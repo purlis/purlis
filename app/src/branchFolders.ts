@@ -11,6 +11,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { listen } from "./here";
+import { isPlaneRoot } from "./pieceViews";
 
 /**
  * **The folders of branches the explorer has expanded, read one level at a time** (FM-1,
@@ -19,6 +20,10 @@ import { listen } from "./here";
  * A branch is named, never given as a directory: a workspace, a repo and a piece, or no piece
  * for the repo's own folder (#948). A folder is its path inside the branch, `""` for its top.
  * What each holds is `purlis_core::files::tree`'s answer, through `branch_tree`.
+ *
+ * **Or the plane root** (issue 1916): with no workspace and no repo (`pieceViews.PLANE_ROOT`),
+ * a folder is one of the project's own, read through `plane_tree` — the window's own command,
+ * which leaves out what purlis keeps to itself — and watched like any other.
  *
  * **What it costs.** One `branch_tree` per folder when it is expanded, and nothing for a
  * folder that is not: a branch of a hundred thousand files costs what its open folders hold.
@@ -104,8 +109,10 @@ export function useBranchFolders(
           return { workspace, reads };
         });
       };
-      void commands
-        .branchTree(plane, workspace, ref.repo, ref.piece, ref.folder)
+      const asked = isPlaneRoot({ workspace, repo: ref.repo, piece: ref.piece })
+        ? commands.planeTree(plane, ref.folder)
+        : commands.branchTree(plane, workspace, ref.repo, ref.piece, ref.folder);
+      void asked
         .then((said) =>
           told(
             said.status === "error"

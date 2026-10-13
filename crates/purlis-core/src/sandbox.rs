@@ -1109,157 +1109,16 @@ impl Denied {
 
     /// The denials for a chat in the plane at `root`, on `machine`.
     pub fn of(root: &Path, machine: &Machine) -> Self {
-        let ctx = crate::secrets::Ctx::new(root, machine.env.clone());
-        let mut paths = Vec::new();
-        let mut deny = |class, path: PathBuf, access| {
-            paths.push(Denial {
-                class,
-                path,
-                access,
-                named: None,
-            })
-        };
-
-        // 1. Vaults: every provider's storage and local session, wherever it is configured.
-        deny(Class::Vaults, ctx.vaults_dir(), Access::ReadWrite);
-        deny(
-            Class::Vaults,
-            crate::secrets::fingerprint::key_path(&ctx),
-            Access::ReadWrite,
-        );
-        let registry = crate::secrets::registry::load_registry(&ctx);
-        let mut keyring = registry.is_err();
-        if let Ok(doc) = &registry {
-            for (name, _) in crate::secrets::registry::vaults(doc) {
-                let Ok(vault) = crate::secrets::registry::vault_in(doc, &name) else {
-                    continue;
-                };
-                match vault.provider.as_str() {
-                    "plain-file" => {
-                        if let Ok(file) = crate::secrets::plain_file::file_path(&ctx, &vault) {
-                            deny(Class::Vaults, file, Access::ReadWrite);
-                        }
-                    }
-                    "keyring" => keyring = true,
-                    _ => {}
-                }
-            }
-        }
-        if let Some(home) = &machine.home {
-            let op = machine
-                .env
-                .get("OP_CONFIG_DIR")
-                .filter(|dir| !dir.is_empty())
-                .map_or_else(|| home.join(".config/op"), PathBuf::from);
-            deny(Class::Vaults, op, Access::ReadWrite);
-            deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
-            deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
-        }
-        // The registry that names the vaults: readable, never rewritten.
-        deny(Class::Vaults, ctx.shared_registry(), Access::Write);
-        deny(Class::Vaults, ctx.local_registry(), Access::Write);
-
-        // 2. Integrity: charter's own records, which only charter writes.
-        // Under EVERY spelling of the state folder (RN-2a): a chat that could write
-        // `.purlis/app` would be writing records charter may read next.
-        for state in crate::names::STATE_DIR.spellings() {
-            let app = root.join(state).join("app");
-            deny(Class::Integrity, app.clone(), Access::Write);
-            // Every chat's hook spool and the keys that check it, neither read nor written: the
-            // hooks that write a spool run outside the sandbox their tools run in (ADR 0068 §6
-            // as amended by V63), so nothing inside it needs them.
-            deny(
-                Class::Integrity,
-                crate::hookwire::spool::dir_for(&app.join("hooks.sock")),
-                Access::ReadWrite,
-            );
-            // Every dispatch's record, neither read nor written (#1452, D-1452-11): a brief or a
-            // report written for one persona is not for a chat running as another. A chat gets
-            // its own dispatch's report on the delivery path and its own list from the app's
-            // answer, never from the file.
-            deny(
-                Class::Integrity,
-                app.join(crate::dispatchrecord::DIR_NAME),
-                Access::ReadWrite,
-            );
-            // The person's approvals of a profile's command and of a project's harness
-            // declaration (#1458): what lets purlis start that program, written by the app when
-            // the person approves in the window and by nothing a chat runs. Read, never written.
-            // And the person's approvals of a persona's credentialed MCP servers, written by
-            // `purlis persona approve-mcp` in the person's terminal, never a chat's.
-            for record in [
-                crate::profiletrust::RECORD,
-                crate::harness_declaration::APPROVED,
-                crate::personaverbs::mcp::APPROVED_FILE,
-            ] {
-                deny(
-                    Class::Integrity,
-                    root.join(state).join(record),
-                    Access::Write,
-                );
-            }
-        }
-        // The MCP approvals are read where `$PURLIS_HOME` puts the state folder, when it does.
-        if !crate::names::STATE_DIR
-            .spellings()
-            .any(|state| root.join(state) == ctx.state)
-        {
-            deny(
-                Class::Integrity,
-                crate::personaverbs::mcp::approvals_path(&ctx.state),
-                Access::Write,
-            );
-        }
-        // …and a state folder the project does not have as a folder is not the chat's to make
-        // (D-RN2a-7): which folder holds charter's state is decided by which are there, so making
-        // one is a move of that state. One that is there is left to the rows above.
-        for state in crate::names::STATE_DIR.spellings() {
-            let folder = root.join(state);
-            // Not a directory of its own: absent, a file, or a link (which a chat could point
-            // anywhere) — none is the chat's to turn into a state folder.
-            if !std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir()) {
-                deny(Class::Integrity, folder, Access::Write);
-            }
-        }
-
-        // 3. Human powers: the approvals a person gave on this machine.
-        let config_root = crate::machine::rooted(
-            machine.env.get(crate::machine::HOME_VAR).map(Into::into),
-            machine.env.get("XDG_CONFIG_HOME").map(Into::into),
-            machine.home.clone(),
-        );
-        // Under EVERY spelling of the config home, there or not (RN-5): which one is the home
-        // is decided by which is there, so a chat that could make `purlis/` beside `charter/`
-        // would be writing the approvals charter reads next.
-        if let Some(config_root) = config_root {
-            for home in crate::machine::dirs_spelled(&config_root) {
-                deny(Class::HumanPowers, home.clone(), Access::Write);
-                // The human client scopes' credentials (FD-27, V16a): a chat neither reads nor
-                // writes anything there, so it holds no person's credential. This does not stop
-                // a connect to `charterd.sock` beside them, which a sandbox judges as network:
-                // each compiler allows no unix socket but the hook socket for that. `charterd`
-                // also refuses those scopes to a chat's processes. Every spelling of the folder.
-                for daemon in crate::names::DAEMON_DIR.spellings() {
-                    deny(Class::HumanPowers, home.join(daemon), Access::ReadWrite);
-                }
-                // What the human's forge sign-in fetched: the native transport's ETag store
-                // holds raw answers, private repos' among them, so a chat neither reads nor
-                // writes it (ADR 0070 §3 and §4).
-                deny(
-                    Class::HumanPowers,
-                    home.join(crate::forge::etag::DIR),
-                    Access::ReadWrite,
-                );
-            }
-        }
+        let (mut paths, keyring, _) = kept_by_purlis(root, machine);
 
         // …and this machine's policy (#1343): what an administrator locks is never a chat's to
         // write, wherever the system lets it be written.
-        deny(
-            Class::HumanPowers,
-            real(&policy::machine_folder()),
-            Access::Write,
-        );
+        paths.push(Denial {
+            class: Class::HumanPowers,
+            path: real(&policy::machine_folder()),
+            access: Access::Write,
+            named: None,
+        });
 
         // 5. Later code: the project root's manifests, under every name (#1336); those between
         // the root and the chat's folder are added where the folder is known
@@ -1319,6 +1178,225 @@ impl Denied {
             unread,
         }
     }
+}
+
+/// **What purlis keeps for itself, of a chat's denials** (classes 1 to 3: vaults, integrity and
+/// human powers), resolved for the plane at `root` on `machine`, and whether a vault there
+/// keeps its secrets in the credential store.
+///
+/// One list, read twice: [`Denied::of`] hands it to each harness's sandbox, and
+/// [`kept_from_reading`] hands the part no chat reads to the window's own file reads, so the
+/// two cannot drift apart.
+///
+/// The third answer is why the list may be short of a vault's storage: the registry that
+/// names the vaults did not read, or one of its entries did not resolve to where it keeps its
+/// secrets. `None` when every vault it names is in the list.
+fn kept_by_purlis(root: &Path, machine: &Machine) -> (Vec<Denial>, bool, Option<String>) {
+    let ctx = crate::secrets::Ctx::new(root, machine.env.clone());
+    let mut paths = Vec::new();
+    let mut deny = |class, path: PathBuf, access| {
+        paths.push(Denial {
+            class,
+            path,
+            access,
+            named: None,
+        })
+    };
+
+    // 1. Vaults: every provider's storage and local session, wherever it is configured.
+    deny(Class::Vaults, ctx.vaults_dir(), Access::ReadWrite);
+    deny(
+        Class::Vaults,
+        crate::secrets::fingerprint::key_path(&ctx),
+        Access::ReadWrite,
+    );
+    // …and under EVERY spelling of the state folder, there or not, as its other records are
+    // below (RN-2a): which folder holds the vaults is decided by which are there.
+    // The folder in use is one of the spellings unless `$PURLIS_HOME` moved it: named once.
+    let in_use = [
+        ctx.vaults_dir(),
+        crate::secrets::fingerprint::key_path(&ctx),
+    ];
+    for state in crate::names::STATE_DIR.spellings() {
+        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+            let path = root.join(state).join(kept);
+            if !in_use.contains(&path) {
+                deny(Class::Vaults, path, Access::ReadWrite);
+            }
+        }
+    }
+    let registry = crate::secrets::registry::load_registry(&ctx);
+    let mut keyring = registry.is_err();
+    let mut unresolved = registry
+        .as_ref()
+        .err()
+        .map(|_| "the vault registry could not be read".to_string());
+    if let Ok(doc) = &registry {
+        for (name, _) in crate::secrets::registry::vaults(doc) {
+            let Ok(vault) = crate::secrets::registry::vault_in(doc, &name) else {
+                unresolved.get_or_insert_with(|| {
+                    format!("the vault registry's entry '{name}' could not be read")
+                });
+                continue;
+            };
+            match vault.provider.as_str() {
+                "plain-file" => match crate::secrets::plain_file::file_path(&ctx, &vault) {
+                    Ok(file) => deny(Class::Vaults, file, Access::ReadWrite),
+                    Err(_) => {
+                        unresolved.get_or_insert_with(|| {
+                            format!("the vault '{name}' does not say where its file is")
+                        });
+                    }
+                },
+                "keyring" => keyring = true,
+                _ => {}
+            }
+        }
+    }
+    if let Some(home) = &machine.home {
+        let op = machine
+            .env
+            .get("OP_CONFIG_DIR")
+            .filter(|dir| !dir.is_empty())
+            .map_or_else(|| home.join(".config/op"), PathBuf::from);
+        deny(Class::Vaults, op, Access::ReadWrite);
+        deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
+        deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
+    }
+    // The registry that names the vaults: readable, never rewritten.
+    deny(Class::Vaults, ctx.shared_registry(), Access::Write);
+    deny(Class::Vaults, ctx.local_registry(), Access::Write);
+
+    // 2. Integrity: charter's own records, which only charter writes.
+    // Under EVERY spelling of the state folder (RN-2a): a chat that could write
+    // `.purlis/app` would be writing records charter may read next.
+    for state in crate::names::STATE_DIR.spellings() {
+        let app = root.join(state).join("app");
+        deny(Class::Integrity, app.clone(), Access::Write);
+        // Every chat's hook spool and the keys that check it, neither read nor written: the
+        // hooks that write a spool run outside the sandbox their tools run in (ADR 0068 §6
+        // as amended by V63), so nothing inside it needs them.
+        deny(
+            Class::Integrity,
+            crate::hookwire::spool::dir_for(&app.join("hooks.sock")),
+            Access::ReadWrite,
+        );
+        // Every dispatch's record, neither read nor written (#1452, D-1452-11): a brief or a
+        // report written for one persona is not for a chat running as another. A chat gets
+        // its own dispatch's report on the delivery path and its own list from the app's
+        // answer, never from the file.
+        deny(
+            Class::Integrity,
+            app.join(crate::dispatchrecord::DIR_NAME),
+            Access::ReadWrite,
+        );
+        // The person's approvals of a profile's command and of a project's harness
+        // declaration (#1458): what lets purlis start that program, written by the app when
+        // the person approves in the window and by nothing a chat runs. Read, never written.
+        // And the person's approvals of a persona's credentialed MCP servers, written by
+        // `purlis persona approve-mcp` in the person's terminal, never a chat's.
+        for record in [
+            crate::profiletrust::RECORD,
+            crate::harness_declaration::APPROVED,
+            crate::personaverbs::mcp::APPROVED_FILE,
+        ] {
+            deny(
+                Class::Integrity,
+                root.join(state).join(record),
+                Access::Write,
+            );
+        }
+    }
+    // The MCP approvals are read where `$PURLIS_HOME` puts the state folder, when it does.
+    if !crate::names::STATE_DIR
+        .spellings()
+        .any(|state| root.join(state) == ctx.state)
+    {
+        deny(
+            Class::Integrity,
+            crate::personaverbs::mcp::approvals_path(&ctx.state),
+            Access::Write,
+        );
+    }
+    // …and a state folder the project does not have as a folder is not the chat's to make
+    // (D-RN2a-7): which folder holds charter's state is decided by which are there, so making
+    // one is a move of that state. One that is there is left to the rows above.
+    for state in crate::names::STATE_DIR.spellings() {
+        let folder = root.join(state);
+        // Not a directory of its own: absent, a file, or a link (which a chat could point
+        // anywhere) — none is the chat's to turn into a state folder.
+        if !std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir()) {
+            deny(Class::Integrity, folder, Access::Write);
+        }
+    }
+
+    // 3. Human powers: the approvals a person gave on this machine.
+    let config_root = crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    );
+    // Under EVERY spelling of the config home, there or not (RN-5): which one is the home
+    // is decided by which is there, so a chat that could make `purlis/` beside `charter/`
+    // would be writing the approvals charter reads next.
+    if let Some(config_root) = config_root {
+        for home in crate::machine::dirs_spelled(&config_root) {
+            deny(Class::HumanPowers, home.clone(), Access::Write);
+            // The human client scopes' credentials (FD-27, V16a): a chat neither reads nor
+            // writes anything there, so it holds no person's credential. This does not stop
+            // a connect to `charterd.sock` beside them, which a sandbox judges as network:
+            // each compiler allows no unix socket but the hook socket for that. `charterd`
+            // also refuses those scopes to a chat's processes. Every spelling of the folder.
+            for daemon in crate::names::DAEMON_DIR.spellings() {
+                deny(Class::HumanPowers, home.join(daemon), Access::ReadWrite);
+            }
+            // What the human's forge sign-in fetched: the native transport's ETag store
+            // holds raw answers, private repos' among them, so a chat neither reads nor
+            // writes it (ADR 0070 §3 and §4).
+            deny(
+                Class::HumanPowers,
+                home.join(crate::forge::etag::DIR),
+                Access::ReadWrite,
+            );
+        }
+    }
+    (paths, keyring, unresolved)
+}
+
+/// **Every path no chat in the plane at `root` may read**, each as written and as the kernel
+/// names it: the vaults and their keys, purlis's own records a chat is kept from (its hook
+/// spool, every dispatch's record, what waits to be told to a chat), and the person's
+/// credentials on this machine. The read half of [`Denied::of`], with what
+/// [`Denied::and_what_waits_for_a_chat`] adds for every harness.
+///
+/// What the window's own file reads leave out too (`crate::files`, the plane root's files):
+/// the window's exclusion list and the sandbox's read denials are one list.
+///
+/// **Refused, with why, when the list cannot be told whole**: the vault registry did not read,
+/// or a vault in it does not say where it keeps its secrets. A reader that would list files by
+/// a list that may be short lists nothing instead.
+pub fn kept_from_reading(root: &Path, machine: &Machine) -> Result<Vec<PathBuf>, String> {
+    let (paths, _, unresolved) = kept_by_purlis(root, machine);
+    if let Some(why) = unresolved {
+        return Err(why);
+    }
+    let denied = Denied {
+        paths,
+        ..Denied::default()
+    }
+    .and_what_waits_for_a_chat(root);
+    let mut out: Vec<PathBuf> = Vec::new();
+    for denial in denied.paths {
+        if denial.access != Access::ReadWrite {
+            continue;
+        }
+        for path in [real(&denial.path), denial.path] {
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// `path` as the kernel names it: its longest part that exists, with its links resolved, and

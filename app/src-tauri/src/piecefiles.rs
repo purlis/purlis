@@ -9,6 +9,13 @@
 //!
 //! Every command names a branch as a workspace, a repo and a piece — or no piece, for the
 //! repo's own folder (#948) — and never as a directory.
+//!
+//! **The plane root's files have two commands of their own** (issue 1916): `plane_tree` and
+//! `plane_file`, which take a project and a path and name no branch. They are the window's
+//! alone (`purlis_session_protocol::ui::WINDOW_ONLY`), and the commands above cannot be
+//! pointed at the plane root: the core's `Branch` for it is made by no workspace, repo or
+//! piece name ([`branch`]). What they leave out is the core's to decide, in one place
+//! (`purlis_core::files`, its `kept` module).
 
 use std::path::Path;
 
@@ -89,6 +96,10 @@ pub struct FolderEntry {
     pub ignored: bool,
     /// Why it does not open, in the core's sentence; `null` when it opens or expands.
     pub refused: Option<String>,
+    /// At the plane root, the workspace whose repo this folder is: one row that leads to that
+    /// workspace's tab, and never a folder that opens here. Left out everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 impl From<Entry> for FolderEntry {
@@ -102,6 +113,7 @@ impl From<Entry> for FolderEntry {
             },
             ignored: entry.ignored,
             refused: entry.refused,
+            workspace: entry.workspace,
         }
     }
 }
@@ -431,8 +443,53 @@ fn status_by(reader: &Reader, plane: &Path, branch: Branch<'_>) -> Result<Branch
         .map_err(|refused| refused.to_string())
 }
 
+/// One folder of the plane root, one level deep, as [`branch_tree`] answers a branch's: the
+/// whole project's files, without what purlis keeps to itself (its vaults, their keys and its
+/// own records), and with each workspace's repo as one row that names its workspace. `""` is
+/// the project's own folder.
+// The window's alone (`WINDOW_ONLY`, issue 1916): it lists the project's own files, which no
+// link is served. Lazy, as `branch_tree` is: one listing and one ignore check per call, read by
+// gitoxide in the bounded reader, on a blocking thread. Not a doc comment, because the generated
+// bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn plane_tree(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    folder: String,
+) -> Result<FolderListing, String> {
+    // Resolved here, so a project that is not open refuses here rather than in the thread.
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("reading the folder", move || {
+        tree_of(&crate::reader(), &root, Branch::plane_root(), &folder)
+    })
+    .await
+}
+
+/// One file of the plane root, by its path relative to the project's folder, as [`piece_file`]
+/// answers a branch's. Refused for a path that leaves the project, for one purlis keeps to
+/// itself, and for one inside a workspace's repo.
+// The window's alone (`WINDOW_ONLY`, issue 1916), and on a blocking thread, as `piece_file` is.
+// Not a doc comment, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn plane_file(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    path: String,
+) -> Result<PieceFile, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("reading the file", move || {
+        file_of(&crate::reader(), &root, Branch::plane_root(), &path)
+    })
+    .await
+}
+
 /// The branch the window named: a piece of a repo, or the repo's own folder. Shared with
 /// `filewatch.rs`, which names branches the same way.
+///
+/// **Never the plane root** (issue 1916), whatever the names: an empty workspace or repo is a
+/// name the core refuses, so every command that reads through here stays a branch's.
 pub(crate) fn branch<'a>(
     workspace: &'a str,
     repo: &'a str,
@@ -441,6 +498,22 @@ pub(crate) fn branch<'a>(
     match piece {
         Some(piece) => Branch::piece(workspace, repo, piece),
         None => Branch::repo(workspace, repo),
+    }
+}
+
+/// **The place a folder watch names** (issue 1916): a branch, as [`branch`] answers, or — with
+/// no workspace and no repo, which name no branch — the plane root. Only the folder watch
+/// reads through here: it resolves folders with the tree's own checks and tells the window
+/// that one moved, and hands back nothing a folder holds.
+pub(crate) fn watched_place<'a>(
+    workspace: &'a str,
+    repo: &'a str,
+    piece: &'a Option<String>,
+) -> Branch<'a> {
+    if workspace.is_empty() && repo.is_empty() && piece.is_none() {
+        Branch::plane_root()
+    } else {
+        branch(workspace, repo, piece)
     }
 }
 
@@ -959,11 +1032,74 @@ mod tests {
         assert_eq!(shell_folder_by(&reader, &plane, PIECE, ""), Ok(folder));
     }
 
-    const PIECE: Branch<'static> = Branch {
-        ws: "alpha",
-        repo: "thing",
-        piece: Some("piece"),
-    };
+    const PIECE: Branch<'static> = Branch::piece("alpha", "thing", "piece");
+
+    /// Issue 1916: the plane root's two commands are the window's alone, so no link is served
+    /// the project's own files; and the commands a link is served name a branch through
+    /// [`branch`], which no names make the plane root.
+    #[test]
+    fn the_plane_roots_files_are_the_windows_alone_and_no_names_reach_them() {
+        for command in ["plane_tree", "plane_file"] {
+            assert!(
+                purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),
+                "{command}"
+            );
+        }
+        assert!(!branch("", "", &None).is_plane_root());
+        assert!(!branch("", "", &Some(String::new())).is_plane_root());
+        // Only the folder watch, which hands back nothing a folder holds, names it so.
+        assert!(watched_place("", "", &None).is_plane_root());
+        assert!(!watched_place("alpha", "", &None).is_plane_root());
+        assert!(!watched_place("", "thing", &None).is_plane_root());
+        assert!(!watched_place("", "", &Some("piece".into())).is_plane_root());
+        assert!(!watched_place("alpha", "thing", &None).is_plane_root());
+    }
+
+    /// Issue 1916 (ruling F1): what the plane root's commands read is refused by the core for
+    /// what purlis keeps to itself, in its sentence, before anything is asked of git — the
+    /// reader here answers every question with the project's folder and nothing else.
+    #[cfg(unix)]
+    #[test]
+    fn the_plane_roots_commands_refuse_what_purlis_keeps_in_the_cores_sentence() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+        let state = purlis_core::names::STATE_DIR.spellings().next().unwrap();
+        std::fs::create_dir_all(plane.join(state).join("vaults")).unwrap();
+        std::fs::write(plane.join(state).join("vaults/forge.json"), "a vault").unwrap();
+        std::fs::create_dir_all(plane.join("workspaces/alpha/thing/.git")).unwrap();
+        let found = serde_json::json!({ "Ok": { "Root": { "base": plane, "refs": [] } } });
+        let (_answer, reader) = reader_answering(&found.to_string());
+        let kept = "is one of the files purlis keeps to itself (vaults, keys and its own \
+                    records), so it is not listed or opened here";
+
+        let vault = format!("{state}/vaults/forge.json");
+        assert_eq!(
+            file_of(&reader, &plane, Branch::plane_root(), &vault),
+            Err(format!("'{vault}' {kept}"))
+        );
+        let vaults = format!("{state}/vaults");
+        assert_eq!(
+            tree_of(&reader, &plane, Branch::plane_root(), &vaults),
+            Err(format!("'{vaults}' {kept}"))
+        );
+        assert_eq!(
+            tree_of(
+                &reader,
+                &plane,
+                Branch::plane_root(),
+                "workspaces/alpha/thing"
+            ),
+            Err(
+                "'workspaces/alpha/thing' is in a repo of workspace 'alpha', whose files are on \
+                 that workspace's tab"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            file_of(&reader, &plane, Branch::plane_root(), "../outside"),
+            Err("'../outside' is not a path inside the branch's folder".to_string())
+        );
+    }
 
     /// A plane with a clone and one piece cut from it.
     fn plane() -> (tempfile::TempDir, PathBuf, PathBuf) {
@@ -1070,12 +1206,14 @@ mod tests {
                     kind: EntryKind::Folder,
                     ignored: false,
                     refused: None,
+                    workspace: None,
                 },
                 FolderEntry {
                     name: "README.md".to_string(),
                     kind: EntryKind::File,
                     ignored: false,
                     refused: None,
+                    workspace: None,
                 },
             ]
         );

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { Explorer, NO_FILES_AT_THE_ROOT, type Spot } from "./Explorer";
+import { Explorer, type Spot } from "./Explorer";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
 import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
@@ -401,16 +401,18 @@ describe("the explorer", () => {
   // Nothing to explore
   // ---------------------------------------------------------------------------------------
 
-  it("names the plane root in the Files heading when the strip is on it, and says why it lists none", () => {
+  it("names the plane root in the Files heading when the strip is on it, and reads no folder without a project (#1916)", () => {
     draw({ workspace: undefined });
 
     const explorer = screen.getByTestId("explorer");
-    // Still a files browser with its heading, never a list of workspaces to pick from.
+    // Still a files browser with its heading, never a list of workspaces to pick from, and
+    // no sentence in place of the tree: with a project, the tree is the whole project's
+    // (`ExplorerSections.window.test.tsx`).
     expect(screen.getByRole("button", { name: "Files Plane root" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    expect(explorer).toHaveTextContent(NO_FILES_AT_THE_ROOT);
+    expect(explorer).not.toHaveTextContent(/is not a workspace/);
     expect(screen.queryByRole("tree")).toBeNull();
     expect(explorer.querySelector('[data-section="workspaces"]')).toBeNull();
   });

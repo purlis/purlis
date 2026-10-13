@@ -222,6 +222,9 @@ fn a_chat_never_reads_or_writes_a_vaults_storage() {
         [
             root.join(".charter/vaults"),
             root.join(".charter/fingerprint.key"),
+            // Every spelling of the state folder, there or not.
+            root.join(".purlis/vaults"),
+            root.join(".purlis/fingerprint.key"),
             root.join("secrets/dev.json"),
             std::path::PathBuf::from("/home/op/.config/op"),
             std::path::PathBuf::from("/home/op/.op"),
@@ -5423,4 +5426,111 @@ fn no_chat_sandbox_writes_the_event_log_beside_the_cache_homes_it_may_write() {
             }
         }
     }
+}
+
+// -------------------------------------------------------------------------------------
+// What no chat reads is what the window's own file reads leave out (issue 1916, ruling F1)
+// -------------------------------------------------------------------------------------
+
+/// The list the plane root's files are read against is the read half of a chat's denials,
+/// with what waits to be told to a chat: one list, so the two cannot drift apart. A path a
+/// later change denies a chat's reads is kept from the window's tree by the same line.
+#[test]
+fn what_the_window_keeps_from_its_file_reads_is_every_path_no_chat_reads() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let machine = machine(Os::MacOs);
+    let denied = Denied::of(plane.path(), &machine).and_what_waits_for_a_chat(plane.path());
+    let unread: Vec<std::path::PathBuf> = denied
+        .paths
+        .iter()
+        .filter(|it| it.access == Access::ReadWrite)
+        .map(|it| it.path.clone())
+        .collect();
+    assert!(!unread.is_empty());
+
+    let kept = kept_from_reading(plane.path(), &machine).expect("the list is told whole");
+
+    for path in &unread {
+        assert!(kept.contains(path), "{path:?} is not kept: {kept:?}");
+        assert!(
+            kept.contains(&real(path)),
+            "{path:?} as the kernel names it"
+        );
+    }
+    // And nothing a chat may read: every kept path is one of those, in one spelling or the
+    // other.
+    for path in &kept {
+        assert!(
+            unread.iter().any(|it| it == path || &real(it) == path),
+            "{path:?} is kept and a chat reads it"
+        );
+    }
+    // The classes a person would name: a vault, the key, a spool, a dispatch's record, a
+    // waiting report, the daemon's folder and the forge's kept answers.
+    let said: Vec<String> = kept.iter().map(|it| it.display().to_string()).collect();
+    for part in [
+        "/vaults",
+        "/fingerprint.key",
+        "/app/spool",
+        "/app/dispatches",
+        "/handbacks",
+        "/forge-etags",
+        "/.config/op",
+    ] {
+        assert!(said.iter().any(|it| it.ends_with(part)), "{part}: {said:?}");
+    }
+}
+
+/// The vaults and the key are a chat's to neither read nor write under every spelling of the
+/// state folder, there or not, as the other records purlis keeps there are; each path once.
+#[test]
+fn the_vaults_and_the_key_are_denied_under_every_spelling_of_the_state_folder() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine(Os::MacOs));
+    let unread = paths(&denied, Class::Vaults, Access::ReadWrite);
+    for state in crate::names::STATE_DIR.spellings() {
+        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+            let path = plane.path().join(state).join(kept);
+            assert_eq!(
+                unread.iter().filter(|it| **it == path).count(),
+                1,
+                "{path:?} in {unread:?}"
+            );
+        }
+    }
+}
+
+/// A list that may be short is no list: where the vault registry does not read, or a vault in
+/// it does not say where its file is, the window's file reads are told why and given nothing.
+#[test]
+fn the_windows_list_is_refused_where_a_vaults_storage_cannot_be_told() {
+    let machine = machine(Os::MacOs);
+    let registry = |text: &str| {
+        let plane = tempfile::tempdir().expect("a plane");
+        std::fs::write(plane.path().join("vaults.json"), text).expect("a registry");
+        let kept = kept_from_reading(plane.path(), &machine);
+        (plane, kept)
+    };
+
+    let (_plane, kept) = registry("{ not json");
+    assert_eq!(
+        kept,
+        Err("the vault registry could not be read".to_string())
+    );
+
+    let (_plane, kept) = registry(r#"{"vaults": {"dev": {"provider": "plain-file"}}}"#);
+    assert_eq!(
+        kept,
+        Err("the vault 'dev' does not say where its file is".to_string())
+    );
+
+    // A registry that reads, with a vault that says where its file is, is told whole.
+    let (plane, kept) = registry(
+        r#"{"vaults": {"dev": {"provider": "plain-file", "config": {"file": "secrets/dev.json"}}}}"#,
+    );
+    let kept = kept.expect("the list is told whole");
+    assert!(
+        kept.contains(&plane.path().join("secrets/dev.json")),
+        "{kept:?}"
+    );
 }

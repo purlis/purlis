@@ -46,7 +46,7 @@ import {
   type Marked,
   type StatusRead,
 } from "./branchStatus";
-import type { Place } from "./pieceViews";
+import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
 import { Menued } from "./Menus";
 import { NotClonedHere, type Cloning } from "./NotCloned";
 import { WorktreeMark } from "./Worktree";
@@ -191,6 +191,15 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
  * selected (ADR 0036), with its live mark and its menu on its tab; this is the files of the one
  * selected there, and it follows the strip. The *Files* heading names whose files they are.
  *
+ * **On the plane root's tab, *Files* is the whole project's** (issue 1916; rulings G3, F1 and F2
+ * of 2026-10-13): the project's own folder as the tree's first level, read one folder at a time
+ * through the window's own command (`plane_tree`, `branchFolders.ts`). The core leaves out what
+ * purlis keeps to itself — the vaults, their keys, its own records — so no row is drawn for
+ * them. A workspace's repo is one row with the workspace's mark, and pressing it selects that
+ * workspace on the strip: its files are that tab's, and the row never opens here. The rows are
+ * read and nothing more: no menu, no drag onto a chat, no change marks — each of those names a
+ * branch, which the plane root is not.
+ *
  * **In the window it is two views** (#1737, spec #1736 P-2): the Explorer view, *Files*, in the
  * left sidebar, and the Repos view, *Repos and branches* alone, in the left half of the Panel
  * ({@link ExplorerPart}). Both are this component, drawn twice with the window's one pick, so
@@ -220,6 +229,7 @@ export function Explorer({
   onReadAgain,
   part = "whole",
   onAddToChat,
+  onGoToWorkspace,
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -257,8 +267,17 @@ export function Explorer({
   /** **Several file and folder rows, picked, to a chat at once** (#1151): their references, in
    *  the order the rows are drawn, all of one branch. No way to hand them without it. */
   onAddToChat?: (refs: Referenced[]) => void;
+  /** A workspace's repo was pressed in the plane root's files (issue 1916, ruling F2): that
+   *  workspace's tab is selected on the strip. */
+  onGoToWorkspace?: (workspace: string) => void;
 }) {
   const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
+  /** Whether this draws the plane root's files (issue 1916): the strip is on the plane root,
+   *  and this is a view with a *Files* section, of a project it can read. */
+  const atRoot = workspace === undefined && plane !== undefined && has("files");
+  /** Whose folders the file trees are keyed and read by: the workspace, or the plane root's
+   *  empty name (`pieceViews.PLANE_ROOT`), which no workspace has. */
+  const filesWorkspace = workspace ?? (atRoot ? PLANE_ROOT.workspace : undefined);
   /** Whether this draws the trees whose rows it keeps: the clones', the files'. */
   const keepsClones = has("repos");
   const keepsFiles = has("files");
@@ -294,14 +313,17 @@ export function Explorer({
   const cockpit = has("files") ? cockpitOf(workspace, state, focus) : undefined;
   /** Where the *Files* section is of: the picked branch or repo, or nothing for the workspace
    *  itself, whose repos' own folders it lists. */
-  const filesTop: BranchFolderRef | undefined =
-    cockpit !== undefined
+  const filesTop: BranchFolderRef | undefined = atRoot
+    ? { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece, folder: "" }
+    : cockpit !== undefined
       ? { ...cockpit.ref, folder: "" }
       : spot === undefined
         ? undefined
         : { repo: spot.repo, piece: spot.piece ?? null, folder: "" };
   const topFold =
-    filesTop === undefined || workspace === undefined ? undefined : fileFold(workspace, filesTop);
+    filesTop === undefined || filesWorkspace === undefined
+      ? undefined
+      : fileFold(filesWorkspace, filesTop);
   // The top of the files drawn is always open: the section's heading, or the cockpit's *Files*
   // row until the operator closes it, is what stands for it.
   const expandedNow =
@@ -314,10 +336,11 @@ export function Explorer({
     : filesTop !== undefined
       ? [filesTop]
       : (state.panels?.repos ?? []).map((repo) => ({ repo, piece: null, folder: "" }));
-  const open = openFolders(workspace, tops, expandedNow);
-  const branches: BranchRef[] = open
-    .filter((ref) => ref.folder === "")
-    .map(({ repo, piece }) => ({ repo, piece }));
+  const open = openFolders(filesWorkspace, tops, expandedNow);
+  // Nothing of the plane root is compared (issue 1916), so no status is read for it.
+  const branches: BranchRef[] = atRoot
+    ? []
+    : open.filter((ref) => ref.folder === "").map(({ repo, piece }) => ({ repo, piece }));
   // The cockpit's branch is read whether or not its files are open: its header counts them.
   if (cockpit !== undefined && !branches.some((one) => branchKey(one) === branchKey(cockpit.ref)))
     branches.push(cockpit.ref);
@@ -335,7 +358,7 @@ export function Explorer({
       ),
     [statuses],
   );
-  const reads = useBranchFolders(plane, workspace, open);
+  const reads = useBranchFolders(plane, filesWorkspace, open);
   const touches = useTouching(plane);
   // What the chats are touching in each branch read here: at most a few hundred paths over the
   // open branches, so worked out each render rather than remembered.
@@ -355,7 +378,7 @@ export function Explorer({
     JSON.stringify([workspace, filesTop?.repo, filesTop?.piece, cockpit !== undefined]),
   );
   const files: FilesOf = {
-    workspace: workspace ?? "",
+    workspace: filesWorkspace ?? "",
     expanded: expandedNow,
     reads,
     showIgnored,
@@ -377,7 +400,9 @@ export function Explorer({
   const placeRows = cockpit === undefined ? shownIn(treeOf(workspace, state, folded), "repos") : [];
   const fileRows =
     workspace === undefined
-      ? []
+      ? atRoot
+        ? shownIn(filesTreeOf(PLANE_ROOT.workspace, tops, true, files), "files")
+        : []
       : cockpit !== undefined
         ? cockpitTreeOf(workspace, cockpit, files)
         : shownIn(filesTreeOf(workspace, tops, filesTop !== undefined, files), "files");
@@ -510,6 +535,20 @@ export function Explorer({
   const named = PART_NAMES[part];
 
   if (workspace === undefined) {
+    const rootLevel = filesTop === undefined ? undefined : levelOf(files, filesTop);
+    /** The plane root's rows: read, and nothing more. No menu, no picks and no drag, each of
+     *  which names a branch (issue 1916). */
+    const rootRows: FileRows = {
+      plane,
+      place: PLANE_ROOT,
+      files,
+      fold,
+      treeitem,
+      isDrawn,
+      onOpenFile,
+      icons,
+      onGoToWorkspace,
+    };
     return (
       // The same `nav` as the full explorer's below, so that it is the SAME element when a
       // workspace arrives: everything holding the old one — a scenario, a screen reader's place —
@@ -520,9 +559,8 @@ export function Explorer({
         aria-label={named.label}
         data-testid={named.testid}
       >
-        {/* The plane root is not a workspace: it has no repos, and purlis reads the files of a
-            workspace's repos and branches and of nothing else. The heading still says where the
-            strip is, so the view never reads as one that failed to load. */}
+        {/* The plane root is not a workspace: it has no repos. Its files are the whole
+            project's (issue 1916), and the heading says where the strip is. */}
         {has("files") ? (
           <Section
             id="files"
@@ -531,7 +569,38 @@ export function Explorer({
             closed={closed.has("files")}
             project={plane}
           >
-            <p className="empty ui-text-secondary">{NO_FILES_AT_THE_ROOT}</p>
+            {filesTop !== undefined && rootLevel !== undefined && (
+              <>
+                <FilesFilter filter={filter} onFilter={setFilter} />
+                <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
+                  <div
+                    className="ui-tree"
+                    role="tree"
+                    aria-label={`Files of ${OUTSIDE_TITLE}`}
+                    data-testid="files"
+                    onKeyDown={onTreeKey(fileRows)}
+                  >
+                    {"pending" in rootLevel ? (
+                      <Pending>Reading the project’s files…</Pending>
+                    ) : "trouble" in rootLevel ? (
+                      <FolderRefused>{rootLevel.trouble}</FolderRefused>
+                    ) : (
+                      <FolderEntries branch={filesTop} level={rootLevel} at={rootRows} />
+                    )}
+                  </div>
+                </RovingFocusGroup.Root>
+                <div className="files-toggles">
+                  <button
+                    type="button"
+                    className="ui-button ui-button-sm ignored-toggle"
+                    aria-pressed={showIgnored}
+                    onClick={() => setShowIgnored((was) => !was)}
+                  >
+                    Show ignored files
+                  </button>
+                </div>
+              </>
+            )}
           </Section>
         ) : (
           <p className="empty ui-text-secondary">
@@ -576,25 +645,7 @@ export function Explorer({
   );
   const filterBox = open.length > 0 && (
     // Only while some branch's files are open: it narrows the file rows and nothing else.
-    <div className="files-filter ui-input-lead">
-      <ListFilter className="ui-input-lead-icon" aria-hidden="true" />
-      <input
-        type="search"
-        className="ui-input"
-        value={filter}
-        aria-label="Filter files"
-        placeholder="Filter files"
-        onChange={(event) => setFilter(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || filter === "") return;
-          // Taken here: an Esc that cleared the box has done its job, and nothing behind
-          // the explorer should act on it too.
-          event.preventDefault();
-          event.stopPropagation();
-          setFilter("");
-        }}
-      />
-    </div>
+    <FilesFilter filter={filter} onFilter={setFilter} />
   );
   const toggles = open.length > 0 && (
     // Only while some branch's files are open: with none, there is nothing they change.
@@ -835,9 +886,31 @@ const PART_NAMES: Record<ExplorerPart, { label: string; testid: string }> = {
  *  section keeps it across the explorer's shapes. */
 type TabStop = ReturnType<typeof useTabStop>;
 
-/** What *Files* says on the plane root's tab, where there is no workspace whose files to list. */
-export const NO_FILES_AT_THE_ROOT =
-  "The plane root is not a workspace, so there are no files to list here. Select a workspace on the strip to browse its files.";
+/** The *Filter files* box: it narrows the file rows drawn to names holding what is typed, and
+ *  Esc clears it. */
+function FilesFilter({ filter, onFilter }: { filter: string; onFilter: (to: string) => void }) {
+  return (
+    <div className="files-filter ui-input-lead">
+      <ListFilter className="ui-input-lead-icon" aria-hidden="true" />
+      <input
+        type="search"
+        className="ui-input"
+        value={filter}
+        aria-label="Filter files"
+        placeholder="Filter files"
+        onChange={(event) => onFilter(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || filter === "") return;
+          // Taken here: an Esc that cleared the box has done its job, and nothing behind
+          // the explorer should act on it too.
+          event.preventDefault();
+          event.stopPropagation();
+          onFilter("");
+        }}
+      />
+    </div>
+  );
+}
 
 /**
  * **The *Repos and branches* section** (#1677): the workspace itself, each clone with its
@@ -1316,6 +1389,9 @@ export type Child = {
   /** A folder that is always open: one of *Changed only*'s. */
   always: boolean;
   marked: Marked | undefined;
+  /** At the plane root, the workspace whose repo this folder is (issue 1916, ruling F2): a
+   *  row that leads to that workspace's tab, and never one that opens. */
+  workspace?: string;
 };
 
 /** What a folder of a branch draws under it: still being read, refused, or its rows. */
@@ -1371,6 +1447,7 @@ function levelOfUncached(files: FilesOf, ref: BranchFolderRef): Level {
       expands: expands(entry),
       always: false,
       marked: index?.marks.get(joined(ref.folder, entry.name)),
+      workspace: entry.workspace ?? undefined,
     }));
     // What the branch deleted here is not on disk to list: it is drawn where it was.
     const listed = new Set(entries.map((entry) => entry.name));
@@ -1457,6 +1534,8 @@ export type FileRows = {
   onPress?: (offer: Offer) => void;
   /** The rows picked to hand a chat at once (#1151); none where they cannot be handed. */
   pick?: ReturnType<typeof useFilePicks>;
+  /** A workspace's repo row was pressed in the plane root's files (issue 1916). */
+  onGoToWorkspace?: (workspace: string) => void;
 };
 
 /** What a file row's menu is looked up in: nothing, because its rows are its own
@@ -1494,6 +1573,8 @@ function FileMenu({ on, at, children }: { on: FileOn; at: FileRows; children: Re
  */
 function draggedAs(at: FileRows, path: string, folder: boolean, refused?: string) {
   const plane = at.plane;
+  // A reference names a branch and a path in it, which a file of the plane root has not.
+  if (isPlaneRoot(at.place)) return {};
   if (plane === undefined || refused !== undefined || path === "") return {};
   return {
     draggable: true,
@@ -1675,6 +1756,29 @@ export function FolderEntries({
             );
           }
           const id = fileRow(here);
+          const ofWorkspace = entry.workspace;
+          if (ofWorkspace !== undefined) {
+            // A workspace's repo, at the plane root (issue 1916, ruling F2): one row with the
+            // workspace's mark, which selects that workspace's tab and never opens here.
+            const said = `A repo of workspace ${ofWorkspace}: its files are on that workspace's tab`;
+            return (
+              <li key={`w${entry.name}`} role="none" data-workspace={ofWorkspace}>
+                <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
+                  <button
+                    type="button"
+                    className="ui-row ui-tree-row file-node"
+                    title={said}
+                    {...at.treeitem(id)}
+                    onClick={() => at.onGoToWorkspace?.(ofWorkspace)}
+                  >
+                    <Folders className="node-icon" />
+                    <span className="spot-name">{entry.name}</span>{" "}
+                    <span className="spot-what ui-text-secondary">{`workspace ${ofWorkspace}`}</span>
+                  </button>
+                </RovingFocusGroup.Item>
+              </li>
+            );
+          }
           const refused = entry.refused;
           const touchedBy = at.files.touching?.get(branchKey(branch))?.get(path);
           // Refused and linked files keep their own marks: what they say is that this row is

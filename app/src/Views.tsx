@@ -284,6 +284,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   harness: Cpu,
   "piece-files": FolderGit2,
   "piece-file": FileCode,
+  /** One file of the plane root (issue 1916, `pieceViews.PLANE_FILE`). */
+  "plane-file": FileCode,
   /** One file against its branch's base (FM-11). */
   "piece-diff": GitCompare,
   /** What one task changed (#1511, `taskChanges.ts`). */

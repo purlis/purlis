@@ -42,6 +42,7 @@ import { commands, type ChangeMark, type PieceFile, type PlaneId } from "../bind
 import {
   pieceDiffTitle,
   pieceDiffView,
+  isPlaneRoot,
   pieceFileTitle,
   pieceFileView,
   type Place,
@@ -99,8 +100,11 @@ function useFile(plane: PlaneId, cut: Place, path: string | undefined): FileRead
     const told = (read: FileRead) => {
       if (!gone) setRead({ path, read });
     };
-    void commands
-      .pieceFile(plane, cut.workspace, cut.repo, cut.piece, path)
+    // The plane root's file is the window's own read (issue 1916), which names no branch.
+    const asked = isPlaneRoot({ workspace: cut.workspace, repo: cut.repo, piece: cut.piece })
+      ? commands.planeFile(plane, path)
+      : commands.pieceFile(plane, cut.workspace, cut.repo, cut.piece, path);
+    void asked
       .then((answer) =>
         told(answer.status === "error" ? { kind: "refused", why: answer.error } : answer.data),
       )
@@ -150,11 +154,13 @@ function useChanged(plane: PlaneId, cut: Place, path: string | undefined): Chang
         .catch(() => told(new Map()));
     };
   });
+  // Nothing of the plane root is compared (issue 1916): it has no base, so it is never asked.
+  const compared = !isPlaneRoot(cut);
   useEffect(() => {
-    if (path !== undefined) read.current();
-  }, [plane, cut.workspace, cut.repo, cut.piece, path]);
+    if (path !== undefined && compared) read.current();
+  }, [plane, cut.workspace, cut.repo, cut.piece, path, compared]);
   useBranchMoved(plane, cut, () => {
-    if (path !== undefined) read.current();
+    if (path !== undefined && compared) read.current();
   });
   if (path === undefined) return undefined;
   const mark = marks?.get(path);
@@ -534,18 +540,21 @@ export function PieceFileTab({
   // A jump to a line (a diff, a record) lands in the text at that line; a file opened to be read
   // is rendered.
   const [source, setSource] = useState(line !== undefined);
+  // What acts on a branch's file — your editor, its path, a chat's context — names a branch,
+  // which the plane root is not (issue 1916): there the file is read, and that is all.
+  const ofABranch = !isPlaneRoot(cut);
   return (
     <div className="piece-file">
       <header className="piece-files-head">
         <code>{path}</code>
         <span className="piece-files-actions">
           <SourceToggle path={path} read={read} source={source} onSource={setSource} />
-          <ToYourEditor plane={plane} cut={cut} path={path} line={at.line} />
-          <CopyAndReveal plane={plane} cut={cut} path={path} />
+          {ofABranch && <ToYourEditor plane={plane} cut={cut} path={path} line={at.line} />}
+          {ofABranch && <CopyAndReveal plane={plane} cut={cut} path={path} />}
           {changed !== undefined && onOpenView !== undefined && (
             <ShowWhatChanged cut={cut} path={path} onOpenView={onOpenView} />
           )}
-          <ToAChat plane={plane} cut={cut} path={path} lines={selection.lines} />
+          {ofABranch && <ToAChat plane={plane} cut={cut} path={path} lines={selection.lines} />}
         </span>
       </header>
       <Shown

@@ -7868,6 +7868,8 @@ export const PlaneView = memo(function PlaneView({
                     cloning={cloning}
                     onReadAgain={rereadPanels}
                     onAddToChat={setAddingToChat}
+                    // A workspace's repo pressed in the plane root's files (issue 1916).
+                    onGoToWorkspace={focusWorkspace}
                   />
                 )}
               />

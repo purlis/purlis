@@ -387,6 +387,9 @@ struct Question {
     ws: String,
     repo: String,
     piece: Option<String>,
+    /// Whether the place is the plane root (issue 1916), which no name spells.
+    #[serde(default)]
+    root: bool,
     ask: Ask,
     memory: u64,
     /// How long the child may take, in milliseconds, before it stops itself.
@@ -553,6 +556,7 @@ impl Reader {
             ws: branch.ws.to_string(),
             repo: branch.repo.to_string(),
             piece: branch.piece.map(str::to_string),
+            root: branch.is_plane_root(),
             ask,
             memory: self.memory,
             deadline_ms: u64::try_from(deadline.as_millis()).unwrap_or(u64::MAX),
@@ -727,6 +731,21 @@ pub fn serve_if_asked() -> Option<i32> {
     Some(serve())
 }
 
+/// Whether `ask` is one the child does not answer for the plane root (issue 1916): the plane
+/// root is listed and opened, and nothing of it is compared. It has no base to be compared
+/// with, and a comparison would read what its tree leaves out ([`super::kept`]).
+fn not_asked_of_the_plane_root(ask: &Ask, branch: Branch<'_>) -> bool {
+    branch.is_plane_root()
+        && matches!(
+            ask,
+            Ask::Status
+                | Ask::AheadBehind
+                | Ask::Compare { .. }
+                | Ask::CompareFile { .. }
+                | Ask::WhatChanged { .. }
+        )
+}
+
 /// The child: one question in, one answer out.
 fn serve() -> i32 {
     let mut asked = Vec::new();
@@ -741,13 +760,16 @@ fn serve() -> i32 {
         return 2;
     };
     watch_own_bounds(question.memory, Duration::from_millis(question.deadline_ms));
-    let branch = Branch {
-        ws: &question.ws,
-        repo: &question.repo,
-        piece: question.piece.as_deref(),
+    let branch = match (question.root, question.piece.as_deref()) {
+        (true, _) => Branch::plane_root(),
+        (false, Some(piece)) => Branch::piece(&question.ws, &question.repo, piece),
+        (false, None) => Branch::repo(&question.ws, &question.repo),
     };
     let plane = question.plane.as_path();
     let answered: Result<Answer, String> = match question.ask {
+        ask if not_asked_of_the_plane_root(&ask, branch) => {
+            Err(Refused::NotAtTheRoot("show what changed"))
+        }
         Ask::Root => root_here(plane, branch).map(Answer::Root),
         Ask::Status => status_here(plane, branch).map(Answer::Status),
         Ask::Folders => folders_here(plane, branch).map(Answer::Folders),
@@ -818,6 +840,33 @@ fn watch_own_bounds(cap: u64, deadline: Duration) {
 
 #[cfg(test)]
 mod tests {
+    /// Issue 1916: the plane root is listed and opened, and the child compares nothing of it;
+    /// every other branch is asked as it was.
+    #[test]
+    fn the_plane_root_is_asked_for_its_files_and_never_for_what_changed() {
+        let root = super::Branch::plane_root();
+        let repo = super::Branch::repo("alpha", "svc");
+        let compared = || super::Ask::WhatChanged {
+            path: "README.md".into(),
+        };
+        for ask in [super::Ask::Status, super::Ask::AheadBehind, compared()] {
+            assert!(super::not_asked_of_the_plane_root(&ask, root), "{ask:?}");
+            assert!(!super::not_asked_of_the_plane_root(&ask, repo), "{ask:?}");
+        }
+        for ask in [
+            super::Ask::Root,
+            super::Ask::Folders,
+            super::Ask::IgnoredTops,
+            super::Ask::Offered { most: None },
+            super::Ask::Ignored {
+                paths: Vec::new(),
+                folders: Vec::new(),
+            },
+        ] {
+            assert!(!super::not_asked_of_the_plane_root(&ask, root), "{ask:?}");
+        }
+    }
+
     use super::*;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

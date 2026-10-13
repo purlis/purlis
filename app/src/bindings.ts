@@ -1923,7 +1923,20 @@ export const commands = {
 	 *  One folder of a branch, one level deep: folders first, then files, each in the order a
 	 *  person reads names, the first 5,000 and a count of the rest. `""` is the branch's own folder.
 	 */
-	branchTree: (plane: PlaneId, workspace: string, repo: string, piece: string | null, folder: string) => typedError<FolderListing, string>(__TAURI_INVOKE("branch_tree", { plane, workspace, repo, piece, folder })),
+	branchTree: (plane: PlaneId, workspace: string, repo: string, piece: string | null, folder: string) => typedError<FolderListing_Serialize, string>(__TAURI_INVOKE("branch_tree", { plane, workspace, repo, piece, folder })),
+	/**
+	 *  One folder of the plane root, one level deep, as [`branch_tree`] answers a branch's: the
+	 *  whole project's files, without what purlis keeps to itself (its vaults, their keys and its
+	 *  own records), and with each workspace's repo as one row that names its workspace. `""` is
+	 *  the project's own folder.
+	 */
+	planeTree: (plane: PlaneId, folder: string) => typedError<FolderListing_Serialize, string>(__TAURI_INVOKE("plane_tree", { plane, folder })),
+	/**
+	 *  One file of the plane root, by its path relative to the project's folder, as [`piece_file`]
+	 *  answers a branch's. Refused for a path that leaves the project, for one purlis keeps to
+	 *  itself, and for one inside a workspace's repo.
+	 */
+	planeFile: (plane: PlaneId, path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("plane_file", { plane, path })),
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
@@ -3428,6 +3441,7 @@ export type BranchChanged = {
 /**
  *  One folder of a branch, as the window names it: the plane, the workspace, the repo, the piece
  *  (none for the repo's own folder) and the folder's path inside the branch (`""` for its top).
+ *  With no workspace and no repo (both `""`) it is a folder of the plane root (issue 1916).
  */
 export type BranchFolder = {
 	plane: PlaneId,
@@ -5112,7 +5126,10 @@ export type FolderChanges = {
 };
 
 /**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
-export type FolderEntry = {
+export type FolderEntry = FolderEntry_Serialize | FolderEntry_Deserialize;
+
+/**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
+export type FolderEntry_Deserialize = {
 	/**  Its name in the folder, not its path. */
 	name: string,
 	kind: EntryKind,
@@ -5120,12 +5137,44 @@ export type FolderEntry = {
 	ignored: boolean,
 	/**  Why it does not open, in the core's sentence; `null` when it opens or expands. */
 	refused: string | null,
+	/**
+	 *  At the plane root, the workspace whose repo this folder is: one row that leads to that
+	 *  workspace's tab, and never a folder that opens here. Left out everywhere else.
+	 */
+	workspace: string | null,
+};
+
+/**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
+export type FolderEntry_Serialize = {
+	/**  Its name in the folder, not its path. */
+	name: string,
+	kind: EntryKind,
+	/**  Whether git ignores it: hidden unless the operator asks to see ignored files. */
+	ignored: boolean,
+	/**  Why it does not open, in the core's sentence; `null` when it opens or expands. */
+	refused: string | null,
+	/**
+	 *  At the plane root, the workspace whose repo this folder is: one row that leads to that
+	 *  workspace's tab, and never a folder that opens here. Left out everywhere else.
+	 */
+	workspace?: string | null,
 };
 
 /**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
-export type FolderListing = {
+export type FolderListing = FolderListing_Serialize | FolderListing_Deserialize;
+
+/**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
+export type FolderListing_Deserialize = {
 	/**  Folders first, then files, each in the order a person reads names; at most 5,000. */
-	entries: FolderEntry[],
+	entries: FolderEntry_Deserialize[],
+	/**  How many entries past those are not listed. */
+	more: number,
+};
+
+/**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
+export type FolderListing_Serialize = {
+	/**  Folders first, then files, each in the order a person reads names; at most 5,000. */
+	entries: FolderEntry_Serialize[],
 	/**  How many entries past those are not listed. */
 	more: number,
 };

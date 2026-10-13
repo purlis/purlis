@@ -316,7 +316,7 @@ pub(super) fn what_changed_here(
     path: &str,
 ) -> Result<Shown, Refused> {
     let opened = open(plane, branch)?;
-    let relative = super::named_in(&opened.base, path)?;
+    let relative = super::named_in(&super::Kept::of(&opened.base, branch), &opened.base, path)?;
     let compared = compared_in(
         plane,
         branch,

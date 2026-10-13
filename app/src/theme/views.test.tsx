@@ -1177,6 +1177,12 @@ const STATES: State[] = [
     drawn: /Read me first/,
   },
   {
+    name: "one of the plane root's files (issue 1916)",
+    view: { from: null, view: "plane-file", key: "docs/guide.md" },
+    answers: { plane_file: { kind: "text", text: "A guide to the project\n" } },
+    drawn: /A guide to the project/,
+  },
+  {
     name: "what changed in one of a branch's files",
     view: { from: null, view: "piece-diff", key: "alpha/svc/fix-it/notes.txt" },
     answers: {

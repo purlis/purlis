@@ -107,3 +107,41 @@ describe("a folder's first read", () => {
     expect(read).toContain("");
   });
 });
+
+describe("a folder of the plane root (#1916)", () => {
+  it("is read through the window's own command and watched with no workspace or repo named", async () => {
+    const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "plane_tree") return { entries: [], more: 0 };
+      return null;
+    });
+    const root: BranchFolderRef = { repo: "", piece: null, folder: "docs" };
+
+    renderHook(() => useBranchFolders(PLANE, "", [root]));
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(asked.filter((one) => one.cmd === "plane_tree").map((one) => one.args)).toEqual([
+      { plane: PLANE, folder: "docs" },
+    ]);
+    // Never a branch's read: the plane root is named by no workspace and no repo.
+    expect(asked.some((one) => one.cmd === "branch_tree")).toBe(false);
+    expect(asked.find((one) => one.cmd === "files_watch")?.args).toEqual({
+      folders: [{ plane: PLANE, workspace: "", repo: "", piece: null, folder: "docs" }],
+    });
+  });
+
+  it("reads a workspace's folder as a branch's, as ever", async () => {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return cmd === "branch_tree" ? { entries: [], more: 0 } : null;
+    });
+
+    renderHook(() => useBranchFolders(PLANE, "alpha", [folder("")]));
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(asked).toContain("branch_tree");
+    expect(asked).not.toContain("plane_tree");
+  });
+});
