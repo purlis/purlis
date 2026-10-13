@@ -7,8 +7,8 @@
 //! **Read, never opened.** The row reads `vaults.json` and this machine's half the way every
 //! vault command does ([`registry::load_shared`], [`registry::load_local`]) and asks nothing of
 //! a provider: no vault is opened, no program runs, no keyring is asked, and no value is in
-//! hand. Whether a vault's credentials are there is the `vaults` row's question, which needs
-//! the provider asked and is still deferred.
+//! hand. Whether a vault's credentials are there is the `vaults` row's question
+//! ([`super::credentials`]).
 //!
 //! A warning for a half that cannot be read, because every `purlis secret` and `purlis vault`
 //! command refuses while it cannot; and for an entry no command can use: one that is not an

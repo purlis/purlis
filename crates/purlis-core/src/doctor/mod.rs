@@ -29,6 +29,7 @@ mod capabilities;
 mod changes;
 mod clones;
 mod config;
+mod credentials;
 mod deferred;
 mod extensions;
 pub mod fix;
@@ -543,7 +544,7 @@ impl Doctor {
         rows.push(changes::changes(self));
         rows.extend(work::work_links(self));
         rows.push(inventory::inventory(self));
-        rows.push(deferred::row("vaults", deferred::VAULTS));
+        rows.push(credentials::vaults(self));
         rows.push(vault_registry::vault_registry(self));
         rows.extend(vaults::vault_files(self));
         rows.extend(vaults::provider_programs(self));
@@ -563,7 +564,7 @@ impl Doctor {
         rows.push(rules::ask_rules(self));
         rows.push(rules::handoff_gate(self));
         rows.push(shadowed::shadowed_docs(self));
-        rows.push(deferred::row("credential paths", deferred::VAULTS));
+        rows.push(credentials::credential_paths(self));
         rows.push(mcp::mcp(self));
         rows.push(plugin::plugin_install(self));
         rows.push(plugin::plugin(self));

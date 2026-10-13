@@ -24,9 +24,9 @@
 //! notes), `plane-root guard` and `guard seen` (the guard's declaration, and its own record of
 //! running), `shadowed docs` (a project's copy of a page or skill purlis ships), `mcp` (whether
 //! each server a persona's chat is given can start) and `workspace layer` (each workspace's and
-//! checkout's generated layer, read without writing, #998). What is still here needs a part
-//! this build does not have: a provider asked about the credentials a vault holds (`vaults`,
-//! `credential paths`).
+//! checkout's generated layer, read without writing, #998), `vaults` and `credential paths`
+//! (each vault's credentials where it says they are, asked without a value read or a provider
+//! run, and each plain-text vault file private and never a link).
 
 use super::Row;
 
@@ -48,6 +48,3 @@ pub(crate) const FORGES: &str = "this version of purlis does not check the forge
 // Not deferred: left out by design, because the app's window takes the tmux frame's place.
 pub(crate) const FRAME: &str = "this purlis has no tmux frame; its window takes the frame's \
                                 place";
-// #994.
-pub(crate) const VAULTS: &str = "this version of purlis does not check vaults and the \
-                                 credentials they hold yet";

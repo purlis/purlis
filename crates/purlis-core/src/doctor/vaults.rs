@@ -5,8 +5,9 @@
 //! gone from it (#1345). Only printed when there is one, as `renamed leftovers` is: a project
 //! with nothing to flag prints the rows it always printed.
 //!
-//! The deferred `vault registry` row stays as it is: this looks at where each file is, not at
-//! the vaults or the credentials they hold.
+//! This looks at where each file is. Whether the registry reads is the `vault registry` row's,
+//! and the credentials each vault holds are the `vaults` and `credential paths` rows'
+//! ([`super::credentials`]).
 //!
 //! The `<program> for vaults` rows (#1516): for each program a registered vault's provider runs
 //! (`op`, `vault`), whether purlis finds it and by which route. Printed only for a project with

@@ -203,7 +203,7 @@ fn a_row_that_did_not_look_is_never_green() {
 }
 
 /// The rows this build still does not check, in the order they print (OB-8, #994).
-const DEFERRED_ROWS: &[&str] = &["frame", "ended tab", "vaults", "credential paths"];
+const DEFERRED_ROWS: &[&str] = &["frame", "ended tab"];
 
 #[test]
 fn every_deferred_row_says_it_did_not_check_and_why() {
@@ -236,6 +236,8 @@ fn the_rows_994_checks_run_on_a_project() {
     for name in [
         "harness",
         "vault registry",
+        "vaults",
+        "credential paths",
         "news",
         "guard seen",
         "shadowed docs",
@@ -258,7 +260,7 @@ fn a_deferred_row_is_told_apart_from_a_check_that_ran_and_could_not_finish() {
     // about twenty of them, on every plane. Counting them would draw a warning count that
     // never goes down. A check that RAN and could not finish is a real warning and has to be
     // counted — so the two answers have to differ.
-    assert!(deferred::row("vaults", deferred::VAULTS).deferred());
+    assert!(deferred::row("frame", deferred::FRAME).deferred());
     assert!(!Row::not_checked("git", "git timed out").deferred());
     assert!(!Row::warn("x", "y", "z").deferred());
     assert!(!Row::ok("x", "y").deferred());
@@ -273,7 +275,8 @@ fn a_deferred_row_is_told_apart_from_a_check_that_ran_and_could_not_finish() {
         .filter(|r| r.deferred())
         .map(|r| r.name.as_str())
         .collect();
-    assert!(deferred.contains(&"vaults"), "{deferred:?}");
+    assert!(deferred.contains(&"frame"), "{deferred:?}");
+    assert!(!deferred.contains(&"vaults"), "{deferred:?}");
     assert!(!deferred.contains(&"charter.toml"), "{deferred:?}");
     assert!(!deferred.contains(&"schema"), "{deferred:?}");
 }
