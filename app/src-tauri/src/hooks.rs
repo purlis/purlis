@@ -444,6 +444,63 @@ pub struct ChatBlocked {
     /// (#1666): a scope it removed, or asking while a connection waits. None where it ruled
     /// nothing out.
     pub ruled: Option<String>,
+    /// **What the person may choose, where the block named nothing a grant could name**
+    /// (#1884, ADR 0093 as amended 2026-10-13): a local socket, from the ones purlis finds on
+    /// this machine or by a path they type, or a system service, from the ones purlis can
+    /// allow. Offered beside Start without the sandbox, in the window only
+    /// (`choose_sandbox_block_target`), and what they choose is judged as a named one is. None
+    /// where there is nothing to choose, or policy forbids every such grant.
+    #[specta(optional)]
+    pub choose: Option<crate::sandboxing::GrantWhat>,
+    /// **For a block found in what a tool that ran nothing read back** (#1884): the sentence
+    /// saying so. Its Notice is a quiet line: nothing waits on it, the chat is not told to
+    /// wait, and the asks registry does not list it until the person takes it up
+    /// (`take_up_sandbox_block`). None for a block of a command the chat ran.
+    #[specta(optional)]
+    pub quiet: Option<String>,
+}
+
+/// What a quiet line says of where its block came from ([`ChatBlocked::quiet`]).
+pub const READ_BACK_SAID: &str = "It was in the output of a command that ran earlier, so \
+                                  nothing waits on your answer.";
+
+/// What an unnamed socket's Notice says in place of "there is no socket to allow" (#1884).
+const CHOOSE_SOCKET_SAID: &str = "The sandbox did not say which socket it refused, so you can \
+                                  choose it. purlis checks the socket you choose as it checks \
+                                  one the sandbox names.";
+
+/// What an unnamed service's Notice says in place of "there is no service to allow" (#1884).
+const CHOOSE_SERVICE_SAID: &str = "The sandbox did not say which system service it refused, so \
+                                   you can choose it from the ones purlis can allow.";
+
+/// **What the person may choose for `block`** ([`ChatBlocked::choose`]), given what [`offered`]
+/// and the chat's harness came to (`offer`, and `named`, what it would show): only where the
+/// Notice would offer no Allow (Start without the sandbox), never for purlis's own operation,
+/// and never where policy forbids every socket and service grant. A socket only where its grant
+/// compiles (D-sock-7, macOS), also where the one the sandbox named may not be granted (one in
+/// a folder a chat may write): the person may choose the one the service keeps elsewhere.
+fn choosable(
+    locks: &purlis_core::sandbox::policy::Locks,
+    block: &purlis_core::sandboxblock::Block,
+    offer: BlockOffer,
+    named: Option<&str>,
+) -> Option<crate::sandboxing::GrantWhat> {
+    use crate::sandboxing::GrantWhat;
+    use purlis_core::sandboxblock::{Kind, Operation};
+    if block.ours || offer != BlockOffer::Unsandboxed || locks.socket_grants_refused().is_some() {
+        return None;
+    }
+    match (block.operation, block.kind) {
+        (Operation::Connect, Kind::LocalSocket) if cfg!(target_os = "macos") => {
+            Some(GrantWhat::Socket)
+        }
+        // A service the sandbox named and this chat's harness cannot take is not one of the
+        // ones listed, so there is nothing to choose in its place.
+        (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) if named.is_none() => {
+            Some(GrantWhat::Service)
+        }
+        _ => None,
+    }
 }
 
 /// What the app does with a sandbox block chat `block.chat`'s hook sent (#1338), heard at `at`:
@@ -463,15 +520,16 @@ fn heard_block(
 ) {
     // Keyed on the block and what it names, never on the vault: a run's vault buys no Notice
     // the same block without one would not get.
-    let let_through = throttle
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .lets_on(
-            block.line.chat,
-            &block.line.sandbox_blocked,
-            block.line.target.as_deref(),
-            at,
-        );
+    let let_through = {
+        let mut throttle = throttle.lock().unwrap_or_else(PoisonError::into_inner);
+        let line = &block.line;
+        // A block read back is never the same as one a command was refused (#1884).
+        if line.read_back {
+            throttle.lets_on_read(line.chat, &line.sandbox_blocked, line.target.as_deref(), at)
+        } else {
+            throttle.lets_on(line.chat, &line.sandbox_blocked, line.target.as_deref(), at)
+        }
+    };
     tell_repeats(throttle, repeated, |t| t.repeats_over(at));
     if !let_through {
         return;
@@ -521,19 +579,45 @@ pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
 /// chat's own.
 pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
     let blocked = &heard.line;
-    let block = blocked.sandbox_blocked;
-    let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
     let harness = blocked
         .harness
         .as_deref()
         .and_then(purlis_core::harness::Harness::of_kind);
-    let (offer, target, route, levels) = held(
-        &locks,
-        for_its_harness(
+    ChatBlocked {
+        vault: heard.vault.as_deref().map(vault_said),
+        quiet: blocked.read_back.then(|| READ_BACK_SAID.to_owned()),
+        ..blocked_on(
+            plane,
+            blocked.chat,
+            &blocked.sandbox_blocked,
             harness,
-            offered(plane.root(), &block, blocked.target.as_deref()),
-        ),
-    );
+            blocked.target.as_deref(),
+        )
+    }
+}
+
+/// **What the window is told of `block`, refused chat `session` of `harness` on `target`**: what
+/// [`blocked`] says of a block a hook sent, and what a block says once the person chose its
+/// target (`crate::sandboxchoose`), so a chosen socket or service is judged, worded and offered
+/// exactly as one the sandbox named (#1884).
+pub(crate) fn blocked_on(
+    plane: &PlaneId,
+    session: u32,
+    block: &purlis_core::sandboxblock::Block,
+    harness: Option<purlis_core::harness::Harness>,
+    target: Option<&str>,
+) -> ChatBlocked {
+    let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
+    let (first, named, why) = for_its_harness(harness, offered(plane.root(), block, target));
+    // Chosen by the person where nothing was named (#1884): said in place of "nothing to
+    // allow". A socket named and refused keeps its own sentence, and may be chosen again.
+    let choose = choosable(&locks, block, first, named.as_deref());
+    let why = match (choose, &named) {
+        (Some(crate::sandboxing::GrantWhat::Socket), None) => Some(CHOOSE_SOCKET_SAID.to_owned()),
+        (Some(_), None) => Some(CHOOSE_SERVICE_SAID.to_owned()),
+        _ => why,
+    };
+    let (offer, target, route, levels) = held(&locks, (first, named, why));
     let ruled = (offer == BlockOffer::Host)
         .then(|| ruled_out(&locks, target.as_deref(), &levels))
         .flatten();
@@ -548,14 +632,16 @@ pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
         levels,
         held: false,
         ruled,
+        choose,
+        quiet: None,
         plane: plane.clone(),
-        session: blocked.chat,
+        session,
         operation: block.operation.word().to_owned(),
         kind: block.kind.word().to_owned(),
         ours: block.ours,
         harness: harness.map(|harness| harness.name().to_owned()),
         said: block.said(),
-        vault: heard.vault.as_deref().map(vault_said),
+        vault: None,
     }
 }
 
@@ -2987,6 +3073,7 @@ mod tests {
                         sandbox_blocked: block,
                         harness: Some("claude".to_owned()),
                         target: None,
+                        read_back: false,
                     }
                     .into(),
                 )
@@ -3010,6 +3097,8 @@ mod tests {
                 held: false,
                 ruled: None,
                 vault: None,
+                choose: None,
+                quiet: None,
             }]
         );
         // A harness word purlis does not start is no harness.
@@ -3020,6 +3109,7 @@ mod tests {
                 sandbox_blocked: told_block(),
                 harness: Some("/home/dev/bin/thing".to_owned()),
                 target: None,
+                read_back: false,
             }
             .into(),
         );
@@ -3041,6 +3131,7 @@ mod tests {
             sandbox_blocked: told_block(),
             harness: None,
             target: None,
+            read_back: false,
         };
         for _ in 0..50 {
             heard_block(
@@ -3081,6 +3172,7 @@ mod tests {
             sandbox_blocked: told_block(),
             harness: None,
             target: None,
+            read_back: false,
         };
         for _ in 0..4 {
             heard_block(&throttle, &slot, &repeated, line.clone().into(), now);
@@ -3178,6 +3270,7 @@ mod tests {
             sandbox_blocked: told_block(),
             harness: Some("claude".to_owned()),
             target: Some("api.cluster.example-k8s.com:6443".to_owned()),
+            read_back: false,
         };
         let with = |line: &purlis_core::hookwire::SandboxBlocked, vault: &str| RunBlocked {
             block: line.clone(),
@@ -3241,6 +3334,7 @@ mod tests {
             sandbox_blocked: told_block(),
             harness: None,
             target: Some("api.example.com:443".to_owned()),
+            read_back: false,
         };
         let said = |vault: &str| {
             blocked(
@@ -3279,6 +3373,7 @@ mod tests {
                     },
                     harness: None,
                     target: target.map(str::to_owned),
+                    read_back: false,
                 }
                 .into(),
             );

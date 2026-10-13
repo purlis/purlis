@@ -186,6 +186,7 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 },
                 harness: Some("claude".to_owned()),
                 target: None,
+                read_back: false,
             },
             SandboxBlocked {
                 chat: 7,
@@ -198,6 +199,7 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 harness: Some("claude".to_owned()),
                 // The sandbox's own line names the one service a grant names (ADR 0093).
                 target: Some("com.apple.trustd.agent".to_owned()),
+                read_back: false,
             },
         ]
     );
@@ -419,6 +421,63 @@ fn a_docker_run_down_a_pipe_reaches_the_app_naming_its_socket() {
     let read = came_back(format!("cat {CANARY}.log | tail -40"));
     assert_eq!(named(&read), vec![(socket, None)]);
     holds_nothing_of_the_call(&read);
+}
+
+/// #1884: a refusal a chat only read back, in a background command's output its file tool
+/// read, reaches the app marked as read back and naming nothing, so its Notice is a quiet line
+/// nobody has to answer; and the chat is told that, not to wait. The same words from a command
+/// the chat ran are a block as ever.
+#[test]
+fn a_refusal_a_chat_only_read_back_reaches_the_app_marked_so_and_the_chat_is_not_told_to_wait() {
+    let said = "docker: permission denied while trying to connect to the docker API at \
+                unix:///Users/dev/.docker/run/docker.sock: dial unix \
+                /Users/dev/.docker/run/docker.sock: connect: operation not permitted\n";
+    let read = hook(
+        "posttooluse-blocked",
+        &serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/private/tmp/claude-501/x/tasks/b1.output"},
+            "tool_response": {"file": {"content": said}},
+            "cwd": "/Users/dev/plane/workspaces/a/repo",
+        }),
+    );
+    let socket = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalSocket,
+        ours: false,
+    };
+    assert_eq!(
+        read.blocked,
+        vec![SandboxBlocked {
+            chat: 7,
+            sandbox_blocked: socket,
+            harness: Some("claude".to_owned()),
+            target: None,
+            read_back: true,
+        }]
+    );
+    let told = context_of(&read.said, "PostToolUse");
+    assert!(told.contains("What you just read holds"), "{told}");
+    assert!(told.contains("nothing waits on their answer"), "{told}");
+    assert!(!told.contains("wait for their answer"), "{told}");
+    assert!(!told.contains("docker.sock"), "fixed words only: {told}");
+    // A command the chat ran that printed the same: a block of its own, and it waits.
+    let ran = hook(
+        "posttooluse-blocked",
+        &serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "make up 2>&1 | tail -40"},
+            "tool_response": {"stdout": said, "stderr": "", "interrupted": false},
+            "cwd": "/Users/dev/plane/workspaces/a/repo",
+        }),
+    );
+    assert_eq!(ran.blocked.len(), 1);
+    assert!(!ran.blocked[0].read_back);
+    assert_eq!(ran.blocked[0].target, None);
+    let told = context_of(&ran.said, "PostToolUse");
+    assert!(told.contains("then wait for their answer"), "{told}");
 }
 
 /// #1663: an opencode chat runs behind purlis's own proxy, which tells the app each host it

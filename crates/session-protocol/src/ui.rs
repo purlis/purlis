@@ -295,6 +295,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "keep_sandbox_block_for_tasks",
     // Keep blocked on one chat's: refuses what its proxy holds and tells the chat (#1666).
     "keep_sandbox_block",
+    // The person names what a block did not (#1884, ADR 0093): the sockets and services this
+    // machine offers to choose from, the choice itself, and taking up a block a chat only read
+    // back. The choice is the person's, so no link lists, makes or prompts it.
+    "sandbox_block_choices",
+    "choose_sandbox_block_target",
+    "take_up_sandbox_block",
     // Widens what a persona's chats reach on this machine (#1362).
     "allow_persona_hosts",
     // Lets every chat here ask the system's certificate check on this machine (ADR 0093).

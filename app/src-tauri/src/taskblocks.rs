@@ -99,6 +99,18 @@ impl HeldBlock {
         }
     }
 
+    /// A block on a socket or a service its report did not name (#1884): only the chat's own
+    /// Notice answers it, once the person has chosen which (`crate::sandboxchoose`). No ask is
+    /// listed for it, and no Allow matches it until then.
+    pub fn unnamed(operation: &str, kind: &str, what: GrantWhat) -> Self {
+        Self {
+            operation: operation.to_owned(),
+            kind: kind.to_owned(),
+            what,
+            target: String::new(),
+        }
+    }
+
     /// A host its report named: one of several a chat may be held on at once under one
     /// operation and kind (#1637).
     fn names_a_host(&self) -> bool {
@@ -131,6 +143,10 @@ pub struct Blocks {
     /// The blocks of each open chat whose connection is held now, waiting on the person
     /// (#1709): never pushed out by what is heard after them, until they no longer wait.
     waiting: Mutex<HashMap<u32, Vec<HeldBlock>>>,
+    /// The blocks of each open chat found in what a tool that ran nothing read back (#1884):
+    /// held, so the person may still answer one, and listed by no ask until they take it up
+    /// ([`Self::taken_up`]) or a command of the chat is refused the same.
+    quiet: Mutex<HashMap<u32, Vec<HeldBlock>>>,
 }
 
 impl Blocks {
@@ -147,6 +163,14 @@ impl Blocks {
     /// [`Self::heard`], at `at`, in seconds since 1970: a block heard again while it is held
     /// keeps the time it was first heard.
     pub fn heard_at(&self, session: u32, block: HeldBlock, at: u64) {
+        // Heard of a command the chat ran: no longer the quiet line of a read (#1884).
+        self.loud(session, |one| {
+            if block.names_a_host() {
+                *one == block
+            } else {
+                one.shares_a_notice(&block)
+            }
+        });
         let waits = self.waiting().get(&session).cloned().unwrap_or_default();
         let waits = |one: &HeldBlock| waits.contains(one);
         let mut held = self.held();
@@ -209,6 +233,56 @@ impl Blocks {
         since.insert(session, kept);
     }
 
+    fn quiet(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
+        self.quiet.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Chat `session`'s quiet blocks that `gone` names are quiet no longer.
+    fn loud(&self, session: u32, gone: impl Fn(&HeldBlock) -> bool) {
+        let mut quiet = self.quiet();
+        if let Some(mine) = quiet.get_mut(&session) {
+            mine.retain(|one| !gone(one));
+            if mine.is_empty() {
+                quiet.remove(&session);
+            }
+        }
+    }
+
+    /// [`Self::heard`], for a block found in what a tool that ran nothing read back (#1884):
+    /// held as any block is, so its Notice's answers are checked against it, and quiet, so no
+    /// ask lists it ([`Self::every_since`]) until the person takes it up ([`Self::taken_up`]).
+    /// A block the chat is already held on by a command it ran stays as it is.
+    pub fn heard_quietly(&self, session: u32, block: HeldBlock) {
+        if self.holds(session, &block) && !self.is_quiet(session, &block) {
+            return;
+        }
+        self.heard(session, block.clone());
+        let held = self.held().get(&session).cloned().unwrap_or_default();
+        let mut quiet = self.quiet();
+        let mine = quiet.entry(session).or_default();
+        mine.push(block);
+        // Only what is still held: the bound on what is held bounds this too.
+        mine.retain(|one| held.contains(one));
+    }
+
+    /// Whether chat `session` is held on `block` quietly.
+    pub fn is_quiet(&self, session: u32, block: &HeldBlock) -> bool {
+        self.quiet()
+            .get(&session)
+            .is_some_and(|mine| mine.contains(block))
+    }
+
+    /// **The person took `block` of chat `session` up** (#1884): it is quiet no longer, and is
+    /// listed as any block is. Whether the chat is held on it now; taking up one that is not
+    /// quiet changes nothing.
+    pub fn taken_up(&self, session: u32, block: &HeldBlock) -> bool {
+        if !self.holds(session, block) {
+            return false;
+        }
+        self.loud(session, |one| one == block);
+        true
+    }
+
     fn since(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64)>>> {
         self.since.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -256,6 +330,7 @@ impl Blocks {
     /// `block` of chat `session` was answered: it is held no longer.
     pub fn answered(&self, session: u32, block: &HeldBlock) {
         self.no_longer_waits(session, block);
+        self.loud(session, |one| one == block);
         self.noticed().remove(&session);
         let mut held = self.held();
         if let Some(mine) = held.get_mut(&session) {
@@ -279,6 +354,7 @@ impl Blocks {
         self.noticed().remove(&session);
         self.since().remove(&session);
         self.waiting().remove(&session);
+        self.quiet().remove(&session);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
@@ -301,32 +377,47 @@ impl Blocks {
 }
 
 /// Holds the block the window is about to be told of, where an answer could name it: a host
-/// or a folder to write, named whole, or a host the report did not name, which the person
-/// types on the chat's own Notice.
+/// or a folder to write, named whole, a host the report did not name, which the person
+/// types on the chat's own Notice, or a socket or a service the person may choose
+/// ([`crate::hooks::ChatBlocked::choose`], #1884). One read back is held quietly
+/// ([`Blocks::heard_quietly`]).
 pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) {
+    let Some(block) = held_of(told) else {
+        return;
+    };
+    if told.quiet.is_some() {
+        chats.blocks().heard_quietly(told.session, block);
+    } else {
+        chats.blocks().heard(told.session, block);
+    }
+}
+
+/// The block a chat is held on for what the window is `told`, or none where no answer names it.
+pub fn held_of(told: &crate::hooks::ChatBlocked) -> Option<HeldBlock> {
     let what = match told.offer {
         crate::hooks::BlockOffer::Host => GrantWhat::Host,
         crate::hooks::BlockOffer::Write => GrantWhat::Write,
         crate::hooks::BlockOffer::Socket => GrantWhat::Socket,
         crate::hooks::BlockOffer::Service => GrantWhat::Service,
-        _ => return,
-    };
-    let block = match told.target.as_deref() {
-        None if what == GrantWhat::Host => HeldBlock::unnamed_host(&told.operation, &told.kind),
-        None => return,
-        Some(target) => {
-            let Some(target) = normalised(what, target) else {
-                return;
-            };
-            HeldBlock {
-                operation: told.operation.clone(),
-                kind: told.kind.clone(),
-                what,
-                target,
-            }
+        // Nothing to allow yet, and something the person may choose.
+        _ => {
+            return told
+                .choose
+                .map(|what| HeldBlock::unnamed(&told.operation, &told.kind, what));
         }
     };
-    chats.blocks().heard(told.session, block);
+    match told.target.as_deref() {
+        None if what == GrantWhat::Host => {
+            Some(HeldBlock::unnamed_host(&told.operation, &told.kind))
+        }
+        None => None,
+        Some(target) => Some(HeldBlock {
+            operation: told.operation.clone(),
+            kind: told.kind.clone(),
+            what,
+            target: normalised(what, target)?,
+        }),
+    }
 }
 
 /// **What one chat's own block Notice answers** (#1538): the block's operation and kind, by the
@@ -752,9 +843,18 @@ impl Blocks {
     }
 
     /// [`Self::every`], each block with when it was first heard, in seconds since 1970, where
-    /// that is kept (#1700).
+    /// that is kept (#1700). **Never a quiet one** (#1884): a block read back asks nothing of
+    /// the person until they take it up.
     pub fn every_since(&self) -> Vec<(u32, HeldBlock, Option<u64>)> {
-        let every = self.every();
+        let every: Vec<(u32, HeldBlock)> = {
+            let quiet = self.quiet();
+            self.every()
+                .into_iter()
+                .filter(|(session, block)| {
+                    !quiet.get(session).is_some_and(|mine| mine.contains(block))
+                })
+                .collect()
+        };
         let since = self.since();
         every
             .into_iter()

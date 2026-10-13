@@ -2293,6 +2293,24 @@ export type AwayRefusal = {
 	shown: string,
 };
 
+/**  One socket or service the person may choose. */
+export type BlockChoice = {
+	/**  What choosing it names: a socket's whole path, as a grant names it, or a service's name. */
+	target: string,
+	/**  The kind of service purlis reads it as: "Container engine", "SSH agent". */
+	named: string,
+	/**  What allowing it means, in the words its Notice says (D-sock-6). */
+	says: string,
+};
+
+/**  What the person may choose from for one block. */
+export type BlockChoices = {
+	/**  In the app's own order, never a chat's. */
+	choices: BlockChoice[],
+	/**  Whether a target may also be typed: a socket's path. Never a service's name. */
+	typed: boolean,
+};
+
 /**  What a block's Notice offers (#1342). */
 export type BlockOffer = 
 /**  Allow a host. */
@@ -2666,6 +2684,22 @@ export type ChatBlocked = {
 	 *  nothing out.
 	 */
 	ruled: string | null,
+	/**
+	 *  **What the person may choose, where the block named nothing a grant could name**
+	 *  (#1884, ADR 0093 as amended 2026-10-13): a local socket, from the ones purlis finds on
+	 *  this machine or by a path they type, or a system service, from the ones purlis can
+	 *  allow. Offered beside Start without the sandbox, in the window only
+	 *  (`choose_sandbox_block_target`), and what they choose is judged as a named one is. None
+	 *  where there is nothing to choose, or policy forbids every such grant.
+	 */
+	choose?: GrantWhat | null,
+	/**
+	 *  **For a block found in what a tool that ran nothing read back** (#1884): the sentence
+	 *  saying so. Its Notice is a quiet line: nothing waits on it, the chat is not told to
+	 *  wait, and the asks registry does not list it until the person takes it up
+	 *  (`take_up_sandbox_block`). None for a block of a command the chat ran.
+	 */
+	quiet?: string | null,
 };
 
 /**

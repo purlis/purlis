@@ -17,7 +17,8 @@ import { useReadOnlySaid } from "./ReadOnlyLine";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
 import { inTheWindow } from "./personaHostsAllow";
-import { hostsOf, inertly, matched, type HeldBlock } from "./sandboxBlocks";
+import { eachHost, hostsOf, inertly, isAnAsk, matched, type HeldBlock } from "./sandboxBlocks";
+import { SandboxChoose, chooseSaid, mayChoose } from "./SandboxChoose";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { Field, SettingRow } from "./settings/components";
@@ -76,6 +77,16 @@ import { Field, SettingRow } from "./settings/components";
  * Allow now tells the chat to run it again. Once allowed, it offers **Tell the chat to retry**
  * (D-1709-7): a chat gone idle hears that only on its next turn, and purlis never types into a
  * chat by itself, so the press puts a fixed line in its prompt for the person to send.
+ *
+ * **A socket or a service the block did not name is the person's to choose** (#1884,
+ * `block.choose`): **Choose the socket…** stands beside Start without the sandbox and opens the
+ * app's own list and a box for a path (`SandboxChoose`). What they choose is judged as a named
+ * one is, and the Notice that names it then offers Allow once, for this chat and always.
+ *
+ * **A block the chat only read back is a quiet line** (#1884, `block.quiet`): found in the
+ * output of a command that ran earlier, by a tool that ran nothing. It says so, asks nothing,
+ * and is put away with Dismiss; **Show what you can do** takes it up, and it is then the
+ * block's own Notice, with every way out it has.
  */
 export function SandboxBlockNotice({
   block,
@@ -114,9 +125,87 @@ export function SandboxBlockNotice({
   const [filed, setFiled] = useState<string>();
   const [said, setSaid] = useState<string>();
   const [filing, setFiling] = useState(false);
+  /** Whether the person took up a block the chat only read back (#1884). */
+  const [takenUp, setTakenUp] = useState(false);
+  const [taking, setTaking] = useState(false);
   const cause = `sandbox-blocked:${block.session}:${block.operation}:${block.kind}:${block.ours ? "ours" : "chat"}`;
   const behind =
     more > 0 ? ` ${more} more ${more === 1 ? "block" : "blocks"} behind this one.` : "";
+
+  if (!block.ours && typeof block.quiet === "string" && !takenUp) {
+    /** What the core holds for it, which taking it up makes an ask: nothing for a block no
+     *  answer names, whose own Notice is drawn with no word to the core. */
+    const held =
+      block.choose === "socket" || block.choose === "service"
+        ? [{ what: block.choose, target: "" }]
+        : isAnAsk(block)
+          ? eachHost(block).map((one) => ({
+              what: block.offer as "host" | "write" | "socket" | "service",
+              target: one.target ?? "",
+            }))
+          : [];
+    const takeUp = () => {
+      if (taking) return;
+      if (held.length === 0) {
+        setTakenUp(true);
+        return;
+      }
+      setTaking(true);
+      setSaid(undefined);
+      void Promise.all(
+        held.map((one) =>
+          commands
+            .takeUpSandboxBlock(block.plane, block.session, {
+              operation: block.operation,
+              kind: block.kind,
+              ...one,
+            })
+            .then((done) => (done.status === "error" ? done.error : undefined))
+            .catch((err: unknown) => `purlis could not show it: ${String(err)}`),
+        ),
+      )
+        .then((answers) => {
+          const refused = answers.find((one) => one !== undefined);
+          if (refused !== undefined) setSaid(refused);
+          else {
+            setTakenUp(true);
+            asksMoved(block.plane);
+          }
+        })
+        .finally(() => setTaking(false));
+    };
+    const line = (
+      <>
+        This chat read a sandbox refusal back: {block.said}. {block.quiet}
+        {said !== undefined && ` ${said}`}
+        {behind}
+      </>
+    );
+    // Taking one up makes it ask, which is the window's alone to do; a block nothing holds
+    // only opens here.
+    return held.length === 0 || inTheWindow(commands, "takeUpSandboxBlock") ? (
+      <Notice
+        cause={`${cause}:read-back`}
+        at="pane"
+        tone="news"
+        label="Sandbox block"
+        fixes={[{ label: "Show what you can do", onPress: takeUp, busy: taking }]}
+        onDismiss={onDismiss}
+      >
+        {line}
+      </Notice>
+    ) : (
+      <Notice
+        cause={`${cause}:read-back`}
+        at="pane"
+        tone="news"
+        label="Sandbox block"
+        onDismiss={onDismiss}
+      >
+        {line}
+      </Notice>
+    );
+  }
 
   if (!block.ours)
     return (
@@ -507,6 +596,22 @@ function AllowNotice({
       .catch((err: unknown) => setSaid(`purlis could not restart the chat: ${String(err)}`))
       .finally(() => setBusy(false));
   };
+  /** Whether the form a socket or a service is chosen in is open (#1884). */
+  const [choosing, setChoosing] = useState(false);
+  /** Choose the socket…, where the block lets the person choose and this page can carry it. */
+  const choose: NoticeAction[] =
+    (block.choose === "socket" || block.choose === "service") && mayChoose()
+      ? [
+          {
+            label: chooseSaid(block),
+            onPress: () => setChoosing((was) => !was),
+            opens: { id, open: choosing },
+          },
+        ]
+      : [];
+  const [chooseIt] = choose;
+  const chooseUnder =
+    choosing && chooseIt !== undefined ? <SandboxChoose block={block} id={id} /> : undefined;
   const withoutSandbox = () => {
     setBusy(true);
     setSaid(undefined);
@@ -549,9 +654,9 @@ function AllowNotice({
         {behind}
       </Notice>
     );
-  if (block.offer === "policy")
-    return (
-      <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
+  if (block.offer === "policy") {
+    const says = (
+      <>
         The sandbox blocked {block.said}
         <RanWith vault={block.vault} />
         {block.target !== null && (
@@ -562,24 +667,43 @@ function AllowNotice({
         )}
         . {block.route}
         {behind}
+      </>
+    );
+    // Policy forbids starting without the sandbox, and a socket may still be chosen (#1884).
+    return chooseIt === undefined ? (
+      <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
+        {says}
+      </Notice>
+    ) : (
+      <Notice
+        cause={cause}
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[chooseIt]}
+        onDismiss={onDismiss}
+        under={chooseUnder}
+      >
+        {says}
       </Notice>
     );
-  if (block.offer === "unsandboxed")
+  }
+  if (block.offer === "unsandboxed") {
+    const startWithout: NoticeAction = {
+      label: "Start without the sandbox for this chat",
+      onPress: () => {
+        if (!busy) withoutSandbox();
+      },
+    };
     return (
       <Notice
         cause={cause}
         at="pane"
         tone="trouble"
         label="Sandbox block"
-        fixes={[
-          {
-            label: "Start without the sandbox for this chat",
-            onPress: () => {
-              if (!busy) withoutSandbox();
-            },
-          },
-        ]}
+        fixes={chooseIt === undefined ? [startWithout] : [chooseIt, startWithout]}
         onDismiss={onDismiss}
+        under={chooseUnder}
       >
         The sandbox blocked {block.said}
         <RanWith vault={block.vault} />
@@ -596,6 +720,7 @@ function AllowNotice({
         {behind}
       </Notice>
     );
+  }
   if (
     block.offer !== "host" &&
     block.offer !== "write" &&
