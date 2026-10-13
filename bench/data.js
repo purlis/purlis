@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791923396599,
+  "lastUpdate": 1791925772384,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9996,6 +9996,48 @@ window.BENCHMARK_DATA = {
             "value": 101.130496,
             "unit": "ms",
             "extra": "median of 5 runs: 100.732, 100.946, 101.130, 101.850, 101.889 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "883e39f7fd8f026f783e74d4c03f00e70e2d5c58",
+          "message": "docs(contributing): where tests live, and what a scanner's finding gets\n\nA module's tests are in `<module>/tests.rs` (or its `tests/`), which is what code scanning reads\nas test code; older layouts move when their module is next changed. A finding is answered by\nmaking the code's intent explicit before any dismissal, and a dismissal says why.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T01:07:11+04:00",
+          "tree_id": "60984f1a4a63da8f063e8eb35980b7b098d6db25",
+          "url": "https://github.com/purlis/purlis/commit/883e39f7fd8f026f783e74d4c03f00e70e2d5c58"
+        },
+        "date": 1791925770893,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5291965000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.509, 0.529, 0.537, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.937714999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.494, 16.804, 16.938, 16.971, 17.435 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.75045549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.005, 103.038, 103.750, 103.915, 104.002 ms"
           }
         ]
       }
