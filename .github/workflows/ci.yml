@@ -511,6 +511,15 @@ jobs:
         if: runner.os == 'Linux'
         env: *coldstart-env
         run: tools/coldstart-linux.sh i3-nobus
+      # A launch that puts 1, 10 and 40 chats back (ADR 0086 row L8): when the window could be
+      # used and when the chats had started. They start behind the window, so the first must
+      # not grow with them. Evidence: reported in the job's summary, and it fails nothing.
+      - name: A launch that puts chats back, on X (evidence only)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        env:
+          APP: ${{ steps.main-app.outputs.change }}
+        run: tools/coldstart-linux.sh restore
 
   # The two newer images are evidence, like `windows`: reported, never a gate, because
   # `release.yml` publishes a dev build only when this whole workflow succeeds, and a preview

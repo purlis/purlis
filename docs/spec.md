@@ -165,6 +165,16 @@ When two choices conflict, the higher priority wins.
    hook keeps current, so a Codex or opencode chat past its first turn and a Claude Code chat
    after `/clear` come back where they were (Q10); Esc or closing the question reopens
    (purlis#250).
+   **The chats start behind the window** (2026-10-13, after the operator's report that a launch
+   with many chats to put back took minutes). Reopening registers every chat at once, which
+   starts nothing: each has its tab in its place from the first frame, drawn as restoring, and
+   the window is usable however many there are. The chats then start a few at a time across
+   every project (two to four, by the machine's cores), the chat in front of the project in
+   front first, then each project's chat in front, then the rest in the record's order. Every
+   chat still comes back, and each start is the one every chat goes through, with every check
+   it makes: only when it starts moved. A chat that does not start is listed with its reason
+   and Retry now, as before, and holds up no other; a record written while chats are still
+   coming back holds them, so a quit then loses none (`app/src-tauri/src/restoring.rs`).
 6. **Harnesses:** Claude Code, Codex and opencode (opencode since charter#371, ADR 0058).
 7. **Remote sessions are not in v1.** Sessions sit behind one interface (spawn, read/write
    bytes, resize, exit) with local PTY as the first implementation, so SSH or devcontainers
@@ -548,7 +558,7 @@ confirm it (D-0082b). A row is added in the pull request that adds its job.
 | L5 | hook call p95, at 50,000 memories and the hot target | ≤ 50 ms | CI absolute (`stress`) | KN-22 | not yet measured |
 | L6 | cold start to the first frame, no chats | ≤ 2 s | CI relative on Linux (`app builds`, a pull request: against main built in the same job, past 1.15 times main's in two passes fails, #1866); CI absolute where there is no main to measure against (median of five; at most one past a 2.5 s ceiling, reported and not gated); both ADR 0086 as amended; release absolute on macOS | FR-8 | 370 ms macOS |
 | L7 | reattach with `purlisd` up: first paint of the focused pane | ≤ 1 s | CI relative (`bench`); release absolute | FD-5, FD-7 | — |
-| L8 | relaunch with the hot target's chats to put back: interactive | ≤ 3 s | CI relative (`bench`); release absolute | SC-20 | — |
+| L8 | relaunch with the hot target's chats to put back: interactive | ≤ 3 s | CI relative (`bench`); release absolute; evidence only (`app builds`, Linux: `tools/coldstart-linux.sh restore` launches with 1, 10 and 40 chats to put back and reports when the window could be used and when the chats had started; the first must not grow with the chats, `tools/restore-case.mjs`) | SC-20 | — |
 | L9 | project switch among 10 open projects, one chat each: the press of the switcher's row to the paint of that project's chat, p95 of 30 | ≤ 200 ms | release absolute; CI relative (`bench`) is #875 and #931; evidence only (`scenario tests`, macOS and Linux) | FR-27 | — |
 | T1 | event log throughput | ≥ 1,000 events/s sustained, L5 inside its budget | CI absolute (`stress`) | FD-9 | — |
 | T2 | audit throughput and group commit | 1,000 entries/s; ≤ 100 ms between commits (ADR 0075) | CI absolute (`stress`) | AU-3 | — |

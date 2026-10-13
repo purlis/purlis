@@ -8,6 +8,8 @@
 #   tools/coldstart-linux.sh bare     # X with no window manager, on the session bus as found
 #   tools/coldstart-linux.sh i3       # i3 under X11, on the session bus as found
 #   tools/coldstart-linux.sh i3-nobus # i3 under X11 with no session bus, as `startx` into i3
+#   tools/coldstart-linux.sh restore  # X with no window manager: a launch that puts 1, 10 and
+#                                     # 40 chats back (row L8), evidence only, never a gate
 #
 # On a GitHub runner "the session bus as found" is charter-app#24's machine: a bus that is up,
 # with a desktop portal it can activate and that cannot start.
@@ -45,7 +47,7 @@
 # its cold-disk cost is likely smaller too.
 set -euo pipefail
 
-case="${1:?which case: bare, i3 or i3-nobus}"
+case="${1:?which case: bare, i3, i3-nobus or restore}"
 
 # `APP` as the caller named it, then the repository root for everything else.
 app="$(realpath -m "${APP:-$(dirname "$0")/../target/debug/charter-app}")"
@@ -146,6 +148,11 @@ with_i3() {
 
 case "$case" in
 bare) "${bench[@]}" ;;
+restore)
+  # When the window could be used and when the chats had started, for each size
+  # (`tools/restore-case.mjs`). Reported: it fails only where a launch could not be made at all.
+  node tools/bench.mjs --skip-build --only restore --app "$app" --evidence
+  ;;
 i3) with_i3 "${bench[@]}" ;;
 i3-nobus)
   # No address and a runtime directory with no `bus` in it: the standard lookup finds nothing.

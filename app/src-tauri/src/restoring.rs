@@ -93,9 +93,13 @@ impl Gate {
         }
     }
 
-    /// The one gate every project's launch goes through.
+    /// The one gate every project's launch goes through. In a test each project has a gate
+    /// of its own, so a start one test holds takes no place from another test's chats.
     pub(crate) fn shared() -> Arc<Self> {
         static SHARED: OnceLock<Arc<Gate>> = OnceLock::new();
+        if cfg!(test) {
+            return Arc::new(Self::letting(at_once(), LENDS_AFTER));
+        }
         Arc::clone(SHARED.get_or_init(|| Arc::new(Self::letting(at_once(), LENDS_AFTER))))
     }
 
