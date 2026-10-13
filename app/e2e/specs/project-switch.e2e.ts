@@ -52,6 +52,9 @@ const PAINTED = READY.split(" ").at(-1) ?? READY;
 /** How many times each project is switched to. */
 const ROUNDS = 3;
 
+/** How many times the back-and-forth returns to each of its two projects. */
+const BACK_AND_FORTH = 4;
+
 /**
  * Opens one chat in `plane`, the project in front, and answers with the name its `×` carries.
  *
@@ -165,5 +168,33 @@ describe(`switching among ${OPEN} open projects`, function () {
     );
 
     expect(switches.samples).toBe(OPEN * ROUNDS);
+  });
+
+  it("goes back and forth between two of them, and says what each return took", async () => {
+    // **The switch a person makes all day**: from one project to another and back. The launch's
+    // project holds the chats earlier specs left in it, the other holds one, so the two
+    // directions are a project of many chats and a project of one. The first visit to each is
+    // left out: it is the one that may still have the project to draw.
+    const [many, one] = [first, planes[1]];
+    const took: { to: "many" | "one"; ms: number; shownMs: number; built: boolean }[] = [];
+    for (let round = 0; round <= BACK_AND_FORTH; round++) {
+      for (const [to, plane] of [
+        ["many", many],
+        ["one", one],
+      ] as const) {
+        const job = await jobInTheWindow<{ ms: number; shownMs: number; built: boolean }>({
+          kind: "project switch",
+          plane,
+          sentinel: PAINTED,
+        });
+        expect(await inFront()).toBe(plane);
+        if (round > 0) took.push({ to, ms: job.ms, shownMs: job.shownMs, built: job.built });
+      }
+    }
+    const launchChats = (await ask<number[]>("running_sessions", { plane: first })).length;
+    logLine("project-switch-back.jsonl", { launchChats, switches: took });
+    console.log(`Back and forth between two projects: ${JSON.stringify(took)}`);
+
+    expect(took).toHaveLength(BACK_AND_FORTH * 2);
   });
 });

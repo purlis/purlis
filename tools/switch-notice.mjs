@@ -11,8 +11,9 @@
 // The switches are taken a round at a time, and the first of each round is the switch to the
 // launch's project, which holds the chats earlier specs left in it where the rest hold one. So
 // the notice says the two apart: what a switch to a project of many chats took, and what a
-// switch to a project of one did. Evidence, never a verdict (ADR 0086): the job's part that ran
-// no switch spec says so and nothing else.
+// switch to a project of one did. A second notice says the same for going back and forth between
+// two projects (`logs/project-switch-back.jsonl`), which is the switch a person makes all day.
+// Evidence, never a verdict (ADR 0086): the job's part that ran no switch spec says nothing.
 
 import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
@@ -68,6 +69,37 @@ export function annotation(record, label) {
   return `::notice title=${escapeProperty(`Project switches (${label})`)}::${escapeData(lines.join("\n"))}`;
 }
 
+/**
+ * The `::notice` line for the back-and-forth between two projects (`record.switches`, each
+ * `{to, ms, shownMs, built}`), titled with `label`; none where it was not recorded. `built` is
+ * whether the switch had the project's pane to open, or found it already there.
+ */
+export function backAndForth(record, label) {
+  if (
+    !record ||
+    !Array.isArray(record.switches) ||
+    record.switches.length === 0
+  )
+    return undefined;
+  const chats =
+    record.launchChats === undefined ? "many" : `${record.launchChats}`;
+  const said = (to, name) => {
+    const those = record.switches.filter((one) => one.to === to);
+    if (those.length === 0) return `${name}: none recorded`;
+    const built = those.filter((one) => one.built).length;
+    return (
+      `${name}, press to its pane painted: ${each(those.map((one) => one.ms))} ms ` +
+      `(to the project in front: ${each(those.map((one) => one.shownMs))} ms; ` +
+      `${built} of ${those.length} opened a pane)`
+    );
+  };
+  const lines = [
+    said("many", `Back to the project of ${chats} chats`),
+    said("one", "Back to the project of one chat"),
+  ];
+  return `::notice title=${escapeProperty(`Project switches, back and forth (${label})`)}::${escapeData(lines.join("\n"))}`;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const file = process.argv[2] ?? "logs/project-switch.jsonl";
   const label = process.argv[3] ?? "scenario";
@@ -76,4 +108,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     label,
   );
   if (line) console.log(line);
+  const back = file.replace(/\.jsonl$/, "-back.jsonl");
+  const second = backAndForth(
+    readSwitches(existsSync(back) ? readFileSync(back, "utf8") : ""),
+    label,
+  );
+  if (second) console.log(second);
 }

@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { annotation, readSwitches } from "./switch-notice.mjs";
+import { annotation, backAndForth, readSwitches } from "./switch-notice.mjs";
 
 /** Two rounds among three projects: the first of each round is the launch's project. */
 const record = {
@@ -47,4 +47,26 @@ test("says nothing for a part of the job that ran no switch spec", () => {
 test("leaves the line about the project in front out of a record that has no such samples", () => {
   const { shown_ms: _, ...older } = record;
   assert.doesNotMatch(annotation(older, "linux"), /before its pane/);
+});
+
+test("says each direction of the back-and-forth, and how many of its switches opened a pane", () => {
+  const line = backAndForth(
+    {
+      launchChats: 48,
+      switches: [
+        { to: "many", ms: 30.2, shownMs: 20, built: false },
+        { to: "one", ms: 25, shownMs: 18, built: false },
+        { to: "many", ms: 700, shownMs: 400, built: true },
+        { to: "one", ms: 26, shownMs: 19, built: false },
+      ],
+    },
+    "linux",
+  );
+  assert.equal(
+    line,
+    "::notice title=Project switches%2C back and forth (linux)::" +
+      "Back to the project of 48 chats, press to its pane painted: 30, 700 ms (to the project in front: 20, 400 ms; 1 of 2 opened a pane)%0A" +
+      "Back to the project of one chat, press to its pane painted: 25, 26 ms (to the project in front: 18, 19 ms; 0 of 2 opened a pane)",
+  );
+  assert.equal(backAndForth(undefined, "linux"), undefined);
 });

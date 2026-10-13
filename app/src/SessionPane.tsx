@@ -152,7 +152,7 @@ export function SessionPane({
       if (!gone) pane.write(`\r\n\x1b[31mcharter: ${trouble}\x1b[0m\r\n`);
     };
     // The renderer loads its own code, so a pane draws with the DOM until it is there.
-    void draw(pane, say, () => !gone).then((drawing) => bench.paneDrawing(session, drawing));
+    void draw(pane, say, () => !gone).then((drawing) => bench.paneDrawing(pane, drawing));
     // Input refused is worth seeing: the program has stopped reading it, or has ended.
     const sayIfRefused = (
       sending: Promise<{ status: "ok" } | { status: "error"; error: string }>,
@@ -193,7 +193,7 @@ export function SessionPane({
     const output = new Channel<string>();
     output.onmessage = (text) => {
       if (gone) return;
-      const written = bench.paneSent(session, text);
+      const written = bench.paneSent(pane, text);
       if (ready) pane.write(text, written);
       else waiting.push({ text, written });
     };
