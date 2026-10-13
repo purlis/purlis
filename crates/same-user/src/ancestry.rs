@@ -89,8 +89,16 @@ impl Parents {
     }
 
     /// When `pid` started, as a time of day, where the kernel says one: what tells whether a
-    /// process can be one a record written at a known time names (#1542). macOS only, from the
-    /// same reading as [`Self::started`]; elsewhere `None`, which a caller takes as a doubt.
+    /// process can be one a record written at a known time names (#1542, #1021). `None` is a
+    /// doubt, which each caller takes in the direction that fails closed.
+    ///
+    /// - **macOS:** from the same reading as [`Self::started`], to the microsecond.
+    /// - **Linux:** the boot's time of day (`btime` in `/proc/stat`) plus the start's clock
+    ///   ticks ([`Self::started`]) at the system's tick rate (`sysconf(_SC_CLK_TCK)`). The boot
+    ///   time is whole seconds, and the kernel moves it when the clock is stepped, so this is
+    ///   good to a second or two: a caller compares it with a slack, never for equality (which
+    ///   [`Self::started`] is for).
+    /// - **Any other unix:** `None`.
     pub fn started_at(pid: u32) -> Option<std::time::SystemTime> {
         #[cfg(target_os = "macos")]
         {
@@ -99,7 +107,17 @@ impl Parents {
                 std::time::Duration::from_secs(seconds) + std::time::Duration::from_micros(micros),
             )
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let ticks = proc_started(pid)?.parse().ok()?;
+            let boot = boot_time_in(&std::fs::read_to_string("/proc/stat").ok()?)?;
+            let per_second = nix::unistd::sysconf(nix::unistd::SysconfVar::CLK_TCK)
+                .ok()
+                .flatten()
+                .and_then(|rate| u64::try_from(rate).ok())?;
+            time_of_day(boot, ticks, per_second)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
         {
             let _ = pid;
             None
@@ -300,6 +318,28 @@ fn proc_started(pid: u32) -> Option<String> {
     let (_, after) = stat.rsplit_once(')')?;
     // Field 3 is the first after the command; the start time is field 22.
     after.split_whitespace().nth(19).map(str::to_owned)
+}
+
+/// The boot's time of day, in seconds since 1970: the `btime` line of Linux's `/proc/stat`.
+pub fn boot_time_in(stat: &str) -> Option<u64> {
+    stat.lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// The time of day `ticks` clock ticks after a boot at `boot` (seconds since 1970), at
+/// `per_second` ticks a second; `None` for no tick rate, or a time past what one can hold.
+pub fn time_of_day(boot: u64, ticks: u64, per_second: u64) -> Option<std::time::SystemTime> {
+    if per_second == 0 {
+        return None;
+    }
+    let whole = ticks / per_second;
+    let nanos = (ticks % per_second).checked_mul(1_000_000_000)? / per_second;
+    std::time::UNIX_EPOCH
+        .checked_add(std::time::Duration::from_secs(boot.checked_add(whole)?))?
+        .checked_add(std::time::Duration::from_nanos(nanos))
 }
 
 /// The parent `/proc/<pid>/stat` names.
@@ -823,6 +863,60 @@ mod tests {
         assert!(!walk(55, 10, tree), "no parent known");
         assert!(!walk(7, 99, tree), "its own parent");
         assert!(!walk(8, 10, tree), "a loop");
+    }
+
+    #[test]
+    fn the_boot_time_is_the_btime_line_of_proc_stat_and_nothing_else() {
+        let stat = "cpu  1 2 3 4\nintr 9 9\nctxt 77\nbtime 1760000000\nprocesses 4242\n";
+        assert_eq!(boot_time_in(stat), Some(1_760_000_000));
+        assert_eq!(boot_time_in("cpu 1 2\nbtimes 5\n"), None, "another word");
+        assert_eq!(boot_time_in("btime soon\n"), None, "not a number");
+        assert_eq!(boot_time_in(""), None);
+    }
+
+    #[test]
+    fn a_start_in_clock_ticks_is_a_time_of_day_after_the_boot() {
+        let boot = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_760_000_000);
+        assert_eq!(
+            time_of_day(1_760_000_000, 12_345, 100),
+            Some(boot + std::time::Duration::from_millis(123_450)),
+            "123.45 s after the boot, at 100 ticks a second"
+        );
+        assert_eq!(
+            time_of_day(1_760_000_000, 7, 1000),
+            Some(boot + std::time::Duration::from_millis(7))
+        );
+        assert_eq!(time_of_day(1_760_000_000, 7, 0), None, "no tick rate");
+        assert_eq!(
+            time_of_day(u64::MAX, u64::MAX, 1),
+            None,
+            "past what a time can hold"
+        );
+    }
+
+    /// Linux reads a start as the boot's time of day plus the start's clock ticks (#1542): the
+    /// boot time is whole seconds and the kernel may step it with the clock, so a start is
+    /// held to within a second or two either way.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_child_s_start_on_linux_is_a_time_of_day_around_when_it_was_started() {
+        let before = std::time::SystemTime::now();
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .expect("a child");
+        let after = std::time::SystemTime::now();
+        let at = Parents::started_at(child.id()).expect("the child's start");
+        let _ = child.kill();
+        let _ = child.wait();
+        let slack = std::time::Duration::from_secs(2);
+        assert!(at + slack >= before && at <= after + slack, "{at:?}");
+        assert_eq!(Parents::started_at(child.id()), None, "a reaped child");
+        assert!(
+            Parents::started_at(std::process::id()).is_some_and(|mine| mine <= at),
+            "this process started before its child"
+        );
     }
 
     #[test]

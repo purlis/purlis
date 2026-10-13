@@ -37,8 +37,9 @@ use std::path::Path;
 
 mod ancestry;
 pub use ancestry::{
-    MOST_GENERATIONS, NotOurHost, Parents, admit_host, holds_a_socket_at, inside_a_chat, judge,
-    listening_at, lsof_command, lsof_names, session_of, stat_parent, walk,
+    MOST_GENERATIONS, NotOurHost, Parents, admit_host, boot_time_in, holds_a_socket_at,
+    inside_a_chat, judge, listening_at, lsof_command, lsof_names, session_of, stat_parent,
+    time_of_day, walk,
 };
 
 /// A user id.

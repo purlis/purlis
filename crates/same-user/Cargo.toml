@@ -19,8 +19,10 @@ thiserror.workspace = true
 # standard library's `peer_cred` is unstable, rustix has the Linux half only, and the
 # workspace denies `unsafe`. The version portable-pty already links, so the tree gains no crate.
 # Its re-exported `libc` is where `ancestry` gets `proc_pidinfo` and the two structs it reads on
-# macOS: the workspace's second audited `unsafe` block (D-1407-8).
-nix = { version = "0.31", default-features = false, features = ["process", "socket", "user"] }
+# macOS: the workspace's second audited `unsafe` block (D-1407-8). `feature` is for `sysconf`'s
+# clock tick rate, which turns a Linux process's start into a time of day (#1542): nix's own
+# safe wrapper, so no `unsafe` here.
+nix = { version = "0.31", default-features = false, features = ["feature", "process", "socket", "user"] }
 
 [dev-dependencies]
 tempfile.workspace = true
