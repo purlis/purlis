@@ -336,13 +336,14 @@ function CertificateCheckHere({
   return (
     <div
       id={ids.id}
+      role="group"
       className="ui-setting-status"
       aria-labelledby={ids.labelledBy}
       aria-describedby={ids.describedBy}
     >
       <p>{said ?? certificateCheckSaid(one)}</p>
       {offered && (
-        <button type="button" disabled={busy} onClick={allow}>
+        <button type="button" className="ui-button" disabled={busy} onClick={allow}>
           {ALLOW_CERTIFICATE_CHECK}
         </button>
       )}

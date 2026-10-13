@@ -244,6 +244,12 @@ function core({
         case "allow_persona_hosts":
           allowed.push(given);
           return sandbox;
+        case "allow_certificate_check":
+          allowed.push({ ...given, certificateCheck: true });
+          return {
+            ...sandbox,
+            certificate_check: { expected: true, allowed: true, locked: null },
+          };
         case "save_project_settings": {
           const which = given.which as SettingsWhich;
           const change = given.change as { kind: "edits"; edits: SettingsEdit[] };
@@ -417,6 +423,69 @@ describe("Settings › Project › Sandbox", () => {
         value: { kind: "bool", value: true },
       },
     ]);
+  });
+
+  // qw351, ADR 0093: the committed switch declares and grants nothing, so the page says what a
+  // chat here has on this machine, and allows it with the window's own call.
+  it("says the certificate check is not allowed on this machine yet, and allows it there", async () => {
+    const { allowed, sent } = core({
+      shared: [MODE_ON, field(["sandbox", "certificate-checks"], { kind: "bool", value: true })],
+      sandbox: state({ certificate_check: { expected: true, allowed: false, locked: null } }),
+    });
+    const page = await atSandbox();
+
+    // The committed switch is on, and the row under it says that is not an Allow here.
+    expect(within(page).getByRole("switch", { name: "Certificate checks" })).toBeChecked();
+    const here = await within(page).findByRole("group", {
+      name: "Certificate checks on this machine",
+    });
+    expect(here).toHaveTextContent(
+      "This project expects certificate checks, and they are not allowed on this machine yet: Go tools such as gh fail in a sandboxed chat with a certificate error (x509: OSStatus -26276) until you allow them here.",
+    );
+
+    await userEvent.click(within(here).getByRole("button", { name: "Allow on this machine" }));
+
+    await waitFor(() => expect(allowed).toEqual([{ plane: PLANE, certificateCheck: true }]));
+    await waitFor(() =>
+      expect(here).toHaveTextContent(
+        "Allowed on this machine: every chat of this project can check certificates from its next start, and a chat already running takes it when it restarts.",
+      ),
+    );
+    expect(within(here).queryByRole("button", { name: "Allow on this machine" })).toBeNull();
+    // This machine's file, never the committed one.
+    expect(sent).toEqual([]);
+  });
+
+  it("says the certificate check is allowed here, or locked by policy, and offers no Allow", async () => {
+    core({
+      sandbox: state({ certificate_check: { expected: false, allowed: true, locked: null } }),
+    });
+    const page = await atSandbox();
+    const here = await within(page).findByRole("group", {
+      name: "Certificate checks on this machine",
+    });
+    expect(here).toHaveTextContent("Allowed on this machine");
+    expect(here).toHaveTextContent("Remove it under Network, in the Allowed list.");
+    expect(within(here).queryByRole("button")).toBeNull();
+    cleanup();
+
+    core({
+      sandbox: state({
+        certificate_check: {
+          expected: true,
+          allowed: false,
+          locked:
+            "Policy forbids allowing a chat a local socket or a system service. Locked by policy, set by IT in /etc/purlis/policy.json.",
+        },
+      }),
+    });
+    const locked = await within(await atSandbox()).findByRole("group", {
+      name: "Certificate checks on this machine",
+    });
+    expect(locked).toHaveTextContent(
+      "Not allowed on this machine, so Go tools such as gh cannot check certificates in a sandboxed chat. Policy forbids allowing a chat a local socket or a system service.",
+    );
+    expect(within(locked).queryByRole("button")).toBeNull();
   });
 
   it("names a persona's own hosts", async () => {

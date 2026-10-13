@@ -41,7 +41,10 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
     offer === "host"
       ? ["you", "chat", "project"]
       : local
-        ? ["once", "chat", "you"]
+        ? // The certificate check leads with this machine's Allow (`asking::sandbox_local`).
+          offer === "service" && target === "com.apple.trustd.agent"
+          ? ["you", "chat", "once"]
+          : ["once", "chat", "you"]
         : ["chat", "you"];
   return [
     {

@@ -17,6 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Moved, OlderSandbox } from "./bindings";
+import { RESTART_WAITS_FOR_THE_TURN } from "./ChatNotices";
 import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { forgetDismissals } from "./dismissals";
 import { sandboxCommandReturned } from "./sandboxAsked";
@@ -237,6 +238,28 @@ describe("Restart chat on a chat's tab", () => {
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     expect(await screen.findByText("session 9")).toBeInTheDocument();
+  });
+
+  // qw351: an Allow pressed while the chat was mid-turn showed nothing until the turn ended.
+  it("says on the pane that an owed restart waits for the turn, and Restart now ends the turn", async () => {
+    const { asked } = await aChat();
+    await act(() => emit("chat-moved", RUNNING));
+    const menu = await tabMenu();
+    await userEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: "Restart chat claude claude 4 when this turn ends",
+      }),
+    );
+    await waitFor(() => expect(asked("ask_chat_restart")).toEqual(ASKED));
+
+    expect(await screen.findByText(RESTART_WAITS_FOR_THE_TURN)).toBeInTheDocument();
+    expect(asked("restart_chat")).toEqual([]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Restart now" }));
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+    expect(await screen.findByText("session 9")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(RESTART_WAITS_FOR_THE_TURN)).toBeNull());
   });
 
   it("says the wait beside the row of a chat whose turns purlis can see", async () => {
