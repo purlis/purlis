@@ -136,7 +136,7 @@ export function Panels({
   if (view === "vaults") {
     // A vault is the plane's, so the view is drawn with no workspace focused too.
     return (
-      <aside className="panels" data-view={view} aria-label={named}>
+      <aside className="panels ui-text-body" data-view={view} aria-label={named}>
         {vaults !== undefined && <Vaults said={vaults} offers={offers} onPress={onPress} />}
       </aside>
     );
@@ -169,13 +169,13 @@ export function Panels({
         : undefined;
     if (own !== undefined && view === "personas")
       return (
-        <aside className="panels" data-view={view} aria-label={named}>
+        <aside className="panels ui-text-body" data-view={view} aria-label={named}>
           {draw(own, "")}
         </aside>
       );
     return (
-      <aside className="panels" data-view={view} aria-label={named}>
-        <p className="empty">
+      <aside className="panels ui-text-body" data-view={view} aria-label={named}>
+        <p className="empty ui-text-secondary">
           {atRoot
             ? "The project root is not a workspace: it has no todos or memory of its own. Chats here look after the project and its workspaces; focus a workspace to see its panels."
             : "No workspace focused."}
@@ -187,14 +187,14 @@ export function Panels({
 
   const panel = all.find((one) => one.key === key);
   return (
-    <aside className="panels" data-view={view} aria-label={named}>
+    <aside className="panels ui-text-body" data-view={view} aria-label={named}>
       {trouble && (
         <p className="trouble" role="alert">
           {trouble}
         </p>
       )}
       {panels === undefined ? (
-        <p className="pending">
+        <p className="pending ui-text-secondary">
           <LoaderCircle className="node-icon spinning" />
           Reading the project…
         </p>
@@ -378,7 +378,7 @@ function Contributed({
                identity of its own in the vocabulary, and a panel's block list is fixed for as
                long as the panel is — it arrives whole from one read and is never spliced. */
             key={at}
-            className={block.tone === "trouble" ? "trouble" : "note"}
+            className={block.tone === "trouble" ? "trouble" : "note ui-text-secondary"}
             role={block.tone === "trouble" ? "alert" : undefined}
           >
             {block.text}

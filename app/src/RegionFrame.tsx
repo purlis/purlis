@@ -691,7 +691,7 @@ function Half({
         {placed !== undefined && (
           <>
             <div className="half-head">
-              <h2 className="sidebar-title">{title}</h2>
+              <h2 className="sidebar-title ui-text-label">{title}</h2>
               {views.map(({ view }) => (
                 <span
                   key={view}

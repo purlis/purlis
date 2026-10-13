@@ -879,7 +879,8 @@ One change each, each checked against a screenshot (#1920):
 1. the Chats list;
 2. the Inbox (its rows already wear the roles, #1919 and this change; its headings and its
    remaining lines follow);
-3. the Explorer;
+3. the Explorer, with the Panel's Repos and Memory halves (moved:
+   [below](#the-explorer-and-the-panels-halves-on-the-roles));
 4. the tab strips and the status bar;
 5. Settings;
 6. Notices and dialogs;
@@ -887,6 +888,52 @@ One change each, each checked against a screenshot (#1920):
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.
+
+### The Explorer and the Panel's halves, on the roles
+
+The Explorer set 12px on its root and a panel 11.9px (`0.85rem`), and both told their words
+apart by opacity (60% for a sentence) and by three greys. Now (#1920):
+
+| word                                                                           | role                            | before                               | after                         |
+| ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------ | ----------------------------- |
+| a section's title: "Files", and "Repos" and "Memory" on the Panel's halves     | `ui-text-label`                 | 11px, strong, capitals; "Files" in the primary colour, the halves' secondary | 11px, strong, secondary, capitals |
+| what Files is of, beside its title (the workspace's name)                      | `ui-text-secondary`             | 11px, regular, muted                 | 12px, regular, secondary      |
+| a file's, a folder's, a repo's and a branch's name                             | `ui-text-body`, from the root   | 12px, primary (a repo's strong)      | 13px, primary (a repo's strong) |
+| "the workspace itself"; why a file does not open                               | `ui-text-secondary`             | 11px, primary at 60%                 | 12px, secondary               |
+| "in <repo>" after a branch                                                     | `ui-text-secondary`             | 12px, muted                          | 12px, secondary               |
+| how many branches a repo has                                                   | `ui-text-meta ui-text-strong`   | 11px, regular, secondary             | 11px, strong, muted           |
+| a change's letter or count                                                     | none: tokens, in its change's colour | 11px, strong                    | the same                      |
+| a sentence: "Nothing here", "No branches cut here", "Asking git…", an empty view's | `ui-text-secondary`         | 12px (11.9px in a panel), primary at 60% | 12px, secondary, undimmed |
+| a path purlis names and does not read                                          | `ui-text-secondary ui-text-code` | 12px, the window's face             | 12px, `--font-mono`           |
+| a panel row's words; the default persona's                                     | `ui-text-body`; `ui-text-strong` | 11.9px, primary; strong             | 13px, primary; strong         |
+| a panel row's note; "· 12 left"                                                | `ui-text-meta`                  | 11.9px muted; 10.5px at 60%          | 11px, muted                   |
+| whose panel it is, beside an extension's title                                 | `ui-text-secondary`             | 11px, regular, muted                 | 12px, regular, secondary      |
+| a branch's cockpit: its crumbs, its name, its facts                            | meta; body strong; meta         | 11px muted; 13px strong; 11px muted  | the same                      |
+
+What it settled, beside what the Chats list did:
+
+- **A name that a state tints takes its role from the root, not from a class of its own.** A
+  changed file's name is drawn in its change's colour and a file purlis will not open in a
+  quieter one. A role outranks a view's rule for the word that wears it, so the Explorer and
+  a panel wear `ui-text-body` on their root and a row's name inherits it; every other word
+  wears its own class.
+- **A count is meta at the strong weight** (`ui-text-meta ui-text-strong`): a repo's branches.
+- **A change's mark wears no role**: its colour is the change's (`--change-colour`), which a
+  role would overrule. It is a meta's size at the strong weight, from the tokens.
+- **A section's title is the label on the element that holds its words.** Where the title is
+  a disclosure (the Explorer's sections) that is the button, which is a row of the set and
+  would otherwise draw the title in a row's colour.
+- **A sentence is quiet by its role, not by opacity**: `.none`, `.pending` and `.empty` are no
+  longer dimmed in the Explorer or in a panel.
+
+A panel's root is shared by every view of the Attention region and the Panel, so what sets no
+size of its own there (Todos, Sessions, Personas, Vaults, a refusal) follows it from 11.9px to
+13px. Not moved with it, and still on their own rules: the day a dated list is drawn under
+(`.panel-day`), the `unwired` and `stale` chips (`.label`), a refusal's colour
+(`state.failed` in the Explorer and in a panel, where the rule above wants `danger.text`),
+and `.sidebar-title`'s own type, which goes when the Inbox's headings wear the label too.
+After this change the type guard's `App.css` list is 13 lines shorter and the geometry
+guard's 2.
 
 ## Tailwind, shadcn and Lucide
 

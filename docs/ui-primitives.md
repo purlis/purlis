@@ -629,6 +629,15 @@ monospace family alone, so a path under a name is `ui-text-secondary ui-text-cod
 The Inbox's rows are the first surface on the roles: the ask's words are the body, strong; where
 it is, the secondary; its kind and its age, the meta (`InboxRow.tsx`).
 
+The Explorer and the Panel's halves are on them too (`Explorer.tsx`, `Panels.tsx`,
+`PanelList.tsx`; `Explorer.roles.test.tsx` and `textRoles.testkit.ts` hold each word to its
+role). **A name that a state tints takes its role from the root**: a changed file's name is
+drawn in its change's colour, which a role on the name would overrule, so the Explorer and a
+panel wear `ui-text-body` on their root and every other word wears its own class. A section's
+title is `ui-text-label` on the element that holds its words (a folding section's button), a
+count is `ui-text-meta ui-text-strong`, and a sentence (`.none`, `.pending`, `.empty`) is
+`ui-text-secondary` with no dimming on top.
+
 `app/src/primitives/text.test.ts` holds each class to this table through the stylesheet's own
 cascade, and `InboxScope.window.test.tsx` that the Inbox's rows are drawn with what they had
 before. `app/src/type.guard.test.ts` refuses a size, weight, line height, family or text colour

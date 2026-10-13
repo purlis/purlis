@@ -131,7 +131,7 @@ export function Breadcrumb({
   if (name === undefined)
     return (
       <nav className="cockpit-crumbs" aria-label="Breadcrumb">
-        <ol>
+        <ol className="ui-text-meta">
           <li>
             <button
               type="button"
@@ -151,7 +151,7 @@ export function Breadcrumb({
     );
   return (
     <nav className="cockpit-crumbs" aria-label="Breadcrumb">
-      <ol>
+      <ol className="ui-text-meta">
         <li>
           <button
             type="button"
@@ -215,11 +215,11 @@ export function CockpitHeader({
   if (piece === null)
     return (
       <section className="cockpit-head" aria-label={`Repo ${repo}`}>
-        <h2 className="cockpit-name">
+        <h2 className="cockpit-name ui-text-body ui-text-strong">
           <FolderGit2 className="node-icon" />
           <span>{repo}</span>
         </h2>
-        <p className="cockpit-facts">
+        <p className="cockpit-facts ui-text-meta">
           <ApartLine apart={apart} on={name === "" ? undefined : name} />
           <span className="cockpit-changes">{changesSaid(status)}</span>
         </p>
@@ -244,11 +244,11 @@ export function CockpitHeader({
   };
   return (
     <section className="cockpit-head" aria-label={`Branch ${name}`}>
-      <h2 className="cockpit-name">
+      <h2 className="cockpit-name ui-text-body ui-text-strong">
         <GitBranch className="node-icon" />
         <span>{name}</span>
       </h2>
-      <p className="cockpit-facts">
+      <p className="cockpit-facts ui-text-meta">
         <ApartLine apart={apart} />
         <span className="cockpit-changes">{changesSaid(status)}</span>
       </p>

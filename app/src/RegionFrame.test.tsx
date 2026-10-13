@@ -16,6 +16,7 @@ import { REGION_CHROME, RegionFrame, stepRegions } from "./RegionFrame";
 import { PanelSection } from "./PanelSection";
 import { ActivityCount } from "./ActivityBar";
 import { drawnWith } from "./cascade.testkit";
+import { wears } from "./textRoles.testkit";
 import {
   DEFAULT_ARRANGEMENT,
   viewMoved,
@@ -567,6 +568,13 @@ describe("the Panel's right half (#1738)", () => {
 
     const head = half("right").querySelector(".half-head") as HTMLElement;
     expect(within(head).getByRole("heading", { name: "Memory" })).toBeInTheDocument();
+    // The half's title is the one section label (#1920), as a sidebar section's is.
+    wears(within(head).getByRole("heading", { name: "Memory" }), "label", "the half's title");
+    wears(
+      within(half("left")).getByRole("heading", { name: "Repos" }),
+      "label",
+      "the other half's title",
+    );
     // The view's own action is on the half's line, and its title is said once, there.
     expect(within(head).getByRole("button", { name: "New memory" })).toBeInTheDocument();
     expect(within(half("right")).getAllByRole("heading", { name: "Memory" })).toHaveLength(1);

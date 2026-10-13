@@ -514,7 +514,12 @@ export function Explorer({
       // The same `nav` as the full explorer's below, so that it is the SAME element when a
       // workspace arrives: everything holding the old one — a scenario, a screen reader's place —
       // would otherwise lose it.
-      <nav ref={navRef} className="explorer" aria-label={named.label} data-testid={named.testid}>
+      <nav
+        ref={navRef}
+        className="explorer ui-text-body"
+        aria-label={named.label}
+        data-testid={named.testid}
+      >
         {/* The plane root is not a workspace: it has no repos, and purlis reads the files of a
             workspace's repos and branches and of nothing else. The heading still says where the
             strip is, so the view never reads as one that failed to load. */}
@@ -526,10 +531,12 @@ export function Explorer({
             closed={closed.has("files")}
             project={plane}
           >
-            <p className="empty">{NO_FILES_AT_THE_ROOT}</p>
+            <p className="empty ui-text-secondary">{NO_FILES_AT_THE_ROOT}</p>
           </Section>
         ) : (
-          <p className="empty">No workspace selected, so there are no repos to list.</p>
+          <p className="empty ui-text-secondary">
+            No workspace selected, so there are no repos to list.
+          </p>
         )}
       </nav>
     );
@@ -622,7 +629,10 @@ export function Explorer({
       </span>
       {picks.picks.length > 0 && (
         <div className="files-toggles" role="group" aria-label="Picked rows">
-          <span aria-hidden="true">{`${picks.picks.length} picked`}</span>
+          <span
+            className="ui-text-secondary"
+            aria-hidden="true"
+          >{`${picks.picks.length} picked`}</span>
           <button
             type="button"
             className="ui-button ui-button-sm"
@@ -649,7 +659,7 @@ export function Explorer({
     return (
       <nav
         ref={navRef}
-        className="explorer cockpit"
+        className="explorer cockpit ui-text-body"
         aria-label="Explorer"
         data-testid="explorer"
         onKeyDown={(event) => {
@@ -724,7 +734,12 @@ export function Explorer({
   );
 
   return (
-    <nav ref={navRef} className="explorer" aria-label={named.label} data-testid={named.testid}>
+    <nav
+      ref={navRef}
+      className="explorer ui-text-body"
+      aria-label={named.label}
+      data-testid={named.testid}
+    >
       {has("repos") && (
         <ReposSection
           bare={part === "repos"}
@@ -912,7 +927,7 @@ function ReposSection({
               <Folders className="node-icon" />
               <span className="spot-name">{workspace}</span>
               {live && <LiveMark />}
-              <span className="spot-what">the workspace itself</span>
+              <span className="spot-what ui-text-secondary">the workspace itself</span>
             </button>
           </RovingFocusGroup.Item>
 
@@ -956,7 +971,7 @@ function ReposSection({
                           <ChevronRight />
                         </span>
                         <FolderGit2 className="node-icon" />
-                        <span className="repo">{repo}</span>
+                        <span className="repo ui-text-body ui-text-strong">{repo}</span>
                         <PieceCount pieces={pieces[repo]} refused={piecesRefused[repo]} />
                       </summary>
                     </RovingFocusGroup.Item>
@@ -974,7 +989,7 @@ function ReposSection({
                   ) : pieces[repo] === undefined ? (
                     <Pending>Asking git…</Pending>
                   ) : pieces[repo].length === 0 ? (
-                    <p className="none">No branches cut here</p>
+                    <p className="none ui-text-secondary">No branches cut here</p>
                   ) : (
                     <ul className="pieces" role="group">
                       {pieces[repo].map((piece) => {
@@ -1084,7 +1099,7 @@ function ReposSection({
       {panels === undefined ? (
         <Pending>Reading the project…</Pending>
       ) : (
-        clones.length === 0 && <p className="none">No repos in this workspace</p>
+        clones.length === 0 && <p className="none ui-text-secondary">No repos in this workspace</p>
       )}
 
       {/* Membership without a clone. There is nothing to explore in it and nothing to start
@@ -1139,7 +1154,7 @@ function Section({
   if (bare) {
     return (
       <div className="explorer-section" data-section={id}>
-        <h2 className="sidebar-title explorer-section-head">
+        <h2 className="sidebar-title explorer-section-head ui-text-label">
           <FolderGit2 className="node-icon" aria-hidden="true" />
           {title}
         </h2>
@@ -1151,12 +1166,12 @@ function Section({
   }
   return (
     <div className="explorer-section" data-section={id}>
-      <h2 className="sidebar-title explorer-section-head">
+      <h2 className="sidebar-title explorer-section-head ui-text-label">
         {/* The heading's whole line is the disclosure: a row of the set (`.ui-row`, #1857), so
             its title starts where the section's rows and its filter's text do. */}
         <button
           type="button"
-          className="ui-row"
+          className="ui-row ui-text-label"
           // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
           tabIndex={0}
           aria-expanded={!closed}
@@ -1168,7 +1183,7 @@ function Section({
           {of !== undefined && (
             <>
               {" "}
-              <span className="section-of">{of}</span>
+              <span className="section-of ui-text-secondary">{of}</span>
             </>
           )}
           {marks}
@@ -1235,7 +1250,7 @@ function FolderRefused({ children }: { children: ReactNode }) {
  *  spin and leaves the mark. */
 function Pending({ children }: { children: ReactNode }) {
   return (
-    <p className="pending">
+    <p className="pending ui-text-secondary">
       <LoaderCircle className="node-icon spinning" />
       <span>{children}</span>
     </p>
@@ -1254,13 +1269,16 @@ export type Spot = { repo: string; piece?: string; path: string };
 function PieceCount({ pieces, refused }: { pieces?: readonly unknown[]; refused?: string }) {
   if (refused !== undefined)
     return (
-      <span className="piece-count none" title={refused}>
+      <span className="piece-count none ui-text-meta" title={refused}>
         unreadable
       </span>
     );
-  if (pieces === undefined) return <span className="piece-count pending">…</span>;
+  if (pieces === undefined) return <span className="piece-count pending ui-text-meta">…</span>;
   return (
-    <span className="piece-count" aria-label={`${pieces.length} branches`}>
+    <span
+      className="piece-count ui-text-meta ui-text-strong"
+      aria-label={`${pieces.length} branches`}
+    >
       {pieces.length}
     </span>
   );
@@ -1614,7 +1632,7 @@ export function FolderEntries({
   );
   const unwatched = at.files.changedOnly ? undefined : unwatchedHere(at.files.reads, branch);
   const note = unwatched !== undefined && (
-    <p className="none" data-testid="unwatched">
+    <p className="none ui-text-secondary" data-testid="unwatched">
       {unwatched === "branch"
         ? "Changes on disk are not shown yet: purlis watches this branch again once it can read it."
         : "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again."}
@@ -1629,7 +1647,7 @@ export function FolderEntries({
       <>
         {note}
         {nothing && (
-          <p className="none">
+          <p className="none ui-text-secondary">
             {at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here"}
           </p>
         )}
@@ -1703,7 +1721,9 @@ export function FolderEntries({
                     <ChangeBadge marked={entry.marked} folder={false} />
                     {/* Why it does not open, said beside it — an ignored file's too, which is
                       drawn only once the operator asked to see what git ignores. */}
-                    {refused !== undefined && <span className="spot-what">{refused}</span>}
+                    {refused !== undefined && (
+                      <span className="spot-what ui-text-secondary">{refused}</span>
+                    )}
                   </button>
                 </RovingFocusGroup.Item>
               </FileMenu>
@@ -1714,7 +1734,7 @@ export function FolderEntries({
       {more > 0 && (
         // A folder of tens of thousands of generated files is drawn as its first entries; the
         // rest are counted, never drawn.
-        <p className="none">
+        <p className="none ui-text-secondary">
           {`${more.toLocaleString("en")} ${at.files.changedOnly ? "more changes" : "more"} not shown`}
         </p>
       )}
@@ -1857,7 +1877,8 @@ function BranchLabel({ repo, piece }: { repo: string; piece: Piece }) {
   if (!piece.branch) return <span className="spot-name">{piece.piece}</span>;
   return (
     <>
-      <span className="spot-name">{piece.branch}</span> <span className="spot-in">in {repo}</span>
+      <span className="spot-name">{piece.branch}</span>{" "}
+      <span className="spot-in ui-text-secondary">in {repo}</span>
     </>
   );
 }

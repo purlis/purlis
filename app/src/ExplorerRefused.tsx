@@ -37,15 +37,22 @@ export function NamedNotRead({
   return (
     <div role="note" aria-label="Named and not read">
       {kept.slice(0, REFUSED_DRAWN).map((one) => (
-        <p key={one.path} className="none" data-mark={one.mark} data-testid="explorer-refused-row">
+        <p
+          key={one.path}
+          className="none ui-text-secondary"
+          data-mark={one.mark}
+          data-testid="explorer-refused-row"
+        >
           <CircleSlash className="node-icon" aria-hidden="true" />
           <span>
-            <span className="refused-path">{one.path}</span> {said[one.mark]}
+            <span className="refused-path ui-text-code">{one.path}</span> {said[one.mark]}
             {one.uncommitted && " · not committed"} · {one.why}
           </span>
         </p>
       ))}
-      {past > 0 && <p className="none">{`${past.toLocaleString("en")} more named and not read`}</p>}
+      {past > 0 && (
+        <p className="none ui-text-secondary">{`${past.toLocaleString("en")} more named and not read`}</p>
+      )}
     </div>
   );
 }

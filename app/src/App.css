@@ -1024,6 +1024,13 @@ button.show-more:focus-visible {
   opacity: 0.6;
 }
 
+/* In the Explorer and in a panel the empty sentence is a secondary line (`ui-text-secondary`,
+   #1920): the role's colour is what makes it quiet, so the dimming is not drawn on top of it. */
+.explorer .empty,
+.panels .empty {
+  opacity: 1;
+}
+
 .pane {
   height: 100%;
   width: 100%;
@@ -3023,12 +3030,16 @@ button.show-more:focus-visible {
    **Prose still wraps** — `.trouble`, `.empty`, `.none`, `.pending`. Those are
    sentences charter says about a failure, not names of nodes: a refusal held on one line would
    push the horizontal scroll out by a paragraph and take the tree with it. The rule is the
-   distinction, not the region. */
+   distinction, not the region.
+
+   **Its words are on the text roles** (#1920, `primitives/text.css`). The root wears the body
+   (`ui-text-body`), which a row's name takes from it: a changed file's name is tinted with its
+   change's colour below, and a role on the name itself would overrule that. Every other word
+   wears its own role, so nothing here writes a size or dims a sentence. */
 .explorer {
   height: 100%;
   overflow: auto;
   padding: var(--space-4);
-  font-size: var(--font-size-sm);
 }
 
 .explorer .pieces,
@@ -3138,12 +3149,7 @@ button.show-more:focus-visible {
    the one thing in this region that must never be read wrong. */
 /* Its fill and edge are a selected row's (`.ui-row`); the weight is the spot's own, on top. */
 .explorer .spot[aria-current="true"] {
-  font-weight: 600;
-}
-
-.explorer .spot-what {
-  font-size: var(--font-size-xs);
-  opacity: 0.6;
+  font-weight: var(--font-weight-strong);
 }
 
 .explorer .explorer-section-head .twisty[data-open] {
@@ -3191,8 +3197,6 @@ button.show-more:focus-visible {
   margin: 0 0 var(--space-3);
   padding: 0;
   list-style: none;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 .explorer .cockpit-crumbs li {
@@ -3216,8 +3220,6 @@ button.show-more:focus-visible {
   gap: var(--space-3);
   align-items: center;
   margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: 600;
 }
 
 .explorer .cockpit-facts {
@@ -3225,8 +3227,6 @@ button.show-more:focus-visible {
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
   margin: var(--space-2) 0 var(--space-3);
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 /* Merge and Done: small buttons (`.ui-button-sm`). */
@@ -3243,7 +3243,7 @@ button.show-more:focus-visible {
   margin-inline-start: auto;
   padding-inline: var(--space-2);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3310,17 +3310,11 @@ button.show-more:focus-visible {
   display: none;
 }
 
-.explorer .repo {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
 /* How many pieces a clone has, on its heading. A count is a pill; the two things that are not
    a count — `unreadable`, and the `…` while git has not answered — are words, and `.none` and
    `.pending` below already draw those. A pill saying "unreadable" would read as a quantity. */
 .explorer .piece-count {
   margin-inline-start: auto;
-  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3328,7 +3322,6 @@ button.show-more:focus-visible {
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
   background: var(--control-count);
-  color: var(--text-secondary);
 }
 
 /* What a piece's row says under its name: the branch, and the two states the operator has to
@@ -3342,16 +3335,6 @@ button.show-more:focus-visible {
   gap: var(--space-3);
   align-items: center;
   flex-wrap: nowrap;
-  font-size: var(--font-size-xs);
-}
-
-.explorer .worktree .branch {
-  color: var(--text-muted);
-}
-
-/* A branch's row reads "<branch> in <repo>" (#1102): the repo is the quieter half. */
-.explorer .spot-in {
-  color: var(--text-muted);
 }
 
 /* **The two states that change what starting a chat in a tree would mean**, and until now
@@ -3391,7 +3374,6 @@ button.show-more:focus-visible {
   align-items: center;
   margin: var(--space-1) 0;
   padding-inline-start: var(--space-4);
-  opacity: 0.6;
 }
 
 /* **A sidebar section's title, on either side of the window** — the Attention region's
@@ -3404,7 +3386,7 @@ button.show-more:focus-visible {
   align-items: center;
   margin: 0;
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-secondary);
@@ -3430,18 +3412,13 @@ h2.sidebar-title .node-icon {
 .explorer .explorer-section-head > button {
   flex: 1;
   min-width: 0;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
   white-space: nowrap;
 }
 .explorer .explorer-section-head .section-of {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
-  color: var(--text-muted);
 }
 .explorer .explorer-section-head .twisty {
   flex: none;
@@ -4564,12 +4541,13 @@ h2.sidebar-title .node-icon {
 }
 
 /* The right region (ADR 0038): the workspace's todos, the plane's personas and whatever an
-   extension contributes. The needs-you queue is the title bar's (charter-app#249). */
+   extension contributes. The needs-you queue is the title bar's (charter-app#249). Its root
+   wears the body (`ui-text-body`, #1920) and its sentences the secondary, so no size is
+   written here and no sentence is dimmed. */
 .panels {
   height: 100%;
   overflow: auto;
   padding: 0.5rem;
-  font-size: 0.85rem;
 }
 /* **One section per panel, and a line between them** (`PanelSection.tsx`). The divider runs
    the region's full width, through its padding, so it reads as the edge of a section and not
@@ -4597,18 +4575,14 @@ h2.sidebar-title .node-icon {
   color: var(--text-muted);
 }
 .panels .repo {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .panels .none,
 .panels .pending,
 .panels .note,
 .panels .stamp {
-  opacity: 0.6;
   margin: 0.1rem 0;
-}
-.panels .note {
-  font-size: 0.75rem;
 }
 .panels .unreadable {
   color: var(--state-unreadable);
@@ -5794,10 +5768,8 @@ h2.sidebar-title .node-icon {
    shown after approval and not only at it. Quiet, because it is provenance and not content:
    an operator reads it when he is asking where a panel came from. */
 .panels .panel-from {
-  font-weight: normal;
   text-transform: none;
   letter-spacing: normal;
-  color: var(--text-muted);
 }
 
 /* **The bound, and the scroll inside the panel** — the operator's own words. The list
@@ -5817,7 +5789,7 @@ h2.sidebar-title .node-icon {
 .panel-day {
   margin: var(--space-3) 0 var(--space-1);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   color: var(--text-muted);
 }
 
@@ -5875,7 +5847,6 @@ h2.sidebar-title .node-icon {
 
 .panel-row .row-note {
   flex: 0 0 auto;
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -5886,12 +5857,7 @@ h2.sidebar-title .node-icon {
 
 /* The row its list treats as the default — the plane's default persona. The words it always
    had are what a screen reader gets and what the region's scenario spec asks for; the weight
-   and the star are on top of them. */
-.panel-row.is-default {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
+   (`ui-text-strong` on its words, #1920) and the star are on top of them. */
 .panel-row.is-default .node-icon {
   color: var(--accent-base);
 }
@@ -5917,10 +5883,6 @@ h2.sidebar-title .node-icon {
 .panel-more {
   font: inherit;
   font-size: var(--font-size-xs);
-}
-
-.panel-more .note {
-  color: var(--text-muted);
 }
 
 /* What a row opens: a popover, drawn by the overlay surface (`.ui-popover`,
@@ -7277,8 +7239,6 @@ h2.sidebar-title .node-icon {
 .panel-row .row-snippet {
   margin: 0 0 var(--space-1) var(--space-7);
   overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -7286,7 +7246,7 @@ h2.sidebar-title .node-icon {
 .panel-row .row-snippet mark {
   color: var(--text-primary);
   background: none;
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* **A memory's tab** (SI-9b, ADR 0065 Q2): where it is — its store as a badge, its stamp, its

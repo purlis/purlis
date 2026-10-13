@@ -56,13 +56,15 @@ export function PanelSection({
   return (
     <section data-testid={testid} data-panel-from={from}>
       <div className="panel-head">
-        <h2 className="sidebar-title">
+        <h2 className="sidebar-title ui-text-label">
           <Mark className="node-icon" />
           {title}
           {/* **What is in force, after approval and not only at it** — ADR 0041 item
               5. An operator has to be able to tell a panel his own charter draws from one a
               stranger's extension contributed, without opening a dialog to find out. */}
-          {provenance !== undefined && <span className="panel-from">{` · ${provenance}`}</span>}
+          {provenance !== undefined && (
+            <span className="panel-from ui-text-secondary">{` · ${provenance}`}</span>
+          )}
         </h2>
         {actions}
       </div>

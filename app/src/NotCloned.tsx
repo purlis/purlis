@@ -53,7 +53,7 @@ export function NotClonedHere({
   return (
     <section className="absent" data-testid="absent">
       <div className="absent-heading">
-        <h2 className="sidebar-title">Not cloned here</h2>
+        <h2 className="sidebar-title ui-text-label">Not cloned here</h2>
         {absent.length > 1 && all !== undefined && (
           <div className="absent-actions">
             <SettingActions>
@@ -114,9 +114,9 @@ function AbsentRow({
       <Menued on={{ on: "absent", repo }} offers={offers} onPress={onPress}>
         <div className="absent-row">
           <FolderX className="node-icon" />
-          <span className="repo">{repo}</span>
+          <span className="repo ui-text-body ui-text-strong">{repo}</span>
           {busy ? (
-            <span className="pending" aria-busy="true">
+            <span className="pending ui-text-secondary" aria-busy="true">
               <LoaderCircle className="node-icon spinning" />
               <span>
                 {state.state === "cloning"

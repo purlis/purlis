@@ -164,7 +164,7 @@ export function BranchTree({
 
   const level = levelOf(files, top);
   return (
-    <div className="explorer piece-files-tree">
+    <div className="explorer piece-files-tree ui-text-body">
       <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
         <div
           ref={treeRef}

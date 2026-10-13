@@ -8,7 +8,9 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
+import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
+import { wears } from "./textRoles.testkit";
 import { CATALOGUE, type ViewId } from "./regions";
 import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
@@ -1034,5 +1036,44 @@ describe("the Todos box on a read-only project (#826)", () => {
     expect(box).toHaveAttribute("title", SENTENCE);
     await userEvent.type(box, "Cut the release{Enter}");
     expect(added).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// The panels' words, each on its text role (#1920)
+// ---------------------------------------------------------------------------------------
+
+describe("a panel's words, each on its text role (#1920)", () => {
+  it("draws a row's words as a body, and the default's at the strong weight", () => {
+    draw({ state: withMemory(), offers: crudOffers() });
+
+    const memory = screen.getByTestId("panel-memory");
+    expect(memory.closest(".panels")).toHaveClass("ui-text-body");
+    wears(memory.querySelector(".row-text"), "body", "a memory's title");
+
+    const personas = screen.getByTestId("panel-personas");
+    const [devops, steward] = [...personas.querySelectorAll(".panel-row")];
+    wears(devops.querySelector(".row-text"), "body", "a persona's name");
+    wears(steward.querySelector(".row-text"), "body", "the default persona's name", true);
+  });
+
+  it("heads a section with the one section label, and whose panel it is beside it as data", () => {
+    draw({ contributed: [contributedPanel()] });
+
+    for (const heading of screen.getByTestId("panels").querySelectorAll(".panels h2"))
+      wears(heading, "label", `the heading ${heading.textContent}`);
+    wears(
+      screen.getByTestId("panels").querySelector(".panel-from"),
+      "secondary",
+      "whose panel it is",
+    );
+  });
+
+  it("says there is nothing to show as a secondary sentence, at its full strength", () => {
+    draw({ workspace: undefined });
+
+    const [empty] = screen.getAllByText("No workspace focused.");
+    wears(empty, "secondary", "the empty sentence");
+    expect(drawnWith(empty, "opacity")).toBe("1");
   });
 });
