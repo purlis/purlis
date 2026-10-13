@@ -574,7 +574,27 @@ pub fn checked(
 }
 
 /// Judges what allowing a block for one task would grant.
-pub type Judge<'a> = &'a dyn Fn(u32, &HeldBlock) -> Result<(What, Level), String>;
+pub type Judge<'a> =
+    &'a dyn Fn(u32, &HeldBlock) -> Result<(What, Level), crate::sandboxing::NotJudged>;
+
+/// **Why one answer to several tasks kept nothing**: the sentence the question says, and
+/// whether it was because a socket is no longer the one the question drew (#1927), which is
+/// answered by telling each task's block again as it stands ([`allowed_or_told_again`]). Told
+/// by its kind, never read back out of the sentence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotAnswered {
+    pub said: String,
+    pub socket_changed: bool,
+}
+
+impl From<String> for NotAnswered {
+    fn from(said: String) -> Self {
+        Self {
+            said,
+            socket_changed: false,
+        }
+    }
+}
 
 /// What [`answered`] is told to do with the app.
 pub struct Doing<'a> {
@@ -600,12 +620,14 @@ pub fn answered(
     level: GrantLevel,
     reading: &Reading<'_>,
     doing: Doing<'_>,
-) -> Result<TasksAnswered, String> {
+) -> Result<TasksAnswered, NotAnswered> {
     let (tasks, block) = checked(session, seen, reading)?;
     let mut judged = Vec::with_capacity(tasks.len());
     for task in &tasks {
-        let (what, level) = (doing.judge)(*task, &block)
-            .map_err(|why| format!("Nothing was allowed: for chat {task}, {why}"))?;
+        let (what, level) = (doing.judge)(*task, &block).map_err(|why| NotAnswered {
+            said: format!("Nothing was allowed: for chat {task}, {why}"),
+            socket_changed: why == crate::sandboxing::NotJudged::SocketChanged,
+        })?;
         judged.push((*task, what, level));
     }
     let count = tasks.len();
@@ -614,7 +636,7 @@ pub fn answered(
         for (task, what, level) in &judged {
             if let Err(why) = (doing.keep)(*task, what, *level) {
                 if allowed.is_empty() {
-                    return Err(format!("Nothing was allowed: {why}"));
+                    return Err(format!("Nothing was allowed: {why}").into());
                 }
                 return Ok(TasksAnswered {
                     said: format!(
@@ -643,13 +665,14 @@ pub fn answered(
     }
     // Kept once: every task was judged to the same grant, or it is not one answer.
     let [(first, what, level), rest @ ..] = judged.as_slice() else {
-        return Err("Nothing was allowed: no task was named.".to_owned());
+        return Err("Nothing was allowed: no task was named.".to_owned().into());
     };
     if rest.iter().any(|(_, other, _)| other != what) {
         return Err(
             "Nothing was allowed: these tasks do not want the same thing, so one answer cannot \
              cover them. Answer each on its own."
-                .to_owned(),
+                .to_owned()
+                .into(),
         );
     }
     (doing.keep)(*first, what, *level).map_err(|why| format!("Nothing was allowed: {why}"))?;
@@ -696,23 +719,64 @@ fn reading<R>(chats: &crate::chats::Chats, with: impl FnOnce(&Reading<'_>) -> R)
     })
 }
 
-/// [`allow_sandbox_block_for_tasks`] for the project at `root` on `machine`, with `chats` and
-/// `audit` the app's: [`answered`] with the real judging and keeping, then the blocks of the
-/// tasks it answered let go.
+/// **[`answered`], then what follows from it**: the blocks of the tasks it answered are let
+/// go; and where nothing was kept because a socket is no longer the one the question drew
+/// (#1927), each task still held on that socket is told its block again as it stands now
+/// (`tell`), so the question the person reads next names what an answer would keep. The
+/// refusal is known by its kind ([`NotAnswered::socket_changed`]).
+pub(crate) fn allowed_or_told_again(
+    plane: &PlaneId,
+    chats: &crate::chats::Chats,
+    reading: &Reading<'_>,
+    (session, seen, level): (u32, &[SeenBlock], GrantLevel),
+    doing: Doing<'_>,
+    tell: &dyn Fn(crate::hooks::ChatBlocked),
+) -> Result<TasksAnswered, String> {
+    match answered(session, seen, level, reading, doing) {
+        Ok(done) => {
+            let_go(chats, seen, &done.answered);
+            Ok(done)
+        }
+        Err(not) => {
+            if not.socket_changed {
+                for one in seen.iter().filter(|one| one.what == GrantWhat::Socket) {
+                    let was = HeldBlock {
+                        operation: one.operation.clone(),
+                        kind: one.kind.clone(),
+                        what: one.what,
+                        target: one.target.clone(),
+                    };
+                    if chats.blocks().holds(one.task, &was)
+                        && let Some(told) =
+                            crate::sandboxing::shown_again(plane, chats, one.task, &was)
+                    {
+                        tell(told);
+                    }
+                }
+            }
+            Err(not.said)
+        }
+    }
+}
+
+/// [`allow_sandbox_block_for_tasks`] for the project `plane` on `machine`, with `chats` and
+/// `audit` the app's: [`allowed_or_told_again`] with the real judging and keeping.
 pub fn allow_for_tasks(
-    root: &std::path::Path,
+    plane: &PlaneId,
     machine: &purlis_core::sandbox::Machine,
     chats: &crate::chats::Chats,
-    (session, seen, level): (u32, &[SeenBlock], GrantLevel),
+    asked: (u32, &[SeenBlock], GrantLevel),
     audit: crate::sandboxing::Audit<'_>,
-    at: u64,
+    (at, tell): (u64, &dyn Fn(crate::hooks::ChatBlocked)),
 ) -> Result<TasksAnswered, String> {
-    let done = reading(chats, |reading| {
-        answered(
-            session,
-            seen,
-            level,
+    let root = plane.root();
+    let level = asked.2;
+    reading(chats, |reading| {
+        allowed_or_told_again(
+            plane,
+            chats,
             reading,
+            asked,
             Doing {
                 judge: &|task, block| {
                     crate::sandboxing::judged(
@@ -745,10 +809,9 @@ pub fn allow_for_tasks(
                     }
                 },
             },
+            tell,
         )
-    })?;
-    let_go(chats, seen, &done.answered);
-    Ok(done)
+    })
 }
 
 /// The blocks of `answered` among `seen` are answered: the app holds them no longer.
@@ -785,14 +848,15 @@ pub fn allow_sandbox_block_for_tasks(
     level: GrantLevel,
 ) -> Result<TasksAnswered, String> {
     let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
     allow_for_tasks(
-        &root,
+        &plane,
         &purlis_core::sandbox::Machine::this(),
         held.chats(),
         (session, &seen, level),
         &held.audit_then_record(planes.network()),
-        crate::sandboxing::now_secs(),
+        (crate::sandboxing::now_secs(), &|told| {
+            planes.tell_block(told)
+        }),
     )
 }
 

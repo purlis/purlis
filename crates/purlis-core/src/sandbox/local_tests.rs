@@ -912,3 +912,84 @@ fn a_folder_made_again_at_the_same_path_takes_nothing_allowed_before() {
     std::fs::create_dir_all(&root).expect("made again");
     assert!(granted_writes(&root).is_empty());
 }
+
+/// #1927: the answer to what a project expects is kept by what was shown, the declared path
+/// with the name it was shown under. An older build's record, of declared paths alone, reads
+/// as answered under the path as written; names answered before are kept for a path still
+/// answered, a path no longer answered is forgotten, and the names kept are bounded.
+#[test]
+fn an_answer_to_what_a_project_expects_is_kept_by_what_was_shown() {
+    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
+    let root = project.path().canonicalize().expect("real");
+    assert!(expects_answered(&root).is_empty());
+    let shown = |written: &str, named: &str| (written.to_owned(), named.to_owned());
+    acknowledge_expects(
+        &root,
+        &[
+            shown("/opt/run/dev.sock", "/Users/dev/.tool/dev.sock"),
+            shown("com.example.helper", "com.example.helper"),
+        ],
+    )
+    .expect("kept");
+    assert_eq!(
+        expects_answered(&root),
+        [
+            Answered {
+                written: "/opt/run/dev.sock".to_owned(),
+                named: vec!["/Users/dev/.tool/dev.sock".to_owned()],
+            },
+            Answered {
+                written: "com.example.helper".to_owned(),
+                named: vec!["com.example.helper".to_owned()],
+            },
+        ]
+    );
+    assert_eq!(
+        expects_seen(&root),
+        ["/opt/run/dev.sock", "com.example.helper"]
+    );
+    // Answered again under another name: both names stand for that path; the service, not
+    // answered this time, is forgotten and asked about again.
+    acknowledge_expects(
+        &root,
+        &[shown("/opt/run/dev.sock", "/Users/dev/.other/x.sock")],
+    )
+    .expect("kept");
+    assert_eq!(
+        expects_answered(&root),
+        [Answered {
+            written: "/opt/run/dev.sock".to_owned(),
+            named: vec![
+                "/Users/dev/.tool/dev.sock".to_owned(),
+                "/Users/dev/.other/x.sock".to_owned()
+            ],
+        }]
+    );
+    // Bounded: the oldest names go first.
+    for n in 0..(MOST_NAMES_ANSWERED + 3) {
+        acknowledge_expects(
+            &root,
+            &[shown("/opt/run/dev.sock", &format!("/Users/dev/{n}.sock"))],
+        )
+        .expect("kept");
+    }
+    let kept = expects_answered(&root);
+    assert_eq!(kept[0].named.len(), MOST_NAMES_ANSWERED);
+    assert_eq!(
+        kept[0].named.last().map(String::as_str),
+        Some(format!("/Users/dev/{}.sock", MOST_NAMES_ANSWERED + 2).as_str())
+    );
+    // An older build's record: each declared path, answered as written.
+    write_new(&path(&root), |held| {
+        held.expects_answered = None;
+        held.expects_seen = Some(vec!["/opt/run/old.sock".to_owned()]);
+    })
+    .expect("an older record");
+    assert_eq!(
+        expects_answered(&root),
+        [Answered {
+            written: "/opt/run/old.sock".to_owned(),
+            named: vec!["/opt/run/old.sock".to_owned()],
+        }]
+    );
+}

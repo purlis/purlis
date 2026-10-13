@@ -796,40 +796,58 @@ fn allow_awaited(
             "Nothing shown can be allowed on this machine now, so nothing was allowed.".to_owned()
         });
     }
-    let answered: Vec<String> = awaiting
+    // Each under the name it has now (#1927), which is the name it was drawn under: one that
+    // changed is left out above.
+    let answered: Vec<(String, String)> = awaiting
         .items
         .iter()
         .filter(|item| !changed(item) && shown.iter().any(|one| one.target == item.written))
-        .map(|item| item.written.clone())
+        .map(sandbox::services::Awaited::as_named)
         .collect();
     sandbox::local::acknowledge_expects(root, &answered).map_err(|err| err.to_string())
 }
 
 /// **Not now**, on the Notice of what a project expects (ADR 0093): remembered on this
-/// machine for the declaration as it was shown, `shown`, so it is asked again only when the
-/// project declares something new. Nothing is allowed, and Settings › Sandbox still offers
-/// it. The window's alone (`WINDOW_ONLY`): a chat cannot answer the question for the person.
+/// machine for the declaration as it was shown, `shown`, each item with the name it was drawn
+/// under, so it is asked again only when the project declares something new, or when a path
+/// it declared comes to name another socket (#1927). Nothing is allowed, and Settings ›
+/// Sandbox still offers it. The window's alone (`WINDOW_ONLY`): a chat cannot answer the
+/// question for the person.
 #[tauri::command]
 #[specta::specta]
 pub fn decline_project_expects(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-    shown: Vec<String>,
+    shown: Vec<ExpectedShown>,
 ) -> Result<SandboxState, String> {
     let held = planes.held(&plane)?;
     decline_expects(held.root(), &shown)
 }
 
+/// The longest name an answer records: far past any path or service name.
+const MOST_NAME_ANSWERED: usize = 4096;
+
 /// [`decline_project_expects`] in the project at `root`: only what the project declares now
-/// is recorded, whatever the window sent.
-fn decline_expects(root: &std::path::Path, shown: &[String]) -> Result<SandboxState, String> {
-    let declared: Vec<String> = sandbox::services::awaiting(root, &sandbox::Machine::this())
+/// is recorded, whatever the window sent, and **by the name it was drawn under** (the path as
+/// written where it was drawn as one that cannot be allowed). The answer is to what the
+/// person saw: an item that names something else by now is not answered by it, and is asked
+/// about again as it stands.
+fn decline_expects(
+    root: &std::path::Path,
+    shown: &[ExpectedShown],
+) -> Result<SandboxState, String> {
+    let declared = sandbox::services::awaiting(root, &sandbox::Machine::this())
         .map(|awaiting| awaiting.shown())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let answered: Vec<(String, String)> = declared
         .into_iter()
-        .filter(|one| shown.contains(one))
+        .filter_map(|written| {
+            let drawn = shown.iter().find(|one| one.target == written)?;
+            let named = drawn.named.clone().unwrap_or_else(|| written.clone());
+            (named.len() <= MOST_NAME_ANSWERED).then_some((written, named))
+        })
         .collect();
-    sandbox::local::acknowledge_expects(root, &declared).map_err(|err| err.to_string())?;
+    sandbox::local::acknowledge_expects(root, &answered).map_err(|err| err.to_string())?;
     Ok(state_of(root))
 }
 
@@ -1191,7 +1209,7 @@ fn allow(
     asked: (GrantWhat, &str, GrantLevel),
     audit: Audit<'_>,
     at: u64,
-) -> Result<Allowed, String> {
+) -> Result<Allowed, NotJudged> {
     let folder = chats.folder_of(session);
     let (what, level) = judged(root, machine, folder.as_deref(), session, asked)?;
     let kept = kept(root, chats, session, (&what, level), audit, at)?;
@@ -1211,11 +1229,11 @@ pub(crate) fn judged(
     folder: Option<&std::path::Path>,
     session: u32,
     (what, target, level): (GrantWhat, &str, GrantLevel),
-) -> Result<(sandbox::grant::What, sandbox::grant::Level), String> {
+) -> Result<(sandbox::grant::What, sandbox::grant::Level), NotJudged> {
     use sandbox::grant::{self, Level, What};
     let level = Level::from(level);
     if level == Level::Project && matches!(what, GrantWhat::Socket | GrantWhat::Service) {
-        return Err(
+        return refused(
             "purlis will not allow a local socket or a system service for everyone in the \
              project: it is this machine's, and a committed file that granted one could grant \
              itself to every chat. Allow it for this chat, or for every chat of this project on \
@@ -1224,12 +1242,12 @@ pub(crate) fn judged(
         );
     }
     if level == Level::Once && matches!(what, GrantWhat::Host | GrantWhat::Write) {
-        return Err(
+        return refused(
             "purlis allows a host or a folder for this chat, or for longer, not once.".to_owned(),
         );
     }
     if level == Level::Project && what == GrantWhat::Write {
-        return Err(
+        return refused(
             "purlis will not allow a folder for everyone in the project: a folder is a path on \
              this machine. Allow it for this chat, or for every chat of this project on this \
              machine."
@@ -1238,13 +1256,13 @@ pub(crate) fn judged(
     }
     let what = match what {
         GrantWhat::Vault => {
-            return Err(
+            return refused(
                 "purlis allows a vault from the notice its refusal raises, not from a block's."
                     .to_owned(),
             );
         }
         GrantWhat::PersonaHosts => {
-            return Err(
+            return refused(
                 "purlis allows a persona's hosts from the notice that shows them, not from a \
                  block's."
                     .to_owned(),
@@ -1258,18 +1276,18 @@ pub(crate) fn judged(
             let ground = grant::Ground::of(root, folder, machine);
             What::Write(grant::write(target, &ground.place()).map_err(|why| why.to_string())?)
         }
-        GrantWhat::Socket => What::Socket(
-            sandbox::services::socket(
-                target,
-                &sandbox::services::SocketGround::of(root, machine, &[]),
-            )
-            .map_err(|why| why.to_string())?,
-        ),
+        // Only the socket the Notice drew (#1927): one whose path leads elsewhere by now is
+        // never kept, whichever Notice or list the answer came from.
+        GrantWhat::Socket => {
+            let ground = sandbox::services::SocketGround::of(root, machine, &[]);
+            let now = sandbox::services::socket(target, &ground).map_err(|why| why.to_string())?;
+            What::Socket(socket_as_drawn(target, now)?)
+        }
         GrantWhat::Service => {
             let name = sandbox::services::service(target).map_err(|why| why.to_string())?;
             // Never a grant (R1): the project's setting and policy alone decide it.
             if name == sandbox::services::TRUSTD {
-                return Err(
+                return refused(
                     "Certificate checks are a setting of the project's, on unless it turns them \
                      off, so there is nothing to allow: see Settings › Sandbox."
                         .to_owned(),
@@ -1281,9 +1299,96 @@ pub(crate) fn judged(
     // Policy (#1343): the strictest wins, for a host at the level it would be kept at, and for
     // any folder at all.
     if let Some(why) = sandbox::policy::Locks::of(root).refuses_grant(&what, level) {
-        return Err(why);
+        return refused(why);
     }
     Ok((what, level))
+}
+
+/// What an Allow says where a socket is no longer the one its Notice drew (#1927). purlis's
+/// own sentence, whole: it names no path.
+pub(crate) const SOCKET_CHANGED: &str = "That socket is not the one this Notice showed any more: \
+                                         its path leads somewhere else now, so nothing was \
+                                         allowed. It is shown again as it stands now.";
+
+/// **Why an Allow was not judged as one to keep**: its socket is no longer the one its Notice
+/// drew ([`socket_as_drawn`]), which the caller answers by telling the block again, or the
+/// core's refusal in its own words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NotJudged {
+    SocketChanged,
+    Refused(String),
+}
+
+impl std::fmt::Display for NotJudged {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SocketChanged => f.write_str(SOCKET_CHANGED),
+            Self::Refused(why) => f.write_str(why),
+        }
+    }
+}
+
+impl From<String> for NotJudged {
+    fn from(why: String) -> Self {
+        Self::Refused(why)
+    }
+}
+
+impl From<NotJudged> for String {
+    fn from(not: NotJudged) -> Self {
+        not.to_string()
+    }
+}
+
+/// `why`, as a refusal of [`judged`]'s.
+fn refused<T>(why: String) -> Result<T, NotJudged> {
+    Err(NotJudged::Refused(why))
+}
+
+/// **The socket an Allow of `drawn` keeps**: `now`, what the drawn path is judged to name at
+/// the press ([`sandbox::services::socket`]), only while that is still the name that was
+/// drawn (#1927). A block's Notice draws its socket by the name the kernel gave it when the
+/// Notice was told, and may be answered much later; a link in that path can lead to another
+/// socket by then. So an Allow keeps the socket only as it was drawn, as the up-front Allow of
+/// what a project expects does ([`stands_as_shown`]). One that changed is never kept under
+/// the name the person read.
+fn socket_as_drawn(drawn: &str, now: std::path::PathBuf) -> Result<std::path::PathBuf, NotJudged> {
+    if now == std::path::Path::new(drawn) {
+        Ok(now)
+    } else {
+        Err(NotJudged::SocketChanged)
+    }
+}
+
+/// **Tells the window chat `session`'s block `was` again, as it stands now** (#1927), after
+/// an Allow found its socket changed: worded, judged and offered by the function that tells
+/// any block (`crate::hooks::blocked_on`), from the path that was drawn. The chat is held on
+/// the block as told now and no longer on `was`, so the Notice the person reads next is the
+/// only one an answer matches. None where `was` is not a block the sandbox reports.
+pub(crate) fn shown_again(
+    plane: &PlaneId,
+    chats: &crate::chats::Chats,
+    session: u32,
+    was: &crate::taskblocks::HeldBlock,
+) -> Option<crate::hooks::ChatBlocked> {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let block = Block {
+        operation: Operation::of_word(&was.operation)?,
+        kind: Kind::of_word(&was.kind)?,
+        ours: false,
+    };
+    // The chat's harness by the app's own record of what it started, never a word it sent.
+    let told = crate::hooks::blocked_on(
+        plane,
+        session,
+        &block,
+        chats.harness(session),
+        Some(&was.target),
+        chats.has_certificate_check(session),
+    );
+    chats.blocks().answered(session, was);
+    crate::taskblocks::heard(chats, &told);
+    Some(told)
 }
 
 /// What keeping a grant came to (#1666).
@@ -1515,7 +1620,7 @@ pub fn allow_sandbox_block(
     let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
     let (what, target) = (shown.what, shown.target);
     let root = held.root().to_path_buf();
-    let allowed = allow(
+    let allowed = match allow(
         &root,
         &sandbox::Machine::this(),
         held.chats(),
@@ -1523,7 +1628,18 @@ pub fn allow_sandbox_block(
         (what, &target, level),
         &held.audit_then_record(planes.network()),
         now_secs(),
-    )?;
+    ) {
+        // Its socket is not the one the Notice drew any more (#1927): nothing was kept, and
+        // the Notice is told the block again as it stands, so what is read next is what an
+        // answer would keep.
+        Err(NotJudged::SocketChanged) => {
+            if let Some(told) = shown_again(&plane, held.chats(), session, &block) {
+                planes.tell_block(told);
+            }
+            return Err(SOCKET_CHANGED.to_owned());
+        }
+        answered => answered?,
+    };
     // Answered: neither this Notice nor a question for several tasks answers it again.
     held.chats().blocks().answered(session, &block);
     Ok(allowed)
@@ -1795,23 +1911,42 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         });
     }
     // What is kept and policy now drops is said, never listed as granted (#1423): a host at
-    // the level it is kept at, and every folder where policy forbids write grants.
+    // the level it is kept at, every folder where policy forbids write grants, and anything
+    // kept at a scope policy's `allow-scopes` leaves out (#1927), by the judgement a start
+    // makes of it (`Locks::holds_kept`): held by policy, kept on the record, with Remove.
     for one in &mut out {
+        let level = sandbox::grant::Level::from(one.level);
         one.locked = match one.what {
             GrantWhat::Host => sandbox::hosts::Host::parse(&one.target)
                 .ok()
                 .and_then(|host| {
-                    locks.refuses(&sandbox::hosts::Granted {
-                        host,
-                        level: sandbox::grant::Level::from(one.level).hosts_level(),
-                    })
+                    locks
+                        .refuses(&sandbox::hosts::Granted {
+                            host: host.clone(),
+                            level: level.hosts_level(),
+                        })
+                        // One chat's, or an Allow's line at a scope policy leaves out.
+                        .or_else(|| {
+                            sandbox::host_held(root, &host, level, &locks).or_else(|| {
+                                locks.holds_kept(&sandbox::grant::What::Host(host), level)
+                            })
+                        })
                 }),
-            GrantWhat::Write => locks.write_grants_refused(),
+            GrantWhat::Write => locks.holds_kept(
+                &sandbox::grant::What::Write(one.target.clone().into()),
+                level,
+            ),
             // A vault's row was given its own lock as it was listed (#1430).
             GrantWhat::Vault => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
-            GrantWhat::Socket | GrantWhat::Service => locks.socket_grants_refused(),
+            GrantWhat::Socket => locks.holds_kept(
+                &sandbox::grant::What::Socket(one.target.clone().into()),
+                level,
+            ),
+            GrantWhat::Service => {
+                locks.holds_kept(&sandbox::grant::What::Service(one.target.clone()), level)
+            }
         };
     }
     // What the project declares it expects is said beside its grant (D-sock-4), never a grant.
@@ -2479,6 +2614,7 @@ mod tests {
                 100,
             )
             .expect_err("refused")
+            .to_string()
         };
         assert!(
             refused(GrantWhat::Write, "/tmp/x", GrantLevel::Project)
@@ -2513,6 +2649,7 @@ mod tests {
                 100,
             )
             .expect_err("refused")
+            .to_string()
         };
         for what in [GrantWhat::Socket, GrantWhat::Service] {
             assert!(
@@ -2624,7 +2761,8 @@ mod tests {
                 1,
                 (GrantWhat::Service, TRUSTD, level),
             )
-            .expect_err("refused");
+            .expect_err("refused")
+            .to_string();
             assert!(refused.contains("Settings"), "{refused}");
         }
         sandbox::local::grant_service(root, TRUSTD).expect("an older build's");
@@ -2807,8 +2945,33 @@ mod tests {
         assert!(sandbox::local::granted_services(root).is_empty());
 
         // Not now: remembered, still awaited, and nothing is allowed or audited.
-        let shown: Vec<String> = said.items.iter().map(|item| item.target.clone()).collect();
-        let declined = decline_expects(root, &shown)
+        let as_drawn = |named: &dyn Fn(&ExpectedItem) -> String| -> Vec<ExpectedShown> {
+            said.items
+                .iter()
+                .map(|item| ExpectedShown {
+                    target: item.target.clone(),
+                    named: Some(named(item)),
+                })
+                .collect()
+        };
+        // #1927: an answer is to what was shown. A "Not now" sent for a socket drawn under
+        // another name than the item has now answers nothing: it is asked about again.
+        let stale = decline_expects(root, &as_drawn(&|_| "/Users/dev/.other/x.sock".to_owned()))
+            .expect("kept")
+            .expects
+            .expect("awaited");
+        assert!(stale.asked, "what was shown is not what stands");
+        // And something the window names that the file does not declare is not recorded.
+        decline_expects(
+            root,
+            &[ExpectedShown {
+                target: "com.example.undeclared".to_owned(),
+                named: None,
+            }],
+        )
+        .expect("kept");
+        assert!(sandbox::local::expects_seen(root).is_empty());
+        let declined = decline_expects(root, &as_drawn(&|item| item.named.clone()))
             .expect("kept")
             .expects
             .expect("awaited");
@@ -2954,6 +3117,7 @@ mod tests {
         assert!(
             judge(GrantWhat::Host, "api.example.com")
                 .expect_err("refused")
+                .to_string()
                 .contains("only a local socket or a system service")
         );
         assert!(judge(GrantWhat::Service, sandbox::services::TRUSTD).is_err());
@@ -3093,7 +3257,8 @@ mod tests {
             &no_audit(),
             100,
         )
-        .expect_err("refused");
+        .expect_err("refused")
+        .to_string();
         assert!(
             from_a_block.contains("notice its refusal raises"),
             "{from_a_block}"
@@ -3285,6 +3450,138 @@ mod tests {
         }
         assert!(grants_of(root, &chats).is_empty());
         assert_eq!(*heard.lock().unwrap(), 2);
+    }
+
+    /// #1927: what was kept at a scope a policy's `allow-scopes` now leaves out is listed as
+    /// held by policy, whichever level kept it, with who set the policy. It is neither taken
+    /// off the record nor hidden, and Remove still takes it away.
+    #[test]
+    fn what_was_kept_at_a_scope_policy_leaves_out_is_listed_as_held_and_still_removed() {
+        let everywhere = tempfile::tempdir().expect("a config home");
+        sandbox::local::everywhere_for_this_test(Some(
+            everywhere.path().join(sandbox::local::EVERY_PROJECT),
+        ));
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path();
+        let chats = crate::chats::Chats::new();
+        let path = std::path::Path::new;
+        sandbox::local::grant_write(root, path("/tmp/tool-cache")).expect("kept");
+        sandbox::local::grant_socket(root, path("/purlis-test-nowhere/mine.sock")).expect("kept");
+        sandbox::local::grant_socket_everywhere(path("/purlis-test-nowhere/docker.sock"), None)
+            .expect("kept");
+        sandbox::local::grant_service_everywhere("com.example.helper", None).expect("kept");
+        let held = |root: &std::path::Path| -> Vec<(GrantLevel, GrantWhat, bool)> {
+            grants_of(root, &chats)
+                .into_iter()
+                .map(|one| (one.level, one.what, one.locked.is_some()))
+                .collect()
+        };
+        let rows = |you: bool, machine: bool| {
+            vec![
+                (GrantLevel::You, GrantWhat::Write, you),
+                (GrantLevel::You, GrantWhat::Socket, you),
+                (GrantLevel::Machine, GrantWhat::Socket, machine),
+                (GrantLevel::Machine, GrantWhat::Service, machine),
+            ]
+        };
+        assert_eq!(held(root), rows(false, false), "no policy holds nothing");
+        {
+            // A policy that fixes no scopes holds nothing either.
+            let _under = Under::policy(r#"{"owner": "IT", "sandbox": {}}"#);
+            assert_eq!(held(root), rows(false, false));
+        }
+        {
+            let _under =
+                Under::policy(r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#);
+            assert_eq!(held(root), rows(false, true));
+            let why = grants_of(root, &chats)
+                .into_iter()
+                .find(|one| one.level == GrantLevel::Machine)
+                .and_then(|one| one.locked)
+                .expect("held");
+            assert_eq!(
+                why,
+                "Held by policy, which leaves out what was allowed on this machine, for every \
+                 project. Locked by policy, set by IT in /etc/purlis/policy.json."
+            );
+        }
+        {
+            let _under = Under::policy(
+                r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "machine"]}}"#,
+            );
+            assert_eq!(held(root), rows(true, false));
+        }
+        let _under = Under::policy(r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat"]}}"#);
+        assert_eq!(held(root), rows(true, true));
+        // Nothing left the record, and each is still the person's to take away.
+        assert_eq!(sandbox::local::sockets_everywhere().len(), 1);
+        assert_eq!(sandbox::local::granted_sockets(root).len(), 1);
+        let heard = std::sync::Mutex::new(0);
+        let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+            *heard.lock().unwrap() += 1;
+            Ok(())
+        };
+        for one in grants_of(root, &chats) {
+            revoke(root, &chats, &one.id, &audit).expect("removed");
+        }
+        assert!(grants_of(root, &chats).is_empty());
+        assert_eq!(*heard.lock().unwrap(), 4);
+        assert!(sandbox::local::sockets_everywhere().is_empty());
+        sandbox::local::everywhere_for_this_test(None);
+    }
+
+    /// #1927: a block's own Allow of a local socket keeps what its Notice drew, the socket by
+    /// the name the kernel gave it then. Where its path leads somewhere else by the press,
+    /// nothing is kept: the Allow is refused in fixed words, as the up-front Allow is.
+    #[test]
+    fn a_blocks_socket_allow_keeps_only_the_socket_its_notice_drew() {
+        let drawn = "/Users/dev/.docker/run/docker.sock";
+        // Still the socket the Notice named: kept as drawn.
+        assert_eq!(
+            socket_as_drawn(drawn, drawn.into()),
+            Ok(std::path::PathBuf::from(drawn))
+        );
+        // Its path leads to another socket now (a link in it moved since): never kept,
+        // whatever the other socket is, and said as a change, not as a refusal's words.
+        assert_eq!(
+            socket_as_drawn(drawn, "/Users/dev/.other/engine.sock".into()),
+            Err(NotJudged::SocketChanged)
+        );
+        assert_eq!(NotJudged::SocketChanged.to_string(), SOCKET_CHANGED);
+        // The sentence is purlis's own, whole: it names no path a chat could have chosen.
+        assert!(!SOCKET_CHANGED.contains('/'), "{SOCKET_CHANGED}");
+    }
+
+    /// #1927: when an Allow finds its socket changed, the Notice is told the block again as
+    /// it stands now, and the chat is held on that, never on what was drawn before.
+    #[test]
+    fn a_block_whose_socket_changed_is_told_again_as_it_stands() {
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path().canonicalize().expect("real");
+        let plane: PlaneId = serde_json::from_value(serde_json::json!(root.display().to_string()))
+            .expect("a plane id");
+        let chats = crate::chats::Chats::new();
+        let was = crate::taskblocks::HeldBlock {
+            operation: "connect".to_owned(),
+            kind: "local-socket".to_owned(),
+            what: GrantWhat::Socket,
+            target: "/purlis-test-nowhere/docker.sock".to_owned(),
+        };
+        chats.blocks().heard(4, was.clone());
+        let told = shown_again(&plane, &chats, 4, &was).expect("told again");
+        assert_eq!(told.session, 4);
+        assert_eq!(
+            (told.operation.as_str(), told.kind.as_str()),
+            ("connect", "local-socket")
+        );
+        // Nothing is there now, so no Allow is drawn for it, and it says why.
+        assert_ne!(told.offer, crate::hooks::BlockOffer::Socket);
+        assert!(told.levels.is_empty());
+        assert!(told.route.is_some());
+        assert!(
+            !chats.blocks().holds(4, &was),
+            "the block as it was drawn is answered by nothing more"
+        );
     }
 
     #[test]

@@ -433,11 +433,13 @@ export const commands = {
 	allowProjectExpects: (plane: PlaneId, shown: ExpectedShown[]) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_project_expects", { plane, shown })),
 	/**
 	 *  **Not now**, on the Notice of what a project expects (ADR 0093): remembered on this
-	 *  machine for the declaration as it was shown, `shown`, so it is asked again only when the
-	 *  project declares something new. Nothing is allowed, and Settings › Sandbox still offers
-	 *  it. The window's alone (`WINDOW_ONLY`): a chat cannot answer the question for the person.
+	 *  machine for the declaration as it was shown, `shown`, each item with the name it was drawn
+	 *  under, so it is asked again only when the project declares something new, or when a path
+	 *  it declared comes to name another socket (#1927). Nothing is allowed, and Settings ›
+	 *  Sandbox still offers it. The window's alone (`WINDOW_ONLY`): a chat cannot answer the
+	 *  question for the person.
 	 */
-	declineProjectExpects: (plane: PlaneId, shown: string[]) => typedError<SandboxState, string>(__TAURI_INVOKE("decline_project_expects", { plane, shown })),
+	declineProjectExpects: (plane: PlaneId, shown: ExpectedShown[]) => typedError<SandboxState, string>(__TAURI_INVOKE("decline_project_expects", { plane, shown })),
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -3690,9 +3692,9 @@ export type ChatBlocked = {
 	 */
 	held: boolean,
 	/**
-	 *  For [`BlockOffer::Host`]: what an administrator's policy ruled out here, and who set it
-	 *  (#1666): a scope it removed, or asking while a connection waits. None where it ruled
-	 *  nothing out.
+	 *  What an administrator's policy ruled out here, and who set it (#1666): a scope it
+	 *  removed, "Allow once" among them (#1927), or, for a host, asking while a connection
+	 *  waits. None where it ruled nothing out.
 	 */
 	ruled: string | null,
 	/**

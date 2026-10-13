@@ -741,6 +741,34 @@ impl Awaiting {
     pub fn shown(&self) -> Vec<String> {
         self.items.iter().map(|item| item.written.clone()).collect()
     }
+
+    /// Each item as the file writes it with the name it is shown under now: what an answer
+    /// to the question as it stands records ([`super::local::acknowledge_expects`]).
+    pub fn answered_as_named(&self) -> Vec<(String, String)> {
+        self.items.iter().map(Awaited::as_named).collect()
+    }
+}
+
+impl Awaited {
+    /// As the file writes it, and the name it is shown under now: the socket an Allow would
+    /// keep, links resolved, or the path as written where it cannot be allowed; a service's
+    /// own name.
+    pub fn as_named(&self) -> (String, String) {
+        (self.written.clone(), self.what.target())
+    }
+}
+
+/// **Whether the person is still to be asked about any of `items`** (#1927): one they have
+/// not answered under the name it has now. An answer is to what was shown, so a declared path
+/// that names another socket since is asked about again, and one that names a socket already
+/// answered is not.
+fn still_asked(items: &[Awaited], answered: &[super::local::Answered]) -> bool {
+    items.iter().any(|item| {
+        let named = item.what.target();
+        !answered
+            .iter()
+            .any(|one| one.written == item.written && one.named.contains(&named))
+    })
 }
 
 /// [`Awaiting`] for the project at `root` on `machine`, or none: where its chats are not
@@ -751,10 +779,9 @@ pub fn awaiting(root: &Path, machine: &super::Machine) -> Option<Awaiting> {
     super::Plane::read(root).in_force(&locks)?;
     let declared = declared(root);
     let ground = SocketGround::of(root, machine, &[]);
-    let mut sockets = super::local::granted_sockets(root);
-    sockets.extend(super::local::sockets_everywhere());
-    let mut services = super::local::granted_services(root);
-    services.extend(super::local::services_everywhere());
+    // Allowed already only where policy leaves the scope it was kept at open (#1927): one
+    // held by policy reaches no chat, so it waits again and is asked about.
+    let (sockets, services) = super::kept_in_scope(root, &locks);
     let none = Declared::default();
     let mut items = Vec::new();
     for written in &declared.sockets {
@@ -792,9 +819,9 @@ pub fn awaiting(root: &Path, machine: &super::Machine) -> Option<Awaiting> {
     if items.is_empty() {
         return None;
     }
-    let seen = super::local::expects_seen(root);
+    let answered = super::local::expects_answered(root);
     Some(Awaiting {
-        asked: items.iter().any(|item| !seen.contains(&item.written)),
+        asked: still_asked(&items, &answered),
         // The level the Allow keeps at, so what is offered is what would be kept.
         locked: items
             .first()

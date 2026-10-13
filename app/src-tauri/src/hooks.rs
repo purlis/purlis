@@ -444,9 +444,9 @@ pub struct ChatBlocked {
     /// waits on this Notice, and an Allow lets the same command carry on with nothing
     /// restarting. Set by the app from the chat's own board, never from what a chat sent.
     pub held: bool,
-    /// For [`BlockOffer::Host`]: what an administrator's policy ruled out here, and who set it
-    /// (#1666): a scope it removed, or asking while a connection waits. None where it ruled
-    /// nothing out.
+    /// What an administrator's policy ruled out here, and who set it (#1666): a scope it
+    /// removed, "Allow once" among them (#1927), or, for a host, asking while a connection
+    /// waits. None where it ruled nothing out.
     pub ruled: Option<String>,
     /// **What the person may choose, where the block named nothing a grant could name**
     /// (#1884, ADR 0093 as amended 2026-10-13): a local socket, from the ones purlis finds on
@@ -627,9 +627,10 @@ pub(crate) fn blocked_on(
         _ => why,
     };
     let (offer, target, route, levels) = held(&locks, (first, named, why));
-    let ruled = (offer == BlockOffer::Host)
-        .then(|| ruled_out(&locks, target.as_deref(), &levels))
-        .flatten();
+    let ruled = match offer {
+        BlockOffer::Host => ruled_out(&locks, target.as_deref(), &levels),
+        other => scopes_ruled_out(&locks, other),
+    };
     let (offer, route, levels) = match allowed_already(plane.root(), offer, target.as_deref()) {
         Some(said) => (BlockOffer::Allowed, Some(said), Vec::new()),
         None => (offer, route, levels),
@@ -679,33 +680,38 @@ fn allowed_already(
     target: Option<&str>,
 ) -> Option<String> {
     use purlis_core::sandbox::{grant, local};
+    let locks = purlis_core::sandbox::policy::Locks::of(root);
+    // For this project, or for every project on this machine (R2), at a scope policy leaves
+    // open: one kept at a scope it now leaves out reaches no chat (#1927), so a restart would
+    // change nothing, and the Notice offers what policy leaves open instead.
+    let in_force = |what: grant::What, yours: bool, everywhere: bool| {
+        [
+            (grant::Level::You, yours),
+            (grant::Level::Machine, everywhere),
+        ]
+        .into_iter()
+        .find(|(level, kept)| *kept && locks.holds_kept(&what, *level).is_none())
+        .map(|(level, _)| level)
+    };
     let level = match offer {
         BlockOffer::Host => grant::allowed_already(root, &grant::host(target?).ok()?)?,
-        // For this project, or for every project on this machine (R2).
         BlockOffer::Socket => {
             let target = std::path::Path::new(target?);
-            if local::granted_sockets(root).iter().any(|one| one == target) {
-                grant::Level::You
-            } else {
-                local::sockets_everywhere()
-                    .iter()
-                    .any(|one| one == target)
-                    .then_some(grant::Level::Machine)?
-            }
+            in_force(
+                grant::What::Socket(target.into()),
+                local::granted_sockets(root).iter().any(|one| one == target),
+                local::sockets_everywhere().iter().any(|one| one == target),
+            )?
         }
         BlockOffer::Service => {
             let target = target?;
-            if local::granted_services(root)
-                .iter()
-                .any(|one| one == target)
-            {
-                grant::Level::You
-            } else {
-                local::services_everywhere()
+            in_force(
+                grant::What::Service(target.to_owned()),
+                local::granted_services(root)
                     .iter()
-                    .any(|one| one == target)
-                    .then_some(grant::Level::Machine)?
-            }
+                    .any(|one| one == target),
+                local::services_everywhere().iter().any(|one| one == target),
+            )?
         }
         _ => return None,
     };
@@ -739,6 +745,25 @@ fn ruled_out(
         .chain(locks.live_asks_refused())
         .collect();
     (!said.is_empty()).then(|| said.join(" "))
+}
+
+/// **What policy ruled out on a socket's, a service's or a folder's Notice** (#1927): each
+/// scope the Notice would offer that `allow-scopes` removed, named, with who set it. "Allow
+/// once" is the first answer such a Notice offers, so one a policy removed is said and never
+/// only missing. None for any other offer, and where policy removed none.
+fn scopes_ruled_out(
+    locks: &purlis_core::sandbox::policy::Locks,
+    offer: BlockOffer,
+) -> Option<String> {
+    use purlis_core::sandbox::grant::Level;
+    let offered: &[Level] = match offer {
+        BlockOffer::Socket | BlockOffer::Service => {
+            &[Level::Once, Level::Machine, Level::Chat, Level::You]
+        }
+        BlockOffer::Write => &[Level::Chat, Level::You],
+        _ => return None,
+    };
+    locks.scopes_removed(offered)
 }
 
 /// What a block's Notice offers (#1342).
@@ -847,9 +872,12 @@ fn held(
             ]
             .into_iter()
             .filter(|level| {
-                let refused = named
-                    .as_ref()
-                    .and_then(|what| locks.refuses_grant(what, (*level).into()));
+                // A block that names nothing yet is still held to the scopes policy leaves
+                // open (#1927): what the person then chooses is offered at no other.
+                let refused = match named.as_ref() {
+                    Some(what) => locks.refuses_grant(what, (*level).into()),
+                    None => locks.scope_removed((*level).into()),
+                };
                 if refused.is_some() && why.is_none() {
                     why = refused.clone();
                 }
@@ -861,15 +889,25 @@ fn held(
                 _ => (offer, target, route, levels),
             }
         }
-        BlockOffer::Write => match locks.write_grants_refused() {
-            Some(why) => instead(target, why),
-            None => (
-                offer,
-                target,
-                route,
-                vec![GrantLevel::Chat, GrantLevel::You],
-            ),
-        },
+        BlockOffer::Write => {
+            let mut why = locks.write_grants_refused();
+            // At the scopes policy leaves open alone (#1927): one it removed was drawn here
+            // and then refused at the press.
+            let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
+                .into_iter()
+                .filter(|level| {
+                    let refused = locks.scope_removed((*level).into());
+                    if refused.is_some() && why.is_none() {
+                        why = refused.clone();
+                    }
+                    refused.is_none()
+                })
+                .collect();
+            match (locks.forbids_write_grants() || levels.is_empty(), why) {
+                (true, Some(why)) => instead(target, why),
+                _ => (offer, target, route, levels),
+            }
+        }
         BlockOffer::Unsandboxed => match locks.opt_out_refused() {
             Some(locked) => (
                 BlockOffer::Policy,
@@ -3925,7 +3963,7 @@ mod tests {
                 GrantLevel::You
             ]
         );
-        // A policy that fixes the scopes leaves every project out: no word of its names it.
+        // A policy that fixes the scopes and leaves every project out removes it (C3)...
         let scoped = Locks::parse(
             r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#,
             Path::new("/etc/purlis/policy.json"),
@@ -3934,6 +3972,43 @@ mod tests {
             held(&scoped, socket()).3,
             [GrantLevel::Chat, GrantLevel::You]
         );
+        // ...and one that names it by its word, `machine`, keeps it on offer.
+        let worded = Locks::parse(
+            r#"{"owner": "IT", "sandbox": {"allow-scopes": ["once", "machine"]}}"#,
+            Path::new("/etc/purlis/policy.json"),
+        );
+        assert_eq!(
+            held(&worded, socket()).3,
+            [GrantLevel::Once, GrantLevel::Machine]
+        );
+        // What it removed is said on the Notice, "Allow once" too: never only missing.
+        let said = scopes_ruled_out(&scoped, BlockOffer::Socket).expect("said");
+        assert!(
+            said.contains("Allow once, for this chat's next run")
+                && said.contains("Allow on this machine, for every project")
+                && said.contains("set by IT"),
+            "{said}"
+        );
+        assert_eq!(scopes_ruled_out(&Locks::none(), BlockOffer::Socket), None);
+        assert_eq!(scopes_ruled_out(&scoped, BlockOffer::Write), None);
+        assert_eq!(scopes_ruled_out(&scoped, BlockOffer::Unsandboxed), None);
+        // A block that names no socket yet is offered at no scope policy removed either.
+        let unnamed = || (BlockOffer::Socket, None, None);
+        assert_eq!(
+            held(&scoped, unnamed()).3,
+            [GrantLevel::Chat, GrantLevel::You]
+        );
+        // A folder is offered at the scopes policy leaves open, and not at all where it
+        // leaves none a folder is kept at.
+        let write = || (BlockOffer::Write, Some("/p/out".to_owned()), None);
+        let you = Locks::parse(
+            r#"{"owner": "IT", "sandbox": {"allow-scopes": ["you", "machine"]}}"#,
+            Path::new("/etc/purlis/policy.json"),
+        );
+        assert_eq!(held(&you, write()).3, [GrantLevel::You]);
+        let (offer, _, route, levels) = held(&worded, write());
+        assert_eq!((offer, levels), (BlockOffer::Unsandboxed, Vec::new()));
+        assert!(route.is_some_and(|why| why.contains("Policy removed Allow")));
         let locked = Locks::parse(
             r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
             Path::new("/etc/purlis/policy.json"),
@@ -4073,6 +4148,20 @@ mod tests {
         );
         local::grant_socket(&root, std::path::Path::new(socket)).expect("kept");
         assert!(allowed_already(&root, BlockOffer::Socket, Some(socket)).is_some());
+        // #1927: kept at a scope policy now leaves out, it reaches no chat, so a restart is
+        // not what the Notice offers: it is asked about at the scopes that are left.
+        purlis_core::sandbox::policy::set_for_this_test(
+            purlis_core::sandbox::policy::Locks::parse(
+                r#"{"sandbox": {"allow-scopes": ["once", "chat"]}}"#,
+                Path::new("/etc/purlis/policy.json"),
+            ),
+        );
+        let held = (
+            allowed_already(&root, BlockOffer::Socket, Some(socket)),
+            allowed_already(&root, BlockOffer::Service, Some(HELPER)),
+        );
+        purlis_core::sandbox::policy::set_for_this_test(purlis_core::sandbox::policy::Locks::none());
+        assert_eq!(held, (None, None));
         // R2: allowed for every project on this machine, a chat of any project that started
         // before is told the same, in that scope's words.
         let everywhere = tempfile::tempdir().expect("a config home");

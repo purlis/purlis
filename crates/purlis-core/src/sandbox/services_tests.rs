@@ -654,7 +654,7 @@ fn what_a_project_expects_is_asked_once_until_it_is_allowed_declined_or_changes(
     );
 
     // Answered "Not now": remembered on this machine, not asked again, still awaited.
-    local::acknowledge_expects(&root, &asked.shown()).expect("kept");
+    local::acknowledge_expects(&root, &asked.answered_as_named()).expect("kept");
     let declined = awaiting(&root, &machine).expect("still awaited, for Settings");
     assert!(!declined.asked);
     assert_eq!(declined.items, asked.items);
@@ -853,21 +853,222 @@ fn every_project_is_offered_for_a_socket_or_a_service_only_and_policy_scopes_lea
         .refuses_grant(&socket, Level::Machine)
         .expect("left out");
     assert!(why.contains("Policy removed Allow"), "{why}");
-    // And "machine" is not a word a policy may write: the file is refused, every lock set.
+    // "machine" is the policy's word for it (ruling C3): named, it is kept.
     let worded = Locks::parse(
         r#"{"sandbox": {"allow-scopes": ["machine"]}}"#,
         Path::new("/etc/purlis/policy.json"),
     );
-    assert!(
-        worded.forbids_socket_grants(),
-        "a refused file locks everything"
-    );
+    assert_eq!(worded.refused_because(), None);
+    assert_eq!(worded.refuses_grant(&socket, Level::Machine), None);
     // The lock on sockets and services holds at this level as at any.
     let locked = Locks::parse(
         r#"{"sandbox": {"socket-grants": false}}"#,
         Path::new("/etc/purlis/policy.json"),
     );
     assert!(locked.refuses_grant(&socket, Level::Machine).is_some());
+}
+
+/// #1927: what a person allowed before a policy fixed `allow-scopes` is judged against the
+/// policy at every start, whichever level kept it. A level the policy leaves out contributes
+/// nothing, and what is kept stays on disk, said as held, for the day the policy lets it back.
+#[test]
+fn what_was_kept_at_a_scope_policy_leaves_out_reaches_no_start_and_stays_kept() {
+    use crate::sandbox::grant::Level;
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let (_dir, root) = project();
+    let everywhere = PathBuf::from("/purlis-test-nowhere/everywhere.sock");
+    let mine = PathBuf::from("/purlis-test-nowhere/mine.sock");
+    let held = PathBuf::from("/purlis-test-nowhere/chat.sock");
+    let once = PathBuf::from("/purlis-test-nowhere/once.sock");
+    local::grant_socket_everywhere(&everywhere, None).expect("kept");
+    local::grant_service_everywhere("com.example.everywhere", None).expect("kept");
+    local::grant_socket(&root, &mine).expect("kept");
+    local::grant_service(&root, "com.example.mine").expect("kept");
+    let mut chat = Grants::default();
+    chat.add(&What::Socket(held.clone()));
+    chat.add(&What::Service("com.example.chat".to_owned()));
+    chat.add_once(&What::Socket(once.clone()));
+    let started = |policy: Option<&str>| {
+        set_for_this_test(policy.map_or_else(Locks::none, |json| {
+            Locks::parse(json, Path::new("/etc/purlis/policy.json"))
+        }));
+        let widened = compiled_at(&root, &chat).widened;
+        set_for_this_test(Locks::none());
+        (widened.sockets, widened.services)
+    };
+    let names = |names: &[&str]| {
+        names
+            .iter()
+            .map(|one| (*one).to_owned())
+            .collect::<Vec<_>>()
+    };
+    // No policy, and one that fixes no scopes: every level's.
+    for open in [None, Some(r#"{"sandbox": {}}"#)] {
+        assert_eq!(
+            started(open),
+            (
+                vec![held.clone(), once.clone(), mine.clone(), everywhere.clone()],
+                names(&[
+                    "com.example.chat",
+                    "com.example.mine",
+                    "com.example.everywhere"
+                ])
+            ),
+            "{open:?}"
+        );
+    }
+    // Every project left out: this chat's and this project's alone.
+    assert_eq!(
+        started(Some(
+            r#"{"sandbox": {"allow-scopes": ["once", "chat", "you"]}}"#
+        )),
+        (
+            vec![held.clone(), once.clone(), mine.clone()],
+            names(&["com.example.chat", "com.example.mine"])
+        )
+    );
+    // Only this chat: what was kept for the project and for every project reaches nothing,
+    // and neither does what was allowed once, which is a scope of its own.
+    assert_eq!(
+        started(Some(r#"{"sandbox": {"allow-scopes": ["chat"]}}"#)),
+        (vec![held.clone()], names(&["com.example.chat"]))
+    );
+    // Every project named and this project left out: neither word stands in for the other.
+    assert_eq!(
+        started(Some(
+            r#"{"sandbox": {"allow-scopes": ["once", "machine"]}}"#
+        )),
+        (
+            vec![once.clone(), everywhere.clone()],
+            names(&["com.example.everywhere"])
+        )
+    );
+    // A file purlis refuses keeps no scope: nothing.
+    assert_eq!(
+        started(Some(r#"{"sandbox": {"allow-scopes": ["everywhere"]}}"#)),
+        (Vec::new(), Vec::new())
+    );
+    // Nothing was taken off this machine's record by any of that.
+    assert_eq!(local::sockets_everywhere(), vec![everywhere.clone()]);
+    assert_eq!(local::granted_sockets(&root), vec![mine.clone()]);
+    assert_eq!(local::granted_services(&root), names(&["com.example.mine"]));
+    // And each held one is said as held, with who set the policy.
+    let scoped = Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["once", "chat", "you"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    let why = scoped
+        .holds_kept(&What::Socket(everywhere.clone()), Level::Machine)
+        .expect("held");
+    assert!(why.starts_with("Held by policy"), "{why}");
+    assert!(
+        why.contains("on this machine, for every project") && why.contains("set by IT"),
+        "{why}"
+    );
+    assert_eq!(
+        scoped.holds_kept(&What::Socket(mine.clone()), Level::You),
+        None
+    );
+    assert_eq!(
+        Locks::none().holds_kept(&What::Socket(mine), Level::You),
+        None
+    );
+    set_for_this_test(scoped);
+    let held_now = crate::sandbox::held_by_policy(&root);
+    set_for_this_test(Locks::none());
+    assert_eq!(
+        held_now
+            .iter()
+            .map(|one| (one.what.target(), one.level))
+            .collect::<Vec<_>>(),
+        [
+            (everywhere.display().to_string(), Level::Machine),
+            ("com.example.everywhere".to_owned(), Level::Machine),
+        ]
+    );
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// #1927: a declared socket that was allowed at a scope policy now leaves out is not allowed
+/// any more, so it waits again, and is asked about at the scope that is left.
+#[test]
+fn what_a_project_expects_waits_again_once_policy_holds_the_scope_it_was_allowed_at() {
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let (_dir, root) = project();
+    std::fs::write(
+        crate::names::manifest(&root),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\nexpects = \
+         [\"com.example.helper\"]\n",
+    )
+    .expect("written");
+    local::grant_service_everywhere("com.example.helper", None).expect("kept");
+    let machine = machine_at(&root);
+    assert_eq!(awaiting(&root, &machine), None, "allowed for every project");
+    set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["chat", "you"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let waits = awaiting(&root, &machine);
+    set_for_this_test(Locks::none());
+    let waits = waits.expect("held by policy, so it waits");
+    assert_eq!(waits.shown(), ["com.example.helper"]);
+    assert_eq!(waits.locked, None, "for me on this machine is still open");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// #1927: an answer is to what was shown. After "Not now", a declared path that comes to name
+/// another socket is asked about again; one that names what was answered before is not, so a
+/// link moving between two answered sockets asks once for each and no more.
+#[test]
+fn a_declared_path_that_names_another_socket_since_the_answer_is_asked_about_again() {
+    let item = |written: &str, named: &str, refused: bool| Awaited {
+        what: What::Socket(PathBuf::from(named)),
+        written: written.to_owned(),
+        said: String::new(),
+        refused: refused.then(|| "Not there now.".to_owned()),
+    };
+    let answered = |written: &str, named: &[&str]| local::Answered {
+        written: written.to_owned(),
+        named: named.iter().map(|one| (*one).to_owned()).collect(),
+    };
+    const WRITTEN: &str = "/opt/project/run/dev.sock";
+    let harmless = item(WRITTEN, "/Users/dev/.tool/dev.sock", false);
+    let engine = item(WRITTEN, "/Users/dev/.docker/run/docker.sock", false);
+    // Never answered: asked.
+    assert!(still_asked(std::slice::from_ref(&harmless), &[]));
+    // Answered as it was shown: not asked again.
+    let seen = [answered(WRITTEN, &["/Users/dev/.tool/dev.sock"])];
+    assert!(!still_asked(std::slice::from_ref(&harmless), &seen));
+    // The same declared path names another socket now: asked again.
+    assert!(still_asked(std::slice::from_ref(&engine), &seen));
+    // Both answered: neither is asked about again, whichever the path names today.
+    let both = [answered(
+        WRITTEN,
+        &[
+            "/Users/dev/.tool/dev.sock",
+            "/Users/dev/.docker/run/docker.sock",
+        ],
+    )];
+    assert!(!still_asked(std::slice::from_ref(&engine), &both));
+    assert!(!still_asked(std::slice::from_ref(&harmless), &both));
+    // An answer to another declared path answers nothing here.
+    let other = [answered("/opt/other.sock", &["/Users/dev/.tool/dev.sock"])];
+    assert!(still_asked(std::slice::from_ref(&harmless), &other));
+    // A service is named as it is written.
+    let helper = Awaited {
+        what: What::Service("com.example.helper".to_owned()),
+        written: "com.example.helper".to_owned(),
+        said: String::new(),
+        refused: None,
+    };
+    assert!(!still_asked(
+        std::slice::from_ref(&helper),
+        &[answered("com.example.helper", &["com.example.helper"])]
+    ));
 }
 
 /// MF-2 fold-in of #1808's review: an administrator's `socket-grants` lock drops every socket

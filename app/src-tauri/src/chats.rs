@@ -1321,7 +1321,12 @@ impl Chats {
             && let Some(made) = lock(&self.grants).get(id)
         {
             for one in made {
-                grants.add(&one.what);
+                // Once is a scope of its own, which a start judges against policy (#1927).
+                if one.once {
+                    grants.add_once(&one.what);
+                } else {
+                    grants.add(&one.what);
+                }
             }
         }
         grants
