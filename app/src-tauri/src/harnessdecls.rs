@@ -62,9 +62,12 @@ fn listed(read: &Declarations) -> ProjectHarnesses {
                 acp: one.levels.acp.is_some(),
             })
             .collect(),
+        // The project's own: what this machine's `charter.local.toml` declares (#968) is
+        // listed, and refused, with the profiles there.
         refused: read
             .refused
             .iter()
+            .filter(|one| one.file.starts_with(harness_declaration::DIR))
             .map(|one| RefusedHarness {
                 file: one.file.clone(),
                 reason: one.reason.clone(),
@@ -119,6 +122,8 @@ fn launch_of(root: &Path, file: &str, editor: YourEditor) -> Result<Launch, Stri
 }
 
 /// **Open file** on a harness declaration in Settings (#1389): the file in your editor.
+// A terminal editor opens in a shell tab at the project root, standing in `harnesses/`, as a
+// branch's file does (#1042's follow-up).
 // Placed by the name the listing gave it, never a path the window made up, and handed to the
 // editor as `open_in_your_editor` hands one. Not a doc comment, because the generated bindings
 // carry those.
@@ -132,14 +137,33 @@ pub async fn open_harness_declaration(
     editor: YourEditor,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
     let launch = launch_of(&root, &file, editor)?;
     match launch {
         Launch::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)
             .map_err(|e| format!("the system did not open {url}: {e}")),
-        Launch::Program { program, args } => crate::piecefiles::started(program, args).await,
+        Launch::Program { program, args } => {
+            // The folder the file was placed in, resolved as the file was.
+            let cwd = || {
+                declaration_file(&root, &file)?
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .ok_or_else(|| format!("{file} is in no folder, so nothing was opened."))
+            };
+            crate::editortab::started(
+                &app,
+                &held,
+                &plane,
+                crate::editortab::PROJECT_ROOT,
+                cwd,
+                program,
+                args,
+            )
+            .await
+        }
     }
 }
 

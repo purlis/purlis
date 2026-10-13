@@ -31,6 +31,11 @@ use crate::planes::{Held, PlaneId};
 /// The event the window is sent when a terminal editor opened in a tab.
 pub const OPENED: &str = "editor-tab-opened";
 
+/// Where the window files a tab that stands in no workspace: the project root's strip. The
+/// window's own word for it (`OUTSIDE` in `app/src/actions.ts`), which no workspace can be
+/// named, as a workspace's name is a folder's.
+pub const PROJECT_ROOT: &str = "outside/every/workspace";
+
 /// A terminal editor's tab, as the window needs it to draw one.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Opened {

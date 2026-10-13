@@ -182,3 +182,27 @@ fn a_declaration_that_links_to_another_in_the_folder_opens_that_file() {
         opened.display()
     );
 }
+
+/// #968: what this machine declares in `charter.local.toml` is not the project's, so the
+/// project's listing holds neither it, a replacement of a built-in's facts, nor one refused.
+#[test]
+fn what_this_machine_declares_is_not_listed_as_the_projects() {
+    let dir = project(&[("gemini.toml", GEMINI)]);
+    let local = "[harnesses.shelly]\nprogram = \"shelly\"\n\
+                 [harnesses.claude]\nprogram = \"claude\"\n\
+                 [harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\"]\n\
+                 [harnesses.broken]\nprogram = \"/bin/sh\"\n";
+    let read = harness_declaration::read_with(dir.path(), Ok(Some(local.to_owned())));
+    assert!(read.get("shelly").is_some());
+    assert_eq!(read.refused.len(), 1, "{:?}", read.refused);
+
+    let listed = listed(&read);
+
+    let names: Vec<&str> = listed
+        .declared
+        .iter()
+        .map(|one| one.name.as_str())
+        .collect();
+    assert_eq!(names, ["gemini"]);
+    assert_eq!(listed.refused, Vec::new());
+}
