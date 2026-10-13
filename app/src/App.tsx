@@ -102,6 +102,7 @@ import { fitting, LEAST, leastAt, useRoom } from "./fits";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { NewProject } from "./NewProject";
 import { PlaneView } from "./PlaneView";
+import { KEPT_DRAWN } from "./projectShown";
 import { withSessionRows } from "./sessionOffers";
 import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
 import { Closer, Doer, Gear, Pin, ShowMore } from "./StripMarks";
@@ -1488,6 +1489,15 @@ function App() {
     if (inFront === undefined) return;
     setRecent((was) => (was[0] === inFront ? was : [inFront, ...was.filter((p) => p !== inFront)]));
   }, [inFront]);
+  /**
+   * **The projects that stay drawn while another is in front** (`projectShown.ts`): the ones the
+   * person was in last, so going back to one puts its view in the window as it was left and
+   * builds nothing. Bounded, so a window holding many projects keeps the views of a few.
+   */
+  const keptDrawn = useMemo(() => new Set(recent.slice(0, KEPT_DRAWN)), [recent]);
+  /** Where the project in front's view is put: an element of the window's, between its notices
+   *  and whatever is drawn after the projects. */
+  const [projectSlot, setProjectSlot] = useState<HTMLElement | null>(null);
 
   /** The rows the project strip draws. The same rows `catalogue` splices into the palette —
    *  one place the words and the availability are written down (`actions.projectRows`). */
@@ -2269,13 +2279,17 @@ function App() {
         )}
       </NoticeList>
 
-      {/* Every project this window holds. Only the one in front draws anything; the rest keep
-          their tabs, their splits and their chat states and render nothing at all. */}
+      {/* Every project this window holds. Only the one in front is in the window; the ones the
+          person was in last stay drawn off it (`projectShown.ts`), and the rest keep their tabs,
+          their splits and their chat states and draw nothing at all. */}
+      <div className="project-views" ref={setProjectSlot} />
       {planes.map((plane) => (
         <PlaneView
           key={plane}
           plane={plane}
           inFront={plane === inFront}
+          kept={keptDrawn.has(plane)}
+          slot={projectSlot}
           projects={drawn}
           pinnedProjects={pinnedProjects}
           window={windowDoes}

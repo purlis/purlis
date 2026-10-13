@@ -4,6 +4,7 @@
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderBare,
@@ -23,6 +24,7 @@ import {
   stripNamed,
 } from "./test-strips";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
+import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
 
 /**
@@ -813,6 +815,153 @@ const switcherKey = () =>
     window,
     onAMac() ? { key: "p", metaKey: true } : { key: "P", ctrlKey: true, shiftKey: true },
   );
+
+describe("a project that is not in front stays drawn, off the window", () => {
+  /** `count` projects back from the last quit, each with one chat, the first in front. */
+  function holding(count: number) {
+    const planes = Array.from({ length: count }, (_, n) => `/home/dev/p${n}`);
+    const held = core({
+      launch: null,
+      restore: { planes, active: 0, dropped: [] },
+      chats: Object.fromEntries(
+        planes.map((plane, n) => [plane, [chat({ session: 1, name: `p${n}.1` })]]),
+      ),
+    });
+    return { ...held, planes };
+  }
+
+  /** Brings a project to the front by its tab, and waits for its chat's tab. */
+  async function goTo(n: number) {
+    fireEvent.click(projectTab(`p${n}`));
+    await waitFor(() => expect(chatTabs()).toEqual([`p${n}.1`]));
+  }
+
+  it("has one project's view in the window, whichever is in front", async () => {
+    holding(3);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    await goTo(1);
+    await goTo(0);
+
+    // A second tab strip, or a second copy of an id, is what every query here would trip over.
+    expect(document.querySelectorAll('[data-strip="Tabs"]')).toHaveLength(1);
+    expect(screen.getAllByTestId("pane")).toHaveLength(1);
+  });
+
+  it("puts back what it drew, and reads what it held again only once it is on screen", async () => {
+    const { asked, planes } = holding(3);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    const pane = screen.getByTestId("pane");
+    /** What a view reads of its project's settings: at its mount, and again as they change. */
+    const reads = (...commands: string[]) =>
+      asked.filter((one) => one.args.plane === planes[0] && commands.includes(one.cmd)).length;
+    await waitFor(() => expect(reads("sandbox_state", "project_lives_here")).toBeGreaterThan(0));
+    await goTo(1);
+    // Whatever the first project still owed as it left has been asked by now.
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    const before = reads("sandbox_state", "project_lives_here");
+    const builtOnce = reads("project_icons_drawn");
+
+    act(() => {
+      fireEvent.click(projectTab("p0"));
+    });
+
+    // On screen when the press returns: the very pane it had, so its terminal was never closed
+    // and none was started, and nothing was asked of the core to draw it.
+    expect(chatTabs()).toEqual(["p0.1"]);
+    expect(screen.getByTestId("pane")).toBe(pane);
+    expect(reads("sandbox_state", "project_lives_here")).toBe(before);
+
+    // Behind that, what it showed is read again: nothing else may ever say what changed while
+    // the project was away.
+    await waitFor(() =>
+      expect(reads("sandbox_state", "project_lives_here")).toBeGreaterThan(before),
+    );
+    // And what is only read as a view is built is not read again: it was not built.
+    expect(reads("project_icons_drawn")).toBe(builtOnce);
+  });
+
+  it("puts a dialog away with its project, and it is there again when the project is", async () => {
+    const { secondLaunch, planes } = holding(2);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    fireEvent.click(
+      within(stripNamed("Workspaces")).getByRole("button", { name: "New workspace…" }),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    // By a way that needs no press under the dialog: a second launch naming the other project.
+    act(() => secondLaunch(planes[1]));
+    await waitFor(() => expect(projectTabs()).toEqual(["p0", "p1*"]));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    act(() => secondLaunch(planes[0]));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("lists the window's own lines in the Inbox of whichever project is in front", async () => {
+    // The window draws its one list where the project in front gives it a place (#1695). A
+    // project that kept its view kept that place too, and the list followed the last project
+    // to be built: into a view nobody could see, or back under the title bar, over the panes.
+    const planes = ["/home/dev/p0", "/home/dev/p1"];
+    core({
+      launch: null,
+      restore: {
+        planes,
+        active: 0,
+        dropped: [],
+        gone: [{ path: "/home/dev/gone", said: "~/dev/gone is no longer there" }],
+      },
+      chats: Object.fromEntries(
+        planes.map((plane, n) => [plane, [chat({ session: 1, name: `p${n}.1` })]]),
+      ),
+    });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    /** Where the line is drawn: inside the Inbox's place for the window's lines, in the window. */
+    const inTheInbox = () =>
+      [...document.querySelectorAll(".inbox-window-lines")].some((place) =>
+        place.textContent?.includes("~/dev/gone is no longer there"),
+      );
+    await waitFor(() => expect(inTheInbox()).toBe(true));
+
+    await goTo(1);
+    await waitFor(() => expect(inTheInbox()).toBe(true));
+    await goTo(0);
+    await waitFor(() => expect(inTheInbox()).toBe(true));
+    await goTo(1);
+    await waitFor(() => expect(inTheInbox()).toBe(true));
+    // One place for it in the window, and the line once.
+    expect(document.querySelectorAll(".inbox-window-lines")).toHaveLength(1);
+    expect(screen.getAllByText(/~\/dev\/gone is no longer there/)).toHaveLength(1);
+  });
+
+  it("keeps the projects the person was in last, and draws one left longer ago again", async () => {
+    holding(KEPT_DRAWN + 2);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    const first = screen.getByTestId("pane");
+    await goTo(1);
+    const second = screen.getByTestId("pane");
+    // On through the rest, so the first project is no longer among the last ones.
+    for (let n = 2; n < KEPT_DRAWN + 2; n++) await goTo(n);
+
+    await goTo(0);
+    expect(screen.getByTestId("pane")).not.toBe(first);
+
+    // And a window holding many projects keeps the views of a few: the second went with it.
+    await goTo(1);
+    expect(screen.getByTestId("pane")).not.toBe(second);
+    // While the one just left is put back as it was.
+    const again = screen.getByTestId("pane");
+    await goTo(0);
+    await goTo(1);
+    expect(screen.getByTestId("pane")).toBe(again);
+  });
+});
 
 describe("the project switcher (FR-27)", () => {
   /** Three projects back from the last quit, `one` in front, and the operator having been in

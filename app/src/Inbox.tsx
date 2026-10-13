@@ -57,6 +57,7 @@ import { KIND_SAID } from "./inboxUpdates";
 import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { useNoticeSettle } from "./noticeSettle";
+import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
@@ -218,7 +219,11 @@ export function Inbox({
   if (asks !== undefined) noteSeen(plane, asks);
   /** How many lines the window lists in this Inbox, and where it draws them. */
   const windowLinesCount = windowLines?.count ?? 0;
-  const placeWindowLines = windowLines?.at;
+  // **Only while this project is in front** (`projectShown.tsx`). The window has one list and
+  // draws it in the place it was last handed; a project kept behind another keeps what it drew,
+  // so it gives its place up as it leaves the front and hands it over again as it comes back.
+  const shown = useProjectShown();
+  const placeWindowLines = shown ? windowLines?.at : undefined;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
   // Named only where the window can bring the project forward.

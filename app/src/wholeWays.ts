@@ -152,6 +152,10 @@ export function fitWaysOn(group: HTMLElement): () => void {
  * Runs `fit` on `what` now, and once a frame later whenever `sized` changes size or `held`
  * what it holds. Not on an attribute: setting a thing aside is one, and must not set off
  * another fit.
+ *
+ * **Not while `what` is in no document**, as everything of a project kept off the window is
+ * (`projectShown.tsx`): nothing there has a size to fit to, so what was set aside stays as it
+ * is, and it is fitted again as it comes back, which is a change of size.
  */
 function refitOn(
   what: HTMLElement,
@@ -166,7 +170,7 @@ function refitOn(
     if (queued !== 0) return;
     queued = requestAnimationFrame(() => {
       queued = 0;
-      fit(what);
+      if (what.isConnected) fit(what);
     });
   };
   const resized = new ResizeObserver(again);

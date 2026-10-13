@@ -21,6 +21,14 @@ import { QueueRead } from "./QueueRead";
 import { CountPill } from "./CountPill";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
+import { createPortal } from "react-dom";
+import {
+  AsLastShown,
+  InTheWindow,
+  OnlyInFront,
+  ProjectShownProvider,
+  useProjectHost,
+} from "./projectShown";
 import { FolderPlus, House, MessageSquarePlus } from "lucide-react";
 import {
   commands,
@@ -452,24 +460,39 @@ type Typed =
  * states, the picker and the palette, so a second project had nowhere to put any of them and
  * the app could draw exactly one. Here a project holds its own, and the window holds projects.
  *
- * **A project that is not in front keeps everything and draws nothing.** It stays mounted and
- * returns `null`: its tabs, its splits, its focused workspace and its picker are React state
- * that simply is not rendered, and its `useChats` goes on listening, so the project tab
- * can say a chat over there needs you. That is the operator's own reason for wanting one
- * window per project in the first place — fifty chats in project A must not be torn down
- * because he glanced at project B.
+ * **A project that is not in front keeps everything, and its view stays drawn off the window**
+ * (`projectShown.tsx`). It stays mounted: its tabs, its splits, its focused workspace and its
+ * picker are React state, and its `useChats` goes on listening, so the project tab can say a
+ * chat over there needs you. That is the operator's own reason for wanting one window per
+ * project in the first place — fifty chats in project A must not be torn down because he
+ * glanced at project B.
  *
- * It draws nothing rather than being hidden with CSS: a hidden
- * `[data-strip="Tabs"]` is a second tab strip for every query in this app and
- * in the scenario tests to trip over, and a hidden pane is a terminal being fitted to a box
- * with no size.
+ * **What it drew is kept too, in an element that is in no document**, for the projects the
+ * person was in last (`KEPT_DRAWN`). It used to draw nothing while another project was in
+ * front, so every switch built the whole view again: about a thousand components mounted, more
+ * with each chat the project holds, some fifty commands sent to the core by what mounts, and
+ * the terminal of its chat disposed and a new one started and sent the screen. The operator
+ * felt that as one to three seconds of nothing. Now a switch takes one element out of the
+ * window and puts another in (`projectSwitch.cost.test.tsx` holds the counts).
  *
- * **And not kept drawn under React's `<Activity mode="hidden">` either** (FR-27, #620). It was
- * prototyped around this view's chrome only, on CI: the switch it was meant to speed up moved
- * by less than CI's own spread from run to run, and what it costs in memory was not settled by
- * the one reading taken. What a switch costs is drawing this view and starting the pane's
- * terminal; what is kept small instead is the drawing again after that first draw
- * (`fits.useRoom`, `saving.ts`, `projectTheme.ts`).
+ * Off the window, and not hidden in it with CSS: a hidden `[data-strip="Tabs"]` is a second tab
+ * strip, and a second copy of every id, for every query in this app and in the scenario tests
+ * to trip over. An element in no document is found by none of them, is laid out and painted by
+ * nothing, and takes no key and no press.
+ *
+ * **And not kept drawn under React's `<Activity mode="hidden">`** (FR-27, #620). That was
+ * prototyped around this view's chrome only, on CI, and the switch it was meant to speed up
+ * moved by less than CI's own spread from run to run. A hidden `Activity` keeps what was
+ * drawn and takes its effects down, and the effects are most of what a switch costs here: the
+ * reads each part makes as it mounts, and the terminal.
+ *
+ * **While it is off the window it is not drawn again** (`AsLastShown`): what it hears about its
+ * chats is kept as state here and reported to the window, and its view takes it all at once as
+ * it comes back. Its terminals are not React's to draw: they go on taking what their programs
+ * write. What is asked over the whole window, a dialog, is put away with it (`OnlyInFront`).
+ *
+ * A project the person has not been in lately draws nothing, as every project behind the front
+ * one used to, and is drawn again when they come back to it.
  *
  * **The palette is the window's, not a project's**, for the same reason turned round. It has
  * to be mounted before the core has said which project this launch opened — `F2` is a
@@ -477,9 +500,10 @@ type Typed =
  * window with a capturing listener. So what it lists travels up from here with the rest of
  * this project's report, and the window draws the one palette.
  *
- * Its panes come and go with it, and that costs a project nothing: only the tab in front has
- * panes on screen anyway (`tabs.ts`), the core has held every session's terminal all along,
- * and a view opened again is sent the screen as it already is.
+ * Its panes stay with it: only the tab in front has panes drawn (`tabs.ts`), so a project kept
+ * off the window keeps those terminals and their views of the session open, and no more. A
+ * project that draws nothing has none, which costs it nothing: the core has held every
+ * session's terminal all along, and a view opened again is sent the screen as it already is.
  *
  * **Held (`memo`), so the window redrawing is not this view redrawing** (SC-3). Every chat move
  * reaches the window as this project's report — the quit warning's states, the project strip's
@@ -489,6 +513,8 @@ type Typed =
 export const PlaneView = memo(function PlaneView({
   plane,
   inFront,
+  kept,
+  slot,
   projects,
   pinnedProjects,
   window: windowDoes,
@@ -519,6 +545,10 @@ export const PlaneView = memo(function PlaneView({
   plane: PlaneId;
   /** Whether this is the project the operator is looking at. */
   inFront: boolean;
+  /** Whether it stays drawn while another project is in front: the person was in it lately. */
+  kept: boolean;
+  /** Where its view goes while it is in front: the window's element for the project it shows. */
+  slot: HTMLElement | null;
   /** Every project this window holds, for the rows that switch between them. */
   projects: readonly Project[];
   /** Which of them this operator has pinned, by root. The window holds it, because the
@@ -7500,9 +7530,13 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [alerts, plane, noticesListed, showInbox, windowLines?.count]);
 
-  // A project the operator is not looking at keeps every piece of state above and draws none
-  // of it. See this module's own docstring for why it is `null` and not `hidden`.
-  if (!inFront) return null;
+  /** The element this project draws into, in the window only while it is in front. */
+  const host = useProjectHost();
+
+  // A project the operator has not been in lately keeps every piece of state above and draws
+  // none of it. One they were in lately stays drawn, off the window: see this module's own
+  // docstring.
+  if (!inFront && !kept) return null;
 
   /**
    * **The project's standing lines, in its Inbox** (#1695, I-4): what stood under the tab strip
@@ -7720,7 +7754,7 @@ export const PlaneView = memo(function PlaneView({
     </>
   );
 
-  return (
+  const view = (
     <Lent
       chats={chats}
       tasksBelow={tasksBelow}
@@ -8313,399 +8347,417 @@ export const PlaneView = memo(function PlaneView({
 
         {/* Making a workspace, and deleting one. Mounted only while they are up, and drawn
           here rather than in the window: a workspace belongs to a project. */}
-        {makingWorkspace && (
-          <NewWorkspace
-            plane={plane}
-            trouble={workspaceTrouble}
-            making={busyMaking}
-            planeId={plane}
-            onCreate={(name, vision, live, repos) => void makeWorkspace(name, vision, live, repos)}
-            onCancel={() => {
-              setMakingWorkspace(false);
-              setWorkspaceTrouble(undefined);
-            }}
-          />
-        )}
-
-        {branching && (
-          <NewBranch
-            repo={branching.repo}
-            trouble={branchTrouble}
-            making={busyBranching}
-            onCut={(branch) => void cutBranch(branch)}
-            onCancel={() => {
-              setBranching(undefined);
-              setBranchTrouble(undefined);
-            }}
-          />
-        )}
-
-        {makingVault && (
-          <NewVault
-            plane={plane}
-            trouble={vaultTrouble}
-            making={busyVault}
-            onCreate={(name, provider, opVault) => void makeVault(name, provider, opVault)}
-            onMade={(done) => {
-              // The guided set-up made it in the core (#1527): the same ending as `makeVault`.
-              setMakingVault(false);
-              setVaultTrouble(undefined);
-              reloadVaults();
-              showView({ from: null, view: "vault", key: done.contents.name }, done.contents.name);
-            }}
-            onCancel={() => {
-              setMakingVault(false);
-              setVaultTrouble(undefined);
-            }}
-          />
-        )}
-
-        {edits.dialogs}
-
-        {addingToChat && (
-          <AddToAChat
-            referenced={addingToChat}
-            chats={referenceChats.chats}
-            onPick={(chat) => {
-              const [one, ...more] = addingToChat;
-              if (more.length === 0) {
-                if (one !== undefined) referenceChats.hand(one, chat.session, "add");
-                return;
+        {/* **What is asked over the window is asked only of the project in front**: a dialog is
+          drawn over the whole window, wherever the project that opened it is. One left open in
+          a project that is no longer in front is put away with it and is there again when the
+          project is. */}
+        <OnlyInFront>
+          {makingWorkspace && (
+            <NewWorkspace
+              plane={plane}
+              trouble={workspaceTrouble}
+              making={busyMaking}
+              planeId={plane}
+              onCreate={(name, vision, live, repos) =>
+                void makeWorkspace(name, vision, live, repos)
               }
-              // Several rows picked in the explorer: one paste of them all (#1151).
-              void handReferences(plane, chat.session, chat.name, addingToChat).then((ran) =>
-                setReport(
-                  ran.ok
-                    ? { from: "reference", refused: false, words: ran.said ?? "" }
-                    : { from: "reference", refused: true, words: ran.refused },
-                ),
-              );
-            }}
-            onCancel={() => setAddingToChat(undefined)}
-          />
-        )}
+              onCancel={() => {
+                setMakingWorkspace(false);
+                setWorkspaceTrouble(undefined);
+              }}
+            />
+          )}
 
-        {pickingVault && (
-          <OpenVault
-            vaults={vaults.vaults ?? []}
-            offers={found}
-            onPress={press}
-            onCancel={() => setPickingVault(false)}
-          />
-        )}
+          {branching && (
+            <NewBranch
+              repo={branching.repo}
+              trouble={branchTrouble}
+              making={busyBranching}
+              onCut={(branch) => void cutBranch(branch)}
+              onCancel={() => {
+                setBranching(undefined);
+                setBranchTrouble(undefined);
+              }}
+            />
+          )}
 
-        {linkingWork && (
-          <LinkWorkItem
-            chat={tabs.byId[linkingWork.tab]?.name ?? ""}
-            linked={workItems[chatOf(tabs, linkingWork.tab) ?? -1]}
-            trouble={linkingWork.trouble}
-            linking={linkingWork.busy}
-            onLink={(key) => void saveWorkLink(linkingWork.tab, key)}
-            onCancel={() => setLinkingWork(undefined)}
-          />
-        )}
+          {makingVault && (
+            <NewVault
+              plane={plane}
+              trouble={vaultTrouble}
+              making={busyVault}
+              onCreate={(name, provider, opVault) => void makeVault(name, provider, opVault)}
+              onMade={(done) => {
+                // The guided set-up made it in the core (#1527): the same ending as `makeVault`.
+                setMakingVault(false);
+                setVaultTrouble(undefined);
+                reloadVaults();
+                showView(
+                  { from: null, view: "vault", key: done.contents.name },
+                  done.contents.name,
+                );
+              }}
+              onCancel={() => {
+                setMakingVault(false);
+                setVaultTrouble(undefined);
+              }}
+            />
+          )}
 
-        {briefOf && (
-          <BriefPanel
-            // Another task's brief is another panel: it reads again, from nothing.
-            key={"chat" in briefOf ? `chat:${briefOf.chat}` : `dispatch:${briefOf.dispatch}`}
-            plane={plane}
-            of={briefOf}
-            onClose={() => setBriefOf(undefined)}
-          />
-        )}
+          {edits.dialogs}
 
-        {answerOf && (
-          <AnswerPanel
-            // Another task's question is another dialog: it reads again, from nothing.
-            key={answerOf.chat}
-            plane={plane}
-            of={answerOf}
-            asking={chatsByNumber.get(answerOf.chat)?.from?.asking === true}
-            onClose={() => setAnswerOf(undefined)}
-          />
-        )}
+          {addingToChat && (
+            <AddToAChat
+              referenced={addingToChat}
+              chats={referenceChats.chats}
+              onPick={(chat) => {
+                const [one, ...more] = addingToChat;
+                if (more.length === 0) {
+                  if (one !== undefined) referenceChats.hand(one, chat.session, "add");
+                  return;
+                }
+                // Several rows picked in the explorer: one paste of them all (#1151).
+                void handReferences(plane, chat.session, chat.name, addingToChat).then((ran) =>
+                  setReport(
+                    ran.ok
+                      ? { from: "reference", refused: false, words: ran.said ?? "" }
+                      : { from: "reference", refused: true, words: ran.refused },
+                  ),
+                );
+              }}
+              onCancel={() => setAddingToChat(undefined)}
+            />
+          )}
 
-        {askingPersona && (
-          <AskPersona
-            // A new question is a new dialog: its boxes start from its own prefill.
-            key={`${askingPersona.session}:${askingPersona.persona}`}
-            persona={askingPersona.persona}
-            chat={nameOf(askingPersona.session)}
-            // Every workspace but the one that chat works in: there, "this chat's folder" is it.
-            workspaces={(sidebar?.workspaces ?? [])
-              .filter((ws) => !ws.chats.some((chat) => chat.session === askingPersona.session))
-              .map((ws) => ws.name)}
-            prefill={askingPersona.prefill}
-            from={askingPersona.from}
-            trouble={askingPersona.trouble}
-            asking={askingPersona.busy}
-            folderShared={folderShared}
-            onAsk={(name, ask, place) => void sendAsk(name, ask, place)}
-            onCancel={() => setAskingPersona(undefined)}
-          />
-        )}
+          {pickingVault && (
+            <OpenVault
+              vaults={vaults.vaults ?? []}
+              offers={found}
+              onPress={press}
+              onCancel={() => setPickingVault(false)}
+            />
+          )}
 
-        {askingAction && (
-          <AskFirst
-            extension={askingAction.extension}
-            action={askingAction.action}
-            onRun={async () => {
-              const outcome = await runExtensionAction(
-                plane,
-                askingAction.extension,
-                askingAction.action,
-                { view: null, key: "", row: null },
-                ofWorkspace,
-                true,
-              );
-              if ("refused" in outcome) return { refused: outcome.refused };
-              // From the palette there is no view to say it above, so the dialog says it.
-              if (outcome.answer.overreach !== null) return { seen: outcome.answer.overreach };
-              setAskingAction(undefined);
-              return undefined;
-            }}
-            onCancel={() => setAskingAction(undefined)}
-          />
-        )}
+          {linkingWork && (
+            <LinkWorkItem
+              chat={tabs.byId[linkingWork.tab]?.name ?? ""}
+              linked={workItems[chatOf(tabs, linkingWork.tab) ?? -1]}
+              trouble={linkingWork.trouble}
+              linking={linkingWork.busy}
+              onLink={(key) => void saveWorkLink(linkingWork.tab, key)}
+              onCancel={() => setLinkingWork(undefined)}
+            />
+          )}
 
-        {liveAsk !== undefined && (
-          <LiveDialog
-            plane={plane}
-            workspace={liveAsk}
-            onClose={() => setLiveAsk(undefined)}
-            onDone={(said) => {
-              setLiveAsk(undefined);
-              setReport({
-                from: `workspace.live:${liveAsk}`,
-                refused: false,
-                words: said.join(" "),
-              });
-              // Read the plane again: the marks come from what is on disk, not from this press.
-              setReplan((asked) => asked + 1);
-            }}
-          />
-        )}
+          {briefOf && (
+            <BriefPanel
+              // Another task's brief is another panel: it reads again, from nothing.
+              key={"chat" in briefOf ? `chat:${briefOf.chat}` : `dispatch:${briefOf.dispatch}`}
+              plane={plane}
+              of={briefOf}
+              onClose={() => setBriefOf(undefined)}
+            />
+          )}
 
-        {membershipAsk !== undefined && (
-          <RemoveFromWorkspace
-            plane={plane}
-            workspace={membershipAsk.workspace}
-            repo={membershipAsk.repo}
-            onClose={() => setMembershipAsk(undefined)}
-            onDone={(said) => {
-              setMembershipAsk(undefined);
-              setReport({
-                from: `absent.drop:${membershipAsk.repo}`,
-                refused: false,
-                words: said.join(" "),
-              });
-              // The list is what is on disk: read again, so the repo leaves "Not cloned here".
-              rereadPanels();
-            }}
-          />
-        )}
+          {answerOf && (
+            <AnswerPanel
+              // Another task's question is another dialog: it reads again, from nothing.
+              key={answerOf.chat}
+              plane={plane}
+              of={answerOf}
+              asking={chatsByNumber.get(answerOf.chat)?.from?.asking === true}
+              onClose={() => setAnswerOf(undefined)}
+            />
+          )}
 
-        {renamingWs && (
-          <RenameWorkspace
-            workspace={renamingWs.workspace}
-            startsFresh={renamingWs.startsFresh}
-            trouble={renamingWs.trouble}
-            renaming={renamingWs.busy}
-            onRename={(name) => void doRename(renamingWs.workspace, name)}
-            onCancel={() => setRenamingWs(undefined)}
-          />
-        )}
+          {askingPersona && (
+            <AskPersona
+              // A new question is a new dialog: its boxes start from its own prefill.
+              key={`${askingPersona.session}:${askingPersona.persona}`}
+              persona={askingPersona.persona}
+              chat={nameOf(askingPersona.session)}
+              // Every workspace but the one that chat works in: there, "this chat's folder" is it.
+              workspaces={(sidebar?.workspaces ?? [])
+                .filter((ws) => !ws.chats.some((chat) => chat.session === askingPersona.session))
+                .map((ws) => ws.name)}
+              prefill={askingPersona.prefill}
+              from={askingPersona.from}
+              trouble={askingPersona.trouble}
+              asking={askingPersona.busy}
+              folderShared={folderShared}
+              onAsk={(name, ask, place) => void sendAsk(name, ask, place)}
+              onCancel={() => setAskingPersona(undefined)}
+            />
+          )}
 
-        {removing && (
-          <DeleteWorkspace
-            workspace={removing.workspace}
-            atRisk={removing.atRisk}
-            unreadable={removing.unreadable}
-            refusal={removing.refusal}
-            deleting={removing.busy}
-            onDelete={(force) => void deleteWorkspace(removing.workspace, force)}
-            onCancel={() => setRemoving(undefined)}
-          />
-        )}
+          {askingAction && (
+            <AskFirst
+              extension={askingAction.extension}
+              action={askingAction.action}
+              onRun={async () => {
+                const outcome = await runExtensionAction(
+                  plane,
+                  askingAction.extension,
+                  askingAction.action,
+                  { view: null, key: "", row: null },
+                  ofWorkspace,
+                  true,
+                );
+                if ("refused" in outcome) return { refused: outcome.refused };
+                // From the palette there is no view to say it above, so the dialog says it.
+                if (outcome.answer.overreach !== null) return { seen: outcome.answer.overreach };
+                setAskingAction(undefined);
+                return undefined;
+              }}
+              onCancel={() => setAskingAction(undefined)}
+            />
+          )}
 
-        {/* The one question charter asks before it ends a chat, wherever the row was pressed
+          {liveAsk !== undefined && (
+            <LiveDialog
+              plane={plane}
+              workspace={liveAsk}
+              onClose={() => setLiveAsk(undefined)}
+              onDone={(said) => {
+                setLiveAsk(undefined);
+                setReport({
+                  from: `workspace.live:${liveAsk}`,
+                  refused: false,
+                  words: said.join(" "),
+                });
+                // Read the plane again: the marks come from what is on disk, not from this press.
+                setReplan((asked) => asked + 1);
+              }}
+            />
+          )}
+
+          {membershipAsk !== undefined && (
+            <RemoveFromWorkspace
+              plane={plane}
+              workspace={membershipAsk.workspace}
+              repo={membershipAsk.repo}
+              onClose={() => setMembershipAsk(undefined)}
+              onDone={(said) => {
+                setMembershipAsk(undefined);
+                setReport({
+                  from: `absent.drop:${membershipAsk.repo}`,
+                  refused: false,
+                  words: said.join(" "),
+                });
+                // The list is what is on disk: read again, so the repo leaves "Not cloned here".
+                rereadPanels();
+              }}
+            />
+          )}
+
+          {renamingWs && (
+            <RenameWorkspace
+              workspace={renamingWs.workspace}
+              startsFresh={renamingWs.startsFresh}
+              trouble={renamingWs.trouble}
+              renaming={renamingWs.busy}
+              onRename={(name) => void doRename(renamingWs.workspace, name)}
+              onCancel={() => setRenamingWs(undefined)}
+            />
+          )}
+
+          {removing && (
+            <DeleteWorkspace
+              workspace={removing.workspace}
+              atRisk={removing.atRisk}
+              unreadable={removing.unreadable}
+              refusal={removing.refusal}
+              deleting={removing.busy}
+              onDelete={(force) => void deleteWorkspace(removing.workspace, force)}
+              onCancel={() => setRemoving(undefined)}
+            />
+          )}
+
+          {/* The one question charter asks before it ends a chat, wherever the row was pressed
           (the operator: *"closing session should ask confirmation"*). */}
-        {/* A finished task's Merge… or Discard branch…, asked from its row's menu (#1534). */}
-        {taskBranchActs.asking}
-        {/* NO-3's two questions: a chat's record dropped, and a chat started again. */}
-        {forgetting && (
-          <ChatAsk
-            title={`Forget ${forgetting.name}?`}
-            says={`purlis stops keeping ${forgetting.name}, and no later launch tries to start it again. This cannot be undone.`}
-            answer="Forget chat"
-            trouble={forgetting.trouble}
-            busy={forgetting.busy}
-            onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
-            onCancel={() => setForgetting(undefined)}
-            onCloseAutoFocus={afterForgetAsk}
-          />
-        )}
-        {approving && (
-          <ChatAsk
-            title={`Approve ${approving.approval.profile}?`}
-            says={`${approving.name} starts on the profile ${approving.approval.profile}. Approving records that purlis may run its command on this machine, and starts nothing: Retry now starts the chat.`}
-            answer="Approve"
-            trouble={approving.trouble}
-            busy={approving.busy}
-            onAnswer={() => void approveWaiting(approving)}
-            onCancel={() => setApproving(undefined)}
-            onCloseAutoFocus={afterApproveAsk}
-          >
-            {/* The picker's own sentence, line and mark (`ProfileApproval.tsx`, ruling V69). */}
-            <ApprovalSentence row={approving.approval} />
-            <ProfileMeta row={approving.approval} />
-          </ChatAsk>
-        )}
-        {stopAsk && (
-          <ChatAsk
-            title={stopTitle(stopAsk)}
-            says={stopSays(stopAsk)}
-            answer={stopAnswer(stopAsk)}
-            trouble={stopAsk.trouble}
-            busy={stopAsk.busy}
-            onAnswer={() => void stopAsked()}
-            onCancel={() => setStopAsk(undefined)}
-          />
-        )}
-        {stopAllAsk && (
-          <ChatAsk
-            title={stopAllTitle(stopAllAsk)}
-            says={stopAllSays(stopAllAsk)}
-            answer={stopAllAnswer(stopAllAsk)}
-            trouble={stopAllAsk.trouble}
-            busy={stopAllAsk.busy}
-            onAnswer={() => void stopAllAsked()}
-            onCancel={() => setStopAllAsk(undefined)}
-          />
-        )}
-        {taskEndAsk && (
-          <TaskEndAsk
-            asked={taskEndAsk}
-            onBelow={(belowToo) => setTaskEndAsk({ ...taskEndAsk, belowToo })}
-            onAnswer={(way) =>
-              void endTaskNow(
-                taskEndAsk.session,
-                way,
-                taskEndAsk.belowToo && taskEndAsk.below.length > 0,
-                taskEndAsk,
-              )
-            }
-            onCancel={() => setTaskEndAsk(undefined)}
-          />
-        )}
-        {freshening && (
-          <ChatAsk
-            title={`Start ${freshening.name} fresh?`}
-            says={`The project's instructions changed since it started (${freshening.files.join(", ")}). Its program ends, and it starts again on what is there now, as a new conversation.`}
-            answer="Start fresh"
-            warns={oneChatMidTurn(freshening.name, freshening.doing)}
-            trouble={freshening.trouble}
-            busy={freshening.busy}
-            onAnswer={() => void startFresh()}
-            onCancel={() => setFreshening(undefined)}
-          />
-        )}
-        {restartingTask && (
-          <ChatAsk
-            title={`Restart ${restartingTask.name}?`}
-            says="It is a task. Its program ends and starts again on the same conversation, once its turn has ended. It stays a task, and still owes its report."
-            answer="Restart it"
-            busy={false}
-            onAnswer={() => {
-              const { session } = restartingTask;
-              setRestartingTask(undefined);
-              restartNow.current(session);
-            }}
-            onCancel={() => setRestartingTask(undefined)}
-          />
-        )}
-        {endingChat && (
-          <EndingChat
-            offer={endingChat.offer}
-            smart={endingChat.smart}
-            running={endingChat.running}
-            closing={endingChat.closing}
-            keeps={endingChat.keeps}
-            shows={endingChat.shows}
-            back={endingChat.back}
-            ownTabs={endingChat.ownTabs}
-            onEnd={(stop) => {
-              const { offer: ending, session } = endingChat;
-              setEndingChat(undefined);
-              // Stop them: the core closes the chat too, in the one step. Keep them: the
-              // ordinary close.
-              if (stop && session !== undefined) void closeStopping(session, "close");
-              else void carryOut(ending);
-            }}
-            onSmartClose={(stop) => {
-              const session = endingChat.session;
-              setEndingChat(undefined);
-              if (session === undefined) return;
-              void (async () => {
-                if (stop && !(await closeStopping(session, "smart_close"))) return;
-                await beginSmartClose(session);
-              })();
-            }}
-            onCancel={() => setEndingChat(undefined)}
-          />
-        )}
+          {/* A finished task's Merge… or Discard branch…, asked from its row's menu (#1534). */}
+          {taskBranchActs.asking}
+          {/* NO-3's two questions: a chat's record dropped, and a chat started again. */}
+          {forgetting && (
+            <ChatAsk
+              title={`Forget ${forgetting.name}?`}
+              says={`purlis stops keeping ${forgetting.name}, and no later launch tries to start it again. This cannot be undone.`}
+              answer="Forget chat"
+              trouble={forgetting.trouble}
+              busy={forgetting.busy}
+              onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
+              onCancel={() => setForgetting(undefined)}
+              onCloseAutoFocus={afterForgetAsk}
+            />
+          )}
+          {approving && (
+            <ChatAsk
+              title={`Approve ${approving.approval.profile}?`}
+              says={`${approving.name} starts on the profile ${approving.approval.profile}. Approving records that purlis may run its command on this machine, and starts nothing: Retry now starts the chat.`}
+              answer="Approve"
+              trouble={approving.trouble}
+              busy={approving.busy}
+              onAnswer={() => void approveWaiting(approving)}
+              onCancel={() => setApproving(undefined)}
+              onCloseAutoFocus={afterApproveAsk}
+            >
+              {/* The picker's own sentence, line and mark (`ProfileApproval.tsx`, ruling V69). */}
+              <ApprovalSentence row={approving.approval} />
+              <ProfileMeta row={approving.approval} />
+            </ChatAsk>
+          )}
+          {stopAsk && (
+            <ChatAsk
+              title={stopTitle(stopAsk)}
+              says={stopSays(stopAsk)}
+              answer={stopAnswer(stopAsk)}
+              trouble={stopAsk.trouble}
+              busy={stopAsk.busy}
+              onAnswer={() => void stopAsked()}
+              onCancel={() => setStopAsk(undefined)}
+            />
+          )}
+          {stopAllAsk && (
+            <ChatAsk
+              title={stopAllTitle(stopAllAsk)}
+              says={stopAllSays(stopAllAsk)}
+              answer={stopAllAnswer(stopAllAsk)}
+              trouble={stopAllAsk.trouble}
+              busy={stopAllAsk.busy}
+              onAnswer={() => void stopAllAsked()}
+              onCancel={() => setStopAllAsk(undefined)}
+            />
+          )}
+          {taskEndAsk && (
+            <TaskEndAsk
+              asked={taskEndAsk}
+              onBelow={(belowToo) => setTaskEndAsk({ ...taskEndAsk, belowToo })}
+              onAnswer={(way) =>
+                void endTaskNow(
+                  taskEndAsk.session,
+                  way,
+                  taskEndAsk.belowToo && taskEndAsk.below.length > 0,
+                  taskEndAsk,
+                )
+              }
+              onCancel={() => setTaskEndAsk(undefined)}
+            />
+          )}
+          {freshening && (
+            <ChatAsk
+              title={`Start ${freshening.name} fresh?`}
+              says={`The project's instructions changed since it started (${freshening.files.join(", ")}). Its program ends, and it starts again on what is there now, as a new conversation.`}
+              answer="Start fresh"
+              warns={oneChatMidTurn(freshening.name, freshening.doing)}
+              trouble={freshening.trouble}
+              busy={freshening.busy}
+              onAnswer={() => void startFresh()}
+              onCancel={() => setFreshening(undefined)}
+            />
+          )}
+          {restartingTask && (
+            <ChatAsk
+              title={`Restart ${restartingTask.name}?`}
+              says="It is a task. Its program ends and starts again on the same conversation, once its turn has ended. It stays a task, and still owes its report."
+              answer="Restart it"
+              busy={false}
+              onAnswer={() => {
+                const { session } = restartingTask;
+                setRestartingTask(undefined);
+                restartNow.current(session);
+              }}
+              onCancel={() => setRestartingTask(undefined)}
+            />
+          )}
+          {endingChat && (
+            <EndingChat
+              offer={endingChat.offer}
+              smart={endingChat.smart}
+              running={endingChat.running}
+              closing={endingChat.closing}
+              keeps={endingChat.keeps}
+              shows={endingChat.shows}
+              back={endingChat.back}
+              ownTabs={endingChat.ownTabs}
+              onEnd={(stop) => {
+                const { offer: ending, session } = endingChat;
+                setEndingChat(undefined);
+                // Stop them: the core closes the chat too, in the one step. Keep them: the
+                // ordinary close.
+                if (stop && session !== undefined) void closeStopping(session, "close");
+                else void carryOut(ending);
+              }}
+              onSmartClose={(stop) => {
+                const session = endingChat.session;
+                setEndingChat(undefined);
+                if (session === undefined) return;
+                void (async () => {
+                  if (stop && !(await closeStopping(session, "smart_close"))) return;
+                  await beginSmartClose(session);
+                })();
+              }}
+              onCancel={() => setEndingChat(undefined)}
+            />
+          )}
 
-        {picking && (
-          <StartChat
-            options={picking.options}
-            repo={pickingInRepo}
-            starting={starting}
-            prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
-            trouble={pickerTrouble}
-            onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
-              void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
-            }
-            onApprove={(profile, persona, footer, shown, label, newBranch, withoutSandbox) =>
-              void approveAndStart(
-                profile,
-                persona,
-                footer,
-                shown,
-                label,
-                newBranch,
-                withoutSandbox,
-              )
-            }
-            // SD-30's install action: a shell tab at the project root with the command typed and
-            // not run. The picker closes, since the chat it was for starts after the install.
-            onInstall={
-              root === undefined
-                ? undefined
-                : () => {
-                    setPicking(undefined);
-                    setPickerTrouble(undefined);
-                    openShell(root, OUTSIDE, { sandboxInstall: true });
-                  }
-            }
-            fixing={pickerFixing}
-            onFix={(id) => void fixInPicker(id)}
-            // A refused profile is mended on its page in Settings, its command focused (NO-8,
-            // #1296): the picker closes, as it does for the install, since the chat it was for
-            // starts after the mend.
-            onOpenSettings={(group, setting) => {
-              setPicking(undefined);
-              setPickerTrouble(undefined);
-              openSettingsAt({ group, setting });
-            }}
-            onCancel={() => {
-              setPicking(undefined);
-              setPickerTrouble(undefined);
-            }}
-          />
-        )}
+          {picking && (
+            <StartChat
+              options={picking.options}
+              repo={pickingInRepo}
+              starting={starting}
+              prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
+              trouble={pickerTrouble}
+              onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
+                void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
+              }
+              onApprove={(profile, persona, footer, shown, label, newBranch, withoutSandbox) =>
+                void approveAndStart(
+                  profile,
+                  persona,
+                  footer,
+                  shown,
+                  label,
+                  newBranch,
+                  withoutSandbox,
+                )
+              }
+              // SD-30's install action: a shell tab at the project root with the command typed and
+              // not run. The picker closes, since the chat it was for starts after the install.
+              onInstall={
+                root === undefined
+                  ? undefined
+                  : () => {
+                      setPicking(undefined);
+                      setPickerTrouble(undefined);
+                      openShell(root, OUTSIDE, { sandboxInstall: true });
+                    }
+              }
+              fixing={pickerFixing}
+              onFix={(id) => void fixInPicker(id)}
+              // A refused profile is mended on its page in Settings, its command focused (NO-8,
+              // #1296): the picker closes, as it does for the install, since the chat it was for
+              // starts after the mend.
+              onOpenSettings={(group, setting) => {
+                setPicking(undefined);
+                setPickerTrouble(undefined);
+                openSettingsAt({ group, setting });
+              }}
+              onCancel={() => {
+                setPicking(undefined);
+                setPickerTrouble(undefined);
+              }}
+            />
+          )}
+        </OnlyInFront>
       </SessionOffersLent>
     </Lent>
+  );
+  return createPortal(
+    <ProjectShownProvider value={inFront}>
+      <InTheWindow host={host} slot={slot} shown={inFront} />
+      <AsLastShown>{view}</AsLastShown>
+    </ProjectShownProvider>,
+    host,
   );
 });
 

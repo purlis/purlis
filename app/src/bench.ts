@@ -48,6 +48,10 @@ const TAIL = 4096;
  */
 const open = new Map<Terminal, Pane>();
 
+/** How many panes have been opened, ever: a job reads it before and after to say whether what
+ *  it did opened one. */
+let opens = 0;
+
 /** The panes on screen, by session: the project in front's, which is what a job is about. */
 function onScreen(): Map<number, Pane> {
   const shown = new Map<number, Pane>();
@@ -73,6 +77,7 @@ export function paneOpened(session: number, terminal: Terminal): void {
   if (!measuring) return;
   const pane: Pane = { session, terminal, tail: "", chunks: 0, characters: 0 };
   open.set(terminal, pane);
+  opens += 1;
   terminal.onRender(() => {
     if (!pane.waiting?.seen) return;
     // The row is in the grid; one more frame presented is when a person sees it (research
@@ -386,6 +391,7 @@ async function work(plan: Plan): Promise<unknown> {
         };
       });
       const from = performance.now();
+      const opensBefore = opens;
       row.click();
       const shown = await until(() =>
         document.querySelector(
@@ -398,7 +404,10 @@ async function work(plan: Plan): Promise<unknown> {
       // and what it printed is in its terminal already. Its paint is then the terminal's next
       // draw, or the frame after the project came to the front where it has nothing to draw
       // again; `built` says no pane was opened for the switch.
-      const kept = [...onScreen().values()].find((one) => holds(one.terminal, plan.sentinel));
+      const kept =
+        opens === opensBefore
+          ? [...onScreen().values()].find((one) => holds(one.terminal, plan.sentinel))
+          : undefined;
       if (kept !== undefined) {
         awaited = undefined;
         subject = kept.session;
