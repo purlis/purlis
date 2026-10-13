@@ -119,6 +119,56 @@ async fn a_method_the_host_does_not_serve_is_refused_before_it_is_asked() {
     assert!(commands.asked.lock().unwrap().is_empty());
 }
 
+/// Issue 1916: a link is served a branch's folders to watch and never the plane root's. The
+/// call is refused on the link itself, with the protocol's own sentence, and the app's command
+/// is never asked.
+#[tokio::test]
+async fn a_folder_watch_that_names_the_plane_root_is_refused_before_the_command_is_asked() {
+    let commands = Commands::default();
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let ui = ui::Server::new(BUILD, ["files_watch", "rename_chat"], commands.clone());
+    tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
+    let client = Client::new(client.unwrap()).0;
+    let ui = client.ui(BUILD).await.unwrap();
+    let folder = |workspace: &str, repo: &str| json!({"plane": "/p", "workspace": workspace, "repo": repo, "piece": null, "folder": "docs"});
+
+    for args in [
+        json!({"folders": [folder("", "")]}),
+        // One such folder among a branch's refuses the whole call.
+        json!({"folders": [folder("alpha", "svc"), folder("", "")]}),
+        json!({"folders": [{"plane": "/p", "folder": ""}]}),
+        // A call that does not say its folders as a list names no branch.
+        json!({}),
+        json!([[folder("alpha", "svc")]]),
+    ] {
+        let refused = ui.call("files_watch", args.clone()).await.unwrap();
+        assert_eq!(
+            refused,
+            Err(json!(ui::THE_PLANE_ROOT_IS_THE_WINDOWS)),
+            "{args}"
+        );
+    }
+    assert!(commands.asked.lock().unwrap().is_empty());
+
+    // A branch's folders are the command's to answer, as before.
+    let branch = json!({"folders": [folder("alpha", "svc")]});
+    let answered = ui.call("files_watch", branch.clone()).await.unwrap();
+    assert_eq!(answered, Err(json!("that plane is not open")));
+    assert_eq!(
+        commands.asked.lock().unwrap().clone(),
+        vec![("files_watch".to_owned(), branch)]
+    );
+}
+
 #[tokio::test]
 async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // HP-6: `answer_ask` is the window's over Tauri's IPC alone, even when a host is built with

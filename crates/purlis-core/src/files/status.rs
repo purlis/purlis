@@ -159,6 +159,8 @@ pub(super) fn status_here(plane: &Path, branch: Branch<'_>) -> Result<Status, Re
         why,
     };
     let opened = open(plane, branch)?;
+    let kept = super::Kept::of(plane, &opened.base, branch);
+    kept.whole()?;
     let held = super::compare::hold(plane, &opened.base).map_err(unreadable)?;
     let head = opened.repo.head_commit().ok().map(|commit| commit.id);
     let based = head.and_then(|head| opened.head_based(head));
@@ -169,11 +171,16 @@ pub(super) fn status_here(plane: &Path, branch: Branch<'_>) -> Result<Status, Re
     };
     // The one diff engine's file list, without its line counts (RC-2).
     let super::compare::Changed {
-        changes: all,
+        changes: mut all,
         refused: mut refused_all,
         ..
     } = super::compare::changed(&repo, since, super::compare::At::WorkingTree, Some(&held))
         .map_err(unreadable)?;
+    // What purlis keeps to itself is not marked as changed, nor rolled up into its folder.
+    all.retain(|change| {
+        !super::compare::kept_from_a_list(&kept, &change.path, change.from.as_deref())
+    });
+    refused_all.retain(|change| !super::compare::kept_from_a_list(&kept, &change.path, None));
     let folders = rolled_up(&all);
     let more = all.len().saturating_sub(MARKED) + refused_all.len().saturating_sub(MARKED);
     let mut changes = all;

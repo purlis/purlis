@@ -1077,6 +1077,10 @@ pub struct Denied {
     /// A config whose commands purlis stopped reading ([`planted::Unread`]), so what they run
     /// is not known and the chat is refused ([`NotStarted::Unread`]).
     pub unread: Option<Named>,
+    /// Why what purlis keeps from a chat could not be told whole ([`kept_from_reading`]): the
+    /// paths may be short of a vault's storage, so no sandbox is compiled from them and the
+    /// chat is refused ([`NotStarted::KeptUntold`]). `None` when the list is whole.
+    pub untold: Option<Untold>,
 }
 
 impl Denied {
@@ -1109,7 +1113,12 @@ impl Denied {
 
     /// The denials for a chat in the plane at `root`, on `machine`.
     pub fn of(root: &Path, machine: &Machine) -> Self {
-        let (mut paths, keyring, _) = kept_by_purlis(root, machine);
+        let KeptList {
+            mut paths,
+            keyring,
+            untold,
+            ..
+        } = kept_by_purlis(root, machine);
 
         // …and this machine's policy (#1343): what an administrator locks is never a chat's to
         // write, wherever the system lets it be written.
@@ -1176,6 +1185,7 @@ impl Denied {
                 Vec::new()
             },
             unread,
+            untold,
         }
     }
 }
@@ -1188,10 +1198,20 @@ impl Denied {
 /// [`kept_from_reading`] hands the part no chat reads to the window's own file reads, so the
 /// two cannot drift apart.
 ///
-/// The third answer is why the list may be short of a vault's storage: the registry that
-/// names the vaults did not read, or one of its entries did not resolve to where it keeps its
-/// secrets. `None` when every vault it names is in the list.
-fn kept_by_purlis(root: &Path, machine: &Machine) -> (Vec<Denial>, bool, Option<String>) {
+/// **Whole, or said not to be** ([`KeptList::untold`]). Every entry of the vault registry, in
+/// the committed half and in this machine's, is judged ([`judged`]): a vault of a kind purlis
+/// knows resolves to where it keeps its secrets, which is in the list; an entry that names no
+/// kind, or a kind this purlis does not know, has every location it names in the project in
+/// the list, and Doctor is told ([`KeptList::notes`]). The list is not whole where the registry
+/// does not read, where its `vaults` is not an object, where a vault of a known kind says where
+/// its file is in a way purlis cannot use, or where a vault's file has other names and the
+/// project holds more than purlis looks through for them. Neither reader goes on with a list
+/// that is not whole: a chat does not start, and the window's file reads list nothing.
+///
+/// **A registry that is not there is whole**: a project with no vault registry, or no state
+/// folder yet, registers no vault, and keeps what every project keeps. So is one whose
+/// `plain-file` vault has no file on this machine yet: there is nothing of it here to keep.
+fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     let ctx = crate::secrets::Ctx::new(root, machine.env.clone());
     let mut paths = Vec::new();
     let mut deny = |class, path: PathBuf, access| {
@@ -1225,31 +1245,109 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> (Vec<Denial>, bool, Option<
             }
         }
     }
-    let registry = crate::secrets::registry::load_registry(&ctx);
-    let mut keyring = registry.is_err();
-    let mut unresolved = registry
-        .as_ref()
-        .err()
-        .map(|_| "the vault registry could not be read".to_string());
-    if let Ok(doc) = &registry {
-        for (name, _) in crate::secrets::registry::vaults(doc) {
-            let Ok(vault) = crate::secrets::registry::vault_in(doc, &name) else {
-                unresolved.get_or_insert_with(|| {
-                    format!("the vault registry's entry '{name}' could not be read")
-                });
-                continue;
-            };
-            match vault.provider.as_str() {
-                "plain-file" => match crate::secrets::plain_file::file_path(&ctx, &vault) {
-                    Ok(file) => deny(Class::Vaults, file, Access::ReadWrite),
-                    Err(_) => {
-                        unresolved.get_or_insert_with(|| {
-                            format!("the vault '{name}' does not say where its file is")
+    // Each half is read by itself, so every entry of either is judged, under any name.
+    use crate::secrets::registry;
+    let mut keyring = false;
+    let mut unresolved: Option<Untold> = None;
+    let mut notes: Vec<KeptNote> = Vec::new();
+    let unread = |file: PathBuf| Untold {
+        why: format!("the vault registry {} could not be read", file.display()),
+        registry: Some(file),
+    };
+    let halves = match registry::load_shared(&ctx) {
+        Err(_) => Err(unread(ctx.shared_registry())),
+        Ok(shared) => match registry::load_local(&ctx) {
+            Err(_) => Err(unread(ctx.local_registry())),
+            Ok(local) => Ok((shared, local)),
+        },
+    };
+    match halves {
+        Err(why) => {
+            keyring = true;
+            unresolved = Some(why);
+        }
+        Ok((shared, local)) => {
+            let files = [ctx.shared_registry(), ctx.local_registry()];
+            // An entry under a name purlis refuses, judged where it is written.
+            let mut entries: Vec<(String, serde_json::Map<String, serde_json::Value>, &PathBuf)> =
+                Vec::new();
+            for (half, file) in [&shared, &local].into_iter().zip(&files) {
+                match half.get("vaults") {
+                    None => {}
+                    Some(serde_json::Value::Object(named)) => {
+                        for (name, entry) in named {
+                            if let (false, Some(entry)) =
+                                (registry::name_ok(name), entry.as_object())
+                            {
+                                entries.push((name.clone(), entry.clone(), file));
+                            }
+                        }
+                    }
+                    Some(_) => {
+                        unresolved.get_or_insert_with(|| Untold {
+                            why: format!(
+                                "'vaults' in the vault registry {} is not a list of vaults",
+                                file.display()
+                            ),
+                            registry: Some(file.clone()),
                         });
                     }
-                },
-                "keyring" => keyring = true,
-                _ => {}
+                }
+            }
+            // And each vault of the two halves together, said to be in the half that says
+            // where its file is.
+            let doc = registry::merged(&shared, &local);
+            for (name, entry) in registry::vaults(&doc) {
+                let says_where = |half: &serde_json::Map<String, serde_json::Value>| {
+                    half.get("vaults")
+                        .and_then(|vaults| vaults.get(&name))
+                        .is_some_and(|entry| entry.get("config").is_some())
+                };
+                let file = if says_where(&local) || !scope_has(&shared, &name) {
+                    &files[1]
+                } else {
+                    &files[0]
+                };
+                if let Some(entry) = entry.as_object() {
+                    entries.push((name, entry.clone(), file));
+                }
+            }
+            // In one order, whatever order the files were written in.
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            for (name, entry, file) in entries {
+                let name = crate::personas::one_line(&name);
+                match judged(&ctx, &entry) {
+                    Judged::Kept(places) => {
+                        for place in places {
+                            deny(Class::Vaults, place, Access::ReadWrite);
+                        }
+                    }
+                    Judged::CredentialStore => keyring = true,
+                    Judged::Elsewhere => {}
+                    Judged::NotSetUp => notes.push(KeptNote::NotSetUp(name)),
+                    Judged::LeftOver(places) => {
+                        for place in places {
+                            deny(Class::Vaults, place, Access::ReadWrite);
+                        }
+                        notes.push(KeptNote::LeftOver(name));
+                    }
+                    Judged::UnknownKind(kind, places) => {
+                        for place in places {
+                            deny(Class::Vaults, place, Access::ReadWrite);
+                        }
+                        notes.push(KeptNote::UnknownKind { name, kind });
+                    }
+                    Judged::Unusable => {
+                        unresolved.get_or_insert_with(|| Untold {
+                            why: format!(
+                                "the vault '{name}' in the vault registry {} does not say where \
+                                 its file is",
+                                file.display()
+                            ),
+                            registry: Some(file.clone()),
+                        });
+                    }
+                }
             }
         }
     }
@@ -1360,7 +1458,404 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> (Vec<Denial>, bool, Option<
             );
         }
     }
-    (paths, keyring, unresolved)
+    // A vault's file is kept under the other names purlis finds for it in the project.
+    let mut vaults: Vec<PathBuf> = Vec::new();
+    for denial in &paths {
+        if denial.class == Class::Vaults && denial.access == Access::ReadWrite {
+            for place in [real(&denial.path), denial.path.clone()] {
+                if !vaults.contains(&place) {
+                    vaults.push(place);
+                }
+            }
+        }
+    }
+    match second_names(root, &vaults) {
+        Ok(found) => {
+            paths.extend(found.names.into_iter().map(|path| Denial {
+                class: Class::Vaults,
+                path,
+                access: Access::ReadWrite,
+                named: None,
+            }));
+            notes.extend(found.not_looked_in.into_iter().map(KeptNote::NotLookedIn));
+        }
+        Err(why) => {
+            unresolved.get_or_insert(why);
+        }
+    }
+    // A list that is not whole is never held by the store alone.
+    keyring |= unresolved.is_some();
+    KeptList {
+        paths,
+        keyring,
+        untold: unresolved,
+        notes,
+    }
+}
+
+/// Whether `half` of the registry has an entry named `name`.
+fn scope_has(half: &serde_json::Map<String, serde_json::Value>, name: &str) -> bool {
+    half.get("vaults")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|vaults| vaults.contains_key(name))
+}
+
+/// What [`kept_by_purlis`] answers.
+struct KeptList {
+    paths: Vec<Denial>,
+    /// Whether a vault here keeps its secrets in the credential store.
+    keyring: bool,
+    untold: Option<Untold>,
+    notes: Vec<KeptNote>,
+}
+
+/// **Why the list of what purlis keeps from a chat is not whole.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Untold {
+    /// Why, as a clause of a sentence, naming the file concerned.
+    pub why: String,
+    /// The half of the vault registry to put right, where that is the repair: the one file
+    /// the window still opens while nothing else of the project is read.
+    pub registry: Option<PathBuf>,
+}
+
+impl fmt::Display for Untold {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.why)
+    }
+}
+
+/// **What Doctor says of a list that is whole**: an entry of the registry that keeps nothing
+/// from starting and that a person would still want to know of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeptNote {
+    /// An entry that names no kind of vault: what is left on this machine of a vault the
+    /// project no longer registers.
+    LeftOver(String),
+    /// A vault of a kind this purlis does not know: one a newer purlis registered.
+    UnknownKind { name: String, kind: String },
+    /// A `plain-file` vault with no file on this machine yet.
+    NotSetUp(String),
+    /// A folder purlis could not look in for another name of a vault's file.
+    NotLookedIn(PathBuf),
+}
+
+impl fmt::Display for KeptNote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LeftOver(name) => write!(
+                f,
+                "'{name}' is left over on this machine: it names no kind of vault"
+            ),
+            Self::UnknownKind { name, kind } => write!(
+                f,
+                "'{name}' is a vault of a kind this purlis does not know ({kind}): update purlis"
+            ),
+            Self::NotSetUp(name) => write!(
+                f,
+                "'{name}' is not set up on this machine: it does not say where its file is"
+            ),
+            Self::NotLookedIn(folder) => write!(
+                f,
+                "purlis could not look in {} for another name of a vault's file",
+                folder.display()
+            ),
+        }
+    }
+}
+
+/// **What purlis says of its list for the project at `root`**, for Doctor: why it is not
+/// whole, if it is not, and what it noted while telling it.
+pub fn kept_said(root: &Path, machine: &Machine) -> (Option<Untold>, Vec<KeptNote>) {
+    let list = kept_by_purlis(root, machine);
+    (list.untold, list.notes)
+}
+
+/// **Whether chats in the project at `root` run sandboxed**, or may: its own file turned the
+/// sandbox on, an administrator's policy requires it, or the file that would say is gone or
+/// does not read, which never reads as "off".
+pub fn in_force_at(root: &Path) -> bool {
+    let plane = Plane::read(root);
+    plane.unreadable() || plane.missing() || plane.in_force(&policy::Locks::of(root)).is_some()
+}
+
+/// What one entry of the vault registry means for the list.
+enum Judged {
+    /// A vault that keeps its secrets in these places.
+    Kept(Vec<PathBuf>),
+    /// A vault that keeps its secrets in the credential store.
+    CredentialStore,
+    /// A vault of a kind purlis knows that keeps nothing on this machine's disk.
+    Elsewhere,
+    /// A `plain-file` vault with no file said yet.
+    NotSetUp,
+    /// An entry that names no kind, with every file it names.
+    LeftOver(Vec<PathBuf>),
+    /// An entry of a kind this purlis does not know, with every file it names.
+    UnknownKind(String, Vec<PathBuf>),
+    /// A vault of a known kind whose file is said in a way purlis cannot use.
+    Unusable,
+}
+
+/// `entry`, one entry of the vault registry in the project at `root`, judged.
+///
+/// A `plain-file` vault keeps the file it names. One that names none yet has no file on this
+/// machine. One whose `config` is not an object, or whose `file` is not a path, cannot be
+/// placed, and the list is not whole. **An entry keeps the files it names, whatever kind it
+/// says**: one of no kind, or of a kind this purlis does not know, keeps every `file` or `path`
+/// it gives, of its own or in its `config`, placed as a `plain-file` vault's file is.
+fn judged(ctx: &crate::secrets::Ctx, entry: &serde_json::Map<String, serde_json::Value>) -> Judged {
+    use serde_json::Value;
+    // Where a file said as `said` is: as it is written, and with every `..` step taken.
+    let placed = |said: &str| -> Vec<PathBuf> {
+        let written = ctx.vault_file_path(said);
+        let stepped = planted::lexical(&written);
+        if stepped == written {
+            vec![written]
+        } else {
+            vec![stepped, written]
+        }
+    };
+    let named = || -> Vec<PathBuf> {
+        let config = entry.get("config").and_then(Value::as_object);
+        let mut places = Vec::new();
+        for part in [Some(entry), config].into_iter().flatten() {
+            for key in ["file", "path"] {
+                let Some(said) = part.get(key).and_then(Value::as_str) else {
+                    continue;
+                };
+                if said.is_empty() {
+                    continue;
+                }
+                for place in placed(said) {
+                    if !places.contains(&place) {
+                        places.push(place);
+                    }
+                }
+            }
+        }
+        places
+    };
+    match entry.get("provider") {
+        None | Some(Value::Null) => Judged::LeftOver(named()),
+        Some(Value::String(kind)) if kind == "plain-file" => match entry.get("config") {
+            None | Some(Value::Null) => Judged::NotSetUp,
+            Some(Value::Object(config)) => match config.get("file") {
+                None | Some(Value::Null) => Judged::NotSetUp,
+                Some(Value::String(file)) if !file.is_empty() => Judged::Kept(placed(file)),
+                Some(_) => Judged::Unusable,
+            },
+            Some(_) => Judged::Unusable,
+        },
+        Some(Value::String(kind)) if kind == "keyring" => Judged::CredentialStore,
+        Some(Value::String(kind))
+            if crate::secrets::registry::PROVIDERS.contains(&kind.as_str()) =>
+        {
+            Judged::Elsewhere
+        }
+        Some(kind) => Judged::UnknownKind(
+            crate::personas::one_line(&match kind {
+                Value::String(kind) => kind.clone(),
+                other => other.to_string(),
+            }),
+            named(),
+        ),
+    }
+}
+
+/// The most entries of the vaults' own places [`second_names`] looks at.
+const MOST_KEPT_LOOKED_AT: usize = 20_000;
+
+/// The most entries of a project [`second_names`] looks through for a file's other names.
+const MOST_LOOKED_THROUGH: usize = 200_000;
+
+/// Folders [`second_names`] does not look in, at any depth: git's own, and what builds and
+/// package managers fill, which no review of a project lists.
+const NOT_LOOKED_IN: [&str; 3] = [".git", "target", "node_modules"];
+
+/// How long an answer of [`second_names`] is kept for the same files with the same number of
+/// names, so one start and the window's reads beside it look through the project once.
+const NAMES_KEPT_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// What [`second_names`] found.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct OtherNames {
+    /// The other names found, sorted.
+    names: Vec<PathBuf>,
+    /// Folders that could not be listed, and so were not looked in: said in Doctor.
+    not_looked_in: Vec<PathBuf>,
+}
+
+/// A file in a kept place that has more than one name: where it is, what it is, and how many
+/// names it has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Several {
+    path: PathBuf,
+    id: (u64, u64),
+    names: u64,
+}
+
+/// One kept answer of [`second_names`]: for which project and which files, when, and what.
+type NamesKept = (
+    PathBuf,
+    Vec<Several>,
+    std::time::Instant,
+    Result<OtherNames, Untold>,
+);
+
+/// **The other names purlis finds, in the project at `root`, of every file at or under `kept`**
+/// (each kept place as written or as the kernel names it): a file with more than one name is
+/// the same file under each, so each name found is kept as the file is. The project is looked
+/// through only where a kept file has more than one name, which a vault's file as purlis
+/// writes it never has; and once for the same files with the same number of names
+/// ([`NAMES_KEPT_FOR`]), so a start and the window's reads do not each look again.
+///
+/// Refused, naming the file, where the project holds more entries than are looked through. A
+/// folder that cannot be listed is not looked in, and is answered so Doctor says so. No link
+/// is followed, and [`NOT_LOOKED_IN`] is not looked in.
+fn second_names(root: &Path, kept: &[PathBuf]) -> Result<OtherNames, Untold> {
+    static KEPT: std::sync::Mutex<Vec<NamesKept>> = std::sync::Mutex::new(Vec::new());
+    let several = several_names(kept, MOST_KEPT_LOOKED_AT)?;
+    if several.is_empty() {
+        return Ok(OtherNames::default());
+    }
+    let now = std::time::Instant::now();
+    let mut held = KEPT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    held.retain(|(_, _, when, _)| now.duration_since(*when) < NAMES_KEPT_FOR);
+    if let Some((_, _, _, answer)) = held
+        .iter()
+        .find(|(of, files, _, _)| of == root && *files == several)
+    {
+        return answer.clone();
+    }
+    let answer = names_in(root, kept, &several, MOST_LOOKED_THROUGH);
+    held.retain(|(of, _, _, _)| of != root);
+    held.push((root.to_path_buf(), several, now, answer.clone()));
+    answer
+}
+
+/// The files at or under `kept` that have more than one name, looking at no more than `most`
+/// entries. A kept folder that cannot be listed is kept whole by its own name, and whoever
+/// cannot list it is not one to say what is in it.
+#[cfg(unix)]
+fn several_names(kept: &[PathBuf], most: usize) -> Result<Vec<Several>, Untold> {
+    use std::os::unix::fs::MetadataExt as _;
+    let mut several: Vec<Several> = Vec::new();
+    let mut left = most;
+    let mut places: Vec<PathBuf> = kept.to_vec();
+    while let Some(place) = places.pop() {
+        let Ok(meta) = std::fs::symlink_metadata(&place) else {
+            continue;
+        };
+        if meta.is_dir() {
+            let Ok(listed) = std::fs::read_dir(&place) else {
+                continue;
+            };
+            for entry in listed.flatten() {
+                if left == 0 {
+                    return Err(Untold {
+                        why: format!(
+                            "{} holds more files than purlis looks at for a vault's file with \
+                             more than one name",
+                            place.display()
+                        ),
+                        registry: None,
+                    });
+                }
+                left -= 1;
+                places.push(entry.path());
+            }
+        } else if meta.is_file() && meta.nlink() > 1 {
+            let id = (meta.dev(), meta.ino());
+            if !several.iter().any(|one| one.id == id) {
+                several.push(Several {
+                    path: place,
+                    id,
+                    names: meta.nlink(),
+                });
+            }
+        }
+    }
+    several.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(several)
+}
+
+/// The names in the project at `root`, outside `kept`, of the files `several`, looking through
+/// no more than `most` entries.
+#[cfg(unix)]
+fn names_in(
+    root: &Path,
+    kept: &[PathBuf],
+    several: &[Several],
+    most: usize,
+) -> Result<OtherNames, Untold> {
+    use std::os::unix::fs::{DirEntryExt as _, MetadataExt as _};
+    let mut found = OtherNames::default();
+    let mut left = most;
+    let mut folders = vec![root.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        let Ok(listed) = std::fs::read_dir(&folder) else {
+            found.not_looked_in.push(folder);
+            continue;
+        };
+        for entry in listed.flatten() {
+            if left == 0 {
+                return Err(Untold {
+                    why: format!(
+                        "the vault file {} has more than one name, and this project holds more \
+                         files than purlis looks through for the others",
+                        several[0].path.display()
+                    ),
+                    registry: None,
+                });
+            }
+            left -= 1;
+            let path = entry.path();
+            if kept.iter().any(|it| path.starts_with(it)) {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                if !NOT_LOOKED_IN
+                    .iter()
+                    .any(|name| entry.file_name() == std::ffi::OsStr::new(name))
+                {
+                    folders.push(path);
+                }
+            } else if kind.is_file()
+                && several.iter().any(|one| one.id.1 == entry.ino())
+                && entry
+                    .metadata()
+                    .is_ok_and(|meta| several.iter().any(|one| one.id == (meta.dev(), meta.ino())))
+            {
+                found.names.push(path);
+            }
+        }
+    }
+    found.names.sort();
+    found.not_looked_in.sort();
+    Ok(found)
+}
+
+/// Where a file has one name, nothing more is kept.
+#[cfg(not(unix))]
+fn several_names(_kept: &[PathBuf], _most: usize) -> Result<Vec<Several>, Untold> {
+    Ok(Vec::new())
+}
+
+/// Where a file has one name, nothing more is kept.
+#[cfg(not(unix))]
+fn names_in(
+    _root: &Path,
+    _kept: &[PathBuf],
+    _several: &[Several],
+    _most: usize,
+) -> Result<OtherNames, Untold> {
+    Ok(OtherNames::default())
 }
 
 /// **Every path no chat in the plane at `root` may read**, each as written and as the kernel
@@ -1372,12 +1867,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> (Vec<Denial>, bool, Option<
 /// What the window's own file reads leave out too (`crate::files`, the plane root's files):
 /// the window's exclusion list and the sandbox's read denials are one list.
 ///
-/// **Refused, with why, when the list cannot be told whole**: the vault registry did not read,
-/// or a vault in it does not say where it keeps its secrets. A reader that would list files by
-/// a list that may be short lists nothing instead.
-pub fn kept_from_reading(root: &Path, machine: &Machine) -> Result<Vec<PathBuf>, String> {
-    let (paths, _, unresolved) = kept_by_purlis(root, machine);
-    if let Some(why) = unresolved {
+/// **Refused, with why, when the list cannot be told whole** ([`Denied::untold`]): the vault
+/// registry does not read, or a vault in it says where its file is in a way purlis cannot
+/// use. A reader that would list files by a list that may be short lists nothing instead, as a
+/// chat does not start under one.
+pub fn kept_from_reading(root: &Path, machine: &Machine) -> Result<Vec<PathBuf>, Untold> {
+    let KeptList { paths, untold, .. } = kept_by_purlis(root, machine);
+    if let Some(why) = untold {
         return Err(why);
     }
     let denied = Denied {
@@ -2613,6 +3109,11 @@ fn compile_checked(
     if let Some(unread) = &compiled.denied.unread {
         return Err(NotStarted::Unread(unread.clone()));
     }
+    // Before any compiler is asked: no harness's sandbox is made from a list that may be
+    // short of what purlis keeps from a chat.
+    if let Some(why) = &compiled.denied.untold {
+        return Err(NotStarted::KeptUntold(why.clone()));
+    }
     let ground = ground(root, machine.home.as_deref());
     if let Some(refused) = covering(&compiled.denied.paths, &ground) {
         return Err(refused.placed_in(root));
@@ -3138,6 +3639,10 @@ pub enum NotStarted {
     /// A config's commands change folder or name scripts more often than purlis follows
     /// ([`planted::MOST_MOVES`], [`planted::MOST_NAMED`]), so what they run is not known.
     Unread(Named),
+    /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
+    /// a sandbox compiled from a list that may be short would keep less than purlis means to,
+    /// so none is compiled and the chat is not started.
+    KeptUntold(Untold),
     /// A person asked to start the chat without the sandbox, and an administrator's policy
     /// forbids it (#1343): why, naming the policy and who set it.
     OptOutLocked(String),
@@ -3315,6 +3820,17 @@ impl NotStarted {
                     ", or start this chat without the sandbox from the new-chat picker."
                 } else {
                     "."
+                }
+            ),
+            Self::KeptUntold(untold) => format!(
+                "{lead}, and {untold}, so purlis cannot tell what to keep from this chat, and \
+                 nothing was started. {} and start the chat again.",
+                match untold.registry {
+                    Some(_) => {
+                        "Doctor says what is wrong: put that file right, or remove the vault \
+                         in its view,"
+                    }
+                    None => "Doctor says which file: leave it one name,",
                 }
             ),
             Self::OptOutLocked(why) => format!("{why} Nothing was started."),
@@ -3960,6 +4476,7 @@ pub fn ahead(
             | NotStarted::Uncompilable(_)
             | NotStarted::CoversItsGround { .. }
             | NotStarted::Unread(_)
+            | NotStarted::KeptUntold(_)
             | NotStarted::PlaneUnreadable
             | NotStarted::PlaneMissing
             | NotStarted::OptOutLocked(_)
@@ -4039,6 +4556,8 @@ mod codex_tests;
 mod egress_tests;
 #[cfg(test)]
 mod hosts_tests;
+#[cfg(test)]
+mod kept_tests;
 #[cfg(test)]
 mod opencode_tests;
 #[cfg(test)]

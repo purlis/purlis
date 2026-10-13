@@ -23,7 +23,13 @@
 //! together. A file with more than one name is refused when one of its names is in a kept
 //! folder.
 //!
-//! Every other branch reads as it did: [`Kept::of`] answers a guard that keeps nothing.
+//! **A branch's folder leaves out the same files** (ADR 0038 as amended): a workspace's clone
+//! is inside the project, so a vault's file may be registered in one and a kept file may have a
+//! name in one. [`Kept::of`] answers every place with the one list, and only the plane root
+//! with the rule for clones. Where the list cannot be told whole, a branch's files are not
+//! read either, in a project that runs its chats sandboxed; where it runs none sandboxed there
+//! is no such list in force, and a branch reads as it always did. At the plane root the one
+//! file that still opens is the half of the vault registry to put right.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -33,11 +39,14 @@ use super::{Branch, Refused};
 /// several names. Past it the file is refused: purlis could not tell, so it does not open.
 const WALKED: usize = 20_000;
 
-/// What a read of one place leaves out: nothing, but at the plane root.
+/// What a read of one place leaves out: what purlis keeps to itself, in every place, and at
+/// the plane root everything of a workspace's clone too.
 #[derive(Debug)]
 pub(super) struct Kept {
-    /// Whether this is the plane root's guard. Every other place keeps nothing.
+    /// Whether this guard keeps anything: every place of a project's.
     on: bool,
+    /// Whether this is the plane root's guard, which alone holds the rule for clones.
+    root: bool,
     /// The place's folder, resolved.
     base: PathBuf,
     /// What purlis keeps to itself: absolute paths, as written and as the kernel names them.
@@ -48,7 +57,7 @@ pub(super) struct Kept {
     workspaces: Vec<String>,
     /// Why nothing of the place is read at all: the list of what purlis keeps could not be
     /// told whole. `None` when it could.
-    unread: Option<String>,
+    unread: Option<crate::sandbox::Untold>,
     /// Why nothing under `workspaces/` is read: the project's workspaces could not be listed,
     /// so a clone cannot be told from a folder of the project's own.
     unlisted: Option<String>,
@@ -103,31 +112,51 @@ fn under(path: &Path, root: &Path) -> bool {
 }
 
 impl Kept {
-    /// The guard of `branch`, whose folder is resolved to `base`, on this machine.
-    pub(super) fn of(base: &Path, branch: Branch<'_>) -> Self {
+    /// The guard of `branch` in the project at `plane`, its folder resolved to `base`, on
+    /// this machine.
+    pub(super) fn of(plane: &Path, base: &Path, branch: Branch<'_>) -> Self {
+        let machine = crate::sandbox::Machine::this();
         if branch.is_plane_root() {
-            Self::at_the_root(base, &crate::sandbox::Machine::this())
+            Self::at_the_root(base, &machine)
         } else {
-            Self::nothing(base)
+            Self::in_a_branch(plane, base, &machine)
         }
     }
 
-    /// A guard that keeps nothing: every branch but the plane root.
-    pub(super) fn nothing(base: &Path) -> Self {
+    /// The guard of a branch's folder, resolved to `base`, in the project at `plane` on
+    /// `machine`: what the project keeps to itself, wherever in the folder it is.
+    pub(super) fn in_a_branch(
+        plane: &Path,
+        base: &Path,
+        machine: &crate::sandbox::Machine,
+    ) -> Self {
+        let plane = std::fs::canonicalize(plane).unwrap_or_else(|_| plane.to_path_buf());
+        let (private, ids, mut unread) = Self::private_in(&plane, machine);
+        // The list is what a chat is kept from. Where the project runs no chat sandboxed
+        // there is no such list in force, so a branch whose list cannot be told is read as a
+        // branch always was; the plane root keeps its own rule.
+        if unread.is_some() && !crate::sandbox::in_force_at(&plane) {
+            unread = None;
+        }
         Self {
-            on: false,
+            on: true,
+            root: false,
             base: base.to_path_buf(),
-            private: Vec::new(),
-            ids: Vec::new(),
+            private,
+            ids,
             workspaces: Vec::new(),
-            unread: None,
+            unread,
             unlisted: None,
         }
     }
 
-    /// The plane root's guard, the project's folder resolved to `base`, on `machine`.
-    pub(super) fn at_the_root(base: &Path, machine: &crate::sandbox::Machine) -> Self {
-        let (private, unread) = match crate::sandbox::kept_from_reading(base, machine) {
+    /// What purlis keeps to itself in the project at `plane` on `machine`, with the identity
+    /// of each that is there — or why that could not be told whole.
+    fn private_in(
+        plane: &Path,
+        machine: &crate::sandbox::Machine,
+    ) -> (Vec<PathBuf>, Vec<Id>, Option<crate::sandbox::Untold>) {
+        let (private, unread) = match crate::sandbox::kept_from_reading(plane, machine) {
             Ok(private) => (private, None),
             Err(why) => (Vec::new(), Some(why)),
         };
@@ -142,12 +171,19 @@ impl Kept {
                 }
             }
         }
+        (private, ids, unread)
+    }
+
+    /// The plane root's guard, the project's folder resolved to `base`, on `machine`.
+    pub(super) fn at_the_root(base: &Path, machine: &crate::sandbox::Machine) -> Self {
+        let (private, ids, unread) = Self::private_in(base, machine);
         let (workspaces, unlisted) = match crate::workspaces::Plane::open(base).workspaces() {
             Ok(workspaces) => (workspaces, None),
             Err(why) => (Vec::new(), Some(why.to_string())),
         };
         Self {
             on: true,
+            root: true,
             base: base.to_path_buf(),
             private,
             ids,
@@ -212,7 +248,7 @@ impl Kept {
     /// a `.git` of its own. purlis's own folders under a workspace start with a dot, and none
     /// is a repo.
     pub(super) fn clone_of(&self, relative: &Path) -> Option<&str> {
-        if !self.on {
+        if !self.root {
             return None;
         }
         let mut steps = relative.components();
@@ -242,8 +278,17 @@ impl Kept {
         // The list that says what to leave out could not be told whole: nothing is read by a
         // list that may be short, the place's own folder included.
         if let Some(why) = &self.unread {
+            // But the one file to put right, so the person can read what is wrong with it.
+            if self.is_the_registry_to_put_right(relative) {
+                return Ok(());
+            }
             return Err(Refused::Unreadable {
-                what: "the project's own files".to_string(),
+                what: if self.root {
+                    "the project's own files"
+                } else {
+                    "this folder's files"
+                }
+                .to_string(),
                 why: format!(
                     "{why}, so purlis cannot tell which files are a vault's. Doctor says \
                      what is wrong with it"
@@ -275,6 +320,18 @@ impl Kept {
         Ok(())
     }
 
+    /// Whether `relative` is the half of the vault registry that keeps the list from being
+    /// told whole, at the plane root: the one file that still opens there, so what is wrong
+    /// with it can be read in the window.
+    fn is_the_registry_to_put_right(&self, relative: &Path) -> bool {
+        self.root
+            && self
+                .unread
+                .as_ref()
+                .and_then(|untold| untold.registry.as_ref())
+                .is_some_and(|registry| *registry == self.base.join(relative))
+    }
+
     /// [`Self::refuse`] for a path the disk resolved, as a link's target is: outside the
     /// place it is not this guard's to judge, and the caller refuses it.
     pub(super) fn refuse_resolved(&self, resolved: &Path, said: &str) -> Result<(), Refused> {
@@ -301,6 +358,10 @@ impl Kept {
         let Ok(meta) = file.metadata() else {
             return true;
         };
+        // The registry to put right opens as the one file it is: under no other name of it.
+        if self.unread.is_some() && names_of(&meta) > 1 {
+            return true;
+        }
         let Some(id) = id_of(&meta) else {
             return false;
         };
@@ -335,17 +396,50 @@ impl Kept {
         false
     }
 
-    /// `offered`, a place's offered list, without what the plane root does not read: nothing
-    /// purlis keeps to itself and nothing of a workspace's clone is offered, so neither opens
-    /// and neither is found.
+    /// `offered`, a place's offered list, without what the place does not read: nothing
+    /// purlis keeps to itself and, at the plane root, nothing of a workspace's clone is
+    /// offered, so neither opens and neither is found.
+    ///
+    /// **Nothing is offered by a list that may be short**: where what purlis keeps could not be
+    /// told whole the list holds at most the registry to put right, and where the workspaces could not be listed
+    /// nothing under `workspaces/` stays on it, whoever asks and whatever was refused before.
     pub(super) fn offered(&self, offered: &mut Vec<String>) {
         if !self.on {
             return;
         }
+        if self.unread.is_some() {
+            offered.retain(|path| self.is_the_registry_to_put_right(Path::new(path)));
+            return;
+        }
         offered.retain(|path| {
             let relative = Path::new(path);
-            !self.private(relative) && self.clone_of(relative).is_none()
+            let unlisted = self.unlisted.is_some()
+                && relative
+                    .components()
+                    .next()
+                    .is_some_and(|first| folded(first) == "workspaces");
+            // A branch's list is judged by spelling, as [`Self::listed_private`] says why.
+            let private = if self.root {
+                self.private(relative)
+            } else {
+                self.listed_private(relative)
+            };
+            !unlisted && !private && self.clone_of(relative).is_none()
         });
+    }
+
+    /// Whether `relative`, one path of a list of the place's files, is or is under something
+    /// purlis keeps to itself, **by its spelling alone**: a list may hold every file of a
+    /// branch, and the disk is not asked about each. What a path IS is asked where a file is
+    /// opened ([`Self::refuse`], [`Self::holds_a_name_of`]).
+    pub(super) fn listed_private(&self, relative: &Path) -> bool {
+        self.on && self.spelled_private(&self.base.join(relative))
+    }
+
+    /// Refused where nothing of the place is read: the list of what purlis keeps could not be
+    /// told whole.
+    pub(super) fn whole(&self) -> Result<(), Refused> {
+        self.refuse(Path::new(""), "")
     }
 }
 
@@ -544,9 +638,12 @@ mod tests {
         std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
         let kept = Kept::at_the_root(&base, &machine(&base.join("home")));
 
-        let said = "purlis could not read 'the project's own files': the vault registry could \
-                    not be read, so purlis cannot tell which files are a vault's. Doctor says \
-                    what is wrong with it";
+        let said = format!(
+            "purlis could not read 'the project's own files': the vault registry {} could not \
+             be read, so purlis cannot tell which files are a vault's. Doctor says what is \
+             wrong with it",
+            base.join("vaults.json").display()
+        );
         // The place's own folder, a file of its own, and the vault's file: none is read.
         for path in ["", "README.md", "secrets/dev.json", "docs"] {
             assert_eq!(
@@ -555,6 +652,88 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn the_registry_to_put_right_is_the_one_file_that_still_opens_at_the_plane_root() {
+        let (_dir, base, _) = project();
+        std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
+        let home = base.join("home");
+        let kept = Kept::at_the_root(&base, &machine(&home));
+
+        assert!(kept.refuse(Path::new("vaults.json"), "vaults.json").is_ok());
+        // Under no other spelling, and nothing beside it.
+        for path in ["Vaults.json", "docs/vaults.json", "vaults.json/x", ""] {
+            assert!(kept.refuse(Path::new(path), path).is_err(), "{path}");
+        }
+        let mut offered = vec![
+            "README.md".to_string(),
+            "vaults.json".to_string(),
+            "docs/vaults.json".to_string(),
+        ];
+        kept.offered(&mut offered);
+        assert_eq!(offered, ["vaults.json".to_string()]);
+
+        // A branch's folder has no such file: nothing of it opens.
+        let clone = base.join("workspaces/alpha/svc");
+        let kept = Kept::in_a_branch(&base, &clone, &machine(&home));
+        assert!(
+            kept.refuse(Path::new("vaults.json"), "vaults.json")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn the_registry_to_put_right_does_not_open_where_it_is_another_name_of_a_file() {
+        let (_dir, base, _) = project();
+        // The key, under the registry's name: it does not read as a registry.
+        std::fs::hard_link(
+            base.join(state()).join("fingerprint.key"),
+            base.join("vaults.json"),
+        )
+        .unwrap();
+        let kept = Kept::at_the_root(&base, &machine(&base.join("home")));
+        assert!(kept.refuse(Path::new("README.md"), "README.md").is_err());
+        let opened = std::fs::File::open(base.join("vaults.json")).unwrap();
+        assert!(kept.holds_a_name_of(&opened));
+
+        // A registry of one name that does not read still opens.
+        std::fs::remove_file(base.join("vaults.json")).unwrap();
+        std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
+        let kept = Kept::at_the_root(&base, &machine(&base.join("home")));
+        let opened = std::fs::File::open(base.join("vaults.json")).unwrap();
+        assert!(!kept.holds_a_name_of(&opened));
+    }
+
+    #[test]
+    fn a_branch_is_read_as_ever_where_the_project_runs_no_chat_sandboxed() {
+        let (_dir, base, _) = project();
+        std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
+        let clone = base.join("workspaces/alpha/svc");
+        let home = base.join("home");
+        let read = |manifest: Option<&str>| {
+            match manifest {
+                Some(text) => std::fs::write(base.join("charter.toml"), text).unwrap(),
+                None => {
+                    let _ = std::fs::remove_file(base.join("charter.toml"));
+                }
+            }
+            let kept = Kept::in_a_branch(&base, &clone, &machine(&home));
+            (
+                kept.refuse(Path::new("main.rs"), "main.rs").is_ok(),
+                kept.whole().is_ok(),
+            )
+        };
+        // The sandbox is not on: there is no list in force, and the branch reads.
+        assert_eq!(read(Some("schema = 1\n")), (true, true));
+        // On, or not known to be off: the branch is not read by a list that is not whole.
+        assert_eq!(read(Some("[sandbox]\nmode = \"on\"\n")), (false, false));
+        assert_eq!(read(Some("not toml [")), (false, false));
+        assert_eq!(read(None), (false, false));
+        // The plane root keeps its own rule, whatever the sandbox is.
+        std::fs::write(base.join("charter.toml"), "schema = 1\n").unwrap();
+        let root = Kept::at_the_root(&base, &machine(&home));
+        assert!(root.refuse(Path::new("README.md"), "README.md").is_err());
     }
 
     #[test]
@@ -582,17 +761,151 @@ mod tests {
     }
 
     #[test]
-    fn a_guard_of_any_other_branch_keeps_nothing() {
+    fn nothing_is_offered_where_the_vault_registry_does_not_read() {
         let (_dir, base, _) = project();
-        let kept = Kept::of(&base, Branch::repo("alpha", "svc"));
-        let vault = Path::new(state()).join("vaults/forge.json");
-        assert!(!kept.private(&vault));
+        std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
+        let home = base.join("home");
+        for kept in [
+            Kept::at_the_root(&base, &machine(&home)),
+            Kept::in_a_branch(&base, &base.join("workspaces/alpha/svc"), &machine(&home)),
+        ] {
+            let mut offered = vec![
+                "README.md".to_string(),
+                "secrets/dev.json".to_string(),
+                "workspaces/alpha/workspace.md".to_string(),
+            ];
+            kept.offered(&mut offered);
+            assert_eq!(offered, Vec::<String>::new());
+        }
+    }
+
+    #[test]
+    fn nothing_under_workspaces_is_offered_where_the_workspaces_cannot_be_listed() {
+        let (_dir, base, _) = project();
+        std::fs::remove_dir_all(base.join("workspaces")).unwrap();
+        std::fs::write(base.join("workspaces"), "").unwrap();
+        let kept = Kept::at_the_root(&base, &machine(&base.join("home")));
+
+        let mut offered = vec![
+            "README.md".to_string(),
+            "workspaces/alpha/svc/main.rs".to_string(),
+            "Workspaces/alpha/workspace.md".to_string(),
+            format!("{}/sessions/one.md", state()),
+        ];
+        kept.offered(&mut offered);
+        assert_eq!(
+            offered,
+            [
+                "README.md".to_string(),
+                format!("{}/sessions/one.md", state())
+            ]
+        );
+    }
+
+    /// A project whose `plain-file` vault keeps its file in the clone `workspaces/alpha/svc`,
+    /// and the guard of that clone's folder.
+    fn clone_with_a_vault_file() -> (tempfile::TempDir, PathBuf, PathBuf, Kept) {
+        let (dir, base, _) = project();
+        let clone = base.join("workspaces/alpha/svc");
+        std::fs::create_dir_all(clone.join("secrets")).unwrap();
+        std::fs::write(clone.join("secrets/dev.json"), "{}").unwrap();
+        std::fs::write(
+            base.join("vaults.json"),
+            r#"{"vaults": {"dev": {"provider": "plain-file",
+                "config": {"file": "workspaces/alpha/svc/secrets/dev.json"}}}}"#,
+        )
+        .unwrap();
+        let kept = Kept::in_a_branch(&base, &clone, &machine(&base.join("home")));
+        (dir, base, clone, kept)
+    }
+
+    #[test]
+    fn a_branchs_folder_leaves_out_what_the_project_keeps_and_reads_the_rest() {
+        let (_dir, _base, _clone, kept) = clone_with_a_vault_file();
+        assert!(kept.on());
+        assert!(kept.private(Path::new("secrets/dev.json")));
+        assert!(kept.private(Path::new("Secrets/DEV.json")));
+        assert_eq!(
+            kept.refuse(Path::new("secrets/dev.json"), "secrets/dev.json")
+                .unwrap_err()
+                .to_string(),
+            "'secrets/dev.json' is one of the files purlis keeps to itself (vaults, keys and \
+             its own records), so it is not listed or opened here"
+        );
+        assert!(kept.private_entry(Path::new("secrets"), "dev.json".as_ref()));
+        // The rest of the clone reads as ever, and the rule for clones is the plane root's.
+        for path in ["", "main.rs", "secrets", "workspaces/alpha/svc/main.rs"] {
+            assert!(kept.refuse(Path::new(path), path).is_ok(), "{path}");
+        }
         assert_eq!(
             kept.clone_of(Path::new("workspaces/alpha/svc/main.rs")),
             None
         );
-        let mut offered = vec![format!("{}/vaults/forge.json", state())];
+        let mut offered = vec!["main.rs".to_string(), "secrets/dev.json".to_string()];
         kept.offered(&mut offered);
-        assert_eq!(offered.len(), 1);
+        assert_eq!(offered, ["main.rs".to_string()]);
+    }
+
+    #[test]
+    fn a_list_of_a_branchs_changes_leaves_out_a_kept_file_at_either_end_of_a_move() {
+        let (_dir, _base, _clone, kept) = clone_with_a_vault_file();
+        let left_out = crate::files::compare::kept_from_a_list;
+        assert!(left_out(&kept, "secrets/dev.json", None));
+        assert!(left_out(&kept, "SECRETS/dev.json", None));
+        assert!(left_out(
+            &kept,
+            "notes/moved.json",
+            Some("secrets/dev.json")
+        ));
+        assert!(left_out(&kept, "secrets/dev.json", Some("notes/old.json")));
+        assert!(!left_out(&kept, "main.rs", None));
+        assert!(!left_out(&kept, "main.rs", Some("old.rs")));
+        // A list is read where the kept list is whole, and not where it is not.
+        assert!(kept.whole().is_ok());
+    }
+
+    #[test]
+    fn no_list_of_a_branchs_changes_is_read_where_the_vault_registry_does_not_read() {
+        let (_dir, base, _) = project();
+        std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
+        let clone = base.join("workspaces/alpha/svc");
+        let kept = Kept::in_a_branch(&base, &clone, &machine(&base.join("home")));
+        assert!(kept.whole().is_err());
+    }
+
+    #[test]
+    fn a_second_name_in_a_branchs_folder_of_a_kept_file_does_not_open_there() {
+        let (_dir, base, clone, kept) = clone_with_a_vault_file();
+        // Made after the guard: found by what the file is.
+        let beside = clone.join("harmless.json");
+        std::fs::hard_link(base.join(state()).join("vaults/forge.json"), &beside).unwrap();
+        std::fs::hard_link(clone.join("main.rs"), clone.join("main.again")).unwrap();
+        let opened = |path: &Path| std::fs::File::open(path).unwrap();
+        assert!(kept.holds_a_name_of(&opened(&beside)));
+        assert!(!kept.holds_a_name_of(&opened(&clone.join("main.again"))));
+
+        // There when the guard is made: kept by its name too.
+        let kept = Kept::in_a_branch(&base, &clone, &machine(&base.join("home")));
+        assert!(kept.private(Path::new("harmless.json")));
+    }
+
+    #[test]
+    fn a_branchs_files_are_not_read_where_the_vault_registry_does_not_read() {
+        let (_dir, base, _) = project();
+        std::fs::write(base.join("vaults.json"), "{ not json").unwrap();
+        let clone = base.join("workspaces/alpha/svc");
+        let kept = Kept::in_a_branch(&base, &clone, &machine(&base.join("home")));
+        for path in ["", "main.rs"] {
+            assert_eq!(
+                kept.refuse(Path::new(path), path).unwrap_err().to_string(),
+                format!(
+                    "purlis could not read 'this folder's files': the vault registry {} could \
+                     not be read, so purlis cannot tell which files are a vault's. Doctor says \
+                     what is wrong with it",
+                    base.join("vaults.json").display()
+                ),
+                "{path}"
+            );
+        }
     }
 }

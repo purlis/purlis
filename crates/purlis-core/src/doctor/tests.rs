@@ -3197,6 +3197,61 @@ fn the_sandbox_row_sits_after_the_version_lock() {
     assert_eq!(names[at + 1], "sandbox");
 }
 
+// ---- sandbox kept files -------------------------------------------------------------------------
+
+#[test]
+fn a_project_whose_list_is_whole_prints_no_kept_files_row() {
+    for toml in ["schema = 1\n", "schema = 1\n[sandbox]\nmode = \"on\"\n"] {
+        let (_d, root) = plane(toml);
+        assert!(
+            !doctor(&root)
+                .run()
+                .iter()
+                .any(|r| r.name == "sandbox kept files"),
+            "{toml}"
+        );
+    }
+}
+
+#[test]
+fn a_list_that_is_not_whole_is_said_with_the_sandbox_on_and_with_it_off() {
+    for (toml, hint) in [
+        (
+            "schema = 1\n[sandbox]\nmode = \"on\"\n",
+            "No sandboxed chat starts in this project",
+        ),
+        (
+            "schema = 1\n",
+            "The project's own files are not listed in the window",
+        ),
+    ] {
+        let (_d, root) = plane(toml);
+        std::fs::write(root.join("vaults.json"), "{ not json").unwrap();
+        let row = one(&root, "sandbox kept files");
+        assert_eq!(row.status, Status::Warn, "{toml}");
+        assert!(
+            row.detail
+                .starts_with("purlis cannot tell what to keep from a chat: the vault registry "),
+            "{}",
+            row.detail
+        );
+        assert!(row.hint.starts_with(hint), "{toml}: {}", row.hint);
+    }
+}
+
+#[test]
+fn the_kept_files_row_sits_after_the_sandbox_row() {
+    let (_d, root) = plane("schema = 1\n[sandbox]\nmode = \"on\"\n");
+    std::fs::write(
+        root.join("vaults.json"),
+        r#"{"vaults": {"odd": {"provider": "carrier-pigeon"}}}"#,
+    )
+    .unwrap();
+    let names: Vec<String> = doctor(&root).run().into_iter().map(|r| r.name).collect();
+    let at = names.iter().position(|n| n == "sandbox").unwrap();
+    assert_eq!(names[at + 1], "sandbox kept files");
+}
+
 // ---- sandbox blocks (#1338) --------------------------------------------------------------------
 
 /// A project with no manifest of its own: the network record is all the row reads, kept under

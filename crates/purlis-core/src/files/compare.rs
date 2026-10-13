@@ -316,7 +316,11 @@ pub(super) fn what_changed_here(
     path: &str,
 ) -> Result<Shown, Refused> {
     let opened = open(plane, branch)?;
-    let relative = super::named_in(&super::Kept::of(&opened.base, branch), &opened.base, path)?;
+    let relative = super::named_in(
+        &super::Kept::of(plane, &opened.base, branch),
+        &opened.base,
+        path,
+    )?;
     let compared = compared_in(
         plane,
         branch,
@@ -419,6 +423,13 @@ pub(super) enum At {
     WorkingTree,
 }
 
+/// Whether a change at `path`, moved from `from`, is left out of a list of a place's changes:
+/// either name is something purlis keeps to itself ([`super::Kept::listed_private`]).
+pub(super) fn kept_from_a_list(kept: &super::Kept, path: &str, from: Option<&str>) -> bool {
+    kept.listed_private(Path::new(path))
+        || from.is_some_and(|from| kept.listed_private(Path::new(from)))
+}
+
 /// [`compare`], in this process: only the bounded reader's child calls it.
 pub(super) fn compare_here(
     plane: &Path,
@@ -442,6 +453,8 @@ fn compared_in(
         what: format!("the changes of {}", branch.called()),
         why,
     };
+    let kept = super::Kept::of(plane, &opened.base, branch);
+    kept.whole()?;
     let (since, head, named) = resolve(plane, branch, opened, comparison)?;
     // The folder is held for a commit's head too: git reads the attributes from the working
     // tree whatever it compares. Not held, only the bytes and `info/attributes` decide then.
@@ -452,10 +465,13 @@ fn compared_in(
     let Changed {
         mut repo,
         head_tree,
-        changes: all,
+        changes: mut all,
         unread,
         refused: mut refused_all,
     } = changed_with(&opened.repo, since, head, held.as_ref(), true).map_err(unreadable)?;
+    // What purlis keeps to itself is not among a comparison's files, at either end of a move.
+    all.retain(|change| !kept_from_a_list(&kept, &change.path, change.from.as_deref()));
+    refused_all.retain(|change| !kept_from_a_list(&kept, &change.path, None));
     let more = all.len().saturating_sub(MARKED) + refused_all.len().saturating_sub(MARKED);
     refused_all.truncate(MARKED);
     let listed = all.iter().take(MARKED);
@@ -552,6 +568,12 @@ fn file_diff_in(
     from: Option<String>,
     whitespace: Whitespace,
 ) -> Result<FileDiff, Refused> {
+    // What purlis keeps to itself is compared in no place, under either name of a move.
+    let kept = super::Kept::of(plane, &opened.base, branch);
+    kept.refuse(Path::new(&path), &path)?;
+    if let Some(from) = &from {
+        kept.refuse(Path::new(from), from)?;
+    }
     let what = path.clone();
     let unreadable = |why: String| Refused::Unreadable {
         what: what.clone(),

@@ -272,11 +272,13 @@ pub enum Refused {
 /// build output is not offered.
 pub fn list(plane: &Path, branch: Branch<'_>) -> Result<Vec<String>, Refused> {
     let folder = folder_of(plane, branch)?;
-    if !branch.is_plane_root() {
-        return files_in(&folder, branch);
-    }
     let base = resolved(&folder, branch)?;
-    Via::Here.offered(&Kept::of(&base, branch), &base, branch)
+    if !branch.is_plane_root() {
+        let mut files = files_in(&folder, branch)?;
+        Kept::of(plane, &base, branch).offered(&mut files);
+        return Ok(files);
+    }
+    Via::Here { plane }.offered(&Kept::of(plane, &base, branch), &base, branch)
 }
 
 /// One folder level of a branch: its first [`SHOWN`] entries, and how many more it holds.
@@ -305,7 +307,12 @@ pub struct Folder {
 /// a link out of the branch or to an ignored file, something that is not a file (a FIFO, a
 /// socket), anything inside another repository nested in this one, and an ignored file.
 pub fn tree(plane: &Path, branch: Branch<'_>, folder: &str) -> Result<Folder, Refused> {
-    tree_in(Via::Here, &base_of(plane, branch)?, branch, folder)
+    tree_in(
+        Via::Here { plane },
+        &base_of(plane, branch)?,
+        branch,
+        folder,
+    )
 }
 
 /// What a workspace's clone says at the plane root, where it is one row (ruling F2).
@@ -315,7 +322,7 @@ fn of_workspace(ws: &str) -> String {
 
 /// [`tree`] in a branch whose folder is already resolved to `base`.
 fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Result<Folder, Refused> {
-    let kept = Kept::of(base, branch);
+    let kept = Kept::of(via.plane(), base, branch);
     let relative = folder_in(&kept, base, folder)?;
     let base = base.to_path_buf();
     let dir = base.join(&relative);
@@ -337,7 +344,7 @@ fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Resul
             unreadable(e)
         }
     })?;
-    // At the plane root, what purlis keeps to itself is not listed at all, nor counted.
+    // What purlis keeps to itself is not listed at all, nor counted.
     listed.retain(|one| !kept.private_entry(&relative, &one.name));
     listed.sort_by(|a, b| {
         (a.kind != Kind::Folder)
@@ -426,7 +433,7 @@ fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Resul
     // answers both in one ask, for every path, and the answers about paths the submodules rule
     // out are not used.
     let answered = match via {
-        Via::Here => None,
+        Via::Here { .. } => None,
         Via::Reader { reader, plane } => {
             let paths: Vec<PathBuf> = asked
                 .iter()
@@ -756,7 +763,7 @@ fn listing(base: &Path, relative: &Path) -> std::io::Result<Vec<Listed>> {
 /// the tree hears an agent add or remove a file in it. Refused exactly as [`tree`] refuses it.
 pub fn folder(plane: &Path, branch: Branch<'_>, folder: &str) -> Result<PathBuf, Refused> {
     let base = base_of(plane, branch)?;
-    folder_of_in(&Kept::of(&base, branch), &base, folder)
+    folder_of_in(&Kept::of(plane, &base, branch), &base, folder)
 }
 
 /// [`folder`] in a branch whose folder is already resolved to `base`.
@@ -768,12 +775,13 @@ fn folder_of_in(kept: &Kept, base: &Path, folder: &str) -> Result<PathBuf, Refus
 /// lot rather than one per folder. At most [`WATCHED`] are resolved; the rest are answered as
 /// refused.
 pub fn folders(plane: &Path, branch: Branch<'_>, named: &[&str]) -> Vec<Result<PathBuf, Refused>> {
-    folders_in(base_of(plane, branch), branch, named)
+    folders_in(plane, base_of(plane, branch), branch, named)
 }
 
 /// [`folders`] in a branch whose folder resolved to `base`, or refused: every one of `named` is
 /// then refused with its sentence.
 fn folders_in(
+    plane: &Path,
     base: Result<PathBuf, Refused>,
     branch: Branch<'_>,
     named: &[&str],
@@ -793,7 +801,7 @@ fn folders_in(
                 .collect();
         }
     };
-    let kept = Kept::of(&base, branch);
+    let kept = Kept::of(plane, &base, branch);
     named
         .iter()
         .enumerate()
@@ -902,16 +910,24 @@ fn files_in_until(
 /// agent can write. Either answers the same lists; only who reads them differs.
 #[derive(Debug, Clone, Copy)]
 enum Via<'a> {
-    Here,
+    Here { plane: &'a Path },
     Reader { reader: &'a Reader, plane: &'a Path },
 }
 
 impl Via<'_> {
+    /// The project the branch is in, whoever reads its git: what a place's guard is made for
+    /// ([`Kept::of`]).
+    fn plane(&self) -> &Path {
+        match self {
+            Via::Here { plane } | Via::Reader { plane, .. } => plane,
+        }
+    }
+
     /// The offered list of `branch`, whose folder is resolved to `base`: [`list`]'s answer,
     /// less what `kept` leaves out at the plane root.
     fn offered(self, kept: &Kept, base: &Path, branch: Branch<'_>) -> Result<Vec<String>, Refused> {
         let mut offered = match self {
-            Via::Here => files_in(base, branch)?,
+            Via::Here { .. } => files_in(base, branch)?,
             Via::Reader { reader, plane } => {
                 let never = std::sync::atomic::AtomicBool::new(false);
                 match offered_by(reader, plane, branch, None, &never)? {
@@ -1254,12 +1270,12 @@ fn natural(a: &str, b: &str) -> std::cmp::Ordering {
 /// (through a link) to somewhere outside the branch. A link to another offered file of the same
 /// branch opens, as `CLAUDE.md` linked to `AGENTS.md` does in many repos.
 pub fn open(plane: &Path, branch: Branch<'_>, path: &str) -> Result<Opened, Refused> {
-    open_in(Via::Here, &base_of(plane, branch)?, branch, path)
+    open_in(Via::Here { plane }, &base_of(plane, branch)?, branch, path)
 }
 
 /// [`open`] in a branch whose folder is already resolved to `base`.
 fn open_in(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<Opened, Refused> {
-    let kept = Kept::of(base, branch);
+    let kept = Kept::of(via.plane(), base, branch);
     let resolved = locate(via, &kept, base, branch, path)?;
     // The resolved path has no link on it, so the open refuses one planted since.
     let mut file = crate::contain::open_no_link(base, &resolved).map_err(|e| {
@@ -1280,8 +1296,8 @@ fn open_in(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<
     if !meta.is_file() {
         return Err(Refused::NotAFile(path.to_string()));
     }
-    // Asked of the file that was opened, so it is the one read: at the plane root, a second
-    // name of a file purlis keeps to itself opens no more than its first.
+    // Asked of the file that was opened, so it is the one read: a second name of a file
+    // purlis keeps to itself opens no more than its first.
     if kept.holds_a_name_of(&file) {
         return Err(Refused::KeptPrivate(path.to_string()));
     }
@@ -1372,7 +1388,7 @@ pub struct Placed {
 /// placed like any other: the tree draws it when asked, and nothing here reads its bytes.
 pub fn place(plane: &Path, branch: Branch<'_>, path: &str) -> Result<Placed, Refused> {
     let base = base_of(plane, branch)?;
-    place_in(&Kept::of(&base, branch), &base, path)
+    place_in(&Kept::of(plane, &base, branch), &base, path)
 }
 
 /// [`place`] in a branch whose folder is already resolved to `base`.
@@ -1464,7 +1480,7 @@ fn place_named_folder(named: &Path, branch: Branch<'_>) -> Result<Placed, Refuse
 pub fn named(plane: &Path, branch: Branch<'_>, path: &str) -> Result<String, Refused> {
     spelled_inside(path)?;
     let base = base_of(plane, branch)?;
-    named_in(&Kept::of(&base, branch), &base, path)
+    named_in(&Kept::of(plane, &base, branch), &base, path)
 }
 
 /// `path` as git's file list spells it, refused as [`named`] refuses a path by its spelling
@@ -1521,7 +1537,7 @@ pub fn in_your_editor(
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Launch, Refused> {
     in_your_editor_in(
-        Via::Here,
+        Via::Here { plane },
         &base_of(plane, branch)?,
         branch,
         path,
@@ -1541,13 +1557,13 @@ fn in_your_editor_in(
     editor: Editor,
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Launch, Refused> {
-    let kept = Kept::of(base, branch);
+    let kept = Kept::of(via.plane(), base, branch);
     let resolved = locate(via, &kept, base, branch, path)?;
     // A submodule is offered by its path and is a folder; a FIFO is no file to edit.
     if !resolved.is_file() {
         return Err(Refused::NotAFile(path.to_string()));
     }
-    // At the plane root, a second name of a file purlis keeps to itself is not handed on.
+    // A second name of a file purlis keeps to itself is not handed on.
     if kept.on()
         && crate::contain::open_no_link(base, &resolved)
             .map(|file| kept.holds_a_name_of(&file))
@@ -1643,25 +1659,25 @@ impl Root {
     /// [`folder`], on this branch.
     pub fn folder(&self, folder: &str) -> Result<PathBuf, Refused> {
         let base = self.base()?;
-        folder_of_in(&Kept::of(&base, self.branch()), &base, folder)
+        folder_of_in(&Kept::of(self.plane(), &base, self.branch()), &base, folder)
     }
 
     /// [`folders`], on this branch: the folders a window's explorer has expanded, resolved for
     /// its folder watch (#1189).
     pub fn resolve(&self, named: &[&str]) -> Vec<Result<PathBuf, Refused>> {
-        folders_in(self.base(), self.branch(), named)
+        folders_in(self.plane(), self.base(), self.branch(), named)
     }
 
     /// [`place`], on this branch.
     pub fn place(&self, path: &str) -> Result<Placed, Refused> {
         let base = self.base()?;
-        place_in(&Kept::of(&base, self.branch()), &base, path)
+        place_in(&Kept::of(self.plane(), &base, self.branch()), &base, path)
     }
 
     /// [`named`], on this branch.
     pub fn named(&self, path: &str) -> Result<String, Refused> {
         let base = self.base()?;
-        named_in(&Kept::of(&base, self.branch()), &base, path)
+        named_in(&Kept::of(self.plane(), &base, self.branch()), &base, path)
     }
 
     /// [`in_your_editor`], on this branch, its offered list read by `reader`.

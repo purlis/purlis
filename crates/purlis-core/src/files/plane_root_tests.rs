@@ -406,9 +406,11 @@ fn the_tree_and_every_open_are_refused_where_the_vault_registry_does_not_read() 
     let (_dir, plane) = project();
     std::fs::write(plane.join("vaults.json"), "{ not json").unwrap();
     let (_answers, reader, root) = root(&plane, &["README.md"], 5);
-    let said = "purlis could not read 'the project's own files': the vault registry could not \
-                be read, so purlis cannot tell which files are a vault's. Doctor says what is \
-                wrong with it";
+    let said = format!(
+        "purlis could not read 'the project's own files': the vault registry {} could not be \
+         read, so purlis cannot tell which files are a vault's. Doctor says what is wrong with it",
+        plane.join("vaults.json").display()
+    );
 
     assert_eq!(refusal(root.tree(&reader, "")), said);
     assert_eq!(refusal(root.tree(&reader, "docs")), said);
@@ -419,6 +421,106 @@ fn the_tree_and_every_open_are_refused_where_the_vault_registry_does_not_read() 
     // Mended, it lists again.
     std::fs::remove_file(plane.join("vaults.json")).unwrap();
     assert!(root.tree(&reader, "").is_ok());
+}
+
+#[test]
+fn the_registry_that_does_not_read_is_the_one_file_that_still_opens() {
+    let (_dir, plane) = project();
+    std::fs::write(plane.join("vaults.json"), "{ not json").unwrap();
+    // The child offers what git lists; only the registry stays on the list here.
+    let (_answers, reader, root) = root(&plane, &["README.md", "vaults.json"], 5);
+
+    assert_eq!(
+        root.open(&reader, "vaults.json").unwrap(),
+        super::Opened::Text {
+            text: "{ not json".to_string()
+        }
+    );
+    assert!(root.open(&reader, "README.md").is_err());
+    assert!(root.tree(&reader, "").is_err());
+}
+
+/// The paths of the files a search for `query` in workspace `alpha`'s repo `svc` finds hits
+/// in, the reader's child offering `offers`.
+fn searched(plane: &Path, offers: &[&str], query: &str) -> Vec<String> {
+    let clone = plane.join("workspaces/alpha/svc");
+    let (_answers, reader) =
+        reader_answering_each(&found_at(&clone), &offered(offers), &ignored(&[], &[]));
+    let scope = [super::Place {
+        plane,
+        branch: Branch::repo("alpha", "svc"),
+    }];
+    let mut search = super::search(&scope, query, super::SearchOptions::default())
+        .unwrap()
+        .reading_with(reader);
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let mut heard = Vec::new();
+    search.more(50, &stop, &mut |one| heard.push(one));
+    let mut found: Vec<String> = heard
+        .into_iter()
+        .filter_map(|one| match one {
+            super::Searched::File(hits) => Some(hits.path),
+            super::Searched::Refused { .. } | super::Searched::NotSearched { .. } => None,
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+#[test]
+fn a_search_of_a_branch_reads_no_other_name_of_a_file_purlis_keeps() {
+    let (_dir, plane) = project();
+    let clone = plane.join("workspaces/alpha/svc");
+    std::fs::write(clone.join("notes.txt"), "of the vault\n").unwrap();
+    // Another name of the vault's file, offered as any file of the branch is.
+    std::fs::create_dir_all(clone.join("target")).unwrap();
+    std::fs::hard_link(
+        plane.join(state()).join("vaults/forge.json"),
+        clone.join("target/peek.txt"),
+    )
+    .unwrap();
+
+    let found = searched(
+        &plane,
+        &["main.rs", "notes.txt", "target/peek.txt"],
+        "vault",
+    );
+
+    assert_eq!(found, ["notes.txt".to_string()]);
+}
+
+#[test]
+fn a_branch_reads_on_where_no_chat_is_sandboxed_and_stops_where_one_is() {
+    let (_dir, plane) = project();
+    let clone = plane.join("workspaces/alpha/svc");
+    std::fs::write(plane.join("vaults.json"), "{ not json").unwrap();
+    let read = |manifest: &str| {
+        std::fs::write(plane.join("charter.toml"), manifest).unwrap();
+        let (_answers, reader) = reader_answering_each(
+            &found_at(&clone),
+            &offered(&["main.rs"]),
+            &ignored(&[false; 1], &[]),
+        );
+        let branch = super::root(&reader, &plane, Branch::repo("alpha", "svc")).unwrap();
+        let listed = branch
+            .tree(&reader, "")
+            .map(|folder| names(&folder.entries).join(" "));
+        let opened = branch.open(&reader, "main.rs").map(|_| ());
+        let found = searched(&plane, &["main.rs"], "main");
+        (listed, opened, found)
+    };
+
+    // No chat here is sandboxed: the branch is listed, opened and searched as it always was.
+    let (listed, opened, found) = read("schema = 1\n");
+    assert_eq!(listed.unwrap(), ".git main.rs");
+    assert!(opened.is_ok(), "{opened:?}");
+    assert_eq!(found, ["main.rs".to_string()]);
+
+    // Chats here are sandboxed: nothing of the branch is read by a list that is not whole.
+    let (listed, opened, found) = read("[sandbox]\nmode = \"on\"\n");
+    assert!(refusal(listed).contains("could not be read, so purlis cannot tell which files"));
+    assert!(opened.is_err());
+    assert_eq!(found, Vec::<String>::new());
 }
 
 #[test]
@@ -472,21 +574,21 @@ fn no_workspace_repo_or_piece_name_spells_the_plane_root() {
 }
 
 #[test]
-fn a_workspaces_own_branch_keeps_reading_as_it_did() {
+fn a_workspaces_own_branch_leaves_out_what_the_project_keeps_and_has_no_rule_for_clones() {
     let (_dir, plane) = project();
-    // The same folders, read as a repo's own: no guard, so nothing here is hidden by it.
+    // The same folders, read as a repo's own: what purlis keeps to itself is left out as at
+    // the plane root, and the rest reads as a branch's folder always did.
     let folder = plane.clone();
     let (_answers, reader) = reader_answering_each(
         &found_at(&folder),
         &offered(&[]),
-        &ignored(&[false; 5], &[]),
+        &ignored(&[false; 2], &[]),
     );
     let branch = super::root(&reader, &plane, Branch::repo("alpha", "svc")).unwrap();
 
     let level = branch.tree(&reader, state()).unwrap().entries;
 
-    assert_eq!(
-        names(&level),
-        ["app", "handbacks", "sessions", "vaults", "fingerprint.key"]
-    );
+    assert_eq!(names(&level), ["app", "sessions"]);
+    // A clone below it is a nested repository here, as in any branch: never a workspace's row.
+    assert!(level.iter().all(|entry| entry.workspace.is_none()));
 }

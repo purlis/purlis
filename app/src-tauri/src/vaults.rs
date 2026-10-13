@@ -87,6 +87,16 @@ fn health(ctx: &Ctx, v: &Vault) -> VaultHealth {
 /// panel nobody asked to check. A vault's own tab reads the vault and says the provider's own
 /// line ([`health`]), as `purlis vault list` does in a terminal.
 fn listed_health(ctx: &Ctx, v: &Vault) -> VaultHealth {
+    // A vault the project registers and this machine has not said the file of yet: a
+    // teammate's, on a fresh clone. Nothing of it is here, and that is no fault.
+    if v.provider == "plain-file"
+        && purlis_core::secrets::config_str(&v.config, "file").is_none_or(str::is_empty)
+    {
+        return VaultHealth {
+            ok: false,
+            detail: NOT_SET_UP_HERE.to_owned(),
+        };
+    }
     if v.provider == "1password"
         && identity_missing(ctx, v).is_none()
         && !identity::in_keyring(ctx, v)
@@ -206,6 +216,33 @@ pub(crate) fn list_for_chat(
     }
 }
 
+/// What a `plain-file` vault with no file said on this machine reads as in the list.
+const NOT_SET_UP_HERE: &str =
+    "not set up on this machine: say where its file is, or remove the vault";
+
+/// What an entry that cannot be read as a vault says in the list, by what is wrong with it:
+/// one with no kind is what is left of a vault the project no longer registers, and one of a
+/// kind this purlis does not know asks for a newer purlis. Anything else is the registry's own
+/// sentence.
+fn unread_entry(
+    doc: &serde_json::Map<String, serde_json::Value>,
+    name: &str,
+    said: String,
+) -> String {
+    let kind = registry::vaults(doc)
+        .get(name)
+        .and_then(|entry| entry.get("provider").cloned());
+    match kind {
+        None | Some(serde_json::Value::Null) => {
+            "left over on this machine: it names no kind of vault. Remove it".to_owned()
+        }
+        Some(serde_json::Value::String(kind)) if !registry::PROVIDERS.contains(&kind.as_str()) => {
+            "a vault of a kind this purlis does not know: update purlis".to_owned()
+        }
+        Some(_) => said,
+    }
+}
+
 /// Every vault the plane registers, by name.
 pub(crate) fn list(ctx: &Ctx) -> Result<Vec<VaultSummary>, String> {
     let doc = registry::load_registry(ctx).map_err(message_of)?;
@@ -228,7 +265,7 @@ pub(crate) fn list(ctx: &Ctx) -> Result<Vec<VaultSummary>, String> {
                 count: None,
                 health: VaultHealth {
                     ok: false,
-                    detail: e.message,
+                    detail: unread_entry(&doc, &name, e.message),
                 },
                 name,
             },
@@ -1831,6 +1868,55 @@ mod tests {
                 ("ops", "keyring", Some(2), true)
             ]
         );
+    }
+
+    /// The list marks what it cannot read as a vault, each by what is wrong with it, and goes
+    /// on listing the rest: an entry left over on this machine, a vault of a kind this purlis
+    /// does not know, and a vault this machine has not set up yet.
+    #[test]
+    fn the_list_marks_an_entry_left_over_a_kind_not_known_and_a_vault_not_set_up_here() {
+        let (_dir, ctx) = plane();
+        std::fs::write(
+            ctx.shared_registry(),
+            r#"{"vaults": {
+                "newer": {"provider": "carrier-pigeon"},
+                "theirs": {"provider": "plain-file"}
+            }}"#,
+        )
+        .unwrap();
+        let mut local = registry::load_local(&ctx).unwrap();
+        local["vaults"]["gone"] = serde_json::json!({"config": {"account": "me@example.test"}});
+        registry::save_local(&ctx, &local).unwrap();
+
+        let listed = list(&ctx).unwrap();
+
+        let shown: Vec<(&str, bool, &str)> = listed
+            .iter()
+            .map(|v| (v.name.as_str(), v.health.ok, v.health.detail.as_str()))
+            .collect();
+        assert_eq!(
+            [shown[1], shown[2], shown[4]],
+            [
+                (
+                    "gone",
+                    false,
+                    "left over on this machine: it names no kind of vault. Remove it"
+                ),
+                (
+                    "newer",
+                    false,
+                    "a vault of a kind this purlis does not know: update purlis"
+                ),
+                (
+                    "theirs",
+                    false,
+                    "not set up on this machine: say where its file is, or remove the vault"
+                ),
+            ]
+        );
+        // The rest is listed as it always was.
+        assert_eq!((shown[0].0, shown[0].1), ("files", true));
+        assert_eq!((shown[3].0, shown[3].1), ("ops", true));
     }
 
     /// #1660: the list says, per vault, whether opening its tab reads a secret, from the core's
