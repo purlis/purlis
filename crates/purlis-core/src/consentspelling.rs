@@ -1326,6 +1326,40 @@ mod tests {
         }
     }
 
+    /// A consent-gated command any shell that runs a string is handed is refused, however the
+    /// shell spells its `-c` and wherever fish puts a keyword in front (#1325). A mention is not.
+    #[test]
+    fn a_consent_gated_command_every_string_shell_runs_is_refused() {
+        let mut hostile: Vec<String> = [
+            "mksh", "lksh", "oksh", "loksh", "pdksh", "rbash", "yash", "posh", "csh", "tcsh",
+            "fish",
+        ]
+        .iter()
+        .flat_map(|sh| {
+            [
+                format!("{sh} -c 'purlis report bug --yes x'"),
+                format!("echo 'charter report bug --yes x' | {sh}"),
+            ]
+        })
+        .collect();
+        hostile.extend(
+            [
+                "yash --cmdline 'purlis report bug --yes x'",
+                "fish --command='purlis report bug --yes x'",
+                "fish -C 'charter report bug --yes x'",
+                "fish -c 'true; and purlis report bug --yes x'",
+                "fish -c 'begin; charter report bug --yes x; end'",
+            ]
+            .map(String::from),
+        );
+        let through = hostile
+            .iter()
+            .filter(|cmd| !refused(cmd).is_some_and(|why| why.contains("`charter report")))
+            .collect::<Vec<_>>();
+        assert!(through.is_empty(), "let through: {through:?}");
+        assert_eq!(refused("fish -c 'echo purlis report bug --yes x'"), None);
+    }
+
     /// A consent-gated command a shell is fed on its stdin, or a `find -exec` runs, is told
     /// where it was fed (#1426); one in a string or a heredoc keeps that sentence.
     #[test]

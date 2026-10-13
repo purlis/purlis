@@ -85,7 +85,7 @@ const WRAPPERS: [&str; 25] = [
 /// Shell KEYWORDS that can stand where a program stands once a command has been segmented.
 /// `if true; then cat <vault>; fi` segments into `then cat <vault>`, whose token 0 is `then`.
 /// `coproc` (bash's and zsh's) runs the command after it, behind a name when that command is a
-/// compound one ([`COPROC_COMPOUND`], #1325).
+/// compound one ([`COPROC_COMPOUND`], #1325). fish's own are [`FISH_KEYWORDS`].
 pub(crate) const SHELL_KEYWORDS: [&str; 22] = [
     "if", "then", "elif", "else", "fi", "while", "until", "do", "done", "for", "in", "case",
     "esac", "select", "function", "!", "{", "}", "(", ")", "$", "coproc",
@@ -1222,9 +1222,18 @@ fn assignment_name(tok: &str) -> String {
 /// `_STRING_SHELLS`, as the Python recorded it; [`OWN_STRING_SHELLS`] adds charter's own.
 pub const STRING_SHELLS: [&str; 5] = ["sh", "bash", "zsh", "dash", "ksh"];
 
-/// The shells beside [`STRING_SHELLS`] that run a `-c` string the same way, charter's own:
-/// busybox's two, `ash` and `hush` (#1325).
-const OWN_STRING_SHELLS: [&str; 2] = ["ash", "hush"];
+/// The shells beside [`STRING_SHELLS`] that run a string they are handed, charter's own
+/// (#1325): busybox's two, `ash` and `hush`; the ksh family by each name it ships under; `rbash`,
+/// which is bash; `yash` and `posh`; the csh family; and `fish`. Each runs `-c`'s string, and
+/// a script from its stdin when it names none. yash also spells `-c` out (`--cmdline`, read
+/// in [`shell_options`]); fish takes the string as `-c`'s value and has an init command too,
+/// read in [`fish_options`]. The strings of fish and the csh family are read as sh reads a
+/// line: their simple commands, lists and pipelines are spelt the same, and fish's keywords
+/// are read past first ([`as_sh_reads_fish`]).
+const OWN_STRING_SHELLS: [&str; 13] = [
+    "ash", "hush", "mksh", "lksh", "oksh", "loksh", "pdksh", "rbash", "yash", "posh", "csh",
+    "tcsh", "fish",
+];
 
 /// True when `prog` names one of [`STRING_SHELLS`] or [`OWN_STRING_SHELLS`], however it is
 /// spelled or cased.
@@ -1274,6 +1283,13 @@ pub fn shell_scripts_of(prog: &str, argv: &[String]) -> Vec<String> {
     if !is_string_shell(prog) {
         return Vec::new();
     }
+    if base == "fish" {
+        return fish_options(argv)
+            .0
+            .iter()
+            .map(|script| as_sh_reads_fish(script))
+            .collect();
+    }
     let mut out: Vec<String> = Vec::new();
     for unknown_takes_a_value in [false, true] {
         if let (true, Some(script)) = shell_options(argv, unknown_takes_a_value)
@@ -1304,11 +1320,16 @@ const SHELL_LONG_SWITCH: [&str; 12] = [
     "--interactive",
 ];
 
+/// yash's long spelling of `-c`. yash takes a unique prefix of a long option for the whole
+/// of it, so a prefix is read as it too (`--cmd`).
+const YASH_DASH_C: &str = "--cmdline";
+
 /// Past a shell's options: whether `-c` was among them, and the first operand after them.
 ///
 /// A long option that takes a value consumes it, and so does a cluster holding `o` or `O`
 /// (`-o pipefail`, `-euo pipefail`, `-co pipefail`), since that letter takes the next word. A
 /// long option in neither list consumes the next word when `unknown_takes_a_value` says so.
+/// yash's `--cmdline`, or a prefix of it, is a `-c`.
 fn shell_options(argv: &[String], unknown_takes_a_value: bool) -> (bool, Option<&String>) {
     let mut dash_c = false;
     let mut i = 1;
@@ -1316,6 +1337,11 @@ fn shell_options(argv: &[String], unknown_takes_a_value: bool) -> (bool, Option<
         if a == "--" {
             i += 1;
             break;
+        }
+        if a.len() > 2 && YASH_DASH_C.starts_with(a.as_str()) {
+            dash_c = true;
+            i += 1;
+            continue;
         }
         if a.starts_with("--") && !a.contains('=') {
             let takes = SHELL_LONG_VALUE.contains(&a.as_str())
@@ -1337,11 +1363,119 @@ fn shell_options(argv: &[String], unknown_takes_a_value: bool) -> (bool, Option<
     (dash_c, argv.get(i))
 }
 
+/// fish's keywords that run the command after them: `true; and git push`, `false; or git
+/// push`, `not git push`, `begin git push; end`. They are fish's alone (a sh runs a program by
+/// those names), so they are read past only in a string fish runs.
+const FISH_KEYWORDS: [&str; 4] = ["and", "or", "not", "begin"];
+
+/// A string fish runs, as sh would read the same commands: each of [`FISH_KEYWORDS`] that
+/// stands where a command begins is blanked out, so the command after it stands where every
+/// reader looks for the program. Only an unquoted keyword is one. A string that will not lex is
+/// left as it is, and so is one that holds none of the words. Linear in the string.
+fn as_sh_reads_fish(script: &str) -> String {
+    if !FISH_KEYWORDS.iter().any(|k| script.contains(k)) {
+        return script.to_owned();
+    }
+    let Ok(toks) = shellseg::lex(script) else {
+        return script.to_owned();
+    };
+    let mut chars: Vec<char> = script.chars().collect();
+    let mut command_starts = true;
+    for t in shellseg::split_punctuation(toks) {
+        if t.is_any_op() {
+            command_starts = true;
+            continue;
+        }
+        let keyword = t.bare && FISH_KEYWORDS.contains(&t.text.as_str());
+        if command_starts && keyword {
+            if let (Ok(from), Ok(to)) = (usize::try_from(t.start), usize::try_from(t.end))
+                && let Some(span) = chars.get_mut(from..to)
+            {
+                span.fill(' ');
+            }
+            continue;
+        }
+        // A keyword of sh's own (`if not …`, `while and …`) keeps the command still to come.
+        command_starts = t.bare && SHELL_KEYWORDS.contains(&t.text.as_str());
+    }
+    chars.into_iter().collect()
+}
+
+/// fish's options that take the next word, or the rest of their cluster, as a value: the two
+/// whose value is a string fish runs, then the rest (`fish --help`).
+const FISH_SCRIPT_SHORT: [char; 2] = ['c', 'C'];
+const FISH_VALUE_SHORT: [char; 5] = ['d', 'D', 'f', 'o', 'p'];
+const FISH_SCRIPT_LONG: [&str; 2] = ["command", "init-command"];
+const FISH_VALUE_LONG: [&str; 6] = [
+    "debug",
+    "debug-output",
+    "debug-stack-frames",
+    "features",
+    "profile",
+    "profile-startup",
+];
+
+/// Past fish's options, as its getopt reads them: every string it runs (`-c` and `-C`, attached
+/// or separated, in a cluster, or spelt long with `=`, apart, or as a prefix of the name), and
+/// the first operand after the options, a script file, or `None` when it reads its stdin.
+///
+/// A long prefix that names more than one option is an error fish stops on; it is read as the
+/// option that runs a string, if one of them does, so a reading errs toward running more.
+fn fish_options(argv: &[String]) -> (Vec<String>, Option<&String>) {
+    let mut scripts = Vec::new();
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        i += 1;
+        if a == "--" {
+            return (scripts, argv.get(i));
+        }
+        let value = |attached: Option<&str>, i: &mut usize| match attached {
+            Some(v) => Some(v.to_owned()),
+            None => {
+                *i += 1;
+                argv.get(*i - 1).cloned()
+            }
+        };
+        if let Some(long) = a.strip_prefix("--") {
+            let (name, attached) = match long.split_once('=') {
+                Some((name, v)) => (name, Some(v)),
+                None => (long, None),
+            };
+            let names = |set: &[&str]| !name.is_empty() && set.iter().any(|o| o.starts_with(name));
+            if names(&FISH_SCRIPT_LONG) {
+                scripts.extend(value(attached, &mut i));
+            } else if names(&FISH_VALUE_LONG) {
+                value(attached, &mut i);
+            }
+            continue;
+        }
+        let Some(cluster) = a.strip_prefix('-').filter(|c| !c.is_empty()) else {
+            return (scripts, Some(a));
+        };
+        for (at, letter) in cluster.char_indices() {
+            let script = FISH_SCRIPT_SHORT.contains(&letter);
+            if script || FISH_VALUE_SHORT.contains(&letter) {
+                let rest = &cluster[at + letter.len_utf8()..];
+                let v = value((!rest.is_empty()).then_some(rest), &mut i);
+                if script {
+                    scripts.extend(v);
+                }
+                break;
+            }
+        }
+    }
+    (scripts, None)
+}
+
 /// True when a segment is a shell reading its script from stdin: no `-c` and no script file.
 pub fn reads_script_from_stdin(toks: &[String]) -> bool {
     let (prog, _env, argv) = split_env(toks);
     if !is_string_shell(&prog) {
         return false;
+    }
+    if base_lower(&prog) == "fish" {
+        let (scripts, operand) = fish_options(&argv);
+        return scripts.is_empty() && operand.is_none();
     }
     let (dash_c, operand) = shell_options(&argv, false);
     !dash_c && (operand.is_none() || argv.iter().any(|a| a == "-s"))
@@ -1404,6 +1538,10 @@ pub fn takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
     if !is_string_shell(prog) {
         return false;
     }
+    if base_lower(prog) == "fish" {
+        let (scripts, operand) = fish_options(&words);
+        return scripts.is_empty() && (operand.is_none() || names_stdin(operand));
+    }
     let (dash_c, operand) = shell_options(&words, false);
     !dash_c && (operand.is_none() || names_stdin(operand) || words.iter().any(|a| a == "-s"))
 }
@@ -1420,9 +1558,14 @@ pub fn runs_a_script_file(prog: &str) -> bool {
 pub fn here_string_script_of(prog: &str, argv: &[String]) -> Option<String> {
     let at = argv.iter().position(|t| t == "<<<")?;
     let sourced = SOURCING.contains(&prog) && takes_its_script_from_stdin(prog, &argv[..at]);
-    (is_string_shell(prog) || sourced)
+    let script = (is_string_shell(prog) || sourced)
         .then(|| argv.get(at + 1).cloned())
-        .flatten()
+        .flatten()?;
+    Some(if base_lower(prog) == "fish" {
+        as_sh_reads_fish(&script)
+    } else {
+        script
+    })
 }
 
 /// The primaries of `find` that run the words after them as a command, up to a `;` or a `+`.
@@ -1879,6 +2022,100 @@ mod tests {
         // busybox's own options run nothing, and are not taken for the program.
         let it = split_words(&["busybox", "--list"]);
         assert_eq!(it.prog, "");
+    }
+
+    /// The shells beside sh's own five run a string they are handed as surely: the ksh family,
+    /// yash, posh, the csh family and fish, however each spells its `-c` (#1325).
+    #[test]
+    fn every_shell_that_runs_a_string_hands_it_on() {
+        let scripts = |words: &[&str]| {
+            let it = split_words(words);
+            shell_scripts_of(&it.prog, &it.argv)
+        };
+        for shell in [
+            "mksh", "lksh", "oksh", "loksh", "pdksh", "rbash", "yash", "posh", "csh", "tcsh",
+            "fish",
+        ] {
+            assert_eq!(
+                scripts(&[shell, "-c", "git push -f"]),
+                ["git push -f"],
+                "{shell}"
+            );
+            let loud = format!("/opt/bin/{}", shell.to_uppercase());
+            assert_eq!(
+                scripts(&[&loud, "-c", "git push -f"]),
+                ["git push -f"],
+                "{loud}"
+            );
+            assert_eq!(scripts(&["env", shell, "-lc", "x"]), ["x"], "{shell}");
+            assert!(is_string_shell(shell), "{shell}");
+            // A script file is a file, not a string.
+            assert!(scripts(&[shell, "run.sh"]).is_empty(), "{shell}");
+        }
+        // yash spells `-c` out; fish's takes the string as its value, in every spelling
+        // getopt reads, and runs an init command's too.
+        for words in [
+            &["yash", "--cmdline", "git push -f"][..],
+            &["yash", "--cmd", "git push -f"],
+            &["fish", "--command", "git push -f"],
+            &["fish", "--command=git push -f"],
+            &["fish", "--comm", "git push -f"],
+            &["fish", "-cgit push -f"],
+            &["fish", "-lc", "git push -f"],
+            &["fish", "-C", "git push -f"],
+            &["fish", "--init-command=git push -f"],
+            &["fish", "-d", "3", "-c", "git push -f"],
+            &["fish", "--debug-output", "/tmp/o", "-c", "git push -f"],
+            &["fish", "-C", "git push -f", "run.fish"],
+        ] {
+            assert!(
+                scripts(words).iter().any(|s| s == "git push -f"),
+                "{words:?}: {:?}",
+                scripts(words)
+            );
+        }
+        assert_eq!(
+            scripts(&["fish", "-C", "a", "-c", "b"]),
+            ["a", "b"],
+            "both strings a fish runs"
+        );
+        // fish's own keywords stand where a program would in a string fish runs, and only
+        // there: a sh runs a program by those names.
+        for script in [
+            "true; and git push",
+            "false; or git push",
+            "not git push",
+            "begin; git push; end",
+            "begin git push; end",
+            "if not git push; end",
+        ] {
+            let read = scripts(&["fish", "-c", script]);
+            let segments = shellseg::segment_argv(&read[0]);
+            assert!(
+                segments
+                    .iter()
+                    .any(|seg| split_env_chdir(seg).prog == "git"),
+                "{script:?} read as {read:?}"
+            );
+        }
+        assert_eq!(
+            scripts(&["fish", "-c", "echo 'and' not"]),
+            ["echo 'and' not"]
+        );
+        assert_eq!(scripts(&["sh", "-c", "not git push"]), ["not git push"]);
+        let it = split_words(&["not", "git", "push"]);
+        assert_eq!(it.prog, "not");
+        // A string a fish is fed on its stdin is a script, as a sh's is.
+        let toks = |w: &[&str]| w.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert!(takes_its_script_from_stdin("fish", &toks(&["fish"])));
+        assert!(takes_its_script_from_stdin(
+            "fish",
+            &toks(&["fish", "-d", "3"])
+        ));
+        assert!(!takes_its_script_from_stdin(
+            "fish",
+            &toks(&["fish", "-c", "x"])
+        ));
     }
 
     /// Only charter's own `secret exec` is a wrapper: another charter verb, and another program

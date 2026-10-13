@@ -892,6 +892,58 @@ mod tests {
         }
     }
 
+    /// A ruled command any shell that runs a string is handed is refused, however the shell
+    /// spells its `-c` and wherever fish puts a keyword in front (#1325). A mention stays
+    /// allowed, and so does a script file.
+    #[test]
+    fn a_ruled_command_every_string_shell_runs_is_refused() {
+        let rules = Rules::of_claude_settings(
+            ".claude/settings.json",
+            r#"{"permissions": {"ask": ["Bash(terraform apply *)"]}}"#,
+        );
+        let mut hostile: Vec<String> = [
+            "mksh", "lksh", "oksh", "loksh", "pdksh", "rbash", "yash", "posh", "csh", "tcsh",
+            "fish",
+        ]
+        .iter()
+        .flat_map(|sh| {
+            [
+                format!("{sh} -c 'terraform apply x'"),
+                format!("env {sh} -lc 'terraform apply x'"),
+                format!("echo 'terraform apply x' | {sh}"),
+                format!("{sh} <<< 'terraform apply x'"),
+            ]
+        })
+        .collect();
+        hostile.extend(
+            [
+                "yash --cmdline 'terraform apply x'",
+                "fish --command 'terraform apply x'",
+                "fish --command='terraform apply x'",
+                "fish -C 'terraform apply x'",
+                "fish -d 3 -c 'terraform apply x'",
+                "fish -c 'true; and terraform apply x'",
+                "fish -c 'false; or terraform apply x'",
+                "fish -c 'not terraform apply x'",
+                "fish -c 'begin; terraform apply x; end'",
+                "sh -c \"fish -c 'terraform apply x'\"",
+            ]
+            .map(String::from),
+        );
+        let past = hostile
+            .iter()
+            .filter(|cmd| rules.refusal(cmd).is_none())
+            .collect::<Vec<_>>();
+        assert!(past.is_empty(), "got past: {past:?}");
+        for cmd in [
+            "fish -c 'echo terraform apply x'",
+            "mksh run.sh terraform apply x",
+            "tcsh -c 'echo and terraform apply x'",
+        ] {
+            assert_eq!(rules.refusal(cmd), None, "{cmd:?}");
+        }
+    }
+
     /// A ruled command a shell is fed on its stdin, or a `find -exec` runs, is refused in words
     /// that name where it is, not "a string or a heredoc" (#1426); one in a string keeps those.
     #[test]

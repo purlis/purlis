@@ -268,6 +268,125 @@ fn a_branch_move_behind_coproc_or_busybox_is_read() {
     );
 }
 
+/// A root and a directory beside it, with no repository in either: what the walk reads off the
+/// line needs no git to ask.
+fn bare_root() -> (tempfile::TempDir, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let base = crate::pypath::realpath(dir.path().to_str().unwrap());
+    let root = format!("{base}/plane");
+    let elsewhere = format!("{base}/elsewhere");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    (dir, root, elsewhere)
+}
+
+/// A git a shell is handed in a string runs where that shell runs, with what the line exported
+/// to it: `sh -c`, any shell that runs a string, `eval`, a here-string, one inside another. The
+/// walk reads it as a line of its own (#1325). A string that moves no branch stands aside, and a
+/// `cd` inside `sh -c` moves only that shell.
+#[test]
+fn a_branch_move_in_a_string_a_shell_runs_is_read() {
+    let (_dir, root, elsewhere) = bare_root();
+    let moves = |cmd: &str, cwd: &str| {
+        plane_root_git(cmd, cwd, &root)
+            .iter()
+            .any(|inv| BRANCH_MOVERS.contains(&inv.sub.as_str()))
+    };
+    for cmd in [
+        "sh -c 'git checkout feature'",
+        "bash -c \"git switch -c x\"",
+        "env bash -lc 'git checkout -b x'",
+        "mksh -c 'git checkout feature'",
+        "fish -c 'true; and git checkout feature'",
+        "eval git checkout feature",
+        "eval 'git switch -c x'",
+        "bash <<< 'git checkout feature'",
+        "sh -c \"sh -c 'git checkout feature'\"",
+        "sh -c 'cd /; cd - && git checkout feature'",
+        "true && sh -c 'git status; git checkout feature' | cat",
+    ] {
+        assert!(moves(cmd, &root), "from the root: {cmd:?}");
+        assert!(
+            plane_root_branch_reason(cmd, &root, &root).is_some(),
+            "from the root: {cmd:?}"
+        );
+    }
+    // From beside the root, the string still reaches it wherever the line sends the shell.
+    for cmd in [
+        format!("cd {root} && sh -c 'git checkout feature'"),
+        format!("env -C {root} sh -c 'git checkout feature'"),
+        format!("sh -c 'cd {root} && git checkout feature'"),
+        format!("sh -c 'git -C {root} checkout feature'"),
+        format!("eval cd {root}; git checkout feature"),
+        format!("ln -s {root} here && sh -c 'git -C here checkout feature'"),
+        format!("sh -c 'ln -s {root} here' && git -C here checkout feature"),
+    ] {
+        assert!(moves(&cmd, &elsewhere), "from beside it: {cmd:?}");
+    }
+    for cmd in [
+        "sh -c 'git status'",
+        "sh -c 'echo git checkout feature'",
+        "eval git log",
+    ] {
+        assert!(!moves(cmd, &root), "{cmd:?}");
+    }
+    for cmd in [
+        "sh -c 'git checkout feature'".to_owned(),
+        format!("sh -c 'cd {root}'; git checkout feature"),
+    ] {
+        assert!(!moves(&cmd, &elsewhere), "from beside it: {cmd:?}");
+    }
+}
+
+/// A string handed on deeper than the guards read is refused unread where it may name git, and
+/// stands aside where it cannot (#1325).
+#[test]
+fn a_string_handed_on_past_the_cap_is_refused_where_it_may_be_git() {
+    let (_dir, root, _elsewhere) = bare_root();
+    let deep = |inner: &str| {
+        (0..=crate::guardcaps::MAX_NESTING).fold(inner.to_owned(), |inner, _| {
+            format!("eval {}", shellwrap_quote(&inner))
+        })
+    };
+    let said = plane_root_branch_reason(&deep("git log"), &root, &root).unwrap();
+    assert!(said.contains("too deeply nested"), "{said}");
+    assert_eq!(plane_root_branch_reason(&deep("ls"), &root, &root), None);
+}
+
+/// `inner` as one single-quoted shell word.
+fn shellwrap_quote(inner: &str) -> String {
+    format!("'{}'", inner.replace('\'', "'\\''"))
+}
+
+/// What a string a shell runs does in the root is answered as the same command typed bare: a
+/// branch move refused, the remedy allowed, a reset that loses commits refused (#1325).
+#[test]
+fn a_string_a_shell_runs_in_the_root_gets_the_bare_commands_answer() {
+    let f = fixture();
+    assert!(
+        branch(&f, "sh -c 'git checkout feature'")
+            .unwrap()
+            .starts_with("would switch to 'feature' in the PLANE ROOT. ")
+    );
+    assert_eq!(branch(&f, "sh -c 'git checkout main'"), None);
+    assert_eq!(branch(&f, "bash -c 'git checkout README'"), None);
+    assert!(reset(&f, "sh -c 'git reset --hard origin/main'").is_some());
+    assert!(reset(&f, "eval git zzwipe origin/main").is_some());
+    let elsewhere = format!("{}/elsewhere", f.base);
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let via_env = format!("GIT_DIR={}/.git sh -c 'git checkout feature'", f.root);
+    assert!(plane_root_branch_reason(&via_env, &elsewhere, &f.root).is_some());
+    let exported = format!(
+        "export GIT_DIR={}/.git; bash -c 'git checkout feature'",
+        f.root
+    );
+    assert!(plane_root_branch_reason(&exported, &elsewhere, &f.root).is_some());
+    assert_eq!(
+        plane_root_branch_reason("sh -c 'git checkout feature'", &elsewhere, &f.root),
+        None
+    );
+}
+
 /// A `cd` the line itself can redirect is not taken on trust: a `pushd -n` that moves nothing, a
 /// `~` or `CDPATH` the line sets, a `cd` the line redefines or disables, and zsh's two-operand
 /// `cd old new` all leave the later command possibly in the root.

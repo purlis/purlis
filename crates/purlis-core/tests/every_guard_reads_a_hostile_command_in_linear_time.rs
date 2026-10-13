@@ -64,6 +64,51 @@ fn shapes(deep: usize) -> Vec<Shape> {
             }),
         ),
         (
+            // Every shell that runs a string is read, in each spelling of its `-c`, and fish's
+            // keywords stand in front of a command (#1325).
+            "other shells' strings and fish's keywords in front of every command",
+            Box::new(|b| {
+                fill(
+                    &format!(
+                        "{}fish -c 'true; and not begin git checkout feature; end'\n",
+                        "mksh -c yash --cmdline tcsh -c ".repeat(MAX_LAYERS / 4)
+                    ),
+                    b,
+                )
+            }),
+        ),
+        (
+            // The project-root guard reads a string a shell runs as a line of its own, from
+            // where that shell runs, at every level a shape nests (#1325).
+            "strings handed to every kind of shell around git, nested",
+            Box::new(move |b| {
+                let unit =
+                    (0..deep).fold("git checkout feature".to_string(), |inner, k| match k % 4 {
+                        0 => format!("cd x && sh -c {inner:?}"),
+                        1 => format!("fish --command={inner:?}"),
+                        2 => format!("eval {inner:?}; git status"),
+                        _ => format!("env -C y yash --cmdline {inner:?} <<< {inner:?}"),
+                    });
+                fill(&format!("{unit}\n"), b)
+            }),
+        ),
+        (
+            // What a line exports and assigns is handed to every string a shell runs in it,
+            // and joined only where a git may read it (#1325).
+            "assignments and exports before many strings handed to shells",
+            Box::new(|b| {
+                let mut s = String::new();
+                let mut i = 0;
+                while s.len() < b {
+                    s += &format!(
+                        "export GIT_V{i}=x; A{i}=y; B=1 C=2 sh -c 'git status; git log'; "
+                    );
+                    i += 1;
+                }
+                s
+            }),
+        ),
+        (
             "a shell's -c inside a shell's -c",
             Box::new(|b| fill(&format!("{}ls\n", "bash -c ".repeat(MAX_LAYERS)), b)),
         ),

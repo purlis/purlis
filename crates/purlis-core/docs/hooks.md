@@ -72,7 +72,12 @@ rule while one who reads a bare refusal files an issue.
   it is handed, `purlis secret exec … --`, a `{ … }` group, a `then` branch, a `coproc` with
   or without its name) does not change what the program is. Where one of them hands a shell a string instead (`watch` with anything more
   than plain words, `flock -c`, `script -c`, `parallel` with such a command), the string is
-  read by every guard that reads a string a shell runs, as `sh -c '…'` is — and where a wrapper opens a
+  read by every guard that reads a string a shell runs, as `sh -c '…'` is. Every shell that
+  runs a string is read that way: sh, bash, zsh, dash and ksh; busybox's `ash` and `hush`; the
+  ksh family under its other names (`mksh`, `lksh`, `oksh`, `loksh`, `pdksh`); `rbash`; `yash`,
+  whose `--cmdline` is its `-c`; `posh`; `csh` and `tcsh`; and `fish`, whose `-c`/`--command`
+  and `-C`/`--init-command` are read in every spelling its options take, and whose own
+  keywords in front of a command (`and`, `or`, `not`, `begin`) are read past. And where a wrapper opens a
   file *itself* (`xargs -a <file>`) that file counts as read, even though the program named
   on the line is something else. A **redirection** is neither the program nor an operand: it
   may sit in front of the command (`< <vault> cat`), and the target of an input redirection
@@ -225,7 +230,14 @@ rule while one who reads a bare refusal files an issue.
   at all. A directory the same command makes or re-points before git runs (the target of an
   `ln`, `mv` or `cp`, or a `.git` file a redirection writes) does not exist yet, or is still
   what it was, when the guard reads it, so it is read off the line instead: git sent there is
-  refused as a directory purlis cannot name (#1326).
+  refused as a directory purlis cannot name (#1326). **A string a shell is handed to run is
+  read as a line of its own** (#1325): `sh -c '…'` and every other shell's `-c` above, `eval`,
+  and a here-string. It starts in every directory that shell may be in (a `cd` before it, a
+  wrapper's chdir flag), with the environment the line exports to it and its own
+  assignments, and what it makes or re-points counts for the rest of the line. A `cd` inside
+  `sh -c` moves only that shell; one inside `eval` moves the line's. A string nested deeper
+  than the guards read is refused unread where it may name git. A string piped to a shell's
+  stdin (`echo '…' | sh`) is not read here.
 - **Plane-root history wipe.** A `git reset --hard` (or `--merge`/`--keep`) in the plane root
   that would take commits off the branch which no remote has a copy of — the command that
   destroyed eleven memory commits in one session. Only that: the unstage

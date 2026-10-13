@@ -79,6 +79,7 @@
 //!   wherever that directory lives.
 
 use crate::gitconfig;
+use crate::guardcaps;
 use crate::memstore::py_strip;
 use crate::pypath::{is_abs, normpath, path_div, pure_path, realpath};
 use crate::shellseg;
@@ -750,6 +751,7 @@ fn cd_call(toks: &[String], prog: &str, args: &[String]) -> Option<CdCall> {
 ///
 /// Each is a fail-closed reading of a substring: a line that merely mentions `HOME` loses the
 /// `~` shortcut, which costs nothing but a refusal the denial's own remedy answers.
+#[derive(Clone)]
 struct CdContext {
     /// The line may redefine `cd` — a function (`cd() …`, `function cd`), an `alias`, or an
     /// `enable -n` — so no `cd` in it is certainly the builtin.
@@ -767,6 +769,20 @@ struct CdContext {
 }
 
 impl CdContext {
+    /// This context with the line's around it: a string a shell is handed inherits what its
+    /// line does to a `cd`, so each reading is the more careful of the two.
+    fn with(self, outer: Option<&CdContext>) -> Self {
+        let Some(o) = outer else {
+            return self;
+        };
+        CdContext {
+            redefined: self.redefined || o.redefined,
+            sets_home: self.sets_home || o.sets_home,
+            cdpath: self.cdpath || o.cdpath,
+            quotes_tilde: self.quotes_tilde || o.quotes_tilde,
+        }
+    }
+
     fn of(cmd: &str) -> Self {
         static REDEFINES: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         let redefines = REDEFINES.get_or_init(|| {
@@ -1023,43 +1039,138 @@ fn invocation_readings(
 /// * **Any** subject being the root is enough ([`git_target`]), from any directory the shell may
 ///   be in, and under every reading of the directory words git is sent to; a word the guard
 ///   cannot name puts the invocation on the root (#1323).
+/// * **A string a shell is handed to run is read as a line of its own** (#1325): a shell's
+///   `-c` ([`shellwrap::shell_scripts_of`], every shell that runs one), `eval`'s words, a
+///   here-string. It starts where that shell may be, with what the line exported to it and
+///   what it made; a `cd` inside it moves only that shell, except under `eval`, which runs in
+///   this one. A string handed on deeper than [`guardcaps::MAX_NESTING`] is not read: where it
+///   may name git, the line is refused unread ([`plane_root_branch_reason`]).
 pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
+    read_line(cmd, cwd, root).0
+}
+
+/// [`plane_root_git`]'s invocations, and whether a string a shell is handed was nested past
+/// what the walk reads while it may name git.
+fn read_line(cmd: &str, cwd: &str, root: &str) -> (Vec<RootInvocation>, bool) {
+    let shared = Shared {
+        root,
+        the_root: std::cell::OnceCell::new(),
+        aliases: AliasBook::of(root),
+    };
+    let mut walk = Walk {
+        made: Made::default(),
+        out: Vec::new(),
+        too_deep: false,
+    };
+    walk_line(
+        cmd,
+        Whereabouts::at(cwd),
+        &Outer::default(),
+        0,
+        &shared,
+        &mut walk,
+    );
+    (walk.out, walk.too_deep)
+}
+
+/// What one command line shares with every string its shells are handed: the root, stat-ed on
+/// the first git invocation so a line with none pays nothing for it, and the root's configured
+/// aliases, read once for the whole line and only if it needs them.
+struct Shared<'a> {
+    root: &'a str,
+    the_root: std::cell::OnceCell<TheRoot>,
+    aliases: AliasBook<'a>,
+}
+
+/// What the walk gathers across a line and the strings in it.
+struct Walk {
+    /// What earlier segments make or re-point: a directory word reaching it is unnameable
+    /// (#1326). One for the line and its strings, since a string's `ln` makes a path for the
+    /// line after it as surely as the line's own.
+    made: Made,
+    out: Vec<RootInvocation>,
+    /// A string was handed on past [`guardcaps::MAX_NESTING`] where it may name git.
+    too_deep: bool,
+}
+
+/// What the segment that hands a shell a string gives it: the environment exported to it,
+/// every bare assignment before it, its own assignments, whether a loose `cd` came before it,
+/// and what the line around it does to a `cd`. Empty for the line itself.
+///
+/// The lists are borrowed in parts, one or two for each level the string is in, and joined
+/// only for a segment that may be git: a line of many assignments handing many strings on
+/// would otherwise copy the one into the other, its square.
+#[derive(Default)]
+struct Outer<'a> {
+    exported: Vec<&'a [String]>,
+    assigned: Vec<&'a [String]>,
+    own_env: Vec<&'a [String]>,
+    loose_cd: bool,
+    context: Option<CdContext>,
+}
+
+/// The parts of a list, in order, as one.
+fn joined(parts: &[&[String]]) -> Vec<String> {
+    parts.iter().flat_map(|part| part.iter().cloned()).collect()
+}
+
+/// One command line, or a string a shell runs `depth` levels in, read from `start` — the walk
+/// [`plane_root_git`] documents. Answers every directory the shell may be in once it is read,
+/// which is where an `eval` leaves the shell that ran it.
+fn walk_line(
+    cmd: &str,
+    start: Whereabouts,
+    outer: &Outer<'_>,
+    depth: usize,
+    shared: &Shared<'_>,
+    walk: &mut Walk,
+) -> Whereabouts {
+    if depth > guardcaps::MAX_NESTING {
+        // A git the walk cannot read may move the root: refused unread where one may be named,
+        // a program in a variable among them (#1354).
+        walk.too_deep |= shellwrap::may_name(cmd, "git") || cmd.contains('$');
+        return start;
+    }
     let Some(segments) = shellseg::joined_argv(cmd) else {
-        return Vec::new();
+        return start;
     };
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
     let carried = shellwrap::exported_env_shared(&argvs);
-    // Stat-ed on the first git invocation, so a line with none pays nothing for it.
-    let the_root = std::cell::OnceCell::new();
-    let mut out = Vec::new();
-    let mut here = Whereabouts::at(cwd);
+    let (root, the_root, aliases) = (shared.root, &shared.the_root, &shared.aliases);
+    let mut here = start;
     // Where the shell stays if a `cd … &&` failed: back in play once the `&&` chain ends.
     let mut left_behind = Whereabouts::default();
     // A certain `cd` not joined by `&&` came before: what the denial's hint is for (#1326).
-    let mut loose_cd = false;
-    // What earlier segments make or re-point: a directory word reaching it is unnameable (#1326).
-    let mut made = Made::default();
-    let context = CdContext::of(cmd);
-    // The root's configured aliases, read once for the whole line and only if it needs them.
-    let aliases = AliasBook::of(root);
+    let mut loose_cd = outer.loose_cd;
+    let context = CdContext::of(cmd).with(outer.context.as_ref());
     // Every assignment a bare assignment segment (`A=1;`) has made so far: each distinct one
     // once, in order, so a line repeating one stays short and every value a variable was given
-    // is still there to be read (D-1358f).
+    // is still there to be read (D-1358f). A string's line's come before them.
     let mut assigned: Vec<String> = Vec::new();
     let mut assigned_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (i, seg) in segments.iter().enumerate() {
+        // Taken apart each segment, so a string handed on can be walked with the whole of it.
+        let (out, made) = (&mut walk.out, &mut walk.made);
         let before = carried.before(i);
         let call = shellwrap::split_env_chdir(&seg.argv);
         let (prog, env, args, chdir) = (call.prog, call.env, call.argv, call.chdir);
         // What this segment makes, read where it runs and taken in once it is read.
         let makes = Made::of(&seg.argv, &prog, &args, &here);
-        // The segment's own assignments: the only line-set configuration git surely sees (#1358).
-        let own_env = env;
+        // The segment's own assignments: the only line-set configuration git surely sees
+        // (#1358), after those of the segments that handed this string on. Built only for a
+        // segment that may be git.
+        let own_env_of = || {
+            let mut out = joined(&outer.own_env);
+            out.extend(env.iter().cloned());
+            out
+        };
         // `before + env`, built only for a segment that may be git: copying every earlier
-        // export into every segment made a line of exports cost its square.
+        // export into every segment made a line of exports cost its square. A string starts
+        // with what its line exported to it.
         let inherited = || {
-            let mut out = before.to_vec();
-            out.extend(own_env.iter().cloned());
+            let mut out = joined(&outer.exported);
+            out.extend(before.iter().cloned());
+            out.extend(own_env_of());
             out
         };
         // What may set git's configuration for this segment: every bare assignment the line
@@ -1068,7 +1179,8 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
         // Built only for a segment that may be git, so a long line of assignments costs what it
         // is long.
         let config_env = || {
-            let mut out: Vec<String> = assigned.clone();
+            let mut out = joined(&outer.assigned);
+            out.extend(assigned.iter().cloned());
             out.extend(inherited());
             out
         };
@@ -1101,17 +1213,17 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             // A program with no words after it runs nothing the guards judge, and is left
             // before the line's configuration is gathered for it.
             let words = args.get(1..).unwrap_or(&[]);
-            let env = if words.is_empty() {
-                Vec::new()
+            let (env, own_env) = if words.is_empty() {
+                (Vec::new(), Vec::new())
             } else {
-                config_env()
+                (config_env(), own_env_of())
             };
             let found = match literal_mover_after(words) {
                 Some((sub, post)) => Some((sub, post, Vec::new(), false)),
                 None if words.is_empty() => None,
                 None => {
                     let (pre, rest) = shellwrap::git_globals(&args);
-                    subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases, false)
+                    subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, false)
                         .map(|(sub, post, unread)| (sub, post, pre, unread))
                 }
             };
@@ -1124,7 +1236,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                     unread,
                     program_unnamed: true,
                     env,
-                    own_env: own_env.clone(),
+                    own_env,
                     after_loose_cd: loose_cd,
                 });
             }
@@ -1133,9 +1245,9 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             // and `env -C $(…) git …` read as running the substitution's first word. A git
             // among what follows may be the one that runs, sent where the guard cannot name.
             let (pre, rest) = shellwrap::git_globals(&seg.argv[at..]);
-            let env = config_env();
+            let (env, own_env) = (config_env(), own_env_of());
             if let Some((sub, post, unread)) =
-                subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases, true)
+                subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, true)
             {
                 out.push(RootInvocation {
                     sub,
@@ -1145,7 +1257,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                     unread,
                     program_unnamed: false,
                     env,
-                    own_env: own_env.clone(),
+                    own_env,
                     after_loose_cd: loose_cd,
                 });
             }
@@ -1156,9 +1268,9 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             // it, are spread through what follows, so neither the directory nor the subcommand
             // can be read from their places.
             let spliced = pre.iter().any(|t| t.ends_with('$'));
-            let env = config_env();
+            let (env, own_env) = (config_env(), own_env_of());
             let words = if spliced {
-                subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases, true)
+                subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, true)
             } else {
                 rest.split_first()
                     .map(|(sub, post)| (sub.clone(), post.to_vec(), false))
@@ -1207,13 +1319,46 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                         unread,
                         program_unnamed: false,
                         env,
-                        own_env: own_env.clone(),
+                        own_env,
                         after_loose_cd: loose_cd,
                     });
                 }
             }
         }
+        // A string this segment hands a shell runs where that shell runs, with what the line
+        // gives it (#1325).
+        let scripts: Vec<String> = shellwrap::shell_scripts_of(&prog, &args)
+            .into_iter()
+            .chain(shellwrap::here_string_script_of(&prog, &args))
+            .collect();
+        let handed = (!scripts.is_empty()).then(|| {
+            let gives = Outer {
+                exported: outer.exported.iter().copied().chain([before]).collect(),
+                assigned: outer
+                    .assigned
+                    .iter()
+                    .copied()
+                    .chain([&assigned[..]])
+                    .collect(),
+                own_env: outer.own_env.iter().copied().chain([&env[..]]).collect(),
+                loose_cd,
+                context: Some(context.clone()),
+            };
+            let runs_at = where_a_shell_runs(&here, &chdir, &seg.argv, &context, made);
+            (runs_at, gives)
+        });
         made.take(makes);
+        // Each string is read now, so what it makes reaches the segments after it, and where an
+        // `eval` leaves this shell is where they run.
+        if let Some((runs_at, gives)) = handed {
+            let evals = shellwrap::basename(&prog) == "eval";
+            for script in &scripts {
+                let left = walk_line(script, runs_at.clone(), &gives, depth + 1, shared, walk);
+                if evals {
+                    here.merge(left);
+                }
+            }
+        }
         if !matches!(seg.after.as_deref(), Some("&&" | "|" | "|&")) {
             here.merge(std::mem::take(&mut left_behind));
         }
@@ -1223,6 +1368,43 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                     assigned.push(assign.clone());
                 }
             }
+        }
+    }
+    here.merge(left_behind);
+    here
+}
+
+/// Every directory a shell handed a string may run it in: where this one may be, moved by a
+/// wrapper's chdir flag (`env -C <dir> sh -c …`). A flag the guard cannot name may be anywhere.
+fn where_a_shell_runs(
+    here: &Whereabouts,
+    chdir: &str,
+    argv: &[String],
+    line: &CdContext,
+    made: &Made,
+) -> Whereabouts {
+    if chdir.is_empty() {
+        return here.clone();
+    }
+    let separated = argv
+        .windows(2)
+        .any(|w| matches!(w[0].as_str(), "-C" | "-D" | "--chdir") && w[1] == chdir);
+    let readings = (!made.reaches(chdir, here))
+        .then(|| directory_readings(chdir, !separated || line.quotes_tilde, line))
+        .flatten();
+    let Some(readings) = readings else {
+        return Whereabouts {
+            dirs: Vec::new(),
+            anywhere: true,
+        };
+    };
+    let mut out = Whereabouts {
+        dirs: Vec::new(),
+        anywhere: here.anywhere,
+    };
+    for dir in &here.dirs {
+        for reading in &readings {
+            out.merge(Whereabouts::at(&join_dir(dir, reading)));
         }
     }
     out
@@ -2061,7 +2243,12 @@ pub fn default_branch(root: &str) -> Option<String> {
 /// place as restore-only, opens the gate.
 pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
-    for inv in plane_root_git(cmd, cwd, &root) {
+    let (invocations, too_deep) = read_line(cmd, cwd, &root);
+    if too_deep {
+        // A git in a string handed on past what the walk reads may move the root (#1325).
+        return Some(guardcaps::too_deep_refusal());
+    }
+    for inv in invocations {
         if inv.unread && inv.program_unnamed {
             return Some(format!(
                 "cannot tell what this command does: its program is named only when the shell \
