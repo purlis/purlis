@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
-import { BellRing, ChevronDown, Compass, PanelBottom } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
   CATALOGUE,
@@ -1054,91 +1054,3 @@ export function inHandleBand(
   };
   return across(box.left, box.right, e.clientX) && across(box.top, box.bottom, e.clientY);
 }
-
-/**
- * The button that puts a region away and brings it back (ADR 0038).
- *
- * **Not a row of the catalogue**, deliberately, and this is the one place in the bar where that
- * is true. The catalogue is what a project can DO — open a chat, split a pane, remove a
- * worktree — and every one of its rows is also a palette row, because the palette is the
- * primary input. Whether the operator has the explorer on screen is not a thing to do to the
- * plane; it is how this window is laid out, it is remembered beside the window and not on the
- * plane, and a palette full of "Navigation", "Attention" would be rows of noise in
- * front of a hundred real ones at ADR 0026's limits.
- *
- * `aria-pressed` and not a label that flips between "Show" and "Hide": the name of the thing is
- * what a person looks for, and the state is what the attribute is for.
- *
- * # Its mark, and nothing else — on the status line (charter-app#193)
- *
- * The operator asked for this twice. First *"show hide buttons can be movet to bottom status
- * bar — again like ZED"*, and then, when only half of it had been done: *"you dont moved this 3
- * hide/show bottons to bottom status bar — and let make them without labels, just small icons
- * without texts, texts only with tooltips, i already asked about this — seems you missed."*
- * `StatusLine.tsx` is where they are drawn now; this is what one of them is.
- *
- * **The words do not go away — they move from the content to `aria-label`.** That is the one
- * condition `docs/design-system.md` puts on an icon with no text beside it, and it is not a
- * formality here: `pressOnly("Explorer")` is how the palette and the scenario specs reach a
- * control, and a screen reader reads exactly the same string. An icon-only button whose
- * accessible name is an icon is a button nobody can find, by either route.
- *
- * **The `title` says what pressing it does, which the name cannot.** `aria-label` has to be the
- * name of the thing — `Explorer` — because that is what a person looks for; the tooltip is
- * where *"Put the Explorer region away"* belongs, and it already said it. A tooltip that merely
- * repeated the label would be a tooltip nobody reads twice.
- *
- * **The mark is what the region IS and never where it is**, which was already true and is now
- * the whole of what is drawn — see {@link REGION_MARKS}. A panel-left glyph would be wrong the
- * first time a region moved, and with the words gone it would be the only thing left to be
- * wrong.
- */
-export function RegionToggle({
-  id,
-  shown,
-  onToggle,
-}: {
-  id: RegionId;
-  shown: boolean;
-  onToggle: (id: RegionId) => void;
-}) {
-  const name = CATALOGUE[id].name;
-  const Mark = REGION_MARKS[id];
-  return (
-    <button
-      type="button"
-      className="region-toggle"
-      // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-      // down (`docs/ui-primitives.md`, charter-app#189).
-      tabIndex={0}
-      aria-pressed={shown}
-      aria-label={name}
-      title={shown ? `Put the ${name} region away` : `Bring the ${name} region back`}
-      onClick={() => onToggle(id)}
-    >
-      <Mark />
-    </button>
-  );
-}
-
-/**
- * Each region's mark, by what it IS and not by where it is.
- *
- * A panel-left / panel-right icon would be the obvious choice and would be wrong the first
- * time an operator moved a region: the layout is data (`regions.ts`), so the explorer can be
- * on the right, and a toggle drawn as "left panel" would then point at the wrong edge of the
- * window. Navigation is a compass, attention is a bell.
- *
- * A `Record` over `RegionId`, so a region added to the catalogue without a mark here is a type
- * error rather than a toggle with a hole in it.
- */
-const REGION_MARKS: Record<RegionId, typeof Compass> = {
-  // The region the Chats and Explorer views are in: a way to somewhere, as ADR 0038 reads it.
-  // The explorer's folder tree is the Explorer view's own mark now (`ActivityBar.tsx`).
-  navigation: Compass,
-  aside: BellRing,
-  // The Panel's halves are toggled by their Lower icons and ⌘J, not on the status line; a half
-  // IS a part of the Panel, so the Panel is its mark.
-  "panel-left": PanelBottom,
-  "panel-right": PanelBottom,
-};

@@ -998,16 +998,6 @@ button.show-more:focus-visible {
    is gone with the button rather than left behind matching nothing: dead CSS is how a rule
    comes to be copied for a reason that stopped being true. */
 
-/* The project's directory. It used to be the last thing on `header.bar`; it is on the status
-   line at the bottom of the window now, and this is the only place it is drawn. It is the one
-   item on that line allowed to shrink — see `.status-line`. */
-.plane {
-  opacity: 0.7;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .trouble {
   margin: 0;
   padding: 0.35rem 0.6rem;
@@ -2904,11 +2894,6 @@ button.show-more:focus-visible {
 .slot-panel {
   border-top: 1px solid var(--border-subtle);
 }
-
-/* The buttons that put a region away and bring it back are NOT drawn here any more. They are
-   on the status line at the bottom of the window (charter-app#193), and `.status-line
-   .regions-doing` below is where they are dressed — beside the rest of that line, which is
-   what makes them look like part of it rather than like the bar's controls moved down. */
 
 /* The left region: the repo and worktree explorer, which is the selector WITHIN a workspace
    (ADR 0038). */
@@ -5025,39 +5010,88 @@ h2.sidebar-title .node-icon {
   display: none;
 }
 
-/* **charter's status line**: one line at the very bottom of the window, under the bottom
-   region and under everything else (`app/src/StatusLine.tsx`, which argues why it is not one
-   of ADR 0038's four regions). `surface.deep` is defined by the theme as the topmost strip and
-   the bottom of the window, so this and the projects strip are the two ends of the same frame.
+/* **charter's status line**: one line at the very bottom of the window, under every region
+   (`app/src/StatusLine.tsx`, which argues why it is not one of ADR 0038's regions).
+   `surface.deep` is defined by the theme as the topmost strip and the bottom of the window, so
+   this and the projects strip are the two ends of the same frame.
 
-   `flex: none` on the line and on every item in it: the window is a flex column and the
-   regions take what is left, and a status line that grew or shrank with the window would be a
-   second bottom bar. */
+   **One bar, as an editor's status bar is** (qw357): context on the left, health on the right,
+   every size from the core tokens. What can be pressed is the set's small ghost button
+   (`.ui-button-ghost.ui-button-sm`): no box, the chrome's height, the set's hover and ring.
+   The line's own padding is the ring's room (its width and its offset), so a focused item's
+   ring is never clipped by the window's bottom edge.
+
+   `flex: none` on the line: the window is a flex column and the regions take what is left. */
 .status-line {
   display: flex;
   flex: none;
-  gap: 0.75rem;
+  gap: var(--space-5);
   align-items: center;
-  padding: 0.15rem 0.6rem;
-  font-size: 0.8rem;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
   white-space: nowrap;
   overflow: hidden;
   background: var(--surface-deep);
   border-top: 1px solid var(--border-subtle);
 }
 
-.status-line > * {
+/* **Context gives way, health never does.** The left end shrinks and cuts its last cells
+   first; everything in it is a count or a name that costs less off the end than the Notices
+   count would. `min-width: 0` is what lets a flex item shrink below its content at all. */
+.status-context {
+  display: flex;
+  flex: 0 1 auto;
+  gap: var(--space-5);
+  align-items: center;
+  min-width: 0;
+  /* As tall as a status item, so the line is one height with or without the health end. */
+  min-height: var(--size-chrome);
+  overflow: hidden;
+}
+
+.status-context > * {
   flex: none;
 }
 
-/* The project's path is the ONE thing on the line allowed to give way, and it gives way last:
-   everything to its left is a count that is unreadable when it is half-drawn, and a path is
-   still a path with its head cut off. `min-width: 0` is what lets a flex item shrink below its
-   content at all; the whole path is on the element's `title` either way. */
-.status-line > .plane {
+/* The auto margin is what divides the line. */
+.status-health {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+/* **The project, as its name** (qw357): its mark, then the directory's last segment, with a
+   hairline after it that parts the project from the workspace inside it. The one cell of the
+   context that shrinks inside itself: a long name is cut with an ellipsis and is whole in the
+   tooltip's path. The ring is inside, because the context clips what is outside it. */
+.status-line .status-project {
+  display: flex;
   flex: 0 1 auto;
+  gap: var(--space-2);
+  align-items: center;
   min-width: 0;
-  margin-left: 0.25rem;
+  padding-inline-end: var(--space-5);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+.status-project:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+.status-project-mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.status-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
 }
 
 /* Where I am: charter's own mark, and the workspace's name in the weight the footer gives it
@@ -5087,139 +5121,38 @@ h2.sidebar-title .node-icon {
   color: var(--text-muted);
 }
 
-/* The alerts button, and the auto margin that divides the line: what is true of where you are
-   on the left, what you can open and which project it is on the right. */
-.status-alerts {
-  display: flex;
-  gap: 0.3rem;
-  align-items: center;
-  margin-left: auto;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.05rem 0.4rem;
-  font: inherit;
-  cursor: pointer;
-}
-
-.status-alerts:hover:not(:disabled) {
-  border-color: var(--accent-base);
-}
-
-/* No drawer behind it, so not pressable — and drawn as such rather than as a live control that
-   answers a press with nothing (`StatusLine.tsx`). The window always wires one. */
-.status-alerts:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .status-unknown {
   color: var(--text-muted);
 }
 
+/* The Notices count: the neutral count pill, at the count's size. */
 .status-count {
-  padding: 0 0.3rem;
-  border-radius: 999px;
+  padding: var(--space-0) var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--control-count);
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 
-/* **Which regions are drawn, at the right-hand corner of the line** (ADR 0038,
-   charter-app#193). They were labelled buttons on `header.bar`; the operator asked twice for
-   them down here — *"show hide buttons can be movet to bottom status bar — again like ZED"* —
-   and then *"let make them without labels, just small icons without texts, texts only with
-   tooltips"*. So each is its mark and nothing else, and its name is on `aria-label` where a
-   screen reader and `pressOnly("Explorer")` both still find it (`RegionFrame.tsx`).
-
-   Square and small, because a row of three icons with a text button's padding reads as three
-   words missing. `1.4rem` is the icon at `1em` plus its own breathing room, which is the
-   smallest this can be while staying a pointer target at the very corner of the window. */
-.regions-doing {
+/* **The update button** (`app/src/Updates.tsx`), on the title bar. A quiet updater is its icon
+   alone, in the muted colour: it is a way in to the channel, not a fact on the bar. An offer is
+   in the accent, the one thing there that is news, and a failure the operator asked about is
+   amber. */
+.status-update {
   display: flex;
-  gap: 0.15rem;
-  align-items: center;
-  /* First on the line, as Zed has them: a hairline after the group is what says these are the
-     window's controls and what follows is the line's text. */
-  padding-inline-end: 0.5rem;
-  margin-inline-end: 0.25rem;
-  border-inline-end: 1px solid var(--border-subtle);
-}
-
-.region-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.4rem;
-  padding: 0.1rem;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-primary);
-  font: inherit;
-  cursor: pointer;
-}
-
-.region-toggle:hover {
-  background: var(--surface-hover);
-}
-
-.region-toggle:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-/* **Off is drawn by going quiet, on by the accent underneath.** Both were here before the move
-   and neither is decoration: with the words gone, `aria-pressed` is carried to a pointer by
-   these two rules alone, and a screen reader by the attribute itself. */
-.region-toggle[aria-pressed="false"] {
-  opacity: 0.45;
-}
-
-.region-toggle[aria-pressed="true"] {
-  border-bottom: 1px solid var(--accent-base);
-}
-/* **The doctor's button** (`app/src/Doctor.tsx`): the same chrome as the alerts button beside
-   it, so the right-hand end of the line reads as "things you can open". Its tone is the
-   verdict's — a blocker in the colour a failed check has everywhere else in the window, a
-   warning in the amber of "not finished" — and a clean doctor is the plain control colour,
-   never green: about twenty checks did not run, and a green word over them is a claim. */
-.status-doctor {
-  display: flex;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
   color: var(--text-primary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-0) var(--space-3);
   font: inherit;
   cursor: pointer;
 }
 
-.status-doctor:hover,
-.status-update:hover,
-.status-pin:hover {
+.status-update:hover {
   border-color: var(--accent-base);
-}
-
-/* **The update button and the pin** (`app/src/Updates.tsx`), in the same chrome as the doctor
-   beside them. A quiet updater is its icon alone, in the muted colour: it is a way in to the
-   channel, not a fact on the line. An offer is in the accent — the one thing on the line that
-   is news — and a failure the operator asked about is amber. The pin is drawn only when it
-   drifts, so it is always amber. */
-.status-update,
-.status-pin {
-  display: flex;
-  gap: 0.3rem;
-  align-items: center;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.05rem 0.4rem;
-  font: inherit;
-  cursor: pointer;
 }
 
 .status-update.update-quiet {
@@ -5232,8 +5165,17 @@ h2.sidebar-title .node-icon {
   border-color: var(--accent-base);
 }
 
-.status-update.update-failed,
-.status-pin {
+.status-update.update-failed {
+  color: var(--state-waiting);
+}
+
+/* **Severity is a colour and a word, never a colour alone** (qw357). The pin is drawn only
+   when it drifts, so its mark is always amber, beside words that say what is pinned. The
+   doctor's count takes its verdict's colour: a blocker in the colour a failed check has
+   everywhere else in the window, a warning in the amber of "not finished". A clean doctor is
+   the plain word, never green: about twenty checks did not run, and a green word over them is
+   a claim. One it could not run is quiet. */
+.status-pin svg {
   color: var(--state-waiting);
 }
 
@@ -5250,10 +5192,6 @@ h2.sidebar-title .node-icon {
   border-radius: 4px;
 }
 
-.status-doctor.doctor-tone-fail {
-  border-color: var(--state-failed);
-}
-
 .status-doctor.doctor-tone-fail .doctor-said {
   color: var(--state-failed);
 }
@@ -5262,7 +5200,7 @@ h2.sidebar-title .node-icon {
   color: var(--state-waiting);
 }
 
-.status-doctor.doctor-tone-unknown {
+.status-doctor.doctor-tone-unknown svg {
   color: var(--text-muted);
 }
 

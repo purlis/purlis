@@ -499,11 +499,8 @@ export function ChatStrip({
         They are still catalogue rows and still in the palette, which is what a keyboard
         without a pointer uses: the palette acts on the focused pane, and a pane's own
         button focuses that pane before it runs the same row. */}
-      {/* **The region toggles are NOT here any more.** They are on the status line at the
-        bottom of the window, icon-only (`StatusLine.tsx`, `RegionFrame`'s `RegionToggle`),
-        where the operator asked for them twice — *"show hide buttons can be movet to
-        bottom status bar — again like ZED"*. The rule is unchanged and travels with them:
-        one button per region in the arrangement, in the order the window draws them.
+      {/* **No region toggles here, and none on the status line either** (qw357): a side is put
+        away and brought back from its activity bar, its key and the palette.
 
         The project's path is not here either, for the same reason and since #172. */}
     </header>

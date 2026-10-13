@@ -1,11 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { StatusLine, runningIn } from "./StatusLine";
-import type { FactBadge, Panels, PanelTodo, Piece } from "./bindings";
+import { StatusLine, projectName, runningIn } from "./StatusLine";
+import type { DoctorState } from "./Doctor";
+import type { DoctorReport, DoctorRow, FactBadge, Panels, PanelTodo, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
 
 /**
@@ -103,13 +107,6 @@ describe("the status line says where you are", () => {
     expect(words()).not.toContain("reading");
     // Zero IS drawn for `ws`: an empty plane is a fact, not an absence of one.
     expect(within(screen.getByTestId("status-workspaces")).getByText("0")).toBeInTheDocument();
-  });
-
-  it("carries the project's directory, whole, as the path it is", () => {
-    draw();
-
-    const said = screen.getByTestId("status-line").querySelector("code");
-    expect(said?.textContent).toBe(PLANE);
   });
 
   it("says how many workspaces the project has", () => {
@@ -244,26 +241,160 @@ describe("the Notices button (#1695)", () => {
   });
 });
 
-describe("the region toggles", () => {
-  // The operator asked four times, with a screenshot of Zed: the buttons that show and hide the
-  // regions are at the status line's LEFT edge. #207 put them at the right-hand end; this is
-  // what keeps them from going back there.
-  it("are the first thing on the line, at its left edge", () => {
-    const onToggle = vi.fn();
-    draw({
-      regions: {
-        placed: [
-          { id: "navigation", side: "left", order: 0, collapsed: false },
-          { id: "aside", side: "right", order: 0, collapsed: true },
-        ],
-        onToggle,
-      },
-    });
-    const line = screen.getByTestId("status-line");
-    const first = line.firstElementChild;
-    expect(first?.className).toBe("regions-doing");
-    const buttons = within(first as HTMLElement).getAllByRole("button");
-    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Navigation", "Attention"]);
+/**
+ * **The project is its name, and its directory is the tooltip** (qw357). The operator:
+ * *"project directory is very large and can be just compacted and showed only project name, and
+ * on hovering just show directory"*.
+ */
+describe("the project, as its name (qw357)", () => {
+  const project = () => screen.getByTestId("status-project");
+
+  it("shows the directory's last segment, and not the directory", () => {
+    draw({ plane: "/Users/dev/IdeaProjects/charter" });
+
+    expect(project()).toHaveTextContent(/^charter$/);
+    expect(words()).not.toContain("/Users/dev");
+    // Named for what it is, in words a screen reader reads: the mark is an image called Project.
+    expect(within(project()).getByRole("img", { name: "Project" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["/home/dev/plane", "plane"],
+    ["/home/dev/plane/", "plane"],
+    ["C:\\Users\\dev\\plane", "plane"],
+    ["/", "/"],
+  ])("reads %s as %s", (directory, name) => {
+    expect(projectName(directory)).toBe(name);
+  });
+
+  it("says the whole directory in its tooltip, under the pointer", async () => {
+    draw();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    await userEvent.hover(project());
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(PLANE);
+  });
+
+  it("is reached by the keyboard, which opens the same tooltip", async () => {
+    // A path that only a hover shows is one a keyboard never reads.
+    draw();
+    expect(project()).toHaveAttribute("tabindex", "0");
+
+    await userEvent.tab();
+
+    expect(project()).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(PLANE);
+  });
+
+  it("hands the directory to whoever reads the window, whole", () => {
+    // The scenario specs learn which project is open from here (`app/e2e`).
+    draw();
+
+    expect(project()).toHaveAttribute("data-directory", PLANE);
+  });
+
+  it("cuts a long name with an ellipsis, and never the health end of the line", () => {
+    const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
+    const rule = (selector: string) =>
+      css.slice(css.indexOf(`\n${selector} {`), css.indexOf("}", css.indexOf(`\n${selector} {`)));
+
+    expect(rule(".status-project-name")).toContain("text-overflow: ellipsis");
+    expect(rule(".status-context")).toContain("flex: 0 1 auto");
+    expect(rule(".status-health")).toContain("flex: none");
+  });
+});
+
+/**
+ * **One bar, two ends** (qw357): context on the left, health on the right, and what can be
+ * pressed is a status item, the set's small ghost button, and not a box of its own.
+ */
+describe("the line is one status bar (qw357)", () => {
+  const row = (name: string, status: DoctorRow["status"]): DoctorRow => ({
+    name,
+    status,
+    detail: "",
+    hint: "",
+    fix: null,
+    settings: null,
+    checked: true,
+  });
+  const doctor = (rows: DoctorRow[]): DoctorState => ({
+    report: { rows, full: false } as unknown as DoctorReport,
+    running: false,
+    run: vi.fn(),
+  });
+
+  it("puts where you are on the left and what wants a look on the right", () => {
+    draw({ alerts: { count: 2, open: vi.fn() }, doctor: doctor([row("git", "warn")]) });
+
+    const [context, health, ...more] = [...screen.getByTestId("status-line").children];
+    expect(more).toEqual([]);
+    expect(context).toHaveClass("status-context");
+    expect(context.firstElementChild).toBe(screen.getByTestId("status-project"));
+    expect(context).toHaveTextContent("alpha");
+    expect(health).toHaveClass("status-health");
+    expect(within(health as HTMLElement).getAllByRole("button")).toEqual([
+      screen.getByTestId("status-alerts"),
+      screen.getByTestId("status-doctor"),
+    ]);
+  });
+
+  it("draws Notices and the doctor as status items, flat on the bar", () => {
+    draw({ alerts: { count: 2, open: vi.fn() }, doctor: doctor([row("git", "warn")]) });
+
+    for (const item of [screen.getByTestId("status-alerts"), screen.getByTestId("status-doctor")]) {
+      expect(item).toHaveClass("ui-button", "ui-button-ghost", "ui-button-sm");
+    }
+    // And no rule of the window's own boxes them again: the look is the class's, whole.
+    const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
+    for (const boxed of [".status-alerts {", ".status-doctor {", ".status-pin {"]) {
+      expect(css).not.toContain(`\n${boxed}`);
+    }
+  });
+
+  it("says the doctor's count in words, in its verdict's colour class, and nothing at zero", () => {
+    const { unmount } = draw({ doctor: doctor([row("git", "warn"), row("gh", "warn")]) });
+    const warned = screen.getByRole("button", { name: "Doctor: 2 warnings" });
+    expect(warned).toHaveClass("doctor-tone-warn");
+    expect(warned.querySelector(".doctor-said")).toHaveTextContent(/^2 warnings$/);
+    unmount();
+
+    draw({ doctor: doctor([row("git", "ok")]) });
+    const clean = screen.getByTestId("status-doctor");
+    expect(clean).toHaveClass("doctor-tone-quiet");
+    expect(clean.querySelector(".doctor-said")).toBeNull();
+    expect(clean).toHaveAccessibleName(/nothing wrong/);
+  });
+
+  it("announces the Notices count in the item's name, with the number drawn beside the bell", () => {
+    draw({ alerts: { count: 6, open: vi.fn() } });
+
+    const notices = screen.getByRole("button", { name: "Notices: 6" });
+    expect(notices.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(notices).toHaveTextContent(/Notices\s*6/);
+  });
+});
+
+/**
+ * **The region toggles are gone from the line** (qw357). The operator: *"bottom toggle icons
+ * are redundant now … they can be removed fully"*. What they did is each side's activity bar's,
+ * its key's and the palette's: `FourRegions.test.tsx` holds a side put away and brought back by
+ * each, and `actions.test.ts` the palette's rows.
+ */
+describe("the region toggles (qw357)", () => {
+  it("are not on the line: nothing on it is a toggle", () => {
+    draw({ alerts: { count: 0, open: vi.fn() } });
+
+    expect(screen.getByTestId("status-line").querySelector("[aria-pressed]")).toBeNull();
+    expect(document.querySelector(".regions-doing, .region-toggle")).toBeNull();
+  });
+
+  it("left no rule and no component behind", () => {
+    const read = (file: string) => readFileSync(join(process.cwd(), "src", file), "utf8");
+
+    expect(read("App.css")).not.toMatch(/\.regions-doing|\.region-toggle/);
+    expect(read("RegionFrame.tsx")).not.toContain("RegionToggle");
   });
 });
 

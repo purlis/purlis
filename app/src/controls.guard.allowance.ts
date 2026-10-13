@@ -66,7 +66,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "Doctor.tsx": [
     "<button className=\"doctor-fix\">",
     "<button className=\"doctor-settings\">",
-    "<button className={`status-doctor doctor-tone-${tone}`}>",
   ],
   "DoorPage.tsx": [
     "<button className=\"welcome-link\">",
@@ -159,7 +158,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "RegionFrame.tsx": [
     "<button className=\"panel-view half-away\">",
-    "<button className=\"region-toggle\">",
   ],
   "RepoPicker.tsx": [
     "<button>",
@@ -170,10 +168,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "SessionRecordTab.tsx": [
     "<button className=\"record-ref\">",
-  ],
-  "StatusLine.tsx": [
-    "<button className=\"status-alerts\">",
-    "<button className=\"status-alerts\">",
   ],
   "StripMarks.tsx": [
     "<button className={clsx( offer.id === \"pane.close\" && !closesOnly(offer.does) && \"ends-a-chat\", bare && \"bare\", )}>",
@@ -206,7 +200,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "Updates.tsx": [
     "<button className={`status-update update-${state.kind}`}>",
-    "<button className=\"status-pin\">",
   ],
   "VaultSignIn.tsx": [
     "<button>",

@@ -1,11 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Bell } from "lucide-react";
+import { Bell, FolderRoot } from "lucide-react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import type { WorkspaceState } from "./workspaceState";
 import { Health, type DoctorState } from "./Doctor";
-import { RegionToggle } from "./RegionFrame";
-import type { Placement, RegionId } from "./regions";
 import { PinItem } from "./Updates";
 import type { FactBadge, PinReport } from "./bindings";
 import { ago } from "./ChangesView";
@@ -31,14 +30,11 @@ import { ago } from "./ChangesView";
  *   `react-resizable-panels` takes. A status line is one line of text: its height is a font
  *   and two paddings, and the percentage that happens to equal that at 1080 px is the wrong
  *   one at 4K. There is no honest number to put in the catalogue.
- * - **A region resizes and can be put away; this does neither.** The toggles are drawn from the
- *   arrangement (`SIDES.flatMap`), so a region arrives with a button that hides it — which is
- *   the right rule for a region and the wrong one for the line that says where you are and
- *   which project you are in. A status line an operator can lose is one they will lose and then
- *   report as a bug. That those toggles are now drawn *on* this line does not weaken the
- *   argument, it sharpens it: the line carries every region's way back and has none of its own,
- *   which is what makes it the frame rather than a tenant. `FourRegions.test.tsx`'s *"cannot be
- *   put away, because it is not a region"* is the guard.
+ * - **A region resizes and can be put away; this does neither.** A region arrives with a way
+ *   to hide it, which is the right rule for a region and the wrong one for the line that says
+ *   where you are and which project you are in. A status line an operator can lose is one they
+ *   will lose and then report as a bug. `FourRegions.test.tsx`'s *"cannot be put away, because
+ *   it is not a region"* is the guard.
  * - **It is the frame, not a tenant of it.** `.projects`, in the title bar, sits above the
  *   regions and is not in the arrangement either. The window is chrome, regions, chrome;
  *   this is the bottom half of the chrome, and `RegionFrame` is untouched by it — which is also
@@ -92,6 +88,27 @@ import { ago } from "./ChangesView";
  * listening for one event. It is on the title bar now — the window's own chrome, drawn once
  * (`TitleBar.tsx`). Moved rather than copied: two surfaces stating one fact is the shape
  * charter refuses, and the duplication this line already carries is named above and argued for.
+ *
+ * # One bar, two ends (qw357)
+ *
+ * The operator, 2026-10-13: *"notices and doctor buttons in bottom are not better UI integrated
+ * in bottom bar, also project directory is very large and can be just compacted and showed only
+ * project name, and on hovering just show directory"*. So the line reads as an editor's status
+ * bar does:
+ *
+ * - **The left end is context, the right end is health.** Which project, which workspace and
+ *   what it holds are on the left; Notices, the doctor and a drifting pin are on the right.
+ *   The left end is the one that gives way in a narrow window: a count that goes off the end
+ *   costs less than the Notices count doing so.
+ * - **What can be pressed is a status item**, the set's small ghost button
+ *   (`docs/ui-primitives.md`): no box, the chrome's height, the set's own hover and focus ring.
+ *   An icon, a short word, then a count.
+ * - **The project is its name**, the last segment of its directory, and the whole directory is
+ *   its tooltip, on hover and on keyboard focus.
+ *
+ * **The region toggles are gone from here**, on the operator's word that they are redundant:
+ * each side's activity bar puts its side away on a press of the open view and brings it back
+ * on a press of any, ⌘B and ⌥⌘B do the same, and so do the palette's rows (`actions.ts`).
  */
 export function StatusLine({
   plane,
@@ -104,7 +121,6 @@ export function StatusLine({
   doctor,
   onOpenSettings,
   pin,
-  regions,
   badges,
   factNotes,
 }: {
@@ -154,21 +170,6 @@ export function StatusLine({
    *  to ask again. The item is drawn only when it drifts or was not read. */
   pin?: { pin?: PinReport; trouble?: string; again: () => void };
   /**
-   * Which regions the window is drawing, and the way to change that (ADR 0038).
-   *
-   * **The arrangement, already in the order the window draws it** — `PlaneView` flattens
-   * `inSlots` and hands the result over. Nothing here sorts, filters or names a region: a
-   * status line that decided which regions exist would be the second place that decides, and
-   * the reason there is a catalogue at all is that there is one.
-   *
-   * Absent draws no toggles, which is a status line rendered on its own.
-   */
-  regions?: {
-    /** One region each, in the order the window draws them. */
-    placed: readonly Placement[];
-    onToggle: (id: RegionId) => void;
-  };
-  /**
    * The badges the extensions on in this project and workspace show here (charter-app#340),
    * read from each one's facts file by the core — `extension_facts`, which never starts a
    * program. Absent or empty draws none.
@@ -186,116 +187,141 @@ export function StatusLine({
   const pieces = pieceCount(state);
   return (
     <footer className="status-line" aria-label="Status" data-testid="status-line">
-      {/* **Which regions are drawn** (ADR 0038), FIRST on the line, at the window's
-          bottom-left corner — the operator's *"show hide buttons can be movet to bottom status
-          bar — again like ZED"*, with a screenshot of Zed that has them at the far left. #207
-          put them at the right-hand end and called that Zed's place; it is not, and the
-          operator had to ask a fourth time.
+      {/* **Context**: where I am. It is what the line is for, and the end that gives way when
+          the window is narrow, its last cell first. */}
+      <span className="status-context">
+        <ProjectItem plane={plane} />
 
-          **One button per region in the arrangement, in the order the window draws them.** A
-          region added to the catalogue gets its own way back without anybody remembering to
-          add one, which is what a list written out by hand kept getting wrong.
-
-          **First is also where they cannot move.** The row's order is its truncation order,
-          and nothing to their left changes width, so they sit at the same x whatever the
-          workspace is called or however long the path is. */}
-      {regions && (
-        <span className="regions-doing">
-          {regions.placed.map((placed) => (
-            <RegionToggle
-              key={placed.id}
-              id={placed.id}
-              shown={!placed.collapsed}
-              onToggle={regions.onToggle}
-            />
-          ))}
+        <span className="status-where">
+          <span className="status-glyph" aria-hidden="true">
+            ⬢
+          </span>{" "}
+          {where !== undefined ? (
+            <span className="status-workspace">{where}</span>
+          ) : read ? (
+            // The plane answered and the window is on no workspace — a plane that holds none,
+            // or one whose workspaces all went away. Said, because it is the answer.
+            <span className="none">no workspace</span>
+          ) : (
+            <span className="pending">reading the project…</span>
+          )}
         </span>
-      )}
 
-      {/* Where I am. Right after the region toggles, because it is what the line is for, and because the row's order
-          is its truncation order: what goes off the end is the least important thing. */}
-      <span className="status-where">
-        <span className="status-glyph" aria-hidden="true">
-          ⬢
-        </span>{" "}
-        {where !== undefined ? (
-          <span className="status-workspace">{where}</span>
-        ) : read ? (
-          // The plane answered and the window is on no workspace — a plane that holds none,
-          // or one whose workspaces all went away. Said, because it is the answer.
-          <span className="none">no workspace</span>
-        ) : (
-          <span className="pending">reading the project…</span>
+        {todos !== undefined && (
+          <span className="status-cell" data-testid="status-todos">
+            <span className="status-label">todo</span> {todos}
+          </span>
+        )}
+
+        {pieces !== undefined && (
+          <span className="status-cell" data-testid="status-pieces">
+            <span className="status-label">branches</span> {pieces}
+          </span>
+        )}
+
+        {workspaces !== undefined && (
+          <span className="status-cell" data-testid="status-workspaces">
+            <span className="status-label">ws</span> {workspaces}
+          </span>
+        )}
+
+        {/* The line's rule and not the breadcrumb's: zero is dropped, because presence is the
+            signal, and so is a count the project has not settled yet. */}
+        {running !== undefined && running > 0 && (
+          <span className="status-cell" data-testid="status-running">
+            {running} {running === 1 ? "chat" : "chats"} running
+          </span>
+        )}
+
+        {/* An extension's badges: after charter's own counts, because they are about where you
+            are too and they are the least of it — the row's order is its truncation order. A
+            stale one is dimmed whole and says its age, so an old count never reads as a current
+            one. */}
+        {badges?.map((badge) => (
+          <span
+            key={`${badge.extension}/${badge.id}`}
+            className={badge.stale ? "status-cell status-badge stale" : "status-cell status-badge"}
+            data-testid={`status-badge-${badge.extension}-${badge.id}`}
+            title={`${badge.label}, from ${badge.name}'s facts file — ${ago(badge.age_seconds)}`}
+          >
+            <span className="status-label">{badge.label}</span> {badge.value}
+            {badge.stale && <span className="status-age"> · {ago(badge.age_seconds)}</span>}
+          </span>
+        ))}
+
+        {factNotes !== undefined && factNotes.length > 0 && (
+          <span
+            className="status-cell status-fact-notes"
+            data-testid="status-fact-notes"
+            title={factNotes.join("\n")}
+          >
+            <span className="status-label">
+              {factNotes.length} extension {factNotes.length === 1 ? "note" : "notes"}
+            </span>
+          </span>
         )}
       </span>
 
-      {todos !== undefined && (
-        <span className="status-cell" data-testid="status-todos">
-          <span className="status-label">todo</span> {todos}
-        </span>
-      )}
+      {/* **Health**: what wants a look, each a status item that opens it. This end never gives
+          way. */}
+      <span className="status-health">
+        <AlertsButton alerts={alerts} />
 
-      {pieces !== undefined && (
-        <span className="status-cell" data-testid="status-pieces">
-          <span className="status-label">branches</span> {pieces}
-        </span>
-      )}
+        {doctor && <Health doctor={doctor} onOpenSettings={onOpenSettings} />}
 
-      {workspaces !== undefined && (
-        <span className="status-cell" data-testid="status-workspaces">
-          <span className="status-label">ws</span> {workspaces}
-        </span>
-      )}
-
-      {/* The line's rule and not the breadcrumb's: zero is dropped, because presence is the
-          signal, and so is a count the project has not settled yet. */}
-      {running !== undefined && running > 0 && (
-        <span className="status-cell" data-testid="status-running">
-          {running} {running === 1 ? "chat" : "chats"} running
-        </span>
-      )}
-
-      {/* An extension's badges: after charter's own counts, because they are about where you
-          are too and they are the least of it — the row's order is its truncation order. A
-          stale one is dimmed whole and says its age, so an old count never reads as a current
-          one. */}
-      {badges?.map((badge) => (
-        <span
-          key={`${badge.extension}/${badge.id}`}
-          className={badge.stale ? "status-cell status-badge stale" : "status-cell status-badge"}
-          data-testid={`status-badge-${badge.extension}-${badge.id}`}
-          title={`${badge.label}, from ${badge.name}'s facts file — ${ago(badge.age_seconds)}`}
-        >
-          <span className="status-label">{badge.label}</span> {badge.value}
-          {badge.stale && <span className="status-age"> · {ago(badge.age_seconds)}</span>}
-        </span>
-      ))}
-
-      {factNotes !== undefined && factNotes.length > 0 && (
-        <span
-          className="status-cell status-fact-notes"
-          data-testid="status-fact-notes"
-          title={factNotes.join("\n")}
-        >
-          <span className="status-label">
-            {factNotes.length} extension {factNotes.length === 1 ? "note" : "notes"}
-          </span>
-        </span>
-      )}
-
-      <AlertsButton alerts={alerts} />
-
-      {doctor && <Health doctor={doctor} onOpenSettings={onOpenSettings} />}
-
-      {pin && <PinItem pin={pin.pin} trouble={pin.trouble} again={pin.again} />}
-
-      {/* The project directory. `code`, because it is a path and the operator copies it out of
-          here; the whole path rather than the directory's name, because two projects can share
-          a name and this is the one place in the window that says which one is open. */}
-      <span className="plane" title={plane}>
-        <span className="status-label">project</span> <code>{plane}</code>
+        {pin && <PinItem pin={pin.pin} trouble={pin.trouble} again={pin.again} />}
       </span>
     </footer>
+  );
+}
+
+/**
+ * A project's name: the last segment of its directory, as its tab on the title bar and a
+ * terminal's prompt say it. A root (`/`, `C:\`) has no segment and is said whole.
+ */
+export function projectName(plane: string): string {
+  const segments = plane.split(/[\\/]+/).filter((one) => one !== "");
+  return segments.at(-1) ?? plane;
+}
+
+/**
+ * **The project, as its name** (qw357): the operator's *"project directory is very large and
+ * can be just compacted and showed only project name, and on hovering just show directory"*.
+ *
+ * The whole directory is the window's tooltip (`.ui-tooltip`), which opens under the pointer
+ * and on keyboard focus alike, so the path is one Tab away and never only a hover's. Words and
+ * no control, as a table's shortened heading is (`settings/ColumnHeading.tsx`): it presses
+ * nothing, so it is no button. Two projects may share a name; the directory tells them apart,
+ * and it is also what `data-directory` hands the scenario specs.
+ *
+ * A long name is cut with an ellipsis (`.status-project-name`), and is whole in the tooltip's
+ * path.
+ */
+function ProjectItem({ plane }: { plane: string }) {
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <span
+            className="status-project"
+            tabIndex={0}
+            data-testid="status-project"
+            data-directory={plane}
+          >
+            <span className="status-project-mark" role="img" aria-label="Project">
+              <FolderRoot aria-hidden="true" />
+            </span>
+            <span className="status-project-name">{projectName(plane)}</span>
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
+            <code>{plane}</code>
+            <Tooltip.Arrow className="ui-overlay-arrow" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }
 
@@ -313,7 +339,8 @@ export type Alerts = {
 };
 
 /**
- * The Notices button, in the states it can be in.
+ * The Notices item, in the states it can be in. A status item (the set's small ghost button),
+ * so it is flat on the bar: its bell, its word, then its count.
  *
  * - **A count** — drawn in the badge, because something needs the operator.
  * - **Zero** — the word `Notices` and no badge. The footer's rule: a `0` sitting there every
@@ -331,14 +358,14 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
     return (
       <button
         type="button"
-        className="status-alerts"
+        className="ui-button ui-button-ghost ui-button-sm status-alerts"
         tabIndex={0}
         data-testid="status-alerts"
         disabled
         aria-label="Notices — nothing to open here"
         title="This status line has no Inbox behind it."
       >
-        <Bell aria-hidden="true" size="1em" /> Notices{" "}
+        <Bell aria-hidden="true" size="1em" /> Notices
         <span className="status-unknown" aria-hidden="true">
           —
         </span>
@@ -349,7 +376,7 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
   return (
     <button
       type="button"
-      className="status-alerts"
+      className="ui-button ui-button-ghost ui-button-sm status-alerts"
       // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
       // down (`docs/ui-primitives.md`, charter-app#189).
       tabIndex={0}

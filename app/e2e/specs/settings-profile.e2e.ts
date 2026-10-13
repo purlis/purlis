@@ -32,9 +32,10 @@ const TABLE = `[harness.${NAME}]`;
 
 /** The project the app says it is acting on: the copy this run was given, never the repo's. */
 async function planeRoot(): Promise<string> {
-  const said = await $("span.plane code");
+  // The status line says the project by its name; its directory is on the item (qw357).
+  const said = await $('[data-testid="status-project"]');
   await said.waitForDisplayed({ timeout: 30_000 });
-  return (await said.getText()).trim();
+  return ((await said.getAttribute("data-directory")) ?? "").trim();
 }
 
 /** The names on the tab strip. */

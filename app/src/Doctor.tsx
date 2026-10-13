@@ -600,7 +600,8 @@ function Rows({
 }
 
 /**
- * The status line's doctor button, and the dialog it opens.
+ * The status line's doctor item, and the dialog it opens. A status item (the set's small ghost
+ * button, `StatusLine.tsx`): flat on the bar, its mark, its word, then its count.
  *
  * A Radix dialog (`docs/ui-primitives.md`), which is what makes the list keyboard-reachable
  * and the window behind it inert while it is up.
@@ -651,7 +652,7 @@ export function Health({
       <Dialog.Trigger asChild>
         <button
           type="button"
-          className={`status-doctor doctor-tone-${tone}`}
+          className={`ui-button ui-button-ghost ui-button-sm status-doctor doctor-tone-${tone}`}
           // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
           // down (`docs/ui-primitives.md`, charter-app#189).
           tabIndex={0}
@@ -665,8 +666,10 @@ export function Health({
           ) : (
             <Stethoscope aria-hidden="true" />
           )}{" "}
-          Doctor
-          {said !== undefined && <span className="doctor-said"> · {said}</span>}
+          Doctor{" "}
+          {/* The count, in its verdict's colour and in words, so the colour is never the only
+              thing that says it; nothing at all when nothing is wrong (qw357). */}
+          {said !== undefined && <span className="doctor-said">{said}</span>}
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>

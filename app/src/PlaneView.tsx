@@ -169,10 +169,8 @@ import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import {
   ATTENTION_VIEWS,
-  inSlots,
   openView as viewOpenIn,
   placesOf,
-  SIDES,
   useArrangement,
   type Toggled,
   type ViewId,
@@ -1081,8 +1079,6 @@ export const PlaneView = memo(function PlaneView({
     },
     [moveView],
   );
-  /** The arrangement as the slots it draws, which is what both the toggles and the frame read. */
-  const slots = inSlots(arrangement);
 
   // The arrangement as it is right now, so that what a button does is decided here and not
   // inside a state update. React may run an update again, and a session must not be opened or
@@ -2085,7 +2081,7 @@ export const PlaneView = memo(function PlaneView({
     () => (awayNames === "" ? [] : (awayNames.split(" ") as Toggled[])),
     [awayNames],
   );
-  /** Put a region away or bring it back, or the whole Panel (⌘J, the palette, the status line):
+  /** Put a region away or bring it back, or the whole Panel (its key, the palette):
    *  the Panel counts as drawn only where a half is drawn now, as the palette's title says
    *  (#1752), so a half holding only panels no extension contributes now hides nothing. */
   const toggleRegion = useCallback(
@@ -8159,14 +8155,6 @@ export const PlaneView = memo(function PlaneView({
           alerts={noticesButton}
           badges={facts.badges}
           factNotes={facts.notes}
-          /* Which regions are drawn (ADR 0038), handed over as the arrangement already reads
-           them. **The slots are flattened here and not there**: the arrangement is this
-           project's, `inSlots` is the module that knows what order a side's regions come in,
-           and a status line that sorted regions would be a second place that decides. */
-          regions={{
-            placed: SIDES.flatMap((side) => slots[side]),
-            onToggle: toggleRegion,
-          }}
         />
 
         {/* Making a workspace, and deleting one. Mounted only while they are up, and drawn

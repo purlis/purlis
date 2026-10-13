@@ -8,6 +8,17 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
+/** The project the status line names, found by its directory: the line draws the project's
+ *  name, and its directory is the item's tooltip (qw357). */
+const projectAt = (directory: string) =>
+  vi.waitFor(() => {
+    const item = document.querySelector<HTMLElement>(
+      `[data-testid="status-project"][data-directory="${directory}"]`,
+    );
+    if (item === null) throw new Error(`the status line names no project at ${directory}`);
+    return item;
+  });
+
 /**
  * The welcome, and the question in front of it.
  *
@@ -112,7 +123,7 @@ describe("the welcome's way in by path and recents", () => {
     render(<App />);
     await openByPath("/home/dev/plane");
 
-    expect(await screen.findByText("/home/dev/plane")).toBeInTheDocument();
+    expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
     expect(asked.find((one) => one.cmd === "open_plane")?.args).toEqual({
       path: "/home/dev/plane",
     });
@@ -174,7 +185,7 @@ describe("the welcome's way in by path and recents", () => {
       path: "/home/dev/stranger",
       contributes: CONTRIBUTES,
     });
-    expect(await screen.findByText("/home/dev/stranger")).toBeInTheDocument();
+    expect(await projectAt("/home/dev/stranger")).toBeInTheDocument();
   });
 
   it("opens nothing when the operator cancels, and leaves the welcome where it was", async () => {
@@ -367,7 +378,7 @@ describe("the welcome's way in by path and recents", () => {
 
     render(<App />);
     const person = userEvent.setup();
-    await screen.findByText("/home/dev/plane");
+    await projectAt("/home/dev/plane");
     // The `×` on the project's own tab, which IS the catalogue's row — one per project, the
     // way a chat tab's close is one per tab.
     await person.click(await screen.findByRole("button", { name: "Close project plane" }));
@@ -383,7 +394,7 @@ describe("the welcome's way in by path and recents", () => {
 
     await openByPath("/home/dev/plane");
 
-    expect(await screen.findByText("/home/dev/plane")).toBeInTheDocument();
+    expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
     // Its chats are drawn again, which is what a ref still naming the project it just let go
     // of would have silently prevented.
     await vi.waitFor(() =>
@@ -450,7 +461,7 @@ describe("the welcome's way in by path and recents", () => {
     );
     await openByPath("/home/dev/two");
 
-    await vi.waitFor(() => expect(screen.getByText("/home/dev/two")).toBeInTheDocument());
+    expect(await projectAt("/home/dev/two")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "waiting on you" })).not.toBeInTheDocument();
   });
 
