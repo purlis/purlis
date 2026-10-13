@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
-import { tellWorkspaceRemoved } from "./removeWorkspaceAsk";
+import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a chat
@@ -167,6 +167,12 @@ const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "machine", "projec
 const isLevel = (option: string): option is GrantLevel =>
   (LEVELS as readonly string[]).includes(option);
 
+/**
+ * The option of a workspace's removal that answers nothing and opens the window's own Delete
+ * workspace (qw356): the core's `asking::REMOVE`.
+ */
+export const OPENS_DELETE_WORKSPACE = "remove";
+
 /** What is said when an ask names no path the window can send. */
 export const IN_ITS_CHAT = "This is answered in its chat: go to it.";
 
@@ -188,12 +194,16 @@ export async function answerThrough(
  * host's Allow that the chat's proxy took while the command waited, so the command carries on
  * and nothing restarts. What the block Notice does after an Allow, a window that answers
  * through the registry does by this.
+ *
+ * `opened` says the option answered nothing: it opened a dialog of the window's where the
+ * person decides (a workspace's removal, qw356), so the ask still waits and nothing is to be
+ * noted as answered.
  */
 export async function answerTaken(
   plane: string,
   ask: Shown,
   option: string,
-): Promise<{ refused: string | undefined; live: boolean }> {
+): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
   if (!ask.options.some((one) => one.id === option))
@@ -202,6 +212,7 @@ export async function answerTaken(
       live: false,
     };
   let live = false;
+  let opened = false;
   const sent = async (): Promise<{ status: "ok" } | { status: "error"; error: string }> => {
     switch (path.via) {
       case "hook": {
@@ -226,18 +237,18 @@ export async function answerTaken(
           return allowed;
         }
         break;
-      case "workspace-removal": {
-        // Keep puts the question away. Remove is the window's own remove, with its guard and
-        // never forced (qw356): what it is refused with is the core's sentence, said whole.
+      case "workspace-removal":
+        // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
+        // own Delete workspace, where what goes is read and the person's press there decides.
+        // The question waits until they do, or keep it.
         if (option === "keep")
           return commands.keepAskedWorkspace(plane, ask.session, path.workspace);
-        if (option !== "remove") break;
-        const removed = await commands.removeAskedWorkspace(plane, ask.session, path.workspace);
-        if (removed.status !== "ok") return { status: "error", error: removed.error.said };
-        // What follows a removal from the window's own dialog follows this one.
-        tellWorkspaceRemoved(plane, path.workspace, removed.data);
-        return { status: "ok" };
-      }
+        if (option === OPENS_DELETE_WORKSPACE) {
+          askRemoveWorkspace(plane, path.workspace);
+          opened = true;
+          return { status: "ok" };
+        }
+        break;
     }
     return { status: "error", error: `${JSON.stringify(option)} is no answer purlis sends.` };
   };
@@ -246,6 +257,6 @@ export async function answerTaken(
     error: String(err),
   }));
   return answer.status === "ok"
-    ? { refused: undefined, live }
+    ? { refused: undefined, live, ...(opened ? { opened } : {}) }
     : { refused: answer.error, live: false };
 }

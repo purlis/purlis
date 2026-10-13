@@ -659,11 +659,14 @@ function Ask({
     setBusy(true);
     setSaid(undefined);
     void answerTaken(plane, ask, option.id)
-      .then(({ refused, live }) => {
+      .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
           return;
         }
+        // A dialog of the window's was opened, where the person decides (qw356): the ask
+        // still waits, and nothing was answered here.
+        if (opened === true) return;
         noteAnswered(plane, {
           at: Date.now(),
           chain: ask.chain,

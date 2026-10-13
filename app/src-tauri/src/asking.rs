@@ -149,9 +149,10 @@ pub enum AnswerPath {
     SandboxBlock {
         shown: crate::taskblocks::BlockShown,
     },
-    /// `remove_asked_workspace` for Remove, which is the window's own remove with its guard
-    /// and never forced, and `keep_asked_workspace` for Keep (qw356). `workspace` is one this
-    /// project lists; `memories` and `todos` are what it holds now, by the app's own count.
+    /// `keep_asked_workspace` for Keep; Remove… sends nothing, and opens the window's own
+    /// Delete workspace on `workspace`, where the person's press removes (qw356). `workspace`
+    /// is one this project lists; `memories` and `todos` are what it holds now, by the app's
+    /// own count.
     WorkspaceRemoval {
         workspace: String,
         memories: u32,
@@ -644,10 +645,12 @@ pub fn question(session: u32) -> Shown {
     }
 }
 
-/// The option id of Remove on a workspace's removal (qw356).
+/// The option id of Remove… on a workspace's removal (qw356): the window's
+/// `OPENS_DELETE_WORKSPACE`.
 pub const REMOVE: &str = "remove";
-/// What Remove and Keep say on a workspace's removal: written once, here.
-const REMOVE_SAID: &str = "Remove";
+/// What Remove… and Keep say on a workspace's removal: written once, here. Remove… opens a
+/// dialog, so it is spelled as what opens one is.
+const REMOVE_SAID: &str = "Remove…";
 const KEEP_IT_SAID: &str = "Keep";
 
 /// The key of a workspace removal's ask, unique in its project: the chat and the workspace.
@@ -656,7 +659,8 @@ fn removal_key(session: u32, workspace: &str) -> String {
 }
 
 /// **The workspace removal adapter** (qw356): a workspace a chat asked the person to remove,
-/// held now. It offers Remove, which is the window's own remove, and Keep. Every word is
+/// held now. It offers Remove…, which opens the window's own Delete workspace and removes
+/// nothing itself, and Keep. Every word is
 /// purlis's; the workspace's name is the project's own listing's, drawn as data, and what it
 /// holds is counted by the app.
 pub fn workspace_removal(

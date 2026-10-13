@@ -294,10 +294,10 @@ pub async fn workspace_remove(
     remove_for_the_person(&app, &held, &heard, plane, workspace, force).await
 }
 
-/// **The window's one removal of a workspace**, whichever of its surfaces the person pressed:
-/// the sidebar's dialog ([`workspace_remove`]), or Remove on a question a chat raised
-/// (`crate::removalasks::remove_asked_workspace`, qw356), which never forces. The guard is
-/// inside it either way, and what follows a removal follows both.
+/// **The window's one removal of a workspace**, behind [`workspace_remove`]: the Delete
+/// workspace dialog, opened from the sidebar or by Remove… on a question a chat raised (qw356).
+/// The guard is inside it, and a chat that asked the person to remove the workspace is told
+/// here that they did.
 pub(crate) async fn remove_for_the_person(
     app: &tauri::AppHandle,
     held: &std::sync::Arc<crate::planes::Held>,

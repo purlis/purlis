@@ -97,7 +97,6 @@ macro_rules! app_commands {
                 dispatchunattended::chat_attended,
                 vaultroute::allow_refused_vault,
                 vaultroute::keep_vault_blocked,
-                removalasks::remove_asked_workspace,
                 removalasks::keep_asked_workspace,
                 dispatchlimits::dispatch_limits,
                 dispatchgrants::dispatch_grants_needed,
