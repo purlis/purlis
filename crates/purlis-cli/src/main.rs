@@ -3405,6 +3405,10 @@ fn main() -> ExitCode {
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {
         guard::refuse_on_a_crash(tell_the_host_about_a_crash);
     }
+    // Before any git is run: whoever started this command ends it by its process group (a
+    // terminal's Ctrl-C, a harness ending a hook, the app ending a chat), so the gits it runs
+    // stay in that group, where the same stop reaches them.
+    purlis_core::worktree::git::stay_in_the_callers_group();
     // A warning the core raises is said on this terminal rather than dropped (#647). Output a
     // command prints on purpose never goes through it.
     purlis_core::applog::install_for_a_terminal();
