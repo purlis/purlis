@@ -187,6 +187,12 @@ struct OnDisk {
     /// The system services you let every chat of this project look up by name (ADR 0093).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     services_mine: Vec<String>,
+    /// What the project's committed file declared it expects (`[sandbox] expects`) when this
+    /// machine last asked the person about it and was answered, each as the file writes it;
+    /// absent before the first answer. **An answer, never a grant**: it only stops the same
+    /// declaration being asked about twice ([`super::services::awaiting`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expects_seen: Option<Vec<String>>,
     /// Each grant made on this machine from a block's Notice that lasts past one chat (#1342):
     /// what Settings' Granted list says of who granted it, when, and from which chat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1007,6 +1013,20 @@ pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
         held.granted
             .retain(|made| !(made.what == "service" && made.target == service));
     })
+}
+
+// ---- what the project expects, as this machine was asked about it ---------------------------
+
+/// What the project at `root` declared it expects when the person here last answered the
+/// question about it: empty before the first answer.
+pub fn expects_seen(root: &Path) -> Vec<String> {
+    read(root).expects_seen.unwrap_or_default()
+}
+
+/// Records that the person answered the question about `shown`, the project's declaration as
+/// the Notice showed it: an item declared after it is asked about again. Nothing is granted.
+pub fn acknowledge_expects(root: &Path, shown: &[String]) -> io::Result<()> {
+    change(root, |held| held.expects_seen = Some(shown.to_vec()))
 }
 
 // ---- the sockets and services you let every project's chats reach (R2) ----------------------

@@ -413,6 +413,23 @@ export const commands = {
 	 */
 	allowPersonaHosts: (plane: PlaneId, persona: string, digest: string) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_persona_hosts", { plane, persona, digest })),
 	/**
+	 *  **Allow on this machine**, on the Notice of what a project expects or in Settings › Sandbox
+	 *  (ADR 0093, ruling 2): the person lets every chat of this project reach what its committed
+	 *  file declares, of what the question showed (`shown`, each as the file writes it). Each is
+	 *  judged as any grant is, audited, and kept in this machine's own file, never the project's:
+	 *  the declaration itself grants nothing. One that cannot be allowed here now is left out and
+	 *  said. A chat takes it from its next start. The window's alone (`WINDOW_ONLY`): no link and
+	 *  no chat makes it, so a chat can neither ask for it nor answer it.
+	 */
+	allowProjectExpects: (plane: PlaneId, shown: string[]) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_project_expects", { plane, shown })),
+	/**
+	 *  **Not now**, on the Notice of what a project expects (ADR 0093): remembered on this
+	 *  machine for the declaration as it was shown, `shown`, so it is asked again only when the
+	 *  project declares something new. Nothing is allowed, and Settings › Sandbox still offers
+	 *  it. The window's alone (`WINDOW_ONLY`): a chat cannot answer the question for the person.
+	 */
+	declineProjectExpects: (plane: PlaneId, shown: string[]) => typedError<SandboxState, string>(__TAURI_INVOKE("decline_project_expects", { plane, shown })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 */
@@ -4576,6 +4593,20 @@ export type EntryWritten =
  */
 { kind: "saved"; file: SettingsFile; added: string | null; removed: EntryValue[] | null } | { kind: "refused"; fields: EntryFieldRefusal[]; referrers: EntryReferrer[]; reasons: string[] };
 
+/**  One local socket or system service a project expects ([`sandbox::services::Awaited`]). */
+export type ExpectedItem = {
+	what: GrantWhat,
+	/**
+	 *  The socket's path or the service's name, as the committed file writes it: what an
+	 *  answer is sent back by. Written by a repository, so the window draws it inertly.
+	 */
+	target: string,
+	/**  What allowing it means, in purlis's own words. */
+	says: string,
+	/**  Why it cannot be allowed on this machine now, where it cannot. */
+	refused: string | null,
+};
+
 /**
  *  The question charter asks before an extension contributes anything.
  * 
@@ -7070,6 +7101,26 @@ export type ProjectAnswer = {
 	asks_forge: string | null,
 };
 
+/**
+ *  **What a project declares it expects and this machine has not allowed** (ADR 0093, ruling
+ *  2: a committed file declares and never grants). The window asks about it once where the
+ *  declaration is read, on opening the project, and Settings offers the same Allow after a
+ *  "Not now" ([`sandbox::services::Awaiting`]).
+ */
+export type ProjectExpects = {
+	items: ExpectedItem[],
+	/**
+	 *  Where an administrator's policy forbids allowing any of it: the sentence that says so
+	 *  and who set it. Then nothing is offered.
+	 */
+	locked: string | null,
+	/**
+	 *  Whether the person is still to be asked: something is declared that they have neither
+	 *  allowed nor said "Not now" to on this machine.
+	 */
+	asked: boolean,
+};
+
 /**  One extension in one project, as the Settings tab draws it. */
 export type ProjectExtension = {
 	id: string,
@@ -7860,6 +7911,11 @@ export type SandboxState = {
 	 *  here run sandboxed: what Settings' one switch says. `null` where the sandbox is off.
 	 */
 	certificate_check?: CertificateCheck | null,
+	/**
+	 *  What the project's committed file declares it expects that this machine has not
+	 *  allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
+	 */
+	expects?: ProjectExpects | null,
 };
 
 /**  One save attempt, as the journal holds it. */

@@ -155,6 +155,60 @@ pub struct SandboxState {
     /// here run sandboxed: what Settings' one switch says. `null` where the sandbox is off.
     #[specta(optional)]
     pub certificate_check: Option<CertificateCheck>,
+    /// What the project's committed file declares it expects that this machine has not
+    /// allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
+    #[specta(optional)]
+    pub expects: Option<ProjectExpects>,
+}
+
+/// **What a project declares it expects and this machine has not allowed** (ADR 0093, ruling
+/// 2: a committed file declares and never grants). The window asks about it once where the
+/// declaration is read, on opening the project, and Settings offers the same Allow after a
+/// "Not now" ([`sandbox::services::Awaiting`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ProjectExpects {
+    pub items: Vec<ExpectedItem>,
+    /// Where an administrator's policy forbids allowing any of it: the sentence that says so
+    /// and who set it. Then nothing is offered.
+    pub locked: Option<String>,
+    /// Whether the person is still to be asked: something is declared that they have neither
+    /// allowed nor said "Not now" to on this machine.
+    pub asked: bool,
+}
+
+/// One local socket or system service a project expects ([`sandbox::services::Awaited`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ExpectedItem {
+    pub what: GrantWhat,
+    /// The socket's path or the service's name, as the committed file writes it: what an
+    /// answer is sent back by. Written by a repository, so the window draws it inertly.
+    pub target: String,
+    /// What allowing it means, in purlis's own words.
+    pub says: String,
+    /// Why it cannot be allowed on this machine now, where it cannot.
+    pub refused: Option<String>,
+}
+
+impl From<sandbox::services::Awaiting> for ProjectExpects {
+    fn from(said: sandbox::services::Awaiting) -> Self {
+        Self {
+            items: said
+                .items
+                .into_iter()
+                .map(|item| ExpectedItem {
+                    what: match item.what {
+                        sandbox::grant::What::Socket(_) => GrantWhat::Socket,
+                        _ => GrantWhat::Service,
+                    },
+                    target: item.written,
+                    says: item.said,
+                    refused: item.refused,
+                })
+                .collect(),
+            locked: said.locked,
+            asked: said.asked,
+        }
+    }
 }
 
 /// **Whether a chat here has the system's certificate check, and why not** (the operator's
@@ -408,6 +462,7 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
             .map(|policy| {
                 CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
             }),
+        expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
     }
 }
 
@@ -610,6 +665,99 @@ fn acknowledge_presets(root: &std::path::Path, shown: &[String]) -> Result<Sandb
 
 fn acknowledge(root: &std::path::Path, shown: &[String]) -> Result<SandboxState, String> {
     sandbox::local::acknowledge_hosts(root, shown).map_err(|err| err.to_string())?;
+    Ok(state_of(root))
+}
+
+/// **Allow on this machine**, on the Notice of what a project expects or in Settings › Sandbox
+/// (ADR 0093, ruling 2): the person lets every chat of this project reach what its committed
+/// file declares, of what the question showed (`shown`, each as the file writes it). Each is
+/// judged as any grant is, audited, and kept in this machine's own file, never the project's:
+/// the declaration itself grants nothing. One that cannot be allowed here now is left out and
+/// said. A chat takes it from its next start. The window's alone (`WINDOW_ONLY`): no link and
+/// no chat makes it, so a chat can neither ask for it nor answer it.
+#[tauri::command]
+#[specta::specta]
+pub fn allow_project_expects(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: Vec<String>,
+) -> Result<SandboxState, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    allow_expects(
+        &root,
+        held.chats(),
+        &shown,
+        &held.audit_then_record(planes.network()),
+        now_secs(),
+    )?;
+    Ok(state_of(&root))
+}
+
+/// [`allow_project_expects`] in the project at `root`: only what is declared **and** was
+/// shown **and** still waits is kept, for every chat of the project on this machine
+/// ([`kept_for`], for no chat). Refused whole where policy forbids it. The answer is then
+/// recorded, so the question is not asked again for what could not be allowed.
+fn allow_expects(
+    root: &std::path::Path,
+    chats: &crate::chats::Chats,
+    shown: &[String],
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<(), String> {
+    use sandbox::grant::Level;
+    let Some(awaiting) = sandbox::services::awaiting(root, &sandbox::Machine::this()) else {
+        return Err("Nothing this project expects waits to be allowed on this machine.".to_owned());
+    };
+    if let Some(locked) = &awaiting.locked {
+        return Err(locked.clone());
+    }
+    let locks = sandbox::policy::Locks::of(root);
+    let mut kept = 0;
+    for item in awaiting
+        .items
+        .iter()
+        .filter(|item| item.refused.is_none() && shown.contains(&item.written))
+    {
+        if let Some(why) = locks.refuses_grant(&item.what, Level::You) {
+            return Err(why);
+        }
+        kept_for(root, chats, None, (&item.what, Level::You), audit, at)?;
+        kept += 1;
+    }
+    if kept == 0 {
+        return Err(
+            "Nothing shown can be allowed on this machine now, so nothing was allowed.".to_owned(),
+        );
+    }
+    sandbox::local::acknowledge_expects(root, &awaiting.shown()).map_err(|err| err.to_string())
+}
+
+/// **Not now**, on the Notice of what a project expects (ADR 0093): remembered on this
+/// machine for the declaration as it was shown, `shown`, so it is asked again only when the
+/// project declares something new. Nothing is allowed, and Settings › Sandbox still offers
+/// it. The window's alone (`WINDOW_ONLY`): a chat cannot answer the question for the person.
+#[tauri::command]
+#[specta::specta]
+pub fn decline_project_expects(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: Vec<String>,
+) -> Result<SandboxState, String> {
+    let held = planes.held(&plane)?;
+    decline_expects(held.root(), &shown)
+}
+
+/// [`decline_project_expects`] in the project at `root`: only what the project declares now
+/// is recorded, whatever the window sent.
+fn decline_expects(root: &std::path::Path, shown: &[String]) -> Result<SandboxState, String> {
+    let declared: Vec<String> = sandbox::services::awaiting(root, &sandbox::Machine::this())
+        .map(|awaiting| awaiting.shown())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|one| shown.contains(one))
+        .collect();
+    sandbox::local::acknowledge_expects(root, &declared).map_err(|err| err.to_string())?;
     Ok(state_of(root))
 }
 
@@ -2417,6 +2565,140 @@ mod tests {
         );
     }
 
+    /// ADR 0093, ruling 2: what a project declares it expects is asked about up front and
+    /// grants nothing by itself. Each state: declared and not allowed (asked, with each item's
+    /// own words); "Not now" (remembered here, still offered in Settings); a new declared item
+    /// (asked again); Allow (audited, kept in this machine's file for this project, and what
+    /// cannot be allowed here is left out and said); and policy's lock (nothing is allowed,
+    /// and who set it is said).
+    #[test]
+    fn what_a_project_expects_is_asked_once_allowed_by_the_person_and_never_by_the_file() {
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path();
+        let expecting = |expects: &str| {
+            std::fs::write(
+                root.join("charter.toml"),
+                format!("[sandbox]\nmode = \"on\"\nexpects = [{expects}]\n"),
+            )
+            .expect("toml");
+        };
+        let chats = crate::chats::Chats::new();
+        let seen = std::sync::Mutex::new(Vec::new());
+        let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+            seen.lock().unwrap().push((
+                chat,
+                audited.granted,
+                audited.what.to_owned(),
+                audited.target.to_owned(),
+                audited.level.word(),
+            ));
+            Ok(())
+        };
+        std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("toml");
+        assert_eq!(state_of(root).expects, None, "nothing declared");
+
+        expecting("\"com.example.helper\", \"/purlis-test-nowhere/docker.sock\"");
+        let said = state_of(root).expects.expect("asked");
+        assert!(said.asked);
+        assert_eq!(said.locked, None);
+        assert_eq!(
+            said.items
+                .iter()
+                .map(|item| (item.what, item.target.as_str(), item.refused.is_some()))
+                .collect::<Vec<_>>(),
+            [
+                (GrantWhat::Socket, "/purlis-test-nowhere/docker.sock", true),
+                (GrantWhat::Service, "com.example.helper", false),
+            ]
+        );
+        assert!(said.items[0].says.contains("about the same as no sandbox"));
+        // The declaration allowed nothing.
+        assert!(sandbox::local::granted_services(root).is_empty());
+
+        // Not now: remembered, still awaited, and nothing is allowed or audited.
+        let shown: Vec<String> = said.items.iter().map(|item| item.target.clone()).collect();
+        let declined = decline_expects(root, &shown).expect("kept").expects.expect("awaited");
+        assert!(!declined.asked);
+        assert_eq!(declined.items, said.items);
+        assert!(seen.lock().unwrap().is_empty());
+        assert!(sandbox::local::granted_services(root).is_empty());
+
+        // The declaration changes: asked again.
+        expecting(
+            "\"com.example.helper\", \"/purlis-test-nowhere/docker.sock\", \"com.example.other\"",
+        );
+        assert!(state_of(root).expects.expect("asked").asked);
+
+        // An unaudited Allow is no Allow.
+        let all = [
+            "com.example.helper".to_owned(),
+            "/purlis-test-nowhere/docker.sock".to_owned(),
+            "com.example.other".to_owned(),
+        ];
+        assert!(
+            allow_expects(root, &chats, &all, &no_audit(), 100)
+                .expect_err("refused")
+                .contains("event log")
+        );
+        assert!(sandbox::local::granted_services(root).is_empty());
+        // Allow, for what was shown: only that, only what the file declares, and never what
+        // cannot be allowed here. Something the window names that the file does not is nothing.
+        let shown = [
+            "com.example.helper".to_owned(),
+            "/purlis-test-nowhere/docker.sock".to_owned(),
+            "com.example.never-declared".to_owned(),
+        ];
+        allow_expects(root, &chats, &shown, &audit, 100).expect("allowed");
+        assert_eq!(sandbox::local::granted_services(root), ["com.example.helper"]);
+        assert!(sandbox::local::granted_sockets(root).is_empty());
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [(
+                None,
+                true,
+                "service".to_owned(),
+                "com.example.helper".to_owned(),
+                "you"
+            )]
+        );
+        // What is left still awaits, answered: the socket that is not there, and the item
+        // that was not shown.
+        let left = state_of(root).expects.expect("awaited");
+        assert!(!left.asked);
+        assert_eq!(left.items.len(), 2);
+        // Nothing shown that can be allowed: said, and nothing kept.
+        assert!(
+            allow_expects(
+                root,
+                &chats,
+                &["/purlis-test-nowhere/docker.sock".to_owned()],
+                &audit,
+                101
+            )
+            .expect_err("refused")
+            .contains("nothing was allowed")
+        );
+
+        // Policy's lock: nothing is allowed, and the state says who set it.
+        sandbox::policy::set_for_this_test(sandbox::policy::Locks::parse(
+            r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+            std::path::Path::new("/etc/purlis/policy.json"),
+        ));
+        let locked = state_of(root).expects.expect("awaited");
+        let refused = allow_expects(
+            root,
+            &chats,
+            &["com.example.other".to_owned()],
+            &audit,
+            102,
+        );
+        sandbox::policy::set_for_this_test(sandbox::policy::Locks::none());
+        let why = locked.locked.expect("locked");
+        assert!(why.contains("Policy forbids") && why.contains("IT"), "{why}");
+        assert_eq!(refused.expect_err("refused"), why);
+        assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
     /// R2 (2026-10-13): a socket or a service allowed "on this machine, for every project" is
     /// judged as any grant is, audited once, kept in this machine's one file (never the
     /// project's, nor under its clone's key), listed in every project's Allowed list with
@@ -3159,6 +3441,7 @@ mod tests {
                 policy: None,
                 manifest: None,
                 certificate_check: None,
+                expects: None,
             }
         );
 
@@ -3189,6 +3472,7 @@ mod tests {
                     locked: None,
                     widens: sandbox::Os::this() == sandbox::Os::MacOs,
                 }),
+                expects: None,
             }
         );
     }
@@ -3218,6 +3502,7 @@ mod tests {
                 policy: None,
                 manifest: None,
                 certificate_check: None,
+                expects: None,
             }
         );
         assert_eq!(

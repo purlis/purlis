@@ -301,6 +301,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "take_up_sandbox_block",
     // Widens what a persona's chats reach on this machine (#1362).
     "allow_persona_hosts",
+    // The person's answer to what a project declares it expects (ADR 0093): the Allow widens
+    // what every chat of the project reaches here, and "Not now" is theirs to say, so no chat
+    // answers the question before it is asked.
+    "allow_project_expects",
+    "decline_project_expects",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.

@@ -69,6 +69,8 @@ macro_rules! app_commands {
                 sandboxing::acknowledge_project_hosts,
                 sandboxing::acknowledge_project_presets,
                 sandboxing::allow_persona_hosts,
+                sandboxing::allow_project_expects,
+                sandboxing::decline_project_expects,
                 sandboxing::persona_grants_held,
                 sandboxing::allow_persona_grants,
                 sandboxing::type_sandbox_install,
