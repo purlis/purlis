@@ -7,7 +7,8 @@
  *
  * The core derives a project's list from every source that waits today (`asks_waiting`): a
  * permission prompt held on a chat's hook, a dispatch held for a grant, a host a chat's sandbox
- * refused, a prompt in a harness's own terminal, a chat waiting on the person's reply. It keeps
+ * refused, a workspace a chat asked the person to remove, a prompt in a harness's own terminal,
+ * a chat waiting on the person's reply. It keeps
  * no store, so the window reads the list again whenever one of those may have moved, and an
  * ask leaves it the moment its source stops waiting, wherever it was answered.
  *
@@ -22,6 +23,7 @@ import { useEffect, useState } from "react";
 import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
+import { tellWorkspaceRemoved } from "./removeWorkspaceAsk";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a chat
@@ -224,6 +226,18 @@ export async function answerTaken(
           return allowed;
         }
         break;
+      case "workspace-removal": {
+        // Keep puts the question away. Remove is the window's own remove, with its guard and
+        // never forced (qw356): what it is refused with is the core's sentence, said whole.
+        if (option === "keep")
+          return commands.keepAskedWorkspace(plane, ask.session, path.workspace);
+        if (option !== "remove") break;
+        const removed = await commands.removeAskedWorkspace(plane, ask.session, path.workspace);
+        if (removed.status !== "ok") return { status: "error", error: removed.error.said };
+        // What follows a removal from the window's own dialog follows this one.
+        tellWorkspaceRemoved(plane, path.workspace, removed.data);
+        return { status: "ok" };
+      }
     }
     return { status: "error", error: `${JSON.stringify(option)} is no answer purlis sends.` };
   };

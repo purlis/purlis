@@ -2108,6 +2108,12 @@ export type AnswerPath =
  *  on a folder.
  */
 { via: "sandbox-block"; shown: BlockShown } | 
+/**
+ *  `remove_asked_workspace` for Remove, which is the window's own remove with its guard
+ *  and never forced, and `keep_asked_workspace` for Keep (qw356). `workspace` is one this
+ *  project lists; `memories` and `todos` are what it holds now, by the app's own count.
+ */
+{ via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2207,6 +2213,11 @@ export type AskSource =
  *  (D-sock-1).
  */
 "sandbox-local" | 
+/**
+ *  A workspace a chat asked the person to remove, which only their press removes
+ *  (qw356).
+ */
+"workspace-removal" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */

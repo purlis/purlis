@@ -1572,6 +1572,15 @@ impl Chats {
         *lock(&self.asks_moved) = Some(moved);
     }
 
+    /// This project's asks may have moved for a reason no event of its own says (qw356: a
+    /// chat asked the person to remove a workspace, or that question was answered): the window
+    /// is told its asks, so it reads the registry again.
+    pub fn asks_may_have_moved(&self) {
+        if let Some(moved) = lock(&self.asks_moved).clone() {
+            moved();
+        }
+    }
+
     /// Who hears, from now on, each connection purlis's own proxy carries for a chat it wraps
     /// (#1664).
     pub fn tell_connections_to(&self, hear: ProxyReached) {

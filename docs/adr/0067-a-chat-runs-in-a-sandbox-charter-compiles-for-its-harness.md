@@ -1024,6 +1024,37 @@ there.
    comes through `SSH_AUTH_SOCK` unchanged. A chat that rewrites the file in its own temp
    directory reaches nothing more: its network is still its sandbox's.
 
+## Noted (2026-10-13, qw356): removing a workspace is asked in the window — to be confirmed
+
+**To be confirmed by the operator.** Section 2 lists "creating and removing a workspace" among
+the brokered writes. Creating one is brokered. Removing one never was: a chat held by the
+sandbox was refused `purlis workspace remove` and told to ask the person, with nothing in the
+window for the person to press. That was a dead end in the chat purlis's own Safe remove
+opens. The operator's ruling of 2026-10-13 (workspace remove: the window asks Remove or Keep,
+and removes on the person's click, for any chat) is built as follows.
+
+1. **The chat's command asks, and removes nothing.** It hands the app a workspace's name and
+   nothing else: no reason, no `--force`, no other project. The app answers with a sentence
+   that says the person has been asked, or that this project has no such workspace.
+2. **The app asks the person on the asking chat's tab and in the Inbox**: Remove or Keep, in
+   purlis's own words, with the name drawn as data and what the workspace holds counted by the
+   app. The name is checked against the project's own list of workspaces when it is asked and
+   again when Remove is pressed. A second ask by one chat about one workspace is the same
+   question. A question about a workspace that is gone is dropped. Asks are held to the rate a
+   chat's brokered writes are, and to three waiting per chat.
+3. **Only the person's press removes.** Remove runs the window's own removal with its guard,
+   never forced. A refusal is said in the core's words and leads to the window's own Delete
+   workspace dialog. Both answers are commands of the window alone
+   (`session-protocol`'s `WINDOW_ONLY`).
+4. **The chat is told what the person decided on its next turn**, in purlis's fixed words, on
+   the road a held connection's answer takes (the amendment of 2026-10-10, #1666). purlis
+   types nothing into the chat for it.
+
+So "removing a workspace" in section 2's list reads: **asked of the person through the app,
+and never made for a chat.** No CLI word and no key of the project's format was added.
+`purlis persona remove` and `purlis worktree remove` are still refused in a sandboxed chat;
+the ask is shaped to carry each as one more kind.
+
 ## Amended (2026-10-13, #1476): follow-ups of the brokered commit, decided in implementation
 
 Decided under delegation and flagged for the operator. Each narrows what the amendment of

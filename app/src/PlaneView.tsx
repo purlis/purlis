@@ -133,6 +133,7 @@ import {
   SIDEBAR,
   usePlaneChanged,
 } from "./planeChanged";
+import { useRemoveWorkspaceAsked, useWorkspaceRemovedOnAsk } from "./removeWorkspaceAsk";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
@@ -4181,6 +4182,28 @@ export const PlaneView = memo(function PlaneView({
     [plane],
   );
 
+  // A Notice of a removal the core refused opens this same dialog (qw356).
+  useRemoveWorkspaceAsked(plane, removeWorkspace);
+
+  /**
+   * **What follows a workspace's removal in this window**, from its own dialog or from Remove
+   * on a chat's question (qw356): the core's words are said, and the sidebar is read again.
+   */
+  const workspaceRemoved = useCallback((workspace: string, words: readonly string[]) => {
+    // A dialog left open on the workspace that has gone has nothing left to delete.
+    setRemoving((now) => (now?.workspace === workspace ? undefined : now));
+    setReport({
+      from: `workspace.remove:${workspace}`,
+      refused: false,
+      words: words.join(" "),
+    });
+    // Nothing is picked any more: the workspace that was picked may be the one that has just
+    // gone, and the sidebar's own focus rule decides what the window lands on.
+    setPicked(undefined);
+    setReplan((asked) => asked + 1);
+  }, []);
+  useWorkspaceRemovedOnAsk(plane, workspaceRemoved);
+
   /** Asks for a workspace's new name. Nothing is renamed until the dialog is answered. */
   const renameWorkspace = useCallback(
     (workspace: string) => {
@@ -4275,17 +4298,9 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       setRemoving(undefined);
-      setReport({
-        from: `workspace.remove:${workspace}`,
-        refused: false,
-        words: answer.data.join(" "),
-      });
-      // Nothing is picked any more: the workspace that was picked may be the one that has just
-      // gone, and the sidebar's own focus rule decides what the window lands on.
-      setPicked(undefined);
-      setReplan((asked) => asked + 1);
+      workspaceRemoved(workspace, answer.data);
     },
-    [plane],
+    [plane, workspaceRemoved],
   );
 
   /** Lands the piece the row named in its clone, fast-forward only. The core never pushes. */

@@ -632,6 +632,89 @@ fn a_sandboxed_chat_removing_a_workspace_is_refused_before_anything_is_deleted()
     assert!(!root(&tmp).join("workspaces/beta").exists());
 }
 
+/// The environment of chat 3 as the app starts it under the sandbox at the project root, where
+/// Safe remove runs: its connection to the app, and the sandbox's mark.
+fn sandboxed_chat_of(app: &App) -> Vec<(String, String)> {
+    vec![
+        (SOCKET_ENV.to_owned(), app.socket.display().to_string()),
+        (CHAT_ENV.to_owned(), "3".to_owned()),
+        (TOKEN_ENV.to_owned(), app.token.expose().to_owned()),
+        (hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()),
+    ]
+}
+
+#[test]
+fn a_sandboxed_chat_removing_a_workspace_asks_the_person_in_the_window_and_removes_nothing() {
+    // qw356: the refusal was a dead end, in the chat purlis's own Safe remove opens. The
+    // command now hands the name to the app, which asks the person, and says so.
+    let tmp = a_project();
+    let theirs = a_memory_in(&tmp, "beta", "Not this chat's");
+    let asked_said = purlis_core::removalask::asked_said("beta");
+    let app = an_app(
+        &tmp,
+        Some(Answer::No {
+            why: asked_said.clone(),
+        }),
+    );
+
+    for args in [
+        vec!["ws", "remove", "beta"],
+        vec!["ws", "remove", "beta", "--force"],
+    ] {
+        let ran = purlis(&tmp, &args, &sandboxed_chat_of(&app));
+
+        // Nothing was removed, so it is no success; and the sentence is the app's.
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        assert!(said(&ran).contains(&asked_said), "{args:?}: {}", said(&ran));
+        assert!(
+            !said(&ran).contains("Ask the person to remove it"),
+            "{args:?}: {}",
+            said(&ran)
+        );
+        // The app was handed the name and the chat, and nothing else: no field carries a force.
+        match app.asked.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ask::Removal(removal)) => assert_eq!(
+                removal,
+                hookwire::RemovalAsk {
+                    chat: 3,
+                    removing: hookwire::Removing::Workspace {
+                        name: "beta".to_owned(),
+                    },
+                }
+            ),
+            other => panic!("{args:?}: the app was not asked about a removal: {other:?}"),
+        }
+    }
+    let memory = root(&tmp).join("workspaces/beta/memory");
+    assert!(
+        files(&memory)
+            .iter()
+            .any(|name| name.contains(theirs.as_str())),
+        "{:?}",
+        files(&memory)
+    );
+}
+
+#[test]
+fn a_removal_no_app_asks_the_person_about_is_refused_naming_the_window_as_before() {
+    // An app older than the ask answers that nothing here takes it: the chat is still refused
+    // before anything is deleted, and told the way round it had before.
+    let tmp = a_project();
+    let app = an_app(
+        &tmp,
+        Some(Answer::No {
+            why: hookwire::NOTHING_ANSWERS.to_owned(),
+        }),
+    );
+
+    let ran = purlis(&tmp, &["ws", "remove", "beta"], &sandboxed_chat_of(&app));
+
+    assert_eq!(ran.status.code(), Some(1), "{}", said(&ran));
+    assert!(said(&ran).contains("nothing was removed"), "{}", said(&ran));
+    assert!(said(&ran).contains("from the window"), "{}", said(&ran));
+    assert!(root(&tmp).join("workspaces/beta").exists());
+}
+
 /// The environment of chat 3, which the app started under the sandbox in `workspace` (`None`:
 /// at the project root).
 fn sandboxed_chat(workspace: Option<&str>) -> Vec<(String, String)> {

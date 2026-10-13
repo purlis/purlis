@@ -238,6 +238,32 @@ pub fn no_removal_in_a_sandbox(name: &str) -> String {
     )
 }
 
+/// **What `purlis workspace remove <name>` says where the removal is held** (qw356): the
+/// refusal was a dead end, so the name is handed to the app that started this chat, which asks
+/// the person in its window and answers with the sentence that says so
+/// ([`purlis_core::removalask`]). Nothing is removed here either way, and nothing but the name
+/// is handed over: a `--force` has no field to travel in.
+///
+/// Where no app asks the person (no chat, no connection, an app older than the ask, or one
+/// that did not answer), it is [`no_removal_in_a_sandbox`], as before.
+pub fn removal_asked_of_the_person(name: &str) -> String {
+    let asked = asked(
+        |chat| {
+            Ask::Removal(hookwire::RemovalAsk {
+                chat,
+                removing: hookwire::Removing::Workspace {
+                    name: name.to_owned(),
+                },
+            })
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    match asked {
+        Ok(Ok(Answer::No { why })) if why != hookwire::NOTHING_ANSWERS => why,
+        _ => no_removal_in_a_sandbox(name),
+    }
+}
+
 /// The sentence `purlis persona remove <name>` is refused with in a chat the app started under
 /// the sandbox (#1408): as [`no_removal_in_a_sandbox`], for a persona.
 pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {

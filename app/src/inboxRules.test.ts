@@ -76,6 +76,12 @@ describe("the asks a pane draws", () => {
     expect(offItsPane(asks, 3)).toBe(1);
   });
 
+  it("draws a workspace the chat asked to have removed on its pane (qw356)", () => {
+    const removal = ask(3, "removal:3:alpha", "workspace-removal", 10);
+    expect(onItsPane([removal], 3)).toEqual([removal]);
+    expect(onItsPane([removal], 4)).toEqual([]);
+  });
+
   it("draws no Notice for a reply the chat waits on: the pane is where it is typed", () => {
     expect(onItsPane([ask(3, "question:3", "question")], 3)).toEqual([]);
   });
