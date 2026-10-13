@@ -24,7 +24,8 @@
 //!
 //! - `{"call":{"id":7,"command":"stop","chat":"<ULID>"}}`, a command, from the client;
 //! - `{"reply":{"re":7,"ok":"done"}}` or `{"reply":{"re":7,"refused":{"code":"…","why":"…"}}}`,
-//!   its answer, from the host, in any order relative to other answers;
+//!   its answer, from the host, in any order relative to other answers ([`serve`] answers a
+//!   link's calls side by side, and keeps the order of the commands about one chat);
 //! - `{"pushed":{"event":{…}}}` or `{"pushed":{"missed":{…}}}`, from the host to a client that
 //!   subscribed: ADR 0066's envelope, or word that events were missed, never a silent gap;
 //! - `{"ui":{…}}`, a frame of the UI RPC ([`crate::ui`]).
@@ -44,11 +45,14 @@
 //! word comes from an exhaustive `match` ([`Command::word`] and its kin), so a new variant does
 //! not compile without one, and fails that test until its frame is recorded.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::Arc;
 
 use bytes::Bytes;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 
 use crate::auth::Scope;
 use crate::grants::Power;
@@ -396,71 +400,240 @@ pub trait Host: Send + Sync + 'static {
     }
 }
 
+/// The most calls one link has in flight: taken up by the host and not yet answered, the
+/// session protocol's and the UI RPC's together. Past it the host reads no further call from
+/// the link until one is answered, so the rest wait in the link, whose own flow control holds
+/// the client back: no call is refused or dropped for it, and the host holds a bounded number
+/// of them. It matches [`crate::link::MOST_UNACCEPTED_STREAMS`], the link's other bound on
+/// what one peer may leave open, and is far more than a window sends at once.
+pub const MOST_CALLS_IN_FLIGHT: usize = 32;
+
 /// Serve the session protocol, and the UI RPC beside it when `ui` is given, on a link the
-/// host admitted, until the client closes it. Commands are answered in the order they come.
+/// host admitted, until the client closes it.
+///
+/// **A link's calls are answered side by side** (#1081), each on a task of its own, and each
+/// answer is sent when it is ready: replies come in any order, matched by `re`. So a command
+/// that waits (a `start` that waits on a harness) holds back neither another command's answer
+/// nor a pushed event, and neither does a UI RPC command that waits (#1095).
+///
+/// **What has an order keeps it.** The commands about one chat are carried out one after
+/// another, in the order they came: keystrokes are sent call after call without waiting for
+/// each answer, and one must not overtake another. `subscribe` and `unsubscribe` keep theirs
+/// too. Commands about different chats, and those about none (`list`, `start`), wait for
+/// nobody. A client that needs one of those after another waits for the first one's answer.
+///
+/// **At most [`MOST_CALLS_IN_FLIGHT`] at once**, counting those waiting their chat's turn.
+///
+/// **A command the host took up is carried out** even when its link ends first: `serve`
+/// returns once each has finished, and what a link asked for is not undone by its closing (a
+/// `start` cut off halfway would leave a chat nobody holds). A host that must stop at once
+/// drops this future, which stops them where they wait.
 pub async fn serve<H: Host>(
     mut link: Link,
     host: H,
     ui: Option<ui::Server>,
 ) -> Result<(), LinkError> {
-    let peer = Peer {
+    let peer = Arc::new(Peer {
         scope: link.scope(),
         version: link.version(),
         views: link.opener(),
-    };
-    let mut ui = ui::Serving::new(ui);
+    });
+    let host = Arc::new(host);
+    let mut calls = Calls::default();
+    let served = answer(&mut link, &host, &peer, ui::Serving::new(ui), &mut calls).await;
+    // Nobody is left to hear these answers; the commands are carried out all the same.
+    while calls.next().await.is_some() {}
+    served
+}
+
+/// [`serve`]'s loop: read a call and start it, send an answer that is ready, push an event.
+async fn answer<H: Host>(
+    link: &mut Link,
+    host: &Arc<H>,
+    peer: &Arc<Peer>,
+    mut ui: ui::Serving,
+    calls: &mut Calls,
+) -> Result<(), LinkError> {
     let mut events: Option<mpsc::Receiver<Pushed>> = None;
     loop {
         let next = tokio::select! {
-            frame = link.control().next() => Next::Frame(frame),
+            frame = link.control().next(), if !calls.full() => Next::Frame(frame),
+            Some(finished) = calls.next() => Next::Finished(finished),
             pushed = next_pushed(&mut events) => Next::Pushed(pushed),
         };
-        let frame = match next {
-            Next::Pushed(Some(pushed)) => {
-                link.control()
-                    .send(Frame::Pushed(pushed).to_bytes())
-                    .await?;
-                continue;
-            }
+        let answer = match next {
+            Next::Pushed(Some(pushed)) => Some(Frame::Pushed(pushed)),
             Next::Pushed(None) => {
                 events = None;
-                continue;
+                None
+            }
+            Next::Finished(Finished::Answered(frame)) => Some(frame),
+            Next::Finished(Finished::Subscribed(id, Ok(receiver))) => {
+                events = Some(receiver);
+                Some(reply(id, Ok(Answer::Subscribed)))
+            }
+            Next::Finished(Finished::Subscribed(id, Err(refusal))) => Some(reply(id, Err(refusal))),
+            Next::Finished(Finished::Unsubscribed(id)) => {
+                events = None;
+                Some(reply(id, Ok(Answer::Done)))
             }
             Next::Frame(None) => return Ok(()),
-            Next::Frame(Some(frame)) => frame?,
-        };
-        let answer = match serde_json::from_slice::<Frame>(&frame) {
-            Ok(Frame::Call(Call { id, command })) => {
-                let outcome = match refused(&command, &peer, &host).await {
-                    Some(refusal) => Outcome::Refused(refusal),
-                    None => match command {
-                        Command::Subscribe { since } => match host.subscribe(since, &peer).await {
-                            Ok(receiver) => {
-                                events = Some(receiver);
-                                Outcome::Ok(Answer::Subscribed)
-                            }
-                            Err(refusal) => Outcome::Refused(refusal),
-                        },
-                        Command::Unsubscribe => {
-                            events = None;
-                            Outcome::Ok(Answer::Done)
+            Next::Frame(Some(frame)) => {
+                let frame = frame?;
+                match serde_json::from_slice::<Frame>(&frame) {
+                    Ok(Frame::Call(Call { id, command })) => {
+                        let (host, peer) = (Arc::clone(host), Arc::clone(peer));
+                        calls.take(
+                            Lane::of(&command),
+                            Box::pin(async move { carry_out(id, command, &*host, &peer).await }),
+                        );
+                        None
+                    }
+                    Ok(Frame::Ui(frame)) => match ui.answer(frame, peer) {
+                        ui::Answered::Now(frame) => frame.map(Frame::Ui),
+                        ui::Answered::Later(answer) => {
+                            calls.take(
+                                None,
+                                Box::pin(
+                                    async move { Finished::Answered(Frame::Ui(answer.await)) },
+                                ),
+                            );
+                            None
                         }
-                        command => match host.call(command, &peer).await {
-                            Ok(answer) => Outcome::Ok(answer),
-                            Err(refusal) => Outcome::Refused(refusal),
-                        },
                     },
-                };
-                Some(Frame::Reply(Reply { re: id, outcome }))
+                    // Only a host sends these; a client that does is ignored, not believed.
+                    Ok(Frame::Reply(_) | Frame::Pushed(_)) => None,
+                    Err(_) => unreadable_call(&frame),
+                }
             }
-            Ok(Frame::Ui(frame)) => ui.answer(frame, &peer).await.map(Frame::Ui),
-            // Only a host sends these; a client that does is ignored, not believed.
-            Ok(Frame::Reply(_) | Frame::Pushed(_)) => None,
-            Err(_) => unreadable_call(&frame),
         };
         if let Some(answer) = answer {
             link.control().send(answer.to_bytes()).await?;
         }
+    }
+}
+
+/// Carry out one call: the grants' check first ([`refused`]), then the host.
+async fn carry_out<H: Host>(id: u64, command: Command, host: &H, peer: &Peer) -> Finished {
+    if let Some(refusal) = refused(&command, peer, host).await {
+        return Finished::Answered(reply(id, Err(refusal)));
+    }
+    match command {
+        // The link holds the subscription, so its loop takes these two up when they finish.
+        Command::Subscribe { since } => Finished::Subscribed(id, host.subscribe(since, peer).await),
+        Command::Unsubscribe => Finished::Unsubscribed(id),
+        command => Finished::Answered(reply(id, host.call(command, peer).await)),
+    }
+}
+
+fn reply(re: u64, answer: Result<Answer, Refusal>) -> Frame {
+    Frame::Reply(Reply {
+        re,
+        outcome: match answer {
+            Ok(answer) => Outcome::Ok(answer),
+            Err(refusal) => Outcome::Refused(refusal),
+        },
+    })
+}
+
+/// What a call's task ends with.
+enum Finished {
+    /// Its answer, ready to send.
+    Answered(Frame),
+    /// A `subscribe` the host answered: the link holds the receiver.
+    Subscribed(u64, Result<mpsc::Receiver<Pushed>, Refusal>),
+    /// An `unsubscribe`: the link lets go of the receiver.
+    Unsubscribed(u64),
+}
+
+/// What a link's calls keep their order within ([`serve`]).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Lane {
+    /// The commands about one chat.
+    Chat(String),
+    /// `subscribe` and `unsubscribe`.
+    Subscription,
+}
+
+impl Lane {
+    /// The lane `command` keeps its order in, or `None` when it waits for nobody. An
+    /// exhaustive `match`, so a command added later says which it is.
+    fn of(command: &Command) -> Option<Lane> {
+        match command {
+            Command::List | Command::Start(_) => None,
+            Command::Attach { chat }
+            | Command::Detach { chat, .. }
+            | Command::Write { chat, .. }
+            | Command::Resize { chat, .. }
+            | Command::Answer { chat, .. }
+            | Command::Stop { chat } => Some(Lane::Chat(chat.clone())),
+            Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
+        }
+    }
+}
+
+type Work = BoxFuture<'static, Finished>;
+
+/// The calls one link has in flight: each running on a task of its own, and behind each lane's
+/// running call, the later ones of that lane in the order they came.
+#[derive(Default)]
+struct Calls {
+    running: JoinSet<(Option<Lane>, Finished)>,
+    /// A lane is here while one of its calls runs, with those waiting their turn behind it.
+    waiting: HashMap<Lane, VecDeque<Work>>,
+    in_flight: usize,
+}
+
+impl Calls {
+    fn full(&self) -> bool {
+        self.in_flight >= MOST_CALLS_IN_FLIGHT
+    }
+
+    /// Take up one call: run it now, or behind its lane's earlier ones.
+    fn take(&mut self, lane: Option<Lane>, work: Work) {
+        self.in_flight += 1;
+        let Some(lane) = lane else {
+            return self.run(None, work);
+        };
+        match self.waiting.get_mut(&lane) {
+            Some(behind) => behind.push_back(work),
+            None => {
+                self.waiting.insert(lane.clone(), VecDeque::new());
+                self.run(Some(lane), work);
+            }
+        }
+    }
+
+    fn run(&mut self, lane: Option<Lane>, work: Work) {
+        self.running.spawn(async move { (lane, work.await) });
+    }
+
+    /// The next call to finish, or `None` when none is in flight. Its lane's next call starts.
+    /// A host that panicked answering a call panics here, as it did when `serve` answered each
+    /// call itself: the link ends, and nothing is answered in the host's name.
+    async fn next(&mut self) -> Option<Finished> {
+        let (lane, finished) = match self.running.join_next().await? {
+            Ok(done) => done,
+            Err(gone) => match gone.try_into_panic() {
+                Ok(panic) => std::panic::resume_unwind(panic),
+                // Stopped with the runtime: nothing of this link runs on.
+                Err(_) => {
+                    self.waiting.clear();
+                    self.in_flight = self.running.len();
+                    return None;
+                }
+            },
+        };
+        self.in_flight -= 1;
+        if let Some(lane) = lane {
+            match self.waiting.get_mut(&lane).and_then(VecDeque::pop_front) {
+                Some(work) => self.run(Some(lane), work),
+                None => {
+                    self.waiting.remove(&lane);
+                }
+            }
+        }
+        Some(finished)
     }
 }
 
@@ -492,6 +665,7 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
 
 enum Next {
     Frame(Option<Result<Bytes, LinkError>>),
+    Finished(Finished),
     Pushed(Option<Pushed>),
 }
 
@@ -567,17 +741,49 @@ pub struct Client {
     scope: Scope,
 }
 
-/// The events a subscription pushes, in order.
-pub type Events = mpsc::UnboundedReceiver<Pushed>;
+/// What a subscription brings a client, in order: each thing the host pushed, and word of
+/// where the client fell behind ([`Told`]). It holds [`MOST_EVENTS_QUEUED`] of them at the
+/// most, or what [`Client::holding`] was given.
+pub type Events = mpsc::Receiver<Told>;
+
+/// What a client reads from its [`Events`].
+///
+/// This is the client's own word to its reader, made on the client's side of the link: it is
+/// not a frame, and nothing of it crosses the wire.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Told {
+    /// What the host pushed.
+    Pushed(Pushed),
+    /// The reader fell behind: it left more unread than the queue holds, so the client let go
+    /// of the subscription ([`Command::Unsubscribe`]) and kept nothing after `since`, which
+    /// is, for each device, the last `seq` this queue did keep (or the one the subscription
+    /// was made from, for a device nothing was kept of). Every event after it is what was
+    /// missed, and [`Client::subscribe`] from `since` brings each of them back, or the host's
+    /// word that it no longer keeps some ([`Pushed::Missed`]). Never a silent gap, and never
+    /// a queue that grows (#1081).
+    FellBehind { since: Since },
+}
+
+/// The most events a client's queue holds for a reader that is not reading. A burst that a
+/// reader takes a moment over fits; a reader that has stopped holds this many and no more. It
+/// counts events, each of which is one control frame
+/// ([`crate::link::MOST_CONTROL_FRAME_BYTES`] at the most).
+pub const MOST_EVENTS_QUEUED: usize = 1024;
 
 impl Client {
     /// Speak the session protocol on `link`. Answers with the client, the streams the host
     /// opens (each attach's view, [`crate::view::Viewer::accept`]), and the events it pushes
     /// once subscribed.
-    pub fn new(mut link: Link) -> (Client, Acceptor, Events) {
+    pub fn new(link: Link) -> (Client, Acceptor, Events) {
+        Client::holding(link, MOST_EVENTS_QUEUED)
+    }
+
+    /// [`Client::new`], with a queue that holds `most_events` (one at the least) for a reader
+    /// that is not reading, where [`Client::new`] holds [`MOST_EVENTS_QUEUED`].
+    pub fn holding(mut link: Link, most_events: usize) -> (Client, Acceptor, Events) {
         let views = link.acceptor();
         let (asks, asked) = mpsc::unbounded_channel();
-        let (pushed, events) = mpsc::unbounded_channel();
+        let (pushed, events) = Subscribed::queue(most_events);
         let client = Client {
             asks,
             version: link.version(),
@@ -668,7 +874,9 @@ impl Client {
         }
     }
 
-    /// Subscribe from `since`: the events come on the [`Events`] [`Client::new`] gave.
+    /// Subscribe from `since`: the events come on the [`Events`] [`Client::new`] gave. A
+    /// reader that leaves too many unread is told so there ([`Told::FellBehind`]), and
+    /// subscribes again from the cursor it is given.
     pub async fn subscribe(&self, since: Since) -> Result<(), CallError> {
         match self.call(Command::Subscribe { since }).await? {
             Answer::Subscribed => Ok(()),
@@ -698,13 +906,78 @@ fn unexpected(answer: &Answer) -> CallError {
     CallError::Unexpected(serde_json::to_string(answer).unwrap_or_default())
 }
 
+/// The client's side of its subscription: the bounded queue its reader reads, and where the
+/// reader would read on from.
+struct Subscribed {
+    queue: mpsc::Sender<Told>,
+    /// Whether the host's pushes are being kept: from a `subscribe` the host answered until
+    /// the reader falls behind.
+    live: bool,
+    /// For each device, the last `seq` queued, or the one subscribed from.
+    cursor: Since,
+    /// The cursor of each `subscribe` not yet answered, by its call's number.
+    asked: HashMap<u64, Since>,
+}
+
+impl Subscribed {
+    /// A queue of `most` events (one at the least), and one place more: the last place is
+    /// kept for the word that the reader fell behind, so that word always fits, in its order.
+    fn queue(most: usize) -> (Subscribed, Events) {
+        let (queue, events) = mpsc::channel(most.max(1).saturating_add(1));
+        let subscribed = Subscribed {
+            queue,
+            live: false,
+            cursor: Since::new(),
+            asked: HashMap::new(),
+        };
+        (subscribed, events)
+    }
+
+    /// The host answered the call numbered `re`: when that is a `subscribe` it accepted, its
+    /// events are kept from here on, and the cursor is the one it was made from.
+    fn answered(&mut self, re: u64, accepted: bool) {
+        if let Some(since) = self.asked.remove(&re)
+            && accepted
+        {
+            self.cursor = since;
+            self.live = true;
+        }
+    }
+
+    /// Queue what the host pushed. Answers `true` when the reader has just fallen behind, and
+    /// the host is to be told to stop: the queue has only its last place left, which takes the
+    /// word of it. What comes after that is not kept, and is asked for again from the cursor.
+    fn pushed(&mut self, pushed: Pushed) -> bool {
+        if !self.live {
+            return false;
+        }
+        if self.queue.capacity() > 1 {
+            match &pushed {
+                Pushed::Event(event) => self.cursor.insert(event.device_id.clone(), event.seq),
+                // The gap is told by this very frame: reading on from before it would only
+                // tell it again.
+                Pushed::Missed {
+                    device, resumes_at, ..
+                } => self
+                    .cursor
+                    .insert(device.clone(), resumes_at.saturating_sub(1)),
+            };
+            let _ = self.queue.try_send(Told::Pushed(pushed));
+            return false;
+        }
+        self.live = false;
+        // With no place left at all, the last thing queued is the word from the time before,
+        // nothing has been read or kept since, and its cursor is still where to read on from.
+        let _ = self.queue.try_send(Told::FellBehind {
+            since: self.cursor.clone(),
+        });
+        true
+    }
+}
+
 /// The client's driver: it numbers each call, sends it, and hands each answer to whoever
-/// waits for it, and each pushed event to [`Events`].
-async fn drive(
-    mut link: Link,
-    mut asked: mpsc::UnboundedReceiver<Ask>,
-    pushed: mpsc::UnboundedSender<Pushed>,
-) {
+/// waits for it, and each pushed event to [`Events`], which it holds to a bound.
+async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut pushed: Subscribed) {
     let mut next_id: u64 = 1;
     let mut waiting: HashMap<u64, oneshot::Sender<Result<Answer, CallError>>> = HashMap::new();
     let mut ui = ui::Waiting::default();
@@ -721,6 +994,9 @@ async fn drive(
                 next_id += 1;
                 let frame = match ask {
                     Ask::Session(command, reply) => {
+                        if let Command::Subscribe { since } = &command {
+                            pushed.asked.insert(id, since.clone());
+                        }
                         waiting.insert(id, reply);
                         Frame::Call(Call { id, command })
                     }
@@ -734,6 +1010,7 @@ async fn drive(
             Driven::Frame(Some(Err(e))) => break e.to_string(),
             Driven::Frame(Some(Ok(frame))) => match serde_json::from_slice::<Frame>(&frame) {
                 Ok(Frame::Reply(Reply { re, outcome })) => {
+                    pushed.answered(re, outcome == Outcome::Ok(Answer::Subscribed));
                     if let Some(reply) = waiting.remove(&re) {
                         let _ = reply.send(match outcome {
                             Outcome::Ok(answer) => Ok(answer),
@@ -742,17 +1019,33 @@ async fn drive(
                     }
                 }
                 Ok(Frame::Pushed(event)) => {
-                    let _ = pushed.send(event);
+                    if pushed.pushed(event) {
+                        // The reader fell behind: the host is told to stop pushing, in a call
+                        // of the driver's own, whose answer nobody waits for. It is sent
+                        // before any call made on reading that word, so a subscription made
+                        // again on it comes after.
+                        let id = next_id;
+                        next_id += 1;
+                        let stop = Frame::Call(Call {
+                            id,
+                            command: Command::Unsubscribe,
+                        });
+                        if let Err(e) = link.control().send(stop.to_bytes()).await {
+                            break e.to_string();
+                        }
+                    }
                 }
                 Ok(Frame::Ui(frame)) => ui.answered(frame),
                 // A reply this client cannot read fails its call, rather than leaving it to
                 // wait for an answer that has come.
                 Err(e) => {
-                    if let Some(reply) = unreadable_reply(&frame).and_then(|re| waiting.remove(&re))
-                    {
-                        let _ = reply.send(Err(CallError::Unexpected(format!(
-                            "a reply this client cannot read ({e})"
-                        ))));
+                    if let Some(re) = unreadable_reply(&frame) {
+                        pushed.answered(re, false);
+                        if let Some(reply) = waiting.remove(&re) {
+                            let _ = reply.send(Err(CallError::Unexpected(format!(
+                                "a reply this client cannot read ({e})"
+                            ))));
+                        }
                     }
                 }
                 // A call from the host: not this client's to answer.

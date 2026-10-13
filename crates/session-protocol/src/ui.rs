@@ -492,6 +492,12 @@ impl Server {
     }
 }
 
+/// How [`Serving::answer`] answers a frame: at once (or not at all), or once its handler has.
+pub(crate) enum Answered {
+    Now(Option<Frame>),
+    Later(BoxFuture<'static, Frame>),
+}
+
 /// The host's UI RPC on one link: whether the window has been welcomed.
 pub(crate) struct Serving {
     server: Option<Server>,
@@ -506,29 +512,35 @@ impl Serving {
         }
     }
 
-    /// The host's answer to one frame, if it has one.
-    pub(crate) async fn answer(&mut self, frame: Frame, peer: &Peer) -> Option<Frame> {
+    /// The host's answer to one frame. A hello, and a call refused before its handler is
+    /// asked, are answered at once, so a call is judged by what the link had said hello to
+    /// when it came. A call the handler answers is answered later, off the link's loop, so one
+    /// that waits holds back nothing else on the link (#1095).
+    pub(crate) fn answer(&mut self, frame: Frame, peer: &Peer) -> Answered {
         match frame {
-            Frame::Hello { build } => Some(self.hello(&build, peer)),
+            Frame::Hello { build } => Answered::Now(Some(self.hello(&build, peer))),
             Frame::Call(Call { id, method, args }) => {
-                let outcome = match (&self.server, self.open) {
+                let reply = move |outcome| Frame::Reply(Reply { re: id, outcome });
+                match (&self.server, self.open) {
                     (Some(server), true) if server.methods.contains(&method) => {
-                        match server.handler.call(method.clone(), args).await {
-                            Ok(value) => Outcome::Ok(as_a_link_is_served(&method, value)),
-                            Err(value) => Outcome::Err(value),
-                        }
+                        let handler = Arc::clone(&server.handler);
+                        Answered::Later(Box::pin(async move {
+                            reply(match handler.call(method.clone(), args).await {
+                                Ok(value) => Outcome::Ok(as_a_link_is_served(&method, value)),
+                                Err(value) => Outcome::Err(value),
+                            })
+                        }))
                     }
-                    (Some(_), true) => Outcome::Err(Value::String(format!(
-                        "this host serves no UI RPC method `{method}`"
-                    ))),
-                    _ => Outcome::Err(Value::String(
+                    (Some(_), true) => Answered::Now(Some(reply(Outcome::Err(Value::String(
+                        format!("this host serves no UI RPC method `{method}`"),
+                    ))))),
+                    _ => Answered::Now(Some(reply(Outcome::Err(Value::String(
                         "the UI RPC is not open on this link: say hello first".into(),
-                    )),
-                };
-                Some(Frame::Reply(Reply { re: id, outcome }))
+                    ))))),
+                }
             }
             // Only a host sends these.
-            Frame::Welcome { .. } | Frame::Refused { .. } | Frame::Reply(_) => None,
+            Frame::Welcome { .. } | Frame::Refused { .. } | Frame::Reply(_) => Answered::Now(None),
         }
     }
 
