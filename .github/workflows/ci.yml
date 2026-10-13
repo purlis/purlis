@@ -856,6 +856,14 @@ jobs:
         continue-on-error: true
         run: node ../tools/e2e-timings.mjs logs/timings.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
+      # What the project switches of the run above took (`specs/project-switch.e2e.ts`), as a
+      # notice on the part of the job that ran them: a switch to a project of many chats apart
+      # from one to a project of one (`tools/switch-notice.mjs`). A report, never a verdict.
+      - name: Annotate the project switches
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node ../tools/switch-notice.mjs logs/project-switch.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
+        working-directory: app
       # A harness reporting its own state through `charter hook`, all the way to what the
       # window draws. Its own run, because the app reads `SHELL` once and this harness is a
       # different one.
