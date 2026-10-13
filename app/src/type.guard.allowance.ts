@@ -55,7 +55,6 @@ export const TYPE_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".inbox-chain | font-weight: 600",
     ".explorer [data-mark] > .file-node > .spot-name | color: var(--change-colour)",
     ".explorer .change-mark | color: var(--change-colour)",
-    ".chats-section li.chats-group | font-size: 0.85em",
     ".state-bar .repo | font-weight: 600",
     ".came-back | font-size: 0.85rem",
     ".warning h2 | font-size: 1rem",
