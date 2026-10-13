@@ -66,6 +66,7 @@ const STATE: WorkspaceState = {
 };
 
 const STATUS: BranchStatus = {
+  refused: [],
   changes: [
     { path: "README.md", mark: "changed", from: null, uncommitted: true },
     { path: "src/new.rs", mark: "added", from: null, uncommitted: false },

@@ -990,6 +990,14 @@ const STATES: State[] = [
               { path: "src/queue.rs", mark: "changed", from: null, uncommitted: false, also: [] },
               { path: "src/new.rs", mark: "added", from: null, uncommitted: true, also: ["tidy"] },
             ],
+            refused: [
+              {
+                path: "vendor/.git/x",
+                mark: "added",
+                why: "Named and not read: a folder on its path is called .git.",
+                uncommitted: true,
+              },
+            ],
             more: 0,
             unread: null,
           },

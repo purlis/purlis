@@ -98,9 +98,9 @@ export function pastTheCap(more: number): string {
   return `git found ${more} more changes in this folder than it lists, so a file this task wrote may be among them and not shown.`;
 }
 
-/** How many files a task's changes list, across every place. */
+/** How many paths a task's changes list, across every place: the files and the refused ones. */
 export function filesIn(changes: TaskChanges): number {
-  return changes.places.reduce((sum, place) => sum + place.files.length, 0);
+  return changes.places.reduce((sum, place) => sum + place.files.length + place.refused.length, 0);
 }
 
 /** `1 commit`, or `3 commits`. */

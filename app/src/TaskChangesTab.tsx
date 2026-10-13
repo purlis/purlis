@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { GitCompare, LoaderCircle } from "lucide-react";
+import { CircleSlash, GitCompare, LoaderCircle } from "lucide-react";
 import { ChatAsk } from "./ChatAsk";
 import { EmptyState } from "./EmptyState";
 import { Notice } from "./Notice";
@@ -254,7 +254,8 @@ export function TaskChangesTab({
   );
 }
 
-/** The files a task changed in one repo's folder or one branch's: each opens its comparison. */
+/** The files a task changed in one repo's folder or one branch's: each opens its comparison,
+ *  except a path purlis names and does not read, which is drawn and never opened (#704). */
 function Place({
   place,
   shared,
@@ -297,6 +298,22 @@ function Place({
           </li>
         ))}
       </ul>
+      {place.refused.length > 0 && (
+        // **Named, and never opened** (#704): a path the engine refuses to read is drawn as text
+        // with its mark and why. No row of it is a control, so nothing opens, compares or
+        // stages it.
+        <ul className="task-changes-files task-changes-refused" aria-label="Named and not read">
+          {place.refused.map((refused) => (
+            <li key={refused.path} data-mark={refused.mark} data-testid="task-changes-refused-row">
+              <CircleSlash className="node-icon" aria-hidden="true" />
+              <span className="refused-path">{refused.path}</span>
+              <span className="outcome"> {MARKS[refused.mark]}</span>
+              {refused.uncommitted && <span className="none"> · not committed</span>}
+              <span className="honest"> · {refused.why}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {place.more > 0 &&
         (shared ? (
           <p className="honest">{pastTheCap(place.more)}</p>

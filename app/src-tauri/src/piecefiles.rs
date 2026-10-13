@@ -193,11 +193,39 @@ pub struct FolderChanges {
     pub count: u32,
 }
 
+/// A path a branch changed that purlis names and never reads (#704): a folder on its path is
+/// called `.git`, or its name is not a plain path inside the branch. Drawn with its mark and
+/// why, and never opened, compared or offered as a file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RefusedFile {
+    /// Its name as git spelled it: shown, never a path to open.
+    pub path: String,
+    pub mark: ChangeMark,
+    /// Why it is not read, in the core's sentence.
+    pub why: String,
+    /// Whether it is not committed yet.
+    pub uncommitted: bool,
+}
+
+impl From<files::RefusedChange> for RefusedFile {
+    fn from(refused: files::RefusedChange) -> Self {
+        Self {
+            path: refused.path,
+            mark: refused.mark.into(),
+            why: refused.why.said().to_owned(),
+            uncommitted: refused.uncommitted,
+        }
+    }
+}
+
 /// What a branch changed against the branch it was cut from, committed or not.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct BranchStatus {
     /// Sorted by path, at most 10,000.
     pub changes: Vec<FileChange>,
+    /// The paths it changed that are named and never read, sorted by path, at most 10,000. On
+    /// no folder's count, and never among `changes`.
+    pub refused: Vec<RefusedFile>,
     /// Every folder holding a change, sorted by path.
     pub folders: Vec<FolderChanges>,
     /// How many changes past those are not listed.
@@ -370,8 +398,12 @@ pub(crate) fn ahead_behind_of(plane: &Path, branch: Branch<'_>) -> Result<AheadB
 }
 
 pub(crate) fn status_of(plane: &Path, branch: Branch<'_>) -> Result<BranchStatus, String> {
+    status_by(&crate::reader(), plane, branch)
+}
+
+fn status_by(reader: &Reader, plane: &Path, branch: Branch<'_>) -> Result<BranchStatus, String> {
     let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
-    files::status(&crate::reader(), plane, branch)
+    files::status(reader, plane, branch)
         .map(|status| BranchStatus {
             changes: status
                 .changes
@@ -383,6 +415,7 @@ pub(crate) fn status_of(plane: &Path, branch: Branch<'_>) -> Result<BranchStatus
                     uncommitted: one.uncommitted,
                 })
                 .collect(),
+            refused: status.refused.into_iter().map(RefusedFile::from).collect(),
             folders: status
                 .folders
                 .into_iter()
@@ -1081,6 +1114,55 @@ mod tests {
             "{status:?}"
         );
         assert_eq!(status.base.as_deref(), Some("main"));
+    }
+
+    /// #704: a path the engine names and never reads crosses as a row of its own, with its mark
+    /// and the core's sentence for why, and never among the files that open.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_path_crosses_with_its_mark_and_why_and_never_among_the_files() {
+        let nowhere = tempfile::tempdir().unwrap();
+        let answer = serde_json::json!({ "Ok": { "Status": {
+            "changes": [{ "path": "a.txt", "mark": "Changed", "from": null, "uncommitted": true }],
+            "folders": [],
+            "refused": [
+                { "path": "vendor/.GIT/x", "mark": "Added", "why": "GitsOwnFolder",
+                  "uncommitted": false },
+                { "path": "a\\b.txt", "mark": "Deleted", "why": "NotAPlainPath",
+                  "uncommitted": true },
+            ],
+            "more": 0,
+            "base": "main",
+        } } });
+        let (_answer, reader) = reader_answering(&answer.to_string());
+
+        let status = status_by(&reader, nowhere.path(), PIECE).unwrap();
+
+        assert_eq!(
+            status.refused,
+            [
+                RefusedFile {
+                    path: "vendor/.GIT/x".to_string(),
+                    mark: ChangeMark::Added,
+                    why: files::RefusedFor::GitsOwnFolder.said().to_string(),
+                    uncommitted: false,
+                },
+                RefusedFile {
+                    path: "a\\b.txt".to_string(),
+                    mark: ChangeMark::Deleted,
+                    why: files::RefusedFor::NotAPlainPath.said().to_string(),
+                    uncommitted: true,
+                },
+            ]
+        );
+        assert_eq!(
+            status
+                .changes
+                .iter()
+                .map(|one| one.path.as_str())
+                .collect::<Vec<_>>(),
+            ["a.txt"]
+        );
     }
 
     #[test]

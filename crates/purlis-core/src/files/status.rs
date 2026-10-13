@@ -92,6 +92,23 @@ pub enum RefusedFor {
     NotAPlainPath,
 }
 
+impl RefusedFor {
+    /// Why the path is named and not read, in the sentence the window draws beside it.
+    pub fn said(self) -> &'static str {
+        match self {
+            Self::GitsOwnFolder => {
+                "Named and not read: a folder on its path is called .git, the name git keeps \
+                 for its own folder."
+            }
+            Self::NotAPlainPath => {
+                "Named and not read: its name is not a plain path inside the branch. It is \
+                 absolute, leads out of the branch, is spelled with a backslash, or is not \
+                 UTF-8."
+            }
+        }
+    }
+}
+
 /// A path the branch changed that purlis names and never reads (#704): **shown as refused, not
 /// left out without a word**. Only its name is kept, as git spelled it (bytes that are not UTF-8
 /// as U+FFFD); nothing at it, or under it, is opened, on either side.
@@ -781,6 +798,21 @@ mod tests {
 
     fn specs(all: &[&str]) -> Vec<String> {
         all.iter().map(|one| (*one).to_string()).collect()
+    }
+
+    /// #704: a refused path's row says why in a sentence of its own, never the bare variant,
+    /// and the two reasons never read alike.
+    #[test]
+    fn each_reason_a_path_is_refused_is_said_in_its_own_sentence() {
+        let gits = RefusedFor::GitsOwnFolder.said();
+        let plain = RefusedFor::NotAPlainPath.said();
+        assert!(gits.contains(".git"), "{gits}");
+        assert!(plain.contains("not a plain path"), "{plain}");
+        assert_ne!(gits, plain);
+        for said in [gits, plain] {
+            assert!(said.ends_with('.'), "{said}");
+            assert!(said.contains("not read"), "{said}");
+        }
     }
 
     /// #1130: the upstream follows the remote's fetch refspec, as git's `@{upstream}` does, so a

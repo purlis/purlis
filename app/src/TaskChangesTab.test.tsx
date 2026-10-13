@@ -73,3 +73,50 @@ describe("a task that changed nothing", () => {
     expect(screen.queryByTestId("task-changes-empty")).toBeNull();
   });
 });
+
+describe("a path the engine named and does not read (#704)", () => {
+  const WHY =
+    "Named and not read: a folder on its path is called .git, the name git keeps for its own folder.";
+
+  function withRefused(): TaskChanges {
+    return changes({
+      own: { repo: "api", branch: "fix-the-queue", standing: "kept", acts: false, left: null },
+      places: [
+        {
+          workspace: "alpha",
+          repo: "api",
+          piece: "fix-the-queue",
+          base: "main",
+          files: [],
+          refused: [{ path: "vendor/.GIT/hooks/x", mark: "added", why: WHY, uncommitted: true }],
+          more: 0,
+          unread: null,
+        },
+      ],
+    });
+  }
+
+  it("draws its path, its mark and why, and offers nothing to open, stage or compare", async () => {
+    const onOpenView = vi.fn();
+    mockIPC((cmd) => (cmd === "task_changes" ? withRefused() : null));
+    render(<TaskChangesTab plane={PLANE} id="01K6TASK" changed={0} onOpenView={onOpenView} />);
+
+    const row = await screen.findByTestId("task-changes-refused-row");
+    expect(row).toHaveTextContent("vendor/.GIT/hooks/x");
+    expect(row).toHaveTextContent("added");
+    expect(row).toHaveTextContent("not committed");
+    expect(row).toHaveTextContent(WHY);
+    expect(within(row).queryByRole("button")).toBeNull();
+    expect(within(row).queryByRole("link")).toBeNull();
+    expect(row.querySelector("[tabindex]")).toBeNull();
+    expect(onOpenView).not.toHaveBeenCalled();
+  });
+
+  it("is a change, so the tab does not say nothing changed", async () => {
+    mockIPC((cmd) => (cmd === "task_changes" ? withRefused() : null));
+    render(<TaskChangesTab plane={PLANE} id="01K6TASK" changed={0} onOpenView={vi.fn()} />);
+
+    await screen.findByTestId("task-changes-refused-row");
+    expect(screen.queryByTestId("task-changes-empty")).toBeNull();
+  });
+});

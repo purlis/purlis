@@ -67,6 +67,7 @@ const folder = (name: string): FolderEntry => ({
 /** A branch that changed README.md, added src/deep/new.rs, deleted src/gone.rs and renamed
  *  lib/old.rs to lib/new.rs. */
 const CHANGED: BranchStatus = {
+  refused: [],
   changes: [
     { path: "README.md", mark: "changed", from: null, uncommitted: true },
     { path: "lib/new.rs", mark: "renamed", from: "lib/old.rs", uncommitted: false },
@@ -195,7 +196,7 @@ describe("what a branch changed, in the explorer", () => {
 
   it("says when a branch changed nothing", async () => {
     core(TOP, {
-      now: { changes: [], folders: [], more: 0, base: "main" },
+      now: { changes: [], refused: [], folders: [], more: 0, base: "main" },
     });
     draw();
     await named("^README.md");

@@ -2456,6 +2456,11 @@ export type BranchMerge = {
 export type BranchStatus = {
 	/**  Sorted by path, at most 10,000. */
 	changes: FileChange[],
+	/**
+	 *  The paths it changed that are named and never read, sorted by path, at most 10,000. On
+	 *  no folder's count, and never among `changes`.
+	 */
+	refused: RefusedFile[],
 	/**  Every folder holding a change, sorted by path. */
 	folders: FolderChanges[],
 	/**  How many changes past those are not listed. */
@@ -2564,6 +2569,11 @@ export type ChangedIn = {
 	/**  What the changes are counted against; `null` when against the last commit. */
 	base: string | null,
 	files: TaskFile[],
+	/**
+	 *  The paths it changed that purlis names and never reads (#704), each with why: drawn,
+	 *  and never opened or compared.
+	 */
+	refused: RefusedFile[],
 	/**
 	 *  How many changes git found past the most it lists. Of a task in a shared folder, a file
 	 *  of its own past them is not listed.
@@ -6350,6 +6360,21 @@ export type Refused = {
 	said: string,
 	/**  What the core refused on, in the order it said them. */
 	at_risk: AtRisk[],
+};
+
+/**
+ *  A path a branch changed that purlis names and never reads (#704): a folder on its path is
+ *  called `.git`, or its name is not a plain path inside the branch. Drawn with its mark and
+ *  why, and never opened, compared or offered as a file.
+ */
+export type RefusedFile = {
+	/**  Its name as git spelled it: shown, never a path to open. */
+	path: string,
+	mark: ChangeMark,
+	/**  Why it is not read, in the core's sentence. */
+	why: string,
+	/**  Whether it is not committed yet. */
+	uncommitted: boolean,
 };
 
 /**  A declaration file purlis would not read. */

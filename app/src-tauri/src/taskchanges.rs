@@ -38,7 +38,7 @@ use purlis_core::files::Branch;
 use purlis_core::reopen::Mode;
 use purlis_core::taskchanges::{self as core, Paths, Working};
 
-use crate::piecefiles::{ChangeMark, FileChange};
+use crate::piecefiles::{BranchStatus, ChangeMark, FileChange, RefusedFile};
 use crate::planes::{Held, PlaneId, Planes};
 
 /// The files each chat's edit tools wrote while this app has been running
@@ -129,6 +129,9 @@ pub(crate) struct ChangedIn {
     /// What the changes are counted against; `null` when against the last commit.
     pub base: Option<String>,
     pub files: Vec<TaskFile>,
+    /// The paths it changed that purlis names and never reads (#704), each with why: drawn,
+    /// and never opened or compared.
+    pub refused: Vec<RefusedFile>,
     /// How many changes git found past the most it lists. Of a task in a shared folder, a file
     /// of its own past them is not listed.
     pub more: u32,
@@ -221,32 +224,51 @@ fn record_of(held: &Held, id: &str) -> Result<Record, String> {
         .ok_or_else(|| "purlis has no record of that task.".to_owned())
 }
 
-/// What `branch` changed, as one place of a Changes tab, each file as `file` makes it.
+/// What `branch` changed, as one place of a Changes tab, each file as `file` makes it and each
+/// refused path that `keeps` names.
 fn changed_in(
     held: &Held,
     (workspace, repo, piece): (&str, &str, Option<&str>),
     file: impl Fn(FileChange) -> Option<TaskFile>,
+    keeps: impl Fn(&str) -> bool,
 ) -> ChangedIn {
     let named = piece.map(str::to_owned);
     let read = crate::piecefiles::status_of(
         held.root(),
         crate::piecefiles::branch(workspace, repo, &named),
     );
-    let (base, files, more, unread) = match read {
+    place_from(read, (workspace, repo, named), file, keeps)
+}
+
+/// One place of a Changes tab from what was read of it: the files `file` keeps, the refused
+/// paths `keeps` names, or why it was not read.
+fn place_from(
+    read: Result<BranchStatus, String>,
+    (workspace, repo, piece): (&str, &str, Option<String>),
+    file: impl Fn(FileChange) -> Option<TaskFile>,
+    keeps: impl Fn(&str) -> bool,
+) -> ChangedIn {
+    let (base, files, refused, more, unread) = match read {
         Ok(status) => (
             status.base,
             status.changes.into_iter().filter_map(file).collect(),
+            status
+                .refused
+                .into_iter()
+                .filter(|one| keeps(&one.path))
+                .collect(),
             status.more,
             None,
         ),
-        Err(why) => (None, Vec::new(), 0, Some(why)),
+        Err(why) => (None, Vec::new(), Vec::new(), 0, Some(why)),
     };
     ChangedIn {
         workspace: workspace.to_owned(),
         repo: repo.to_owned(),
-        piece: named,
+        piece,
         base,
         files,
+        refused,
         more,
         unread,
     }
@@ -297,6 +319,8 @@ fn of_its_own_branch(held: &Held, record: &Record, changes: &mut TaskChanges) {
                     also: Vec::new(),
                 })
             },
+            // Its branch is the task's alone, so every path it names is the task's.
+            |_| true,
         )),
         None => {
             changes.unknown = Some(
@@ -347,16 +371,22 @@ fn of_a_shared_folder(held: &Held, record: &Record, changes: &mut TaskChanges) {
         }
     }
     for ((workspace, repo, piece), named) in by_place {
-        let place = changed_in(held, (&workspace, &repo, piece.as_deref()), |change| {
-            let whole = named.get(&change.path)?;
-            Some(TaskFile {
-                also: held.touched_files().also(chat, whole),
-                path: change.path,
-                mark: change.mark,
-                from: change.from,
-                uncommitted: change.uncommitted,
-            })
-        });
+        let place = changed_in(
+            held,
+            (&workspace, &repo, piece.as_deref()),
+            |change| {
+                let whole = named.get(&change.path)?;
+                Some(TaskFile {
+                    also: held.touched_files().also(chat, whole),
+                    path: change.path,
+                    mark: change.mark,
+                    from: change.from,
+                    uncommitted: change.uncommitted,
+                })
+            },
+            // Only what this task's own tools wrote, as for the files.
+            |path| named.contains_key(path),
+        );
         // Listed in a place is what this task wrote there. `more` stays git's count past its
         // cap: a file of this task's past it is not listed, and the tab says so.
         changes.places.push(place);
@@ -826,6 +856,40 @@ pub(crate) fn task_folder_shared(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn refused(path: &str) -> RefusedFile {
+        RefusedFile {
+            path: path.to_owned(),
+            mark: ChangeMark::Added,
+            why: "Named and not read.".to_owned(),
+            uncommitted: true,
+        }
+    }
+
+    /// #704: a place carries the refused paths the engine named, the ones `keeps` names, and
+    /// none where the branch could not be read.
+    #[test]
+    fn a_place_carries_the_refused_paths_its_task_s_own_and_none_unread() {
+        let status = BranchStatus {
+            changes: Vec::new(),
+            refused: vec![refused(".git/hooks/x"), refused("src/.GIT/y")],
+            folders: Vec::new(),
+            more: 0,
+            base: Some("main".to_owned()),
+        };
+        let none = |_: FileChange| None;
+        let at = ("alpha", "thing", Some("piece".to_owned()));
+
+        let every = place_from(Ok(status.clone()), at.clone(), none, |_| true);
+        assert_eq!(every.refused, status.refused);
+
+        let own = place_from(Ok(status), at.clone(), none, |path| path == "src/.GIT/y");
+        assert_eq!(own.refused, [refused("src/.GIT/y")]);
+
+        let unread = place_from(Err("no folder".to_owned()), at, none, |_| true);
+        assert!(unread.refused.is_empty());
+        assert_eq!(unread.unread.as_deref(), Some("no folder"));
+    }
 
     #[test]
     fn the_files_a_task_s_tools_named_are_kept_by_its_chat_and_no_other_s() {
