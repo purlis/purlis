@@ -138,6 +138,10 @@ What keeps it from becoming the library this file forbids:
   not set. A harness plugin's on/off stays a three-way `select` of on, off and not set: not set
   leaves it to the harness, whose answer purlis does not know, so a switch would show a value
   nobody said. So does a key holding something that is neither on nor off, shown as held.
+  While the core has not yet said what is in force (Saving's keys, on load), a key the file
+  does not set holds a quiet "Reading…" in its control's place, and one the file sets is its
+  switch at once (#1875): no row draws a select that turns into a switch. Where what is in force
+  could not be read, the key stays a select.
 - **Every select is the one select** (#1860): `primitives/Select.tsx`, Radix Select under
   `.ui-select`, its list in the one menu style. An option's empty value ("not set", "Every
   workspace") is an option like any other; a value none of the options has shows the

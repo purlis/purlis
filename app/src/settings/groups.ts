@@ -207,6 +207,9 @@ export type FileSetting = Named & {
   /** An on/off key's value in force while no file at the row's level holds it: the row is a
    *  switch, and Reset takes the key back to not set (#1865; `fileControls.ts`'s `Control`). */
   inForce?: boolean;
+  /** An on/off key whose value in force is still being read: a placeholder while no file at
+   *  the row's level holds it (#1875; `fileControls.ts`'s `Control`). */
+  reading?: true;
 };
 
 /**

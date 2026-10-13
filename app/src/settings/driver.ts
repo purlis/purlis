@@ -622,5 +622,6 @@ export function fileSetting(
     names: control.names,
     resets: control.resets,
     ...(control.inForce === undefined ? {} : { inForce: control.inForce }),
+    ...(control.reading ? { reading: control.reading } : {}),
   };
 }

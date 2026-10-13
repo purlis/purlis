@@ -1040,15 +1040,22 @@ function FileRow({
                 </button>
               )}
           </>
-        ) : setting.inForce !== undefined && ON_OFF.has(value) ? (
+        ) : setting.reading && value === "" ? (
+          // What is in force is still being read (#1875): a placeholder, so the row does not
+          // draw a select that turns into a switch once the core answers. Nothing to pick yet.
+          <span className="ui-setting-help" aria-labelledby={ids.labelledBy} aria-busy="true">
+            Reading…
+          </span>
+        ) : (setting.inForce !== undefined || setting.reading) && ON_OFF.has(value) ? (
           // An on/off key whose value in force is known (#1865): a switch at what is in force —
           // the file's value, or the one beneath while the file does not set it — and the row's
           // Reset takes it back to not set. A value the file holds that is neither stays a
-          // select below, so it is shown as held.
+          // select below, so it is shown as held. One the file sets is a switch at once, even
+          // while what is beneath is still read (#1875): the file's value is what it shows.
           <Choice
             kind="switch"
             ids={ids}
-            checked={value === "" ? setting.inForce : value === "on"}
+            checked={value === "" ? setting.inForce === true : value === "on"}
             onCheckedChange={(on) => write(on ? "on" : "off")}
           />
         ) : setting.kind === "choice" ? (

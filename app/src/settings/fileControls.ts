@@ -71,6 +71,12 @@ export type Control = {
    * set, since a switch would show a value purlis does not know.
    */
   inForce?: boolean;
+  /**
+   * **What is in force is still being read** (#1875): an on/off key that will be a switch once
+   * the core says its value in force. While the file does not set it, the row holds a
+   * placeholder, never a select that turns into a switch on load.
+   */
+  reading?: true;
 };
 
 /**
@@ -273,14 +279,15 @@ function standing(it: ProjectExtension): string {
 
 /**
  * One key holding true or false, as a closed choice: on, off, or not set here. With `inForce`,
- * the value in force while the key is not set here, it is drawn as a switch (#1865).
+ * the value in force while the key is not set here, it is drawn as a switch (#1865); with
+ * `"reading"`, it will be once the core says, and holds a placeholder until then (#1875).
  */
 export function onOffAt(
   path: SettingsStep[],
   label: string,
   hint: string,
   unset: string,
-  inForce?: boolean,
+  inForce?: boolean | "reading",
 ): Control {
   return {
     id: JSON.stringify(path),
@@ -289,7 +296,7 @@ export function onOffAt(
     kind: "choice",
     choices: ["on", "off"],
     unset,
-    ...(inForce === undefined ? {} : { inForce }),
+    ...(inForce === undefined ? {} : inForce === "reading" ? { reading: true } : { inForce }),
     read: (file) => {
       const value = valueAt(file, path);
       if (value?.kind !== "bool") return shown(value);
@@ -537,8 +544,10 @@ function decided(
   return `In this project: ${value}, ${origin}${overridden}.`;
 }
 
-/** An on/off save key's value in force, as its switch shows it; unknown before the core says. */
-function onOffInForce(it: InForce | undefined): boolean | undefined {
+/** An on/off save key's value in force, as its switch shows it; `"reading"` before the core
+ *  says, and unknown where it said none. */
+function onOffInForce(it: InForce | undefined, reading: boolean): boolean | "reading" | undefined {
+  if (reading) return "reading";
   if (it?.value === "on") return true;
   if (it?.value === "off") return false;
   return undefined;
@@ -553,10 +562,11 @@ function saveControl(
   section: Section,
   marker: string | null,
   it?: InForce,
+  reading = false,
 ): Control {
   const hint = marker === null ? one.hint : `${one.hint} ${marker}`;
   const unset = section === "local" ? "not set — charter.toml's" : "not set";
-  if (one.kind === "bool") return onOffAt(path, label, hint, unset, onOffInForce(it));
+  if (one.kind === "bool") return onOffAt(path, label, hint, unset, onOffInForce(it, reading));
   if (one.kind === "mode")
     return { ...textAt(path, label, { hint, kind: "choice", choices: MODES }), unset };
   return textAt(path, label, { hint });
@@ -651,6 +661,8 @@ export function planeGroup(section: Section): Group {
             section,
             marker,
             typeof it === "boolean" ? undefined : it,
+            // Not answered yet, nor refused: what is in force is on its way (#1875).
+            asked === undefined,
           );
         }),
         ...(section !== "local"

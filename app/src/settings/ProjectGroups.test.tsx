@@ -161,6 +161,8 @@ function core({
   refuse = undefined as string[] | undefined,
   personas = [] as string[],
   iconThemes = [] as { extension: string; name: string; text: string }[],
+  /** Holds the core's answer on what saving has in force until it settles. */
+  savingHeld = undefined as Promise<void> | undefined,
 } = {}) {
   const files: Record<SettingsWhich, SettingsFile> = { shared, local };
   const themeNow = () => (typeof theme === "function" ? theme() : theme);
@@ -179,12 +181,16 @@ function core({
           return { extensions, local_left_out: leftOut };
         case "project_harness_plugins":
           return [];
-        case "project_saving_in_force":
+        case "project_saving_in_force": {
           count.saving += 1;
-          if ("trouble" in saving) throw saving.trouble;
-          return leftOut === null
-            ? saving
-            : { ...saving, plane_left_out: leftOut, repos_left_out: leftOut };
+          const answer = () => {
+            if ("trouble" in saving) throw saving.trouble;
+            return leftOut === null
+              ? saving
+              : { ...saving, plane_left_out: leftOut, repos_left_out: leftOut };
+          };
+          return savingHeld === undefined ? answer() : savingHeld.then(answer);
+        }
         case "project_theme":
           return { ...themeNow(), local_left_out: leftOut };
         case "project_theme_drawn":
@@ -963,6 +969,35 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
       ],
       [{ path: [{ key: "plane" }, { key: "sign" }], value: null }],
     ]);
+  });
+
+  it("holds a placeholder for an on/off key until the core says what is in force, so nothing flips (#1875)", async () => {
+    let settle = () => {};
+    const savingHeld = new Promise<void>((resolve) => (settle = resolve));
+    core({ shared: SAVES_SHARED, saving: SAVES_IN_FORCE, savingHeld });
+    const saving = await at("Saving");
+
+    // Not set here, and what is in force not yet said: neither a select nor a switch.
+    const reading = within(rowOf("Auto-save")).getByText("Reading…");
+    expect(reading).toHaveAttribute("aria-busy", "true");
+    expect(within(rowOf("Auto-save")).queryByRole("combobox")).toBeNull();
+    expect(within(saving).queryByRole("switch", { name: "Auto-save" })).toBeNull();
+    // Set here, so its switch shows what the file holds, and does not wait.
+    expect(within(saving).getByRole("switch", { name: "Sign commits" })).toBeChecked();
+
+    settle();
+
+    expect(await within(saving).findByRole("switch", { name: "Auto-save" })).toBeChecked();
+    expect(within(rowOf("Auto-save")).queryByText("Reading…")).toBeNull();
+  });
+
+  it("draws an on/off key as a select when what is in force could not be read", async () => {
+    core({ shared: SAVES_SHARED, saving: { trouble: "the plane could not be read" } });
+    const saving = await at("Saving");
+
+    expect(within(saving).queryByRole("switch", { name: "Auto-save" })).toBeNull();
+    expect(within(saving).getByLabelText("Auto-save")).toHaveValue("");
+    expect(within(saving).queryByText("Reading…")).toBeNull();
   });
 
   it("shows an on/off key holding something else as held, in a select", async () => {
