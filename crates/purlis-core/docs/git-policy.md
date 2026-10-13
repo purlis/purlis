@@ -173,6 +173,13 @@ call site.
   (a folder) is no network call and is not listed. When the window runs it against a host you
   have a purlis account on, that one credential is your account's, through purlis's own helper
   ([forges.md](forges.md), "The git the window runs", #752); otherwise it is the forge CLI's.
+- **A verb that can reach another repository runs only through `run_network`** (#1853): a
+  fetch, pull, push, clone, `ls-remote`, a `remote` or `submodule` command that fetches, a remote
+  archive and the transport verbs. Every other entry point refuses one before git runs, so none
+  can skip the one-credential rule or the network log. A clone or push to a folder on this
+  machine goes through `run_network` too, given no credential and not listed. Kept everywhere
+  are the lookups that connect to nothing: `ls-remote --get-url`, and a `remote` that only reads
+  or writes its own config.
 - **A call that crosses a network uses only your own network settings, not a repository's.**
   A proxy, TLS and certificate settings, extra headers and the other `http.*` keys, a remote's
   own proxy, and an address rewrite (`url.<base>.insteadOf`, `.pushInsteadOf`) to another host

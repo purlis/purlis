@@ -107,11 +107,9 @@ pub(super) fn into_workspace(
     // `--` before the two paths: a source directory whose name begins with a dash is a path,
     // never an option. Python passes neither path after a separator; this is the one place
     // the port is stricter, and it cannot change what git does to any path that is not one.
-    let cloned = git::run(
-        root,
-        &["clone", "--quiet", "--", &src_arg, &dest_arg],
-        git::NETWORK,
-    );
+    // Through the network entry point, as every clone is (#1853): a folder is given no
+    // credential and is not listed in the network log.
+    let cloned = git::run_network(root, None, &["clone", "--quiet", "--", &src_arg, &dest_arg]);
     let failed = match &cloned {
         Ok(done) if done.ok() => None,
         Ok(done) => Some(done.err.trim().to_owned()),

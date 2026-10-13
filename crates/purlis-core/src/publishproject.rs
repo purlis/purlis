@@ -494,7 +494,7 @@ impl Hands for OnThisMachine {
         git_in(root, &["remote", "add", "origin", &url], "name the remote")?;
         let args = ["push", "-q", "--set-upstream", "origin", branch.as_str()];
         let Some(helper) = helper else {
-            return git_in(root, &args, "push the project");
+            return crate::createproject::pushed_to_a_folder(root, &args, "push the project");
         };
         let run = git::run_network(root, Some(&helper), &args)
             .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;

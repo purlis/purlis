@@ -577,6 +577,18 @@ pub(crate) fn git_in(folder: &Path, args: &[&str], what: &str) -> Result<(), Str
     }
 }
 
+/// [`git_in`] for a push given no credential helper (a test's repository on this machine), through the network
+/// entry point as every push is (#1853), with no credential at all.
+pub(crate) fn pushed_to_a_folder(folder: &Path, args: &[&str], what: &str) -> Result<(), String> {
+    let run = git::run_network(folder, None, args)
+        .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
+    if run.ok() {
+        Ok(())
+    } else {
+        Err(format!("git could not {what}: {}", git_words(&run)))
+    }
+}
+
 /// The last thing git said, without its `fatal: `.
 pub(crate) fn git_words(run: &git::Run) -> String {
     let said = if run.err.trim().is_empty() {
@@ -661,7 +673,7 @@ impl Hands for OnThisMachine {
         if let Some(to) = &self.push_to {
             let to = to.display().to_string();
             git_in(folder, &["remote", "add", "origin", &to], "name the remote")?;
-            return git_in(
+            return pushed_to_a_folder(
                 folder,
                 &["push", "-q", "--set-upstream", "origin", BRANCH],
                 "push the first commit",

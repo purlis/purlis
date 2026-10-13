@@ -80,6 +80,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+mod connecting;
 mod listing;
 mod network;
 pub mod presence;
@@ -711,6 +712,11 @@ fn programs_held(
     let Some(at) = verb_at(args) else {
         return Ok(Ok(extra));
     };
+    // A verb that can reach another repository runs only through the network entry point,
+    // which holds the one-credential rule and lists the call (#1853, [`connecting`]).
+    if !extra.network && connecting::connects(&args[at..]) {
+        return Ok(Err(refused_raw(connecting::OFF_THE_NETWORK_ENTRY)));
+    }
     let programs = reaches_a_program(&args[at..]);
     // `clone` and `init` read no repository's own config ([`network`]).
     let network = extra.network && !matches!(args[at], "clone" | "init");
@@ -3097,6 +3103,66 @@ mod tests {
         [super::super::link::CHANGED, super::super::link::MOVED]
             .contains(&said.as_str())
             .then_some(said)
+    }
+
+    #[test]
+    fn a_connecting_verb_is_refused_outside_the_network_entry_point_before_git_runs() {
+        // #1853: the one-credential rule, the network settings and the network log live on
+        // `run_network`; any other runner refuses a verb that can reach another repository,
+        // before git starts. A plain folder is enough: nothing is run to be refused.
+        let dir = tempfile::tempdir().unwrap();
+        let here = dir.path();
+        let said = |raw: RawRun| {
+            assert_eq!(raw.code, Some(128));
+            String::from_utf8_lossy(&raw.err).trim().to_owned()
+        };
+        for args in [
+            &["fetch", "origin"][..],
+            &["push", "origin", "main"],
+            &["-c", "a.b=c", "pull"],
+            &["clone", "--", "/nowhere", "copy"],
+            &["ls-remote", "origin"],
+            &["remote", "update"],
+            &["submodule", "update", "--init"],
+        ] {
+            let answers = [
+                as_text_raw(run(here, args, READ).unwrap()),
+                as_text_raw(run_untimed(here, args).unwrap()),
+                as_text_raw(run_until(here, args, READ, &AtomicBool::new(false)).unwrap()),
+                run_with_input(here, args, Vec::new(), READ).unwrap(),
+                run_as_session(here, args, READ).unwrap(),
+                run_in_hook(here, args, READ).unwrap(),
+            ];
+            for answer in answers {
+                assert_eq!(said(answer), connecting::OFF_THE_NETWORK_ENTRY, "{args:?}");
+            }
+            assert!(
+                matches!(spawn_fed(here, args), Ok(Err(_))),
+                "a fed call is refused too: {args:?}"
+            );
+        }
+        // The local-only lookups the network log uses are kept.
+        for args in [
+            &["ls-remote", "--get-url", "origin"][..],
+            &["remote", "get-url", "--push", "origin"],
+        ] {
+            let answer = run(here, args, READ).unwrap();
+            assert!(
+                !answer.err.contains(connecting::OFF_THE_NETWORK_ENTRY),
+                "{args:?}: {answer:?}"
+            );
+        }
+        // And the network entry point runs them.
+        let fetched = run_network(here, None, &["fetch", "origin"]).unwrap();
+        assert!(!fetched.err.contains(connecting::OFF_THE_NETWORK_ENTRY));
+    }
+
+    fn as_text_raw(run: Run) -> RawRun {
+        RawRun {
+            code: run.code,
+            out: run.out.into_bytes(),
+            err: run.err.into_bytes(),
+        }
     }
 
     #[test]
