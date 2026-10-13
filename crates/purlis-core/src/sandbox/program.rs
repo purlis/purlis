@@ -1186,13 +1186,30 @@ mod tests {
     #[test]
     fn a_child_that_leaves_the_group_holding_the_answer_does_not_hold_the_start() {
         // It answers at once and exits, but a child it started in a group of its own keeps the
-        // answer's pipe open past the deadline. That child ends on its own, so the test kills
-        // nothing it did not start.
+        // answer's pipe open past the deadline. The probe's end does not reach that child, so
+        // the test ends it: the child goes the moment a file the test writes is there, when
+        // the test is done and if it fails. (By a file it reads, because the probe's own wrap
+        // lets it write nothing a test could read its id from on macOS.)
+        struct Told(PathBuf);
+        impl Drop for Told {
+            fn drop(&mut self) {
+                let _ = std::fs::write(&self.0, "");
+            }
+        }
         let fx = Fixture::new();
+        let stop = Told(fx.outside.path().join("the-test-is-over"));
+        let said = fx.outside.path().join("what-left-the-group");
         let leaver = stand_in::program(
             fx.outside.path(),
             "claude",
-            "#!/bin/sh\necho 'not claude'\nperl -e 'setpgrp(0,0); sleep 20' &\nexit 0\n",
+            &format!(
+                "#!/bin/sh\necho 'not claude'\n\
+                 perl -e 'setpgrp(0,0); for (1..200) {{ exit if -e $ARGV[0]; \
+                 select(undef, undef, undef, 0.1) }}' '{stop}' &\n\
+                 echo $! 2>/dev/null > '{said}.part' && mv '{said}.part' '{said}'\nexit 0\n",
+                stop = stop.0.display(),
+                said = said.display()
+            ),
         );
         let began = Instant::now();
         assert!(fx.check(Harness::ClaudeCode, &leaver, &[], None).is_err());
@@ -1201,6 +1218,14 @@ mod tests {
             "{:?}",
             began.elapsed()
         );
+        drop(stop);
+        // Where the program could say which child it started, that child is seen to go.
+        if let Some(left) = stand_in::pid_named_in(&said, Duration::from_secs(2)) {
+            assert!(
+                stand_in::is_gone(left, Duration::from_secs(10)),
+                "the test left its own fixture running"
+            );
+        }
     }
 
     #[test]

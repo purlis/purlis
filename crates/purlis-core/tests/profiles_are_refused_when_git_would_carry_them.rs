@@ -300,7 +300,10 @@ fn a_git_that_never_answers_refuses_too_because_a_hang_is_not_a_pass() {
     let hanging = a_git_that(
         dir.path(),
         "git-that-hangs",
-        &format!("sleep 20 &\necho $! > '{}'\nwait", said.display()),
+        &format!(
+            "sleep 20 &\necho $! > '{0}.part'\nmv '{0}.part' '{0}'\nwait",
+            said.display()
+        ),
     );
 
     let check =
@@ -309,23 +312,12 @@ fn a_git_that_never_answers_refuses_too_because_a_hang_is_not_a_pass() {
     // Ended at the deadline with what it started. Ending the script alone left its `sleep`
     // running for twenty seconds, and a suite that ended meanwhile was failed for it by CI's
     // orphan check, with no test named (qw375).
+    // The id is waited for rather than read once: on a loaded machine the git may not have
+    // written it yet. A git ended before it started anything wrote none, and left nothing.
     #[cfg(unix)]
-    {
-        let pid: i32 = fs::read_to_string(&said)
-            .expect("the git said which process it started")
-            .trim()
-            .parse()
-            .expect("a pid");
-        let started = rustix::process::Pid::from_raw(pid).expect("not zero");
-        // A killed process is there until it is reaped, so give that a moment.
-        let reaped = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while rustix::process::test_kill_process(started).is_ok()
-            && std::time::Instant::now() < reaped
-        {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+    if let Some(started) = stand_in::pid_named_in(&said, std::time::Duration::from_secs(5)) {
         assert!(
-            rustix::process::test_kill_process(started).is_err(),
+            stand_in::is_gone(started, std::time::Duration::from_secs(10)),
             "what the git started was left running"
         );
     }

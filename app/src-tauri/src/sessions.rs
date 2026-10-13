@@ -660,7 +660,7 @@ mod tests {
         let id = sessions
             .open(
                 None,
-                &opening("printf 'output for the pane'; sleep 600"),
+                &opening("printf 'output for the pane'; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");
@@ -676,7 +676,7 @@ mod tests {
         let id = sessions
             .open(
                 None,
-                &opening("read line; printf 'you typed %s' \"$line\"; sleep 600"),
+                &opening("read line; printf 'you typed %s' \"$line\"; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");
@@ -693,7 +693,7 @@ mod tests {
         let id = sessions
             .open(
                 None,
-                &opening("stty raw -echo; printf 'raw now'; head -c 3 | od -An -tx1 | tr -s ' '; sleep 600"),
+                &opening("stty raw -echo; printf 'raw now'; head -c 3 | od -An -tx1 | tr -s ' '; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");
@@ -715,7 +715,7 @@ mod tests {
         let id = sessions
             .open(
                 None,
-                &opening("read _; printf 'after the pane went away'; sleep 600"),
+                &opening("read _; printf 'after the pane went away'; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");
@@ -814,7 +814,7 @@ mod tests {
                 None,
                 &Opening {
                     operator_shell: true,
-                    ..opening("echo looking-around; sleep 600")
+                    ..opening("echo looking-around; exec sleep 600")
                 },
                 &|_| {},
             )
@@ -893,7 +893,7 @@ mod tests {
     fn a_resize_reaches_the_program() {
         let sessions = Sessions::new();
         let id = sessions
-            .open(None, &opening("read _; stty size; sleep 600"), &|_| {})
+            .open(None, &opening("read _; stty size; exec sleep 600"), &|_| {})
             .expect("the session opens");
         let (_view, seen) = watching(&sessions, id);
 
@@ -940,7 +940,7 @@ mod tests {
                 let id = sessions
                     .open(
                         None,
-                        &opening(&format!("printf 'session {n} is running'; sleep 600")),
+                        &opening(&format!("printf 'session {n} is running'; exec sleep 600")),
                         &|_| {},
                     )
                     .expect("the session opens");
@@ -995,7 +995,7 @@ mod tests {
         let sessions = Sessions::new();
         let mut opening = opening(
             "printf 'git<%s|%s|%s|%s|%s>' \"$GIT_CONFIG_COUNT\" \"$GIT_CONFIG_KEY_0\" \
-             \"$GIT_CONFIG_VALUE_0\" \"$GIT_CONFIG_KEY_1\" \"$GIT_CONFIG_VALUE_1\"; sleep 600",
+             \"$GIT_CONFIG_VALUE_0\" \"$GIT_CONFIG_KEY_1\" \"$GIT_CONFIG_VALUE_1\"; exec sleep 600",
         );
         opening.env = vec![
             ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
@@ -1034,7 +1034,7 @@ mod tests {
     /// names only, so not even a fixture's value is put on a screen.
     fn op_names_in_a_chat(sessions: &Sessions, env: Vec<(String, String)>) -> String {
         let mut opening = opening(
-            "printf 'ops<%s>' \"$(env | grep '^OP_' | cut -d= -f1 | tr '\\n' ,)\"; sleep 600",
+            "printf 'ops<%s>' \"$(env | grep '^OP_' | cut -d= -f1 | tr '\\n' ,)\"; exec sleep 600",
         );
         opening.env = env;
         let id = sessions
@@ -1081,7 +1081,7 @@ mod tests {
         // #271 review U6. `env_strip` carries every identity source a vault declares, so a vault
         // bound to `PROD_1P_TOKEN` (no `OP_` prefix) leaks it to no chat.
         let sessions = Sessions::new();
-        let mut opening = opening("printf 'seen<%s>' \"$PROD_1P_TOKEN\"; sleep 600");
+        let mut opening = opening("printf 'seen<%s>' \"$PROD_1P_TOKEN\"; exec sleep 600");
         opening.env = vec![("PROD_1P_TOKEN".into(), "ops_fixture-declared-src".into())];
         opening.env_strip = vec!["PROD_1P_TOKEN".into()];
         let id = sessions
@@ -1154,7 +1154,7 @@ mod tests {
         opening.args = vec![
             "-c".to_owned(),
             format!(
-                "env | cut -d= -f1 > '{0}.part' && mv '{0}.part' '{0}'; sleep 600",
+                "env | cut -d= -f1 > '{0}.part' && mv '{0}.part' '{0}'; exec sleep 600",
                 out.display()
             ),
         ];
@@ -1286,7 +1286,7 @@ mod tests {
     /// What a chat's program sees of the two variables that say where it was started.
     fn pins_in_a_chat(sessions: &Sessions, env: Vec<(String, String)>) -> String {
         let mut opening = opening(
-            "printf 'pins<%s|%s>' \"$CHARTER_WORKSPACE\" \"$CHARTER_PLANE_ROOT_SESSION\"; sleep 600",
+            "printf 'pins<%s|%s>' \"$CHARTER_WORKSPACE\" \"$CHARTER_PLANE_ROOT_SESSION\"; exec sleep 600",
         );
         opening.env = env;
         let id = sessions
@@ -1374,7 +1374,7 @@ mod tests {
         let id = sessions
             .open(
                 None,
-                &opening("printf 'sid=<%s>' \"$CHARTER_SESSION_ID\"; sleep 600"),
+                &opening("printf 'sid=<%s>' \"$CHARTER_SESSION_ID\"; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");
@@ -1447,7 +1447,7 @@ mod tests {
         let id = sessions
             .open(
                 None,
-                &opening("printf 'token=<%s>' \"$CHARTER_CHAT_TOKEN\"; sleep 600"),
+                &opening("printf 'token=<%s>' \"$CHARTER_CHAT_TOKEN\"; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");
@@ -1530,7 +1530,7 @@ mod tests {
         let again = sessions
             .open(
                 Some(id),
-                &opening("printf 'token=<%s>' \"$CHARTER_CHAT_TOKEN\"; sleep 600"),
+                &opening("printf 'token=<%s>' \"$CHARTER_CHAT_TOKEN\"; exec sleep 600"),
                 &|_| {},
             )
             .expect("the session opens");

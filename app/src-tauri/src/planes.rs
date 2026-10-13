@@ -9010,7 +9010,7 @@ mod tests {
         std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
         let claude = dir.path().join("bin/claude");
         std::fs::create_dir_all(claude.parent().unwrap()).unwrap();
-        std::fs::write(&claude, "#!/bin/sh\nsleep 30\n").unwrap();
+        std::fs::write(&claude, "#!/bin/sh\nexec sleep 30\n").unwrap();
         std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
         let (planes, _told) = planes_telling();
         let plane = planes.open(&root);
@@ -9770,7 +9770,7 @@ mod tests {
         chat.args = vec![
             "-c".to_owned(),
             format!(
-                "printf %s \"$CHARTER_CHAT_TOKEN\" > '{0}.part' && mv '{0}.part' '{0}'; sleep 600",
+                "printf %s \"$CHARTER_CHAT_TOKEN\" > '{0}.part' && mv '{0}.part' '{0}'; exec sleep 600",
                 seen.display()
             ),
         ];
@@ -9908,7 +9908,7 @@ mod tests {
     /// A chat on a stand-in called `harness` that says nothing and waits, so the chat stays
     /// open while a test reports on its behalf.
     fn a_chat_on_a_stand_in(held: &Held, dir: &Path, harness: &str) -> u32 {
-        let program = stand_in::program(dir, harness, "#!/bin/sh\nsleep 600\n");
+        let program = stand_in::program(dir, harness, "#!/bin/sh\nexec sleep 600\n");
         held.chats()
             .start(
                 &one_chat_on(&program.display().to_string()).chats[0],

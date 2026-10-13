@@ -1028,7 +1028,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_terminal_edits_lines_until_its_program_asks_for_raw_keys() {
-        let session = sh("printf 'cooked\\n'; read _; stty raw -echo; printf 'raw\\n'; sleep 30");
+        let session =
+            sh("printf 'cooked\\n'; read _; stty raw -echo; printf 'raw\\n'; exec sleep 30");
         screen_until(&session, |screen| {
             screen.lines.iter().any(|l| l == "cooked")
         });
@@ -1049,7 +1050,7 @@ mod tests {
     fn a_session_says_how_long_its_program_has_written_nothing() {
         let session = sh(
             "i=0; while [ $i -lt 60 ]; do printf x; sleep 0.05; i=$((i+1)); done; \
-             printf done; sleep 30",
+             printf done; exec sleep 30",
         );
         // Longer than the bound below, so a session that only counted from its start fails.
         std::thread::sleep(Duration::from_millis(1500));
@@ -1122,7 +1123,8 @@ mod tests {
             std::env::var_os("HOME").is_some(),
             "the test needs an inherited variable"
         );
-        let mut spec = Spec::new("/bin/sh", SIZE).args(["-c", "echo \"seen<${HOME}>\"; sleep 30"]);
+        let mut spec =
+            Spec::new("/bin/sh", SIZE).args(["-c", "echo \"seen<${HOME}>\"; exec sleep 30"]);
         spec.env_without = vec!["HOME".into()];
 
         let session = Session::spawn(spec, Box::new(AlacrittyEngine::new(SIZE, 1000)))
@@ -1140,8 +1142,10 @@ mod tests {
             std::env::var_os("HOME").is_some(),
             "the test needs an inherited variable"
         );
-        let mut spec = Spec::new("/bin/sh", SIZE)
-            .args(["-c", "echo \"seen<${HOME}|${GIVEN}|${TERM}>\"; sleep 30"]);
+        let mut spec = Spec::new("/bin/sh", SIZE).args([
+            "-c",
+            "echo \"seen<${HOME}|${GIVEN}|${TERM}>\"; exec sleep 30",
+        ]);
         spec.env_clear = true;
         spec.env = vec![("GIVEN".into(), "yes".into())];
 
@@ -1157,7 +1161,7 @@ mod tests {
         // names is taken away.
         let home = std::env::var("HOME").expect("the test needs an inherited variable");
 
-        let session = sh("echo \"seen<${HOME}>\"; sleep 30");
+        let session = sh("echo \"seen<${HOME}>\"; exec sleep 30");
 
         screen_until(&session, shows(&format!("seen<{home}>")));
     }
@@ -1286,7 +1290,7 @@ mod tests {
         // The program asks 20,000 times and never reads the answers, so they back up. Output
         // must keep flowing, and input must still be accepted or refused, never block.
         let session = sh(
-            "stty raw -echo; i=0; while [ $i -lt 20000 ]; do printf '\\033[6n'; i=$((i+1)); done; printf done-flooding; sleep 600",
+            "stty raw -echo; i=0; while [ $i -lt 20000 ]; do printf '\\033[6n'; i=$((i+1)); done; printf done-flooding; exec sleep 600",
         );
 
         screen_until(&session, shows("done-flooding"));
@@ -1516,7 +1520,7 @@ mod tests {
 
     #[test]
     fn a_view_opens_on_the_screen_as_it_already_is() {
-        let session = sh("printf 'printed before the view opened'; sleep 600");
+        let session = sh("printf 'printed before the view opened'; exec sleep 600");
         screen_until(&session, shows("printed before the view opened"));
 
         let view = session.attach();
@@ -1630,7 +1634,7 @@ mod tests {
 
     #[test]
     fn closing_a_view_stops_the_session_sending_to_it_at_once() {
-        let session = sh("read _; printf 'after the view closed'; sleep 600");
+        let session = sh("read _; printf 'after the view closed'; exec sleep 600");
         let (closing, _size, output) = session.attach().into_parts();
         let staying = session.attach();
 
@@ -1668,6 +1672,13 @@ mod tests {
             "trap 'echo interrupted-first; exit 0' INT; trap 'echo hung-up-first; exit 0' HUP; \
              echo ready; while :; do sleep 600 & wait; done",
         );
+        // The interrupt comes as the shell starts its `sleep`. One caught between the fork and
+        // the `sleep` itself still has the shell's own handlers: it takes the hangup that
+        // follows the shell's exit as the shell would, starts the `sleep` after all, and the
+        // stop, finding the program already gone, signals nothing more. It ran for its ten
+        // minutes and failed the suite that ended meanwhile (qw376). So the group is ended
+        // with the test, whatever is left in it.
+        let _ends = stand_in::Ends::group(session.process_id().expect("a pid"));
         screen_until(&session, shows("ready"));
 
         session.stopper().stop();
@@ -1715,7 +1726,7 @@ mod tests {
 
     #[test]
     fn what_the_program_writes_after_a_view_opens_reaches_it() {
-        let session = sh("read _; printf 'printed after the view opened'; sleep 600");
+        let session = sh("read _; printf 'printed after the view opened'; exec sleep 600");
         let view = session.attach();
 
         session.write(b"\r").unwrap();
@@ -1788,7 +1799,7 @@ mod tests {
 
     #[test]
     fn two_views_of_one_session_both_get_its_output() {
-        let session = sh("read _; printf 'for both views'; sleep 600");
+        let session = sh("read _; printf 'for both views'; exec sleep 600");
         let first = session.attach();
         let second = session.attach();
 
@@ -1800,7 +1811,7 @@ mod tests {
 
     #[test]
     fn a_session_keeps_running_for_the_views_it_has_left_when_one_closes() {
-        let session = sh("read _; printf 'after the other view closed'; sleep 600");
+        let session = sh("read _; printf 'after the other view closed'; exec sleep 600");
         let closing = session.attach();
         let staying = session.attach();
 
@@ -1813,7 +1824,7 @@ mod tests {
 
     #[test]
     fn a_view_keeps_working_after_the_session_is_resized() {
-        let session = sh("read _; stty size; sleep 600");
+        let session = sh("read _; stty size; exec sleep 600");
         let view = session.attach();
         let bigger = Size {
             columns: 100,
@@ -2018,7 +2029,7 @@ mod tests {
         // wraps a whole screen in one update — which is what a snapshot would do if it were
         // written for that — must not leave every pane waiting on its safety timeout.
         let session = sh_engine(
-            "printf 'a line\\r\\n'; sleep 30",
+            "printf 'a line\\r\\n'; exec sleep 30",
             AnEngineAsked {
                 real: AlacrittyEngine::new(SIZE, 1000),
                 open_update: AS_IT_IS,
@@ -2052,7 +2063,7 @@ mod tests {
         // same frame undrawn. Its deadline never arrives, so the snapshot is the only thing
         // that can hand it over.
         let session = sh_asked(
-            "sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jheld back\\r\\n'; sleep 30",
+            "sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jheld back\\r\\n'; exec sleep 30",
             NEVER_EXPIRES,
         );
         let first = session.attach();
@@ -2078,7 +2089,7 @@ mod tests {
         // is written has to draw the screen the engine has, and nothing else.
         let session = sh(
             "sleep 0.3; printf '\\033[?2026h\\033[H\\033[2JAAA\\033[?20'; sleep 0.5; \
-             printf '26l'; sleep 30",
+             printf '26l'; exec sleep 30",
         );
         let view = session.attach();
         let mut pieces = pieces_until_followed(&view, "AAA", XTERM_SAFETY_TIMEOUT);
@@ -2102,7 +2113,7 @@ mod tests {
         // whole and nothing in the held bytes says an update was opened at all. The engine
         // reads across the boundary and knows, which is why it is what decides to hold them.
         let session = sh("sleep 0.3; printf '\\033[?20'; sleep 0.1; \
-             printf '26h\\033[H\\033[2Jhalf a frame'; sleep 30");
+             printf '26h\\033[H\\033[2Jhalf a frame'; exec sleep 30");
         let view = session.attach();
 
         let pieces = pieces_until_followed(&view, "half a frame", XTERM_SAFETY_TIMEOUT);
@@ -2124,7 +2135,7 @@ mod tests {
         // engine reports no open update while the bytes for the pane still hold one open, and
         // the pane is told the update ended rather than left waiting on its safety timeout.
         let session = sh_asked(
-            "sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jhalf a frame'; sleep 30",
+            "sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jhalf a frame'; exec sleep 30",
             STOPPED_TRACKING,
         );
         let view = session.attach();
@@ -2282,7 +2293,7 @@ mod tests {
                printf 'frame %d closes\\r\\n\\033[?2026l\\033[?2026hframe %d opens\\r\\n' \
                  $i $((i + 1)); \
                sleep 0.02; i=$((i + 1)); \
-             done; sleep 30");
+             done; exec sleep 30");
         let view = session.attach();
 
         let pieces = pieces_until(&view, "frame 7 closes", PATIENCE);
@@ -2320,7 +2331,7 @@ mod tests {
         // The pause is so that the frame is output the view is sent, and not part of the
         // screen it opened on, which would prove nothing about holding it back.
         let session =
-            sh("sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jhalf a frame\\r\\n'; sleep 30");
+            sh("sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jhalf a frame\\r\\n'; exec sleep 30");
         let view = session.attach();
 
         let pieces = pieces_until_followed(&view, "half a frame", XTERM_SAFETY_TIMEOUT);
@@ -2340,7 +2351,7 @@ mod tests {
         // too, or the next thing the program writes is handed to a pane still inside one.
         let session = sh("printf 'a frame starts\\r\\n'; sleep 0.02; \
              printf '\\033[?2026h\\033[H\\033[2Jheld back\\r\\n'; \
-             read go; printf 'and more\\r\\n'; sleep 30");
+             read go; printf 'and more\\r\\n'; exec sleep 30");
         let first = session.attach();
         pieces_until(&first, "a frame starts", PATIENCE);
         // The update is open by now and its deadline has not passed: 20 ms in, of 150.
@@ -2387,7 +2398,7 @@ mod tests {
         let session = sh(
             "sleep 0.3; printf '\\033[?2026hone|'; sleep 0.05; printf 'two\\033[?2026l'; \
              sleep 0.05; printf '\\033[?2026hthree|'; sleep 0.05; \
-             printf 'four\\033[?2026l'; sleep 30",
+             printf 'four\\033[?2026l'; exec sleep 30",
         );
         let view = session.attach();
 
@@ -2405,7 +2416,7 @@ mod tests {
         // written, to the byte, whenever the program ends its own updates.
         let wrote = b"\x1b[?2026h\x1b[H\x1b[2Jone\x1b[?2026ltwo".to_vec();
         let session =
-            sh("sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jone\\033[?2026ltwo'; sleep 30");
+            sh("sleep 0.3; printf '\\033[?2026h\\033[H\\033[2Jone\\033[?2026ltwo'; exec sleep 30");
         let view = session.attach();
 
         let pieces = pieces_until(&view, "two", PATIENCE);
