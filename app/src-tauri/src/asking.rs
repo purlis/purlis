@@ -531,8 +531,8 @@ pub fn sandbox_block(
 /// **The socket and service adapter** (D-sock-1): a local socket or a system service chat
 /// `session`'s sandbox refused, held now, is an ask as a host is. Allow is offered once, for
 /// this chat and for the person (never everyone's: it is this machine's), at each level `locks`
-/// leaves open; then Keep blocked. The certificate check's main button is the person's, for
-/// this project on this machine. What it says names it whole and what allowing it means.
+/// leaves open; then Keep blocked. What it says names it whole and what allowing it means. The
+/// certificate check is never asked about here: it is no grant (R1, 2026-10-13).
 pub fn sandbox_local(
     session: u32,
     block: &crate::taskblocks::HeldBlock,
@@ -552,15 +552,9 @@ pub fn sandbox_local(
         GrantWhat::Service => (What::Service(block.target.clone()), "the system service"),
         _ => return None,
     };
-    // **The certificate check is asked once, then always** (ADR 0093, ruling 3; qw351): its
-    // main button allows it for this project on this machine, as a host's does, so one press
-    // is the last, and "once" is a narrower choice beside it. Anything else (a container
-    // engine's socket, a service purlis cannot tell) keeps the narrowest answer first.
-    let order = if matches!(services::known(&what), services::Known::CertificateCheck) {
-        [GrantLevel::You, GrantLevel::Chat, GrantLevel::Once]
-    } else {
-        [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
-    };
+    // The narrowest answer first: a container engine's socket is about the same as no sandbox,
+    // and a service purlis cannot tell could be anything.
+    let order = [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You];
     let levels: Vec<GrantLevel> = order
         .into_iter()
         .filter(|level| locks.refuses_grant(&what, (*level).into()).is_none())

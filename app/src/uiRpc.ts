@@ -2536,21 +2536,25 @@ export type ByHand = {
 };
 
 /**
- *  **Whether a chat here may ask the system's certificate check, on this machine** (ADR 0093):
- *  what a chat's next start compiles in, never what the committed file says. Settings draws it
- *  beside the committed `certificate-checks`, so a switch that is on there never reads as an
- *  Allow nobody made here.
+ *  **Whether a chat here has the system's certificate check, and why not** (the operator's
+ *  ruling R1 of 2026-10-13, amending ADR 0093): what a chat's next start compiles in
+ *  ([`sandbox::CertificateChecks`]). On by default; off where the project's
+ *  `certificate-checks` is `false`, or an administrator's policy locks it.
  */
 export type CertificateCheck = {
-	/**  The project's committed file declares it expects the certificate check. */
-	expected: boolean,
+	/**  A chat has it from its next start. */
+	on: boolean,
 	/**
-	 *  The person allowed it for every chat of this project on this machine, and no policy
-	 *  takes it away: a chat has it from its next start.
+	 *  Where an administrator's policy turns it off: the sentence that says so and who set
+	 *  it. Then the switch is drawn locked. `null` where it is the project's to say.
 	 */
-	allowed: boolean,
-	/**  Why it cannot be allowed here, where an administrator's policy forbids it. */
 	locked: string | null,
+	/**
+	 *  Whether the setting lets a chat reach anything on this system: macOS only, where the
+	 *  certificate check is a system service (D-1337-7). Elsewhere a chat's tools check
+	 *  certificates themselves, whatever the switch says.
+	 */
+	widens: boolean,
 };
 
 /**
@@ -6920,9 +6924,8 @@ export type SandboxState = {
 	 */
 	manifest?: string | null,
 	/**
-	 *  The certificate check on this machine (ADR 0093), where chats here run sandboxed: what
-	 *  Settings says beside the committed `certificate-checks`, which declares it and grants
-	 *  nothing. `null` where the sandbox is off.
+	 *  Whether a chat here has the system's certificate check (R1, 2026-10-13), where chats
+	 *  here run sandboxed: what Settings' one switch says. `null` where the sandbox is off.
 	 */
 	certificate_check?: CertificateCheck | null,
 };

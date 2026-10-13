@@ -126,7 +126,10 @@ pub struct Policy {
     /// The project's own hosts: `[sandbox] hosts` in the committed file.
     pub hosts: Vec<hosts::Host>,
     /// `certificate-checks`: whether a chat may ask the system's certificate check, which Go
-    /// programs such as `gh` need to verify a host (D-1337-7). Off unless the file says `true`.
+    /// programs such as `gh` need to verify a host (D-1337-7). **On unless the file says
+    /// `false`** (the operator's ruling R1 of 2026-10-13, amending ADR 0093): the key only
+    /// ever narrows. An administrator's `socket-grants` lock turns it off besides
+    /// ([`CertificateChecks`]).
     pub certificate_checks: bool,
     /// Each persona's own grants: `[sandbox.personas.<name>]` in the committed file (#1362).
     pub personas: std::collections::BTreeMap<String, persona::Grants>,
@@ -134,19 +137,67 @@ pub struct Policy {
 
 impl Policy {
     /// The sandbox turned on and nothing else said: the default presets ([`Preset::DEFAULT`]),
-    /// no host of the project's own, no certificate checks, no persona's grants.
+    /// no host of the project's own, certificate checks on, no persona's grants.
     pub fn defaults() -> Self {
         Self {
             egress: Preset::DEFAULT.to_vec(),
             hosts: Vec::new(),
-            certificate_checks: false,
+            certificate_checks: true,
             personas: std::collections::BTreeMap::new(),
         }
     }
 }
 
-/// The key that lets a chat ask the system's certificate check.
+/// The key that turns the system's certificate check off for a project's chats: `false` is the
+/// one value that changes anything (R1, 2026-10-13).
 pub const CERTIFICATE_CHECKS: &str = "certificate-checks";
+
+/// **Whether a sandboxed chat of a project has the system's certificate check, and why not**
+/// (the operator's ruling R1 of 2026-10-13, amending ADR 0093). On by default, on every
+/// harness; off only where the project's committed file says `certificate-checks = false` or
+/// an administrator's `socket-grants` lock stands. One answer for what a start compiles
+/// ([`Widened::of`], [`Widened::and_granted`]), what Settings says, and what a block's Notice
+/// says, so none of them can tell another story.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CertificateChecks {
+    /// A chat has it from its next start.
+    On,
+    /// The project's committed file turns it off for everyone in the project.
+    OffByProject,
+    /// An administrator's policy turns it off on this machine: the sentence names who set it.
+    OffByPolicy(String),
+}
+
+impl CertificateChecks {
+    /// What `policy`, a project's sandbox in force, comes to under `locks`. Policy is said
+    /// first: it holds whatever the project's file says.
+    pub fn of(policy: &Policy, locks: &policy::Locks) -> Self {
+        if locks.forbids_socket_grants() {
+            return Self::OffByPolicy(format!(
+                "Policy turns certificate checks off on this machine. {}",
+                locks.locked_by()
+            ));
+        }
+        if policy.certificate_checks {
+            Self::On
+        } else {
+            Self::OffByProject
+        }
+    }
+
+    /// [`Self::of`] for the project at `root` as its file stands; none where its chats are not
+    /// sandboxed.
+    pub fn at(root: &Path) -> Option<Self> {
+        let locks = policy::Locks::of(root);
+        Plane::read(root)
+            .in_force(&locks)
+            .map(|policy| Self::of(&policy, &locks))
+    }
+
+    pub fn is_on(&self) -> bool {
+        matches!(self, Self::On)
+    }
+}
 
 /// The `[sandbox]` block that turns the sandbox on with the default egress, as charter writes it
 /// into a new project's `charter.toml` and into an existing one whose operator took the offer
@@ -394,7 +445,7 @@ impl fmt::Display for Refusal {
             Self::CertificateChecksNotABool => write!(
                 f,
                 "{TABLE}.{CERTIFICATE_CHECKS} in {FILE} is not true or false; certificate checks \
-                 stay off"
+                 are off until it is"
             ),
             Self::Persona(said) => f.write_str(&said.why),
             Self::ForgeHost(written, why) => write!(
@@ -552,8 +603,10 @@ impl Said {
                 Vec::new()
             }
         };
+        // On unless the file says `false` (R1): what cannot be read is refused and read as off,
+        // the narrow value.
         let certificate_checks = match table.get(CERTIFICATE_CHECKS) {
-            None => false,
+            None => true,
             Some(toml::Value::Boolean(on)) => *on,
             Some(_) => {
                 refused.push(Refusal::CertificateChecksNotABool);
@@ -1454,16 +1507,17 @@ pub struct Widened {
     pub caches: Option<caches::CacheHome>,
     /// Whether a chat may ask the system's certificate check (D-1337-7): on macOS, Go programs
     /// such as `gh` verify a host's certificate by asking the `trustd` service, and without it
-    /// every one of them fails TLS. Off by default: the service fetches the addresses a
-    /// certificate names, past the egress proxy. Only a person's Allow turns it on (ADR 0093);
-    /// the committed `certificate-checks` declares it and grants nothing.
+    /// every one of them fails TLS. **On by default** (R1, 2026-10-13, amending ADR 0093),
+    /// with a known residual: the service fetches the addresses a certificate names, past the
+    /// egress proxy. Off where the project's `certificate-checks` is `false` or policy locks
+    /// it ([`CertificateChecks`]); no grant of a person's turns it back on.
     pub trust: bool,
     /// The local sockets a person let this chat connect to (D-sock-1): its own grants and
     /// yours on this machine, never the committed file's ([`services`]). Each as the kernel
     /// names it.
     pub sockets: Vec<PathBuf>,
     /// The system services a person let this chat look up by name besides the certificate
-    /// check, which is [`Self::trust`] (D-sock-1).
+    /// check, which is [`Self::trust`] and never a grant (D-sock-1, R1).
     pub services: Vec<String>,
 }
 
@@ -1477,18 +1531,20 @@ impl Widened {
                 .any(|preset| preset.widens_caches())
                 .then(|| caches::home_of(machine, root, denied))
                 .flatten(),
-            // A declaration since ADR 0093: the committed `certificate-checks` grants nothing.
-            // Each person allows the certificate check once on their own machine, from its
-            // Notice ([`Self::and_granted`]).
-            trust: false,
+            // On unless the project's file says `false` (R1): nothing a person grants, and
+            // nothing a committed file can widen, since `true` is what an absent key means.
+            // Policy has its say in [`Self::and_granted`].
+            trust: policy.certificate_checks,
             sockets: Vec::new(),
             services: Vec::new(),
         }
     }
 
     /// These widenings with `sockets` and `services` granted besides (D-sock-1): each judged
-    /// again ([`services::still_sockets`], [`services::still_services`]), the certificate
-    /// check's service as [`Self::trust`], and none where `locks` forbid them.
+    /// again ([`services::still_sockets`], [`services::still_services`]), and none where
+    /// `locks` forbid them. **The certificate check's service is never taken from a grant**
+    /// (R1): the project's setting and policy alone decide [`Self::trust`], so a grant an
+    /// older build kept for it changes nothing either way.
     pub fn and_granted(
         mut self,
         sockets: &[PathBuf],
@@ -1507,9 +1563,7 @@ impl Widened {
             }
         }
         for service in services::still_services(services) {
-            if service == services::TRUSTD {
-                self.trust = true;
-            } else if !self.services.contains(&service) {
+            if service != services::TRUSTD && !self.services.contains(&service) {
                 self.services.push(service);
             }
         }

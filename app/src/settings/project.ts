@@ -66,7 +66,6 @@ import {
   personaHostsCollection,
   personaHostsHelp,
   personaHostsNotes,
-  certificateCheckRows,
   sandboxControls,
   sandboxNotes,
   personaHostsRows,
@@ -590,13 +589,9 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       notes: sandboxNotes(read.shared, read.sandbox),
       // The mode, and any value an administrator's policy locks (#1343), is a status line:
       // nothing here takes it back, moves it or resets it.
-      settings: [
-        ...fromShared("project.sandbox", sandboxControls(read.sandbox)).map((one) =>
-          same(one.key, SANDBOX_MODE) || one.kind === "status" ? { ...one, oneWay: true } : one,
-        ),
-        // What a chat here has on this machine, under the committed switch (ADR 0093).
-        ...(read.plane !== undefined ? certificateCheckRows(read.plane, read.sandbox) : []),
-      ],
+      settings: fromShared("project.sandbox", sandboxControls(read.sandbox)).map((one) =>
+        same(one.key, SANDBOX_MODE) || one.kind === "status" ? { ...one, oneWay: true } : one,
+      ),
       ...(sharedOk ? { collection: hostsCollection(read.shared, "hosts") } : {}),
       after: [
         ...(read.plane !== undefined ? personaHostsRows(read.plane, read.sandbox) : []),

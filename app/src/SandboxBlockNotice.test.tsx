@@ -286,53 +286,63 @@ describe("a local socket's Notice (ADR 0093)", () => {
   });
 });
 
-describe("the certificate check's Notice (ADR 0093, qw351)", () => {
-  const TRUST: ChatBlocked = {
+describe("the certificate check's Notice (R1, 2026-10-13)", () => {
+  const CHECK: ChatBlocked = {
     ...UNNAMED,
     operation: "lookup",
     kind: "certificate-check",
     said: "a lookup of the system's certificate check",
-    offer: "service",
-    target: "com.apple.trustd.agent",
-    route:
-      "This project expects certificate checks. Allowing it lets Go and similar tools check " +
-      "certificates; that service can make its own network requests.",
-    levels: ["once", "chat", "you"],
+    target: null,
+    levels: [],
   };
 
-  it("leads with this machine's Allow, so one press is the last, and sends it", async () => {
-    const { sent } = drawn(TRUST);
+  it("offers a restart and no Allow where the project has them on and the chat started before", async () => {
+    const { sent } = drawn({
+      ...CHECK,
+      offer: "allowed",
+      route:
+        "Certificate checks are on for this project. This chat started before they were, so tools such as gh can verify a host's certificate once it restarts on the same conversation.",
+    });
 
-    expect(screen.getByText("com.apple.trustd.agent")).toBeTruthy();
-    expect(screen.getByText(/This project expects certificate checks/)).toBeTruthy();
-    // Allow once is a narrower choice beside it, never the main button.
-    expect(screen.queryByRole("button", { name: "Allow once" })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Allow for me on this machine" }));
+    expect(screen.getByText(/Certificate checks are on for this project/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Allow/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Restart this chat" }));
 
     await waitFor(() =>
-      expect(sent("allow_sandbox_block")).toEqual([
-        {
-          plane: PLANE,
-          session: 4,
-          shown: {
-            operation: "lookup",
-            kind: "certificate-check",
-            what: "service",
-            target: "com.apple.trustd.agent",
-          },
-          level: "you",
-        },
-      ]),
+      expect(sent("ask_chat_restart")).toEqual([{ plane: PLANE, session: 4 }]),
     );
+    expect(sent("allow_sandbox_block")).toEqual([]);
   });
 
-  it("keeps once and only this chat under Other scopes", async () => {
-    drawn(TRUST);
+  it("says the project turned them off, with where to turn them on, and never an Allow", () => {
+    drawn({
+      ...CHECK,
+      offer: "unsandboxed",
+      route:
+        "This project turns certificate checks off, so tools such as gh cannot verify a host's certificate in its sandboxed chats. Turn Certificate checks on in Settings › Sandbox, for everyone in the project, or start this chat without the sandbox.",
+    });
 
-    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+    expect(screen.getByText(/This project turns certificate checks off/)).toBeTruthy();
+    expect(screen.getByText(/Settings › Sandbox/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Allow/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Start without the sandbox for this chat" }),
+    ).toBeTruthy();
+  });
 
-    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Allow once" })).toBeTruthy();
+  it("says who locked them and offers nothing where policy forbids the way out too", () => {
+    drawn({
+      ...CHECK,
+      offer: "policy",
+      route:
+        "Policy turns certificate checks off on this machine. Locked by policy, set by IT in /etc/purlis/policy.json. Policy forbids starting this chat without the sandbox too.",
+    });
+
+    expect(screen.getByText(/Policy turns certificate checks off on this machine/)).toBeTruthy();
+    expect(screen.getByText(/set by IT/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Allow/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Start without the sandbox/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Restart this chat" })).toBeNull();
   });
 });
 
