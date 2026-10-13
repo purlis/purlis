@@ -16,6 +16,15 @@
 //! program runs on this machine only once the operator has approved it, and again after any
 //! change to it ([`crate::profiletrust::declaration_approval_needed`], V24b).
 //!
+//! **This machine may declare a harness too** (ADR 0073 §5, #968): a `[harnesses.<name>]`
+//! table in `charter.local.toml`, in the same schema ([`Origin::Local`]). It needs no approval
+//! of its own, as it is the operator's file, and a launch reads it only where git would not
+//! carry that file, as it reads the profiles there. One that takes a built-in's name
+//! **replaces that built-in's facts on this machine and never its arming**: it runs the
+//! built-in's program, at the built-in's levels and through the built-in's adapter, its words
+//! may not start the harness disarmed, and purlis types into it one line only, as into any
+//! harness it did not measure ([`Declaration::why_drawn_as_a_placeholder`]).
+//!
 //! **Level 2 is charter code** (V24c). A project declaration that says `hooks = true` is
 //! refused: the hooks a harness reports through are armed by an adapter charter ships
 //! ([`crate::harness::HarnessAdapter`]), and only a built-in has one. A declared harness runs
@@ -35,6 +44,10 @@ use crate::shown;
 
 /// The directory a project declares its harnesses in, at the project root.
 pub const DIR: &str = "harnesses";
+
+/// The table of `charter.local.toml` a machine declares its own harnesses in, one
+/// `[harnesses.<name>]` table each (ADR 0073 §5, #968).
+pub const LOCAL_TABLE: &str = "harnesses";
 
 /// The record of the declarations this clone's operator approved, under `.charter/`.
 pub const APPROVED: &str = "harness-declarations-approved.json";
@@ -85,6 +98,9 @@ pub enum Origin {
     BuiltIn,
     /// The project's `harnesses/<name>.toml`, committed.
     Project,
+    /// A `[harnesses.<name>]` table in `charter.local.toml`: this machine's own, a harness
+    /// for it alone or the replacement of a built-in's facts ([`Declaration::replaces`]).
+    Local,
 }
 
 /// Who chooses a new session's id.
@@ -250,7 +266,8 @@ impl Declaration {
     /// (`curation::pasted`). The one rule every harness is judged by, built-in or declared
     /// ([`Harness::why_drawn_as_a_placeholder`]).
     ///
-    /// **A harness the project declares is typed into one line only.** purlis cannot tell
+    /// **A harness the project or this machine declares is typed into one line only**, and so
+    /// is this machine's replacement of a built-in's facts. purlis cannot tell
     /// whether its program turned bracketed paste on, and one that did not reads each line
     /// break of a paste as Enter: what is above it would be sent before the person read it.
     /// A built-in's measurement says it takes a paste whole; a declaration's word is not one.
@@ -283,9 +300,20 @@ impl Declaration {
     }
 
     /// Whether charter ships an adapter for this harness's hooks (level 2). Only a built-in
-    /// can: a project's `hooks = true` is refused.
+    /// can, and this machine's replacement of one, which keeps the built-in's levels: a
+    /// project's `hooks = true` is refused.
     pub fn has_adapter(&self) -> bool {
-        self.origin == Origin::BuiltIn && self.levels.hooks
+        self.levels.hooks && (self.origin == Origin::BuiltIn || self.replaces().is_some())
+    }
+
+    /// The harness purlis ships whose facts this declaration replaces on this machine: a
+    /// `[harnesses.<name>]` table in `charter.local.toml` under a built-in's name (#968). Its
+    /// adapter, its levels and its program stay the built-in's; `None` for every other.
+    pub fn replaces(&self) -> Option<Harness> {
+        if self.origin != Origin::Local {
+            return None;
+        }
+        Harness::of_kind(&self.name)
     }
 }
 
@@ -299,7 +327,7 @@ fn filled(words: &[String], id: &SessionId, name: &str) -> Vec<String> {
 /// A declaration charter will not read, and the one sentence saying why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused {
-    /// `harnesses/<file>`, or the directory itself.
+    /// `harnesses/<file>`, or the directory itself, or `charter.local.toml [harnesses.<name>]`.
     pub file: String,
     pub reason: String,
 }
@@ -320,6 +348,20 @@ impl Declarations {
     /// The project's own, without the built-ins.
     pub fn projects(&self) -> impl Iterator<Item = &Declaration> {
         self.declared.iter().filter(|d| d.origin == Origin::Project)
+    }
+
+    /// Every harness added to the ones purlis ships: the project's own and this machine's
+    /// (`charter.local.toml`), without a replacement of a built-in's facts.
+    pub fn added(&self) -> impl Iterator<Item = &Declaration> {
+        self.declared
+            .iter()
+            .filter(|d| d.origin != Origin::BuiltIn && d.replaces().is_none())
+    }
+
+    /// This machine's replacement of `harness`'s facts, where `charter.local.toml` declares one
+    /// (#968).
+    pub fn replacement(&self, harness: Harness) -> Option<&Declaration> {
+        self.declared.iter().find(|d| d.replaces() == Some(harness))
     }
 }
 
@@ -368,9 +410,27 @@ pub fn builtin(name: &str) -> Option<&'static Declaration> {
     builtins().iter().find(|d| d.name == name)
 }
 
-/// Every harness the project at `root` has: the built-ins, then each `harnesses/*.toml`, and
-/// each declaration refused with its reason. Never fails and runs nothing.
+/// Every harness the project at `root` has: the built-ins, then each `harnesses/*.toml`, then
+/// each this machine declares in `charter.local.toml` (a replacement of a built-in's facts in
+/// the built-in's place), and each declaration refused with its reason. Never fails and runs
+/// nothing: it does not ask git whether `charter.local.toml` would be carried, which a launch
+/// asks before it uses one ([`crate::start::ready_in`], [`crate::profiles::for_launch_in`]).
 pub fn read(root: &Path) -> Declarations {
+    let mut out = read_project(root);
+    with_local(&mut out, crate::profiles::read_local(root));
+    out
+}
+
+/// [`read`] with `charter.local.toml`'s text as `local` gives it ([`crate::profiles::read_local`]):
+/// what the file would declare, before it is written.
+pub fn read_with(root: &Path, local: io::Result<Option<String>>) -> Declarations {
+    let mut out = read_project(root);
+    with_local(&mut out, local);
+    out
+}
+
+/// The built-ins and the project's `harnesses/*.toml`.
+fn read_project(root: &Path) -> Declarations {
     let mut out = Declarations {
         declared: builtins().to_vec(),
         refused: Vec::new(),
@@ -450,6 +510,101 @@ pub fn read(root: &Path) -> Declarations {
     out
 }
 
+/// `out` with each `[harnesses.<name>]` table of `charter.local.toml`'s text (#968): a
+/// harness for this machine alone after the project's, or a built-in's facts replaced in the
+/// built-in's place. A file that cannot be read or is not TOML adds nothing here, and the
+/// profiles' read says so once ([`crate::profiles::derive_declared`]).
+fn with_local(out: &mut Declarations, local: io::Result<Option<String>>) {
+    let Ok(Some(text)) = local else {
+        return;
+    };
+    let Ok(top) = text.parse::<toml::Table>() else {
+        return;
+    };
+    let Some(tables) = top.get(LOCAL_TABLE) else {
+        return;
+    };
+    let local_file = crate::profiles::LOCAL_FILE;
+    let Some(tables) = tables.as_table() else {
+        out.refused.push(Refused {
+            file: local_file.to_owned(),
+            reason: format!(
+                "{LOCAL_TABLE} in {local_file} is not a table, so no harness it declares was                  read — the file holds one [{LOCAL_TABLE}.<name>] table per harness. Write it                  that way."
+            ),
+        });
+        return;
+    };
+    for (key, value) in tables {
+        let file = format!("{local_file} [{LOCAL_TABLE}.{}]", shown::short(key));
+        match local_one(key, value, &file, out) {
+            // A replacement keeps the built-in's place: the order a picker draws.
+            Ok(found) => match out.declared.iter_mut().find(|d| d.name == found.name) {
+                Some(slot) => *slot = found,
+                None => out.declared.push(found),
+            },
+            Err(reason) => out.refused.push(Refused { file, reason }),
+        }
+    }
+}
+
+/// One `[harnesses.<key>]` table as a declaration from this machine, or why it is not one.
+fn local_one(
+    key: &str,
+    value: &toml::Value,
+    file: &str,
+    out: &Declarations,
+) -> Result<Declaration, String> {
+    let Some(table) = value.as_table() else {
+        return Err(format!(
+            "{file} is not a table, so it declares nothing. Write it as [{LOCAL_TABLE}.{}] with \
+             the keys of a harness declaration.",
+            shown::short(key)
+        ));
+    };
+    // Named after the harness it declares, as a project's file is, so the name may be left out.
+    let mut table = table.clone();
+    table
+        .entry("name")
+        .or_insert_with(|| toml::Value::String(key.to_owned()));
+    let text = toml::to_string(&table).map_err(|e| {
+        format!(
+            "{file} is not a harness declaration purlis reads ({}), so it declares nothing. \
+             Fix the table.",
+            shown::short(&e.to_string())
+        )
+    })?;
+    let found = parse(&text, Origin::Local, file)?;
+    if found.name != key {
+        return Err(format!(
+            "{file} declares '{}', and a table is named after the harness it declares. Name \
+             the table [{LOCAL_TABLE}.{}].",
+            shown::short(&found.name),
+            shown::short(&found.name)
+        ));
+    }
+    if found.replaces().is_some() {
+        return Ok(found);
+    }
+    if let Some(theirs) = out.projects().find(|d| d.name == found.name) {
+        return Err(format!(
+            "{file} declares '{}', which this project declares in {} — {} adds a harness or \
+             replaces one purlis ships, and never the project's, whose approval is for its own \
+             words. Give it a name of its own.",
+            shown::short(&found.name),
+            theirs.file,
+            crate::profiles::LOCAL_FILE
+        ));
+    }
+    if crate::guardcmd::HARNESSES.contains(&found.name.as_str()) {
+        return Err(format!(
+            "{file} declares '{}', which is the name purlis gives a harness it ships — a chat \
+             on it would be taken for that harness and armed as one. Give it a name of its own.",
+            shown::short(&found.name)
+        ));
+    }
+    Ok(found)
+}
+
 /// One declaration file's text, through the gates every read of a committed file that decides
 /// a launch takes: no link on the way, a plain file, a bound, and text.
 fn read_one(root: &Path, path: &Path) -> Result<String, String> {
@@ -487,8 +642,8 @@ struct Raw {
     session: RawSession,
     #[serde(default)]
     terminal: RawTerminal,
-    #[serde(default)]
-    levels: RawLevels,
+    /// Absent and present apart: a replacement of a built-in's facts takes the built-in's.
+    levels: Option<RawLevels>,
     #[serde(default)]
     capabilities: BTreeMap<String, String>,
 }
@@ -538,15 +693,23 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
         )
     })?;
     let at = |what: &str| format!("{file}'s {what}");
+    // This machine's replacement of a built-in's facts (#968): asked of a local table only, as
+    // the built-ins are what is being read when one of them is parsed.
+    let replaces = match origin {
+        Origin::Local => builtin(&raw.name),
+        Origin::BuiltIn | Origin::Project => None,
+    };
     if let Some(title) = &raw.title {
         if let Some(why) = drawn_refusal(title, MOST_TITLE) {
             return Err(format!("{} {why}", at("title")));
         }
         // Read once the built-ins are: they are what this asks about (`word_launcher`'s reason).
-        if origin == Origin::Project
-            && builtins()
-                .iter()
-                .any(|built_in| built_in.title.eq_ignore_ascii_case(title.trim()))
+        // A replacement may keep the title of the built-in it replaces, and no other's.
+        if origin != Origin::BuiltIn
+            && builtins().iter().any(|built_in| {
+                built_in.title.eq_ignore_ascii_case(title.trim())
+                    && replaces.is_none_or(|replaced| replaced.name != built_in.name)
+            })
         {
             return Err(format!(
                 "{} is {}, which is a harness purlis ships — a card and a picker that named it \
@@ -581,7 +744,23 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             shown::short(&raw.program)
         ));
     }
-    if origin == Origin::Project
+    if let Some(replaced) = replaces
+        && raw.program != replaced.program
+    {
+        return Err(format!(
+            "{} is {}, and a replacement of {}'s facts runs its program, {} — a profile in \
+             {} points a chat at another program, and asks before it runs it. Write program \
+             = \"{}\".",
+            at("program"),
+            shown::short(&raw.program),
+            replaced.title,
+            replaced.program,
+            crate::profiles::LOCAL_FILE,
+            replaced.program
+        ));
+    }
+    if origin != Origin::BuiltIn
+        && replaces.is_none()
         && let Some(why) = launcher(&raw.program)
     {
         return Err(format!(
@@ -597,11 +776,32 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
     }
     let session = session(raw.session, &at, origin)?;
     let terminal = terminal(raw.terminal, &at)?;
-    let levels = Levels {
-        terminal: raw.levels.terminal.unwrap_or(true),
-        hooks: raw.levels.hooks,
-        acp: raw.levels.acp,
+    let levels = raw.levels.map(|raw| Levels {
+        terminal: raw.terminal.unwrap_or(true),
+        hooks: raw.hooks,
+        acp: raw.acp,
+    });
+    let levels = match (replaces, levels) {
+        (None, levels) => levels.unwrap_or(Levels {
+            terminal: true,
+            hooks: false,
+            acp: None,
+        }),
+        // A replacement runs at the built-in's levels, through its adapter: its arming.
+        (Some(replaced), None) => replaced.levels.clone(),
+        (Some(replaced), Some(levels)) if levels == replaced.levels => levels,
+        (Some(replaced), Some(_)) => {
+            return Err(format!(
+                "{} differs from {}'s — a replacement changes the facts purlis measured on a \
+                 harness it ships, and never how purlis runs and arms it. Remove [levels].",
+                at("[levels]"),
+                replaced.title
+            ));
+        }
     };
+    if let Some(replaced) = replaces {
+        replacement_refusal(replaced, &session, &at)?;
+    }
     if !levels.terminal {
         return Err(format!(
             "{} says terminal = false — every harness purlis runs starts in its terminal \
@@ -609,7 +809,7 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             at("[levels]")
         ));
     }
-    if levels.hooks && origin != Origin::BuiltIn {
+    if levels.hooks && origin != Origin::BuiltIn && replaces.is_none() {
         return Err(format!(
             "{} says hooks = true — level 2 needs an adapter purlis ships to arm a harness's \
              hooks, and a declaration cannot carry one. Remove the line; the harness runs in \
@@ -624,7 +824,10 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             at("[terminal] ready_to_type")
         ));
     }
-    if let Some(acp) = &levels.acp {
+    // A replacement's is the built-in's own, read with the built-in.
+    if replaces.is_none()
+        && let Some(acp) = &levels.acp
+    {
         let program_ok = acp.first().is_some_and(|program| {
             bare_word(program) && (origin == Origin::BuiltIn || launcher(program).is_none())
         });
@@ -696,6 +899,48 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
         ),
         text: text.to_owned(),
     })
+}
+
+/// Why this machine's replacement of `replaced`'s facts would change how its chats are armed,
+/// or nothing (#968): who chooses a session's id is how its adapter's hooks are matched to the
+/// chat, and no word it adds to the command line may start the harness past purlis's guard
+/// ([`Harness::disarmed_by`]).
+fn replacement_refusal(
+    replaced: &Declaration,
+    session: &Session,
+    at: &dyn Fn(&str) -> String,
+) -> Result<(), String> {
+    if session.chosen_by != replaced.session.chosen_by {
+        let said = |chosen: ChosenBy| match chosen {
+            ChosenBy::Harness => "harness",
+            ChosenBy::Charter => "purlis",
+        };
+        return Err(format!(
+            "{} is \"{}\", and {}'s is \"{}\" — who chooses a session's id is how purlis's \
+             hooks know its chat, so a replacement keeps it. Write chosen_by = \"{}\".",
+            at("[session] chosen_by"),
+            said(session.chosen_by),
+            replaced.title,
+            said(replaced.session.chosen_by),
+            said(replaced.session.chosen_by)
+        ));
+    }
+    let harness = Harness::of_kind(&replaced.name).expect("a built-in's name is a harness");
+    for (what, words) in [
+        ("[session] new", Some(&session.new)),
+        ("[session] resume", session.resume.as_ref()),
+    ] {
+        let Some(words) = words else { continue };
+        if let Some(why) = harness.disarmed_by(words, &[]) {
+            return Err(format!(
+                "{} would start {} without purlis's guard: {why}. A replacement changes facts \
+                 and never the arming. Take the word out.",
+                at(what),
+                replaced.title
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn session(
@@ -858,6 +1103,11 @@ fn word_refusal(word: &str, origin: Origin) -> Option<&'static str> {
         return Some("is empty");
     }
     if origin == Origin::BuiltIn && (word == "{id}" || word == "{name}") {
+        return None;
+    }
+    // A session id never reads as a flag ([`SessionId::new`]), so this machine's own table
+    // hands one over bare, as a built-in does (`codex resume <id>`). A chat's name it does not.
+    if origin == Origin::Local && word == "{id}" {
         return None;
     }
     let literal = word.replace("{id}", "").replace("{name}", "");

@@ -614,3 +614,211 @@ fn a_declared_template_of_the_word_nothing_never_reads_as_an_empty_one() {
         "{words}"
     );
 }
+
+// --- #968: declarations in `charter.local.toml` ------------------------------------------
+
+/// A harness this machine alone declares, in `charter.local.toml`.
+const LOCAL_SHELLY: &str = r#"
+[harnesses.shelly]
+title = "Shelly"
+program = "true"
+env = ["SHELLY_*"]
+
+[harnesses.shelly.session]
+chosen_by = "purlis"
+new = ["--session={id}"]
+resume = ["resume", "{id}"]
+
+[harnesses.shelly.terminal]
+newline = "\n"
+"#;
+
+/// A profile that runs Claude Code as `true`, so a start needs no harness installed, and this
+/// machine's replacement of Claude Code's facts.
+const CLAUDE_AS_TRUE: &str = "[harness.work]\nkind = \"claude\"\ncommand = [\"true\"]\n";
+const NEWER_CLAUDE: &str = r#"
+[harnesses.claude]
+program = "claude"
+env = ["CLAUDE_*", "MODEL_HINT"]
+
+[harnesses.claude.session]
+chosen_by = "purlis"
+new = ["--session-id={id}", "--title={name}"]
+resume = ["--resume={id}"]
+
+[harnesses.claude.terminal]
+newline = "\u001b[13;2u"
+ready_to_type = "raw-and-quiet"
+"#;
+
+impl Project {
+    fn local(&self, text: &str) -> &Self {
+        fs::write(self.root().join(profiles::LOCAL_FILE), text).unwrap();
+        self
+    }
+
+    /// The operator's yes to the local profile `name`, as the picker records it.
+    fn launched(&self, name: &str) {
+        let set = profiles::current(self.root());
+        let p = set.get(name).expect("a profile to approve");
+        profiletrust::record_launched(self.root(), name, &profiletrust::fingerprint(p)).unwrap();
+    }
+}
+
+#[test]
+fn a_harness_declared_in_the_local_file_alone_runs_as_a_chat() {
+    purlis_core::unsteered!();
+    let project = Project::new();
+    project.local(LOCAL_SHELLY);
+
+    // Its profile is the local file's: held to that file's ignore check and asked once, as
+    // every program that file names is. Its declaration is the operator's own and asks nothing.
+    let set = profiles::current(project.root());
+    let shelly = set
+        .get("shelly")
+        .unwrap_or_else(|| panic!("{:?}", set.refused));
+    assert_eq!(shelly.source, Source::Local);
+    assert_eq!(shelly.command, ["true"]);
+    assert!(profiletrust::declaration_approval_needed(project.root(), shelly).is_none());
+    let refused = start::ready(&project.start("shelly"), project.root())
+        .expect_err("a program the local file names is asked about once");
+    assert!(refused.contains("nobody has approved it"), "{refused}");
+    project.approve("shelly");
+
+    let ready = start::ready(&project.start("shelly"), project.root()).expect("it starts");
+
+    assert!(ready.program.ends_with("/true"), "{}", ready.program);
+    assert_eq!(ready.harness, None, "level 1: nothing arms it");
+    let id = ready.session.clone().expect("purlis chose the id");
+    assert_eq!(ready.args, [format!("--session={id}")]);
+    let declared = ready
+        .declared
+        .as_ref()
+        .expect("its declaration rides the start");
+    assert_eq!(declared.origin, harness_declaration::Origin::Local);
+    assert_eq!(declared.env, ["SHELLY_*"]);
+    assert_eq!(declared.terminal.newline.as_deref(), Some("\n"));
+}
+
+#[test]
+fn a_local_harness_resumes_by_its_own_template_with_the_id_handed_over_bare() {
+    purlis_core::unsteered!();
+    let project = Project::new();
+    project.local(LOCAL_SHELLY);
+    project.approve("shelly");
+    let id = SessionId::new("abc-123").unwrap();
+
+    let ready = start::ready(
+        &Start {
+            resume: Some(id),
+            ..project.start("shelly")
+        },
+        project.root(),
+    )
+    .expect("it starts");
+
+    assert_eq!(ready.args, ["resume", "abc-123"]);
+}
+
+#[test]
+fn a_local_replacement_of_a_built_in_changes_its_facts_and_not_its_arming() {
+    purlis_core::unsteered!();
+    let plain = Project::new();
+    plain.local(CLAUDE_AS_TRUE);
+    plain.launched("work");
+    let replaced = Project::new();
+    replaced.local(&format!("{CLAUDE_AS_TRUE}{NEWER_CLAUDE}"));
+    replaced.launched("work");
+
+    let was = start::ready(&plain.start("work"), plain.root()).expect("it starts");
+    let now = start::ready(&replaced.start("work"), replaced.root()).expect("it starts");
+
+    // Its facts: the words purlis adds, its namespace and its terminal are the replacement's.
+    let id = now.session.clone().expect("purlis still chooses the id");
+    assert_eq!(
+        now.args,
+        [format!("--session-id={id}"), "--title=ide.7".to_owned()]
+    );
+    let declared = now
+        .declared
+        .as_ref()
+        .expect("the replacement rides the start");
+    assert_eq!(
+        declared.replaces(),
+        Some(purlis_core::harness::Harness::ClaudeCode)
+    );
+    assert_eq!(declared.env, ["CLAUDE_*", "MODEL_HINT"]);
+    assert_eq!(
+        now.declaration()
+            .and_then(|d| d.terminal.newline.as_deref()),
+        Some("\x1b[13;2u")
+    );
+    // Typed into one line only, whatever the replacement says its terminal takes.
+    assert!(
+        now.declaration()
+            .and_then(|d| d.why_drawn_as_a_placeholder("two\nlines"))
+            .is_some()
+    );
+    // Its arming: the harness purlis arms, what it is handed and the sandbox are unchanged.
+    assert_eq!(now.harness, Some(purlis_core::harness::Harness::ClaudeCode));
+    assert_eq!(now.harness, was.harness);
+    assert_eq!(now.plugins, was.plugins);
+    assert_eq!(now.sandbox.is_some(), was.sandbox.is_some());
+    assert_eq!(now.unsandboxed, was.unsandboxed);
+    assert_eq!(now.program, was.program);
+    assert_eq!(now.command, was.command);
+    // And without one, the facts are the built-in's.
+    assert_eq!(was.declared, None);
+    let id = was.session.clone().unwrap();
+    assert_eq!(was.args, ["--session-id", id.as_str(), "--name", "ide.7"]);
+}
+
+#[test]
+fn a_local_replacement_that_would_change_arming_leaves_the_built_in_standing() {
+    purlis_core::unsteered!();
+    let project = Project::new();
+    project.local(&format!(
+        "{CLAUDE_AS_TRUE}[harnesses.claude]\nprogram = \"claude\"\n\
+         [harnesses.claude.levels]\nhooks = false\n"
+    ));
+    project.launched("work");
+
+    let ready = start::ready(&project.start("work"), project.root()).expect("it starts");
+
+    assert_eq!(
+        ready.harness,
+        Some(purlis_core::harness::Harness::ClaudeCode)
+    );
+    assert_eq!(ready.declared, None);
+    let set = profiles::current(project.root());
+    assert!(
+        set.refused
+            .iter()
+            .any(|r| r.source == "charter.local.toml [harnesses.claude]"
+                && r.reason.contains("Remove [levels]")),
+        "{:?}",
+        set.refused
+    );
+}
+
+#[test]
+fn a_local_replacement_in_a_file_git_would_carry_changes_nothing() {
+    purlis_core::unsteered!();
+    let project = Project::new();
+    project.local(&format!("{CLAUDE_AS_TRUE}{NEWER_CLAUDE}"));
+    project.launched("work");
+    let declared = harness_declaration::read(project.root());
+    // The launch's own read, with the answer git gives for a file it would carry.
+    let carried = profiles::IgnoreCheck {
+        reason: "charter.local.toml is tracked by git".to_owned(),
+        ..profiles::IgnoreCheck::default()
+    };
+    let launch = (profiles::current(project.root()), carried);
+
+    let ready = start::ready_read(&project.start("work"), project.root(), &declared, &launch)
+        .expect("it starts");
+
+    assert_eq!(ready.declared, None, "the built-in's facts stand");
+    let id = ready.session.clone().unwrap();
+    assert_eq!(ready.args, ["--session-id", id.as_str(), "--name", "ide.7"]);
+}

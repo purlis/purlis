@@ -144,12 +144,13 @@ fn not_asked(p: &Profile, root: &Path, declared: &Declarations) -> Option<(Strin
     })
 }
 
-/// The project's harness declaration `p` runs on, where its kind is one.
+/// The harness declaration `p` runs on, where its kind is one the project or this machine
+/// (#968) adds to the ones purlis ships.
 fn project_declaration<'a>(
     p: &Profile,
     declared: &'a Declarations,
 ) -> Option<&'a crate::harness_declaration::Declaration> {
-    declared.projects().find(|d| d.name == p.kind)
+    declared.added().find(|d| d.name == p.kind)
 }
 
 /// Whether charter's guard runs in a chat the app would start on `p`.
@@ -208,9 +209,12 @@ pub fn detect(p: &Profile, root: &Path) -> Wiring {
                     .unwrap_or_else(|| {
                         format!(
                             "a {} chat runs in its terminal alone, with none of purlis's hooks \
-                             armed (it is declared in {}/)",
+                             armed (it is declared in {})",
                             shown::short(&p.kind),
-                            crate::harness_declaration::DIR
+                            project_declaration(p, &declared).map_or_else(
+                                || format!("{}/", crate::harness_declaration::DIR),
+                                |d| d.file.clone()
+                            )
                         )
                     }),
                 whole(found.first().map(String::as_str).unwrap_or_default()),

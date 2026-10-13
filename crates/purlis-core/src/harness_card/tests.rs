@@ -615,3 +615,69 @@ fn a_built_ins_words_name_only_lines_about_what_a_chat_tells_purlis() {
         }
     }
 }
+
+/// The cards of what `charter.local.toml` holding `text` declares (#968).
+fn local_cards(text: &str) -> Vec<Card> {
+    let dir = project(&[]);
+    harness_declaration::read_with(dir.path(), Ok(Some(text.to_owned())))
+        .declared
+        .iter()
+        .map(of)
+        .collect()
+}
+
+/// The value of `card`'s fact labelled `label`.
+fn fact_of(card: &Card, label: &str) -> Option<String> {
+    card.blocks().into_iter().find_map(|block| match block {
+        Block::Facts(facts) => facts
+            .into_iter()
+            .find(|fact| fact.label == label)
+            .map(|fact| fact.value),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_local_replacements_card_keeps_the_built_ins_adapter_and_says_whose_facts_it_shows() {
+    let cards = local_cards(
+        "[harnesses.claude]\nprogram = \"claude\"\ntested = \"2.2.0\"\n\
+         [harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\"]\n\
+         [harnesses.claude.capabilities]\nreports_waiting = \"no: measured on 2.2.0\"\n",
+    );
+    let claude = card_of(&cards, "claude");
+    let shipped = built_in_card(Harness::ClaudeCode);
+
+    assert_eq!(claude.origin, Origin::Local);
+    assert!(claude.replaces);
+    assert_eq!(
+        fact_of(claude, "Declared").as_deref(),
+        Some("on this machine, in charter.local.toml, in place of the one shipped with purlis")
+    );
+    assert_eq!(fact_of(claude, "Measured on").as_deref(), Some("2.2.0"));
+    // Its arming is the built-in's: its hooks and its sandbox answer as the built-in's do.
+    assert!(has(claude, HOOKS));
+    assert_eq!(
+        ability(claude, SANDBOX).answer,
+        ability(&shipped, SANDBOX).answer
+    );
+    // Its facts are the replacement's.
+    assert_eq!(
+        ability(claude, "reports_waiting").answer,
+        Answer::No("measured on 2.2.0".to_owned())
+    );
+}
+
+#[test]
+fn a_harness_this_machine_declares_has_a_card_with_no_adapters_lines() {
+    let cards = local_cards("[harnesses.shelly]\nprogram = \"shelly\"\n");
+    let shelly = card_of(&cards, "shelly");
+
+    assert_eq!(shelly.origin, Origin::Local);
+    assert!(!shelly.replaces);
+    assert_eq!(
+        fact_of(shelly, "Declared").as_deref(),
+        Some("on this machine, in charter.local.toml")
+    );
+    assert!(!has(shelly, HOOKS));
+    assert!(!has(shelly, SANDBOX));
+}

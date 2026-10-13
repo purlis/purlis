@@ -1077,3 +1077,286 @@ fn a_built_in_is_typed_into_by_the_same_rule_as_a_declared_harness() {
         );
     }
 }
+
+/// What `charter.local.toml` holding `text` declares, in a project declaring `files` (#968).
+fn local(files: &[(&str, &str)], text: &str) -> Declarations {
+    let dir = project(files);
+    read_with(dir.path(), Ok(Some(text.to_owned())))
+}
+
+const LOCAL_SHELLY: &str = r#"
+[harness.work]
+kind = "claude"
+command = ["claude"]
+
+[harnesses.shelly]
+program = "shelly"
+env = ["SHELLY_*"]
+"#;
+
+#[test]
+fn a_harness_charter_local_toml_declares_alone_is_read_as_this_machines() {
+    let read = local(&[], LOCAL_SHELLY);
+
+    assert_eq!(read.refused, Vec::<Refused>::new());
+    let shelly = read
+        .get("shelly")
+        .expect("shelly is declared on this machine");
+    assert_eq!(shelly.origin, Origin::Local);
+    assert_eq!(shelly.program, "shelly");
+    assert_eq!(shelly.title, "shelly");
+    assert_eq!(shelly.file, "charter.local.toml [harnesses.shelly]");
+    assert_eq!(shelly.replaces(), None);
+    assert!(!shelly.has_adapter());
+    assert_eq!(
+        read.added().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["shelly"]
+    );
+    assert_eq!(read.projects().count(), 0);
+}
+
+#[test]
+fn a_local_table_names_the_harness_it_declares() {
+    let read = local(
+        &[],
+        "[harnesses.shelly]\nname = \"other\"\nprogram = \"shelly\"\n",
+    );
+
+    assert_eq!(read.get("other"), None);
+    assert_eq!(read.refused.len(), 1, "{:?}", read.refused);
+    assert_eq!(
+        read.refused[0].file,
+        "charter.local.toml [harnesses.shelly]"
+    );
+    assert!(
+        read.refused[0]
+            .reason
+            .contains("Name the table [harnesses.other]"),
+        "{}",
+        read.refused[0].reason
+    );
+}
+
+#[test]
+fn a_local_table_is_held_to_every_rule_a_projects_file_is() {
+    for (text, said) in [
+        (
+            "[harnesses.shelly]\nprogram = \"bash\"\n",
+            "a shell, an interpreter or a launcher",
+        ),
+        (
+            "[harnesses.shelly]\nprogram = \"shelly\"\n[harnesses.shelly.levels]\nhooks = true\n",
+            "says hooks = true",
+        ),
+        (
+            "[harnesses.shelly]\nprogram = \"shelly\"\nenv = [\"OPENAI_*\"]\n",
+            "named like a credential",
+        ),
+        (
+            "[harnesses.shelly]\nprogram = \"shelly\"\ntitle = \"Codex\"\n",
+            "which is a harness purlis ships",
+        ),
+        ("[harnesses]\nshelly = 1\n", "is not a table"),
+    ] {
+        let read = local(&[], text);
+        assert_eq!(read.added().count(), 0, "{text}");
+        assert!(
+            read.refused.iter().any(|one| one.reason.contains(said)),
+            "{text}: {:?}",
+            read.refused
+        );
+    }
+}
+
+#[test]
+fn a_local_table_never_takes_a_projects_harness_or_the_name_purlis_gives_one() {
+    let read = local(
+        &[("gemini.toml", GEMINI)],
+        "[harnesses.gemini]\nprogram = \"gemini\"\n",
+    );
+    assert_eq!(read.get("gemini").map(|d| d.origin), Some(Origin::Project));
+    assert!(
+        read.refused[0]
+            .reason
+            .contains("which this project declares in harnesses/gemini.toml"),
+        "{:?}",
+        read.refused
+    );
+
+    let read = local(&[], "[harnesses.claude-code]\nprogram = \"cc\"\n");
+    assert_eq!(read.get("claude-code"), None);
+    assert!(
+        read.refused[0]
+            .reason
+            .contains("the name purlis gives a harness it ships"),
+        "{:?}",
+        read.refused
+    );
+}
+
+/// Claude Code's facts as a newer version measured them (#968): its words, its terminal and
+/// its card, in the built-in's place.
+const NEWER_CLAUDE: &str = r#"
+[harnesses.claude]
+title = "Claude Code"
+program = "claude"
+env = ["CLAUDE_*", "MODEL_HINT"]
+tested = "2.2.0"
+
+[harnesses.claude.session]
+chosen_by = "purlis"
+new = ["--session-id={id}", "--title={name}"]
+resume = ["--resume={id}"]
+named_by = ["--resume", "-r"]
+
+[harnesses.claude.terminal]
+newline = "\u001b[13;2u"
+paste_drawn_whole = { lines = 5 }
+ready_to_type = "raw-and-quiet"
+
+[harnesses.claude.capabilities]
+reports_waiting = "no: measured on 2.2.0"
+"#;
+
+#[test]
+fn a_local_replacement_of_a_built_in_changes_its_facts_in_the_built_ins_place() {
+    let read = local(&[], NEWER_CLAUDE);
+
+    assert_eq!(read.refused, Vec::<Refused>::new());
+    let names: Vec<&str> = read.declared.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, ["claude", "opencode", "codex"]);
+    let claude = read.get("claude").expect("claude is declared");
+    assert_eq!(claude.origin, Origin::Local);
+    assert_eq!(claude.replaces(), Some(Harness::ClaudeCode));
+    assert_eq!(read.replacement(Harness::ClaudeCode), Some(claude));
+    assert_eq!(read.replacement(Harness::Codex), None);
+    assert_eq!(read.added().count(), 0);
+    assert_eq!(claude.tested.as_deref(), Some("2.2.0"));
+    assert_eq!(claude.env, ["CLAUDE_*", "MODEL_HINT"]);
+    let id = SessionId::new("0123abcd").unwrap();
+    assert_eq!(
+        claude.new_session_argv(&id, "fix"),
+        ["--session-id=0123abcd", "--title=fix"]
+    );
+    assert_eq!(claude.terminal.newline.as_deref(), Some("\x1b[13;2u"));
+    assert_eq!(claude.terminal.ready_to_type, ReadyToType::RawAndQuiet);
+    assert_eq!(
+        claude.capability("reports_waiting"),
+        Answer::No("measured on 2.2.0".to_owned())
+    );
+    // Its arming is the built-in's: the adapter, the levels and the program.
+    assert!(claude.has_adapter());
+    assert_eq!(claude.levels, of(Harness::ClaudeCode).levels);
+    assert_eq!(claude.program, "claude");
+    // And the built-in purlis ships is unchanged.
+    assert_eq!(Harness::ClaudeCode.declared().origin, Origin::BuiltIn);
+    assert_eq!(
+        Harness::ClaudeCode.declared().tested.as_deref(),
+        Some("2.1.283")
+    );
+}
+
+#[test]
+fn a_local_replacement_never_changes_how_a_built_in_is_run_or_armed() {
+    for (text, said) in [
+        (
+            "[harnesses.claude]\nprogram = \"my-claude\"\n",
+            "runs its program, claude",
+        ),
+        (
+            "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.levels]\nhooks = false\n",
+            "Remove [levels]",
+        ),
+        (
+            "[harnesses.opencode]\nprogram = \"opencode\"\n[harnesses.opencode.levels]\nacp = [\"opencode\", \"serve\"]\n",
+            "Remove [levels]",
+        ),
+        (
+            "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.session]\nchosen_by = \"harness\"\n",
+            "a replacement keeps it",
+        ),
+        (
+            "[harnesses.opencode]\nprogram = \"opencode\"\n[harnesses.opencode.session]\nresume = [\"--session={id}\", \"--pure\"]\n",
+            "without purlis's guard",
+        ),
+        (
+            "[harnesses.opencode]\nprogram = \"opencode\"\n[harnesses.opencode.session]\nchosen_by = \"harness\"\nnew = [\"--pure\"]\n",
+            "without purlis's guard",
+        ),
+        (
+            "[harnesses.codex]\nprogram = \"codex\"\ntitle = \"Claude Code\"\n",
+            "which is a harness purlis ships",
+        ),
+    ] {
+        let read = local(&[], text);
+        let name = text
+            .trim_start_matches("[harnesses.")
+            .split(']')
+            .next()
+            .unwrap();
+        assert_eq!(
+            read.get(name).map(|d| d.origin),
+            Some(Origin::BuiltIn),
+            "{text}: the built-in stands"
+        );
+        assert!(
+            read.refused.iter().any(|one| one.reason.contains(said)),
+            "{text}: {:?}",
+            read.refused
+        );
+    }
+}
+
+#[test]
+fn a_local_replacement_keeps_levels_it_restates_and_hands_an_id_over_bare() {
+    let read = local(
+        &[],
+        "[harnesses.codex]\nprogram = \"codex\"\n[harnesses.codex.session]\nresume = [\"resume\", \"{id}\"]\n[harnesses.codex.levels]\nterminal = true\nhooks = true\n",
+    );
+
+    assert_eq!(read.refused, Vec::<Refused>::new());
+    let codex = read.replacement(Harness::Codex).expect("replaced");
+    assert_eq!(codex.levels, of(Harness::Codex).levels);
+    // A chat's name is still never handed over bare: it could read as a flag.
+    let read = local(
+        &[],
+        "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\", \"--name\", \"{name}\"]\n",
+    );
+    assert_eq!(read.replacement(Harness::ClaudeCode), None);
+    assert!(
+        read.refused[0].reason.contains("{name}"),
+        "{:?}",
+        read.refused
+    );
+}
+
+#[test]
+fn a_local_replacement_is_typed_into_one_line_only_as_a_declared_harness_is() {
+    let read = local(&[], NEWER_CLAUDE);
+    let claude = read.replacement(Harness::ClaudeCode).unwrap();
+
+    assert_eq!(claude.why_drawn_as_a_placeholder("one line"), None);
+    let why = claude
+        .why_drawn_as_a_placeholder("two\nlines")
+        .expect("refused");
+    assert!(why.contains("only a prompt on one line"), "{why}");
+    // The built-in purlis measured takes the same two lines whole.
+    assert_eq!(
+        Harness::ClaudeCode.why_drawn_as_a_placeholder("two\nlines"),
+        None
+    );
+}
+
+#[test]
+fn a_local_file_that_does_not_read_adds_nothing_and_says_it_once_elsewhere() {
+    for local_text in [
+        Ok(None),
+        Ok(Some("not toml [".to_owned())),
+        Err(io::Error::other("denied")),
+    ] {
+        let dir = project(&[]);
+        let read = read_with(dir.path(), local_text);
+        assert_eq!(read.declared, builtins().to_vec());
+        assert_eq!(read.refused, Vec::<Refused>::new());
+    }
+}

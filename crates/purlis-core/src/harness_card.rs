@@ -139,8 +139,10 @@ pub struct Card {
     pub title: String,
     /// The program a chat of it starts.
     pub program: String,
-    /// Shipped with charter, or declared by this project.
+    /// Shipped with charter, declared by this project, or by this machine.
     pub origin: Origin,
+    /// Whether it is this machine's replacement of a built-in's facts (#968).
+    pub replaces: bool,
     /// The versions its facts were measured on, where the declaration says.
     pub tested: Option<String>,
     /// Every line, in [`LINES`]'s order.
@@ -207,6 +209,15 @@ impl Card {
                         harness_declaration::DIR,
                         self.name
                     ),
+                    // This machine's own (#968): in place of the built-in's facts, or a harness
+                    // for this machine alone.
+                    Origin::Local if self.replaces => format!(
+                        "on this machine, in {}, in place of the one shipped with purlis",
+                        crate::profiles::LOCAL_FILE
+                    ),
+                    Origin::Local => {
+                        format!("on this machine, in {}", crate::profiles::LOCAL_FILE)
+                    }
                 },
             },
         ];
@@ -332,11 +343,14 @@ fn unreported_of(title: &str, abilities: &[Ability], words: &[Unsaid]) -> Option
     Some(format!("{}.", clauses.join("; ")))
 }
 
-/// The built-in harness a declaration is, where it is one: the key to its adapter.
+/// The built-in harness a declaration is, where it is one: the key to its adapter. This
+/// machine's replacement of a built-in's facts keeps the built-in's adapter (#968).
 fn built_in(declaration: &Declaration) -> Option<Harness> {
-    (declaration.origin == Origin::BuiltIn)
-        .then(|| Harness::of_kind(&declaration.name))
-        .flatten()
+    match declaration.origin {
+        Origin::BuiltIn => Harness::of_kind(&declaration.name),
+        Origin::Local => declaration.replaces(),
+        Origin::Project => None,
+    }
 }
 
 /// The lines charter acts on only through an adapter it ships (ADR 0073 §3, V24c): its hooks,
@@ -428,6 +442,7 @@ pub fn of(declaration: &Declaration) -> Card {
         name: declaration.name.clone(),
         program: declaration.program.clone(),
         origin: declaration.origin,
+        replaces: declaration.replaces().is_some(),
         tested: declaration
             .tested
             .as_deref()

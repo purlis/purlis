@@ -393,8 +393,10 @@ pub fn derive_from(committed: Option<&str>, local: std::io::Result<Option<String
 
 /// [`derive_from`] for a project whose harness declarations are `declared` (ADR 0073): each
 /// project declaration gives a profile named after it, after the built-ins, and a local
-/// profile's `kind` may name it. A refused declaration is listed with the refused profiles,
-/// under its file.
+/// profile's `kind` may name it. A harness this machine declares in `charter.local.toml`
+/// (#968) gives one too, from that file, so it is held to that file's ignore check and asked
+/// once before its program runs, as every profile there is. A refused declaration is listed
+/// with the refused profiles, under its file.
 pub fn derive_declared(
     committed: Option<&str>,
     local: std::io::Result<Option<String>>,
@@ -404,14 +406,17 @@ pub fn derive_declared(
         profiles: builtins(),
         ..ProfileSet::default()
     };
-    for d in declared.projects() {
+    for d in declared.added() {
         set.profiles.push(Profile {
             name: d.name.clone(),
             kind: d.name.clone(),
             harness: d.name.clone(),
             command: vec![d.program.clone()],
             env: Vec::new(),
-            source: Source::Declared,
+            source: match d.origin {
+                crate::harness_declaration::Origin::Local => Source::Local,
+                _ => Source::Declared,
+            },
         });
     }
     for refused in &declared.refused {
@@ -520,6 +525,9 @@ pub fn derive_declared(
         // `dispatchlimits`: they only ever lower what the project's files give, so nothing in
         // it loosens plane policy, and nothing in it reaches a teammate.
         //
+        // `[harnesses]` declares a harness for this machine alone, or replaces a built-in's
+        // facts and never its arming (ADR 0073 §5, #968), read by `harness_declaration::read`.
+        //
         // `[chat_env]` is which more of this machine's own environment a chat is started with
         // (`chatenv`). It can only be this machine's: a committed list would let a teammate's
         // push decide which of this machine's variables every chat is handed.
@@ -544,6 +552,7 @@ pub fn derive_declared(
             && key != "repos"
             && key != crate::sandbox::TABLE
             && key != crate::dispatchlimits::TABLE
+            && key != crate::harness_declaration::LOCAL_TABLE
         {
             let name = shown::short(key);
             set.refused.push(Refused {
@@ -888,7 +897,7 @@ pub(crate) fn refusals_of(
         let kinds: Vec<&str> = KINDS
             .iter()
             .map(|k| k.word)
-            .chain(declared.projects().map(|d| d.name.as_str()))
+            .chain(declared.added().map(|d| d.name.as_str()))
             .collect();
         out.push((
             "kind",

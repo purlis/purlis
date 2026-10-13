@@ -148,11 +148,14 @@ pub struct Ready {
     pub cwd: Option<PathBuf>,
     /// The harness this chat runs, from its profile's declared kind.
     pub harness: Option<Harness>,
-    /// The declaration of the harness a project declares, for a chat on one (ADR 0073, #967):
-    /// the one the launch read and the operator approved. A chat on it is started with what its
-    /// `env` namespace reaches, its pane's Shift+Enter is its `[terminal] newline`, and a
-    /// prompt is typed into it by its `[terminal]` facts. `None` for a harness purlis ships,
-    /// whose declaration is [`Harness::declared`], and for a chat on no harness.
+    /// The declaration of the harness a project or this machine declares, for a chat on one
+    /// (ADR 0073, #967, #968): the one the launch read and, for a project's, the operator
+    /// approved. A chat on it is started with what its `env` namespace reaches, its pane's
+    /// Shift+Enter is its `[terminal] newline`, and a prompt is typed into it by its
+    /// `[terminal]` facts. For a harness purlis ships it is this machine's replacement of its
+    /// facts, where `charter.local.toml` has one ([`crate::harness_declaration::Declaration::replaces`]),
+    /// and `None` otherwise, as its declaration is [`Harness::declared`]; `None` for a chat on
+    /// no harness.
     pub declared: Option<crate::harness_declaration::Declaration>,
     /// The conversation this chat is now under — resumed, or the one charter just chose.
     pub session: Option<SessionId>,
@@ -192,13 +195,14 @@ pub struct TheirAgentsMd {
 }
 
 impl Ready {
-    /// The declaration of the harness this chat runs, built-in ([`Harness::declared`]) or one
-    /// the project declares ([`Self::declared`]), or none for a chat on no harness: what a
-    /// prompt is typed into it by.
+    /// The declaration of the harness this chat runs: the one it started on
+    /// ([`Self::declared`], a project's or this machine's, a replacement of a built-in's facts
+    /// among them), else the built-in's ([`Harness::declared`]), or none for a chat on no
+    /// harness: what a prompt is typed into it by.
     pub fn declaration(&self) -> Option<&crate::harness_declaration::Declaration> {
-        self.harness
-            .map(Harness::declared)
-            .or(self.declared.as_ref())
+        self.declared
+            .as_ref()
+            .or_else(|| self.harness.map(Harness::declared))
     }
 
     /// Every argument after [`Self::program`], with `armed` — the arguments that arm the
@@ -360,14 +364,18 @@ fn ready_given(
     }
 
     let harness = Harness::of_kind(&profile.kind);
-    // A kind with no `Harness` is one the project declares (ADR 0073): the gate above refused
-    // every other. It runs at level 1, and its session words are its declaration's.
+    // A kind with no `Harness` is one the project or this machine declares (ADR 0073): the
+    // gate above refused every other. It runs at level 1, and its session words are its
+    // declaration's. A built-in's facts are this machine's replacement of them, where
+    // `charter.local.toml` has one and git would not carry that file (#968): its words, its
+    // namespace and its terminal, never its arming — the sandbox, the adapter and the program
+    // below stay the built-in's.
     let declared = match harness {
-        Some(_) => None,
-        None => declared
-            .projects()
-            .find(|d| d.name == profile.kind)
-            .cloned(),
+        Some(harness) => check
+            .passes()
+            .then(|| declared.replacement(harness).cloned())
+            .flatten(),
+        None => declared.added().find(|d| d.name == profile.kind).cloned(),
     };
     // The sandbox, or no chat (ADR 0067 §1): asked before anything is resolved or run, so a
     // chat that cannot be confined never reaches the program. A person's opt-out, or a system
@@ -432,9 +440,9 @@ fn ready_given(
             (None, None)
         }
     };
-    let (added, session, how) = match (harness, &declared) {
-        (None, Some(declared)) => declared_arguments(declared, profile, start),
-        _ => arguments(harness, profile, start),
+    let (added, session, how) = match &declared {
+        Some(declared) => declared_arguments(declared, profile, start),
+        None => arguments(harness, profile, start),
     };
     let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
     // Resolved HERE, in charter's own process, and the absolute path is what the terminal is
