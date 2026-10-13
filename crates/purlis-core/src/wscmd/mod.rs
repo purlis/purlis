@@ -35,7 +35,7 @@
 //!   `workspace layer` row reads every checkout and piece through [`crate::guest::status`], path
 //!   by path and with no git asked; charter's `guest_layer` also derived `withheld`,
 //!   `unaccounted` and `unrecorded` from the exclude block, which needs git per path and is not
-//!   here yet.
+//!   here yet (#998).
 //! - **A withdrawal inside a CHECKOUT.** [`crate::wslayer::wire`] removes a file the plane
 //!   stopped declaring from the workspace directory; [`crate::guest::wire`] does not do the
 //!   same inside a checkout, so such a file stays (hidden, and its line kept) until an

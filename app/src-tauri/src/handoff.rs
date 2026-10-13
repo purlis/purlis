@@ -10593,10 +10593,13 @@ mod tests {
         assert_eq!(child.profile.as_deref(), Some("work"));
         // Under the steward chat, as a task that owes it one report, started by the person.
         let from = held.chats().handed_from(devops).expect("its lineage");
+        // The asking chat by its id as well as its number (#872).
+        let asker = held.chats().recorded_chat(steward).expect("recorded");
+        assert!(asker.identity.id.is_some());
         assert_eq!(
             from,
             HandedFrom {
-                id: None,
+                id: asker.identity.id.clone(),
                 chat: steward,
                 name: "steward 1".to_owned(),
                 workspace: Place::Workspace("alpha".to_owned()),

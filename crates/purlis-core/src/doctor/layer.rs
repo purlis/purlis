@@ -75,12 +75,27 @@ pub(super) fn workspace_layer(d: &Doctor) -> Row {
              never withdraws what it mirrored before over a file it cannot read.",
         );
     }
-    let (workspaces, unseen): (Vec<String>, Vec<Unread>) = match fsx::read_workspaces(root) {
+    let (workspaces, mut unseen): (Vec<String>, Vec<Unread>) = match fsx::read_workspaces(root) {
         Ok(found) => found,
         Err(e) => {
             return Row::not_checked(NAME, fsx::py_os_error(&e, &root.join("workspaces")));
         }
     };
+    // A workspace that cannot be listed is named beside the verdict, as `workspace clones`
+    // names it, rather than read as a layer file that cannot be read.
+    let workspaces: Vec<String> = workspaces
+        .into_iter()
+        .filter(|ws| {
+            let dir = root.join("workspaces").join(ws);
+            match std::fs::read_dir(&dir) {
+                Ok(_) => true,
+                Err(e) => {
+                    unseen.push((dir, e.raw_os_error()));
+                    false
+                }
+            }
+        })
+        .collect();
     let read = read(root, &workspaces);
     let looked_for = workspaces.len() + unseen.len();
     fsx::beside_unread(root, said(&read, looked_for), &unseen)
@@ -370,6 +385,36 @@ mod tests {
         assert!(rows.iter().all(|(_, s)| *s == "missing"), "{rows:?}");
         let after: Vec<_> = std::fs::read_dir(tree).unwrap().flatten().collect();
         assert_eq!(before.len(), after.len());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_workspace_it_cannot_list_is_named_beside_the_verdict() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+        let sealed = root.join("workspaces/beta");
+        std::fs::create_dir_all(&sealed).unwrap();
+        std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let listable = std::fs::read_dir(&sealed).is_ok();
+        let mut d = Doctor::at(&root, &root, false, true);
+        d.has_plane = true;
+        let r = workspace_layer(&d);
+        std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if listable {
+            return; // run as root: a mode does not seal a folder
+        }
+        assert_eq!(r.status, Status::Warn, "{r:?}");
+        assert!(
+            r.detail
+                .ends_with("(1 of 2 workspace(s)); workspaces/beta cannot be checked"),
+            "{r:?}"
+        );
+        assert!(
+            r.hint.starts_with("workspaces/beta cannot be checked"),
+            "{r:?}"
+        );
     }
 
     #[test]
