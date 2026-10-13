@@ -439,48 +439,28 @@ fn a_local_block(what: GrantWhat, kind: &str, target: &str) -> HeldBlock {
     }
 }
 
-/// qw351, ADR 0093 ruling 3 ("ask once, then always"): the certificate check's main button
-/// allows it for this project on this machine, so one press is the last one. With "Allow once"
-/// first, a person pressing the main button was asked again in every chat.
+/// A container engine's socket, and a service purlis cannot tell, are asked about with the
+/// narrowest answer first, never for everyone in the project, and policy's scopes have the
+/// last word.
 #[test]
-fn the_certificate_check_is_asked_with_this_machine_s_allow_first_and_a_socket_with_once_first() {
+fn a_socket_or_a_service_is_asked_with_once_first_and_never_for_the_project() {
     let ids =
         |shown: &Shown| -> Vec<String> { shown.options.iter().map(|one| one.id.clone()).collect() };
-    let trust = sandbox_block(
-        5,
-        &a_local_block(
-            GrantWhat::Service,
-            "certificate-check",
-            purlis_core::sandbox::services::TRUSTD,
-        ),
-        &Locks::none(),
-    )
-    .expect("an ask");
-    assert_eq!(trust.source, AskSource::SandboxLocal);
-    assert_eq!(ids(&trust), ["you", "chat", "once", KEEP]);
-    assert_eq!(trust.options[0].label, "Allow for me on this machine");
-    // Never for everyone in the project: it is this machine's.
-    assert!(!ids(&trust).contains(&"project".to_owned()));
-    // A container engine's socket, and a service purlis cannot tell: the narrowest first.
     for other in [
         a_local_block(GrantWhat::Socket, "local-socket", "/var/run/docker.sock"),
         a_local_block(GrantWhat::Service, "system-service", "com.example.helper"),
     ] {
         let shown = sandbox_block(5, &other, &Locks::none()).expect("an ask");
+        assert_eq!(shown.source, AskSource::SandboxLocal);
         assert_eq!(ids(&shown), ["once", "chat", "you", KEEP], "{other:?}");
     }
-    // Policy's scopes still have the last word on the certificate check's.
     let locks = Locks::parse(
         r#"{"sandbox": {"allow-scopes": ["chat"]}}"#,
         Path::new("/etc/purlis/policy.json"),
     );
     let narrowed = sandbox_block(
         5,
-        &a_local_block(
-            GrantWhat::Service,
-            "certificate-check",
-            purlis_core::sandbox::services::TRUSTD,
-        ),
+        &a_local_block(GrantWhat::Service, "system-service", "com.example.helper"),
         &locks,
     )
     .expect("an ask");

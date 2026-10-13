@@ -990,10 +990,12 @@ fn offered(
         }
         // Nothing a grant names (#1637): never a Notice that only dismisses. Started without
         // the sandbox, the chat is refused none of these.
-        // A system service by name (D-sock-1), the certificate check's among them: Allow,
-        // naming it whole, with what allowing it means.
+        // A system service by name (D-sock-1): Allow, naming it whole, with what allowing it
+        // means. Never the certificate check's, which is no grant (R1): its Notice says what
+        // stands and the way on.
         (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) => {
             match target.map(services::service) {
+                Some(Ok(name)) if name == services::TRUSTD => certificate_check_refused(root),
                 Some(Ok(name)) => {
                     let said = services::said_of(
                         &grant::What::Service(name.clone()),
@@ -1024,23 +1026,62 @@ fn offered(
     }
 }
 
+/// **What a Notice says of a refused certificate check** (the operator's ruling R1 of
+/// 2026-10-13): every sandboxed chat has the check unless the project or policy turns it off,
+/// so there is never an Allow for it, and never a dead end either.
+///
+/// - **On for the project**: this chat started before it was (an update, or the project's
+///   setting turned back on). The Notice says so and offers Restart this chat.
+/// - **Off by the project's own setting**: said, with where to turn it on (Settings › Sandbox,
+///   which everyone in the project then gets) and Start without the sandbox.
+/// - **Off by policy**: said, with who set it; [`held`] then offers Start without the sandbox
+///   unless policy forbids that too.
+fn certificate_check_refused(root: &Path) -> (BlockOffer, Option<String>, Option<String>) {
+    use purlis_core::sandbox::CertificateChecks;
+    // No name beside it: the block's own words say "the system's certificate check", and the
+    // service's name is nothing the person can act on.
+    let target = None;
+    match CertificateChecks::at(root) {
+        None | Some(CertificateChecks::On) => (
+            BlockOffer::Allowed,
+            target,
+            Some(
+                "Certificate checks are on for this project. This chat started before they \
+                 were, so tools such as gh can verify a host's certificate once it restarts on \
+                 the same conversation."
+                    .to_owned(),
+            ),
+        ),
+        Some(CertificateChecks::OffByProject) => (
+            BlockOffer::Unsandboxed,
+            target,
+            Some(
+                "This project turns certificate checks off, so tools such as gh cannot verify \
+                 a host's certificate in its sandboxed chats. Turn Certificate checks on in \
+                 Settings › Sandbox, for everyone in the project, or start this chat without \
+                 the sandbox."
+                    .to_owned(),
+            ),
+        ),
+        Some(CertificateChecks::OffByPolicy(why)) => (BlockOffer::Unsandboxed, target, Some(why)),
+    }
+}
+
 /// **What `offer` comes to for a chat of `harness`** (D-sock-7): Claude Code's own sandbox
 /// takes a socket by path and, of every system service, the certificate check alone
-/// (`enableWeakerNetworkIsolation`), so any other service is not one an Allow could reach there,
-/// and the Notice offers Start without the sandbox, saying why. purlis's own wrap (Codex,
+/// (`enableWeakerNetworkIsolation`), which is the project's setting and never a grant (R1). So
+/// no service is one an Allow could reach there, and the Notice offers Start without the
+/// sandbox, saying why. purlis's own wrap (Codex,
 /// opencode) takes any service by name.
 fn for_its_harness(
     harness: Option<purlis_core::harness::Harness>,
     (offer, target, route): (BlockOffer, Option<String>, Option<String>),
 ) -> (BlockOffer, Option<String>, Option<String>) {
     let claude = harness == Some(purlis_core::harness::Harness::ClaudeCode);
-    if offer == BlockOffer::Service
-        && claude
-        && target.as_deref() != Some(purlis_core::sandbox::services::TRUSTD)
-    {
+    if offer == BlockOffer::Service && claude {
         let (offer, _, why) = without_the_sandbox(
-            "Claude Code's sandbox lets purlis allow one system service, the certificate check, \
-             so this one cannot be allowed for this chat.",
+            "Claude Code's sandbox lets purlis allow no system service by name (the \
+             certificate check is its own setting), so this one cannot be allowed for this chat.",
         );
         return (offer, target, why);
     }
@@ -3634,13 +3675,87 @@ mod tests {
         }
     }
 
-    /// ADR 0093: a refused system service is offered by its name, with what allowing it means;
-    /// a Claude Code chat takes the certificate check alone, so any other service's Notice
-    /// offers Start without the sandbox there, saying why.
+    /// R1 (2026-10-13): a refused certificate check is never offered an Allow, and its Notice
+    /// never dead-ends. On for the project, the chat started before it was: Restart. Off by
+    /// the project's setting: said, with Settings and Start without the sandbox. Off by
+    /// policy: said with who set it, and nothing offered where policy forbids the opt-out too.
     #[test]
-    fn a_service_is_offered_by_name_and_claude_code_takes_only_the_certificate_check() {
+    fn a_refused_certificate_check_says_what_stands_and_never_offers_an_allow() {
+        use purlis_core::sandbox::policy::{self, Locks};
+        use purlis_core::sandbox::services::TRUSTD;
+        use purlis_core::sandboxblock::{Block, Kind, Operation};
+        let block = Block {
+            operation: Operation::Lookup,
+            kind: Kind::CertificateCheck,
+            ours: false,
+        };
+        let project_with = |settings: &str| {
+            let project = tempfile::tempdir().expect("a project");
+            std::fs::write(
+                project.path().join(purlis_core::plane::MANIFEST),
+                format!("[sandbox]\nmode = \"on\"\n{settings}"),
+            )
+            .expect("toml");
+            project
+        };
+        // The default project, and one that says `true`: on, so a restart is what is owed.
+        for settings in ["", "certificate-checks = true\n"] {
+            let project = project_with(settings);
+            let (offer, target, said) = offered(project.path(), &block, Some(TRUSTD));
+            assert_eq!(offer, BlockOffer::Allowed, "{settings}");
+            assert_eq!(target, None);
+            let said = said.expect("said");
+            assert!(said.contains("on for this project"), "{said}");
+            assert!(said.contains("once it restarts"), "{said}");
+            // And policy has nothing to take away from it.
+            let (offer, _, _, levels) = held(&Locks::none(), (offer, target, Some(said)));
+            assert_eq!((offer, levels), (BlockOffer::Allowed, Vec::new()));
+        }
+        // The project's own `false`.
+        let off = project_with("certificate-checks = false\n");
+        let (offer, target, said) = offered(off.path(), &block, Some(TRUSTD));
+        assert_eq!(offer, BlockOffer::Unsandboxed);
+        let said = said.expect("said");
+        assert!(
+            said.contains("This project turns certificate checks off"),
+            "{said}"
+        );
+        assert!(said.contains("Settings › Sandbox"), "{said}");
+        let (offer, _, _, levels) = held(&Locks::none(), (offer, target, Some(said)));
+        assert_eq!((offer, levels), (BlockOffer::Unsandboxed, Vec::new()));
+        // Policy's lock, over a project that leaves it on: who locked it, and nothing to
+        // allow. With the opt-out forbidden too, nothing is offered at all.
+        let project = project_with("");
+        for (text, comes_to) in [
+            (
+                r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+                BlockOffer::Unsandboxed,
+            ),
+            (
+                r#"{"owner": "IT", "sandbox": {"socket-grants": false, "opt-out": false}}"#,
+                BlockOffer::Policy,
+            ),
+        ] {
+            let locks = Locks::parse(text, Path::new("/etc/purlis/policy.json"));
+            policy::set_for_this_test(locks.clone());
+            let (offer, target, said) = offered(project.path(), &block, Some(TRUSTD));
+            policy::set_for_this_test(Locks::none());
+            assert_eq!(offer, BlockOffer::Unsandboxed);
+            let (offer, _, said, levels) = held(&locks, (offer, target, said));
+            assert_eq!((offer, levels), (comes_to, Vec::new()), "{text}");
+            let said = said.expect("said");
+            assert!(said.contains("Policy turns certificate checks off"), "{said}");
+            assert!(said.contains("IT"), "{said}");
+        }
+    }
+
+    /// ADR 0093: a refused system service is offered by its name, with what allowing it means.
+    /// Claude Code's sandbox takes no service by name, so there its Notice offers Start
+    /// without the sandbox, saying why.
+    #[test]
+    fn a_service_is_offered_by_name_and_claude_code_takes_none_by_name() {
         use purlis_core::harness::Harness;
-        use purlis_core::sandbox::services::{RISK_TRUSTD, RISK_UNKNOWN, TRUSTD};
+        use purlis_core::sandbox::services::RISK_UNKNOWN;
         use purlis_core::sandboxblock::{Block, Kind, Operation};
         let project = tempfile::tempdir().expect("a project");
         let root = project.path().canonicalize().expect("real");
@@ -3649,15 +3764,6 @@ mod tests {
             kind,
             ours: false,
         };
-        let trust = offered(&root, &lookup(Kind::CertificateCheck), Some(TRUSTD));
-        assert_eq!(trust.0, BlockOffer::Service);
-        assert_eq!(trust.1.as_deref(), Some(TRUSTD));
-        assert!(
-            trust
-                .2
-                .as_deref()
-                .is_some_and(|said| said.contains(RISK_TRUSTD))
-        );
         let other = offered(
             &root,
             &lookup(Kind::SystemService),
@@ -3670,11 +3776,7 @@ mod tests {
                 .as_deref()
                 .is_some_and(|said| said.contains(RISK_UNKNOWN))
         );
-        // Claude Code: the certificate check only.
-        assert_eq!(
-            for_its_harness(Some(Harness::ClaudeCode), trust.clone()).0,
-            BlockOffer::Service
-        );
+        // Claude Code: none by name.
         let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), other.clone());
         assert_eq!(offer, BlockOffer::Unsandboxed);
         assert_eq!(target.as_deref(), Some("com.example.helper"));
@@ -3822,28 +3924,28 @@ mod tests {
         );
     }
 
-    /// qw351: the person pressed "Allow for me on this machine" for the certificate check, and
-    /// a chat that started before that is refused it still. Its block says the Allow stands and
+    /// qw351: the person allowed a service or a socket for themselves on this machine, and a
+    /// chat that started before that is refused it still. Its block says the Allow stands and
     /// offers Restart this chat: never the same Allow again, which would keep nothing new.
     #[test]
     fn a_service_or_a_socket_allowed_on_this_machine_already_offers_a_restart_and_no_allow() {
         use purlis_core::sandbox::local;
-        use purlis_core::sandbox::services::TRUSTD;
+        const HELPER: &str = "com.example.helper";
         let project = tempfile::tempdir().expect("a project");
         let root = project.path().canonicalize().expect("real");
         assert_eq!(
-            allowed_already(&root, BlockOffer::Service, Some(TRUSTD)),
+            allowed_already(&root, BlockOffer::Service, Some(HELPER)),
             None,
             "nothing is allowed yet, so Allow stays on offer"
         );
-        local::grant_service(&root, TRUSTD).expect("kept");
-        let said = allowed_already(&root, BlockOffer::Service, Some(TRUSTD)).expect("said");
+        local::grant_service(&root, HELPER).expect("kept");
+        let said = allowed_already(&root, BlockOffer::Service, Some(HELPER)).expect("said");
         assert!(said.contains("allowed already"), "{said}");
         assert!(said.contains("on this machine"), "{said}");
         assert!(said.contains("once it restarts"), "{said}");
         // By its whole name: another service is asked about as before.
         assert_eq!(
-            allowed_already(&root, BlockOffer::Service, Some("com.example.helper")),
+            allowed_already(&root, BlockOffer::Service, Some("com.example.other")),
             None
         );
         let socket = "/purlis-test-nowhere/docker.sock";
@@ -3854,9 +3956,9 @@ mod tests {
         local::grant_socket(&root, std::path::Path::new(socket)).expect("kept");
         assert!(allowed_already(&root, BlockOffer::Socket, Some(socket)).is_some());
         // Revoked in Settings, it is asked about again.
-        local::revoke_service(&root, TRUSTD).expect("revoked");
+        local::revoke_service(&root, HELPER).expect("revoked");
         assert_eq!(
-            allowed_already(&root, BlockOffer::Service, Some(TRUSTD)),
+            allowed_already(&root, BlockOffer::Service, Some(HELPER)),
             None
         );
     }

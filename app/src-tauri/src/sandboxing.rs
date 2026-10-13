@@ -151,44 +151,50 @@ pub struct SandboxState {
     /// place of the mode. Such a project never reads as "off". `null` where the manifest reads.
     #[specta(optional)]
     pub manifest: Option<String>,
-    /// The certificate check on this machine (ADR 0093), where chats here run sandboxed: what
-    /// Settings says beside the committed `certificate-checks`, which declares it and grants
-    /// nothing. `null` where the sandbox is off.
+    /// Whether a chat here has the system's certificate check (R1, 2026-10-13), where chats
+    /// here run sandboxed: what Settings' one switch says. `null` where the sandbox is off.
     #[specta(optional)]
     pub certificate_check: Option<CertificateCheck>,
 }
 
-/// **Whether a chat here may ask the system's certificate check, on this machine** (ADR 0093):
-/// what a chat's next start compiles in, never what the committed file says. Settings draws it
-/// beside the committed `certificate-checks`, so a switch that is on there never reads as an
-/// Allow nobody made here.
+/// **Whether a chat here has the system's certificate check, and why not** (the operator's
+/// ruling R1 of 2026-10-13, amending ADR 0093): what a chat's next start compiles in
+/// ([`sandbox::CertificateChecks`]). On by default; off where the project's
+/// `certificate-checks` is `false`, or an administrator's policy locks it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct CertificateCheck {
-    /// The project's committed file declares it expects the certificate check.
-    pub expected: bool,
-    /// The person allowed it for every chat of this project on this machine, and no policy
-    /// takes it away: a chat has it from its next start.
-    pub allowed: bool,
-    /// Why it cannot be allowed here, where an administrator's policy forbids it.
+    /// A chat has it from its next start.
+    pub on: bool,
+    /// Where an administrator's policy turns it off: the sentence that says so and who set
+    /// it. Then the switch is drawn locked. `null` where it is the project's to say.
     pub locked: Option<String>,
+    /// Whether the setting lets a chat reach anything on this system: macOS only, where the
+    /// certificate check is a system service (D-1337-7). Elsewhere a chat's tools check
+    /// certificates themselves, whatever the switch says.
+    pub widens: bool,
 }
 
-/// [`CertificateCheck`] for the project at `root` under `locks`.
-fn certificate_check_of(
-    root: &std::path::Path,
-    locks: &sandbox::policy::Locks,
-) -> CertificateCheck {
-    let trust = sandbox::grant::What::Service(sandbox::services::TRUSTD.to_owned());
-    let locked = locks.refuses_grant(&trust, sandbox::grant::Level::You);
-    CertificateCheck {
-        expected: sandbox::services::declared(root).expects(&trust),
-        // As a start reads it ([`sandbox::Widened::and_granted`]): yours, unless policy forbids
-        // every such grant.
-        allowed: !locks.forbids_socket_grants()
-            && sandbox::local::granted_services(root)
-                .iter()
-                .any(|service| service == sandbox::services::TRUSTD),
-        locked,
+impl CertificateCheck {
+    /// What `said` comes to on a machine running `os`.
+    fn of(said: sandbox::CertificateChecks, os: sandbox::Os) -> Self {
+        let mac = os == sandbox::Os::MacOs;
+        match said {
+            sandbox::CertificateChecks::On => Self {
+                on: true,
+                locked: None,
+                widens: mac,
+            },
+            sandbox::CertificateChecks::OffByProject => Self {
+                on: false,
+                locked: None,
+                widens: mac,
+            },
+            sandbox::CertificateChecks::OffByPolicy(why) => Self {
+                on: false,
+                locked: Some(why),
+                widens: mac,
+            },
+        }
     }
 }
 
@@ -397,7 +403,11 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
         besides: sandbox::besides(root, &plane, &sandbox::Machine::this()).into(),
         policy: SandboxPolicy::of(&locks),
         manifest,
-        certificate_check: on.then(|| certificate_check_of(root, &locks)),
+        certificate_check: plane
+            .in_force(&locks)
+            .map(|policy| {
+                CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
+            }),
     }
 }
 
@@ -1031,7 +1041,16 @@ pub(crate) fn judged(
             .map_err(|why| why.to_string())?,
         ),
         GrantWhat::Service => {
-            What::Service(sandbox::services::service(target).map_err(|why| why.to_string())?)
+            let name = sandbox::services::service(target).map_err(|why| why.to_string())?;
+            // Never a grant (R1): the project's setting and policy alone decide it.
+            if name == sandbox::services::TRUSTD {
+                return Err(
+                    "Certificate checks are a setting of the project's, on unless it turns them \
+                     off, so there is nothing to allow: see Settings › Sandbox."
+                        .to_owned(),
+                );
+            }
+            What::Service(name)
         }
     };
     // Policy (#1343): the strictest wins, for a host at the level it would be kept at, and for
@@ -1244,46 +1263,6 @@ pub fn allow_sandbox_block(
     Ok(allowed)
 }
 
-/// **Allow certificate checks on this machine**, on Settings › Sandbox (qw351; ADR 0093): the
-/// person lets every chat of this project ask the system's certificate check, as "Allow for me
-/// on this machine" on a block's Notice does, without waiting for a Go tool to fail first. Kept
-/// in this machine's file, never the project's; audited; refused where policy forbids it. A
-/// chat takes it from its next start, and the chats open now are asked about on the Notice
-/// after a sandbox setting changed. The window's alone (`WINDOW_ONLY`): no link and no chat
-/// makes it.
-#[tauri::command]
-#[specta::specta]
-pub fn allow_certificate_check(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-) -> Result<SandboxState, String> {
-    let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
-    allow_trust(
-        &root,
-        held.chats(),
-        &held.audit_then_record(planes.network()),
-        now_secs(),
-    )?;
-    Ok(state_of(&root))
-}
-
-/// [`allow_certificate_check`] in the project at `root`: judged against policy, audited, then
-/// kept for every chat of the project on this machine ([`kept_for`], for no chat).
-fn allow_trust(
-    root: &std::path::Path,
-    chats: &crate::chats::Chats,
-    audit: Audit<'_>,
-    at: u64,
-) -> Result<(), String> {
-    use sandbox::grant::{Level, What};
-    let trust = What::Service(sandbox::services::TRUSTD.to_owned());
-    if let Some(why) = sandbox::policy::Locks::of(root).refuses_grant(&trust, Level::You) {
-        return Err(why);
-    }
-    kept_for(root, chats, None, (&trust, Level::You), audit, at).map(|_| ())
-}
-
 /// **Keep blocked** on a block's Notice (#1666, taking over #1411's line): `shown` is the block
 /// the Notice showed. Refused unless the chat is held on that block now (#1538). Nothing is
 /// granted. For a host, what the chat's proxy holds on it is refused now, and the chat is told,
@@ -1443,7 +1422,11 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         let at = when(GrantWhat::Socket, &target, Level::You);
         out.push(row(GrantWhat::Socket, target, Level::You, at));
     }
-    for service in sandbox::local::granted_services(root) {
+    // Never the certificate check's (R1): one an older build kept grants nothing.
+    for service in sandbox::local::granted_services(root)
+        .into_iter()
+        .filter(|service| service != sandbox::services::TRUSTD)
+    {
         let at = when(GrantWhat::Service, &service, Level::You);
         out.push(row(GrantWhat::Service, service, Level::You, at));
     }
@@ -2261,113 +2244,97 @@ mod tests {
         assert!(sandbox::local::granted_services(project.path()).is_empty());
     }
 
-    /// qw351, ADR 0093: Settings says what a chat's next start has, on this machine. The
-    /// committed `certificate-checks` only declares it, so a switch that is on there reads as
-    /// expected and not allowed until the person allows it here; Settings' own Allow keeps it
-    /// for every chat of the project on this machine, audited, as the Notice's does.
+    /// R1 (2026-10-13): Settings says what a chat's next start has. On by default with
+    /// nothing allowed by anyone; off where the project's file says `false`; and nothing is
+    /// said where the sandbox is off.
     #[test]
-    fn settings_says_whether_the_certificate_check_is_allowed_here_and_allows_it() {
-        use sandbox::services::TRUSTD;
-        let project = tempfile::tempdir().expect("a project");
-        let root = project.path();
-        std::fs::write(
-            root.join("charter.toml"),
-            "[sandbox]\nmode = \"on\"\ncertificate-checks = true\n",
-        )
-        .expect("toml");
-        let chats = crate::chats::Chats::new();
-        let said = |root: &std::path::Path| state_of(root).certificate_check.expect("said");
-        assert_eq!(
-            said(root),
-            CertificateCheck {
-                expected: true,
-                allowed: false,
-                locked: None
-            },
-            "the committed file declares it and grants nothing"
-        );
-        // An unaudited Allow is no Allow.
-        assert!(
-            allow_trust(root, &chats, &no_audit(), 100)
-                .expect_err("refused")
-                .contains("event log")
-        );
-        assert!(!said(root).allowed);
-
-        let seen = std::sync::Mutex::new(Vec::new());
-        let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
-            seen.lock().unwrap().push((
-                chat,
-                audited.granted,
-                audited.what.to_owned(),
-                audited.target.to_owned(),
-                audited.level.word(),
-            ));
-            Ok(())
+    fn settings_says_certificate_checks_are_on_unless_the_project_turns_them_off() {
+        let said = |text: &str| {
+            let project = tempfile::tempdir().expect("a project");
+            std::fs::write(project.path().join("charter.toml"), text).expect("toml");
+            state_on(project.path(), sandbox::Os::MacOs).certificate_check
         };
-        allow_trust(root, &chats, &audit, 100).expect("allowed");
-        assert!(said(root).allowed);
-        assert_eq!(sandbox::local::granted_services(root), [TRUSTD]);
+        let on = Some(CertificateCheck {
+            on: true,
+            locked: None,
+            widens: true,
+        });
+        assert_eq!(said("[sandbox]\nmode = \"on\"\n"), on);
         assert_eq!(
-            *seen.lock().unwrap(),
-            [(None, true, "service".to_owned(), TRUSTD.to_owned(), "you")]
+            said("[sandbox]\nmode = \"on\"\ncertificate-checks = true\n"),
+            on
         );
-        // In the Allowed list, with Remove, marked as what the project expects.
-        let listed = grants_of(root, &chats);
-        assert!(
-            listed
-                .iter()
-                .any(|one| one.what == GrantWhat::Service && one.target == TRUSTD),
-            "{listed:?}"
+        assert_eq!(
+            said("[sandbox]\nmode = \"on\"\ncertificate-checks = false\n"),
+            Some(CertificateCheck {
+                on: false,
+                locked: None,
+                widens: true,
+            })
         );
-        // Allowed twice is kept once, and audited once.
-        allow_trust(root, &chats, &audit, 101).expect("allowed already");
-        assert_eq!(seen.lock().unwrap().len(), 1);
-        assert_eq!(sandbox::local::granted_services(root).len(), 1);
-
-        // A project that does not declare it may still be allowed it here; one with the
-        // sandbox off says nothing of it.
-        let plain = tempfile::tempdir().expect("a project");
+        assert_eq!(said(""), None);
+        // Off a Mac the setting widens nothing, and Settings can say so.
+        let project = tempfile::tempdir().expect("a project");
         std::fs::write(
-            plain.path().join("charter.toml"),
+            project.path().join("charter.toml"),
             "[sandbox]\nmode = \"on\"\n",
         )
         .expect("toml");
         assert_eq!(
-            said(plain.path()),
-            CertificateCheck {
-                expected: false,
-                allowed: false,
-                locked: None
-            }
+            state_on(project.path(), sandbox::Os::Linux).certificate_check,
+            Some(CertificateCheck {
+                on: true,
+                locked: None,
+                widens: false,
+            })
         );
-        let off = tempfile::tempdir().expect("a project");
-        std::fs::write(off.path().join("charter.toml"), "").expect("toml");
-        assert_eq!(state_of(off.path()).certificate_check, None);
     }
 
-    /// qw351: an administrator's `socket-grants` lock keeps Settings' Allow off too, and says
-    /// who set it; a grant made before the lock reads as not allowed, as a start reads it.
+    /// R1: an administrator's `socket-grants` lock turns certificate checks off whatever the
+    /// project says, and Settings says who set it.
     #[test]
-    fn policy_keeps_settings_from_allowing_the_certificate_check() {
-        use sandbox::services::TRUSTD;
+    fn settings_says_policy_turned_certificate_checks_off_and_who() {
         let locks = sandbox::policy::Locks::parse(
             r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
             std::path::Path::new("/etc/purlis/policy.json"),
         );
-        let project = tempfile::tempdir().expect("a project");
-        sandbox::local::grant_service(project.path(), TRUSTD).expect("kept");
-        let said = certificate_check_of(project.path(), &locks);
-        assert!(!said.allowed);
-        assert!(
-            said.locked
-                .as_deref()
-                .is_some_and(|why| why.contains("Policy forbids")),
-            "{said:?}"
+        let said = CertificateCheck::of(
+            sandbox::CertificateChecks::of(&sandbox::Policy::defaults(), &locks),
+            sandbox::Os::MacOs,
         );
-        let open = certificate_check_of(project.path(), &sandbox::policy::Locks::none());
-        assert!(open.allowed);
-        assert_eq!(open.locked, None);
+        assert!(!said.on);
+        let why = said.locked.expect("said");
+        assert!(why.contains("Policy turns certificate checks off"), "{why}");
+        assert!(why.contains("IT"), "{why}");
+    }
+
+    /// R1: the certificate check is no grant, so nothing allows it by name: not a block's
+    /// Allow at any level, and one an older build kept is not listed as allowed.
+    #[test]
+    fn the_certificate_check_is_never_granted_by_name_and_an_old_grant_is_not_listed() {
+        use sandbox::services::TRUSTD;
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path();
+        std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("toml");
+        for level in [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You] {
+            let refused = judged(
+                root,
+                &sandbox::Machine::this(),
+                Some(root),
+                1,
+                (GrantWhat::Service, TRUSTD, level),
+            )
+            .expect_err("refused");
+            assert!(refused.contains("Settings"), "{refused}");
+        }
+        sandbox::local::grant_service(root, TRUSTD).expect("an older build's");
+        let chats = crate::chats::Chats::new();
+        assert!(
+            !grants_of(root, &chats)
+                .iter()
+                .any(|one| one.target == TRUSTD),
+            "it grants nothing, so it is not listed"
+        );
     }
 
     #[test]
@@ -3000,9 +2967,9 @@ mod tests {
                 policy: None,
                 manifest: None,
                 certificate_check: Some(CertificateCheck {
-                    expected: false,
-                    allowed: false,
+                    on: true,
                     locked: None,
+                    widens: sandbox::Os::this() == sandbox::Os::MacOs,
                 }),
             }
         );

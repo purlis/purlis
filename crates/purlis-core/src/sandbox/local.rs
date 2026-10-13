@@ -166,7 +166,7 @@ struct OnDisk {
     /// [`super::hosts::Host`] spells it; absent before the first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     hosts_seen: Option<Vec<String>>,
-    /// The project's Internet access presets, and `certificate-checks` where it is on, as this
+    /// The project's Internet access presets, and `certificate-checks` where a chat has them, as this
     /// machine last showed them to the person (#1385), each by the word the committed file
     /// names it by; absent before the first, which reads as the defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -714,7 +714,8 @@ const CERTIFICATE_CHECKS_TITLE: &str = "Certificate checks";
 ///
 /// Told as [`hosts_changed`] tells the hosts, with one difference: a machine that has seen
 /// nothing yet has seen **the defaults** a project starts with ([`super::Preset::DEFAULT`],
-/// less any an administrator's policy turns off, certificate checks off), so a project on the defaults tells nothing on first sight, and one
+/// less any an administrator's policy turns off, certificate checks on unless policy locks
+/// them: R1, 2026-10-13), so a project on the defaults tells nothing on first sight, and one
 /// that differs is told once — a narrowed one too, so that turning a preset back on later is
 /// a change from what was seen.
 pub fn presets_changed(root: &Path) -> Option<PresetsChange> {
@@ -742,15 +743,20 @@ pub fn presets_change(
         .into_iter()
         .map(|preset| preset.word().to_owned())
         .collect();
-    if policy.certificate_checks {
+    // Certificate checks only where a chat has them: not under policy's lock (R1).
+    if super::CertificateChecks::of(&policy, locks).is_on() {
         now.push(super::CERTIFICATE_CHECKS.to_owned());
     }
-    // The defaults as they reach a chat here: a preset policy turns off was never on to see.
-    let defaults: Vec<String> = locks
+    // The defaults as they reach a chat here: a preset policy turns off was never on to see,
+    // and certificate checks are on by default since R1 (2026-10-13), policy allowing.
+    let mut defaults: Vec<String> = locks
         .presets(&Preset::DEFAULT)
         .into_iter()
         .map(|preset| preset.word().to_owned())
         .collect();
+    if !locks.forbids_socket_grants() {
+        defaults.push(super::CERTIFICATE_CHECKS.to_owned());
+    }
     let seen = seen.unwrap_or(&defaults);
     let title = |word: &str| {
         Preset::ALL

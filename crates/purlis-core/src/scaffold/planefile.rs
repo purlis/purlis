@@ -413,7 +413,7 @@ mod tests {
             Some(crate::sandbox::Policy {
                 egress: crate::sandbox::Preset::DEFAULT.to_vec(),
                 hosts: vec![],
-                certificate_checks: false,
+                certificate_checks: true,
                 personas: Default::default(),
             })
         );

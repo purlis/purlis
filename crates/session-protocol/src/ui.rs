@@ -112,8 +112,6 @@ pub struct Server {
 /// - **it lets a persona's committed hosts reach past this machine's sandbox** (#1362):
 ///   `allow_persona_hosts`, which the person at this machine's window allows as it was shown
 ///   there.
-/// - **it lets every chat of the project ask the system's certificate check on this machine**
-///   (ADR 0093): `allow_certificate_check`, Settings' own Allow.
 ///
 /// None is served on a link. A command added later that does one of these belongs here.
 ///
@@ -303,8 +301,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     "take_up_sandbox_block",
     // Widens what a persona's chats reach on this machine (#1362).
     "allow_persona_hosts",
-    // Lets every chat here ask the system's certificate check on this machine (ADR 0093).
-    "allow_certificate_check",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.

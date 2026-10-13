@@ -14,7 +14,7 @@ fn default_policy() -> Option<Policy> {
     Some(Policy {
         egress: vec![Preset::ModelProviders, Preset::Forge, Preset::Toolchains],
         hosts: vec![],
-        certificate_checks: false,
+        certificate_checks: true,
         personas: Default::default(),
     })
 }
@@ -73,7 +73,7 @@ fn a_plane_names_its_egress_by_preset_and_an_unknown_preset_is_refused() {
         Some(Policy {
             egress: vec![Preset::Forge],
             hosts: vec![],
-            certificate_checks: false,
+            certificate_checks: true,
             personas: Default::default(),
         })
     );
@@ -97,7 +97,7 @@ fn an_empty_egress_list_is_the_strictest_answer_and_is_kept() {
         Some(Policy {
             egress: vec![],
             hosts: vec![],
-            certificate_checks: false,
+            certificate_checks: true,
             personas: Default::default(),
         })
     );
@@ -4426,13 +4426,17 @@ fn a_relative_cainfo_is_resolved_where_cargo_resolves_it_or_dropped() {
     }
 }
 
+/// The operator's ruling R1 (2026-10-13, amending ADR 0093): certificate checks are on for
+/// every sandboxed chat unless the project's file says `false`.
 #[test]
-fn certificate_checks_are_off_unless_the_project_turns_them_on() {
+fn certificate_checks_are_on_unless_the_project_turns_them_off() {
+    assert!(Policy::defaults().certificate_checks);
     assert_eq!(
         said("[sandbox]\nmode = \"on\"\n")
             .policy
             .map(|policy| policy.certificate_checks),
-        Some(false)
+        Some(true),
+        "an absent key reads as on"
     );
     let on = said("[sandbox]\nmode = \"on\"\ncertificate-checks = true\n");
     assert_eq!(
@@ -4440,6 +4444,14 @@ fn certificate_checks_are_off_unless_the_project_turns_them_on() {
         Some(true)
     );
     assert!(on.refused.is_empty(), "{:?}", on.refused);
+    let off = said("[sandbox]\nmode = \"on\"\ncertificate-checks = false\n");
+    assert_eq!(
+        off.policy.map(|policy| policy.certificate_checks),
+        Some(false)
+    );
+    assert!(off.refused.is_empty(), "{:?}", off.refused);
+    // What cannot be read is refused with a sentence and read as off: a committed file only
+    // ever narrows, so a value purlis cannot tell is the narrow one.
     let typo = said("[sandbox]\nmode = \"on\"\ncertificate-checks = \"yes\"\n");
     assert_eq!(
         typo.policy.map(|policy| policy.certificate_checks),
@@ -4449,17 +4461,33 @@ fn certificate_checks_are_off_unless_the_project_turns_them_on() {
     assert_eq!(
         typo.refused[0].to_string(),
         "sandbox.certificate-checks in charter.toml is not true or false; certificate checks \
-         stay off"
+         are off until it is"
     );
+}
 
+/// R1, per harness: a default project's chat has the certificate check's one service in the
+/// sandbox it starts in (Claude Code's own switch; the one `mach-lookup` rule in the profile
+/// purlis wraps Codex and opencode in), `false` leaves it out, and so does an administrator's
+/// `socket-grants` lock, whatever the project's file says.
+#[test]
+fn every_harness_starts_with_the_certificate_check_unless_the_project_or_policy_says_no() {
     let machine = mac_with(&[]);
-    for (policy, on) in [
-        // The forge preset alone no longer turns it on.
-        (policy_of(&Preset::ALL, false), false),
-        // Nor the committed key since ADR 0093: it declares the check, and a person's Allow
-        // turns it on (`services_tests`).
-        (policy_of(&[Preset::ModelProviders], true), false),
+    let locked = policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+        StdPath::new("/etc/purlis/policy.json"),
+    );
+    for (policy, locks, on) in [
+        // A default project, and one on every preset.
+        (Policy::defaults(), policy::Locks::none(), true),
+        (policy_of(&Preset::ALL, true), policy::Locks::none(), true),
+        (policy_of(&[], true), policy::Locks::none(), true),
+        // The project's own `certificate-checks = false`.
+        (policy_of(&Preset::ALL, false), policy::Locks::none(), false),
+        // An administrator's lock, over a project that leaves it on.
+        (Policy::defaults(), locked.clone(), false),
+        (policy_of(&Preset::ALL, true), locked, false),
     ] {
+        policy::set_for_this_test(locks.clone());
         let applied = compiled_for(
             Harness::ClaudeCode,
             &policy,
@@ -4470,7 +4498,7 @@ fn certificate_checks_are_off_unless_the_project_turns_them_on() {
         assert_eq!(
             claude_sandbox(&applied)["enableWeakerNetworkIsolation"],
             serde_json::json!(on),
-            "{policy:?}"
+            "{policy:?} under {locks:?}"
         );
         for harness in [Harness::Opencode, Harness::Codex] {
             let profile = wrap_profile(&compiled_for(
@@ -4482,12 +4510,13 @@ fn certificate_checks_are_off_unless_the_project_turns_them_on() {
             assert_eq!(
                 profile.contains("(allow mach-lookup (global-name \"com.apple.trustd.agent\"))\n"),
                 on,
-                "{harness:?}, {policy:?}:\n{profile}"
+                "{harness:?}, {policy:?} under {locks:?}:\n{profile}"
             );
             for service in ["SecurityServer", "securityd", "com.apple.security"] {
                 assert!(!profile.contains(service), "{service}:\n{profile}");
             }
         }
+        policy::set_for_this_test(policy::Locks::none());
     }
 }
 

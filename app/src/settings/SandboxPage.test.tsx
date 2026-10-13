@@ -244,12 +244,6 @@ function core({
         case "allow_persona_hosts":
           allowed.push(given);
           return sandbox;
-        case "allow_certificate_check":
-          allowed.push({ ...given, certificateCheck: true });
-          return {
-            ...sandbox,
-            certificate_check: { expected: true, allowed: true, locked: null },
-          };
         case "save_project_settings": {
           const which = given.which as SettingsWhich;
           const change = given.change as { kind: "edits"; edits: SettingsEdit[] };
@@ -408,11 +402,17 @@ describe("Settings › Project › Sandbox", () => {
     expect(within(page).queryByRole("button", { name: "Turn the sandbox on" })).toBeNull();
   });
 
-  it("writes certificate checks as true or false, from a switch that is off while not set", async () => {
+  // R1 (2026-10-13): on by default, so the one thing the committed file ever says is `false`.
+  it("draws certificate checks on while the file does not set them, and writes false to turn them off", async () => {
     const { sent } = core();
     const page = await atSandbox();
     const checks = within(page).getByRole("switch", { name: "Certificate checks" });
-    expect(checks).not.toBeChecked();
+    expect(checks).toBeChecked();
+    // What it does and what it leaves open, under the one control.
+    expect(page).toHaveTextContent(
+      "Lets tools such as gh, glab and other Go programs verify a host's certificate",
+    );
+    expect(page).toHaveTextContent("those do not go through the sandbox's proxy");
 
     await userEvent.click(checks);
 
@@ -420,72 +420,46 @@ describe("Settings › Project › Sandbox", () => {
     expect(sent[0].edits).toEqual([
       {
         path: [{ key: "sandbox" }, { key: "certificate-checks" }],
-        value: { kind: "bool", value: true },
+        value: { kind: "bool", value: false },
       },
     ]);
   });
 
-  // qw351, ADR 0093: the committed switch declares and grants nothing, so the page says what a
-  // chat here has on this machine, and allows it with the window's own call.
-  it("says the certificate check is not allowed on this machine yet, and allows it there", async () => {
-    const { allowed, sent } = core({
-      shared: [MODE_ON, field(["sandbox", "certificate-checks"], { kind: "bool", value: true })],
-      sandbox: state({ certificate_check: { expected: true, allowed: false, locked: null } }),
+  it("draws a project that turned certificate checks off as off, and no row beside it grants anything", async () => {
+    core({
+      shared: [MODE_ON, field(["sandbox", "certificate-checks"], { kind: "bool", value: false })],
+      sandbox: state({ certificate_check: { on: false, locked: null, widens: true } }),
     });
     const page = await atSandbox();
 
-    // The committed switch is on, and the row under it says that is not an Allow here.
-    expect(within(page).getByRole("switch", { name: "Certificate checks" })).toBeChecked();
-    const here = await within(page).findByRole("group", {
-      name: "Certificate checks on this machine",
-    });
-    expect(here).toHaveTextContent(
-      "This project expects certificate checks, and they are not allowed on this machine yet: Go tools such as gh fail in a sandboxed chat with a certificate error (x509: OSStatus -26276) until you allow them here.",
-    );
-
-    await userEvent.click(within(here).getByRole("button", { name: "Allow on this machine" }));
-
-    await waitFor(() => expect(allowed).toEqual([{ plane: PLANE, certificateCheck: true }]));
-    await waitFor(() =>
-      expect(here).toHaveTextContent(
-        "Allowed on this machine: every chat of this project can check certificates from its next start, and a chat already running takes it when it restarts.",
-      ),
-    );
-    expect(within(here).queryByRole("button", { name: "Allow on this machine" })).toBeNull();
-    // This machine's file, never the committed one.
-    expect(sent).toEqual([]);
+    expect(within(page).getByRole("switch", { name: "Certificate checks" })).not.toBeChecked();
+    // One control for it: no per-machine row, and nothing to allow.
+    expect(within(page).queryByText("Certificate checks on this machine")).toBeNull();
+    expect(within(page).queryByRole("button", { name: "Allow on this machine" })).toBeNull();
+    expect(page).not.toHaveTextContent("certificate service");
   });
 
-  it("says the certificate check is allowed here, or locked by policy, and offers no Allow", async () => {
-    core({
-      sandbox: state({ certificate_check: { expected: false, allowed: true, locked: null } }),
-    });
-    const page = await atSandbox();
-    const here = await within(page).findByRole("group", {
-      name: "Certificate checks on this machine",
-    });
-    expect(here).toHaveTextContent("Allowed on this machine");
-    expect(here).toHaveTextContent("Remove it under Network, in the Allowed list.");
-    expect(within(here).queryByRole("button")).toBeNull();
-    cleanup();
-
-    core({
+  it("says who locked certificate checks off, with nothing to turn on", async () => {
+    const { sent } = core({
       sandbox: state({
         certificate_check: {
-          expected: true,
-          allowed: false,
+          on: false,
           locked:
-            "Policy forbids allowing a chat a local socket or a system service. Locked by policy, set by IT in /etc/purlis/policy.json.",
+            "Policy turns certificate checks off on this machine. Locked by policy, set by IT in /etc/purlis/policy.json.",
+          widens: true,
         },
       }),
     });
-    const locked = await within(await atSandbox()).findByRole("group", {
-      name: "Certificate checks on this machine",
-    });
-    expect(locked).toHaveTextContent(
-      "Not allowed on this machine, so Go tools such as gh cannot check certificates in a sandboxed chat. Policy forbids allowing a chat a local socket or a system service.",
+    const page = await atSandbox();
+
+    await waitFor(() =>
+      expect(page).toHaveTextContent(
+        "Off. Policy turns certificate checks off on this machine. Locked by policy, set by IT in /etc/purlis/policy.json.",
+      ),
     );
-    expect(within(locked).queryByRole("button")).toBeNull();
+    expect(within(page).queryByRole("switch", { name: "Certificate checks" })).toBeNull();
+    expect(page).not.toHaveTextContent("certificate service");
+    expect(sent).toEqual([]);
   });
 
   it("names a persona's own hosts", async () => {
@@ -594,13 +568,17 @@ describe("Settings › Project › Sandbox", () => {
   });
 
   it("names the certificate service only on a Mac, where the setting widens anything", async () => {
-    core({
-      shared: [MODE_ON, field(["sandbox", "certificate-checks"], { kind: "bool", value: true })],
-    });
+    core({ sandbox: state({ certificate_check: { on: true, locked: null, widens: false } }) });
     const page = await atSandbox();
 
     await waitFor(() => expect(page).toHaveTextContent("A chat here can change files"));
     expect(page).not.toHaveTextContent("certificate service");
+    cleanup();
+
+    // On a Mac, a default project's chats reach it, and the sentence at the top says so.
+    core({ sandbox: state({ certificate_check: { on: true, locked: null, widens: true } }) });
+    const mac = await atSandbox();
+    await waitFor(() => expect(mac).toHaveTextContent("the system's certificate service"));
   });
 
   it("is found by searching for what it explains", async () => {

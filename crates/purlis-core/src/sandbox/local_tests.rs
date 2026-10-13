@@ -58,7 +58,7 @@ fn taking_the_offer_turns_the_sandbox_on_and_keeps_every_line_the_operator_wrote
         Some(Policy {
             egress: Preset::DEFAULT.to_vec(),
             hosts: vec![],
-            certificate_checks: false,
+            certificate_checks: true,
             personas: Default::default(),
         })
     );
@@ -96,7 +96,7 @@ fn a_sandbox_table_without_a_mode_gains_the_mode_and_keeps_its_egress() {
         Some(Policy {
             egress: vec![Preset::Forge],
             hosts: vec![],
-            certificate_checks: false,
+            certificate_checks: true,
             personas: Default::default(),
         })
     );
@@ -521,27 +521,61 @@ fn a_project_on_the_default_presets_tells_nothing_on_first_sight() {
     );
 }
 
+/// R1 (2026-10-13): certificate checks are among the defaults a machine has seen, so a default
+/// project tells nothing; a project that turned them off is told once, as a narrowed one is;
+/// and a machine that recorded what it saw before they were on by default is told once that
+/// they are, with what that widens.
 #[test]
-fn certificate_checks_turned_on_is_told_with_what_it_widens() {
-    let told = presets(
+fn certificate_checks_are_a_default_and_a_change_from_what_was_seen_is_told() {
+    const ALL: [&str; 4] = [
+        "model-providers",
+        "forge",
+        "toolchains",
+        "certificate-checks",
+    ];
+    for on in [
+        "[sandbox]\nmode = \"on\"\n",
         "[sandbox]\nmode = \"on\"\ncertificate-checks = true\n",
+    ] {
+        assert_eq!(presets(on, &no_locks(), None), None, "{on}");
+        assert_eq!(presets(on, &no_locks(), Some(&ALL)), None, "{on}");
+    }
+    // Seen before the default changed: told once, with the widening.
+    let told = presets(
+        "[sandbox]\nmode = \"on\"\n",
         &no_locks(),
-        None,
+        Some(&["model-providers", "forge", "toolchains"]),
     )
     .expect("a widening is told");
     assert_eq!(told.added, ["Certificate checks"]);
     assert_eq!(told.removed, Vec::<String>::new());
-    assert_eq!(
-        told.now,
-        [
-            "model-providers",
-            "forge",
-            "toolchains",
-            "certificate-checks"
-        ]
-    );
+    assert_eq!(told.now, ALL);
     assert_eq!(told.widens.len(), 1, "{told:?}");
     assert!(told.widens[0].contains("certificate"), "{told:?}");
+    // Turned off by the project: told as turned off, on first sight too.
+    let off = presets(
+        "[sandbox]\nmode = \"on\"\ncertificate-checks = false\n",
+        &no_locks(),
+        None,
+    )
+    .expect("told");
+    assert_eq!(off.added, Vec::<String>::new());
+    assert_eq!(off.removed, ["Certificate checks"]);
+    assert_eq!(off.now, ["model-providers", "forge", "toolchains"]);
+    // Under policy's lock no chat has them, so they are neither a default seen nor named.
+    let locks = super::super::policy::Locks::parse(
+        r#"{"sandbox": {"socket-grants": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert_eq!(presets("[sandbox]\nmode = \"on\"\n", &locks, None), None);
+    assert_eq!(
+        presets(
+            "[sandbox]\nmode = \"on\"\ncertificate-checks = false\n",
+            &locks,
+            None
+        ),
+        None
+    );
 }
 
 #[test]
@@ -549,12 +583,15 @@ fn a_preset_turned_back_on_after_it_was_seen_off_is_told_with_the_caches_it_wide
     let told = presets(
         "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"toolchains\"]\n",
         &no_locks(),
-        Some(&["model-providers"]),
+        Some(&["model-providers", "certificate-checks"]),
     )
     .expect("a widening is told");
     assert_eq!(told.added, ["Package registries"]);
     assert_eq!(told.removed, Vec::<String>::new());
-    assert_eq!(told.now, ["model-providers", "toolchains"]);
+    assert_eq!(
+        told.now,
+        ["model-providers", "toolchains", "certificate-checks"]
+    );
     assert!(
         told.widens.iter().any(|one| one.contains("package caches")),
         "{told:?}"
@@ -590,7 +627,7 @@ fn what_was_acknowledged_is_what_was_shown_and_order_is_no_change() {
         presets(
             "[sandbox]\nmode = \"on\"\negress = [\"toolchains\", \"forge\"]\n",
             &no_locks(),
-            Some(&["forge", "toolchains"]),
+            Some(&["certificate-checks", "forge", "toolchains"]),
         ),
         None
     );
@@ -606,7 +643,7 @@ fn a_preset_policy_turns_off_reaches_no_chat_and_is_not_named() {
         presets(
             "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"toolchains\"]\n",
             &locks,
-            Some(&["model-providers"]),
+            Some(&["model-providers", "certificate-checks"]),
         ),
         None
     );
@@ -640,9 +677,9 @@ fn a_project_whose_chats_are_not_sandboxed_tells_nothing_of_its_presets() {
 /// Over the file: told once, and not again once acknowledged as shown.
 #[test]
 fn a_teammate_is_told_once_of_a_preset_change() {
-    let project = a_project("[sandbox]\nmode = \"on\"\ncertificate-checks = true\n");
+    let project = a_project("[sandbox]\nmode = \"on\"\ncertificate-checks = false\n");
     let told = presets_changed(project.path()).expect("told");
-    assert_eq!(told.added, ["Certificate checks"]);
+    assert_eq!(told.removed, ["Certificate checks"]);
     acknowledge_presets(project.path(), &told.now).expect("kept");
     assert_eq!(presets_changed(project.path()), None, "told once");
     std::fs::write(
@@ -651,7 +688,7 @@ fn a_teammate_is_told_once_of_a_preset_change() {
     )
     .expect("a teammate's push");
     assert_eq!(
-        presets_changed(project.path()).map(|told| told.removed),
+        presets_changed(project.path()).map(|told| told.added),
         Some(vec!["Certificate checks".to_owned()])
     );
 }
@@ -675,7 +712,7 @@ fn a_pull_that_lands_after_the_write_is_told_and_not_recorded_as_seen() {
     let project = a_project("[sandbox]\nmode = \"on\"\negress = [\"forge\", \"toolchains\"]\n");
     presets_seen_by_you(project.path(), false, written);
     let told = presets_changed(project.path()).expect("the pulled change is told");
-    assert_eq!(told.now, ["forge", "toolchains"]);
+    assert_eq!(told.now, ["forge", "toolchains", "certificate-checks"]);
 
     let written = "[sandbox]\nmode = \"on\"\nhosts = [\"api.example\"]\n";
     let project = a_project("[sandbox]\nmode = \"on\"\nhosts = [\"api.example\", \"b.example\"]\n");

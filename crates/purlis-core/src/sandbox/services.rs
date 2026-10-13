@@ -30,7 +30,10 @@ use super::grant::{Refused, What};
 
 /// The certificate check's service (#1337): what Go programs on macOS ask to verify a host's
 /// certificate. Claude Code grants it as `enableWeakerNetworkIsolation`, a wrapped chat's profile
-/// as [`super::seatbelt::TRUST`].
+/// as [`super::seatbelt::TRUST`]. **Never a grant** since the operator's ruling R1 of
+/// 2026-10-13: every sandboxed chat has it unless the project's `certificate-checks` is `false`
+/// or policy locks it ([`super::CertificateChecks`]), so it is neither declared nor allowed by
+/// name.
 pub const TRUSTD: &str = "com.apple.trustd.agent";
 
 /// What allowing a container engine's socket means.
@@ -625,16 +628,6 @@ impl Declared {
 /// nothing it cannot say plainly.
 pub fn declared_in(top: Option<&toml::Table>) -> Declared {
     let mut out = Declared::default();
-    // `certificate-checks = true` declares the certificate check (ADR 0093): it grants nothing.
-    let checks = top
-        .and_then(|top| top.get(super::TABLE))
-        .and_then(toml::Value::as_table)
-        .and_then(|table| table.get(super::CERTIFICATE_CHECKS))
-        .and_then(toml::Value::as_bool)
-        == Some(true);
-    if checks {
-        out.services.push(TRUSTD.to_owned());
-    }
     let Some(listed) = top
         .and_then(|top| top.get(super::TABLE))
         .and_then(toml::Value::as_table)
@@ -650,6 +643,9 @@ pub fn declared_in(top: Option<&toml::Table>) -> Declared {
                 out.sockets.push(path);
             }
         } else if let Ok(name) = service(one)
+            // The certificate check is the project's own setting, never a grant (R1): a
+            // declaration of it would ask a person for what every chat has already.
+            && name != TRUSTD
             && !out.services.contains(&name)
         {
             out.services.push(name);
@@ -673,12 +669,10 @@ pub fn said_of(what: &What, declared: &Declared) -> String {
         Known::Unknown => format!("It is {RISK_UNKNOWN}."),
         known => format!("Allowing it {}.", known.risk()),
     };
-    match (declared.expects(what), known(what)) {
-        (true, Known::CertificateCheck) => {
-            format!("This project expects certificate checks. {meaning}")
-        }
-        (true, _) => format!("This project expects it. {meaning}"),
-        (false, _) => meaning,
+    if declared.expects(what) {
+        format!("This project expects it. {meaning}")
+    } else {
+        meaning
     }
 }
 

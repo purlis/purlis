@@ -262,34 +262,74 @@ fn a_committed_declaration_is_read_as_what_the_project_expects() {
         declared_in(Some(&top)),
         Declared {
             sockets: vec![PathBuf::from("/var/run/docker.sock")],
-            services: vec![TRUSTD.to_owned()],
+            // The certificate check is the project's own setting since R1, never a grant, so
+            // a declaration of it is left out: there is nothing to ask a person for.
+            services: vec![],
         }
+    );
+    let other: toml::Table = "[sandbox]\nexpects = [\"com.example.helper\"]\n"
+        .parse()
+        .expect("toml");
+    assert_eq!(
+        declared_in(Some(&other)).services,
+        vec!["com.example.helper".to_owned()]
     );
     // And the key is one the file may hold: no refusal for it.
     assert!(Plane::of(Some(DECLARES)).said().refused.is_empty());
 }
 
-/// The operator's rulings 2 and 3 (2026-10-12): the committed `certificate-checks` declares the
-/// certificate check and grants nothing; the person allows it once on their own machine.
+/// The operator's ruling R1 (2026-10-13, amending rulings 2 and 3 of ADR 0093 for this one
+/// service): a sandboxed chat has the certificate check with nothing allowed by anyone, and the
+/// committed `certificate-checks` only ever narrows. `true` says what an absent key says.
 #[test]
-fn a_committed_certificate_checks_declares_the_check_and_grants_nothing() {
+fn a_chat_has_the_certificate_check_by_default_and_the_committed_key_only_turns_it_off() {
     let (_dir, root) = project();
-    std::fs::write(
-        crate::names::manifest(&root),
-        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\ncertificate-checks = true\n",
-    )
-    .expect("written");
-    let compiled = compiled_at(&root, &Grants::default());
-    assert!(!compiled.widened.trust, "a committed file grants nothing");
-    let settings = claude::settings(&compiled).expect("compiles");
-    assert_eq!(settings.sandbox["enableWeakerNetworkIsolation"], false);
-    let declared = declared(&root);
-    assert_eq!(declared.services, vec![TRUSTD.to_owned()]);
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let sandbox = |root: &Path| {
+        let compiled = compiled_at(root, &Grants::default());
+        let claude = claude::settings(&compiled).expect("compiles").sandbox
+            ["enableWeakerNetworkIsolation"]
+            .clone();
+        let mut own = seatbelt::Own::default();
+        seatbelt::widen(&mut own, &compiled.widened).expect("widened");
+        (
+            compiled.widened.trust,
+            claude,
+            own.after.contains(&seatbelt::TRUST.to_owned()),
+        )
+    };
+    // The default project: on, with nothing declared and nothing allowed.
+    assert_eq!(sandbox(&root), (true, serde_json::json!(true), true));
+    assert!(declared(&root).services.is_empty());
     assert_eq!(
-        said_of(&What::Service(TRUSTD.to_owned()), &declared),
-        format!("This project expects certificate checks. Allowing it {RISK_TRUSTD}.")
+        crate::sandbox::CertificateChecks::at(&root),
+        Some(crate::sandbox::CertificateChecks::On)
     );
-    // Allowed by the person, for the chat: on.
+    for (value, on) in [("true", true), ("false", false)] {
+        std::fs::write(
+            crate::names::manifest(&root),
+            format!(
+                "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n\
+                 certificate-checks = {value}\n"
+            ),
+        )
+        .expect("written");
+        assert_eq!(
+            sandbox(&root),
+            (on, serde_json::json!(on), on),
+            "certificate-checks = {value}"
+        );
+        // Declared by neither value: it is no grant.
+        assert!(declared(&root).services.is_empty());
+    }
+    assert_eq!(
+        crate::sandbox::CertificateChecks::at(&root),
+        Some(crate::sandbox::CertificateChecks::OffByProject)
+    );
+    // **`false` only narrows, and nothing a person allowed widens past it**: neither a grant
+    // an older build kept for this machine, nor one held for a chat.
+    local::grant_service(&root, TRUSTD).expect("kept");
     let allowed = compiled_at(
         &root,
         &Grants {
@@ -297,7 +337,47 @@ fn a_committed_certificate_checks_declares_the_check_and_grants_nothing() {
             ..Grants::default()
         },
     );
-    assert!(allowed.widened.trust);
+    assert!(!allowed.widened.trust);
+    assert!(allowed.widened.services.is_empty());
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// R1: an administrator's `socket-grants` lock turns the certificate check off whatever the
+/// project's file says, and says who set it.
+#[test]
+fn policy_turns_the_certificate_check_off_and_says_who() {
+    use crate::sandbox::{CertificateChecks, Policy, policy::Locks};
+    let locks = Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    let said = CertificateChecks::of(&Policy::defaults(), &locks);
+    let CertificateChecks::OffByPolicy(why) = &said else {
+        panic!("{said:?}");
+    };
+    assert!(why.contains("Policy turns certificate checks off"), "{why}");
+    assert!(why.contains("IT"), "{why}");
+    assert!(!said.is_on());
+    // Policy first: it is the one that holds, where the project turned it off too.
+    let off = Policy {
+        certificate_checks: false,
+        ..Policy::defaults()
+    };
+    assert!(matches!(
+        CertificateChecks::of(&off, &locks),
+        CertificateChecks::OffByPolicy(_)
+    ));
+    assert_eq!(
+        CertificateChecks::of(&off, &Locks::none()),
+        CertificateChecks::OffByProject
+    );
+    assert_eq!(
+        CertificateChecks::of(&Policy::defaults(), &Locks::none()),
+        CertificateChecks::On
+    );
+    // And a project whose chats are not sandboxed says nothing of it.
+    let dir = tempfile::tempdir().expect("a folder");
+    assert_eq!(CertificateChecks::at(dir.path()), None);
 }
 
 #[test]
@@ -309,7 +389,6 @@ fn a_planted_committed_declaration_grants_nothing() {
     let compiled = compiled_at(&root, &Grants::default());
     assert!(compiled.widened.sockets.is_empty(), "{compiled:?}");
     assert!(compiled.widened.services.is_empty());
-    assert!(!compiled.widened.trust);
     let settings = claude::settings(&compiled).expect("compiles");
     assert!(settings.sandbox["network"]["allowUnixSockets"].is_null());
 }
@@ -331,7 +410,6 @@ fn a_state_file_in_the_project_carrying_sockets_and_services_grants_none() {
     let compiled = compiled_at(&root, &Grants::default());
     assert!(compiled.widened.sockets.is_empty());
     assert!(compiled.widened.services.is_empty());
-    assert!(!compiled.widened.trust);
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
@@ -365,7 +443,7 @@ fn project() -> (tempfile::TempDir, PathBuf) {
 }
 
 #[test]
-fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_the_certificate_check() {
+fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_never_a_service_by_name() {
     let (_dir, root) = project();
     let home = tempfile::tempdir().expect("a config home");
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
@@ -431,40 +509,23 @@ fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_the_certifi
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
-/// qw351: "Allow for me on this machine" on the certificate check's Notice, or Settings' own
-/// Allow, is kept in this machine's file and reaches **every** chat's next start in the
-/// project, whichever harness: Claude Code as `enableWeakerNetworkIsolation`, purlis's own wrap
-/// (Codex, opencode) as the one `mach-lookup` rule. The committed `certificate-checks` alone
-/// compiles nothing (ADR 0093), so a project that sets it is refused until the person allows it.
+/// R1: a grant of the certificate check an older build kept in this machine's file (qw351's
+/// "Allow on this machine", a Notice's Allow) is harmless: with it or without it a chat has the
+/// check where the project and policy leave it on, by its own switch and one rule, never as a
+/// service by name beside it.
 #[test]
-fn the_certificate_check_allowed_on_this_machine_reaches_every_harness_s_next_start() {
+fn a_grant_of_the_certificate_check_an_older_build_kept_changes_nothing() {
     let (_dir, root) = project();
     let home = tempfile::tempdir().expect("a config home");
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
-    std::fs::write(
-        crate::names::manifest(&root),
-        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\ncertificate-checks = true\n",
-    )
-    .expect("written");
-    let declared_only = compiled_at(&root, &Grants::default());
-    assert!(!declared_only.widened.trust, "a declaration grants nothing");
-    assert_eq!(
-        claude::settings(&declared_only).expect("compiles").sandbox["enableWeakerNetworkIsolation"],
-        false
-    );
-
+    let before = compiled_at(&root, &Grants::default());
     local::grant_service(&root, TRUSTD).expect("kept");
     let compiled = compiled_at(&root, &Grants::default());
+    assert_eq!(compiled.widened, before.widened);
     assert!(compiled.widened.trust);
-    // Its own switch, never a service by name beside it.
     assert!(compiled.widened.services.is_empty());
-    assert_eq!(
-        claude::settings(&compiled).expect("compiles").sandbox["enableWeakerNetworkIsolation"],
-        true
-    );
     let mut own = seatbelt::Own::default();
     seatbelt::widen(&mut own, &compiled.widened).expect("widened");
-    assert!(own.after.contains(&seatbelt::TRUST.to_owned()));
     // The certificate check's own service and no other: nothing wider is compiled for it.
     assert_eq!(
         own.after
@@ -475,9 +536,8 @@ fn the_certificate_check_allowed_on_this_machine_reaches_every_harness_s_next_st
         "{:?}",
         own.after
     );
-
     local::revoke_service(&root, TRUSTD).expect("revoked");
-    assert!(!compiled_at(&root, &Grants::default()).widened.trust);
+    assert!(compiled_at(&root, &Grants::default()).widened.trust);
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
@@ -510,7 +570,9 @@ fn the_socket_grants_lock_drops_every_socket_and_service_at_a_start() {
         &crate::sandbox::policy::Locks::none(),
     );
     assert_eq!(open.sockets.len(), 1);
-    assert!(open.trust);
+    // Never from a grant (R1): the project's setting alone turns it on.
+    assert!(!open.trust);
+    assert!(open.services.is_empty());
 }
 
 /// #1808's review, MF-1a: the file an always grant is kept in is one every chat is denied
