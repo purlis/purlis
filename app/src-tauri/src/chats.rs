@@ -389,6 +389,9 @@ struct Coming {
     told: Option<&'static str>,
     /// Whether its start is under way, so no second one takes it.
     starting: bool,
+    /// The workspace its folder is in, read once as it is registered: where the window files
+    /// its tab until it has started and the project's own read lists it (ADR 0036).
+    workspace: Option<String>,
 }
 
 thread_local! {
@@ -3501,6 +3504,7 @@ impl Chats {
                     number,
                     why: *why,
                     starting: false,
+                    workspace: workspace_at_start(Some(&self.project), chat.cwd.as_deref()),
                 }
             })
             .collect();
@@ -3686,8 +3690,8 @@ impl Chats {
     /// The chats a launch has registered and not started yet, as the window draws their
     /// tabs: in the record's order, each under the number it will start as.
     ///
-    /// What only a start settles is not said: its harness, the workspace its folder is in
-    /// and how it came back are the started chat's, told when it starts.
+    /// What only a start settles is not said: its harness and how it came back are the
+    /// started chat's, told when it starts.
     pub fn restoring_now(&self) -> Vec<Open> {
         let front = *lock(&self.front);
         lock(&self.coming)
@@ -3696,7 +3700,7 @@ impl Chats {
                 session: one.number,
                 name: one.chat.name.clone(),
                 cwd: one.chat.cwd.clone(),
-                workspace: None,
+                workspace: one.workspace.clone(),
                 harness: None,
                 profile: one.chat.profile.clone(),
                 persona: one.chat.persona.clone(),

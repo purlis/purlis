@@ -16,6 +16,13 @@ import {
   type ReactNode,
 } from "react";
 import { listen } from "./here";
+import {
+  CHAT_RESTORED,
+  isRestoring,
+  restoredSince,
+  RestoringContext,
+  type ChatRestored,
+} from "./restoringChats";
 import { QueueRead } from "./QueueRead";
 import { CountPill } from "./CountPill";
 import { machineChanged } from "./settings/thisMachine";
@@ -715,6 +722,17 @@ export const PlaneView = memo(function PlaneView({
   const { dismissed, dismiss, settle: settleNotices, showAgain } = useDismissals(plane);
   /** Chats this launch could not start, by name and why. They are still recorded. */
   const [wouldNotStart, setWouldNotStart] = useState<NotStarted[]>([]);
+  /**
+   * **The chats the launch has still to start** (`restoring.rs`), by the number each tab is
+   * drawn under. The core registers every chat of the record and starts them behind the
+   * window, so this window can be used at once: each has its tab in its place from the first
+   * frame, its pane says it is restoring, and `chat-restored` says when it is the chat.
+   */
+  const [restoringChats, setRestoringChats] = useState<ReadonlySet<number>>(() => new Set());
+  const restoringNow = useRef<ReadonlySet<number>>(new Set());
+  /** Raised when the chats were adopted with some still restoring: they are read again once,
+   *  for one that started between the read and the listener. */
+  const [restoreLooks, setRestoreLooks] = useState(0);
   /** **Forget this chat…** (NO-3): the chat whose record is about to be dropped, while the
    *  question is up, and the core's refusal of the last answer. */
   const [forgetting, setForgetting] = useState<{
@@ -1170,9 +1188,24 @@ export const PlaneView = memo(function PlaneView({
           .then((trouble) => setWouldNotStart(trouble.status === "ok" ? (trouble.data ?? []) : []))
           .catch(() => undefined);
         const open = answer?.status === "ok" ? (answer.data ?? []) : [];
+        // The ones the launch has still to start (`restoring.rs`): drawn with the rest, each
+        // in its place, and filed where the core says its folder is until the sidebar lists it.
+        const coming = open.filter(isRestoring);
+        if (coming.length > 0) {
+          restoringNow.current = new Set(coming.map((chat) => chat.session));
+          setRestoringChats(restoringNow.current);
+          setStartedIn((was) => ({
+            ...was,
+            ...Object.fromEntries(
+              coming.map((chat) => [chat.session, chat.restoring?.workspace ?? OUTSIDE]),
+            ),
+          }));
+          setRestoreLooks((was) => was + 1);
+        }
         // What the relaunch did to each chat is the core's answer: a dismissed note about a chat
-        // that came back some other way, or not at all, is let go (`dismissals.ts`).
-        if (answer?.status === "ok") settleChatNotes(open);
+        // that came back some other way, or not at all, is let go (`dismissals.ts`). Once every
+        // chat has started: one still restoring has not said how it came back.
+        if (answer?.status === "ok" && coming.length === 0) settleChatNotes(open);
         // Each as it is named now: a record an older charter wrote can hold a view since renamed.
         const back = (viewAnswer?.status === "ok" ? (viewAnswer.data ?? []) : []).map((tab) => {
           const now = viewNamedNow(refOf(tab), tab.title);
@@ -1191,8 +1224,15 @@ export const PlaneView = memo(function PlaneView({
           }));
           // A pinned chat comes back pinned: the pin rides the record it came back from.
           setPinnedChats(open.filter((chat) => chat.pinned).map((chat) => chat.session));
-          // A shell comes back a shell: on no profile, running no harness.
-          setShells(new Set(open.filter(isShell).map((chat) => chat.session)));
+          // A shell comes back a shell: on no profile, running no harness. One still restoring
+          // says once it has started (`readRestored`): its harness is its start's to say.
+          setShells(
+            new Set(
+              open
+                .filter((chat) => !isRestoring(chat) && isShell(chat))
+                .map((chat) => chat.session),
+            ),
+          );
         }
         setPinnedViews(back.filter((view) => view.pinned).map((view) => viewKey(refOf(view))));
         const focusedBack = focusAnswer?.status === "ok" ? focusAnswer.data : null;
@@ -5126,6 +5166,100 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **Reads what has become of the chats drawn as restoring** (`restoring.rs`): the ones that
+   * have started are the chats now, with the notes on how each came back; one that did not
+   * start loses its tab and is listed with the chats that did not, with Retry now.
+   *
+   * The whole list is read again each time, so an event this window missed is made up by the
+   * next. `named` is the session an event said a chat started as.
+   */
+  const readRestored = useCallback(
+    async (named: number | null) => {
+      if (restoringNow.current.size === 0 && named === null) return;
+      const answer = await commands.openedChats(plane).catch(() => undefined);
+      if (answer?.status !== "ok") return;
+      const open = answer.data ?? [];
+      const { still, started, gone, arrived } = restoredSince(
+        restoringNow.current,
+        open,
+        named,
+        (session) => alreadyShows(now.current, session),
+      );
+      if (started.length === 0 && gone.length === 0 && arrived.length === 0) return;
+      restoringNow.current = still;
+      setRestoringChats(still);
+      for (const chat of started) {
+        setReopened((was) => [...was.filter((one) => one.session !== chat.session), chat]);
+        if (isShell(chat)) setShells((was) => new Set(was).add(chat.session));
+      }
+      // Started under another number than its tab was drawn under: a chat just started.
+      for (const chat of arrived) {
+        noteStarted(chat);
+        if (chat.from?.tab === false) continue;
+        change((tabs) =>
+          openTabBehind(
+            tabs,
+            chat.session,
+            chat.name,
+            whoOf(chat.persona, chat.harness),
+            chat.label ?? null,
+          ),
+        );
+      }
+      if (gone.length > 0) {
+        change((tabs) =>
+          gone.reduce(
+            (left, one) => closeChat(left, one, filedIn, isPinned, inTheBackground.current),
+            tabs,
+          ),
+        );
+        setReopened((was) => was.filter((one) => !gone.includes(one.session)));
+        void commands
+          .chatsThatWouldNotStart(plane)
+          .then((trouble) => {
+            if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+          })
+          .catch(() => undefined);
+      }
+      // Every chat has said how it came back: the dismissed notes are settled against them.
+      if (still.size === 0) settleChatNotes(open);
+    },
+    [change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
+  );
+  const readRestoredNow = useRef(readRestored);
+  useEffect(() => {
+    readRestoredNow.current = readRestored;
+  }, [readRestored]);
+  // Each chat of the launch as it starts, or is found not to. Read once more as the listener
+  // is heard, for a chat that started before it was.
+  useEffect(() => {
+    const listening = listen<ChatRestored>(CHAT_RESTORED, (event) => {
+      if (event.payload.plane !== plane) return;
+      void readRestoredNow.current(event.payload.session);
+    })
+      .then((stop) => {
+        void readRestoredNow.current(null);
+        return stop;
+      })
+      .catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
+  useEffect(() => {
+    if (restoreLooks > 0) void readRestoredNow.current(null);
+  }, [restoreLooks]);
+  // And every few seconds while any is still restoring: a tab is never left saying so because
+  // one event went to another window.
+  const anyRestoring = restoringChats.size > 0;
+  useEffect(() => {
+    if (!anyRestoring) return;
+    const looking = window.setInterval(
+      () => void readRestoredNow.current(null),
+      RESTORE_LOOKS_EVERY,
+    );
+    return () => window.clearInterval(looking);
+  }, [anyRestoring]);
+
+  /**
    * **Forget this chat…** asked from a waiting chat's Notice: the Notice and the Inbox's list it
    * stands in, found when the question opens (WebKit does not focus a pressed button, so the focus
    * cannot say where it was), and whether the answer was carried out (#1246).
@@ -6357,6 +6491,7 @@ export const PlaneView = memo(function PlaneView({
             commands: extensionCommands,
             curations,
             wrappingUp: [...wrapping],
+            restoring: [...restoringChats],
             workItems,
             // A chat filed in a workspace; one at the project root, or outside the project, is
             // offered no work link (ADR 0088 §4).
@@ -6416,6 +6551,7 @@ export const PlaneView = memo(function PlaneView({
       worktree,
       liveNames,
       wrapping,
+      restoringChats,
       workItems,
       filedIn,
       planeUpdates,
@@ -6850,8 +6986,8 @@ export const PlaneView = memo(function PlaneView({
    */
   /** The close of pane `pane` of the tab in front, decided for that pane (`paneCloseOf`). */
   const closeOfPane = useCallback(
-    (pane: number) => paneCloseOf(tabs, pane, nameOf, askedBy),
-    [askedBy, nameOf, tabs],
+    (pane: number) => paneCloseOf(tabs, pane, nameOf, askedBy, [...restoringChats]),
+    [askedBy, nameOf, restoringChats, tabs],
   );
   /** Pane `pane` of the tab in front goes back to its session's own chat (#1486): the person's
    *  way out of a task that has ended. Its terminal takes the keyboard. */
@@ -7928,8 +8064,9 @@ export const PlaneView = memo(function PlaneView({
              2026-10-12). The session strip is the centre's own tab bar, directly above the chat
              it shows, as an editor's tabs are; the workspaces stay the full-width row above every
              region. Splits live inside a tab, so one centre has one strip. */
-            <div className="editor">
-              {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
+            <RestoringContext.Provider value={restoringChats}>
+              <div className="editor">
+                {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
               (charter-app#281): its shade, its selected tab and its accent.
 
               **Outside `Menued on=pane`**, so a right-click on the strip's gaps is not the pane
@@ -7937,154 +8074,154 @@ export const PlaneView = memo(function PlaneView({
               ones — because it is where `+` is. The editor's chrome (`REGION_CHROME`): F6 into
               the editor passes over it to the pane, as VS Code's F6 lands on the editor and not
               on its tabs. Tab still stops on it, in document order. */}
-              <ChatStrip
-                by={by}
-                found={found}
-                press={press}
-                tabs={tabs}
-                ofWorkspace={ofWorkspace}
-                colourOf={colourOf}
-                tintOf={tintOf}
-                shown={shown}
-                notShowing={notShowing}
-                chatTabId={chatTabId}
-                chatStop={chatStop}
-                strip={strip}
-                chatControls={chatControls}
-                chatLeast={chatLeast}
-                chipWidth={chipWidth}
-                dragSensors={dragSensors}
-                chatDragWords={chatDragWords}
-                dragTab={dragTab}
-                draggingRef={dragging}
-                draggedAtRef={draggedAt}
-                notGoingBack={notGoingBack}
-                isBackground={isBackground}
-                isPinned={isPinned}
-                isDragging={isDragging}
-                nameBoxFor={nameBoxFor}
-                saveName={saveName}
-                endRename={endRename}
-                pressTab={pressTab}
-                referenceChats={referenceChats}
-                wrapping={wrapping}
-                stopping={stopping}
-                shells={shells}
-                personaOf={personaOf}
-                taskNameOf={taskNameOf}
-                taskTabOf={taskTabOf}
-                tabHasTasks={tabHasTasks}
-                showTabTasks={showTabTasks}
-                tasksIdOf={tasksIdOf}
-                tasksAsked={tasksAsked}
-                chatsByTab={chatsByTab}
-                endedByTab={endedByTab}
-                runningOfTab={runningOfTab}
-                chatClock={chatClock}
-                hiddenIn={hiddenIn}
-                waitingOn={waitingOn}
-                showFromChip={showFromChip}
-                taskEndsOf={taskEndsOf}
-                pressTaskEnd={pressTaskEnd}
-                placeFromChip={placeFromChip}
-                usedFromChip={usedFromChip}
-                stopAllOf={stopAllOf}
-                activityFromChip={activityFromChip}
-                freshOf={freshOf}
-                freshMarkOf={freshMarkOf}
-                planeUpdates={planeUpdates}
-                handedFrom={handedFrom}
-                workItems={workItems}
-              />
-              {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
+                <ChatStrip
+                  by={by}
+                  found={found}
+                  press={press}
+                  tabs={tabs}
+                  ofWorkspace={ofWorkspace}
+                  colourOf={colourOf}
+                  tintOf={tintOf}
+                  shown={shown}
+                  notShowing={notShowing}
+                  chatTabId={chatTabId}
+                  chatStop={chatStop}
+                  strip={strip}
+                  chatControls={chatControls}
+                  chatLeast={chatLeast}
+                  chipWidth={chipWidth}
+                  dragSensors={dragSensors}
+                  chatDragWords={chatDragWords}
+                  dragTab={dragTab}
+                  draggingRef={dragging}
+                  draggedAtRef={draggedAt}
+                  notGoingBack={notGoingBack}
+                  isBackground={isBackground}
+                  isPinned={isPinned}
+                  isDragging={isDragging}
+                  nameBoxFor={nameBoxFor}
+                  saveName={saveName}
+                  endRename={endRename}
+                  pressTab={pressTab}
+                  referenceChats={referenceChats}
+                  wrapping={wrapping}
+                  stopping={stopping}
+                  shells={shells}
+                  personaOf={personaOf}
+                  taskNameOf={taskNameOf}
+                  taskTabOf={taskTabOf}
+                  tabHasTasks={tabHasTasks}
+                  showTabTasks={showTabTasks}
+                  tasksIdOf={tasksIdOf}
+                  tasksAsked={tasksAsked}
+                  chatsByTab={chatsByTab}
+                  endedByTab={endedByTab}
+                  runningOfTab={runningOfTab}
+                  chatClock={chatClock}
+                  hiddenIn={hiddenIn}
+                  waitingOn={waitingOn}
+                  showFromChip={showFromChip}
+                  taskEndsOf={taskEndsOf}
+                  pressTaskEnd={pressTaskEnd}
+                  placeFromChip={placeFromChip}
+                  usedFromChip={usedFromChip}
+                  stopAllOf={stopAllOf}
+                  activityFromChip={activityFromChip}
+                  freshOf={freshOf}
+                  freshMarkOf={freshMarkOf}
+                  planeUpdates={planeUpdates}
+                  handedFrom={handedFrom}
+                  workItems={workItems}
+                />
+                {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
                 splits, the key the palette claimed, and — under the line — ending this pane's
                 chat. `asChild` again: the panes' box is measured, and it must not gain a
                 wrapper, so the editor's column is outside it and not between it and the panes. */}
-              <Menued on={{ on: "pane" }} offers={found} onPress={press}>
-                <div className="panes">
-                  {frontTab ? (
-                    <TaskEndContext.Provider value={taskEndHand}>
-                      <LayoutPanes
-                        plane={plane}
-                        // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                        // session that asked, while the tab is switched to it.
-                        layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
-                        crumbs={frontCrumbs}
-                        placed={frontPlaced}
-                        away={frontAway}
-                        finished={frontFinished}
-                        explaining={chipToExplain}
-                        others={frontOthers}
-                        asked={frontAsked}
-                        asks={asksHere}
-                        waiting={waiting}
-                        onShowInbox={showInbox}
-                        onAnswer={answeredOnPane}
-                        closeOf={closeOfPane}
-                        onBack={backInPane}
-                        onShowChat={showChat}
-                        focused={frontTab.focused}
-                        onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                        offerFor={by}
-                        onPaneDoes={onPaneDoes}
-                        name={frontTab.name}
-                        handedFrom={handedFrom}
-                        glances={glances}
-                        workItems={workItems}
-                        byHand={byHand}
-                        onByHand={answerByHand}
-                        startNotes={startNotes}
-                        onDismissStartNote={dismissStartNote}
-                        onRestartChat={askRestart}
-                        blocks={frontBlocks}
-                        onDismissBlock={dismissBlock}
-                        onRestarted={chatRestarted}
-                        onAllowed={oweRestart}
-                        restartsSaid={restartsSaid}
-                        onRestartAnswer={answerRestart}
-                        offered={views}
-                        onOpenView={showView}
-                        onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                        onVaultChanged={reloadVaults}
-                        memory={{
-                          // The views follow the disk themselves (`ViewPane`), so a memory saved
-                          // redraws the views and not this whole window (FD-10).
-                          changed: memoryEdits.changed,
-                          onSaved: memoryEdits.onSaved,
-                          onClose: closeView,
-                          showInstead: (from, to, title) => {
-                            change((tabs) => showInstead(tabs, from, to, title));
-                            // The level switcher moving Settings is a way into it (#1206).
-                            const place = placeOfView(to, plane);
-                            if (place !== undefined) enterSettings(place);
-                          },
-                        }}
-                        firstTask={firstTaskDoes}
-                        split={{
-                          of: (view) => splitOf(tabs, view),
-                          moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
-                        }}
-                      />
-                    </TaskEndContext.Provider>
-                  ) : tabs.order.some((id) => !isBackground(id)) ? (
-                    // Chats are running — just not in the workspace being looked at. Saying
-                    // "no sessions" here would be charter telling the operator that what it is
-                    // still drawing on the strip above does not exist.
-                    <EmptyState
-                      mark={MessageSquarePlus}
-                      headline="No chats in this workspace"
-                      body="Other workspaces have some — pick one on the strip above, or start one here."
-                      action={
-                        <Doer
-                          offer={by("chat.new")}
-                          onPress={press}
-                          words="Open a chat here"
-                          primary
+                <Menued on={{ on: "pane" }} offers={found} onPress={press}>
+                  <div className="panes">
+                    {frontTab ? (
+                      <TaskEndContext.Provider value={taskEndHand}>
+                        <LayoutPanes
+                          plane={plane}
+                          // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                          // session that asked, while the tab is switched to it.
+                          layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                          crumbs={frontCrumbs}
+                          placed={frontPlaced}
+                          away={frontAway}
+                          finished={frontFinished}
+                          explaining={chipToExplain}
+                          others={frontOthers}
+                          asked={frontAsked}
+                          asks={asksHere}
+                          waiting={waiting}
+                          onShowInbox={showInbox}
+                          onAnswer={answeredOnPane}
+                          closeOf={closeOfPane}
+                          onBack={backInPane}
+                          onShowChat={showChat}
+                          focused={frontTab.focused}
+                          onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                          offerFor={by}
+                          onPaneDoes={onPaneDoes}
+                          name={frontTab.name}
+                          handedFrom={handedFrom}
+                          glances={glances}
+                          workItems={workItems}
+                          byHand={byHand}
+                          onByHand={answerByHand}
+                          startNotes={startNotes}
+                          onDismissStartNote={dismissStartNote}
+                          onRestartChat={askRestart}
+                          blocks={frontBlocks}
+                          onDismissBlock={dismissBlock}
+                          onRestarted={chatRestarted}
+                          onAllowed={oweRestart}
+                          restartsSaid={restartsSaid}
+                          onRestartAnswer={answerRestart}
+                          offered={views}
+                          onOpenView={showView}
+                          onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                          onVaultChanged={reloadVaults}
+                          memory={{
+                            // The views follow the disk themselves (`ViewPane`), so a memory saved
+                            // redraws the views and not this whole window (FD-10).
+                            changed: memoryEdits.changed,
+                            onSaved: memoryEdits.onSaved,
+                            onClose: closeView,
+                            showInstead: (from, to, title) => {
+                              change((tabs) => showInstead(tabs, from, to, title));
+                              // The level switcher moving Settings is a way into it (#1206).
+                              const place = placeOfView(to, plane);
+                              if (place !== undefined) enterSettings(place);
+                            },
+                          }}
+                          firstTask={firstTaskDoes}
+                          split={{
+                            of: (view) => splitOf(tabs, view),
+                            moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
+                          }}
                         />
-                      }
-                      testid="empty-workspace"
-                    />
-                  ) : /* **The empty window, centred, with a way out** — the operator's own
+                      </TaskEndContext.Provider>
+                    ) : tabs.order.some((id) => !isBackground(id)) ? (
+                      // Chats are running — just not in the workspace being looked at. Saying
+                      // "no sessions" here would be charter telling the operator that what it is
+                      // still drawing on the strip above does not exist.
+                      <EmptyState
+                        mark={MessageSquarePlus}
+                        headline="No chats in this workspace"
+                        body="Other workspaces have some — pick one on the strip above, or start one here."
+                        action={
+                          <Doer
+                            offer={by("chat.new")}
+                            onPress={press}
+                            words="Open a chat here"
+                            primary
+                          />
+                        }
+                        testid="empty-workspace"
+                      />
+                    ) : /* **The empty window, centred, with a way out** — the operator's own
                      instruction: *"when opening empty workspace lets make open new tab button on
                      empty page center"*. It was one sentence in the top-left corner of a box the
                      size of the screen, and the thing to do about it was a menu item away.
@@ -8094,51 +8231,52 @@ export const PlaneView = memo(function PlaneView({
                      existing if the catalogue stops offering it. A second button with its own
                      label would be the second answer to "how do I start a chat" that
                      `actions.ts` exists to prevent. */
-                  sidebar !== undefined && sidebar.workspaces.length === 0 ? (
-                    /* **A plane with no workspace yet**: making one is the first thing to do,
+                    sidebar !== undefined && sidebar.workspaces.length === 0 ? (
+                      /* **A plane with no workspace yet**: making one is the first thing to do,
                        and it was reachable only from the palette. Both buttons are catalogue
                        rows, as the one below is; a chat here starts in the plane itself. */
-                    <EmptyState
-                      mark={FolderPlus}
-                      headline="No workspaces yet"
-                      body="A workspace holds the repos you work on and the chats about them."
-                      action={
-                        <>
-                          <Doer
-                            offer={by("workspace.create")}
-                            onPress={press}
-                            words="Create a workspace"
-                            primary
-                          />
+                      <EmptyState
+                        mark={FolderPlus}
+                        headline="No workspaces yet"
+                        body="A workspace holds the repos you work on and the chats about them."
+                        action={
+                          <>
+                            <Doer
+                              offer={by("workspace.create")}
+                              onPress={press}
+                              words="Create a workspace"
+                              primary
+                            />
+                            <Doer
+                              offer={by("chat.new")}
+                              onPress={press}
+                              words="Open a chat in the plane"
+                              primary
+                            />
+                          </>
+                        }
+                        testid="empty-plane"
+                      />
+                    ) : (
+                      <EmptyState
+                        mark={MessageSquarePlus}
+                        headline="No chats yet"
+                        body="purlis runs each chat in its own pane. Open the first one here."
+                        action={
                           <Doer
                             offer={by("chat.new")}
                             onPress={press}
-                            words="Open a chat in the plane"
+                            words="Open the first chat"
                             primary
                           />
-                        </>
-                      }
-                      testid="empty-plane"
-                    />
-                  ) : (
-                    <EmptyState
-                      mark={MessageSquarePlus}
-                      headline="No chats yet"
-                      body="purlis runs each chat in its own pane. Open the first one here."
-                      action={
-                        <Doer
-                          offer={by("chat.new")}
-                          onPress={press}
-                          words="Open the first chat"
-                          primary
-                        />
-                      }
-                      testid="empty-window"
-                    />
-                  )}
-                </div>
-              </Menued>
-            </div>
+                        }
+                        testid="empty-window"
+                      />
+                    )}
+                  </div>
+                </Menued>
+              </div>
+            </RestoringContext.Provider>
           }
         />
 
@@ -8861,6 +8999,9 @@ function recalledCrumbs(
 const A_DOUBLE_CLICK = 250;
 /** How long after a drag a click on a tab is the drag's own, and not a press. */
 const AFTER_A_DRAG = 400;
+
+/** How often a window with chats still restoring reads them again (`readRestored`). */
+const RESTORE_LOOKS_EVERY = 3000;
 
 /** Whether any tab already shows `session`, in any of its panes. */
 function alreadyShows(tabs: Tabs, session: number): boolean {

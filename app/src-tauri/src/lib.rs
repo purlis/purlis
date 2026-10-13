@@ -598,11 +598,19 @@ struct OpenChat {
     /// Where a handoff opened it from, where one did: the note its tab's tooltip and its header
     /// draw, `↳ from steward 3 · ops` (charter-app#258). Never the parent's number.
     from: Option<HandedFromNote>,
-    /// Whether a launch has registered it and not started it yet (`restoring.rs`): its tab is
+    /// Set for a chat a launch has registered and not started yet (`restoring.rs`): its tab is
     /// drawn in its place, as restoring, under the number it will start as, and
     /// `chat-restored` says when it has. `null` for a chat that is open.
     #[specta(optional)]
-    restoring: Option<bool>,
+    restoring: Option<RestoringChat>,
+}
+
+/// What the window is told of a chat a launch has still to start, beyond its tab.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RestoringChat {
+    /// The workspace its folder is in, or `null` for one in none: where its tab is filed
+    /// until it has started and the sidebar lists it (ADR 0036).
+    pub workspace: Option<String>,
 }
 
 /// Where a chat another chat started came from, as the window draws it: its note, and its
@@ -1684,7 +1692,9 @@ fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<
         .map(|(open, restoring)| {
             if restoring {
                 OpenChat {
-                    restoring: Some(true),
+                    restoring: Some(RestoringChat {
+                        workspace: open.workspace.clone(),
+                    }),
                     // How it comes back is its start's to say.
                     resumed: None,
                     fresh: None,
