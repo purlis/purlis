@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791930832580,
+  "lastUpdate": 1791933144828,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10122,6 +10122,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1920015,
             "unit": "ms",
             "extra": "median of 5 runs: 100.663, 100.825, 101.192, 101.594, 102.802 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "11ae3e9c7ca8ffdf4e73f0b46173c0afbaa6777d",
+          "message": "review(qw371): a request from the save's branch into its target that purlis did not open is refused\n\nThe contract case the third review named as a gap: it fails if the\nopened-by-purlis condition is removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T02:59:36+04:00",
+          "tree_id": "59b7260b882b1db9666c61b910a1c243ef465165",
+          "url": "https://github.com/purlis/purlis/commit/11ae3e9c7ca8ffdf4e73f0b46173c0afbaa6777d"
+        },
+        "date": 1791933144128,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4589135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.444, 0.453, 0.459, 0.461, 0.471 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2765005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.163, 16.216, 16.277, 16.771, 17.009 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.720237,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.301, 101.359, 101.720, 101.911, 101.964 ms"
           }
         ]
       }
