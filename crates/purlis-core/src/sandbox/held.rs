@@ -11,6 +11,13 @@
 //!
 //! The manifests at the project's root and in every folder above it are asked, so a project
 //! inside another project's tree is held by the outer one's too.
+//!
+//! **What a delete would have to remove is asked too** ([`deletion_held_within`]). Every
+//! sandboxed chat is denied writing the later-code names wherever it may write
+//! ([`super::PLANTED`]: a clone's git config, a branch folder's `.git`, a harness's project
+//! config), and a delete that meets one stops there, half done. A folder holding one this
+//! process may not write is one the sandbox would stop the delete in, whichever project it is
+//! in.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -54,13 +61,48 @@ fn files_at_and_above(root: &Path, names: &[&str]) -> Vec<PathBuf> {
     out
 }
 
+/// Whether this process may not write a file below `target` that deleting `target` would have
+/// to remove: the sign that a chat's sandbox would stop that delete partway (#1408).
+pub fn deletion_held_within(target: &Path) -> bool {
+    held_below(target, &later_code_files())
+}
+
+/// The later-code names a chat is denied writing wherever it may write ([`super::PLANTED`])
+/// that name one file to ask.
+fn later_code_files() -> Vec<&'static str> {
+    super::PLANTED
+        .iter()
+        .map(|planted| planted.path)
+        .filter(|path| !path.contains("**"))
+        .collect()
+}
+
+/// [`deletion_held_within`], asking the files named `names` in each folder of the walk
+/// ([`super::planted::directories`]: bounded, following no link). Only a plain file is asked:
+/// a link, a folder or anything else of the name is passed over, and so is a `target` that is
+/// itself a link, which a delete refuses on its own.
+fn held_below(target: &Path, names: &[&str]) -> bool {
+    if !std::fs::symlink_metadata(target).is_ok_and(|meta| meta.is_dir()) {
+        return false;
+    }
+    super::planted::directories(target).iter().any(|folder| {
+        names.iter().any(|name| {
+            let path = folder.join(name);
+            std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) && held(&path)
+        })
+    })
+}
+
 /// Whether this process may not open `path`, an existing file, for writing, where its
 /// permissions would let it.
 pub fn held(path: &Path) -> bool {
-    let opened = std::fs::OpenOptions::new()
-        .append(true)
-        .open(path)
-        .map(drop);
+    let mut options = std::fs::OpenOptions::new();
+    options.append(true);
+    // Never waits: a name swapped for a pipe since it was looked at is refused at once
+    // (`ENXIO`), and that doubt is held.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
+    let opened = options.open(path).map(drop);
     verdict(opened, || permits_writing(path))
 }
 
@@ -200,6 +242,98 @@ mod tests {
         flags("nouchg");
         assert!(was, "a file the kernel refuses writing was not held");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "[sandbox]\n");
+    }
+
+    /// Names a test may write, standing for the later-code names (the walk is theirs).
+    const STAND_INS: [&str; 2] = ["held.toml", "conf/held.toml"];
+
+    #[test]
+    fn a_tree_whose_files_this_process_may_write_is_not_held_and_is_left_as_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("beta");
+        std::fs::create_dir_all(tree.join("clone/conf")).unwrap();
+        let file = tree.join("clone/conf/held.toml");
+        std::fs::write(&file, "[core]\n").unwrap();
+        let before = std::fs::metadata(&file).unwrap().modified().unwrap();
+
+        assert!(!held_below(&tree, &STAND_INS));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "[core]\n");
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().modified().unwrap(),
+            before
+        );
+        // Nothing there to delete: nothing held.
+        assert!(!held_below(&dir.path().join("gone"), &STAND_INS));
+    }
+
+    /// A delete the sandbox would stop partway: a file below it the kernel refuses writing
+    /// whatever its permissions (macOS's user-immutable flag, standing for a sandbox's refusal).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_tree_holding_a_file_the_kernel_refuses_is_held_at_any_depth_the_walk_reaches() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("beta");
+        for (at, name) in [("", "held.toml"), ("clone", "conf/held.toml")] {
+            let folder = tree.join(at);
+            std::fs::create_dir_all(folder.join("conf")).unwrap();
+            let file = folder.join(name);
+            std::fs::write(&file, "").unwrap();
+            let flags = |flag: &str| {
+                let done = crate::forklock::status(
+                    std::process::Command::new("/usr/bin/chflags")
+                        .arg(flag)
+                        .arg(&file),
+                )
+                .unwrap();
+                assert!(done.success(), "chflags {flag}");
+            };
+            flags("uchg");
+            let was = held_below(&tree, &STAND_INS);
+            flags("nouchg");
+            std::fs::remove_file(&file).unwrap();
+            assert!(was, "{name} in '{at}' was not held");
+        }
+    }
+
+    /// A link is never followed: what it points at is not what the delete removes.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_link_in_the_tree_or_to_it_is_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let file = elsewhere.join("held.toml");
+        std::fs::write(&file, "").unwrap();
+        let tree = dir.path().join("beta");
+        std::fs::create_dir_all(tree.join("clone")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, tree.join("linked")).unwrap();
+        std::os::unix::fs::symlink(&file, tree.join("clone/held.toml")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.path().join("a-link")).unwrap();
+        let flags = |flag: &str| {
+            let done = crate::forklock::status(
+                std::process::Command::new("/usr/bin/chflags")
+                    .arg(flag)
+                    .arg(&file),
+            )
+            .unwrap();
+            assert!(done.success(), "chflags {flag}");
+        };
+        flags("uchg");
+        let in_tree = held_below(&tree, &STAND_INS);
+        let to_it = held_below(&dir.path().join("a-link"), &STAND_INS);
+        flags("nouchg");
+        assert!(!in_tree, "a link in the tree was followed");
+        assert!(!to_it, "a link to the tree was followed");
+    }
+
+    #[test]
+    fn the_later_code_names_asked_below_a_delete_are_the_planted_ones() {
+        let names = later_code_files();
+        for name in [".git", ".git/config", ".claude/settings.json", ".mcp.json"] {
+            assert!(names.contains(&name), "{name}: {names:?}");
+        }
+        // A pattern names no one file to ask.
+        assert!(names.iter().all(|name| !name.contains("**")), "{names:?}");
     }
 
     #[test]

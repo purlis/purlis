@@ -65,5 +65,8 @@ work nothing else has (exit 2), and `persona remove` refuses while another perso
 uses the one being removed. A refusal is the answer: relay it in its own words and stop.
 `--force` belongs to the operator, and you pass it only when they say so.
 
+From a sandboxed chat both are refused before anything is deleted, because the sandbox would
+stop a delete partway: say so, and ask the operator to remove it from the window.
+
 Removing a persona deletes its whole directory, memory and curation actions with it. The
 deletion is a change to the plane like any other and travels with its next save.

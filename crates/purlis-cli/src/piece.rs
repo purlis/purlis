@@ -181,15 +181,22 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             force,
             delete_branch,
             workspace,
-        } => piececmd::remove(
-            &root,
-            &here.active_workspace(workspace.as_deref())?,
-            &repo,
-            &piece,
-            force,
-            delete_branch,
-            &mut say,
-        ),
+        } => {
+            // Never from a chat the app started under the sandbox (#1408, D-qw322-1): refused
+            // before git is run, wherever the chat stands.
+            let ws = here.active_workspace(workspace.as_deref());
+            let target = ws
+                .as_deref()
+                .ok()
+                .and_then(|ws| purlis_core::worktree::path_for(&root, ws, &repo, &piece).ok());
+            if crate::brokered::removal_held(&root, target.as_deref()) {
+                say(purlis_core::repocmd::Say::Fail(
+                    crate::brokered::no_piece_removal_in_a_sandbox(&repo, &piece),
+                ));
+                return Ok(1);
+            }
+            piececmd::remove(&root, &ws?, &repo, &piece, force, delete_branch, &mut say)
+        }
     };
     Ok(code)
 }

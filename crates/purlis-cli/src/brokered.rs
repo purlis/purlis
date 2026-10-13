@@ -238,13 +238,39 @@ pub fn no_removal_in_a_sandbox(name: &str) -> String {
     )
 }
 
-/// Whether `purlis workspace remove` is held in this process for the project at `root`
-/// (#1408, D-qw301-1): in a chat the app started under the sandbox, or wherever the sandbox
-/// itself holds this process ([`purlis_core::sandbox::held`]). Refused before the guard and the
-/// delete run.
-pub fn removal_held(root: &Path) -> bool {
+/// The sentence `purlis persona remove <name>` is refused with in a chat the app started under
+/// the sandbox (#1408): as [`no_removal_in_a_sandbox`], for a persona.
+pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {
+    format!(
+        "a sandboxed chat does not remove a persona: removing '{}' deletes its definition, its \
+         memory and its curation actions, which is the person's to decide, so nothing was \
+         removed. Ask the person to remove it from the window",
+        purlis_core::shown::short(name)
+    )
+}
+
+/// The sentence `purlis worktree remove <repo> <piece>` is refused with in a chat the app
+/// started under the sandbox (#1408): the folder's files go before git's record of it, which a
+/// sandboxed chat cannot finish.
+pub fn no_piece_removal_in_a_sandbox(repo: &str, piece: &str) -> String {
+    format!(
+        "a sandboxed chat does not remove a branch folder: removing '{} · {}' deletes its files \
+         and git's record of it, which a sandboxed chat cannot finish, so nothing was removed. \
+         Ask the person to remove it from the window",
+        purlis_core::shown::short(repo),
+        purlis_core::shown::short(piece)
+    )
+}
+
+/// Whether a command that deletes `target`, a folder of the project at `root`, is held in this
+/// process (#1408, D-qw301-1, D-qw322-1): in a chat the app started under the sandbox, or
+/// wherever the sandbox itself holds this process ([`purlis_core::sandbox::held`]), at the
+/// project's manifests or at a file below `target` the delete would have to remove. Refused
+/// before the guard and the delete run.
+pub fn removal_held(root: &Path, target: Option<&Path>) -> bool {
     removal_held_by(sandboxed(), || {
         purlis_core::sandbox::held::writes_held_at(root)
+            || target.is_some_and(purlis_core::sandbox::held::deletion_held_within)
     })
 }
 

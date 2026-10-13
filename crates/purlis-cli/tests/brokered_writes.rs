@@ -632,6 +632,99 @@ fn a_sandboxed_chat_removing_a_workspace_is_refused_before_anything_is_deleted()
     assert!(!root(&tmp).join("workspaces/beta").exists());
 }
 
+/// The environment of chat 3, which the app started under the sandbox in `workspace` (`None`:
+/// at the project root).
+fn sandboxed_chat(workspace: Option<&str>) -> Vec<(String, String)> {
+    let mut env = vec![
+        (CHAT_ENV.to_owned(), "3".to_owned()),
+        (hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()),
+    ];
+    env.extend(workspace.map(|ws| (purlis_core::active::WORKSPACE_ENV.to_owned(), ws.to_owned())));
+    env
+}
+
+#[test]
+fn a_sandboxed_chat_removing_a_persona_is_refused_before_anything_is_deleted() {
+    // Removing a persona deletes its definition, its memory and its curation actions, which the
+    // sandbox can stop partway. Refused before the delete starts, forced or not, naming the way
+    // round.
+    let tmp = a_project();
+    let persona = root(&tmp).join("personas/steward");
+    std::fs::create_dir_all(persona.join("memory")).unwrap();
+    std::fs::write(persona.join("memory/kept.md"), "kept\n").unwrap();
+
+    for (args, env) in [
+        (
+            vec!["persona", "remove", "steward"],
+            sandboxed_chat(Some("alpha")),
+        ),
+        (
+            vec!["persona", "remove", "steward", "--force"],
+            sandboxed_chat(Some("alpha")),
+        ),
+        (vec!["persona", "remove", "steward"], sandboxed_chat(None)),
+    ] {
+        let ran = purlis(&tmp, &args, &env);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        for words in ["nothing was removed", "from the window"] {
+            assert!(said(&ran).contains(words), "{args:?}: {}", said(&ran));
+        }
+    }
+    assert!(persona.join("persona.md").is_file());
+    assert!(persona.join("memory/kept.md").is_file());
+
+    // A chat the app started without the sandbox removes it here, as a terminal does.
+    let unsandboxed = vec![(CHAT_ENV.to_owned(), "3".to_owned())];
+    let ran = purlis(&tmp, &["persona", "remove", "steward"], &unsandboxed);
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert!(!persona.exists());
+}
+
+#[test]
+fn a_sandboxed_chat_removing_a_branch_folder_is_refused_before_git_is_asked() {
+    // `git worktree remove` deletes the folder's files before git's record of it, which the
+    // sandbox can stop partway. Refused before git runs: so before it is even asked whether the
+    // clone is there.
+    let tmp = a_project();
+    for (args, env) in [
+        (
+            vec!["worktree", "remove", "thing", "piece"],
+            sandboxed_chat(Some("alpha")),
+        ),
+        (
+            vec![
+                "wt",
+                "remove",
+                "thing",
+                "piece",
+                "--force",
+                "--delete-branch",
+            ],
+            sandboxed_chat(None),
+        ),
+    ] {
+        let ran = purlis(&tmp, &args, &env);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        for words in ["nothing was removed", "from the window"] {
+            assert!(said(&ran).contains(words), "{args:?}: {}", said(&ran));
+        }
+    }
+
+    // Outside the sandbox it goes on to git, which finds no clone here.
+    let unsandboxed = vec![(CHAT_ENV.to_owned(), "3".to_owned())];
+    let ran = purlis(
+        &tmp,
+        &["worktree", "remove", "thing", "piece"],
+        &unsandboxed,
+    );
+    assert!(!ran.status.success(), "{}", said(&ran));
+    assert!(
+        !said(&ran).contains("nothing was removed"),
+        "{}",
+        said(&ran)
+    );
+}
+
 /// The project's manifest, written with `text`. A machine that keeps a chat from writing a
 /// manifest anywhere cannot run a test that calls this; CI runs it.
 fn a_manifest(tmp: &tempfile::TempDir, text: &str) -> PathBuf {

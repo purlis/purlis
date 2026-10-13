@@ -1254,6 +1254,15 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             ))
         }
         PersonaCommand::Remove { name, force } => {
+            // Never from a chat the app started under the sandbox (#1408, D-qw322-1): refused
+            // before the guard and the delete run.
+            let target = purlis_core::personas::shape_refusal(&name)
+                .is_none()
+                .then(|| plane.root().join("personas").join(&name));
+            if crate::brokered::removal_held(plane.root(), target.as_deref()) {
+                voice::err(&crate::brokered::no_persona_removal_in_a_sandbox(&name));
+                return Ok(1);
+            }
             let selection =
                 purlis_core::active::persona(&here.asking(None, here.persona_env.as_deref()));
             let mut sink = crate::speak;
