@@ -1708,40 +1708,56 @@ fn reason_in(
 ) -> Option<String> {
     let mut here = start.to_string();
     // Kept normalised, so `cd x; cd ..` is one directory and not two. One past `RELOCATIONS` is
-    // all a caller needs to know, and no more is kept.
-    let mut note = |here: &String| {
-        let place = match pypath::normpath(here) {
+    // all a caller needs to know, and no more is kept. The normalised place is carried from
+    // one relocation to the next, never spelt again from the start, and noted only when it
+    // has moved: a long run of `cd`s is followed in the time it takes to read it (qw377).
+    let mut place = pypath::Normalised::of(start);
+    let mut note = |place: &pypath::Normalised| {
+        if heres.len() > RELOCATIONS {
+            return;
+        }
+        let place = match place.spelt() {
             place if place == "." => String::new(),
             place => place,
         };
-        if heres.len() <= RELOCATIONS && !heres.contains(&place) {
+        if !heres.contains(&place) {
             heres.push(place);
         }
     };
-    note(&here);
+    note(&place);
+    // Whether the shell has moved since the place was last noted: a place is one a segment
+    // STARTS in, so the last `cd` of a line adds none.
+    let mut moved = false;
     for toks in segments {
-        note(&here);
+        if moved {
+            note(&place);
+            moved = false;
+        }
         let it = shellwrap::split_env_chdir(toks.as_slice());
         let base = base_lower(&it.prog);
         if !it.prog.is_empty() && CHDIR_BUILTINS.contains(&base.as_str()) {
             // `cd`/`pushd` relocate the shell for every LATER segment.
             if let Some(dest) = it.argv.iter().skip(1).find(|a| !a.starts_with('-')) {
-                here = if pypath::is_abs(dest) {
-                    dest.clone()
-                } else {
-                    pypath::join(&here, dest)
-                };
+                // `here = join(here, dest)`, in place.
+                if pypath::is_abs(dest) {
+                    here.clear();
+                } else if !here.is_empty() && !here.ends_with('/') {
+                    here.push('/');
+                }
+                here.push_str(dest);
+                place.join(dest);
+                moved = true;
             }
             continue;
         }
         // A wrapper's chdir moves THIS program only — `env -C d cat x` leaves the shell where it
         // was — so it layers onto `here` for this segment and does not outlive it.
-        let where_ = if it.chdir.is_empty() {
-            here.clone()
+        let where_: std::borrow::Cow<'_, str> = if it.chdir.is_empty() {
+            here.as_str().into()
         } else if pypath::is_abs(&it.chdir) {
-            it.chdir.clone()
+            it.chdir.as_str().into()
         } else {
-            pypath::join(&here, &it.chdir)
+            pypath::join(&here, &it.chdir).into()
         };
 
         // Before the `prog` test, because these opens do not depend on what the program turns
@@ -1801,7 +1817,7 @@ fn reason_in(
         // walk GOES — against `where_`, not `cwd`, because the walk's operand has to resolve
         // against the directory the program will really run in.
         let at = if pypath::is_abs(&where_) {
-            where_.clone()
+            where_.to_string()
         } else {
             pypath::join(cwd, &where_)
         };

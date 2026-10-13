@@ -169,6 +169,61 @@ pub fn normpath(path: &str) -> String {
     if out.is_empty() { ".".to_string() } else { out }
 }
 
+/// A path kept as [`normpath`] spells it while more is joined onto it: what
+/// `normpath(join(join(a, b), c))` answers, without spelling the whole way there again for
+/// each part. A caller that follows a long run of relocations (`cd a; cd ../b; …`) and asks
+/// where it stands after each would otherwise read the run's square (qw377).
+///
+/// `normpath` folds a path's components left to right, and what it keeps of them is all that
+/// a later component can change: so the fold is carried on from where it stopped.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Normalised {
+    /// The leading slashes `normpath` keeps: none, one, or POSIX's pair.
+    slashes: usize,
+    comps: Vec<String>,
+}
+
+impl Normalised {
+    /// `path`, as `normpath(path)` spells it.
+    pub fn of(path: &str) -> Self {
+        let mut it = Normalised::default();
+        it.join(path);
+        it
+    }
+
+    /// `more` joined on, as [`join`] joins it: an absolute `more` starts over.
+    pub fn join(&mut self, more: &str) {
+        if is_abs(more) {
+            self.slashes = if more.starts_with("//") && !more.starts_with("///") {
+                2
+            } else {
+                1
+            };
+            self.comps.clear();
+        }
+        for comp in more.split('/') {
+            if comp.is_empty() || comp == "." {
+                continue;
+            }
+            if comp != ".."
+                || (self.slashes == 0 && self.comps.is_empty())
+                || self.comps.last().is_some_and(|c| c == "..")
+            {
+                self.comps.push(comp.to_string());
+            } else {
+                self.comps.pop();
+            }
+        }
+    }
+
+    /// The path, as `normpath` spells it: `.` for none.
+    pub fn spelt(&self) -> String {
+        let mut out = "/".repeat(self.slashes);
+        out.push_str(&self.comps.join("/"));
+        if out.is_empty() { ".".to_string() } else { out }
+    }
+}
+
 /// `os.getcwd()` as `realpath` uses it: already absolute and already symlink-free.
 ///
 /// A cwd that cannot be read is the one case Python cannot reach (it raises), so the fallback
@@ -832,6 +887,20 @@ mod tests {
     }
 
     proptest! {
+        /// Joined a part at a time, a path is spelt as `normpath` spells the whole of it.
+        #[test]
+        fn a_path_joined_part_by_part_is_normpaths_of_the_whole(
+            start in "[a-z./]{0,12}",
+            parts in proptest::collection::vec("[a-z./]{0,8}", 0..12),
+        ) {
+            let mut whole = start.clone();
+            let mut kept = Normalised::of(&start);
+            for part in &parts {
+                whole = join(&whole, part);
+                kept.join(part);
+                prop_assert_eq!(kept.spelt(), normpath(&whole), "{:?} then {:?}", start, parts);
+            }
+        }
         /// A matcher that panics is a matcher that does not answer, and the thing above it reads
         /// "did not answer" as an error rather than as a refusal. The class grammar indexes a
         /// pattern in four places; this is the property that says none of them can walk off it.
