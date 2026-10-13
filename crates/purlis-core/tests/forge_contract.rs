@@ -2792,6 +2792,22 @@ mod merge_when_ready_scenes {
         assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
         spent(&recorded);
 
+        // The same branch into the same target, and not opened by purlis (no prefix, no
+        // marker): a person's own request, which a save leaves as it is, is theirs to merge.
+        for gate in [SETTLED, Gate::Person] {
+            let (backend, recorded) = over(
+                Kind::GitHub,
+                vec![gh_ready_with("headRefName", json!("feature/x"))],
+            );
+            let got =
+                backend.merge_when_ready(&caller(), "acme/api", &PR, &from_a_feature_branch, gate);
+            assert!(
+                matches!(&got, Ok(Ready::Refused(why)) if why.contains("not a request purlis opened")),
+                "{got:?}"
+            );
+            spent(&recorded);
+        }
+
         // GitLab: a merge request from another project is not purlis's own.
         let mut fork = gl_mr("mergeable");
         fork["source_project_id"] = json!(7);
