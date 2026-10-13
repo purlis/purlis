@@ -111,6 +111,11 @@ const CI_ENDS = [
     publishes: false,
   },
   {
+    name: "a green ci of a push to another branch",
+    ci: { conclusion: "success", branch: "release-prep" },
+    publishes: false,
+  },
+  {
     name: "a green ci of a push in another repository",
     ci: { conclusion: "success", from: "stranger/purlis" },
     publishes: false,
@@ -168,6 +173,52 @@ test("plan runs for a green ci of a push to this repository's main, and for no o
   for (const event_name of ["push", "schedule", "workflow_dispatch"]) {
     assert.equal(evaluate(condition, { event_name, repository: REPO, event: {} }), true);
   }
+});
+
+test("each of plan's four tests of the ci run is needed: without any one, plan refuses", () => {
+  // The provenance of a dev build, each condition by itself: the conclusion, the event, the
+  // branch and the repository. A run that fails exactly one of them is refused.
+  const condition = planCondition();
+  const green = { conclusion: "success", event: "push", branch: "main", from: REPO };
+  assert.equal(evaluate(condition, afterCi({ ...green, runId: 1 })), true);
+  for (const [field, other] of [
+    ["conclusion", "failure"],
+    ["event", "pull_request"],
+    ["branch", "main-2"],
+    ["from", "stranger/purlis"],
+  ]) {
+    assert.equal(evaluate(condition, afterCi({ ...green, [field]: other, runId: 1 })), false, field);
+  }
+  for (const want of [
+    "github.event.workflow_run.conclusion == 'success'",
+    "github.event.workflow_run.event == 'push'",
+    "github.event.workflow_run.head_branch == 'main'",
+    "github.event.workflow_run.head_repository.full_name == github.repository",
+  ]) {
+    assert.ok(condition.includes(want), `plan's if: lacks ${want}`);
+  }
+});
+
+test("a dev build's commit is checked against main's history before anything from the checkout runs", () => {
+  const plan = job("plan").map((line) => line.trim());
+  const script = plan.indexOf("set -euo pipefail");
+  assert.deepEqual(plan.slice(script + 1, script + 8), [
+    'if [ "$EVENT" = workflow_run ]; then',
+    'on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status)',
+    'case "$on_main" in',
+    'ahead | identical) echo "$SHA is in main\'s history" ;;',
+    "*) echo \"::error::$SHA is not in main's history (main is '$on_main' of it), so it is not built\"; exit 1 ;;",
+    "esac",
+    "fi",
+  ]);
+  // Nothing of the repository's own runs before it in `plan`: the two checkouts, then this.
+  const before = plan.slice(0, script).filter((line) => /^- (uses|name|run):|^run:|^uses:/.test(line));
+  assert.deepEqual(before.map((line) => line.split("@")[0]), [
+    "- uses: actions/checkout",
+    "- uses: actions/checkout",
+    "- name: Channel, version, and whether anything is published",
+    "run: |",
+  ]);
 });
 
 test("only a run that plan lets publish waits in the dev builds' group", () => {
