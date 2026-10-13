@@ -20,7 +20,13 @@ import {
   whatItLets,
   whatWaits,
 } from "../personaHostsAllow";
-import { ALLOW_EXPECTS, allowable, ExpectedLines, mayAnswerExpects } from "../ProjectExpectsNotice";
+import {
+  ALLOW_EXPECTS,
+  allowable,
+  asDrawn,
+  ExpectedLines,
+  mayAnswerExpects,
+} from "../ProjectExpectsNotice";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
@@ -498,13 +504,17 @@ function ExpectsHere({
     setBusy(true);
     setSaid(undefined);
     void commands
-      .allowProjectExpects(
-        plane,
-        left.items.map((one) => one.target),
-      )
+      .allowProjectExpects(plane, asDrawn(left.items))
       .then((answer) => {
         if (answer.status !== "ok") {
           setSaid(answer.error);
+          // Refused: the list is read again, so what is drawn is what stands now.
+          void commands
+            .sandboxState(plane)
+            .then((state) => {
+              if (state.status === "ok" && state.data?.expects) setLeft(state.data.expects);
+            })
+            .catch(() => {});
           return;
         }
         const now = answer.data.expects ?? null;

@@ -570,8 +570,9 @@ pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
 
 /// What the window is told of a block a chat's hook sent on `plane`'s socket, or a brokered
 /// run's proxy refused. A harness word the app does not start is no harness: the line is the
-/// chat's own.
-pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
+/// chat's own. `has_check`: whether the chat's sandbox was compiled with the system's
+/// certificate check, by the app's own record of its start ([`blocked_on`]).
+pub fn blocked_holding(plane: &PlaneId, heard: &HeardBlock, has_check: bool) -> ChatBlocked {
     let blocked = &heard.line;
     let harness = blocked
         .harness
@@ -586,23 +587,34 @@ pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
             &blocked.sandbox_blocked,
             harness,
             blocked.target.as_deref(),
+            has_check,
         )
     }
+}
+
+/// [`blocked_holding`] for a chat that started without the certificate check.
+#[cfg(test)]
+pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
+    blocked_holding(plane, heard, false)
 }
 
 /// **What the window is told of `block`, refused chat `session` of `harness` on `target`**: what
 /// [`blocked`] says of a block a hook sent, and what a block says once the person chose its
 /// target (`crate::sandboxchoose`), so a chosen socket or service is judged, worded and offered
-/// exactly as one the sandbox named (#1884).
+/// exactly as one the sandbox named (#1884). `has_check`: whether this chat's sandbox was
+/// compiled with the system's certificate check as it started, which decides what a refused
+/// check's Notice says ([`certificate_check_refused`]); never a word the chat sent.
 pub(crate) fn blocked_on(
     plane: &PlaneId,
     session: u32,
     block: &purlis_core::sandboxblock::Block,
     harness: Option<purlis_core::harness::Harness>,
     target: Option<&str>,
+    has_check: bool,
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
-    let (first, named, why) = for_its_harness(harness, offered(plane.root(), block, target));
+    let (first, named, why) =
+        for_its_harness(harness, offered_to(plane.root(), block, target, has_check));
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
     let choose = choosable(&locks, block, first);
@@ -893,10 +905,23 @@ fn held(
 /// - Anything else no grant names (the certificate check, a system service, starting a program,
 ///   a write whose folder the report did not name): "Start without the sandbox", saying why
 ///   (#1637). Only purlis's own block offers nothing to allow.
+#[cfg(test)]
 fn offered(
     root: &Path,
     block: &purlis_core::sandboxblock::Block,
     target: Option<&str>,
+) -> (BlockOffer, Option<String>, Option<String>) {
+    offered_to(root, block, target, false)
+}
+
+/// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
+/// (`has_check`) or without it: all that differs is what a refused check is told
+/// ([`certificate_check_refused`]).
+fn offered_to(
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+    has_check: bool,
 ) -> (BlockOffer, Option<String>, Option<String>) {
     use purlis_core::sandbox::{Class, grant, services};
     use purlis_core::sandboxblock::{Kind, Operation};
@@ -1006,10 +1031,14 @@ fn offered(
         // stands and the way on.
         (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) => {
             match target.map(services::service) {
-                Some(Ok(name)) if name == services::TRUSTD => certificate_check_refused(root),
+                Some(Ok(name)) if name == services::TRUSTD => {
+                    certificate_check_refused(root, has_check)
+                }
                 // A refused certificate check that reached the app naming nothing (down a
                 // pipe, read back later) is the certificate check all the same.
-                None if block.kind == Kind::CertificateCheck => certificate_check_refused(root),
+                None if block.kind == Kind::CertificateCheck => {
+                    certificate_check_refused(root, has_check)
+                }
                 Some(Ok(name)) => {
                     let said = services::said_of(
                         &grant::What::Service(name.clone()),
@@ -1044,18 +1073,35 @@ fn offered(
 /// 2026-10-13): every sandboxed chat has the check unless the project or policy turns it off,
 /// so there is never an Allow for it, and never a dead end either.
 ///
-/// - **On for the project**: this chat started before it was (an update, or the project's
-///   setting turned back on). The Notice says so and offers Restart this chat.
+/// - **On for the project**, and this chat started before it was (an update, or the project's
+///   setting turned back on): the Notice says so and offers Restart this chat.
+/// - **On for the project, and this chat started with it** (`has_check`, the app's own record
+///   of what the chat's sandbox was compiled with): a restart would start it with the same
+///   sandbox, so it is not offered. Something else refused the tool, and the Notice says so,
+///   with Start without the sandbox as the way to tell.
 /// - **Off by the project's own setting**: said, with where to turn it on (Settings › Sandbox,
 ///   which everyone in the project then gets) and Start without the sandbox.
 /// - **Off by policy**: said, with who set it; [`held`] then offers Start without the sandbox
 ///   unless policy forbids that too.
-fn certificate_check_refused(root: &Path) -> (BlockOffer, Option<String>, Option<String>) {
+fn certificate_check_refused(
+    root: &Path,
+    has_check: bool,
+) -> (BlockOffer, Option<String>, Option<String>) {
     use purlis_core::sandbox::CertificateChecks;
     // No name beside it: the block's own words say "the system's certificate check", and the
     // service's name is nothing the person can act on.
     let target = None;
     match CertificateChecks::at(root) {
+        None | Some(CertificateChecks::On) if has_check => (
+            BlockOffer::Unsandboxed,
+            target,
+            Some(
+                "This chat already has certificate checks, so restarting it would change \
+                 nothing: something else refused this tool, and its own message may say what. \
+                 To tell whether the sandbox is the cause, start this chat without the sandbox."
+                    .to_owned(),
+            ),
+        ),
         None | Some(CertificateChecks::On) => (
             BlockOffer::Allowed,
             target,
@@ -3726,6 +3772,27 @@ mod tests {
             let (offer, _, _, levels) = held(&Locks::none(), (offer, target, Some(said)));
             assert_eq!((offer, levels), (BlockOffer::Allowed, Vec::new()));
         }
+        // A chat that started WITH the check and is refused it all the same: a restart would
+        // start it with the same sandbox, so the Notice says the check is on already, that
+        // something else refused it, and offers the way to tell, never Restart.
+        let project = project_with("");
+        for named in [Some(TRUSTD), None] {
+            let (offer, target, said) = offered_to(project.path(), &block, named, true);
+            assert_eq!(offer, BlockOffer::Unsandboxed, "{named:?}");
+            assert_eq!(target, None);
+            let said = said.expect("said");
+            assert!(said.contains("already has certificate checks"), "{said}");
+            assert!(!said.contains("once it restarts"), "{said}");
+            let (offer, _, _, levels) = held(&Locks::none(), (offer, target, Some(said)));
+            assert_eq!((offer, levels), (BlockOffer::Unsandboxed, Vec::new()));
+        }
+        // What the chat started with changes nothing where the project or policy turned the
+        // check off since: that is what stands for its next start, and what is said.
+        let off = project_with("certificate-checks = false\n");
+        assert_eq!(
+            offered_to(off.path(), &block, Some(TRUSTD), true),
+            offered_to(off.path(), &block, Some(TRUSTD), false)
+        );
         // The project's own `false`.
         let off = project_with("certificate-checks = false\n");
         let (offer, target, said) = offered(off.path(), &block, Some(TRUSTD));

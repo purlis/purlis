@@ -239,8 +239,9 @@ pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
 /// The one lookup the certificate check needs (#1337): Go programs on macOS, `gh` among them,
 /// verify a host's certificate by asking the `trustd` agent, and fail every TLS connection
 /// without it. The same rule Claude Code's `enableWeakerNetworkIsolation` adds to its profile.
-/// The agent fetches the addresses a certificate names, past the egress proxy, so it is off
-/// unless the project turns `certificate-checks` on (D-1337-7).
+/// The agent fetches the addresses a certificate names, past the egress proxy: a residual the
+/// operator accepted (R1, 2026-10-13). On unless the project's `certificate-checks` is `false`
+/// or policy locks it ([`super::CertificateChecks`]).
 pub const TRUST: &str = "(allow mach-lookup (global-name \"com.apple.trustd.agent\"))";
 
 /// `own`, widened by what the project's sandbox widens ([`super::Widened`]): its package caches
@@ -248,7 +249,8 @@ pub const TRUST: &str = "(allow mach-lookup (global-name \"com.apple.trustd.agen
 /// never an entry itself, and cargo's few files; each folder purlis made pinned as an entry, so
 /// it is never removed, renamed or swapped for a link; the later-code names denied at any
 /// depth of each, as in every folder a chat writes, and a bare repository's `config` and
-/// `hooks` never written. And the certificate check, where the project turned it on (D-1337-7).
+/// `hooks` never written. And the certificate check, unless the project or policy turned it off
+/// (D-1337-7, R1).
 pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str> {
     if let Some(caches) = &widened.caches {
         for tree in &caches.trees {

@@ -415,13 +415,13 @@ export const commands = {
 	/**
 	 *  **Allow on this machine**, on the Notice of what a project expects or in Settings › Sandbox
 	 *  (ADR 0093, ruling 2): the person lets every chat of this project reach what its committed
-	 *  file declares, of what the question showed (`shown`, each as the file writes it). Each is
+	 *  file declares, of what the question showed (`shown`, each as the window drew it). Each is
 	 *  judged as any grant is, audited, and kept in this machine's own file, never the project's:
 	 *  the declaration itself grants nothing. One that cannot be allowed here now is left out and
-	 *  said. A chat takes it from its next start. The window's alone (`WINDOW_ONLY`): no link and
+	 *  said, and so is one that no longer stands as it was drawn. A chat takes it from its next start. The window's alone (`WINDOW_ONLY`): no link and
 	 *  no chat makes it, so a chat can neither ask for it nor answer it.
 	 */
-	allowProjectExpects: (plane: PlaneId, shown: string[]) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_project_expects", { plane, shown })),
+	allowProjectExpects: (plane: PlaneId, shown: ExpectedShown[]) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_project_expects", { plane, shown })),
 	/**
 	 *  **Not now**, on the Notice of what a project expects (ADR 0093): remembered on this
 	 *  machine for the declaration as it was shown, `shown`, so it is asked again only when the
@@ -4613,6 +4613,22 @@ export type ExpectedItem = {
 	says: string,
 	/**  Why it cannot be allowed on this machine now, where it cannot. */
 	refused: string | null,
+};
+
+/**
+ *  **One item of the question as the window drew it**: what the person saw when they pressed
+ *  Allow, and so all an Allow may keep. A path a repository declared can lead somewhere else
+ *  by the time of the press, and an item that could not be allowed when it was drawn can have
+ *  become one that can; neither is what the person answered.
+ */
+export type ExpectedShown = {
+	/**  As the committed file writes it ([`ExpectedItem::target`]). */
+	target: string,
+	/**
+	 *  What the window named as what an Allow would keep ([`ExpectedItem::named`]); `null`
+	 *  where it drew the item as one that cannot be allowed here now.
+	 */
+	named: string | null,
 };
 
 /**

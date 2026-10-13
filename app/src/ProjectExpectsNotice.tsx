@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type ExpectedItem, type PlaneId, type ProjectExpects } from "./bindings";
+import {
+  commands,
+  type ExpectedItem,
+  type ExpectedShown,
+  type PlaneId,
+  type ProjectExpects,
+} from "./bindings";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
@@ -22,6 +28,15 @@ const kind = (one: ExpectedItem) =>
 
 /** Whether an Allow would keep `one`: it can be allowed on this machine now. */
 export const allowable = (one: ExpectedItem) => one.refused === null;
+
+/**
+ * **What an Allow is sent: each item as it was drawn**, so only that is kept. The name it was
+ * drawn under goes with it, and nothing for one drawn as "cannot be allowed here now": a path a
+ * repository declared may lead somewhere else by the time of the press, and the backend keeps
+ * an item only while it still stands as the person saw it.
+ */
+export const asDrawn = (items: readonly ExpectedItem[]): ExpectedShown[] =>
+  items.map((one) => ({ target: one.target, named: allowable(one) ? one.named : null }));
 
 /**
  * **One line for each thing a project expects**: what it is, named whole and drawn inertly (a
@@ -85,6 +100,9 @@ export function ProjectExpectsNotice({
   // And when the window comes back: an Allow made in Settings, or in another window.
   const focused = useWindowFocused();
 
+  /** Asked again after an Allow that was refused: what waits may stand otherwise by now. */
+  const [again, setAgain] = useState(0);
+
   useEffect(() => {
     let live = true;
     void commands
@@ -98,23 +116,28 @@ export function ProjectExpectsNotice({
     return () => {
       live = false;
     };
-  }, [plane, onDisk, focused]);
+  }, [plane, onDisk, focused, again]);
 
   if (expects === undefined || !expects.asked || expects.items.length === 0) return null;
 
-  const shown = expects.items.map((one) => one.target);
+  const items = expects.items;
   const answer = (allow: boolean) => {
     if (busy) return;
     setBusy(true);
     setSaid(undefined);
     void (
       allow
-        ? commands.allowProjectExpects(plane, shown)
-        : commands.declineProjectExpects(plane, shown)
+        ? commands.allowProjectExpects(plane, asDrawn(items))
+        : commands.declineProjectExpects(
+            plane,
+            items.map((one) => one.target),
+          )
     )
       .then((done) => {
         if (done.status !== "ok") {
           setSaid(done.error);
+          // Refused: the list is read again, so what is drawn is what stands now.
+          setAgain((n) => n + 1);
           return;
         }
         setExpects(done.data.expects ?? undefined);

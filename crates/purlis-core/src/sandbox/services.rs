@@ -631,6 +631,11 @@ impl Declared {
 /// The longest socket path a declaration names: far past any path a socket can be bound at.
 const MOST_DECLARED_PATH: usize = 1024;
 
+/// **The most a project declares**, sockets and services together: far past what a project
+/// needs, and few enough to draw whole in one question and to look at on this machine each
+/// time the declaration is read. What a file lists past it declares nothing.
+pub const MOST_DECLARED: usize = 32;
+
 /// Whether `path`, a socket's as a repository wrote it, can be said plainly: no longer than a
 /// path is, and with no character that draws as nothing (a control, a zero-width or
 /// direction-changing one: [`crate::shown::invisible`]). It is drawn to a person and named in
@@ -644,7 +649,8 @@ fn said_plainly(path: &str) -> bool {
 
 /// What the committed `[sandbox] expects` in `top`, a whole `charter.toml`, declares. Anything
 /// that is neither a whole socket path nor a service name is left out: a declaration says
-/// nothing it cannot say plainly ([`said_plainly`], [`service`]).
+/// nothing it cannot say plainly ([`said_plainly`], [`service`]). And no more than [`MOST_DECLARED`] of
+/// them, in the order the file lists them.
 pub fn declared_in(top: Option<&toml::Table>) -> Declared {
     let mut out = Declared::default();
     let Some(listed) = top
@@ -656,6 +662,9 @@ pub fn declared_in(top: Option<&toml::Table>) -> Declared {
         return out;
     };
     for one in listed.iter().filter_map(toml::Value::as_str) {
+        if out.sockets.len() + out.services.len() >= MOST_DECLARED {
+            break;
+        }
         if one.starts_with('/') {
             let path = PathBuf::from(one);
             if said_plainly(one) && !out.sockets.contains(&path) {

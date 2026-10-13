@@ -3151,6 +3151,14 @@ impl Chats {
             .and_then(|running| running.confines.clone())
     }
 
+    /// Whether chat `session` is open and its sandbox was compiled with the system's
+    /// certificate check as it started (R1): a refusal of the check then has another cause,
+    /// and a restart would change nothing.
+    pub fn has_certificate_check(&self, session: u32) -> bool {
+        self.confines_of(session)
+            .is_some_and(|confines| confines.widened.trust)
+    }
+
     /// What chat `session`'s sandbox was compiled to as it started ([`Self::confines_of`]), with
     /// the hosts the person allowed it live since (#1666): what a brokered `secret exec` run for
     /// it now is held to, so an Allow from a run's Notice reaches the chat's next run (#1667).

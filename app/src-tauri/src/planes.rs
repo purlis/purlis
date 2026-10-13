@@ -2024,8 +2024,14 @@ impl Planes {
             // is told of it, so an answer to it can be checked against what was heard (#1508).
             let held = Arc::downgrade(&held);
             Arc::new(move |block| {
-                let mut told = hooks::blocked(&plane, &block);
-                if let Some(strong) = held.upgrade() {
+                let strong = held.upgrade();
+                // Whether the chat started with the certificate check, by the app's own record
+                // of its start: what a refused check's Notice says turns on it.
+                let has_check = strong
+                    .as_ref()
+                    .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
+                let mut told = hooks::blocked_holding(&plane, &block, has_check);
+                if let Some(strong) = strong {
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());
