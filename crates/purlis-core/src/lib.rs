@@ -21,6 +21,7 @@ pub mod chattools;
 pub mod cistate;
 pub mod cliname;
 pub mod clipath;
+pub mod cloneupdate;
 pub mod commitgate;
 pub mod commitguard;
 pub mod committedby;

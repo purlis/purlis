@@ -279,6 +279,37 @@ fn a_chat_the_app_did_not_start_sandboxed_sends_no_block() {
     assert_eq!(heard.said, "", "no block, so the chat is told nothing");
 }
 
+/// qw349, in git's measured words: a checkout the sandbox stopped at an editor's file came back
+/// with exit status 0, at the new commit, with that file left behind. The chat is told what
+/// the folder now is and the way back, in the one line the block word prints; a chat the app
+/// did not sandbox is told nothing, since the refusal there is not the sandbox's.
+#[test]
+fn a_git_move_the_sandbox_stopped_partway_tells_the_chat_the_way_back() {
+    let payload = serde_json::json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "git checkout feature"},
+        "tool_response": {
+            "stdout": "",
+            "stderr": "error: unable to unlink old 'app/.vscode/tasks.json': Operation not \
+                       permitted\nHEAD is now at 6d66ac1 two\nM\tapp/.vscode/tasks.json\n",
+            "interrupted": false,
+        },
+    });
+    let heard = hook("posttooluse-blocked", &payload);
+    let told = context_of(&heard.said, "PostToolUse");
+    assert!(told.contains("⬢ git stopped partway"), "{told}");
+    assert!(told.contains("`app/.vscode/tasks.json`"), "{told}");
+    assert!(told.contains("half-updated"), "{told}");
+    assert!(
+        told.contains("`git restore --source=HEAD --worktree -- app/.vscode/tasks.json`"),
+        "{told}"
+    );
+    holds_nothing_of_the_call(&heard);
+    let unsandboxed = hook_in("posttooluse-blocked", &payload, false);
+    assert_eq!(unsandboxed.said, "", "not the sandbox's refusal");
+}
+
 /// #1631, replayed: a command that reached three hosts came back with exit status 0, and Claude
 /// Code's proxy said on its standard error that it refused each. No Notice was raised and the
 /// chat, told nothing, went around the block.

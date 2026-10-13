@@ -290,6 +290,82 @@ rule while one who reads a bare refusal files an issue.
   The same holds for purlis's own saves. `purlis save` and `purlis save --pull` run inside
   the chat's sandbox, so where the remote's commits change a file the sandbox denies they
   bring nothing in, say which files, and leave the commit local for the window's save.
+- **A clone's or a branch folder's update a sandbox would stop partway.** The same failure
+  outside the root, asked only of a chat the app sandboxed. The later-code names are denied
+  in every folder a chat writes, and plenty of repositories track one (`.vscode/`, `.husky/`,
+  `.claude/settings.json`, `.mcp.json`, `.envrc`). Measured in a clone: a `pull`, `merge`,
+  `rebase` or `reset --hard` whose other commit changes such a file writes every other file
+  and fails, with the commit unmoved; a `checkout` or `switch` does the same and reports
+  success, at the new commit, with that file left behind as if the chat had changed it; a
+  `clone` writes what it can and leaves its index empty.
+
+  Here the guard is precise. Before the command runs it asks git which paths differ between
+  the folder's commit and the commit the command moves it to, and refuses only where one of
+  them is a path the sandbox denies. The refusal names those paths and says the person runs
+  the command in their own terminal. A move that touches none of them runs, in a repository
+  that tracks such files too. Asked this way: `checkout` and `switch` of a branch or a commit
+  (also `-b`, `-c`, `--detach`, `-t`, `-`, and a bare word one remote has a branch for);
+  `merge <commit>` and a bare `merge`; `rebase <upstream>` and a bare `rebase`, which also
+  answers for every commit it replays; `cherry-pick <commit>` and `revert <commit>`; `stash
+  pop` and `stash apply`; `reset --hard|--merge|--keep <commit>` and a restore from another
+  commit, which also answer for a denied file changed in the folder.
+
+  Where the other commit cannot be named before the command runs, the guard refuses only
+  where the repository tracks a denied path at all, and says how to make the move one it can
+  check:
+  - `git pull` fetches its commit itself. Run `git fetch` on its own, then `git merge
+    --ff-only @{u}` or `git rebase @{u}`.
+  - A move with a command that may write before it on the same line (`git fetch && git rebase
+    origin/main`, `gh pr checkout 7 && git merge main`, a script, a redirection into a
+    file): the name, or the commit the folder is at, may move before git reads it. Run it as
+    a command of its own. A `cd`, what only reads or prints, and git that only reads
+    (`status`, `log`, `diff`) may stay before it; anything may come after it.
+  - `rebase -i`, `--onto`, `--exec`; `merge` of several commits or with `-m`, `-s`, `-X`;
+    `cherry-pick` of a range or several; `am`, `bisect`, `read-tree -u`, `stash branch`,
+    `switch --orphan`; an option the guard does not know; a name that does not resolve.
+
+  Never refused: restores to the current commit, `--abort` and `--quit`, and `--continue`
+  or `--skip` of a rebase, cherry-pick, revert or `am`, whose start answered for every commit
+  it replays. A restore that names a denied file is refused with the `git restore` command
+  for the person's terminal. A move sent to a folder the guard cannot name (a variable, a
+  glob), or with git pointed at a repository by `--git-dir` or `GIT_DIR`, is refused and told
+  to spell the folder out, whatever that folder's repository tracks; so is one whose line
+  sets `core.worktree`. One line is asked about four moves at most. The way back is not
+  counted.
+
+  The guard fails closed where it cannot ask. A repository purlis could not read (its `.git`
+  names a git directory purlis does not follow, or git did not answer) is not taken for one
+  that tracks nothing: a move there is refused, and the way back is not. A word git may take
+  for an alias the guard could not read (the line sets configuration it does not read, or
+  the alias leads on past where it follows) is judged as a move it cannot name. A command
+  run below a clone's top is asked about the clone it is in. A `checkout` or `switch` is
+  asked about the branch of a name before a tag of it, and about the one remote branch of a
+  name nothing else has, as git reads it there.
+
+  A folder with no commit yet (after `git init` and a `fetch`) has nothing to compare with:
+  a move there answers for the whole tree of the commit it lands on. So does any checkout,
+  hard reset or restore in a folder that has a commit and was never checked out (a clone
+  made with `--no-checkout`): it is refused where that tree holds a denied path, and told
+  the person's command that finishes it. Where git does not say what commit a folder is at,
+  a move does not start.
+
+  **`git clone`** of a repository on this machine is asked what it tracks and refused where
+  that includes a denied path, with `purlis clone <repo>` (the app makes the clone, whole)
+  and the person's terminal as the ways through; a `file:` source is one too. A clone from a URL cannot be asked before
+  it is fetched, and runs. `--no-checkout`, `--bare` and `--mirror` write no file and run.
+
+  **And a net under it.** When a git command a sandboxed chat ran says it could not write a
+  later-code file ("unable to create file …", "unable to unlink old …", ending in the
+  sandbox's refusal: "Operation not permitted" on macOS, "Read-only file system" or
+  "Permission denied" on Linux), the chat is told in that turn that the folder is half-updated, not to commit
+  from it, and the way back: `git restore --source=HEAD --worktree -- :/` where the commit
+  did not move, the person's `git restore` of those files where it did, and for a clone the
+  person's `git -C <folder> restore --source=HEAD --staged --worktree -- :/`.
+
+  git is asked through the hardened runner alone, with no global or system configuration,
+  and only by plumbing that compares commits: no file is read through a filter and no
+  program a repository's configuration names is started. A path that reads as prose is
+  counted in a refusal and never repeated.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*

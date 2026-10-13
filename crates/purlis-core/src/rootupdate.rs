@@ -551,13 +551,35 @@ pub fn refusal_where(
         return None;
     }
     let root = planeroot::plane_root(root);
+    refusal_of(
+        &planeroot::plane_root_git(cmd, cwd, &root),
+        cwd,
+        &root,
+        chat_dir,
+        denied,
+    )
+}
+
+/// [`refusal_where`], for a line the walk has already read: `line` is
+/// [`planeroot::plane_root_git`]'s answer for it, against `root` as [`planeroot::plane_root`]
+/// spells it. For a caller that asks more than one arm of a line and reads it once.
+pub fn refusal_of(
+    line: &[planeroot::RootInvocation],
+    cwd: &str,
+    root: &str,
+    chat_dir: Option<&Path>,
+    denied: &dyn Fn(&Path) -> Vec<String>,
+) -> Option<(String, String)> {
+    if !writes_the_root(root, chat_dir) {
+        return None;
+    }
     let mut held: Option<Vec<String>> = None;
-    for inv in planeroot::plane_root_git(cmd, cwd, &root) {
+    for inv in line {
         if inv.unread {
             continue; // the branch guard refuses what it could not read
         }
         let (sub, post, end) = planeroot::resolve_git_alias_to_its_end(
-            &root,
+            root,
             &inv.sub,
             &inv.post,
             &inv.pre,
@@ -571,12 +593,12 @@ pub fn refusal_where(
             continue;
         }
         // Looked at only for a command this arm judges, and once for the line.
-        let held = held.get_or_insert_with(|| denied(Path::new(&root)));
+        let held = held.get_or_insert_with(|| denied(Path::new(root)));
         if held.is_empty() {
             return None;
         }
-        let asks = Asked { root: &root, cwd };
-        let Some(why) = judged(&sub, &post, held, &root, &asks) else {
+        let asks = Asked { root, cwd };
+        let Some(why) = judged(&sub, &post, held, root, &asks) else {
             continue;
         };
         let why = if inv.unnamed {

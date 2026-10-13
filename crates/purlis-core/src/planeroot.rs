@@ -318,6 +318,17 @@ pub fn checkout_opt_kind(tok: &str) -> OptKind {
 ///
 /// Every path is the string `str(Path(...))` would be.
 pub fn git_target(cwd: &str, pre: &[String], env: &[String]) -> Vec<String> {
+    git_target_with(cwd, pre, env, &gitconfig::configured_work_tree)
+}
+
+/// [`git_target`], with the repository's own `core.worktree` asked through `configured`: the
+/// walk asks the disk once for each directory on a line ([`Disk`]), not once for each git.
+fn git_target_with(
+    cwd: &str,
+    pre: &[String],
+    env: &[String],
+    configured: &dyn Fn(&str, Option<&str>) -> Option<String>,
+) -> Vec<String> {
     let mut here = pure_path(if cwd.is_empty() { "." } else { cwd });
     let mut git_dir: Option<String> = None;
     let mut work_tree: Option<String> = None;
@@ -376,7 +387,7 @@ pub fn git_target(cwd: &str, pre: &[String], env: &[String]) -> Vec<String> {
         out.push(gd.clone());
         out.push(path_div(gd, ".."));
     }
-    if let Some(configured) = gitconfig::configured_work_tree(&here, named.as_deref()) {
+    if let Some(configured) = configured(&here, named.as_deref()) {
         out.push(configured);
     }
     out
@@ -498,6 +509,15 @@ fn identity(path: &str) -> Option<(u64, u64)> {
     crate::pypath::file_identity(std::path::Path::new(path))
 }
 
+/// The most directories [`Whereabouts`] spells; past it the shell may be anywhere.
+const MAX_WHEREABOUTS: usize = 64;
+
+/// The most bytes of directory names [`Whereabouts`] spells: [`MAX_WHEREABOUTS`] names of 128
+/// bytes. Every git on a line is read against each directory the shell may be in, so what is
+/// spelt is what one git costs; a `cd` to a relative name makes each name longer, and a line
+/// of them would otherwise make each git cost the line's length (qw367).
+const MAX_SPELT_BYTES: usize = 8 * 1024;
+
 /// Where the later segments of one command line may be running: every directory a `cd` so far
 /// could have left the shell in, and whether one of them is a directory this cannot name
 /// (`cd "$DIR"`, `cd -`, `popd`), which may be the root.
@@ -505,43 +525,68 @@ fn identity(path: &str) -> Option<(u64, u64)> {
 /// **It only ever grows while the shell might still be elsewhere**, as [`git_target`]'s list does
 /// and for the same reason: a `cd` is only taken to REPLACE where the shell is when its failure
 /// would stop what follows, and a `cd` that fails leaves the shell where it was (#345).
-/// The most directories [`Whereabouts`] spells; past it the shell may be anywhere.
-const MAX_WHEREABOUTS: usize = 64;
-
 #[derive(Clone, Debug, Default)]
 struct Whereabouts {
     dirs: Vec<String>,
     anywhere: bool,
+    /// More directories were in play than are spelt ([`MAX_WHEREABOUTS`],
+    /// [`MAX_SPELT_BYTES`]): none is spelt, the shell may be anywhere, and it stays so until a
+    /// `cd` that cannot fail unnoticed names an absolute directory.
+    lost: bool,
+    /// The bytes of `dirs`.
+    bytes: usize,
 }
 
 impl Whereabouts {
     fn at(dir: &str) -> Self {
         Whereabouts {
             dirs: vec![dir.to_string()],
-            anywhere: false,
+            bytes: dir.len(),
+            ..Whereabouts::default()
         }
     }
 
-    /// `other` taken in. Past [`MAX_WHEREABOUTS`] directories the shell may be anywhere: each
-    /// loose `cd` to a relative name may double them, and spelling every one would cost the
-    /// line the power of its `cd`s (#1325). The directories already spelt are kept, so what a
-    /// later segment makes by a relative name is still one no directory word can be told
-    /// apart from ([`Made::spelt`] spells none past [`MAX_MADE_DIRS`]).
+    /// A directory no word spells: the shell may be anywhere.
+    fn unnamed() -> Self {
+        Whereabouts {
+            anywhere: true,
+            ..Whereabouts::default()
+        }
+    }
+
+    /// `other` taken in. Past [`MAX_WHEREABOUTS`] directories, or [`MAX_SPELT_BYTES`] of
+    /// their names, the shell may be anywhere and none is spelt any more: each loose `cd` to
+    /// a relative name may double them, each `cd <name> && …;` adds one a level deeper, and
+    /// spelling every one would cost the line the power of its `cd`s (#1325, qw367). A git
+    /// read there is one the guard cannot name, which every guard refuses as it would in the
+    /// root. What a later segment makes by a relative name is then a name no directory word
+    /// can be told apart from ([`Made::spelt`]).
     fn merge(&mut self, other: Whereabouts) {
         self.anywhere |= other.anywhere;
-        if self.anywhere && self.dirs.len() >= MAX_WHEREABOUTS {
+        if self.lost || other.lost {
+            self.lose();
             return;
         }
         for d in other.dirs {
             if self.dirs.contains(&d) {
                 continue;
             }
-            if self.dirs.len() >= MAX_WHEREABOUTS {
-                self.anywhere = true;
+            if self.dirs.len() >= MAX_WHEREABOUTS || self.bytes + d.len() > MAX_SPELT_BYTES {
+                self.lose();
                 return;
             }
+            self.bytes += d.len();
             self.dirs.push(d);
         }
+    }
+
+    /// More directories than are spelt: see [`Whereabouts::lost`].
+    fn lose(&mut self) {
+        *self = Whereabouts {
+            anywhere: true,
+            lost: true,
+            ..Whereabouts::default()
+        };
     }
 }
 
@@ -840,10 +885,7 @@ fn cd_destinations(
     here: &Whereabouts,
     line: &CdContext,
 ) -> Whereabouts {
-    let anywhere = || Whereabouts {
-        dirs: Vec::new(),
-        anywhere: true,
-    };
+    let anywhere = Whereabouts::unnamed;
     if builtin == "popd" {
         return anywhere();
     }
@@ -896,15 +938,13 @@ fn cd_to(dest: String, here: &Whereabouts, line: &CdContext) -> Whereabouts {
         let walks_cdpath =
             !(dest == "." || dest == ".." || dest.starts_with("./") || dest.starts_with("../"));
         if walks_cdpath && line.cdpath {
-            return Whereabouts {
-                dirs: Vec::new(),
-                anywhere: true,
-            };
+            return Whereabouts::unnamed();
         }
     }
     let mut out = Whereabouts {
-        dirs: Vec::new(),
         anywhere: here.anywhere && !is_abs(&dest),
+        lost: here.lost && !is_abs(&dest),
+        ..Whereabouts::default()
     };
     let from: Vec<&str> = if is_abs(&dest) {
         vec![""]
@@ -1075,14 +1115,24 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
 /// [`plane_root_git`]'s invocations, and whether a string a shell is handed was nested past
 /// what the walk reads while it may name git.
 fn read_line(cmd: &str, cwd: &str, root: &str) -> (Vec<RootInvocation>, bool) {
+    let walk = walked(cmd, cwd, root, None);
+    (walk.out, walk.too_deep)
+}
+
+/// The walk of `cmd`, gathering the git invocations that act elsewhere too where `elsewhere`
+/// is a list to put them in.
+fn walked(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -> Walk {
     let shared = Shared {
         root,
         the_root: std::cell::OnceCell::new(),
         aliases: AliasBook::of(root),
+        disk: std::cell::RefCell::default(),
     };
     let mut walk = Walk {
         made: Made::default(),
         out: Vec::new(),
+        elsewhere,
+        wrote: false,
         too_deep: false,
         budget: STRING_BUDGET_PER_BYTE
             .saturating_mul(cmd.len())
@@ -1096,7 +1146,75 @@ fn read_line(cmd: &str, cwd: &str, root: &str) -> (Vec<RootInvocation>, bool) {
         &shared,
         &mut walk,
     );
-    (walk.out, walk.too_deep)
+    walk
+}
+
+/// One git invocation that acts on a repository other than the project's own: a workspace's
+/// clone, a branch folder, a scratch checkout (qw349, [`crate::cloneupdate`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Elsewhere {
+    /// The invocation, as the root's are read. Its `unnamed` is never set: one sent where the
+    /// guard cannot name is listed for the root ([`RootInvocation::unnamed`]).
+    pub inv: RootInvocation,
+    /// Every directory git may be run in, after its `-C`s and a wrapper's chdir flag: one for
+    /// each directory the shell may be in and each reading of a word.
+    pub dirs: Vec<String>,
+    /// More directories than [`MAX_ELSEWHERE_DIRS`]: the rest are not listed.
+    pub more_dirs: bool,
+    /// git is pointed at a repository or a work tree by name (`--git-dir`, `--work-tree`,
+    /// `GIT_DIR`, `GIT_WORK_TREE`), so the folder it runs in is not the whole answer.
+    pub pointed: bool,
+    /// A command that may write comes before it on the line, in a string a shell is handed
+    /// too: any program but one that only reads or prints ([`may_write`]), a redirection
+    /// that writes a file, git other than a [`GIT_READS`] subcommand. Such a command may move
+    /// a name, or the commit a folder is at, after the guard has read them.
+    pub after_a_writer: bool,
+}
+
+/// The most directories one [`Elsewhere`] lists.
+pub const MAX_ELSEWHERE_DIRS: usize = 8;
+
+/// git subcommands that write nothing a later git on the same line reads a commit from: what
+/// may stand beside a judged command without making its target one the guard read too early.
+/// None of them can be an alias, since git never lets an alias shadow a command of its own.
+pub const GIT_READS: [&str; 16] = [
+    "blame",
+    "cat-file",
+    "describe",
+    "diff",
+    "for-each-ref",
+    "grep",
+    "help",
+    "log",
+    "ls-files",
+    "ls-tree",
+    "merge-base",
+    "rev-list",
+    "rev-parse",
+    "show",
+    "status",
+    "version",
+];
+
+/// Every git invocation on a line, sorted by where it acts (qw349).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LineGit {
+    /// On the project's root, or where the guard cannot name ([`plane_root_git`]).
+    pub root: Vec<RootInvocation>,
+    /// On another repository.
+    pub elsewhere: Vec<Elsewhere>,
+    /// A string a shell is handed was not read, and may name git.
+    pub too_deep: bool,
+}
+
+/// [`plane_root_git`]'s walk, answering the invocations that act elsewhere too.
+pub fn line_git(cmd: &str, cwd: &str, root: &str) -> LineGit {
+    let walk = walked(cmd, cwd, root, Some(Vec::new()));
+    LineGit {
+        root: walk.out,
+        elsewhere: walk.elsewhere.unwrap_or_default(),
+        too_deep: walk.too_deep,
+    }
 }
 
 /// What one command line shares with every string its shells are handed: the root, stat-ed on
@@ -1106,6 +1224,102 @@ struct Shared<'a> {
     root: &'a str,
     the_root: std::cell::OnceCell<TheRoot>,
     aliases: AliasBook<'a>,
+    disk: std::cell::RefCell<Disk>,
+}
+
+/// What the disk said of the directories the gits on one line may run in: asked once for the
+/// line, not once for each git (qw367). Every git on a line is read against every directory
+/// the shell may be in, and most of a line's gits are sent to the same few, so asking again
+/// each time made a line of `cd <name> && git …;` cost the cube of its length.
+///
+/// Nothing a line does is read back off the disk as it is read: what a segment makes is
+/// followed on the line itself ([`Made`]), so an answer holds for the whole of it.
+#[derive(Default)]
+struct Disk {
+    /// Whether git, pointed at a directory, acts on the root's repository
+    /// ([`TheRoot::is_reached_from`]).
+    reaches: std::collections::HashMap<String, bool>,
+    /// The `core.worktree` of the repository a directory is in, or of a named git directory
+    /// ([`gitconfig::configured_work_tree`]).
+    work_trees: std::collections::HashMap<(String, Option<String>), Option<String>>,
+}
+
+/// The most answers [`Disk`] keeps of each kind. Past it the disk is asked again, so a line
+/// that sends git to thousands of different directories costs time and not memory.
+const MAX_DISK_ANSWERS: usize = 1024;
+
+impl Shared<'_> {
+    /// [`gitconfig::configured_work_tree`], asked once for the line.
+    fn configured_work_tree(&self, here: &str, git_dir: Option<&str>) -> Option<String> {
+        let key = (here.to_string(), git_dir.map(str::to_string));
+        if let Some(known) = self.disk.borrow().work_trees.get(&key) {
+            return known.clone();
+        }
+        let found = gitconfig::configured_work_tree(here, git_dir);
+        let mut disk = self.disk.borrow_mut();
+        if disk.work_trees.len() < MAX_DISK_ANSWERS {
+            disk.work_trees.insert(key, found.clone());
+        }
+        found
+    }
+
+    /// Whether git, pointed at `target`, acts on the root's repository, asked once for the
+    /// line.
+    fn reaches_the_root(&self, target: &str) -> bool {
+        if let Some(known) = self.disk.borrow().reaches.get(target) {
+            return *known;
+        }
+        let found = self
+            .the_root
+            .get_or_init(|| TheRoot::of(self.root))
+            .is_reached_from(target);
+        let mut disk = self.disk.borrow_mut();
+        if disk.reaches.len() < MAX_DISK_ANSWERS {
+            disk.reaches.insert(target.to_string(), found);
+        }
+        found
+    }
+
+    /// Where one git may run, under each reading of its directory words and from each
+    /// directory the shell may be in: whether one of them acts on the root's repository, and
+    /// otherwise, where `listed`, every directory it runs in, [`MAX_ELSEWHERE_DIRS`] at most,
+    /// and whether there were more. One pass over the directories, for both answers.
+    fn placed(
+        &self,
+        readings: &[Reading],
+        here: &[String],
+        listed: bool,
+    ) -> (bool, Vec<String>, bool) {
+        let configured = |dir: &str, git_dir: Option<&str>| self.configured_work_tree(dir, git_dir);
+        let (mut dirs, mut more): (Vec<String>, bool) = (Vec::new(), false);
+        for (pre, inherited, chdir) in readings {
+            for dir in here {
+                let dir = if chdir.is_empty() {
+                    dir.clone()
+                } else {
+                    join_dir(dir, chdir) // `env -C`, `sudo --chdir`
+                };
+                let targets = git_target_with(&dir, pre, inherited, &configured);
+                if targets.iter().any(|target| self.reaches_the_root(target)) {
+                    return (true, Vec::new(), false);
+                }
+                // The directory git runs in is the first of its subjects ([`git_target`]).
+                let Some(runs_in) = targets.into_iter().next().filter(|_| listed && !more) else {
+                    continue;
+                };
+                if dirs.contains(&runs_in) {
+                    continue;
+                }
+                // Past the cap nothing more is listed: the caller takes the rest as unnamed.
+                if dirs.len() >= MAX_ELSEWHERE_DIRS {
+                    more = true;
+                    continue;
+                }
+                dirs.push(runs_in);
+            }
+        }
+        (false, dirs, more)
+    }
 }
 
 /// What the walk gathers across a line and the strings in it.
@@ -1115,6 +1329,11 @@ struct Walk {
     /// line after it as surely as the line's own.
     made: Made,
     out: Vec<RootInvocation>,
+    /// The invocations that act on another repository, where the caller asked for them
+    /// ([`line_git`]).
+    elsewhere: Option<Vec<Elsewhere>>,
+    /// A command that may write has been met ([`Elsewhere::after_a_writer`]).
+    wrote: bool,
     /// A string was handed on past [`guardcaps::MAX_NESTING`], or past the budget, where it
     /// may name git.
     too_deep: bool,
@@ -1209,7 +1428,7 @@ fn walk_line(
     };
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
     let carried = shellwrap::exported_env_shared(&argvs);
-    let (root, the_root, aliases) = (shared.root, &shared.the_root, &shared.aliases);
+    let aliases = &shared.aliases;
     let mut here = start;
     // Every directory the shell is in at some point of the line: where a heredoc body it feeds
     // fish may run, since the body is not tied to the segment that reads it. Kept only where
@@ -1247,6 +1466,9 @@ fn walk_line(
         }
         let before = &exported[..];
         let (out, made) = (&mut walk.out, &mut walk.made);
+        let (elsewhere, wrote) = (&mut walk.elsewhere, &mut walk.wrote);
+        // Whether the segment is one of git's, which answers for itself below.
+        let mut gits = false;
         let call = shellwrap::split_env_chdir(&seg.argv);
         let (prog, env, args, chdir) = (call.prog, call.env, call.argv, call.chdir);
         // What this segment makes, read where it runs and taken in once it is read.
@@ -1281,10 +1503,7 @@ fn walk_line(
         };
         if let Some(cd) = cd_call(&seg.argv, &prog, &args) {
             let moved = if cd.args.iter().any(|arg| made.reaches(arg, &here)) {
-                Whereabouts {
-                    dirs: Vec::new(),
-                    anywhere: true,
-                }
+                Whereabouts::unnamed()
             } else {
                 cd_destinations(&cd.builtin, &cd.args, &here, &context)
             };
@@ -1322,6 +1541,8 @@ fn walk_line(
                         .map(|(sub, post, unread)| (sub, post, pre, unread))
                 }
             };
+            gits = true;
+            *wrote |= !words.is_empty();
             if let Some((sub, post, pre, unread)) = found {
                 out.push(RootInvocation {
                     sub,
@@ -1341,6 +1562,8 @@ fn walk_line(
             // among what follows may be the one that runs, sent where the guard cannot name.
             let (pre, rest) = shellwrap::git_globals(&seg.argv[at..]);
             let (env, own_env) = (config_env(), own_env_of());
+            gits = true;
+            *wrote = true;
             if let Some((sub, post, unread)) =
                 subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, true)
             {
@@ -1357,6 +1580,7 @@ fn walk_line(
                 });
             }
         } else if shellwrap::base_lower(&prog) == "git" {
+            gits = true;
             // Folded: on APFS and NTFS `GIT` runs git (#346).
             let (pre, rest) = shellwrap::git_globals(&args);
             // A substitution among git's own options (#1354): its words, and every option after
@@ -1371,6 +1595,8 @@ fn walk_line(
                     .map(|(sub, post)| (sub.clone(), post.to_vec(), false))
             };
             if let Some((sub, post, unread)) = words {
+                let after_a_writer = *wrote;
+                *wrote |= spliced || !GIT_READS.contains(&sub.as_str());
                 // `before + env`, in that order: an assignment on THIS invocation overrides an
                 // export.
                 // `env -C ~/x` hands the shell a word of its own; `env --chdir=~/x` does not.
@@ -1387,35 +1613,43 @@ fn walk_line(
                     &context,
                     &|word| made.reaches(word, &here),
                 );
-                let named = readings.as_ref().is_some_and(|readings| {
-                    readings.iter().any(|(pre, inherited, chdir)| {
-                        here.dirs.iter().any(|dir| {
-                            let dir = if chdir.is_empty() {
-                                dir.clone()
-                            } else {
-                                join_dir(dir, chdir) // `env -C`, `sudo --chdir`
-                            };
-                            git_target(&dir, pre, inherited).iter().any(|t| {
-                                the_root
-                                    .get_or_init(|| TheRoot::of(root))
-                                    .is_reached_from(t)
-                            })
-                        })
-                    })
-                });
+                // Asked of the disk in one pass, and once for the line ([`Disk`]): whether it
+                // acts on the root, and where it runs for one that acts on another repository
+                // (qw349), listed only for a caller that asked and only where the shell is
+                // somewhere the guard can name.
+                let (named, dirs, more_dirs) = match &readings {
+                    Some(readings) => {
+                        shared.placed(readings, &here.dirs, elsewhere.is_some() && !here.anywhere)
+                    }
+                    None => (false, Vec::new(), false),
+                };
                 // Fail closed: a directory the guard cannot name may be the root (#1323).
                 let unnamed = spliced || (!named && (here.anywhere || readings.is_none()));
+                let acts_in = match (&readings, elsewhere.is_some() && !named && !unnamed) {
+                    (Some(readings), true) => Some((dirs, more_dirs, pointed_by_name(readings))),
+                    _ => None,
+                };
+                let inv = RootInvocation {
+                    sub,
+                    post,
+                    pre,
+                    unnamed,
+                    unread,
+                    program_unnamed: false,
+                    env,
+                    own_env,
+                    after_loose_cd: loose_cd,
+                };
                 if named || unnamed {
-                    out.push(RootInvocation {
-                        sub,
-                        post,
-                        pre,
-                        unnamed,
-                        unread,
-                        program_unnamed: false,
-                        env,
-                        own_env,
-                        after_loose_cd: loose_cd,
+                    out.push(inv);
+                } else if let (Some(list), Some((dirs, more_dirs, pointed))) = (elsewhere, acts_in)
+                {
+                    list.push(Elsewhere {
+                        inv,
+                        dirs,
+                        more_dirs,
+                        pointed,
+                        after_a_writer,
                     });
                 }
             }
@@ -1451,6 +1685,13 @@ fn walk_line(
             (runs_at, gives)
         });
         made.take(makes);
+        // Any other program that may write, for the gits after it ([`Elsewhere::after_a_writer`]).
+        // A shell handed a string, a `find` that runs commands and an `eval` are read through:
+        // what they run answers for itself.
+        let moves_the_shell = cd_call(&seg.argv, &prog, &args).is_some();
+        let read_through = gits || moves_the_shell || handed.is_some() || evals;
+        walk.wrote |=
+            writes_a_file(&seg.argv) || (!read_through && may_write(&seg.argv, &prog, &args));
         // Each string is read now, so what it makes reaches the segments after it, and where an
         // `eval` leaves this shell is where they run.
         let mut evaled = Left::at(Whereabouts::default());
@@ -1469,10 +1710,7 @@ fn walk_line(
                     .iter()
                     .any(|w| matches!(w.as_str(), "-execdir" | "-okdir"));
                 let find_runs_at = if in_each_dir {
-                    Whereabouts {
-                        dirs: Vec::new(),
-                        anywhere: true,
-                    }
+                    Whereabouts::unnamed()
                 } else {
                     runs_at
                 };
@@ -1569,6 +1807,63 @@ fn walk_line(
     }
 }
 
+/// Whether a segment redirects into a file: any writing redirection but one to the null
+/// device or to a descriptor.
+fn writes_a_file(argv: &[String]) -> bool {
+    argv.windows(2).any(|pair| {
+        WRITING_REDIRECTIONS.contains(&pair[0].as_str())
+            && pair[1] != "/dev/null"
+            && !pair[1].starts_with('&')
+    })
+}
+
+/// Whether a segment's program may write: any program but one that only reads or prints.
+/// The list is the one the sandbox-block reader keeps ([`crate::sandboxblock::READERS`]),
+/// less the three in it that write a file when told to: `tee`, `sed -i` and a `find` that
+/// deletes or prints to a file. A segment of assignments alone runs nothing.
+fn may_write(argv: &[String], prog: &str, args: &[String]) -> bool {
+    if writes_a_file(argv) {
+        return true;
+    }
+    if prog.is_empty() || argv.iter().all(|word| shellwrap::is_env_assignment(word)) {
+        return false;
+    }
+    let base = shellwrap::base_lower(prog);
+    if !crate::sandboxblock::READERS.contains(&base.as_str()) {
+        return true;
+    }
+    let told = |starts: &[&str]| {
+        args.iter()
+            .any(|arg| starts.iter().any(|start| arg.starts_with(start)))
+    };
+    match base.as_str() {
+        "tee" => true,
+        "sed" => told(&["-i", "--in-place"]),
+        "find" => told(&["-delete", "-fprint", "-fls"]),
+        _ => false,
+    }
+}
+
+/// Whether a word points one git invocation at a repository or a work tree by name
+/// ([`Elsewhere::pointed`]), under any reading of its directory words: git's own options, the
+/// variables it inherits, and a `core.worktree` the line itself configures, however it is
+/// handed over (`-c`, `--config-env`, a `GIT_CONFIG_*` variable). The last is read wide, as
+/// any word that spells the key: it can only add a refusal.
+fn pointed_by_name(readings: &[Reading]) -> bool {
+    let sets_work_tree = |word: &String| word.to_ascii_lowercase().contains("core.worktree");
+    readings.iter().any(|(pre, inherited, _)| {
+        pre.iter().any(|word| {
+            let name = word.split_once('=').map_or(word.as_str(), |(name, _)| name);
+            matches!(name, "--git-dir" | "--work-tree") || sets_work_tree(word)
+        }) || inherited.iter().any(|assign| {
+            sets_work_tree(assign)
+                || GIT_DIR_ENV
+                    .iter()
+                    .any(|(name, _)| assign.split_once('=').is_some_and(|(n, _)| n == *name))
+        })
+    })
+}
+
 /// Every directory a shell handed a string may run it in: where this one may be, moved by a
 /// wrapper's chdir flag (`env -C <dir> sh -c …`). A flag the guard cannot name may be anywhere.
 fn where_a_shell_runs(
@@ -1588,14 +1883,12 @@ fn where_a_shell_runs(
         .then(|| directory_readings(chdir, !separated || line.quotes_tilde, line))
         .flatten();
     let Some(readings) = readings else {
-        return Whereabouts {
-            dirs: Vec::new(),
-            anywhere: true,
-        };
+        return Whereabouts::unnamed();
     };
     let mut out = Whereabouts {
-        dirs: Vec::new(),
         anywhere: here.anywhere,
+        lost: here.lost,
+        ..Whereabouts::default()
     };
     for dir in &here.dirs {
         for reading in &readings {
@@ -1959,8 +2252,11 @@ pub fn resolve_git_alias_to_its_end(
     env: &[String],
     own_env: &[String],
 ) -> (String, Vec<String>, AliasEnd) {
-    let line = LineConfig::of(pre, env, own_env);
+    // Read only for a word that may be an alias: a line of exports hands every git on it the
+    // whole of them, and reading them for each `git status` cost the line its square (qw367).
+    let mut line: Option<LineConfig> = None;
     expand_alias(sub, post, &mut |name| {
+        let line = line.get_or_insert_with(|| LineConfig::of(pre, env, own_env));
         if let Some(found) = line.body(&name.to_lowercase()) {
             return found;
         }

@@ -2162,3 +2162,75 @@ fn a_checkout_of_head_with_its_paths_out_of_sight_is_refused_with_the_restore_th
             .starts_with("would switch to 'HEAD~1' in the PLANE ROOT. ")
     );
 }
+
+/// The directories a line leaves the shell in are spelt up to a number and a size, and past
+/// either none is: every git is read against each, so what is spelt is what one git costs
+/// (qw367). Only a `cd` to an absolute directory that cannot fail unnoticed names one again.
+#[test]
+fn the_directories_in_play_are_spelt_up_to_a_cap_and_then_none_is() {
+    let line = CdContext::of("");
+    let mut here = Whereabouts::at("/r");
+    for n in 1..MAX_WHEREABOUTS {
+        here.merge(Whereabouts::at(&format!("/r/{n}")));
+    }
+    assert_eq!(here.dirs.len(), MAX_WHEREABOUTS);
+    assert!(!here.anywhere && !here.lost);
+    // One already spelt is no more to spell.
+    here.merge(Whereabouts::at("/r/1"));
+    assert!(!here.lost);
+    here.merge(Whereabouts::at("/r/more"));
+    assert!(
+        here.lost && here.anywhere && here.dirs.is_empty(),
+        "{here:?}"
+    );
+    // It stays so whatever is taken in, and a relative `cd` from it spells nothing.
+    here.merge(Whereabouts::at("/elsewhere"));
+    assert!(here.lost && here.dirs.is_empty());
+    let moved = cd_to("sub".to_string(), &here, &line);
+    assert!(
+        moved.lost && moved.anywhere && moved.dirs.is_empty(),
+        "{moved:?}"
+    );
+    // An absolute one names where the shell is, if it ran.
+    let moved = cd_to("/abs".to_string(), &here, &line);
+    assert_eq!(moved.dirs, ["/abs"]);
+    assert!(!moved.lost && !moved.anywhere);
+    // The names' size is capped as their number is: a `cd` to a relative name makes each
+    // longer.
+    let mut deep = Whereabouts::at("/r");
+    let long = format!("/r/{}", "a/".repeat(MAX_SPELT_BYTES / 2));
+    deep.merge(Whereabouts::at(&long));
+    assert!(deep.lost && deep.dirs.is_empty());
+}
+
+/// A git behind more directories than are spelt is one the guard cannot name, and is listed
+/// for the root as any such git is; behind a few it is read where it runs (qw367).
+#[test]
+fn a_git_behind_more_directories_than_are_spelt_is_one_the_guard_cannot_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = crate::pypath::realpath(dir.path().to_str().unwrap());
+    std::fs::create_dir_all(format!("{root}/.git")).unwrap();
+    std::fs::create_dir_all(format!("{root}/clone/.git")).unwrap();
+    let few = "cd clone && true; git checkout feature";
+    let read = line_git(few, &root, &root);
+    assert_eq!(read.root.len(), 1, "{read:?}");
+    assert!(
+        !read.root[0].unnamed,
+        "the root is one of two it may run in"
+    );
+    // Each `cd <name> && …;` leaves one more directory in play, a level deeper.
+    let many = format!(
+        "{}git checkout feature",
+        "cd clone && true; ".repeat(MAX_WHEREABOUTS + 1)
+    );
+    let read = line_git(&many, &root, &root);
+    assert_eq!(read.root.len(), 1, "{read:?}");
+    assert!(read.root[0].unnamed);
+    assert!(read.elsewhere.is_empty());
+    assert_eq!(plane_root_git(&many, &root, &root), read.root);
+    // An absolute `cd` joined by `&&` names where git runs again.
+    let named = format!("{many}; cd {root}/clone && git checkout feature");
+    let read = line_git(&named, &root, &root);
+    assert_eq!(read.elsewhere.len(), 1, "{read:?}");
+    assert_eq!(read.elsewhere[0].dirs, [format!("{root}/clone")]);
+}

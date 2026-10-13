@@ -141,7 +141,7 @@ pub fn handler(name: &str) -> Option<Handler> {
         "posttooluse-skill" => toolhooks::posttooluse_skill,
         "posttooluse-dispatch" => toolhooks::posttooluse_dispatch,
         // What these hooks find goes to the app ([`blocks`]); the chat is told of what the app
-        // took once it has ([`told_of_blocks`]), never from here.
+        // took once it has ([`told_after`]), never from here.
         BLOCKED | BLOCKED_ON_FAILURE => says_nothing,
         _ => return None,
     })
@@ -160,13 +160,17 @@ pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 /// The line block word `word` prints for the blocks the app took, `taken` (#1631): the chat is
 /// told, in the turn it was blocked, that the person has a Notice and it should say what was
 /// blocked and wait ([`purlis_core::sandboxblock::told_the_chat`]). None for another word, and
-/// when the app took no block. Where the call ran nothing and only read the words back
+/// when there is nothing to tell. Where the call ran nothing and only read the words back
 /// (`read_back`, #1884), the chat is told that instead, and not to wait
 /// ([`purlis_core::sandboxblock::told_the_chat_of_a_read`]).
-pub fn told_of_blocks(
+///
+/// And, in the same line since a hook prints one answer, what a git command the sandbox
+/// stopped partway left behind and how to finish it or go back ([`stopped_partway`], qw349).
+pub fn told_after(
     word: &str,
     taken: &[purlis_core::sandboxblock::Block],
     read_back: bool,
+    stopped: Option<String>,
 ) -> Option<String> {
     let event = match word {
         BLOCKED => "PostToolUse",
@@ -174,16 +178,46 @@ pub fn told_of_blocks(
         _ => return None,
     };
     let told = if read_back {
-        purlis_core::sandboxblock::told_the_chat_of_a_read(taken)?
+        purlis_core::sandboxblock::told_the_chat_of_a_read(taken)
     } else {
-        purlis_core::sandboxblock::told_the_chat(taken)?
+        purlis_core::sandboxblock::told_the_chat(taken)
     };
+    let said: Vec<String> = told.into_iter().chain(stopped).collect();
+    if said.is_empty() {
+        return None;
+    }
     Some(
         serde_json::json!({
-            "hookSpecificOutput": {"hookEventName": event, "additionalContext": told}
+            "hookSpecificOutput": {"hookEventName": event, "additionalContext": said.join("\n\n")}
         })
         .to_string(),
     )
+}
+
+/// What a sandboxed chat is told after a Bash command in which git said it could not write a
+/// file the sandbox denies by name ([`purlis_core::cloneupdate::stopped`], qw349): the folder
+/// is half-written, and how to finish it or go back. Read from the command's own words, on
+/// either stream, and said only to the chat that ran it. None in a chat the app did not
+/// sandbox, where such a refusal is not the sandbox's.
+pub fn stopped_partway(
+    payload: &serde_json::Value,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    if !purlis_core::sandbox::chat_is_sandboxed_in(env) {
+        return None;
+    }
+    let command = payload["tool_input"]["command"].as_str()?;
+    let response = &payload["tool_response"];
+    let said: Vec<&str> = [
+        response.as_str(),
+        response["stderr"].as_str(),
+        response["stdout"].as_str(),
+        payload["error"].as_str(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    purlis_core::cloneupdate::stopped(command, &said.join("\n"))
 }
 
 /// Whether `word` is one of the block words.
