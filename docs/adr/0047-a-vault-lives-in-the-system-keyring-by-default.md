@@ -388,8 +388,8 @@ before.
 **A chat never supplies a vault's token.** The window's commands are not a chat's to invoke.
 `vault add --token-stdin` refuses inside a chat, or a shell the app started, before it reads
 anything: by the marks the app sets in the environment of what it starts, and by whether the
-command runs below a program the project's record of open chats names, so clearing the
-variables does not pass. That check is a courtesy to an agent, not the boundary. The boundary
+command runs below a program the project's record of open chats names, or below the app that
+holds a project's hook socket now, so clearing the variables does not pass. That check is a courtesy to an agent, not the boundary. The boundary
 is the sandbox's: both halves of the registry and the keyring are not a sandboxed chat's to
 write (ADR 0067). A chat that runs with no sandbox can write whatever the person can, as before.
 

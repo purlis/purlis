@@ -16,6 +16,8 @@
 //! - [`admit_host`]: the other way round, for a client whose reply carries authority (HP-6's
 //!   permission hook): the process listening must be this user's, this process's ancestor,
 //!   and hold the socket at the path now.
+//! - [`socket_holder`]: the process listening at a socket's path now, this user's and holding
+//!   it, which is how the app holding a project's hook socket is found (#1542).
 //! - [`inside_a_chat`]: whether a process runs inside a chat (its program, its session, or
 //!   below it), for `charterd`'s refusal of a person's scope to a chat's processes (FD-27).
 //!
@@ -38,8 +40,8 @@ use std::path::Path;
 mod ancestry;
 pub use ancestry::{
     MOST_GENERATIONS, NotOurHost, Parents, admit_host, boot_time_in, holds_a_socket_at,
-    inside_a_chat, judge, listening_at, lsof_command, lsof_names, session_of, stat_parent,
-    time_of_day, walk,
+    inside_a_chat, judge, listening_at, lsof_command, lsof_names, session_of, socket_holder,
+    stat_parent, time_of_day, walk,
 };
 
 /// A user id.

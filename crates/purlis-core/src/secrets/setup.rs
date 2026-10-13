@@ -1216,8 +1216,9 @@ pub enum Where {
 ///   project this machine opened ([`projects_asked`]), names each one's program, and a process that IS one, is in one's session (every chat's program leads its
 ///   own, so a process it started stays in it after its parent has gone), or runs below one is
 ///   inside that chat whatever its environment says (`purlis_same_user::inside_a_chat`);
-///   so is a process below the app that started a chat a record names, which covers the chats of
-///   a project that writes no record ([`in_a_chat_seen`]).
+///   so is a process below the app that started a chat a record names, or below the app that
+///   holds the hook socket of any of those projects now, which covers the chats of a project
+///   that writes no record ([`in_a_chat_around`]).
 ///
 /// **Every doubt is [`Where::Unsure`]**: a record that cannot be read or is not one this purlis
 /// knows, a parent or a session that cannot be read, an ancestry that loops.
@@ -1229,22 +1230,24 @@ pub enum Where {
 pub fn in_a_chat(ctx: &Ctx) -> Where {
     #[cfg(unix)]
     {
-        in_a_chat_seen(
+        in_a_chat_around(
             ctx,
             std::process::id(),
             purlis_same_user::Parents::of,
             purlis_same_user::session_of,
             purlis_same_user::Parents::started_at,
+            |socket| purlis_same_user::socket_holder(socket, crate::forklock::output),
             account_home().as_deref(),
         )
     }
     #[cfg(not(unix))]
     {
-        in_a_chat_seen(
+        in_a_chat_around(
             ctx,
             std::process::id(),
             |_| None,
             |_| Err(std::io::Error::other("no sessions here")),
+            |_| None,
             |_| None,
             None,
         )
@@ -1277,8 +1280,21 @@ pub(crate) fn in_a_chat_with(
     in_a_chat_seen(ctx, me, parent, session, |_| None, account_home)
 }
 
-/// [`in_a_chat`] for process `me`, with the kernel's answers, when each process `started`, and
-/// this account's home handed in.
+/// [`in_a_chat_around`] where no app holds any project's hook socket.
+#[cfg(test)]
+pub(crate) fn in_a_chat_seen(
+    ctx: &Ctx,
+    me: u32,
+    parent: impl Fn(u32) -> Option<u32>,
+    session: impl Fn(u32) -> std::io::Result<u32>,
+    started: impl Fn(u32) -> Option<std::time::SystemTime>,
+    account_home: Option<&std::path::Path>,
+) -> Where {
+    in_a_chat_around(ctx, me, parent, session, started, |_| None, account_home)
+}
+
+/// [`in_a_chat`] for process `me`, with the kernel's answers, when each process `started`, which
+/// process holds the unix socket at a path (`holder`), and this account's home handed in.
 ///
 /// **A record's process numbers are read against when it was written** (#1542). Every process a
 /// record names was running when it was written, so one that started after that is a later
@@ -1288,12 +1304,20 @@ pub(crate) fn in_a_chat_with(
 /// writes a record: a process below that app is in one of its chats, or in a shell or program the
 /// app started. A start that cannot be read is a doubt, and the number is counted as before,
 /// but its parent is not.
-pub(crate) fn in_a_chat_seen(
+///
+/// **And the app that holds a project's hook socket now** (#1542), under either spelling of the
+/// project's state folder: its chats are below it whether or not any record names one, so an
+/// app with no recorded live chat, or a project that writes no record, still counts as the host.
+/// The holder is read as the hook's own host check reads it (`purlis_same_user::socket_holder`):
+/// this user's process, holding the socket itself now, so a crashed app's leftover socket names
+/// nobody. A holder that cannot be read only leaves the check as the records make it.
+pub(crate) fn in_a_chat_around(
     ctx: &Ctx,
     me: u32,
     parent: impl Fn(u32) -> Option<u32>,
     session: impl Fn(u32) -> std::io::Result<u32>,
     started: impl Fn(u32) -> Option<std::time::SystemTime>,
+    holder: impl Fn(&std::path::Path) -> Option<u32>,
     account_home: Option<&std::path::Path>,
 ) -> Where {
     let env = |name: &str| ctx.env.get(name);
@@ -1348,6 +1372,9 @@ pub(crate) fn in_a_chat_seen(
                 }
                 _ => programs.push(pid),
             }
+        }
+        for socket in crate::renamelocal::busy::beside(project) {
+            programs.extend(holder(&socket).filter(|app| *app > 1));
         }
     }
     if programs.is_empty() {

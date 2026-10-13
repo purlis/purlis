@@ -1484,6 +1484,74 @@ fn a_process_below_the_app_that_started_a_recorded_chat_is_inside_one() {
 }
 
 #[test]
+fn a_process_below_the_app_holding_a_project_s_hook_socket_is_inside_a_chat() {
+    // #1542: a project that writes no record of its chats, or an app none of whose chats a
+    // record names, is still found: the app holds the project's hook socket. Process 70 runs
+    // below 25, a chat no record names, which the app (20) started.
+    let set = Set::new("unused");
+    let parents = |pid: u32| match pid {
+        70 => Some(25),
+        25 => Some(20),
+        20 => Some(1),
+        _ => None,
+    };
+    let asked = std::cell::RefCell::new(Vec::new());
+    let the_app = |socket: &Path| {
+        asked.borrow_mut().push(socket.to_path_buf());
+        Some(20)
+    };
+    assert_eq!(
+        in_a_chat_around(&set.ctx, 70, parents, |_| Ok(25), |_| None, the_app, None),
+        Where::Inside
+    );
+    assert!(
+        asked.borrow().contains(
+            &crate::names::state(set.tmp.path())
+                .join("app")
+                .join("hooks.sock")
+        ),
+        "the project's own hook socket is asked: {:?}",
+        asked.borrow()
+    );
+    assert_eq!(
+        in_a_chat_around(&set.ctx, 70, parents, |_| Ok(25), |_| None, |_| None, None),
+        Where::Outside,
+        "no app holds it, and no record names a chat"
+    );
+    assert_eq!(
+        in_a_chat_around(
+            &set.ctx,
+            70,
+            parents,
+            |_| Ok(25),
+            |_| None,
+            |_| Some(1),
+            None
+        ),
+        Where::Outside,
+        "init holding it vouches for nothing"
+    );
+    // A terminal of the person's own, beside the app and not below it.
+    let beside = |pid: u32| match pid {
+        70 => Some(60),
+        60 | 20 => Some(1),
+        _ => None,
+    };
+    assert_eq!(
+        in_a_chat_around(
+            &set.ctx,
+            70,
+            beside,
+            |_| Ok(60),
+            |_| None,
+            |_| Some(20),
+            None
+        ),
+        Where::Outside
+    );
+}
+
+#[test]
 fn a_chat_of_another_project_this_machine_opened_is_a_chat_too() {
     // #1542: a chat of another project that clears its variables and names this project is
     // below a program the OTHER project's record names. Every project the machine store

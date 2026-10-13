@@ -421,6 +421,37 @@ pub fn judge(pid: u32, ancestors: &[u32], holds_the_socket: bool) -> Result<(), 
     Ok(())
 }
 
+/// The process that listens on the unix socket at `path` now, where it is this user's and holds
+/// that socket itself (#1542): the app, at a project's hook socket. `None` where nothing does,
+/// or nothing can be vouched for.
+///
+/// **The same liveness [`admit_host`] reads, without the ancestry.** It connects, takes the
+/// listener's uid and pid from the kernel, and asks that the process with that pid holds a
+/// socket bound at the path ([`holds_a_socket_at`]), so a pid a crashed app left behind, now
+/// another process's, is no holder. A connection that writes nothing is ended by the app's
+/// channel unread. Never through a link at the path itself, and only a socket file is
+/// connected to: no FIFO or device is opened.
+///
+/// Every doubt is `None`: what a caller adds from a holder only widens a check it makes from
+/// other readings, so a holder missed leaves that check as it was.
+pub fn socket_holder(
+    path: &Path,
+    run: impl FnOnce(&mut Command) -> io::Result<Output>,
+) -> Option<u32> {
+    use std::os::unix::fs::FileTypeExt;
+    if !std::fs::symlink_metadata(path).is_ok_and(|found| found.file_type().is_socket()) {
+        return None;
+    }
+    let socket = std::os::unix::net::UnixStream::connect(path).ok()?;
+    let (uid, pid) = peer_process_of(&socket).ok()?;
+    drop(socket);
+    admit_peer(Ok(uid), Uid::effective()).ok()?;
+    holds_a_socket_at(pid, path, run)
+        .ok()
+        .filter(|holds| *holds)
+        .map(|_| pid)
+}
+
 /// Whether process `pid` holds a unix socket bound at `path` now. Paths are compared once both
 /// are resolved, so `/tmp` and `/private/tmp`, or a link to the socket, name the same one.
 pub fn holds_a_socket_at(
@@ -611,6 +642,48 @@ mod tests {
         assert!(
             !holds_a_socket_at(std::os::unix::process::parent_id(), &path, run).expect("readable")
         );
+    }
+
+    /// #1542: the app that holds a project's hook socket is found by connecting to it, and only
+    /// while it holds the socket there. Binds a socket, so this first runs on CI.
+    #[test]
+    fn the_holder_of_a_socket_is_the_process_listening_there_now_and_nothing_else_is() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let run = |command: &mut Command| command.output();
+        assert_eq!(socket_holder(&path, run), None, "nothing there");
+
+        let listener = std::os::unix::net::UnixListener::bind(&path).expect("bound");
+        assert_eq!(
+            socket_holder(&path, run),
+            Some(std::process::id()),
+            "this process listens there"
+        );
+        let link = dir.path().join("link.sock");
+        std::os::unix::fs::symlink(&path, &link).expect("a link");
+        assert_eq!(socket_holder(&link, run), None, "never through a link");
+
+        drop(listener);
+        assert!(path.exists(), "a listener that has gone leaves its file");
+        assert_eq!(
+            socket_holder(&path, run),
+            None,
+            "a crashed app's leftover answers nothing"
+        );
+
+        let file = dir.path().join("plain");
+        std::fs::write(&file, "").expect("a file");
+        assert_eq!(socket_holder(&file, run), None, "not a socket");
+    }
+
+    #[test]
+    fn a_socket_with_no_file_or_a_plain_file_has_no_holder_and_nothing_is_run() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let file = dir.path().join("hooks.sock");
+        let never = |_: &mut Command| -> io::Result<Output> { panic!("nothing to ask lsof") };
+        assert_eq!(socket_holder(&file, never), None, "no file");
+        std::fs::write(&file, "").expect("a file");
+        assert_eq!(socket_holder(&file, never), None, "a plain file");
     }
 
     #[test]
