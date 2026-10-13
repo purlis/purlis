@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useContext, type CSSProperties } from "react";
+import { type CSSProperties } from "react";
 import { QueueRead } from "./QueueRead";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { closestCenter, DndContext } from "@dnd-kit/core";
@@ -32,7 +32,7 @@ import { TabTasks, type Place as TaskPlace } from "./TabChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { StripTablist } from "./StripTablist";
 import { chipSays, WRAPPING_UP, WrappingUp } from "./NeedsYou";
-import { RESTORING, RestoringContext } from "./restoringChats";
+import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { useTabStop } from "./roving";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
@@ -129,9 +129,8 @@ export function ChatStrip({
   planeUpdates,
   handedFrom,
   workItems,
+  restoring = NONE_RESTORING,
 }: ChatStripProps) {
-  // The chats the launch has still to start (`restoring.rs`): each one's tab says so.
-  const restoring = useContext(RestoringContext);
   return (
     <header
       className="bar"
@@ -577,4 +576,6 @@ type ChatStripProps = {
   planeUpdates: Readonly<Record<number, readonly string[]>>;
   handedFrom: Record<number, string>;
   workItems: Record<number, string>;
+  /** The chats the launch has still to start (`restoring.rs`): each one's tab says so. */
+  restoring?: ReadonlySet<number>;
 };
