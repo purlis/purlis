@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791927299402,
+  "lastUpdate": 1791927318787,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2586,6 +2586,42 @@ window.BENCHMARK_DATA = {
             "value": 446.6,
             "unit": "MB",
             "extra": "median of 6 samples: 401.8, 427.2, 433.7, 459.5, 459.5, 550.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "e3b5b2f2b26bb8c19d84cfd9b8d9f99811d6d031",
+          "message": "fix(app): a link is served a command only by name\n\nRemoval, grant, settings, install, run, publish and credential commands,\nand what is typed into a session as the person, are the window's alone,\nbeside the ones already listed; the list is the source of which they are.\n\nA link is served a command only where `SERVED_ON_A_LINK` names it. The\nhost's server keeps no other method, whatever it is built with, and a\ntest in the app requires every command to be on that list or to be the\nwindow's alone, never both and never neither. So a command added later\nis the window's alone until someone lists it as served. The\nvalue-bearing class is held to the window as a class.\n\nThe link's generated client names each window-only command and sends\nnothing for it: called off the window it answers, in that command's own\nerror shape, that it is done in purlis's own window, and `inTheWindow`\nreads it as a call the page cannot make, so a page that asks first draws\nno control. The Allowed list asks first for Remove.\n\nRefs #1927\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T00:28:48+04:00",
+          "tree_id": "1b97452bcd087e569509b99bf5748d8b7f888370",
+          "url": "https://github.com/purlis/purlis/commit/e3b5b2f2b26bb8c19d84cfd9b8d9f99811d6d031"
+        },
+        "date": 1791927317239,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1551.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1352.7, 1551.7, 1622.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 441,
+            "unit": "MB",
+            "extra": "median of 6 samples: 403.7, 423.1, 436.1, 446, 446.4, 546.1 MB"
           }
         ]
       }
