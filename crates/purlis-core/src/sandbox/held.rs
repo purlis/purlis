@@ -18,6 +18,11 @@
 //! config), and a delete that meets one stops there, half done. A folder holding one this
 //! process may not write is one the sandbox would stop the delete in, whichever project it is
 //! in.
+//!
+//! **And what a checkout would have to write** ([`checkout_held`], qw346). git checks a tree
+//! out file by file, writing each it may and skipping each it may not, so a move of the
+//! project's tree to another commit that changes a file this process may not write ends half
+//! done: most files as the other commit has them, the rest and HEAD as they were.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -92,6 +97,76 @@ fn held_below(target: &Path, names: &[&str]) -> bool {
                 && held_opening(&path, NOT_THROUGH_A_LINK)
         })
     })
+}
+
+/// Whether this process runs under a chat's sandbox in the project at `root`: the app says so
+/// in its environment ([`super::chat_is_sandboxed`]), or the sandbox itself holds the project's
+/// manifests ([`writes_held_at`]).
+pub fn in_a_sandbox(root: &Path) -> bool {
+    #[cfg(test)]
+    if STOOD_IN.with(|names| names.borrow().is_some()) {
+        return true;
+    }
+    super::chat_is_sandboxed() || writes_held_at(root)
+}
+
+/// The files among `changed`, each relative to the project at `root`, that a checkout would
+/// have to write and this process may not: the sign that a chat's sandbox would stop a move of
+/// the tree partway (qw346). Empty outside a sandbox ([`in_a_sandbox`]).
+///
+/// A file that is there is asked of the kernel, as [`held`] asks, never through a link. One
+/// that is not there yet cannot be asked without making it, so it is judged by its name: a
+/// later-code name, or a manifest in the root folder ([`crate::rootupdate::path_is_denied`]).
+pub fn checkout_held(root: &Path, changed: &[String]) -> Vec<String> {
+    #[cfg(test)]
+    if let Some(names) = STOOD_IN.with(|names| names.borrow().clone()) {
+        return changed
+            .iter()
+            .filter(|path| names.contains(path))
+            .cloned()
+            .collect();
+    }
+    if !in_a_sandbox(root) {
+        return Vec::new();
+    }
+    changed
+        .iter()
+        .filter(|rel| {
+            let path = root.join(rel);
+            let there = std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file());
+            (there && held_opening(&path, NOT_THROUGH_A_LINK))
+                || crate::rootupdate::path_is_denied(rel, root)
+        })
+        .cloned()
+        .collect()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The files a test says a sandbox denies this thread, standing in for one: a test cannot
+    /// put itself under a sandbox, and one run inside a chat's is denied the real names.
+    static STOOD_IN: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// For a test: this thread is under a sandbox that denies it writing `names`, until the answer
+/// is dropped.
+#[cfg(test)]
+pub(crate) fn stand_in(names: &[&str]) -> StoodIn {
+    STOOD_IN.with(|held| {
+        *held.borrow_mut() = Some(names.iter().map(|name| (*name).to_string()).collect());
+    });
+    StoodIn
+}
+
+/// [`stand_in`]'s sandbox, lifted when dropped.
+#[cfg(test)]
+pub(crate) struct StoodIn;
+
+#[cfg(test)]
+impl Drop for StoodIn {
+    fn drop(&mut self) {
+        STOOD_IN.with(|held| *held.borrow_mut() = None);
+    }
 }
 
 /// Whether this process may not open `path`, an existing file, for writing, where its
@@ -362,6 +437,62 @@ mod tests {
             "a manifest reached through a link is still asked"
         );
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "[core]\n");
+    }
+
+    #[test]
+    fn outside_a_sandbox_no_checkout_is_held_and_a_stood_in_one_holds_only_what_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.md"), "").unwrap();
+        let changed = vec!["a.md".to_string(), "held.toml".to_string()];
+        // No manifest here to ask, and no app said this is a chat.
+        if !crate::sandbox::chat_is_sandboxed() {
+            assert!(!in_a_sandbox(dir.path()));
+            assert!(checkout_held(dir.path(), &changed).is_empty());
+        }
+        {
+            let _sandbox = stand_in(&["held.toml"]);
+            assert!(in_a_sandbox(dir.path()));
+            assert_eq!(checkout_held(dir.path(), &changed), ["held.toml"]);
+        }
+        assert!(STOOD_IN.with(|names| names.borrow().is_none()));
+    }
+
+    /// A file the kernel refuses writing whatever its permissions stands for a sandbox's
+    /// refusal: a checkout that changes it is held at it, and at a name the sandbox denies
+    /// that is not there yet, and at nothing else.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_checkout_is_held_at_the_files_the_kernel_refuses_and_the_names_not_there_yet() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A name a test may write stands for the manifest: what puts this process "in a
+        // sandbox" is asked through `writes_held_at`, which a test cannot make true, so the
+        // files are asked directly.
+        let file = root.join("settings.toml");
+        std::fs::write(&file, "").unwrap();
+        std::fs::write(root.join("a.md"), "").unwrap();
+        let flags = |flag: &str| {
+            let done = crate::forklock::status(
+                std::process::Command::new("/usr/bin/chflags")
+                    .arg(flag)
+                    .arg(&file),
+            )
+            .unwrap();
+            assert!(done.success(), "chflags {flag}");
+        };
+        flags("uchg");
+        let there = std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file());
+        let was = there && held_opening(&file, NOT_THROUGH_A_LINK);
+        let free = held_opening(&root.join("a.md"), NOT_THROUGH_A_LINK);
+        flags("nouchg");
+        assert!(was, "a file the kernel refuses writing was not held");
+        assert!(!free, "a file this process may write was held");
+        // Not there yet: judged by its name.
+        assert!(crate::rootupdate::path_is_denied(
+            ".claude/skills/x/SKILL.md",
+            root
+        ));
+        assert!(!crate::rootupdate::path_is_denied("docs/new.md", root));
     }
 
     #[test]

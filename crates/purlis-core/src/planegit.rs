@@ -766,6 +766,9 @@ pub enum Held {
     Unsaved,
     /// `git merge --ff-only` itself refused, in git's words.
     Refused(String),
+    /// This process runs under a chat's sandbox, which denies it writing these files the
+    /// incoming commits change: the move would stop partway (qw346).
+    Sandbox(Vec<String>),
 }
 
 impl Held {
@@ -783,6 +786,11 @@ impl Held {
             ),
             Self::Unsaved => "the tree has unsaved changes, and a pull never moves them".into(),
             Self::Refused(detail) => format!("git refused the fast-forward: {detail}"),
+            Self::Sandbox(files) => format!(
+                "{}; the window brings them in, or the person runs `purlis save --pull` in \
+                 their own terminal",
+                said_sandbox_stops(files)
+            ),
         }
     }
 }
@@ -893,7 +901,69 @@ fn hold(root: &Path, git_dir: &Path, here: &str, branch: &str, mine: u32) -> Opt
     if !changed_paths(root).is_empty() {
         return Some(Held::Unsaved);
     }
+    let stops = sandbox_would_stop(root, &format!("refs/remotes/origin/{branch}"));
+    if !stops.is_empty() {
+        return Some(Held::Sandbox(stops));
+    }
     None
+}
+
+/// The files a move of the tree at `root` from HEAD to `target` would write that the sandbox
+/// this process runs under denies it, or none: outside a chat's sandbox, where the two trees
+/// are the same, and where git cannot say how they differ (the move then fails on its own,
+/// before a file is written).
+///
+/// **A move that cannot finish does not start** (qw346). git checks a tree out file by file and
+/// skips what it may not write, so a fast-forward, a rebase or a reset run by `purlis save`
+/// inside a chat's sandbox left the project half-updated wherever the other commit changed the
+/// manifest or a later-code file, with nothing to say an update was tried. The window's own
+/// save runs under no sandbox and is never held here.
+pub(crate) fn sandbox_would_stop(root: &Path, target: &str) -> Vec<String> {
+    if !crate::sandbox::held::in_a_sandbox(root) {
+        return Vec::new();
+    }
+    // `diff-tree`, the plumbing: two trees compared, the index neither read nor refreshed.
+    let changed: Vec<String> = git::run(
+        root,
+        &[
+            "diff-tree",
+            "-r",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            "HEAD",
+            target,
+        ],
+        git::READ,
+    )
+    .ok()
+    .filter(git::Run::ok)
+    .map(|run| {
+        run.out
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_default();
+    crate::sandbox::held::checkout_held(root, &changed)
+}
+
+/// Why a move of the tree is not made under a chat's sandbox, as a clause naming the files.
+pub(crate) fn said_sandbox_stops(files: &[String]) -> String {
+    let shown: Vec<String> = files.iter().take(4).map(|f| format!("`{f}`")).collect();
+    let more = files.len().saturating_sub(shown.len());
+    let and_more = if more > 0 {
+        format!(" and {more} more")
+    } else {
+        String::new()
+    };
+    format!(
+        "this chat's sandbox does not let it write {}{and_more}, which the remote's commits \
+         change, so bringing them in from here would stop partway and leave the project \
+         half-updated",
+        shown.join(", ")
+    )
 }
 
 /// The repository's own directory, which is a file's target for a worktree plane.
@@ -1168,6 +1238,9 @@ enum Rebased {
     Unsigned(String),
     /// Still running at its deadline, and killed.
     OutOfTime,
+    /// Never started: this process runs under a chat's sandbox, which denies it writing these
+    /// files the remote's commits change (qw346).
+    Held(Vec<String>),
 }
 
 /// Rebase the plane root onto `FETCH_HEAD`, giving up at `deadline`.
@@ -1192,6 +1265,10 @@ enum Rebased {
 /// A run with no exit code is out of time only once the deadline has passed: git killed by a
 /// signal of somebody else's has no code either, and that is not charter stopping it.
 fn rebase_onto_fetched(root: &Path, sign: bool, deadline: Duration) -> Rebased {
+    let stops = sandbox_would_stop(root, "FETCH_HEAD");
+    if !stops.is_empty() {
+        return Rebased::Held(stops);
+    }
     let started = std::time::Instant::now();
     let mut rebase: Vec<&str> = vec!["-c", gpgsign(sign)];
     rebase.extend(["rebase", "FETCH_HEAD"]);
@@ -1523,6 +1600,26 @@ fn push_head_within(
                         "Nothing was pushed, so nothing unsigned reached the remote. Fix the \
                          signer, then rebase onto the remote and push by hand.",
                         say,
+                    );
+                }
+                Rebased::Held(files) => {
+                    // Nothing was started, so there is nothing to undo. Recorded as failed,
+                    // not blocked: the window's own save runs under no sandbox and lands it.
+                    let detail = said_sandbox_stops(&files);
+                    say(Say::Warn(format!("Committed locally, but {detail}.")));
+                    say(Say::Info(
+                        "  Nothing was rebased or pushed. The window's save brings the remote's \
+                         commits in and pushes this one, or the person runs `purlis save` in \
+                         their own terminal."
+                            .into(),
+                    ));
+                    return record_push(
+                        root,
+                        PushResult {
+                            detail,
+                            ..PushResult::of(Outcome::Failed, &branch)
+                        },
+                        &head,
                     );
                 }
                 Rebased::OutOfTime => {

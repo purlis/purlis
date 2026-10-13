@@ -256,6 +256,17 @@ tree…", where the same kind of `cd` comes before it: generated rows 443, 1149 
 the rows above were, by reading each line's segments as the walk does; the replay checks every
 row on CI.
 
+**And where a checkout of `HEAD` with its paths out of sight names the restore that is allowed
+(qw346).** `git checkout HEAD` with no path after a `--` on the line is refused, as the frozen
+Python refused it: the paths a file or `xargs` hands git are out of the guard's sight, so
+`HEAD` reads as a ref to move to. A chat repairing a half-updated root met "would switch to
+'HEAD'" and stopped. The verdict is unchanged; the sentence now says it cannot be read as a
+file restore and names the spelling that cannot move HEAD (`git restore --source=HEAD
+--worktree -- <paths>`). One answer took it: generated row 836 (`bra`), whose alias `gco` runs
+`checkout HEAD`. Generated row 327, a `switch` to `HEAD`, keeps its sentence: `git switch` has
+no path form. The new sentence was checked byte for byte against what the guard says on a
+repository where the edit was made; the replay checks every row on CI.
+
 **And the spelling refusal names the handoff under both names (#1288).** The `hrd` answer of
 a handoff whose words the shell rewrites (`handoff-spelling`) named only `purlis handoff`,
 though it is met under either installed name. It now opens "`purlis handoff` (or `charter

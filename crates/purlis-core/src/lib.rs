@@ -163,6 +163,7 @@ pub mod repos;
 pub mod reposave;
 pub mod retention;
 pub mod rewrite;
+pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
 pub mod sandbox;
