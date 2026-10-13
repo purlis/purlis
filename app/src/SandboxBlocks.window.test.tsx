@@ -206,7 +206,7 @@ describe("a sandbox block on a chat's tab", () => {
 
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     expect(notice).toHaveTextContent(
-      "The sandbox blocked a write to the project's own files that purlis itself ran. That is a purlis bug.",
+      "The sandbox blocked a write to the project's own files. It was purlis's own operation, so it is a purlis bug.",
     );
     expect(asked("sandbox_block_report")).toEqual([]);
 
@@ -262,7 +262,7 @@ describe("a sandbox block on a chat's tab", () => {
     await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
 
     expect(await screen.findByRole("status", { name: "Sandbox block" })).toHaveTextContent(
-      "That is a purlis bug.",
+      "so it is a purlis bug.",
     );
   });
 

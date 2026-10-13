@@ -284,3 +284,22 @@ describe("a local socket's Notice (ADR 0093)", () => {
     );
   });
 });
+
+describe("a block of purlis's own operation", () => {
+  it("says it is purlis's own in a sentence of its own, after a block sentence that holds a full stop (#1416)", () => {
+    drawn({
+      ...UNNAMED,
+      operation: "write",
+      kind: "system-temp",
+      ours: true,
+      said: "a write to one of macOS's per-user folders, which some programs write in place of this chat's own temporary folder. Such a program can usually be told to write under \"$TMPDIR\" instead",
+      offer: "none",
+      levels: [],
+    });
+    const notice = screen.getByRole("status", { name: "Sandbox block" });
+    expect(notice).toHaveTextContent(
+      'write under "$TMPDIR" instead. It was purlis\'s own operation, so it is a purlis bug.',
+    );
+    expect(notice).not.toHaveTextContent("instead that purlis");
+  });
+});

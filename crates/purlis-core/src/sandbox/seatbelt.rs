@@ -560,7 +560,7 @@ pub const TEMP_ENV: [(&str, &str); 4] = [
 /// What a wrapped chat's environment gains: its traffic pointed at the proxy at `proxy`, the
 /// way past it emptied, and its own temp directory `tmp`, under every name in [`TEMP_ENV`] too.
 /// `mktemp` and Foundation's `NSTemporaryDirectory` read no variable at all, and are refused:
-/// a block sorted as `sandboxblock::Kind::SystemTemp`, whose notice gives `mktemp`'s way round.
+/// a block sorted as `sandboxblock::Kind::SystemTemp`, whose notice gives `$TMPDIR` as the way round.
 pub fn env(proxy: &str, tmp: &Path) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = PROXY_ENV
         .iter()

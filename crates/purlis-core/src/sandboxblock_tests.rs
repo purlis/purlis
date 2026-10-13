@@ -439,13 +439,15 @@ fn a_programs_refused_read_of_the_per_user_folders_is_not_a_block() {
     }
 }
 
-/// The temp folder's notice gives mktemp's way round; the cache folder's says Swift and clang
+/// The per-user folders' notice gives the chat's own `$TMPDIR` as the way round, naming no one
+/// tool's option, which fits none of `0` and `X` (#1416); the cache folder's says Swift and clang
 /// builds cannot write it yet, and offers no variable to set.
 #[test]
 fn the_per_user_folders_notices_name_each_folder_and_its_way_round() {
     let temp = block(Operation::Write, Kind::SystemTemp, false).said();
     assert!(temp.contains("temporary folder"), "{temp}");
-    assert!(temp.contains("mktemp -p \"$TMPDIR\""), "{temp}");
+    assert!(temp.contains("under \"$TMPDIR\" instead"), "{temp}");
+    assert!(!temp.contains("mktemp"), "{temp}");
     let cache = block(Operation::Write, Kind::SystemCache, false).said();
     assert!(cache.contains("cache folder"), "{cache}");
     assert!(cache.contains("Swift and clang builds"), "{cache}");

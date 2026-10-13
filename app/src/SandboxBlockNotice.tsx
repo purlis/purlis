@@ -207,7 +207,7 @@ export function SandboxBlockNotice({
       onDismiss={onDismiss}
       under={under}
     >
-      The sandbox blocked {block.said} that purlis itself ran. That is a purlis bug.
+      The sandbox blocked {block.said}. It was purlis&apos;s own operation, so it is a purlis bug.
       {filed !== undefined && ` Reported: ${filed}.`}
       {said !== undefined && ` ${said}`}
       {behind}

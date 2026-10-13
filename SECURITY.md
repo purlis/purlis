@@ -199,8 +199,8 @@ it, and never sends that count anywhere.
   (Swift and Objective-C programs) are refused there in every sandboxed chat, and in a Claude
   Code chat so are `xcrun`'s cache and clang's module cache, so Swift and clang builds fail
   there (#1416). In a Claude Code chat, such a block's notice names the folder, and for the
-  temp folder the way round it, `mktemp -p "$TMPDIR"` (#1120). Wrapped chats show no block
-  notices yet (#1353).
+  per-user folders the way round them, writing under the chat's own `$TMPDIR` (#1120). Wrapped
+  chats show no block notices yet (#1353).
 - **Package caches, with the toolchains preset.** While a project's `toolchains` preset is on,
   its sandboxed chats download into package caches of the project's own, which purlis keeps
   under its data home and points cargo, npm, pip, Go, Gradle, yarn and pnpm at. Your own caches

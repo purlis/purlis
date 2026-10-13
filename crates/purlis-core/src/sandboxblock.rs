@@ -279,12 +279,13 @@ impl Kind {
             Self::ToolchainCache => "a toolchain's package cache",
             Self::Home => "your home folder",
             Self::Temp => "a temporary folder",
-            // One sentence for `T`, `0` and `X`, which this kind holds alike (#1416): the
-            // temporary folder is the one programs reach for, so its way round is the one said.
+            // One sentence for `T`, `0` and `X`, which this kind holds alike (#1416): it names
+            // no one tool's way round, since `0` and `X` are no temporary folder and no one
+            // option fits each program that writes there. The chat's own `$TMPDIR` does.
             Self::SystemTemp => {
-                "one of macOS's per-user folders, such as its temporary folder, which mktemp and \
-                 Swift programs use in place of this chat's own. mktemp -p \"$TMPDIR\" writes in \
-                 this chat's own"
+                "one of macOS's per-user folders, which some programs write in place of this \
+                 chat's own temporary folder. Such a program can usually be told to write under \
+                 \"$TMPDIR\" instead"
             }
             // No harness named (#1416): a chat purlis wraps has its module cache moved into its
             // own temp, and one whose harness runs its own sandbox does not yet.
