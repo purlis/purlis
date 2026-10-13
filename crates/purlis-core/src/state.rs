@@ -352,6 +352,12 @@ pub enum Need {
     /// The chat reported, and its report has nowhere to go: the chat that asked for it,
     /// `asker` as the person saw it, has gone. The report is kept for that chat's workspace.
     ReportUndelivered { asker: String },
+    /// purlis refused the chat a git command that would rewrite the project's root from
+    /// another commit (a pull, a rebase, a merge and the like: guard arm A3c,
+    /// [`crate::rootupdate`]), because its sandbox would stop it partway. Bringing the remote's
+    /// commits in is then the person's to do, with the window's Update (qw348). Raised by the
+    /// app from the guard's own verdict, so its words are the app's and never the chat's.
+    RootUpdateRefused,
 }
 
 /// **What a chat whose turn has ended is waiting on that is not the person** (#1491), as the
@@ -3456,6 +3462,23 @@ mod tests {
         assert_eq!(board.state(7), State::Running, "its state is its own");
         assert!(!board.needs(7, undelivered()), "said once");
         assert_eq!(board.needs_of(7).len(), 1);
+    }
+
+    #[test]
+    fn a_chat_refused_an_update_of_the_root_is_a_needs_you_item_said_once_while_it_runs() {
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+
+        assert!(board.needs(7, Need::RootUpdateRefused));
+
+        assert_eq!(board.needs_you(), vec![7]);
+        assert_eq!(board.state(7), State::Running, "the refusal ends no turn");
+        assert!(
+            !board.needs(7, Need::RootUpdateRefused),
+            "refused twice, asked once"
+        );
+        assert_eq!(board.needs_of(7), vec![Need::RootUpdateRefused]);
     }
 
     #[test]

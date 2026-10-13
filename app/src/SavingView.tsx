@@ -1,13 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { CircleAlert, CircleCheck, CircleDot, LoaderCircle, Save } from "lucide-react";
 import {
   commands,
   type PlaneId,
   type PlaneSaving,
+  type ProjectUpdate,
   type RepoSaving,
   type SaveEntry,
 } from "./bindings";
@@ -21,7 +22,9 @@ import {
   repoStageText,
   requestOf,
   saveAll,
+  takeUpdateAsk,
   tellSaved,
+  UPDATE_ASKED,
   usePlaneSaving,
   useRepoSaving,
 } from "./saving";
@@ -32,6 +35,7 @@ import { Notice } from "./Notice";
 import { AnswerBar } from "./AnswerBar";
 import { RemoteQuestionNotice } from "./RemoteQuestion";
 import { SaveBlockedBySecret } from "./SaveBlockedBySecret";
+import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -90,6 +94,66 @@ export function SavingView({
       tellSaved();
     }
   };
+
+  /** The last Update from remote that left the project as it was (qw348): its Notice, until it
+   *  is dismissed or the next save or update is pressed. */
+  const [left, setLeft] = useState<ProjectUpdate | null>(null);
+
+  /** Bring the incoming commits in, after `first` where it is given (the save of *Save, then
+   *  update*): what `first` refuses is said, and nothing is then updated. The update's own
+   *  answer is the core's, which leaves the project at the new commit or exactly as it was. */
+  const update = async (first?: () => Promise<string | null>) => {
+    setBusy(true);
+    setSaid(null);
+    setRefused(null);
+    setLeft(null);
+    try {
+      const refusal = first === undefined ? null : await first();
+      if (refusal !== null) {
+        setRefused(refusal);
+        return;
+      }
+      const got = await commands.updateProject(plane);
+      if (got.status === "error") setRefused(got.error);
+      else if (got.data.outcome === "left") setLeft(got.data);
+      else {
+        setSaid([...got.data.lines, got.data.said]);
+        onSaved?.();
+      }
+    } catch (err: unknown) {
+      setRefused(String(err));
+    } finally {
+      setBusy(false);
+      tellSaved();
+    }
+  };
+  /** *Save, then update*: the project's own save with the message typed, then the update. */
+  const saveThenUpdate = () =>
+    update(async () => {
+      const typed = message.trim();
+      const got = await commands.savePlane(plane, typed === "" ? null : typed);
+      if (got.status === "error") return got.error;
+      setMessage("");
+      return null;
+    });
+
+  /** The title bar's `↓N` asked for an update (`askUpdate`): run here, once, where its
+   *  progress and result are said. An ask that arrives while something runs is dropped. */
+  const asked = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    asked.current = () => {
+      if (!takeUpdateAsk(plane) || busy) return;
+      void update();
+    };
+  });
+  useEffect(() => {
+    const hear = (event: Event) => {
+      if ((event as CustomEvent<{ plane: string }>).detail.plane === plane) asked.current();
+    };
+    window.addEventListener(UPDATE_ASKED, hear);
+    asked.current();
+    return () => window.removeEventListener(UPDATE_ASKED, hear);
+  }, [plane]);
 
   /** Save all's confirmation, while it is open: every tree it would save, as read when Save all
    *  was pressed. Held still, so what is saved is exactly what the operator read — the rereads
@@ -196,6 +260,26 @@ export function SavingView({
               secrets={saving.secrets ?? []}
               busy={busy}
               onSaveAgain={() => void save()}
+            />
+          )}
+          {(saving.behind ?? 0) > 0 && (
+            <UpdateFromRemote
+              incoming={saving.behind ?? 0}
+              busy={busy}
+              saveFirst={saving.changed.length > 0 && planeSavable(saving)}
+              onUpdate={() => void update()}
+              onSaveThenUpdate={() => void saveThenUpdate()}
+            />
+          )}
+          {left !== null && (
+            <UpdateLeftNotice
+              left={left}
+              busy={busy}
+              canSave={planeSavable(saving)}
+              onUpdate={() => void update()}
+              onSaveThenUpdate={() => void saveThenUpdate()}
+              onTerminal={() => askWayOut(plane, "terminal")}
+              onDismiss={() => setLeft(null)}
             />
           )}
           {saving.stage === "blocked" && (
@@ -636,6 +720,7 @@ export function SaveIndicator({
   busy,
   onOpen,
   onSave,
+  onUpdate,
   off,
 }: {
   saving: PlaneSaving;
@@ -646,6 +731,9 @@ export function SaveIndicator({
   busy: boolean;
   onOpen: () => void;
   onSave: () => void;
+  /** Update from remote (qw348): what pressing `↓N` does. With it, the count is a button of
+   *  its own beside the stage; without it, the count is part of the stage's button, as before. */
+  onUpdate?: () => void;
   /** Why the save is off, when it is: a read-only project's sentence (#826), since a commit
    *  changes the committed tree and the core refuses it. Said as the button's tooltip. */
   off?: string;
@@ -666,12 +754,27 @@ export function SaveIndicator({
         <span className="save-indicator-words">{words}</span>
         {/* What came in, as its own element the words' cap never cuts (charter#403). Its
             meaning is in the button's name and title, which say "N incoming" in full. */}
-        {incoming > 0 && (
+        {incoming > 0 && onUpdate === undefined && (
           <span className="save-indicator-incoming" aria-hidden="true">
             ↓{incoming}
           </span>
         )}
       </button>
+      {/* The count as the Update button (qw348): pressing it brings the incoming commits in,
+          from the Saving tab, where the progress and the result are said. */}
+      {incoming > 0 && onUpdate !== undefined && (
+        <button
+          type="button"
+          className="save-indicator-incoming ui-button ui-button-ghost ui-button-sm"
+          tabIndex={0}
+          aria-label={updateSaid(incoming)}
+          title={updateSaid(incoming)}
+          disabled={busy}
+          onClick={onUpdate}
+        >
+          ↓{incoming}
+        </button>
+      )}
       {savable(saving) && (
         <button
           type="button"

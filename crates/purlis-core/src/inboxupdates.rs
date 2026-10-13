@@ -76,6 +76,9 @@ pub enum Kind {
     ReportUndelivered,
     /// purlis's `pre-commit` refused a commit a chat made (SQ-16, #1694).
     CommitRefused,
+    /// purlis refused a chat a git command that would rewrite the project's root from another
+    /// commit, so bringing the remote's commits in is the person's (qw348).
+    RootUpdateRefused,
 }
 
 /// One update, as it is kept.
