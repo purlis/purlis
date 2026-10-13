@@ -49,9 +49,16 @@ pub(crate) fn unsigned(args: &[&str]) -> Vec<String> {
 
 /// git in `dir` for a test's own setup, through the same runner the product uses, with any
 /// repository it creates unable to ask the developer's signer.
+///
+/// A call that can reach another repository (a fixture's clone of a folder, its push to a bare
+/// remote) goes through the network entry point with no credential, as the product's own do:
+/// every other runner refuses one ([`git::connects`], #1853).
 pub(crate) fn run(dir: &Path, args: &[&str]) -> git::Run {
     let argv = unsigned(args);
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+    if git::connects(&argv) {
+        return git::run_network(dir, None, &argv).expect("git runs");
+    }
     git::run_untimed(dir, &argv).expect("git runs")
 }
 

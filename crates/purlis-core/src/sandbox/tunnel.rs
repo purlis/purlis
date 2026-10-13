@@ -988,7 +988,13 @@ fn route_maker(name: &str) -> Option<u32> {
 /// live app, and a pid that is in use again keeps the folder, which only waits for a later
 /// sweep. The way to [`routes_folder`] is held to no link, and an entry is asked about as itself,
 /// so a link is never removed or followed; `remove_dir_all` does not follow one inside either.
+///
+/// **Unix only.** Off unix [`crate::process::alive`] cannot ask and answers no for every pid,
+/// which would read a live chat's route as left behind, so nothing is swept there.
 pub fn sweep_routes(root: &Path) -> usize {
+    if !cfg!(unix) {
+        return 0;
+    }
     let within = routes_folder(root);
     if crate::contain::no_link_on_the_way(root, &within).is_err() {
         return 0;

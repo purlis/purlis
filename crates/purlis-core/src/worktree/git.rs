@@ -1201,6 +1201,14 @@ const TAKES_THE_NEXT_WORD: &[&str] = &[
 ];
 
 /// Where in `args` the verb is ([`verb`]).
+/// Whether `args` can reach another repository, and so run only through [`run_network`]
+/// ([`connecting`], #1853): for a test's own fixtures ([`crate::testgit::run`]), which clone and
+/// push between folders.
+#[cfg(test)]
+pub(crate) fn connects(args: &[&str]) -> bool {
+    verb_at(args).is_some_and(|at| connecting::connects(&args[at..]))
+}
+
 fn verb_at(args: &[&str]) -> Option<usize> {
     let mut at = 0;
     while let Some(word) = args.get(at) {
