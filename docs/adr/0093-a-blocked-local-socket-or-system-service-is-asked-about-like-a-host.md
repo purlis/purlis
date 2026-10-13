@@ -1,8 +1,9 @@
 # A blocked local socket or system service is asked about like a host
 
-**Accepted 2026-10-12. Amended 2026-10-13 (operator rulings R1 and R2, at the end): the
+**Accepted 2026-10-12. Amended 2026-10-13 (operator rulings R1, R2 and R3, at the end): the
 certificate check is on by default and no longer a grant; a socket or a service may be allowed
-for every project on this machine.** Amends ADR 0067 §2 ("each compiled profile allows the chat to connect to
+for every project on this machine; what a project declares it expects is asked about up
+front.** Amends ADR 0067 §2 ("each compiled profile allows the chat to connect to
 that socket and nothing more") and the ruling it carried in the sandboxed chat's briefing,
 "purlis grants no local socket" (#1779).
 
@@ -275,6 +276,75 @@ What follows from it:
 - **The one-time presets Notice** counts certificate checks among the defaults a machine has
   seen, so a default project tells nothing. A machine that recorded what it saw before this
   change is told once that certificate checks are on, with what that widens.
+
+## Amended 2026-10-13 (operator ruling R2): every project on this machine
+
+> **R2.** Where something stays a per-machine grant (sockets, other services), one press can
+> cover this machine for every project; per-project remains under "Other scopes".
+
+This adds a level to D-sock-2's two (one chat in memory; this project on this machine):
+
+- **Every project on this machine**, for a local socket or a system service only. What a
+  machine has (a container engine, an agent) is the same whichever project asks for it, and a
+  person who allowed Docker's socket in one project was asked again in the next. Kept in
+  `~/.config/purlis/sandbox-grants/every-project.json`, beside the files kept per clone: this
+  machine's own, which no sandboxed chat writes and no repository brings. **Never a host or a
+  folder**, which stay a project's, and never a dispatch grant.
+- **Where it is offered.** A block's Notice for a socket or a service draws two answers side by
+  side: **Allow once**, still the main button and the narrowest, and **Allow on this machine,
+  for every project**. Only this chat, and this project alone, are under Other scopes. (Decided
+  in implementation and flagged: the widest answer is one press away and named for what it is,
+  and is not the default button, because a container engine's socket is about the same as no
+  sandbox, for a project opened later too.)
+- **It is judged like any grant**: by the socket's resolved path when offered and when allowed,
+  and again at every start **for the project the chat starts in**, so a socket inside that
+  project's own tree reaches no chat there. Audited at this level; listed in every project's
+  Allowed list as "Every project on this machine", with Remove, which takes it from them all.
+- **Policy.** `socket-grants: false` forbids it and takes it away, as it does a project's. A
+  policy that fixes `allow-scopes` leaves this level out: no word of a policy names it, and
+  `you` does not stand in for it. A word for it would be a new one in a public format, which
+  is the operator's to add.
+
+## Amended 2026-10-13 (operator ruling R3): what a project expects is asked about up front
+
+> **R3.** Kept: a committed project file declares, never grants.
+
+With it the operator ruled that what a project declares it expects is asked about up front,
+when a chat starts, and not discovered by a failure. A committed file still declares and never
+grants (ruling 2), and each person allows on their own machine. What changes is **when the person is asked**. A
+project that declared a socket said nothing on a new machine until a tool failed there, with
+an error that often hid the cause. Now the declaration is read where the project is opened:
+
+- **One Notice, once**, when a project opens (and when its settings change on disk) and its
+  `[sandbox] expects` names something this machine has not allowed, for this project or for
+  every project: "This project expects more than this machine allows", with a line for each
+  item (its whole name, drawn inertly since a repository wrote it, and D-sock-6's words for
+  what allowing it means), and, for one that cannot be allowed here now, why.
+- **Allow on this machine** keeps each listed item that can be allowed, for this project on
+  this machine, by the route a block's Allow takes: judged, audited, kept in this machine's
+  file. Only what is declared, was shown and still waits is kept, whatever the window sends,
+  and the answer is recorded for what was shown alone: an item declared since is asked about.
+  **Not now** is remembered on this machine (`expects_seen`); Settings › Sandbox has a row,
+  "This project expects", that still offers the Allow. The Notice returns only when the
+  project declares something new.
+- **Both answers are the window's alone** (`allow_project_expects`, `decline_project_expects`,
+  window-only): no link and no chat can ask the question, answer it, or answer it in advance.
+- **The words are purlis's; the names are data.** A repository wrote each name, so the Notice
+  and Settings draw it apart from the sentence, with every character that draws as nothing
+  written out, and each is judged as any grant's target is before anything is kept. A socket
+  path that cannot be said plainly (a character that draws as nothing, or longer than a path
+  is) declares nothing.
+- **A chat's pane says it from the start**: a chat that starts while something declared is
+  neither allowed nor declined says so in one line, and where to allow it. The line counts
+  what is missing and names none of it: it is a sentence of purlis's, whole. A chat started
+  after the Allow has it; one already running is listed on the "Sandbox changed" Notice with
+  Restart, which now counts sockets and services among what a sandbox is made of.
+- **Policy.** Under `socket-grants: false`, or `allow-scopes` without `you`, the Notice says
+  who locked it and offers nothing but "Got it".
+- **The certificate check is not part of this**: it is no grant any more (R1 above), so it is
+  never declared, listed or asked about.
+- **The onboarding steps have no step that introduces the sandbox**, so none was added there;
+  the Notice appears when the project a person just made or got opens.
 
 ## What is not done
 

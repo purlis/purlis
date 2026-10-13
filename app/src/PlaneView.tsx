@@ -328,6 +328,7 @@ import {
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -7448,6 +7449,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **The project's Internet access presets changed** (#1385): told once to each
           teammate, so a preset that widens never widens unseen. */}
       <ProjectPresetsNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.sandbox" })}
+      />
+      {/* **The project expects something this machine has not allowed** (ADR 0093): asked
+          once, up front, where the declaration is read, never first by a tool that failed. */}
+      <ProjectExpectsNotice
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
       />

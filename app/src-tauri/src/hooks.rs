@@ -686,7 +686,10 @@ fn allowed_already(
         }
         BlockOffer::Service => {
             let target = target?;
-            if local::granted_services(root).iter().any(|one| one == target) {
+            if local::granted_services(root)
+                .iter()
+                .any(|one| one == target)
+            {
                 grant::Level::You
             } else {
                 local::services_everywhere()
@@ -836,14 +839,14 @@ fn held(
             .into_iter()
             .filter(|level| {
                 let refused = named
-                        .as_ref()
-                        .and_then(|what| locks.refuses_grant(what, (*level).into()));
-                    if refused.is_some() && why.is_none() {
-                        why = refused.clone();
-                    }
-                    refused.is_none()
-                })
-                .collect();
+                    .as_ref()
+                    .and_then(|what| locks.refuses_grant(what, (*level).into()));
+                if refused.is_some() && why.is_none() {
+                    why = refused.clone();
+                }
+                refused.is_none()
+            })
+            .collect();
             match (levels.is_empty(), why) {
                 (true, Some(why)) => instead(target, why),
                 _ => (offer, target, route, levels),
@@ -3759,7 +3762,10 @@ mod tests {
             let (offer, _, said, levels) = held(&locks, (offer, target, said));
             assert_eq!((offer, levels), (comes_to, Vec::new()), "{text}");
             let said = said.expect("said");
-            assert!(said.contains("Policy turns certificate checks off"), "{said}");
+            assert!(
+                said.contains("Policy turns certificate checks off"),
+                "{said}"
+            );
             assert!(said.contains("IT"), "{said}");
         }
     }
@@ -3998,7 +4004,10 @@ mod tests {
         local::grant_socket_everywhere(std::path::Path::new(agent), None).expect("kept");
         local::grant_service_everywhere("com.example.everywhere", None).expect("kept");
         let said = allowed_already(other.path(), BlockOffer::Socket, Some(agent)).expect("said");
-        assert!(said.contains("on this machine, for every project"), "{said}");
+        assert!(
+            said.contains("on this machine, for every project"),
+            "{said}"
+        );
         assert!(
             allowed_already(
                 other.path(),

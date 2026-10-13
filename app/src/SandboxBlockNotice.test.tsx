@@ -354,9 +354,7 @@ describe("the certificate check's Notice (R1, 2026-10-13)", () => {
     expect(screen.queryByRole("button", { name: /^Allow/ })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Restart this chat" }));
 
-    await waitFor(() =>
-      expect(sent("ask_chat_restart")).toEqual([{ plane: PLANE, session: 4 }]),
-    );
+    await waitFor(() => expect(sent("ask_chat_restart")).toEqual([{ plane: PLANE, session: 4 }]));
     expect(sent("allow_sandbox_block")).toEqual([]);
   });
 
