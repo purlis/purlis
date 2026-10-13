@@ -786,7 +786,9 @@ fn ask_and_keep(
     {
         return Err(why.to_string());
     }
-    let merging = Merging::of(&looked);
+    let merging = Merging::of_a_look(&looked, &on_forge.forge, || {
+        forge::signin::ready(&on_forge.forge, caller)
+    });
     let now = planegit::now() as u64;
     // A stamp that says nothing (none, or one in the future after a clock was set back) is
     // written again as now, so the head settles a wait later rather than never.
@@ -853,6 +855,52 @@ pub fn look(
         changed,
         moved: false,
     })
+}
+
+/// **What the window's Fix hands a chat about a repo's red request**: the repo's half of
+/// [`planegit::trouble`]. Refused unless the last look found it red.
+pub fn trouble(
+    plane: &Path,
+    workspace: &str,
+    repo: &repos::Repo,
+    caller: &forge::Caller,
+) -> Result<(u64, crate::savefix::Trouble), String> {
+    let red =
+        open_request(plane, workspace, repo).filter(|open| open.merge.state == MergeState::Red);
+    let Some(open) = red else {
+        return Err(format!(
+            "{workspace}/{} has no red pull request of a pr-merge save at the commit it is on, \
+             so there is nothing to fix",
+            repo.name
+        ));
+    };
+    let on_forge = pr::Repo::of_clone(plane, &repo.path)?;
+    let kind = on_forge.forge.kind;
+    let request = format!(
+        "{} {}",
+        kind.request_noun(),
+        kind.request_ref(open.pr.number)
+    );
+    let failed = crate::savefix::read_failed(
+        on_forge.backend().as_ref(),
+        caller,
+        &on_forge.path,
+        &open.head,
+        open.pr.number,
+        &open.merge.checks,
+    );
+    Ok((
+        open.pr.number,
+        crate::savefix::red_request(
+            &request,
+            &open.pr.url,
+            crate::savefix::Whose::Repo {
+                workspace,
+                name: &repo.name,
+            },
+            failed,
+        ),
+    ))
 }
 
 /// **Merge a repo's open save request as it stands**, its failed and missing checks included:

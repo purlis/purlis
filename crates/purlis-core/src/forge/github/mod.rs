@@ -12,7 +12,7 @@ use super::backend::{
     Reach, Reason, RepoRecord, Repos, Requests, Support, Tier, Unavailable, UnknownWhy, Visibility,
     WorkItems,
 };
-use super::checks::{self, Checks};
+use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
     Gated, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate, commit_named,
@@ -758,7 +758,7 @@ impl Requests for GitHub {
             // branch requires that has not reported, or another rule of the branch: it may
             // clear by itself, so it waits. The person's merge cannot pass a forge's own rule.
             "BLOCKED" if gate != Gate::Person => {
-                return Ok(Ready::Waiting(format!(
+                return Ok(Ready::Stalled(format!(
                     "GitHub blocks #{number}: a check its branch requires has not reported, or \
                      another rule of the branch is not met"
                 )));
@@ -968,6 +968,32 @@ impl Requests for GitHub {
             })?;
             Ok(checks::github(&runs, &statuses))
         })
+    }
+
+    fn annotations(
+        &self,
+        caller: &Caller,
+        path: &str,
+        check: &FailedCheck,
+    ) -> Result<Vec<Annotation>, ForgeError> {
+        let Some(run) = check.run else {
+            return Ok(Vec::new());
+        };
+        let (owner, name) = owner_name(path);
+        // The first page: what broke is asked for first, and a run can carry thousands.
+        let answer = self.0.ask(
+            caller,
+            &Call::get(
+                format!(
+                    "repos/{}/{}/check-runs/{run}/annotations?per_page=50",
+                    quote(owner),
+                    quote(name)
+                ),
+                LIST_TIMEOUT,
+            ),
+            &format!("reading what check run {run} of {path} found"),
+        )?;
+        Ok(checks::github_annotations(&answer)?)
     }
 
     fn open_on_branch(

@@ -561,3 +561,85 @@ describe("another project's alerts", () => {
     expect(openInboxOf).toHaveBeenCalledWith(OUTER);
   });
 });
+
+describe("a save's red request (`save-request-red`)", () => {
+  const RED: AlertRow = {
+    severity: "bad",
+    subject: "save-request-red",
+    detail:
+      "the pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint",
+    way: {
+      kind: "save-request",
+      workspace: null,
+      repo: null,
+      name: "this project",
+      request: "pull request",
+      pr: "https://github.com/acme/plane/pull/12",
+      target: "main",
+      merge: {
+        state: "red",
+        why: "1 check failed: lint",
+        checks: [{ name: "lint", url: null }],
+        needs: null,
+        number: "#12",
+      },
+    },
+  };
+
+  function inbox(alerts: AlertRow[]) {
+    return (
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{ at: "read", planes: [{ plane: PLANE, alerts, stopped: null }] }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread: vi.fn(),
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>
+    );
+  }
+
+  it("is a Notice in the Inbox with the Saving view's two answers, and goes when the reading no longer lists it", async () => {
+    const { rerender } = render(inbox([RED]));
+
+    const line = screen.getByRole("status");
+    expect(line).toHaveAttribute("data-cause", "save-request-red:this project");
+    expect(line).toHaveClass("notice-trouble");
+    expect(line.textContent).toContain(
+      "The pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint.",
+    );
+    expect(within(line).getByRole("button", { name: "Fix in a chat" })).toBeInTheDocument();
+    // The merge asks first here too, and names the request and where it goes.
+    await userEvent.click(within(line).getByRole("button", { name: "Merge as it stands…" }));
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "Merge the pull request #12 of this project as it stands?",
+    );
+    expect(calls("merge_save_request")).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // The request merged, or its checks passed: the next reading has no row, and it is gone.
+    rerender(inbox([]));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("starts the repo's Fix from the Inbox, in the repo's workspace", async () => {
+    const way = RED.way;
+    if (way.kind !== "save-request") throw new Error("the fixture's way out");
+    render(
+      inbox([{ ...RED, way: { ...way, workspace: "alpha", repo: "widget", name: "widget" } }]),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Fix in a chat" }));
+    await waitFor(() =>
+      expect(calls("fix_save_request").map((one) => one.args)).toEqual([
+        { plane: PLANE, workspace: "alpha", repo: "widget", columns: 80, rows: 24 },
+      ]),
+    );
+  });
+});

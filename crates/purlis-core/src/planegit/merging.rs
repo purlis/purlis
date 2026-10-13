@@ -17,6 +17,9 @@
 //! | `cannot-merge` | a conflict, a review the branch requires, or another rule of the forge's own |
 //! | `merged` | purlis merged it, and the project has not moved onto what merged yet |
 //!
+//! A `waiting` request may also say what ends the wait when nothing purlis reads does
+//! ([`Needs`]): the person's own merge, or a sign-in for purlis's look.
+//!
 //! Everything here that is read back from a file is held to the shape purlis writes: the forge
 //! is the truth and what is kept on disk is a hint, and a check's name and link came from
 //! whoever wrote the check.
@@ -67,13 +70,42 @@ impl MergeState {
     }
 }
 
-/// Where a save's request stands with merging: the state, why in words, and the checks that
-/// failed when it is red.
+/// What ends a wait that nothing purlis reads will end (the operator's rulings, 2026-10-14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Needs {
+    /// The person: no check has started where the repository's other requests have them, its
+    /// checks cannot be read at this commit, or a check its branch requires has not reported.
+    /// purlis keeps looking, and the window offers the person's own merge.
+    Person,
+    /// A sign-in: purlis's own look has none for this forge, so it could not ask.
+    SignIn,
+}
+
+impl Needs {
+    /// The word the files and the window carry.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Person => "person",
+            Self::SignIn => "sign-in",
+        }
+    }
+
+    fn parse(word: &str) -> Option<Needs> {
+        [Self::Person, Self::SignIn]
+            .into_iter()
+            .find(|needs| needs.word() == word)
+    }
+}
+
+/// Where a save's request stands with merging: the state, why in words, the checks that
+/// failed when it is red, and what ends the wait when nothing purlis reads will.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Merging {
     pub state: MergeState,
     pub why: String,
     pub checks: Vec<FailedCheck>,
+    /// Only ever with [`MergeState::Waiting`].
+    pub needs: Option<Needs>,
 }
 
 impl Merging {
@@ -83,7 +115,49 @@ impl Merging {
             state,
             why: bounded(&why.into()),
             checks: Vec::new(),
+            needs: None,
         }
+    }
+
+    /// A wait with what ends it.
+    fn waiting_on(needs: Needs, why: impl Into<String>) -> Merging {
+        Merging {
+            needs: Some(needs),
+            ..Merging::new(MergeState::Waiting, why)
+        }
+    }
+
+    /// What a look that got no answer says once it is known whether purlis could ask at all:
+    /// `can_ask` is [`crate::forge::signin::ready`] for the look's own caller, asked only when
+    /// the look failed and did not already say its sign-in was refused. Without a sign-in the
+    /// wait says so, and the window offers one.
+    pub fn of_a_look(
+        looked: &Result<Ready, ForgeError>,
+        forge: &crate::forge::Forge,
+        can_ask: impl FnOnce() -> Result<(), ForgeError>,
+    ) -> Merging {
+        let merging = Merging::of(looked);
+        let Err(why) = looked else {
+            return merging;
+        };
+        let no_sign_in = match why.failure() {
+            crate::forge::Failure::Auth => true,
+            // Not reaching the forge, or being held back by its budget, is not a sign-in.
+            crate::forge::Failure::Transport | crate::forge::Failure::RateLimited { .. } => false,
+            _ => can_ask().is_err_and(|no| *no.failure() != crate::forge::Failure::Transport),
+        };
+        if !no_sign_in {
+            return merging;
+        }
+        Merging::waiting_on(
+            Needs::SignIn,
+            format!(
+                "purlis has no sign-in to {} on {}, so it could not ask whether it can merge. \
+                 Sign in, and purlis looks again by itself",
+                forge.kind.display(),
+                forge.host
+            ),
+        )
     }
 
     /// What a look at the forge found. A look that got no answer waits: not knowing is never
@@ -92,20 +166,28 @@ impl Merging {
         match looked {
             Ok(Ready::Merged) => Merging::new(MergeState::Merged, "purlis merged it"),
             Ok(Ready::Waiting(why)) => Merging::new(MergeState::Waiting, why.as_str()),
+            Ok(Ready::Stalled(why)) => Merging::waiting_on(Needs::Person, why.as_str()),
             Ok(Ready::Queued(why)) => Merging::new(MergeState::Queued, why.as_str()),
             Ok(Ready::Refused(why)) => Merging::new(MergeState::CannotMerge, why.as_str()),
             Ok(Ready::Red(failed)) => Merging {
                 state: MergeState::Red,
                 why: failed_said(failed),
-                checks: failed.iter().take(FAILED_NAMED).cloned().collect(),
+                // By name and link, as a file keeps them: what the forge reads a check by is
+                // asked for again when it is needed.
+                checks: failed
+                    .iter()
+                    .take(FAILED_NAMED)
+                    .map(|check| check.clone().read_by(None))
+                    .collect(),
+                needs: None,
             },
             Err(why) => Merging::new(
                 MergeState::Waiting,
                 match why.failure() {
                     crate::forge::Failure::Auth => format!(
                         "purlis's own look has no sign-in for this forge, so it could not ask \
-                         whether it can merge ({}). Sign in to the forge's own CLI, or save \
-                         again: your save asks with your sign-in",
+                         whether it can merge ({}). Sign in, or save again: your save asks \
+                         with your sign-in",
                         why.said()
                     ),
                     crate::forge::Failure::Transport => format!(
@@ -120,14 +202,18 @@ impl Merging {
 
     /// The state as it is kept in a file.
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut kept = json!({
             "state": self.state.word(),
             "why": self.why,
             "checks": self.checks.iter().map(|check| json!({
                 "name": check.name,
                 "url": check.url,
             })).collect::<Vec<_>>(),
-        })
+        });
+        if let Some(needs) = self.needs {
+            kept["needs"] = json!(needs.word());
+        }
+        kept
     }
 
     /// The state read back from a file, or `None` for anything that is not one purlis wrote.
@@ -153,6 +239,12 @@ impl Merging {
             state,
             why: bounded(kept.get("why").and_then(Value::as_str).unwrap_or_default()),
             checks,
+            // A wait alone says what ends it; on any other state the word means nothing.
+            needs: kept
+                .get("needs")
+                .and_then(Value::as_str)
+                .and_then(Needs::parse)
+                .filter(|_| state == MergeState::Waiting),
         })
     }
 
@@ -258,12 +350,87 @@ mod tests {
         assert_eq!(waits.state, MergeState::Waiting);
         assert!(waits.why.contains("has no sign-in"), "{}", waits.why);
         assert!(waits.why.contains("save again"), "{}", waits.why);
+        assert_eq!(waits.needs, None, "what `of` alone cannot know");
         let no_cli = Merging::of(&Err(ForgeError::transport("gh is not installed")));
         assert!(
             no_cli.why.contains("could not reach the forge"),
             "{}",
             no_cli.why
         );
+    }
+
+    #[test]
+    fn a_wait_nothing_purlis_reads_will_end_says_it_is_the_persons_to_end() {
+        let stalled = Merging::of(&Ok(Ready::Stalled("no check has started on it".into())));
+        assert_eq!(
+            (stalled.state, stalled.needs),
+            (MergeState::Waiting, Some(Needs::Person))
+        );
+        // A wait that ends by itself, and every other state, names nothing.
+        for looked in [
+            Ok(Ready::Waiting("its checks are still running".into())),
+            Ok(Ready::Red(vec![lint()])),
+            Ok(Ready::Refused("it conflicts".into())),
+            Ok(Ready::Queued("in the queue".into())),
+            Ok(Ready::Merged),
+        ] {
+            assert_eq!(Merging::of(&looked).needs, None, "{looked:?}");
+        }
+        assert_eq!(Merging::from_json(&stalled.to_json()), Some(stalled));
+        // The word is a wait's alone, whatever a file says.
+        let forged = json!({"state": "red", "why": "x", "checks": [], "needs": "person"});
+        assert_eq!(Merging::from_json(&forged).unwrap().needs, None);
+    }
+
+    #[test]
+    fn a_look_with_no_sign_in_says_a_sign_in_is_needed_and_one_that_could_ask_does_not() {
+        let forge = crate::forge::Forge::default_of(crate::forge::Kind::GitHub);
+        let no_login = || Err(ForgeError::new("gh is not authenticated".to_string()));
+        let refused = Err(ForgeError::new("gh: HTTP 401".to_string()));
+        let needs = Merging::of_a_look(&refused, &forge, no_login);
+        assert_eq!(
+            (needs.state, needs.needs),
+            (MergeState::Waiting, Some(Needs::SignIn))
+        );
+        assert!(
+            needs.why.contains("has no sign-in to GitHub"),
+            "{}",
+            needs.why
+        );
+        assert!(needs.why.contains("Sign in"), "{}", needs.why);
+        assert_eq!(Merging::from_json(&needs.to_json()), Some(needs));
+
+        // The forge said the sign-in was refused: nothing more is asked.
+        let auth = Err(ForgeError::of(crate::forge::Failure::Auth, "HTTP 401"));
+        let asked = std::cell::Cell::new(false);
+        let said = Merging::of_a_look(&auth, &forge, || {
+            asked.set(true);
+            Ok(())
+        });
+        assert_eq!(said.needs, Some(Needs::SignIn));
+        assert!(!asked.get());
+
+        // It could ask, and the forge failed otherwise: a wait, with no sign-in asked for.
+        let failed = Err(ForgeError::new("HTTP 502".to_string()));
+        assert_eq!(Merging::of_a_look(&failed, &forge, || Ok(())).needs, None);
+        // Not reaching the forge is not a missing sign-in, and neither is a CLI that did not
+        // answer in time.
+        let offline = Err(ForgeError::transport("no network"));
+        assert_eq!(Merging::of_a_look(&offline, &forge, no_login).needs, None);
+        let slow = || Err(ForgeError::transport("gh did not answer"));
+        assert_eq!(Merging::of_a_look(&failed, &forge, slow).needs, None);
+        // An answer is never rewritten.
+        let red = Ok(Ready::Red(vec![lint()]));
+        assert_eq!(
+            Merging::of_a_look(&red, &forge, no_login),
+            Merging::of(&red)
+        );
+    }
+
+    #[test]
+    fn what_the_forge_reads_a_check_by_is_never_kept() {
+        let red = Merging::of(&Ok(Ready::Red(vec![lint().read_by(Some(7))])));
+        assert_eq!(red.checks[0].run, None);
     }
 
     #[test]

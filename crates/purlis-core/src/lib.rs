@@ -170,6 +170,7 @@ pub mod roster;
 pub mod rulespelling;
 pub mod sandbox;
 pub mod sandboxblock;
+pub mod savefix;
 pub mod scaffold;
 pub mod scanallow;
 pub mod secrets;

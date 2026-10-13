@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, checks: List check run annotations",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/check-runs/4/annotations?per_page=50"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"path\": \"README.md\", \"start_line\": 1, \"end_line\": 1, \"annotation_level\": \"notice\", \"title\": \"Spell check\", \"message\": \"a note\"}, {\"path\": \"src/lib.rs\", \"start_line\": 3, \"end_line\": 3, \"annotation_level\": \"failure\", \"title\": \"unused variable\", \"message\": \"`x` is never read\", \"raw_details\": null}]",
+        "err": ""
+      }
+    }
+  ]
+}

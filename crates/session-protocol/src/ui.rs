@@ -455,6 +455,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // operator's ruling P1, 2026-10-13): the person's own, explicit press and nothing else's.
     // A save and the app's own look never merge past a red check, and no link or chat may.
     "merge_save_request",
+    // Fix on a save's red pull request (the operator's ruling P2, 2026-10-13): it starts a
+    // chat at once on a message purlis wrote, which nothing else in purlis does for a press.
+    // The person's own press in the window, and no link's or chat's.
+    "fix_save_request",
     // Filing a sandbox block's report (#806): it opens an issue on purlis's tracker as the
     // person, with their purlis sign-in, so only their own window's press files it.
     "file_sandbox_block_report",

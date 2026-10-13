@@ -1634,6 +1634,16 @@ export const commands = {
 	 */
 	mergeSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string, string>(__TAURI_INVOKE("merge_save_request", { plane, workspace, repo })),
 	/**
+	 *  **Fix a save's red pull request**: the project's own, or the one of `repo` in `workspace`
+	 *  when both are named. Starts a chat on what failed, or answers the one already open for the
+	 *  same request.
+	 * 
+	 *  The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
+	 * 
+	 *  On a blocking thread: it asks the forge what failed, and starts a program.
+	 */
+	fixSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null, columns: number, rows: number) => typedError<Fixing, string>(__TAURI_INVOKE("fix_save_request", { plane, workspace, repo, columns, rows })),
+	/**
 	 *  Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
 	 *  never the network.
 	 * 
@@ -3064,7 +3074,22 @@ export type AlertWay =
 /**  Another project to open: the one whose `workspaces/` this one is nested in. */
 { kind: "open-project"; path: string } | 
 /**  The project's Saving view, where a save is resolved. */
-{ kind: "saving" };
+{ kind: "saving" } | 
+/**
+ *  **A save's red request** (`save-request-red`; the operator's rulings P1 and P2,
+ *  2026-10-13): the Inbox offers what the Saving view offers for it, Fix and Merge as it
+ *  stands, so it is seen and answered without opening that view. `workspace` and `repo`
+ *  name a workspace repo's request, and are both null for the project's own.
+ */
+{ kind: "save-request"; workspace: string | null; repo: string | null; 
+/**  Whose it is, as a sentence names it: `this project`, or the repo's name. */
+name: string; 
+/**  `pull request` or `merge request`. */
+request: string; 
+/**  The request's page. */
+pr: string; 
+/**  The branch it goes into, where purlis can tell. */
+target: string | null; merge: SaveMerge };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before
@@ -5139,6 +5164,28 @@ export type FirstTaskStarted = {
 	diff: string | null,
 	/**  Why the run's diff cannot be shown. Null when `diff` is set. */
 	no_diff: string | null,
+};
+
+/**
+ *  The chat a Fix opened, or the one already open for the same request: what the window needs
+ *  to put its tab on the right strip, or to bring it forward.
+ */
+export type Fixing = {
+	session: number,
+	/**  The chat's name, which is its number. */
+	name: string,
+	/**  What its tab says. */
+	label: string,
+	persona: string | null,
+	/**  The harness, by the word the plane calls it. */
+	harness: string | null,
+	/**  The workspace it is filed under, or none at the plane root. */
+	workspace: string | null,
+	/**
+	 *  The chat was open already, from an earlier press for the same request: nothing was
+	 *  started, and the window brings it forward.
+	 */
+	existing: boolean,
 };
 
 /**
@@ -8168,6 +8215,19 @@ export type SaveMerge = {
 	why: string,
 	/**  The checks that failed when it is `red`, at most twenty; empty otherwise. */
 	checks: FailedCheck[],
+	/**
+	 *  What ends a `waiting` that nothing purlis reads will end, or `null`. `person`: the
+	 *  wait has no bound (no check where the repository's other requests have them, checks
+	 *  purlis cannot read at this commit, a required check that has not reported), and the
+	 *  window offers the person's own merge. `sign-in`: purlis's look has no sign-in for the
+	 *  forge, and the window offers one.
+	 */
+	needs: string | null,
+	/**
+	 *  The request as its forge names it, `#12` or `!12`; `null` when its page does not end
+	 *  in a number.
+	 */
+	number: string | null,
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */

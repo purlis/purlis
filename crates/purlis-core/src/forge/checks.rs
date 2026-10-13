@@ -98,6 +98,11 @@ const URL_LIMIT: usize = 400;
 pub struct FailedCheck {
     pub name: String,
     pub url: Option<String>,
+    /// What the forge reads this check's own findings by ([`super::backend::Requests::annotations`]):
+    /// a GitHub check run's id, a GitLab pipeline's. `None` for a commit status, which has
+    /// none, and for a check read back from a file: it is the forge's answer, asked for when
+    /// it is needed, and never kept.
+    pub run: Option<u64>,
 }
 
 impl FailedCheck {
@@ -113,8 +118,128 @@ impl FailedCheck {
                         && !u.chars().any(|c| c.is_control() || c.is_whitespace())
                 })
                 .map(str::to_string),
+            run: None,
         }
     }
+
+    /// The same check, read by `run` on its forge.
+    pub fn read_by(self, run: Option<u64>) -> FailedCheck {
+        FailedCheck { run, ..self }
+    }
+}
+
+/// How many findings of one failed check are read: a run can carry thousands, and what a
+/// person or a chat needs first is the handful that say what broke.
+pub const ANNOTATIONS_READ: usize = 10;
+/// The longest title kept of a finding, in characters.
+const TITLE_LIMIT: usize = 120;
+/// The longest place kept of a finding (`path:line`), in characters.
+const PLACE_LIMIT: usize = 200;
+/// The longest message kept of a finding, in characters.
+pub const MESSAGE_LIMIT: usize = 600;
+
+/// One finding of a failed check, as its forge holds it: a GitHub check run's annotation, or
+/// a failed job of a GitLab pipeline.
+///
+/// **Every field is whatever wrote the check**, as a [`FailedCheck`]'s name is: each is cut,
+/// and made printable ([`crate::shown::one_line`] for the title and the place; the message
+/// keeps its line breaks and loses every other control and invisible formatting character).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Annotation {
+    /// What the finding is called: an annotation's title, a job's name.
+    pub title: Option<String>,
+    /// Where it points: `path:line`, or the path alone.
+    pub at: Option<String>,
+    /// What it says.
+    pub message: String,
+}
+
+impl Annotation {
+    /// A finding, from what the forge names it by. One with nothing to say is `None`.
+    pub fn of(
+        title: Option<&str>,
+        path: Option<&str>,
+        line: Option<u64>,
+        message: Option<&str>,
+    ) -> Option<Annotation> {
+        let kept = |text: Option<&str>, most: usize| {
+            text.map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(|t| crate::shown::one_line(t, most))
+        };
+        let message: String = message
+            .unwrap_or_default()
+            .replace("\r\n", "\n")
+            .chars()
+            .map(|c| if c == '\r' { '\n' } else { c })
+            .filter(|c| *c == '\n' || *c == '\t' || !crate::panel::undrawable(*c))
+            .collect();
+        let message = message.trim();
+        let title = kept(title, TITLE_LIMIT);
+        if message.is_empty() && title.is_none() {
+            return None;
+        }
+        let mut cut: String = message.chars().take(MESSAGE_LIMIT).collect();
+        if message.chars().count() > MESSAGE_LIMIT {
+            cut.push('…');
+        }
+        let at = kept(path, PLACE_LIMIT).map(|path| match line {
+            Some(line) => format!("{path}:{line}"),
+            None => path,
+        });
+        Some(Annotation {
+            title,
+            at,
+            message: cut,
+        })
+    }
+}
+
+/// A GitHub check run's annotations, the first [`ANNOTATIONS_READ`]: failures first, then the
+/// rest in the forge's order, because a run lists its notices and warnings beside what broke.
+pub(super) fn github_annotations(answer: &Value) -> Result<Vec<Annotation>, String> {
+    let list = answer
+        .as_array()
+        .ok_or("the forge's annotations answer is not a list")?;
+    let failed = |entry: &&Value| entry["annotation_level"].as_str() == Some("failure");
+    Ok(list
+        .iter()
+        .filter(failed)
+        .chain(list.iter().filter(|entry| !failed(entry)))
+        .filter_map(|entry| {
+            Annotation::of(
+                entry["title"].as_str(),
+                entry["path"].as_str(),
+                entry["start_line"].as_u64(),
+                entry["message"].as_str(),
+            )
+        })
+        .take(ANNOTATIONS_READ)
+        .collect())
+}
+
+/// A GitLab pipeline's failed jobs, the first [`ANNOTATIONS_READ`], each as a finding: its
+/// name and stage, and why GitLab says it failed.
+pub(super) fn gitlab_failed_jobs(answer: &Value) -> Result<Vec<Annotation>, String> {
+    let list = answer
+        .as_array()
+        .ok_or("the forge's jobs answer is not a list")?;
+    Ok(list
+        .iter()
+        .filter_map(|job| {
+            let name = match (job["name"].as_str(), job["stage"].as_str()) {
+                (Some(name), Some(stage)) => Some(format!("{name} (stage {stage})")),
+                (Some(name), None) => Some(name.to_string()),
+                _ => None,
+            };
+            let why = job["failure_reason"]
+                .as_str()
+                .map(|reason| format!("the job failed: {reason}"))
+                .unwrap_or_else(|| "the job failed".to_string());
+            Annotation::of(name.as_deref(), None, None, Some(&why))
+        })
+        .take(ANNOTATIONS_READ)
+        .collect())
 }
 
 /// What one run, status or pipeline says, before they are summed. `Uncounted` is a run the
@@ -203,10 +328,14 @@ fn failed_among<'a>(
     judge: fn(&Value) -> One,
     name: &'a str,
     url: &'a str,
+    run: Option<&'a str>,
 ) -> impl Iterator<Item = FailedCheck> + 'a {
     list.iter()
         .filter(move |entry| judge(entry) == One::Counted(Ci::Failed))
-        .map(move |entry| FailedCheck::of(entry[name].as_str(), entry[url].as_str()))
+        .map(move |entry| {
+            FailedCheck::of(entry[name].as_str(), entry[url].as_str())
+                .read_by(run.and_then(|key| entry[key].as_u64()))
+        })
 }
 
 /// Whether `sha` is a commit id charter will put in an API path: hex, 7 to 64.
@@ -283,12 +412,13 @@ pub(super) fn github(runs: &[Value], statuses: &[Value]) -> Checks {
             .map(check_run)
             .chain(statuses.iter().map(commit_status)),
     );
-    checks.failed = failed_among(runs, check_run, "name", "html_url")
+    checks.failed = failed_among(runs, check_run, "name", "html_url", Some("id"))
         .chain(failed_among(
             statuses,
             commit_status,
             "context",
             "target_url",
+            None,
         ))
         .take(FAILED_NAMED)
         .collect();
@@ -339,7 +469,7 @@ pub(super) fn gitlab(answer: &Value, sha: &str, request: u64) -> Result<Checks, 
                 (Some(id), None) => format!("pipeline #{id}"),
                 _ => "its pipeline".to_string(),
             };
-            FailedCheck::of(Some(&name), p["web_url"].as_str())
+            FailedCheck::of(Some(&name), p["web_url"].as_str()).read_by(p["id"].as_u64())
         })
         .collect();
     Ok(checks)
@@ -366,6 +496,57 @@ mod tests {
         reduce(list.iter().map(|(status, conclusion)| {
             check_run(&json!({"status": status, "conclusion": conclusion}))
         }))
+    }
+
+    #[test]
+    fn what_a_failed_check_found_is_read_failures_first_bounded_and_printable() {
+        let long = "m".repeat(MESSAGE_LIMIT + 50);
+        let mut list = vec![
+            json!({"annotation_level": "notice", "title": "a note", "message": "fyi"}),
+            json!({"annotation_level": "failure", "title": " unused\u{202e} ", "path": "src/a.rs",
+                   "start_line": 3, "message": "one\r\ntwo\u{1b}[31m\u{200b}"}),
+            json!({"annotation_level": "failure", "message": long}),
+            json!({"annotation_level": "failure", "title": "", "message": "  "}),
+        ];
+        list.extend(
+            (0..30).map(|n| json!({"annotation_level": "warning", "message": n.to_string()})),
+        );
+        let found = github_annotations(&json!(list)).unwrap();
+        assert_eq!(found.len(), ANNOTATIONS_READ);
+        assert_eq!(found[0].at.as_deref(), Some("src/a.rs:3"));
+        assert_eq!(found[0].title.as_deref(), Some("unused\\u202e"));
+        assert_eq!(found[0].message, "one\ntwo[31m");
+        assert_eq!(found[1].message.chars().count(), MESSAGE_LIMIT + 1);
+        assert!(found[1].message.ends_with('…'));
+        // The one with nothing to say is left out, and what is no failure comes after.
+        assert_eq!(found[2].title.as_deref(), Some("a note"));
+        assert!(github_annotations(&json!({"message": "Not Found"})).is_err());
+
+        let jobs = gitlab_failed_jobs(&json!([
+            {"name": "lint", "stage": "test", "failure_reason": "script_failure"},
+            {"name": "build"},
+            {"stage": "deploy"},
+        ]))
+        .unwrap();
+        assert_eq!(jobs[0].title.as_deref(), Some("lint (stage test)"));
+        assert_eq!(jobs[0].message, "the job failed: script_failure");
+        assert_eq!(
+            (jobs[1].title.as_deref(), jobs[1].message.as_str()),
+            (Some("build"), "the job failed")
+        );
+        assert_eq!(jobs[2].title, None);
+    }
+
+    #[test]
+    fn a_failed_check_carries_what_its_forge_reads_it_by_and_a_status_carries_none() {
+        let checks = github(
+            &[json!({"id": 4, "name": "lint", "status": "completed", "conclusion": "failure"})],
+            &[json!({"context": "ci/ext", "state": "failure"})],
+        );
+        assert_eq!(
+            checks.failed.iter().map(|c| c.run).collect::<Vec<_>>(),
+            [Some(4), None]
+        );
     }
 
     #[test]

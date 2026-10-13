@@ -899,7 +899,9 @@ pub(super) fn settle(
             base: target,
         };
         let looked = merge_it_ourselves(&repo, &opened, &at, caller, gate);
-        let merging = Merging::of(&looked);
+        let merging = Merging::of_a_look(&looked, &repo.forge, || {
+            crate::forge::signin::ready(&repo.forge, caller)
+        });
         let queued = matches!(looked, Ok(Ready::Queued(_)));
         // Kept where the window reads it, whatever comes next: the request's own state.
         if remember(root, &merging, queued) {
@@ -1235,7 +1237,7 @@ pub(super) fn merge_as_it_stands(
     let looked = merge_it_ourselves(&repo, &opened, &at, caller, Gate::Person);
     match &looked {
         Ok(Ready::Merged) | Ok(Ready::Queued(_)) => {}
-        Ok(Ready::Waiting(why)) | Ok(Ready::Refused(why)) => {
+        Ok(Ready::Waiting(why)) | Ok(Ready::Stalled(why)) | Ok(Ready::Refused(why)) => {
             return Err(format!("{request} was not merged: {why}"));
         }
         Ok(Ready::Red(_)) => return Err(format!("{request} was not merged")),
@@ -1263,6 +1265,47 @@ pub(super) fn merge_as_it_stands(
             "{request} merged, and {target} moves onto it with the next look"
         ))),
     }
+}
+
+/// **What the window's Fix hands a chat about the project's red request**: its number, and the
+/// request with its failed checks and what each found, asked of the forge now
+/// ([`crate::savefix::read_failed`]). Refused unless the last look found it red.
+pub(super) fn trouble(
+    root: &Path,
+    plane: &Plane,
+    target: &str,
+    caller: &Caller,
+) -> Result<(u64, crate::savefix::Trouble), String> {
+    let kept = Kept::read(root);
+    let Some(known) = kept.pr.filter(|pr| pr.target == target) else {
+        return Err("no pull request of this project's saves is open".into());
+    };
+    let red = known
+        .merge
+        .as_ref()
+        .filter(|merge| merge.state == super::MergeState::Red);
+    let Some(red) = red else {
+        return Err(
+            "the pull request of this project's saves is not red any more, so there is \
+             nothing to fix"
+                .into(),
+        );
+    };
+    let (repo, _, _) = config(root, plane)?;
+    let kind = repo.forge.kind;
+    let request = format!("{} {}", kind.request_noun(), kind.request_ref(known.number));
+    let failed = crate::savefix::read_failed(
+        repo.backend().as_ref(),
+        caller,
+        &repo.path,
+        &known.head,
+        known.number,
+        &red.checks,
+    );
+    Ok((
+        known.number,
+        crate::savefix::red_request(&request, &known.url, crate::savefix::Whose::Project, failed),
+    ))
 }
 
 /// The origin URL and credential helper a look that may find the request merged fetches the

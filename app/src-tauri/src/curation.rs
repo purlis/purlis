@@ -521,6 +521,90 @@ pub fn start_typed_where_it_can_be(
     })
 }
 
+/// **Why a chat is started on a message purlis wrote and sent**, where every other chat this
+/// module opens has its prompt typed and left for the person to send (ADR 0061). A closed
+/// set: each is an exception the operator ruled, recorded in ADR 0061 and counted in ADR 0064,
+/// and a new one is a new amendment there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SentFor {
+    /// The window's **Fix** on a save that failed (the operator's ruling P2, 2026-10-13): the
+    /// person's own press, and the chat starts at once.
+    FixASave,
+}
+
+/// Opens `chat` **started on its prompt**: the prompt is the chat's first message, handed to
+/// its harness the way that harness takes one (`purlis_core::handoff::first_message_argv`),
+/// so the chat works from the moment it starts. Nothing is typed and nothing is held.
+///
+/// **The one exception to "typed and never sent" among the chats this module opens**, for the
+/// caller `why` names and no other (ADR 0061, amended 2026-10-14). The message is purlis's
+/// own, written by the core for that caller; what it quotes is quoted there. The window's
+/// press is what starts it: no chat, tool, hook or command reaches this.
+///
+/// It starts a chat and types into none, so the board has nothing to gate: there is no
+/// prompt of a harness's for an Enter to land on. A harness with no measured way of taking a
+/// first message refuses, and nothing starts.
+pub fn start_sent(
+    held: &Arc<Held>,
+    chat: ChatTyped,
+    size: Size,
+    why: SentFor,
+) -> Result<StartedTyped, String> {
+    if let Some(bad) = purlis_core::handoff::bad_message(&chat.prompt) {
+        return Err(bad.say());
+    }
+    let root = held.root().to_path_buf();
+    let number = held.chats().sessions().deal();
+    let name = number.to_string();
+    let ready = purlis_core::start::ready(
+        &purlis_core::start::Start {
+            profile: Some(chat.profile.clone()),
+            persona: chat.persona.clone(),
+            name: name.clone(),
+            cwd: Some(chat.cwd.clone()),
+            resume: None,
+            show_footer: false,
+            resuming: None,
+            // An ordinary sandboxed chat, with nothing past its project's sandbox.
+            without_sandbox: None,
+            held: None,
+            grants: Default::default(),
+        },
+        &root,
+    )
+    .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;
+    let record = Chat {
+        program: ready.program.clone(),
+        // What the RECORD keeps: the profile's own words. Never the message: a relaunch
+        // resumes the conversation, and the message was only ever sent once.
+        args: Vec::new(),
+        cwd: ready.cwd.clone(),
+        name: name.clone(),
+        resume: ready.session.clone(),
+        active: false,
+        profile: Some(chat.profile),
+        persona: chat.persona,
+        show_footer: false,
+        pinned: false,
+        number: Some(number),
+        label: Some(chat.label),
+        from: None,
+        renamed_from: None,
+        ..Default::default()
+    };
+    let session = held.chats().start_ready(&record, &ready, size)?;
+    // Said in the app's own log, as every send purlis makes is: which chat, and for what.
+    tracing::info!(
+        "purlis: chat {number} was started on a message purlis wrote and sent ({why:?})"
+    );
+    Ok(StartedTyped {
+        session,
+        name,
+        ready,
+        typed: false,
+    })
+}
+
 /// The prompts waiting for their chat's harness to start, by chat.
 ///
 /// **The app's, not the window's**: a window can close, reload or be a second window on the

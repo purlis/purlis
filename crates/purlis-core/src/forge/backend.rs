@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::checks::Checks;
+use super::checks::{Annotation, Checks, FailedCheck};
 use super::cli::Cli;
 use super::pr::{AutoMerge, Gate, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State};
 use super::transport::{Call, NoAnswer, Reply, Transport};
@@ -590,6 +590,18 @@ pub trait Requests {
     /// a merge request's own pipelines, and GitHub reads a commit's checks with no request at
     /// all, so its body does not use it.
     fn checks_at(&self, caller: &Caller, path: &str, sha: &str, request: u64) -> Checks;
+
+    /// What one failed check found, the first few ([`super::checks::ANNOTATIONS_READ`]): a
+    /// GitHub check run's annotations, failures first, or the failed jobs of a GitLab
+    /// pipeline. Read by [`FailedCheck::run`]; a check with none (a commit status) has no
+    /// findings to read, and answers the empty list without asking. Every field is whoever
+    /// wrote the check's, bounded and made printable ([`super::checks::Annotation`]).
+    fn annotations(
+        &self,
+        caller: &Caller,
+        path: &str,
+        check: &FailedCheck,
+    ) -> Result<Vec<Annotation>, ForgeError>;
 
     /// The open request on `branch`, as the forge's own field holds it. Permissive: every
     /// failure is `Ok(None)`, and a shape Python raised on is `Err(Raised)` (`gl-refresh`).

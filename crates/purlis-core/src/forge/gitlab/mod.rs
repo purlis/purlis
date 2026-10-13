@@ -13,7 +13,7 @@ use super::backend::{
     PushProtection, Reach, Reason, RepoRecord, Repos, Requests, Support, Tier, Unavailable,
     UnknownWhy, Visibility, WorkItems,
 };
-use super::checks::{self, Checks};
+use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, MergeAs, MergedAt, Opened, Pinned,
     Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
@@ -784,7 +784,7 @@ impl Requests for GitLab {
             // The project requires a pipeline to pass, and none has: it may yet run, so it
             // waits. The person's merge cannot pass a rule GitLab itself enforces.
             "ci_must_pass" if gate != Gate::Person => {
-                return Ok(Ready::Waiting(format!(
+                return Ok(Ready::Stalled(format!(
                     "GitLab requires a pipeline to pass before !{number} merges, and none has"
                 )));
             }
@@ -1016,6 +1016,29 @@ impl Requests for GitLab {
             let answer = self.pipelines_of(caller, path, request)?;
             Ok(checks::gitlab(&answer, sha, request)?)
         })
+    }
+
+    fn annotations(
+        &self,
+        caller: &Caller,
+        path: &str,
+        check: &FailedCheck,
+    ) -> Result<Vec<Annotation>, ForgeError> {
+        let Some(pipeline) = check.run else {
+            return Ok(Vec::new());
+        };
+        let answer = self.0.ask(
+            caller,
+            &Call::get(
+                format!(
+                    "projects/{}/pipelines/{pipeline}/jobs?scope%5B%5D=failed&per_page=50",
+                    quote(path)
+                ),
+                LIST_TIMEOUT,
+            ),
+            &format!("reading the failed jobs of pipeline #{pipeline} of {path}"),
+        )?;
+        Ok(checks::gitlab_failed_jobs(&answer)?)
     }
 
     fn open_on_branch(

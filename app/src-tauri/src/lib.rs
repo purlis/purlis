@@ -98,6 +98,7 @@ mod restored;
 mod restoring;
 mod sandboxchoose;
 mod sandboxing;
+mod savefix;
 mod saving;
 mod searchfiles;
 mod sessions;
