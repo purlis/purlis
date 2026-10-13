@@ -230,7 +230,7 @@ pub struct Session {
     terminal: Arc<Mutex<Terminal>>,
     input: SyncSender<Vec<u8>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    child: Arc<Mutex<Held>>,
     /// Taken by [`Session::when_it_ends`]. The reading thread sends on it once, when the
     /// program's output ends — which is when the program has.
     ended: Mutex<Option<Receiver<()>>>,
@@ -332,7 +332,7 @@ impl Session {
             terminal,
             input,
             master: Mutex::new(pair.master),
-            child: Arc::new(Mutex::new(child)),
+            child: Arc::new(Mutex::new(Held::of(child))),
             ended: Mutex::new(Some(ended)),
         })
     }
@@ -556,9 +556,105 @@ impl Session {
     }
 }
 
+/// A session's program as the session holds it: the child, and whether it has been waited for.
+///
+/// **A program that has ended leaves nothing running in its process group.** The program leads
+/// a session of its own (`portable-pty` starts it so), so its group's id is its process id, and
+/// the group holds what it started that did not leave on purpose. When the program is running
+/// and a chat is ended, stopped or closed, the whole group is hung up and then killed
+/// ([`end`]). A program that ends by itself — it was quit, or it left on the interrupt a stop
+/// sends first — used to leave the rest of its group to the hangup the system sends as a
+/// session's leader goes, and whatever ignored or missed that hangup ran on with nothing left
+/// that could end it: a server a chat had started, or a helper caught between its fork and its
+/// program. So the first look that finds the program ended does for its group what an end
+/// does, before the program is waited for.
+///
+/// The look waits, holding the program, only while something of the group is still running,
+/// and at most the hangup's grace: once, and for nearly every program not at all.
+///
+/// **Before, never after.** Once the program is waited for, its id can be handed to another
+/// process, and a group signalled by that id could be a stranger's: another chat's. So what is
+/// waited for is marked, and nothing is signalled for it again. A process that left the group
+/// on purpose (a session or a group of its own) is not reached, as before: that is how a
+/// program outlives its chat.
+struct Held {
+    child: Box<dyn Child + Send + Sync>,
+    /// Whether the program has been waited for, after which its id is no longer its own.
+    waited_for: bool,
+}
+
+impl Held {
+    fn of(child: Box<dyn Child + Send + Sync>) -> Self {
+        Self {
+            child,
+            waited_for: false,
+        }
+    }
+
+    fn process_id(&self) -> Option<u32> {
+        self.child.process_id()
+    }
+
+    fn kill(&mut self) -> std::io::Result<()> {
+        self.child.kill()
+    }
+
+    /// The program's status if it has ended, having first ended what it left in its group.
+    fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+        #[cfg(unix)]
+        if !self.waited_for {
+            self.end_what_it_left();
+        }
+        let asked = self.child.try_wait();
+        if matches!(asked, Ok(Some(_))) {
+            self.waited_for = true;
+        }
+        asked
+    }
+
+    fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+        let status = self.child.wait();
+        self.waited_for = true;
+        status
+    }
+
+    /// Hangs up, then kills, what is still running in the group of a program that has ended and
+    /// has not been waited for yet. Nothing where the program still runs, or where nothing of
+    /// its group is left, which is nearly always: the wait is only for a group that has someone
+    /// in it.
+    #[cfg(unix)]
+    fn end_what_it_left(&self) {
+        use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
+        let Some(group) = self
+            .child
+            .process_id()
+            .and_then(|pid| i32::try_from(pid).ok())
+            .filter(|raw| *raw > 1)
+            .and_then(Pid::from_raw)
+        else {
+            return;
+        };
+        // Looked at without reaping: an ended program keeps its id until it is waited for.
+        let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+        if !matches!(waitid(WaitId::Pid(group), options), Ok(Some(_))) {
+            return;
+        }
+        if !crate::process::group_still_runs(group) {
+            return;
+        }
+        let _ = kill_process_group(group, Signal::HUP);
+        let _ = kill_process_group(group, Signal::CONT);
+        let until = Instant::now() + HANGUP_GRACE;
+        while Instant::now() < until && crate::process::group_still_runs(group) {
+            thread::sleep(POLL);
+        }
+        let _ = kill_process_group(group, Signal::KILL);
+    }
+}
+
 /// A session's program, to ask about apart from the session ([`Session::program`]).
 pub struct Program {
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    child: Arc<Mutex<Held>>,
 }
 
 impl Program {
@@ -575,7 +671,7 @@ impl Program {
 /// Ends one session's program, and everything it started, without ending the session
 /// ([`Session::stopper`]).
 pub struct Stopper {
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    child: Arc<Mutex<Held>>,
 }
 
 impl Stopper {
@@ -598,7 +694,7 @@ const INTERRUPT_GRACE: Duration = Duration::from_millis(300);
 /// Sends the program's process group an interrupt and waits up to [`INTERRUPT_GRACE`] for it
 /// to go.
 #[cfg(unix)]
-fn interrupt(child: &Mutex<Box<dyn Child + Send + Sync>>) {
+fn interrupt(child: &Mutex<Held>) {
     use rustix::process::{Pid, Signal, kill_process_group};
 
     let group = {
@@ -621,7 +717,7 @@ fn interrupt(child: &Mutex<Box<dyn Child + Send + Sync>>) {
 
 /// No process group to interrupt here: `end` alone ends the program.
 #[cfg(not(unix))]
-fn interrupt(_: &Mutex<Box<dyn Child + Send + Sync>>) {}
+fn interrupt(_: &Mutex<Held>) {}
 
 impl Drop for Session {
     /// Returns at once. Ending and reaping the program happens on a thread of its own, so
@@ -663,10 +759,11 @@ const HANGUP_GRACE: Duration = Duration::from_millis(500);
 
 /// Hangs up the program's process group, then kills whatever is left of it, then reaps.
 #[cfg(unix)]
-fn end(child: &Mutex<Box<dyn Child + Send + Sync>>) {
+fn end(child: &Mutex<Held>) {
     use rustix::process::{Pid, Signal, kill_process_group};
 
     let mut child = lock(child);
+    // A program that has already ended has had its group ended as that was found ([`Held`]).
     if !matches!(child.try_wait(), Ok(None)) {
         return;
     }
@@ -685,7 +782,7 @@ fn end(child: &Mutex<Box<dyn Child + Send + Sync>>) {
 }
 
 #[cfg(not(unix))]
-fn end(child: &Mutex<Box<dyn Child + Send + Sync>>) {
+fn end(child: &Mutex<Held>) {
     let mut child = lock(child);
     if matches!(child.try_wait(), Ok(None)) {
         let _ = child.kill();
@@ -1320,6 +1417,38 @@ mod tests {
     }
 
     #[test]
+    fn a_program_that_ends_by_itself_leaves_nothing_running_in_its_group() {
+        // A chat whose harness was quit, with something it started still running: here one
+        // that ignores the hangup the system sends as the session's leader goes, so nothing
+        // but the session can end it. It is ended as the program is found to have ended.
+        let session = sh(&format!(
+            "(trap '' HUP; exec sleep {}) & echo \"left=$!\"; read _; exit 0",
+            stand_in::FIXTURE_LIFETIME_SECS
+        ));
+        let _ends = stand_in::Ends::group(session.process_id().expect("a pid"));
+        let screen = screen_until(&session, shows("left="));
+        let left: u32 = screen
+            .lines
+            .iter()
+            .find_map(|line| line.strip_prefix("left="))
+            .and_then(|pid| pid.trim().parse().ok())
+            .expect("the script prints its child's pid");
+
+        session.write(b"\r").unwrap();
+        let ended = session.wait(PATIENCE).expect("asked");
+
+        assert_eq!(ended, Some(Exit::Code(0)), "the program ends by itself");
+        let deadline = Instant::now() + PATIENCE;
+        while alive(left) {
+            assert!(
+                Instant::now() < deadline,
+                "process {left} outlived the program that started it"
+            );
+            thread::sleep(POLL);
+        }
+    }
+
+    #[test]
     fn dropping_a_session_ends_programs_it_started_even_ones_ignoring_hangup() {
         let session = sh(&format!(
             "trap '' HUP; (trap '' HUP; sleep {}) & echo \"grandchild=$!\"; wait",
@@ -1674,10 +1803,10 @@ mod tests {
         );
         // The interrupt comes as the shell starts its `sleep`. One caught between the fork and
         // the `sleep` itself still has the shell's own handlers: it takes the hangup that
-        // follows the shell's exit as the shell would, starts the `sleep` after all, and the
-        // stop, finding the program already gone, signals nothing more. It ran for its ten
-        // minutes and failed the suite that ended meanwhile (qw376). So the group is ended
-        // with the test, whatever is left in it.
+        // follows the shell's exit as the shell would, and starts the `sleep` after all. The
+        // stop used to find the program already gone and signal nothing more, so that `sleep`
+        // ran its ten minutes and failed the suite that ended meanwhile (qw376). The stop now
+        // ends what the program left; the guard is for a test that fails before it.
         let _ends = stand_in::Ends::group(session.process_id().expect("a pid"));
         screen_until(&session, shows("ready"));
 

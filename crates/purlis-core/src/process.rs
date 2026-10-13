@@ -99,6 +99,56 @@ pub fn alive(_pid: u32) -> bool {
     false
 }
 
+/// Whether the group `leader` leads still has a process running in it, once `leader` itself
+/// has exited and is waiting to be reaped. Where that cannot be read, it says yes, and the
+/// group is given its whole grace.
+///
+/// Linux counts the exited leader as a member when the group is signalled, so the null signal
+/// cannot tell: each process's own record is read instead (`/proc/<pid>/stat`: after the
+/// name come the state, the parent and the group).
+#[cfg(target_os = "linux")]
+pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> bool {
+    let Ok(listed) = std::fs::read_dir("/proc") else {
+        return true;
+    };
+    let group = leader.as_raw_nonzero().get().to_string();
+    listed.flatten().any(|entry| {
+        let name = entry.file_name();
+        if !name
+            .to_str()
+            .is_some_and(|name| name.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return false;
+        }
+        // A process that ended between the listing and the read is not running.
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            return false;
+        };
+        in_group_and_running(&stat, &group)
+    })
+}
+
+/// Whether one `/proc/<pid>/stat` line is a process of `group` that has not exited. The name,
+/// in parentheses, may itself hold spaces and parentheses, so the fields are read after the
+/// last `)`: state, parent, group.
+#[cfg(any(target_os = "linux", test))]
+fn in_group_and_running(stat: &str, group: &str) -> bool {
+    let Some((_, rest)) = stat.rsplit_once(')') else {
+        return false;
+    };
+    let mut fields = rest.split_ascii_whitespace();
+    let (state, _parent, its) = (fields.next(), fields.next(), fields.next());
+    its == Some(group) && !matches!(state, Some("Z" | "X") | None)
+}
+
+/// On the BSDs and macOS the null signal passes over a process that has exited (measured on
+/// macOS 26.2: a group holding only its unreaped leader answers `EPERM`, one with a running
+/// member answers yes), so it is the question itself.
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> bool {
+    rustix::process::test_kill_process_group(leader).is_ok()
+}
+
 /// Whether this process is `ancestor` or runs below it (V82, #1018): what decides that a
 /// commit is the chat's own, and not one made in a program that only inherited its
 /// environment.
@@ -176,6 +226,24 @@ pub fn could_be_recorded(started: std::time::SystemTime, written: std::time::Sys
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_process_record_is_read_past_a_name_that_holds_spaces_and_parentheses() {
+        let running = "812 (tmux: server (1)) S 1 77 77 0 -1 4194304";
+        assert!(in_group_and_running(running, "77"));
+        assert!(!in_group_and_running(running, "7"));
+        assert!(
+            !in_group_and_running(running, "1"),
+            "the parent is not the group"
+        );
+        let exited = "77 (git) Z 1 77 77 0 -1 4194304";
+        assert!(
+            !in_group_and_running(exited, "77"),
+            "an exited leader is not running"
+        );
+        assert!(!in_group_and_running("", "77"));
+        assert!(!in_group_and_running("77 (git)", "77"));
+    }
 
     #[cfg(unix)]
     #[test]
