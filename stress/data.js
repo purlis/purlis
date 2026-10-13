@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791896316434,
+  "lastUpdate": 1791896340002,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1758,6 +1758,42 @@ window.BENCHMARK_DATA = {
             "value": 433.6,
             "unit": "MB",
             "extra": "median of 6 samples: 399.8, 409.5, 426.4, 440.8, 441, 530.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "d20a36e8db24b004ca4ae91e6e57f1ee44023b80",
+          "message": "sandbox: window tests for the certificate check's Allow, its Settings row and a restart that waits\n\nThe Settings row's control is a named group with the set's button class; the\ntests' stand-in for the asks registry leads the certificate check with this\nmachine's Allow, as the registry does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T16:31:30+04:00",
+          "tree_id": "4f5d5fc77800dc936ef0b332d7ad886428d43505",
+          "url": "https://github.com/purlis/purlis/commit/d20a36e8db24b004ca4ae91e6e57f1ee44023b80"
+        },
+        "date": 1791896338966,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1429.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1340.1, 1429.8, 1587.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 453,
+            "unit": "MB",
+            "extra": "median of 6 samples: 422.4, 447.1, 450, 455.9, 456.3, 542.2 MB"
           }
         ]
       }
