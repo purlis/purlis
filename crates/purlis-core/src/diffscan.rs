@@ -230,9 +230,11 @@ fn object_type(repo: &Path, oid: &str) -> Result<String, String> {
     }
 }
 
-/// The message of the annotated tag `oid`, and of each tag it names in turn down to what is
-/// not a tag, one after another. `Err` is git failing to show one.
-fn tag_messages(repo: &Path, oid: &str) -> Result<String, String> {
+/// The annotated tag `oid`, and each tag it names in turn down to what is not a tag: their
+/// header lines, then their messages, each one after another, as git stores them. The header
+/// is published with the tag as its message is (#1133). `Err` is git failing to show one.
+fn tag_messages(repo: &Path, oid: &str) -> Result<(String, String), String> {
+    let mut headers = String::new();
     let mut messages = String::new();
     let mut at = oid.to_owned();
     // A tag names a tag only so many times before it names what is tagged.
@@ -248,6 +250,8 @@ fn tag_messages(repo: &Path, oid: &str) -> Result<String, String> {
         let text = String::from_utf8_lossy(&run.out).into_owned();
         // The header, to the first blank line, then the message.
         let (header, message) = text.split_once("\n\n").unwrap_or((&text, ""));
+        headers.push_str(header);
+        headers.push('\n');
         messages.push_str(message);
         messages.push('\n');
         let Some(next) = header.lines().find_map(|line| line.strip_prefix("object ")) else {
@@ -255,7 +259,23 @@ fn tag_messages(repo: &Path, oid: &str) -> Result<String, String> {
         };
         at = next.trim().to_owned();
     }
-    Ok(messages)
+    Ok((headers, messages))
+}
+
+/// One commit as `git log --pretty=raw` shows it: its name, its header lines as stored, and its
+/// message with git's four-space indent taken off. `None` is a record that does not start as
+/// git writes one.
+fn raw_commit(record: &str) -> Option<(&str, &str, String)> {
+    let rest = record.trim_start_matches('\n').strip_prefix("commit ")?;
+    let (first, rest) = rest.split_once('\n').unwrap_or((rest, ""));
+    let commit = first.split_whitespace().next()?;
+    let (header, message) = rest.split_once("\n\n").unwrap_or((rest, ""));
+    let message = message
+        .lines()
+        .map(|line| line.strip_prefix("    ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some((commit, header, message))
 }
 
 /// What a commit's or a tag's message, `where_` it is, holds that looks like a credential.
@@ -393,8 +413,9 @@ fn is_nothing(oid: &str) -> bool {
 /// git does not merge again, is read against its first parent. A text file git shows as binary
 /// is read as text ([`shown_as_binary`]).
 ///
-/// **Messages are read too**: each commit's, and each annotated tag's the push sends, for
-/// credentials only ([`in_message`]).
+/// **Messages are read too**: each commit's, and each annotated tag's the push sends, with
+/// every header line of each object (#1133), for credentials only ([`in_message`]), in UTF-8
+/// whatever encoding the repository's config asks git to write messages in.
 ///
 /// **What is pushed must be a commit.** A ref is peeled to the commit it names (an annotated tag
 /// to its commit); a ref that names a blob or a tree, directly or through a tag, has no history
@@ -536,23 +557,25 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
         };
         read.append(shown_as_binary(repo, &binary, &mut as_text, &mut new_text)?);
     }
-    // What each commit says, and each annotated tag pushed: a message is published with them.
-    let said = ask(&["log", "-z", "--format=%H%n%B"])?;
-    for one in said.split('\0') {
-        let Some((commit, message)) = one.split_once('\n') else {
-            continue;
-        };
+    // What each commit says, and each annotated tag pushed: a message is published with them,
+    // and so is every header line of the object (#1133): a merged tag's whole text under
+    // `mergetag`, or a header git does not know. Asked in UTF-8 whatever the repository's
+    // config names, so a message is never written in an encoding this does not read.
+    let said = ask(&["log", "-z", "--encoding=UTF-8", "--pretty=raw"])?;
+    for one in said.split('\0').filter(|one| !one.trim().is_empty()) {
+        let (commit, header, message) =
+            raw_commit(one).ok_or_else(|| "git showed a commit this could not read".to_owned())?;
         let short = commit.get(..12).unwrap_or(commit);
+        read.append(in_message(&format!("commit {short} (its header)"), header));
         read.append(in_message(
             &format!("commit {short} (its message)"),
-            message,
+            &message,
         ));
     }
     for (name, tag) in &tags {
-        read.append(in_message(
-            &format!("tag {name} (its message)"),
-            &tag_messages(repo, tag)?,
-        ));
+        let (header, message) = tag_messages(repo, tag)?;
+        read.append(in_message(&format!("tag {name} (its header)"), &header));
+        read.append(in_message(&format!("tag {name} (its message)"), &message));
     }
     let texts: Vec<Option<String>> = allowlists
         .iter()
@@ -2663,6 +2686,101 @@ mod tests {
             refused(&scan).contains(&("tag refs/tags/v1 (its message)", "forge-token")),
             "{:?}",
             scan.refused
+        );
+    }
+
+    /// An object written as `text`, of git's type `kind`, as `hash-object` stores it.
+    fn object(repo: &Path, kind: &str, text: &str) -> String {
+        let file = repo.parent().unwrap().join(format!("{kind}.object"));
+        std::fs::write(&file, text).unwrap();
+        let made = testgit::run(
+            repo,
+            &["hash-object", "-t", kind, "-w", &file.display().to_string()],
+        );
+        assert!(made.ok(), "{}", made.err);
+        made.out.trim().to_owned()
+    }
+
+    /// #1133: a commit object publishes every line it holds, not only its message: a header
+    /// git keeps for itself (a merged tag's whole text, under `mergetag`) or one it does not
+    /// know. An annotated tag's own header lines are published with it too. Each is read for
+    /// credentials, as the message is; the people a header names are not refused.
+    #[test]
+    fn a_credential_in_a_commits_or_tags_header_lines_is_refused_at_push() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "one\n").unwrap();
+        let published = commit_all(&repo, "one");
+        let tree = testgit::run(&repo, &["rev-parse", "HEAD^{tree}"])
+            .out
+            .trim()
+            .to_owned();
+        let who = format!("Ada <{}> 1 +0000", address());
+        let header = |extra: &str| {
+            format!(
+                "tree {tree}\nparent {published}\nauthor {who}\ncommitter {who}\n{extra}\n\nplain\n"
+            )
+        };
+        // The people a commit's header names are not a finding.
+        let plain = object(&repo, "commit", &header("x-note nothing here"));
+        let scan = pushed(&repo, "/r.git", "/r.git", &update(&plain, &published)).unwrap();
+        assert_eq!(refused(&scan), []);
+
+        for extra in [
+            format!("x-note {}", key()),
+            format!(
+                "mergetag object {published}\n type commit\n tag v0\n tagger {who}\n \n told {}",
+                key()
+            ),
+        ] {
+            let told = object(&repo, "commit", &header(&extra));
+            let scan = pushed(&repo, "/r.git", "/r.git", &update(&told, &published)).unwrap();
+            let short = &told[..12];
+            assert_eq!(
+                refused(&scan),
+                [(
+                    format!("commit {short} (its header)").as_str(),
+                    "forge-token"
+                )],
+                "{extra}"
+            );
+            assert!(!refusal(Stopped::Push, &scan.refused).contains(&key()));
+        }
+
+        let tag = object(
+            &repo,
+            "tag",
+            &format!(
+                "object {published}\ntype commit\ntag v2\ntagger {who}\nx-note {}\n\nv2\n",
+                key()
+            ),
+        );
+        let update = format!("refs/tags/v2 {tag} refs/tags/v2 {NOTHING}\n");
+        let scan = pushed(&repo, "/r.git", "/r.git", &update).unwrap();
+        assert_eq!(
+            refused(&scan),
+            [("tag refs/tags/v2 (its header)", "forge-token")],
+        );
+    }
+
+    /// #1133: what git writes a message in is the repository's config to choose
+    /// (`i18n.logOutputEncoding`), and a message written in an encoding the scan does not read
+    /// would be read as nothing. The push scan asks for UTF-8 whatever the config says.
+    #[test]
+    fn a_messages_credential_is_found_whatever_encoding_the_repository_asks_git_to_write_in() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "one\n").unwrap();
+        let published = commit_all(&repo, "one");
+        std::fs::write(repo.join("f"), "two\n").unwrap();
+        let told = commit_all(&repo, &format!("Two\n\nuse {} to push", key()));
+        testgit::run(&repo, &["config", "i18n.logOutputEncoding", "UTF-16"]);
+        let scan = pushed(&repo, "/r.git", "/r.git", &update(&told, &published)).unwrap();
+        let short = &told[..12];
+        assert_eq!(
+            refused(&scan),
+            [(
+                format!("commit {short} (its message)").as_str(),
+                "forge-token"
+            )]
         );
     }
 
