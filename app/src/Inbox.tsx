@@ -742,17 +742,17 @@ function Ask({
               Allow here would let run is never cut (#1146): it is read whole first. */}
           <span
             id={`${id}-says`}
-            className={`ask-says inbox-primary${whole ? "" : " inbox-clamped"}`}
+            className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
             title={shape.line}
           >
             {shape.line}
           </span>
           {where !== "" && (
-            <span className="inbox-where inbox-secondary" title={where}>
+            <span className="inbox-where inbox-secondary ui-text-secondary" title={where}>
               {where}
             </span>
           )}
-          <span className="inbox-meta" title={SOURCE_SAID[ask.source]}>
+          <span className="inbox-meta ui-text-meta" title={SOURCE_SAID[ask.source]}>
             <span id={`${id}-whose`} className="inbox-source">
               {SOURCE_SAID[ask.source]}
             </span>
@@ -1218,15 +1218,16 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
         <p className="inbox-says">
           <KindMark kind={kindOfUpdate(update.kind)} />
           {/* Every word here is its source's, drawn as text and never as a control. An update
-              whose answer allows is read whole, as an ask is (#1146). */}
+              whose answer allows is read whole, as an ask is (#1146). One read wears no role:
+              its step back (`.inbox-update[data-read]`) is not a rank of the scale (#1920). */}
           <span
             id={`${id}-says`}
-            className={`ask-says inbox-primary${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`}
+            className={`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`}
             title={about}
           >
             {about}
           </span>
-          <span className="inbox-meta">
+          <span className="inbox-meta ui-text-meta">
             <span id={`${id}-kind`} className="inbox-source">
               {KIND_SAID[update.kind]}
               {!update.read && <span className="inbox-unread"> · new</span>}

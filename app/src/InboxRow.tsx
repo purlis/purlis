@@ -17,13 +17,14 @@ import { agoSaid } from "./inboxRules";
  * **What an Inbox row is made of** (qw359): the parts every row of the Inbox shares, so an ask,
  * a chat in another window, another project's ask and an update read alike.
  *
- * A row has three ranks of text, each from the existing type and colour tokens:
+ * A row has three ranks of text, each a text role (`primitives/text.css`, #1920) worn beside
+ * the class that places it in the row:
  *
- * | Rank      | Says                                   | Class             |
- * | --------- | -------------------------------------- | ----------------- |
- * | primary   | what needs the person: the ask's words | `inbox-primary`   |
- * | secondary | where: project · workspace · persona   | `inbox-secondary` |
- * | meta      | its kind and how long it has waited    | `inbox-meta`      |
+ * | Rank      | Says                                   | Placed by         | Wears                         |
+ * | --------- | -------------------------------------- | ----------------- | ----------------------------- |
+ * | primary   | what needs the person: the ask's words | `inbox-primary`   | `ui-text-body ui-text-strong` |
+ * | secondary | where: project · workspace · persona   | `inbox-secondary` | `ui-text-secondary`           |
+ * | meta      | its kind and how long it has waited    | `inbox-meta`      | `ui-text-meta`                |
  *
  * The primary line is the strongest and may be cut to two lines (`inbox-clamped`), with the
  * whole of it in its tooltip and still in the page for a screen reader. **The words of an ask

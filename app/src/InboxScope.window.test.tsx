@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { cascadeOf, drawnWith } from "./cascade.testkit";
 import { Inbox, NOT_READ_YET, NOTHING_WAITS, landOnGroupIn } from "./Inbox";
 import { OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
 import type { Needing } from "./NeedsYou";
@@ -323,6 +324,98 @@ describe("what a row is made of", () => {
     const update = part(document, "li.inbox-update");
     expect(update.querySelector(".inbox-primary")).not.toBeNull();
     expect(update.querySelector(".inbox-meta time")).not.toBeNull();
+  });
+});
+
+describe("a row's ranks are the text roles (#1920)", () => {
+  const part = (within: ParentNode, selector: string): HTMLElement => {
+    const found = within.querySelector<HTMLElement>(selector);
+    if (found === null) throw new Error(`nothing drawn matches ${selector}`);
+    return found;
+  };
+  /** A core token as the value it stood for before it had a name, so what is asserted below
+   *  is the declarations #1919 wrote, to the letter. */
+  const AS_WRITTEN: Record<string, string> = {
+    "var(--font-weight-strong)": "600",
+    "var(--font-weight-regular)": "400",
+  };
+  /** What the window's stylesheets draw a word with: size, weight, colour. */
+  const drawn = (word: Element) =>
+    ["font-size", "font-weight", "color"].map((name) => {
+      const value = drawnWith(word, name);
+      return value === undefined ? undefined : (AS_WRITTEN[value] ?? value);
+    });
+  const update = (key: string, read: boolean) => ({
+    update: {
+      key,
+      kind: "task-done" as const,
+      says: `finished ${key}`,
+      chain: ["steward 3"],
+      at: Date.now() / 1000,
+      read,
+      session: 3,
+    },
+    dismiss: () => undefined,
+  });
+
+  it("draws each rank with the size, weight and colour it had before the roles", () => {
+    draw([{ ...permission(3, "a"), since: Date.now() / 1000 - 5 * 60 }], {
+      ...strip("alpha"),
+      personaOf: () => "steward",
+      updates: {
+        rows: [update("u1", false), update("u2", true)],
+        onMarkAllRead: () => undefined,
+        onDismissAll: () => undefined,
+      },
+    });
+    const ask = part(document, '.inbox-chat[data-session="3"] li.inbox-ask');
+    const primary = part(ask, ".inbox-primary");
+    const where = part(ask, ".inbox-secondary");
+    const meta = part(ask, ".inbox-meta");
+    expect([...primary.classList]).toEqual(
+      expect.arrayContaining(["ui-text-body", "ui-text-strong"]),
+    );
+    expect(where.classList).toContain("ui-text-secondary");
+    expect(meta.classList).toContain("ui-text-meta");
+    // #1919's declarations: md / 600 / primary; sm / secondary; xs / muted.
+    expect(drawn(primary)).toEqual(["var(--font-size-md)", "600", "var(--text-primary)"]);
+    expect(drawn(where)).toEqual(["var(--font-size-sm)", "400", "var(--text-secondary)"]);
+    expect(drawn(meta)).toEqual(["var(--font-size-xs)", "400", "var(--text-muted)"]);
+    // The kind's words inside the meta are the meta's, by inheritance.
+    expect(drawnWith(part(meta, ".inbox-source"), "font-size")).toBe("inherit");
+    expect(drawnWith(part(meta, ".inbox-source"), "color")).toBe("inherit");
+
+    const [fresh, read] = [...document.querySelectorAll("li.inbox-update")];
+    expect(fresh.hasAttribute("data-read")).toBe(false);
+    expect(read.hasAttribute("data-read")).toBe(true);
+    expect(drawn(part(fresh, ".inbox-primary"))).toEqual([
+      "var(--font-size-md)",
+      "600",
+      "var(--text-primary)",
+    ]);
+    expect(drawn(part(fresh, ".inbox-meta"))).toEqual([
+      "var(--font-size-xs)",
+      "400",
+      "var(--text-muted)",
+    ]);
+    expect(drawn(part(fresh, ".inbox-unread")).slice(1)).toEqual(["600", "var(--text-primary)"]);
+    // One read steps back to the regular weight and the secondary text, at the same size: no
+    // rank of the scale, so it wears no role and a role cannot outrank its rule.
+    const quiet = part(read, ".inbox-primary");
+    expect([...quiet.classList].filter((name) => name.startsWith("ui-text-"))).toEqual([]);
+    expect(drawn(quiet)).toEqual(["var(--font-size-md)", "400", "var(--text-secondary)"]);
+  });
+
+  it("leaves the placing to the row's own classes, which set no size, weight or colour", () => {
+    const own = cascadeOf("App.css");
+    document.body.innerHTML =
+      '<span class="inbox-primary"></span><span class="inbox-secondary"></span><span class="inbox-meta"></span>';
+    for (const word of document.body.children) {
+      for (const name of ["font-size", "font-weight", "color"]) {
+        expect(own(word, name), `${word.className} ${name}`).toBeUndefined();
+      }
+    }
+    document.body.innerHTML = "";
   });
 });
 

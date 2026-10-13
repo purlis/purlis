@@ -46,6 +46,12 @@ export const GEOMETRY = {
     "--font-size-lg",
     "--font-size-xl",
   ],
+  /** The two weights of the window's words: regular, and the one strong (#1920). */
+  weight: ["--font-weight-regular", "--font-weight-strong"],
+  /** Line heights, as a share of the text's size: a compact line, and the window's own. */
+  leading: ["--line-height-tight", "--line-height-body"],
+  /** The one monospace family: a command, a path, a host (`ui-text-code`). */
+  family: ["--font-mono"],
   /** Corners: 3px (checks, chips), 4px (controls), 6px (every overlay), and 8px. */
   radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-xl", "--radius-full"],
   /** One height for every control (28px) and one for every strip and pane header (21px). */
@@ -91,4 +97,7 @@ const GEOMETRY_GROUPS = new Set([
   "font",
   "type",
   "typography",
+  "line",
+  "leading",
+  "weight",
 ]);

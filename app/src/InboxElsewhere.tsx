@@ -111,7 +111,7 @@ export function OtherProjects({
               <p className="inbox-says">
                 <KindMark kind="elsewhere" />
                 {/* A project's name is data: drawn as text. */}
-                <span className="ask-says inbox-primary">{`${one.project} · ${one.count} waiting on you`}</span>
+                <span className="ask-says inbox-primary ui-text-body ui-text-strong">{`${one.project} · ${one.count} waiting on you`}</span>
               </p>
               {one.asks !== undefined && one.asks.length > 0 && (
                 <ul className="inbox-there">
@@ -121,16 +121,22 @@ export function OtherProjects({
                     return (
                       <li key={`${ask.session}\u0000${ask.ask}`} className="inbox-says">
                         <KindMark kind={kindOfAsk(ask.source)} />
-                        <span className="ask-says inbox-primary inbox-clamped" title={says}>
+                        <span
+                          className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"
+                          title={says}
+                        >
                           {says}
                         </span>
                         {who !== "" && (
-                          <span className="inbox-where inbox-secondary" title={who}>
+                          <span
+                            className="inbox-where inbox-secondary ui-text-secondary"
+                            title={who}
+                          >
                             {who}
                           </span>
                         )}
                         {typeof ask.since === "number" && now !== undefined && (
-                          <span className="inbox-meta">
+                          <span className="inbox-meta ui-text-meta">
                             <RowAge when={ask.since * 1000} now={now} since="Waiting since" />
                           </span>
                         )}
@@ -222,13 +228,17 @@ export function ElsewhereGroup({
           >
             <p className="inbox-says">
               <KindMark kind="elsewhere" />
-              <span id={`${id}-says`} className="ask-says inbox-primary inbox-clamped" title={says}>
+              <span
+                id={`${id}-says`}
+                className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"
+                title={says}
+              >
                 {says}
               </span>
-              <span className="inbox-where inbox-secondary" title={where}>
+              <span className="inbox-where inbox-secondary ui-text-secondary" title={where}>
                 {where}
               </span>
-              <span className="inbox-meta">
+              <span className="inbox-meta ui-text-meta">
                 <span id={`${id}-whose`} className="inbox-source">
                   {IN_ANOTHER_WINDOW}
                 </span>

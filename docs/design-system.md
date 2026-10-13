@@ -662,35 +662,40 @@ Lengths that should grow with the words are in rem, written as "N px at 14px"
 (`calc(6rem / 14)`), so the text-size setting scales them with the window. Corners and focus
 rings stay in px. The px below are at the default 14px text.
 
-| token                 | value      | for                                                                      |
-| --------------------- | ---------- | ------------------------------------------------------------------------ |
-| `--space-0`           | 0          | the spacing scale: every padding, gap and margin                         |
-| `--space-1`           | 2px        |                                                                          |
-| `--space-2`           | 4px        |                                                                          |
-| `--space-3`           | 6px        |                                                                          |
-| `--space-4`           | 8px        | a control's side padding                                                 |
-| `--space-5`           | 12px       |                                                                          |
-| `--space-6`           | 16px       |                                                                          |
-| `--space-7`           | 24px       |                                                                          |
-| `--space-8`           | 32px       |                                                                          |
-| `--font-size-xs`      | 11px       | the type scale, six steps: badges, counts                                |
-| `--font-size-sm`      | 12px       | secondary lines, help text                                               |
-| `--font-size-md`      | 13px       | dense lists and tables, a menu's rows                                    |
-| `--font-size-base`    | 14px       | the window's text (`1rem`)                                               |
-| `--font-size-lg`      | 16px       | section headings                                                         |
-| `--font-size-xl`      | 20px       | a view's title                                                           |
-| `--radius-sm`         | 3px        | checkboxes, chips                                                        |
-| `--radius-md`         | 4px        | every control                                                            |
-| `--radius-lg`         | 6px        | every overlay (dialogs, popovers, menus, tooltips), segmented controls  |
-| `--radius-xl`         | 8px        | on the scale; nothing draws it since overlays share one corner (#1845)   |
-| `--radius-full`       | 9999px     | pills and round marks                                                    |
-| `--size-control`      | 28px       | every button, field, select and Reset                                    |
-| `--size-chrome`       | 21px       | every tab strip and pane header                                          |
-| `--focus-ring-width`  | 2px        | both focus rings, drawn in the theme's `focus.ring`                      |
-| `--focus-ring-offset` | 2px        | rule 1: a control's ring, **outside** it                                 |
-| `--focus-ring-inset`  | -2px       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
-| `--elevation-raised`  | 0 2px 8px  | a bar floating over a pane (the find bar)                                |
-| `--elevation-overlay` | 0 8px 24px | every overlay: dialogs, popovers, menus, tooltips (#1845)                |
+| token                   | value                                      | for                                                                      |
+| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
+| `--space-0`             | 0                                          | the spacing scale: every padding, gap and margin                         |
+| `--space-1`             | 2px                                        |                                                                          |
+| `--space-2`             | 4px                                        |                                                                          |
+| `--space-3`             | 6px                                        |                                                                          |
+| `--space-4`             | 8px                                        | a control's side padding                                                 |
+| `--space-5`             | 12px                                       |                                                                          |
+| `--space-6`             | 16px                                       |                                                                          |
+| `--space-7`             | 24px                                       |                                                                          |
+| `--space-8`             | 32px                                       |                                                                          |
+| `--font-size-xs`        | 11px                                       | the type scale, six steps: badges, counts; the meta and label roles      |
+| `--font-size-sm`        | 12px                                       | secondary lines, help text; the secondary role                           |
+| `--font-size-md`        | 13px                                       | dense lists and tables, a menu's rows; the body role                     |
+| `--font-size-base`      | 14px                                       | the window's text (`1rem`); the heading role                             |
+| `--font-size-lg`        | 16px                                       | the title role; nothing drew it before the [text roles](#text-roles)     |
+| `--font-size-xl`        | 20px                                       | on the scale; nothing draws it and no role reads it (#1920 rules on it)  |
+| `--font-weight-regular` | 400                                        | the weight of the window's words                                         |
+| `--font-weight-strong`  | 600                                        | the one strong weight: a title, a heading, a label, a row's strong line  |
+| `--line-height-tight`   | 1.2                                        | a compact line: a count, a chip. A share of the text's size, so no unit  |
+| `--line-height-body`    | 1.4                                        | the window's own line (`:root`)                                          |
+| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace` | the one monospace family: a command, a path, a host                      |
+| `--radius-sm`           | 3px                                        | checkboxes, chips                                                        |
+| `--radius-md`           | 4px                                        | every control                                                            |
+| `--radius-lg`           | 6px                                        | every overlay (dialogs, popovers, menus, tooltips), segmented controls   |
+| `--radius-xl`           | 8px                                        | on the scale; nothing draws it since overlays share one corner (#1845)   |
+| `--radius-full`         | 9999px                                     | pills and round marks                                                    |
+| `--size-control`        | 28px                                       | every button, field, select and Reset                                    |
+| `--size-chrome`         | 21px                                       | every tab strip and pane header                                          |
+| `--focus-ring-width`    | 2px                                        | both focus rings, drawn in the theme's `focus.ring`                      |
+| `--focus-ring-offset`   | 2px                                        | rule 1: a control's ring, **outside** it                                 |
+| `--focus-ring-inset`    | -2px                                       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
+| `--elevation-raised`    | 0 2px 8px                                  | a bar floating over a pane (the find bar)                                |
+| `--elevation-overlay`   | 0 8px 24px                                 | every overlay: dialogs, popovers, menus, tooltips (#1845)                |
 
 Tailwind reads these tokens and has no geometry of its own (`styles.css` hands them over with
 `@theme inline reference`, #1837):
@@ -746,7 +751,8 @@ What a tab on the three strips draws, and in what (the operator's asks of 2026-1
 
 ### The guards, and the lists that only shrink
 
-Two guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837):
+Three guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837; the
+third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
 - **`geometry.guard.test.ts`** fails on a literal **size** (width, height and their min, max,
   block and inline forms), **padding**, **margin**, **gap**, **corner** or **font size**, in any
@@ -775,6 +781,112 @@ number. The list only shrinks:
 
 The surface tickets migrate a view and delete its lines in the same change. Two of them editing
 one file's list touch different lines, so their removals merge.
+
+## Text roles
+
+**Every word in the window has a rank, and a rank is one class** (#1920). An audit on
+2026-10-13 counted 152 font-size declarations in 25 values, 38% of them from a token; weights
+written as bare numbers; two monospace stacks; the muted colour on most secondary text; and the
+section label written five ways. Each surface had ranked its own words. A **text role** is a
+fixed size, weight and colour from the tokens, and a surface wears it instead.
+
+| role      | class               | for                                                       | size                     | weight  | colour           |
+| --------- | ------------------- | --------------------------------------------------------- | ------------------------ | ------- | ---------------- |
+| title     | `ui-text-title`     | a view's or a dialog's title                              | `--font-size-lg`, 16px   | strong  | `text.primary`   |
+| heading   | `ui-text-heading`   | a section inside a view; a card's heading                 | `--font-size-base`, 14px | strong  | `text.primary`   |
+| body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words   | `--font-size-md`, 13px   | regular | `text.primary`   |
+| secondary | `ui-text-secondary` | where, who, a help line under a field                     | `--font-size-sm`, 12px   | regular | `text.secondary` |
+| meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.muted`     |
+| label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.06em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
+| code      | `ui-text-code`      | a command, a path, a host: `--font-mono`                  | the role it sits in      | regular | inherited        |
+
+`ui-text-strong` is a modifier and not a role: the one strong line of a row is a body at the
+strong weight (`ui-text-body ui-text-strong`). The classes are in
+`app/src/primitives/text.css`; [`ui-primitives.md`](ui-primitives.md#text-roles) says how a
+view wears one.
+
+**The rules that go with the table:**
+
+1. **Colour follows the role, never the other way.** A word is not made quieter by picking a
+   quieter colour; it is given the role it has, and the role brings the colour.
+2. **Muted is for meta only.** A help line or a where line is secondary. (Muted was the
+   window's most used text colour, mostly on secondary-role text.)
+3. **Nothing is under the smallest step.** 11px (`--font-size-xs`) is the floor: `0.72rem` and
+   `0.65rem` become it.
+4. **One colour for a word that says something is wrong:** `danger.text`. `state.failed` is a
+   state's mark, not a word's colour.
+5. **Two weights.** Regular and strong, and no third.
+6. **A role sets no line height.** A word keeps the line of what it sits in:
+   `--line-height-body` is the window's, `--line-height-tight` a compact line's.
+
+### What is the theme's, and what is core
+
+|                 | what                                                                                                                                        | where                                       | who sets it                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------- |
+| **the theme's** | the colour values: `text.primary`, `text.secondary`, `text.muted`, `danger.text`                                                            | a theme file, written by `theme.ts`         | the theme                       |
+| **core**        | the sizes, the weights, the line heights, the monospace family, and the roles themselves (which size, weight and colour token a role reads) | `theme/geometry.css`, `primitives/text.css` | purlis, the same in every theme |
+
+So a theme can make the secondary text warmer or the muted text darker, and cannot make a
+heading larger, a label bolder or the meta the primary colour. The new core tokens are held
+as the rest of the core is (`geometry.test.ts`): a theme file that names `font.mono`,
+`font.weight.strong` or `line.height.body` is drawn without it and told why.
+
+### Where today's pixels and the table disagree
+
+The roles landed with **no visible change** (#1920's first step), so where a role and the
+window differ, the window was kept and the difference is recorded here for the migrations:
+
+- **`--font-size-lg` and `--font-size-xl` were documented for section headings and a view's
+  title and drawn by nothing.** The table puts the title on `lg` and the heading on `base`.
+  Today's titles are `1rem` (14px) and its section headings `0.85rem` to `0.95rem`, so each
+  steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
+  role.
+- **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
+- **Counts and matches are weight 700** (five rules) and Settings' form labels 500 (two): no
+  token names either, and both stay in the allowance until #1920 rules on them.
+- **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
+  It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
+- **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's
+  text), is in the allowance, to move onto `--font-mono`; so is the window's own sans-serif
+  stack on `:root`, which has no token because nothing else should name it. The terminal and the
+  editor take their type from their own themes and are not covered.
+- **A label's capitals and its `0.06em` spacing have no token**; they are written once, in
+  `.ui-text-label`.
+
+### The type guard
+
+`app/src/type.guard.test.ts` refuses a `font-size`, `font-weight`, `line-height`,
+`font-family` or text `color` that is not its token (or `inherit`, or `currentColor` for a
+colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
+`theme/geometry.css` and in a component's inline `style`. A token of another kind does not
+pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to wear instead,
+by the size or weight that was written.
+
+Its allowance, `type.guard.allowance.ts`, is today's offenders by file, one per line, with a
+frozen ceiling per file (`App.css` 159, of which 91 are font sizes), and it follows
+[the same rule as the other two](#the-guards-and-the-lists-that-only-shrink): a new literal
+fails, a stale entry fails, and a ceiling may only go down. A font size is held by the
+geometry guard too, so a migration deletes its line from both lists.
+
+**A token is not yet a role.** `font-size: var(--font-size-sm)` passes the guard and is still
+a surface ranking its own words. The guard stops the scale growing; the migrations give the
+words their roles.
+
+### The order the surfaces move in
+
+One change each, each checked against a screenshot (#1920):
+
+1. the Chats list;
+2. the Inbox (its rows already wear the roles, #1919 and this change; its headings and its
+   remaining lines follow);
+3. the Explorer;
+4. the tab strips and the status bar;
+5. Settings;
+6. Notices and dialogs;
+7. Welcome.
+
+Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
+type today), and the two largest size tokens are each read by a role or removed.
 
 ## Tailwind, shadcn and Lucide
 

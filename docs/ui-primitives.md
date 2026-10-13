@@ -590,6 +590,52 @@ opens from the keyboard. It reads every component's source too: each Radix overl
 class, every native button inside an overlay's content wears `.ui-button` and every field its
 field class, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
 
+## Text roles
+
+**A word's rank is a class, as a control's look is** (#1920). The window's words have seven
+roles, each a fixed size, weight and colour from the tokens, in
+`app/src/primitives/text.css`, the last sheet of the `components` layer. A view gives a word
+its role and writes no `font-size`, `font-weight` or `color` for it.
+
+| Role      | Class               | For                                                     | Size                | Weight        | Colour           |
+| --------- | ------------------- | ------------------------------------------------------- | ------------------- | ------------- | ---------------- |
+| Title     | `ui-text-title`     | a view's or a dialog's title                            | 16px                | strong (600)  | `text.primary`   |
+| Heading   | `ui-text-heading`   | a section inside a view; a card's heading               | 14px                | strong (600)  | `text.primary`   |
+| Body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words | 13px                | regular (400) | `text.primary`   |
+| Secondary | `ui-text-secondary` | where, who, a help line under a field                   | 12px                | regular (400) | `text.secondary` |
+| Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.muted`     |
+| Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.06em` | 11px                | strong (600)  | `text.secondary` |
+| Code      | `ui-text-code`      | a command, a path, a host                               | the role it sits in | regular (400) | inherited        |
+
+The px are at the default 14px text; each size is a core token and scales with the text-size
+setting. `ui-text-strong` beside a role makes it the strong weight: **the row's one strong
+line is `ui-text-body ui-text-strong`**, not a second body class. `ui-text-code` is the
+monospace family alone, so a path under a name is `ui-text-secondary ui-text-code`.
+
+- **Colour follows the role.** Do not pick a colour to make a word quieter; give it the role it
+  has. **Muted is the meta's only**: a help line or a where line is secondary.
+- **Nothing is under 11px.**
+- **A word that says something is wrong is `danger.text`**, and that is the one colour a view
+  still writes for words; `state.failed` is for a state's mark.
+- **The role is the look, the view places it.** A view's own class still gives a word its grid
+  area, its margin, and whether it is cut or wraps (`.inbox-primary`, `.inbox-clamped`). It sets
+  no size, weight or colour, and could not: the roles are in the layer above `App.css`, so a
+  view rule for the same word loses, at any specificity.
+- **A state that changes a word's rank changes its class**, in the component. A rule in
+  `App.css` cannot step a role back. Where the stepped-back look is no role at all (a read
+  update in the Inbox), the word wears none and one rule built from tokens draws it.
+- **A role sets no line height**, so a word keeps the line of what it sits in.
+
+The Inbox's rows are the first surface on the roles: the ask's words are the body, strong; where
+it is, the secondary; its kind and its age, the meta (`InboxRow.tsx`).
+
+`app/src/primitives/text.test.ts` holds each class to this table through the stylesheet's own
+cascade, and `InboxScope.window.test.tsx` that the Inbox's rows are drawn with what they had
+before. `app/src/type.guard.test.ts` refuses a size, weight, line height, family or text colour
+written any other way, with an allowance that only shrinks; `design-system.md`
+(["Text roles"](design-system.md#text-roles)) has the rules, what a theme may change, where
+today's window still differs, and the order the surfaces move in.
+
 ## Why Radix, and why not the other two
 
 **Not Material (MUI).** Material is the wrong visual language for a dense terminal-adjacent

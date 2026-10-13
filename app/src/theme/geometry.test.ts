@@ -101,6 +101,16 @@ describe("the core geometry", () => {
     expect(scale("focus")).toEqual([2, 2, -2]);
   });
 
+  it("names two weights, two line heights and one monospace family (#1920)", () => {
+    const of = (group: keyof typeof GEOMETRY) => GEOMETRY[group].map((name) => values.get(name));
+    expect(of("weight")).toEqual(["400", "600"]);
+    // The window's own line height (`:root`), and a compact line's: nothing moves.
+    expect(of("leading")).toEqual(["1.2", "1.4"]);
+    const root = /:root\s*\{([^}]*)\}/.exec(read(join(SRC, "App.css")))?.[1] ?? "";
+    expect(root).toContain(`line-height: ${values.get("--line-height-body")};`);
+    expect(of("family")).toEqual(["ui-monospace, Menlo, Consolas, monospace"]);
+  });
+
   it("lifts a surface in the theme's shadow colour and no other", () => {
     for (const name of GEOMETRY.elevation) {
       const value = values.get(name) ?? "";
