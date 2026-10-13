@@ -631,3 +631,43 @@ fn the_clone_update_guard_reads_a_repository_in_time_proportional_to_its_paths()
         );
     }
 }
+
+/// The leak guard follows every `cd` on a line, since what a later command reads is read from
+/// where the shell then stands. A long run of them is followed in time proportional to the
+/// line: it once spelt the whole way there again for each one, the square of the line, which
+/// the family test's two sizes sat too close to its allowance to tell from a slow runner
+/// (qw377). Asked here at 16 KB and 64 KB, where the square is unmistakable, of a run that
+/// goes back and forth, one that only goes deeper, and one with absolute stops in it.
+#[test]
+fn the_leak_guard_follows_a_long_run_of_relocations_in_time_proportional_to_its_length() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().expect("a directory");
+    let state = dir.path().join(".charter");
+    for (shape, unit) in [
+        ("back and forth", "cd a; cd ../b; "),
+        ("deeper and deeper", "cd a; pushd b; "),
+        (
+            "back to the top now and then",
+            "cd a; cd ../b; cd /tmp/x; cd c; ",
+        ),
+    ] {
+        let time = |bytes: usize| {
+            let cmd = format!("cd workspaces/x/repo; {} true", fill(unit, bytes));
+            assert_eq!(guardcaps::refusal(&cmd), None, "{shape}");
+            (0..3)
+                .map(|_| {
+                    let began = Instant::now();
+                    let _ = leakguard::leak_reason(&cmd, "", &state);
+                    began.elapsed()
+                })
+                .min()
+                .unwrap_or_default()
+        };
+        let (t_small, t_large) = (time(16 * 1024), time(64 * 1024));
+        assert!(
+            t_large < t_small * 10 + Duration::from_millis(100),
+            "the leak guard on a run of relocations, {shape}: 16 KB took {t_small:?}, 64 KB \
+             took {t_large:?}"
+        );
+    }
+}
