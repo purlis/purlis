@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791914876584,
+  "lastUpdate": 1791916653579,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9828,6 +9828,48 @@ window.BENCHMARK_DATA = {
             "value": 101.657442,
             "unit": "ms",
             "extra": "median of 5 runs: 100.827, 101.616, 101.657, 101.798, 103.000 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "026db107f571b8f9eda94950c7172c2eaec32cdc",
+          "message": "fix(app): a finished task's refusal is its name's size\n\nReview of the Chats list's move onto the text roles:\n\n- Why a finished task was not reopened wore no role, so it took the\n  section's body size, 13px, over the 12px name it stands under. It\n  keeps the danger colour, which no role has, and one rule built from\n  a token sizes it: 11.9px -> 12px, danger.text as before.\n- The section's comment said no rule below writes a size; two do, each\n  a token, and it now names them.\n- The changelog said nothing in the list is under 11px. The scope\n  switch, a persona's initials and the second step of ending a task\n  still are, so it says what is true: no line of words under a row.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T22:36:17+04:00",
+          "tree_id": "0f2a8f74e7c9a24753382b1789ffd31be82b8efe",
+          "url": "https://github.com/purlis/purlis/commit/026db107f571b8f9eda94950c7172c2eaec32cdc"
+        },
+        "date": 1791916652483,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5446679999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.509, 0.527, 0.545, 0.554, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.2411465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.828, 16.990, 17.241, 17.263, 17.315 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 106.05864,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.895, 105.086, 106.059, 106.239, 107.125 ms"
           }
         ]
       }
