@@ -16,13 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { listen } from "./here";
-import {
-  CHAT_RESTORED,
-  isRestoring,
-  restoredSince,
-  RestoringContext,
-  type ChatRestored,
-} from "./restoringChats";
+import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
 import { CountPill } from "./CountPill";
 import { machineChanged } from "./settings/thisMachine";
@@ -8067,9 +8061,8 @@ export const PlaneView = memo(function PlaneView({
              2026-10-12). The session strip is the centre's own tab bar, directly above the chat
              it shows, as an editor's tabs are; the workspaces stay the full-width row above every
              region. Splits live inside a tab, so one centre has one strip. */
-            <RestoringContext.Provider value={restoringChats}>
-              <div className="editor">
-                {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
+            <div className="editor">
+              {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
               (charter-app#281): its shade, its selected tab and its accent.
 
               **Outside `Menued on=pane`**, so a right-click on the strip's gaps is not the pane
@@ -8077,154 +8070,156 @@ export const PlaneView = memo(function PlaneView({
               ones — because it is where `+` is. The editor's chrome (`REGION_CHROME`): F6 into
               the editor passes over it to the pane, as VS Code's F6 lands on the editor and not
               on its tabs. Tab still stops on it, in document order. */}
-                <ChatStrip
-                  by={by}
-                  found={found}
-                  press={press}
-                  tabs={tabs}
-                  ofWorkspace={ofWorkspace}
-                  colourOf={colourOf}
-                  tintOf={tintOf}
-                  shown={shown}
-                  notShowing={notShowing}
-                  chatTabId={chatTabId}
-                  chatStop={chatStop}
-                  strip={strip}
-                  chatControls={chatControls}
-                  chatLeast={chatLeast}
-                  chipWidth={chipWidth}
-                  dragSensors={dragSensors}
-                  chatDragWords={chatDragWords}
-                  dragTab={dragTab}
-                  draggingRef={dragging}
-                  draggedAtRef={draggedAt}
-                  notGoingBack={notGoingBack}
-                  isBackground={isBackground}
-                  isPinned={isPinned}
-                  isDragging={isDragging}
-                  nameBoxFor={nameBoxFor}
-                  saveName={saveName}
-                  endRename={endRename}
-                  pressTab={pressTab}
-                  referenceChats={referenceChats}
-                  wrapping={wrapping}
-                  stopping={stopping}
-                  shells={shells}
-                  personaOf={personaOf}
-                  taskNameOf={taskNameOf}
-                  taskTabOf={taskTabOf}
-                  tabHasTasks={tabHasTasks}
-                  showTabTasks={showTabTasks}
-                  tasksIdOf={tasksIdOf}
-                  tasksAsked={tasksAsked}
-                  chatsByTab={chatsByTab}
-                  endedByTab={endedByTab}
-                  runningOfTab={runningOfTab}
-                  chatClock={chatClock}
-                  hiddenIn={hiddenIn}
-                  waitingOn={waitingOn}
-                  showFromChip={showFromChip}
-                  taskEndsOf={taskEndsOf}
-                  pressTaskEnd={pressTaskEnd}
-                  placeFromChip={placeFromChip}
-                  usedFromChip={usedFromChip}
-                  stopAllOf={stopAllOf}
-                  activityFromChip={activityFromChip}
-                  freshOf={freshOf}
-                  freshMarkOf={freshMarkOf}
-                  planeUpdates={planeUpdates}
-                  handedFrom={handedFrom}
-                  workItems={workItems}
-                />
-                {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
+              <ChatStrip
+                by={by}
+                found={found}
+                press={press}
+                tabs={tabs}
+                ofWorkspace={ofWorkspace}
+                colourOf={colourOf}
+                tintOf={tintOf}
+                shown={shown}
+                notShowing={notShowing}
+                chatTabId={chatTabId}
+                chatStop={chatStop}
+                strip={strip}
+                chatControls={chatControls}
+                chatLeast={chatLeast}
+                chipWidth={chipWidth}
+                dragSensors={dragSensors}
+                chatDragWords={chatDragWords}
+                dragTab={dragTab}
+                draggingRef={dragging}
+                draggedAtRef={draggedAt}
+                notGoingBack={notGoingBack}
+                isBackground={isBackground}
+                isPinned={isPinned}
+                isDragging={isDragging}
+                nameBoxFor={nameBoxFor}
+                saveName={saveName}
+                endRename={endRename}
+                pressTab={pressTab}
+                referenceChats={referenceChats}
+                wrapping={wrapping}
+                stopping={stopping}
+                shells={shells}
+                personaOf={personaOf}
+                taskNameOf={taskNameOf}
+                taskTabOf={taskTabOf}
+                tabHasTasks={tabHasTasks}
+                showTabTasks={showTabTasks}
+                tasksIdOf={tasksIdOf}
+                tasksAsked={tasksAsked}
+                chatsByTab={chatsByTab}
+                endedByTab={endedByTab}
+                runningOfTab={runningOfTab}
+                chatClock={chatClock}
+                hiddenIn={hiddenIn}
+                waitingOn={waitingOn}
+                showFromChip={showFromChip}
+                taskEndsOf={taskEndsOf}
+                pressTaskEnd={pressTaskEnd}
+                placeFromChip={placeFromChip}
+                usedFromChip={usedFromChip}
+                stopAllOf={stopAllOf}
+                activityFromChip={activityFromChip}
+                freshOf={freshOf}
+                freshMarkOf={freshMarkOf}
+                planeUpdates={planeUpdates}
+                handedFrom={handedFrom}
+                workItems={workItems}
+                restoring={restoringChats}
+              />
+              {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
                 splits, the key the palette claimed, and — under the line — ending this pane's
                 chat. `asChild` again: the panes' box is measured, and it must not gain a
                 wrapper, so the editor's column is outside it and not between it and the panes. */}
-                <Menued on={{ on: "pane" }} offers={found} onPress={press}>
-                  <div className="panes">
-                    {frontTab ? (
-                      <TaskEndContext.Provider value={taskEndHand}>
-                        <LayoutPanes
-                          plane={plane}
-                          // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                          // session that asked, while the tab is switched to it.
-                          layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
-                          crumbs={frontCrumbs}
-                          placed={frontPlaced}
-                          away={frontAway}
-                          finished={frontFinished}
-                          explaining={chipToExplain}
-                          others={frontOthers}
-                          asked={frontAsked}
-                          asks={asksHere}
-                          waiting={waiting}
-                          onShowInbox={showInbox}
-                          onAnswer={answeredOnPane}
-                          closeOf={closeOfPane}
-                          onBack={backInPane}
-                          onShowChat={showChat}
-                          focused={frontTab.focused}
-                          onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                          offerFor={by}
-                          onPaneDoes={onPaneDoes}
-                          name={frontTab.name}
-                          handedFrom={handedFrom}
-                          glances={glances}
-                          workItems={workItems}
-                          byHand={byHand}
-                          onByHand={answerByHand}
-                          startNotes={startNotes}
-                          onDismissStartNote={dismissStartNote}
-                          onRestartChat={askRestart}
-                          blocks={frontBlocks}
-                          onDismissBlock={dismissBlock}
-                          onRestarted={chatRestarted}
-                          onAllowed={oweRestart}
-                          restartsSaid={restartsSaid}
-                          onRestartAnswer={answerRestart}
-                          offered={views}
-                          onOpenView={showView}
-                          onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                          onVaultChanged={reloadVaults}
-                          memory={{
-                            // The views follow the disk themselves (`ViewPane`), so a memory saved
-                            // redraws the views and not this whole window (FD-10).
-                            changed: memoryEdits.changed,
-                            onSaved: memoryEdits.onSaved,
-                            onClose: closeView,
-                            showInstead: (from, to, title) => {
-                              change((tabs) => showInstead(tabs, from, to, title));
-                              // The level switcher moving Settings is a way into it (#1206).
-                              const place = placeOfView(to, plane);
-                              if (place !== undefined) enterSettings(place);
-                            },
-                          }}
-                          firstTask={firstTaskDoes}
-                          split={{
-                            of: (view) => splitOf(tabs, view),
-                            moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
-                          }}
-                        />
-                      </TaskEndContext.Provider>
-                    ) : tabs.order.some((id) => !isBackground(id)) ? (
-                      // Chats are running — just not in the workspace being looked at. Saying
-                      // "no sessions" here would be charter telling the operator that what it is
-                      // still drawing on the strip above does not exist.
-                      <EmptyState
-                        mark={MessageSquarePlus}
-                        headline="No chats in this workspace"
-                        body="Other workspaces have some — pick one on the strip above, or start one here."
-                        action={
-                          <Doer
-                            offer={by("chat.new")}
-                            onPress={press}
-                            words="Open a chat here"
-                            primary
-                          />
-                        }
-                        testid="empty-workspace"
+              <Menued on={{ on: "pane" }} offers={found} onPress={press}>
+                <div className="panes">
+                  {frontTab ? (
+                    <TaskEndContext.Provider value={taskEndHand}>
+                      <LayoutPanes
+                        plane={plane}
+                        restoring={restoringChats}
+                        // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                        // session that asked, while the tab is switched to it.
+                        layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                        crumbs={frontCrumbs}
+                        placed={frontPlaced}
+                        away={frontAway}
+                        finished={frontFinished}
+                        explaining={chipToExplain}
+                        others={frontOthers}
+                        asked={frontAsked}
+                        asks={asksHere}
+                        waiting={waiting}
+                        onShowInbox={showInbox}
+                        onAnswer={answeredOnPane}
+                        closeOf={closeOfPane}
+                        onBack={backInPane}
+                        onShowChat={showChat}
+                        focused={frontTab.focused}
+                        onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                        offerFor={by}
+                        onPaneDoes={onPaneDoes}
+                        name={frontTab.name}
+                        handedFrom={handedFrom}
+                        glances={glances}
+                        workItems={workItems}
+                        byHand={byHand}
+                        onByHand={answerByHand}
+                        startNotes={startNotes}
+                        onDismissStartNote={dismissStartNote}
+                        onRestartChat={askRestart}
+                        blocks={frontBlocks}
+                        onDismissBlock={dismissBlock}
+                        onRestarted={chatRestarted}
+                        onAllowed={oweRestart}
+                        restartsSaid={restartsSaid}
+                        onRestartAnswer={answerRestart}
+                        offered={views}
+                        onOpenView={showView}
+                        onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                        onVaultChanged={reloadVaults}
+                        memory={{
+                          // The views follow the disk themselves (`ViewPane`), so a memory saved
+                          // redraws the views and not this whole window (FD-10).
+                          changed: memoryEdits.changed,
+                          onSaved: memoryEdits.onSaved,
+                          onClose: closeView,
+                          showInstead: (from, to, title) => {
+                            change((tabs) => showInstead(tabs, from, to, title));
+                            // The level switcher moving Settings is a way into it (#1206).
+                            const place = placeOfView(to, plane);
+                            if (place !== undefined) enterSettings(place);
+                          },
+                        }}
+                        firstTask={firstTaskDoes}
+                        split={{
+                          of: (view) => splitOf(tabs, view),
+                          moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
+                        }}
                       />
-                    ) : /* **The empty window, centred, with a way out** — the operator's own
+                    </TaskEndContext.Provider>
+                  ) : tabs.order.some((id) => !isBackground(id)) ? (
+                    // Chats are running — just not in the workspace being looked at. Saying
+                    // "no sessions" here would be charter telling the operator that what it is
+                    // still drawing on the strip above does not exist.
+                    <EmptyState
+                      mark={MessageSquarePlus}
+                      headline="No chats in this workspace"
+                      body="Other workspaces have some — pick one on the strip above, or start one here."
+                      action={
+                        <Doer
+                          offer={by("chat.new")}
+                          onPress={press}
+                          words="Open a chat here"
+                          primary
+                        />
+                      }
+                      testid="empty-workspace"
+                    />
+                  ) : /* **The empty window, centred, with a way out** — the operator's own
                      instruction: *"when opening empty workspace lets make open new tab button on
                      empty page center"*. It was one sentence in the top-left corner of a box the
                      size of the screen, and the thing to do about it was a menu item away.
@@ -8234,52 +8229,51 @@ export const PlaneView = memo(function PlaneView({
                      existing if the catalogue stops offering it. A second button with its own
                      label would be the second answer to "how do I start a chat" that
                      `actions.ts` exists to prevent. */
-                    sidebar !== undefined && sidebar.workspaces.length === 0 ? (
-                      /* **A plane with no workspace yet**: making one is the first thing to do,
+                  sidebar !== undefined && sidebar.workspaces.length === 0 ? (
+                    /* **A plane with no workspace yet**: making one is the first thing to do,
                        and it was reachable only from the palette. Both buttons are catalogue
                        rows, as the one below is; a chat here starts in the plane itself. */
-                      <EmptyState
-                        mark={FolderPlus}
-                        headline="No workspaces yet"
-                        body="A workspace holds the repos you work on and the chats about them."
-                        action={
-                          <>
-                            <Doer
-                              offer={by("workspace.create")}
-                              onPress={press}
-                              words="Create a workspace"
-                              primary
-                            />
-                            <Doer
-                              offer={by("chat.new")}
-                              onPress={press}
-                              words="Open a chat in the plane"
-                              primary
-                            />
-                          </>
-                        }
-                        testid="empty-plane"
-                      />
-                    ) : (
-                      <EmptyState
-                        mark={MessageSquarePlus}
-                        headline="No chats yet"
-                        body="purlis runs each chat in its own pane. Open the first one here."
-                        action={
+                    <EmptyState
+                      mark={FolderPlus}
+                      headline="No workspaces yet"
+                      body="A workspace holds the repos you work on and the chats about them."
+                      action={
+                        <>
+                          <Doer
+                            offer={by("workspace.create")}
+                            onPress={press}
+                            words="Create a workspace"
+                            primary
+                          />
                           <Doer
                             offer={by("chat.new")}
                             onPress={press}
-                            words="Open the first chat"
+                            words="Open a chat in the plane"
                             primary
                           />
-                        }
-                        testid="empty-window"
-                      />
-                    )}
-                  </div>
-                </Menued>
-              </div>
-            </RestoringContext.Provider>
+                        </>
+                      }
+                      testid="empty-plane"
+                    />
+                  ) : (
+                    <EmptyState
+                      mark={MessageSquarePlus}
+                      headline="No chats yet"
+                      body="purlis runs each chat in its own pane. Open the first one here."
+                      action={
+                        <Doer
+                          offer={by("chat.new")}
+                          onPress={press}
+                          words="Open the first chat"
+                          primary
+                        />
+                      }
+                      testid="empty-window"
+                    />
+                  )}
+                </div>
+              </Menued>
+            </div>
           }
         />
 

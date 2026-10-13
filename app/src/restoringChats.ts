@@ -1,21 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext } from "react";
-
 import type { OpenChat } from "./bindings";
 
 /**
- * **The chats a launch has still to start** (`restoring.rs`), by the number each one's tab is
- * drawn under, which is the number it starts as.
+ * **The chats a launch has still to start** (`restoring.rs`), as the window keeps them: by the
+ * number each one's tab is drawn under, which is the number it starts as.
  *
  * A launch registers every chat it puts back and starts them behind the window, a few at a
  * time, so the window can be used at once however many there are. Each has its tab in its
  * place from the first frame; until its program has started there is no terminal to draw, and
- * its pane says so (`RestoringPane`). A context, as `TaskEndContext` is: the strip and the
- * panes are drawn several components below the view that hears each chat start.
+ * its pane says so (`RestoringPane`).
  */
-export const RestoringContext = createContext<ReadonlySet<number>>(new Set());
+export const NONE_RESTORING: ReadonlySet<number> = new Set();
 
 /** What a restoring chat's tab says of it: its tooltip. */
 export const RESTORING = "Restoring…";
