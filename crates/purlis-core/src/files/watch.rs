@@ -25,7 +25,8 @@
 //! folders git ignores whole and that hold nothing git tracks, and answers a path under one
 //! without asking. What it learnt is forgotten when a `.gitignore`, the clone's index or its
 //! exclude file moves, and trusted for [`IGNORED_TRUSTED_FOR`] at most, for what the watch does
-//! not hear: a worktree's index, kept in its clone's git folder, and the user's own excludes.
+//! not hear: the user's own excludes. A worktree's index is kept in its clone's git folder, so
+//! the clone's watch hears it and forgets what was learnt for the clone's worktrees.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -56,6 +57,8 @@ pub const IGNORED_TRUSTED_FOR: Duration = Duration::from_secs(30);
 struct KnownIgnored {
     by_root: HashMap<PathBuf, (Instant, HashSet<String>)>,
     forgotten: HashMap<PathBuf, Instant>,
+    /// Folders whose every branch was forgotten at once ([`Self::forget_under`]), and when.
+    forgotten_under: HashMap<PathBuf, Instant>,
 }
 
 impl KnownIgnored {
@@ -71,7 +74,14 @@ impl KnownIgnored {
         // Old entries go, so the branches let go of do not pile up.
         self.by_root.retain(|_, (at, _)| fresh(at));
         self.forgotten.retain(|_, at| fresh(at) || *at >= asked);
-        if self.forgotten.get(root).is_some_and(|at| *at >= asked) {
+        self.forgotten_under
+            .retain(|_, at| fresh(at) || *at >= asked);
+        if self.forgotten.get(root).is_some_and(|at| *at >= asked)
+            || self
+                .forgotten_under
+                .iter()
+                .any(|(folder, at)| root.starts_with(folder) && *at >= asked)
+        {
             return;
         }
         self.by_root.insert(root.to_path_buf(), (asked, tops));
@@ -81,6 +91,14 @@ impl KnownIgnored {
     fn forget(&mut self, root: &Path) {
         self.by_root.remove(root);
         self.forgotten.insert(root.to_path_buf(), Instant::now());
+    }
+
+    /// The tops of every branch whose folder is in `folder` may have changed: a clone's
+    /// worktrees, when one's index moved in the clone's git folder.
+    fn forget_under(&mut self, folder: &Path) {
+        self.by_root.retain(|root, _| !root.starts_with(folder));
+        self.forgotten_under
+            .insert(folder.to_path_buf(), Instant::now());
     }
 }
 
@@ -110,6 +128,22 @@ fn forgets_known_ignored(relative: &Path, tops: &HashSet<String>) -> bool {
         .file_name()
         .is_some_and(|name| name == ".gitignore")
         && !under_known_ignored(relative, tops)
+}
+
+/// Whether `relative`, a path inside a clone's folder, is the index of one of its worktrees
+/// (`.git/worktrees/<name>/index`): kept in the clone's git folder, so heard by the clone's
+/// watch and not by the worktree's own (#874).
+fn moves_a_worktrees_index(relative: &Path) -> bool {
+    let steps: Vec<Component<'_>> = relative.components().collect();
+    matches!(
+        steps.as_slice(),
+        [
+            Component::Normal(git),
+            Component::Normal(worktrees),
+            Component::Normal(_),
+            Component::Normal(index),
+        ] if *git == ".git" && *worktrees == "worktrees" && *index == "index"
+    )
 }
 
 /// A branch's folder, resolved, with the names it was found by.
@@ -210,6 +244,19 @@ impl Root {
         if forgets {
             known_ignored().forget(&self.base);
             known = None;
+        }
+        // A worktree's index moves in its clone's git folder, which only the clone's watch
+        // hears: what was learnt for the clone's worktrees is forgotten now, not when it
+        // expires (#874). They are in the workspace's worktrees folder, beside the clone.
+        if self.piece.is_none()
+            && moved.iter().any(|path| {
+                path.strip_prefix(&self.base)
+                    .is_ok_and(moves_a_worktrees_index)
+            })
+            && let Some(workspace) = self.base.parent()
+        {
+            known_ignored()
+                .forget_under(&workspace.join(crate::worktree::DIR_NAME).join(&self.repo));
         }
         let mut asked: Vec<PathBuf> = Vec::new();
         for path in moved {
@@ -515,9 +562,58 @@ mod tests {
         }
     }
 
+    /// #874: a worktree's index is kept in its clone's git folder, which the clone's watch
+    /// hears, so its move forgets what was learnt for the clone's worktrees at once; the lock
+    /// beside it, and the rest of the worktree's git folder, do not.
+    #[test]
+    fn a_worktrees_index_moving_in_its_clone_is_told_apart() {
+        for forgets in [".git/worktrees/fix/index", ".git/worktrees/a b/index"] {
+            assert!(moves_a_worktrees_index(Path::new(forgets)), "{forgets}");
+        }
+        for keeps in [
+            ".git/index",
+            ".git/worktrees/fix/index.lock",
+            ".git/worktrees/fix/HEAD",
+            ".git/worktrees/index",
+            "src/.git/worktrees/fix/index",
+            ".git/worktrees/fix/sub/index",
+        ] {
+            assert!(!moves_a_worktrees_index(Path::new(keeps)), "{keeps}");
+        }
+    }
+
+    /// #874: forgetting a clone's worktrees forgets every root under their folder, and nothing
+    /// else, and an answer asked for before it is not kept, as [`KnownIgnored::forget`]'s.
+    #[test]
+    fn a_clones_worktrees_are_forgotten_together_and_alone() {
+        let start = Instant::now();
+        let mut known = KnownIgnored::default();
+        let clone = Path::new("/p/workspaces/w/svc");
+        let fix = Path::new("/p/workspaces/w/.worktrees/svc/fix");
+        let feat = Path::new("/p/workspaces/w/.worktrees/svc/feat");
+        let other = Path::new("/p/workspaces/w/.worktrees/svc-old/x");
+        for root in [clone, fix, feat, other] {
+            known.keep(root, tops(&["target"]), start);
+        }
+        let asked = Instant::now();
+
+        known.forget_under(Path::new("/p/workspaces/w/.worktrees/svc"));
+
+        assert_eq!(known.of(fix, asked), None);
+        assert_eq!(known.of(feat, asked), None);
+        assert_eq!(known.of(clone, asked), Some(tops(&["target"])));
+        assert_eq!(known.of(other, asked), Some(tops(&["target"])));
+        known.keep(fix, tops(&["target"]), asked);
+        assert_eq!(
+            known.of(fix, asked),
+            None,
+            "asked for before it was forgotten"
+        );
+    }
+
     /// #874 (L8): the tops are trusted for [`IGNORED_TRUSTED_FOR`] at most, for what the watch
-    /// does not hear (a worktree's index kept in its clone's git folder, the user's own
-    /// excludes), and a root's are forgotten on their own.
+    /// does not hear (the user's own excludes; a worktree's index where its clone is not
+    /// watched), and a root's are forgotten on their own.
     #[test]
     fn the_known_ignored_tops_are_trusted_for_a_while_and_per_root() {
         let start = Instant::now();
