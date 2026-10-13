@@ -254,7 +254,7 @@ async fn a_ui_rpc_command_that_waits_delays_no_session_command() {
         go: Arc::new(Semaphore::new(0)),
         waiting: Arc::default(),
     };
-    let server = ui::Server::new(BUILD, ["slow", "quick"], commands.clone());
+    let server = ui::Server::of_any_methods_for_tests(BUILD, ["slow", "quick"], commands.clone());
     let (client, _events) = linked(host, Some(server)).await;
     let ui = client.ui(BUILD).await.unwrap();
 

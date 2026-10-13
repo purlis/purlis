@@ -110,14 +110,43 @@ mod tests {
     }
 
     #[test]
+    fn every_command_is_served_on_a_link_by_name_or_is_the_windows_alone() {
+        // #1927, fail closed: a link is served a command only where the served list names it
+        // (`SERVED_ON_A_LINK`), and every command of the app is on that list or is the
+        // window's alone, never both and never neither. So a command added to
+        // `ipc_commands.rs` fails this test until someone puts it on one list, and it reaches
+        // a link only by a decision made where a review reads it.
+        use purlis_session_protocol::ui;
+        let on_neither: Vec<&str> = every_listed()
+            .into_iter()
+            .filter(|command| !ui::SERVED_ON_A_LINK.contains(command) && !ui::window_only(command))
+            .collect();
+        assert_eq!(
+            on_neither,
+            Vec::<&str>::new(),
+            "list each in session-protocol's ui.rs: the window's alone, or served on a link"
+        );
+        let on_both: Vec<&str> = every_listed()
+            .into_iter()
+            .filter(|command| ui::SERVED_ON_A_LINK.contains(command) && ui::window_only(command))
+            .collect();
+        assert_eq!(on_both, Vec::<&str>::new());
+        // And the served list names only commands this app has.
+        for command in ui::SERVED_ON_A_LINK {
+            assert!(every_listed().contains(command), "{command} is no command");
+        }
+    }
+
+    #[test]
     fn a_vaults_sign_in_set_up_is_never_served_on_a_link() {
         // #1527 (ADR 0052, amended 2026-10-09): a credential the person gives a vault reaches
         // purlis through the window's own IPC, never the UI RPC a link serves.
+        //
+        // #1927: held by the class and not by a name. Every command of the value-bearing
+        // class (`vault_values` in `ipc_commands.rs`) is the window's alone, whichever way the
+        // value goes, so one that joins the class is never served on a link by omission.
         let (_, values) = listed();
-        for command in values
-            .iter()
-            .filter(|c| c.starts_with("vault_setup_") || c.starts_with("forge_"))
-        {
+        for command in values {
             assert!(
                 purlis_session_protocol::ui::window_only(command),
                 "{command} would be served on a link"

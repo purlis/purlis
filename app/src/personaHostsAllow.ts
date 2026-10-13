@@ -9,7 +9,9 @@ import { commands, type PersonaHosts, type PlaneId, type SandboxState } from "./
  * control that would press one is drawn only where the press can work (#1362).
  */
 export function inTheWindow(client: object, method: string): boolean {
-  return typeof (client as Record<string, unknown>)[method] === "function";
+  const call = (client as Record<string, unknown>)[method];
+  // The link's client names a window-only command and marks it as one it never sends.
+  return typeof call === "function" && (call as { windowOnly?: boolean }).windowOnly !== true;
 }
 
 /** Whether this page may allow a persona's hosts: the window's alone. */
