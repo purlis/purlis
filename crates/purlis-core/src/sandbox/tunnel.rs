@@ -935,6 +935,10 @@ pub fn routes_folder(root: &Path) -> PathBuf {
 /// ([`routes_folder`]), made the person's alone if missing. The folder goes when the returned
 /// handle is dropped, as the chat ends. Refused where `within` is not, as the kernel names it,
 /// a folder of its own: a link there could put the route where a chat writes.
+///
+/// The folder is named `chat-<pid>-<random>`, the pid this process's, so one an app killed
+/// before it could drop the handle is known as left behind once that process is gone
+/// ([`sweep_routes`], #1708).
 pub fn routed_in(within: &Path, socks: u16) -> io::Result<(tempfile::TempDir, SshRoute)> {
     std::fs::create_dir_all(within)?;
     let not_its_own =
@@ -954,10 +958,66 @@ pub fn routed_in(within: &Path, socks: u16) -> io::Result<(tempfile::TempDir, Ss
         std::fs::set_permissions(within, std::fs::Permissions::from_mode(0o700))?;
     }
     let dir = tempfile::Builder::new()
-        .prefix("chat-")
+        .prefix(&format!("{ROUTE_PREFIX}{}-", std::process::id()))
         .tempdir_in(within)?;
     let route = SshRoute::write(dir.path(), socks)?;
     Ok((dir, route))
+}
+
+/// The start of a route folder's name: `chat-`, then the pid of the process that made it.
+const ROUTE_PREFIX: &str = "chat-";
+
+/// The pid a route folder's name says made it ([`routed_in`]), where `name` has that shape:
+/// `chat-`, decimal digits, `-`, and the rest. A name of any other shape is not one purlis made.
+fn route_maker(name: &str) -> Option<u32> {
+    let (pid, rest) = name.strip_prefix(ROUTE_PREFIX)?.split_once('-')?;
+    if pid.is_empty() || rest.is_empty() || !pid.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    // A pid past `u32` is no process at all, so the folder is left behind all the same.
+    Some(pid.parse().unwrap_or(u32::MAX))
+}
+
+/// **Remove the route folders a killed app left behind** in the project at `root` (#1708); how
+/// many went. Swept as the project opens, beside the other leftovers
+/// ([`crate::leftovers::sweep_plane`]).
+///
+/// A route goes with its chat ([`routed_in`]), but an app killed outside its own control drops
+/// nothing. Only a folder of [`route_maker`]'s shape, made by a process that is not this one
+/// and is not alive ([`crate::process::alive`]), is removed: a live chat's route belongs to a
+/// live app, and a pid that is in use again keeps the folder, which only waits for a later
+/// sweep. The way to [`routes_folder`] is held to no link, and an entry is asked about as itself,
+/// so a link is never removed or followed; `remove_dir_all` does not follow one inside either.
+pub fn sweep_routes(root: &Path) -> usize {
+    let within = routes_folder(root);
+    if crate::contain::no_link_on_the_way(root, &within).is_err() {
+        return 0;
+    }
+    let Ok(entries) = std::fs::read_dir(&within) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let Some(pid) = route_maker(&entry.file_name().to_string_lossy()) else {
+            continue;
+        };
+        if pid == std::process::id() || crate::process::alive(pid) {
+            continue;
+        }
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        if std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        tracing::info!(
+            "purlis: removed {removed} ssh route folder(s) a chat left behind in {}",
+            within.display()
+        );
+    }
+    removed
 }
 
 /// `text` in single quotes, as a POSIX shell reads one word.

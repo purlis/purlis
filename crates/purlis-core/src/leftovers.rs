@@ -101,12 +101,17 @@ const OLD_BLOCKS: &str = "sandbox-blocks.json";
 
 /// The plane's leftovers: `.charter/` (the launched-profiles record's) and `.charter/app/`
 /// (the reopen record's), and the old sandbox-blocks store there (#1681), on the same terms:
-/// a plain file older than [`STALE_AFTER`], with no link on the way.
+/// a plain file older than [`STALE_AFTER`], with no link on the way. And the ssh route folders
+/// of chats a killed app could not end (#1708), each once the process that made it is gone
+/// ([`crate::sandbox::tunnel::sweep_routes`]).
 pub fn sweep_plane(root: &Path) -> usize {
     let state = crate::names::state(root);
     let now = SystemTime::now();
     let app = state.join("app");
-    sweep(root, &state, now) + sweep(root, &app, now) + sweep_old_blocks(root, &app, now)
+    sweep(root, &state, now)
+        + sweep(root, &app, now)
+        + sweep_old_blocks(root, &app, now)
+        + crate::sandbox::tunnel::sweep_routes(root)
 }
 
 /// [`OLD_BLOCKS`] in `app`, removed on [`sweep`]'s terms and logged: 1 where it went.

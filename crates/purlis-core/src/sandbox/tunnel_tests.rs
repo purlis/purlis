@@ -524,7 +524,7 @@ mod ssh {
 mod claude_route {
     use std::path::Path;
 
-    use super::super::tunnel::{CLAUDE_ENV_NAME, SshRoute, routed_in, routes_folder};
+    use super::super::tunnel::{CLAUDE_ENV_NAME, SshRoute, routed_in, routes_folder, sweep_routes};
 
     #[test]
     fn the_routes_folder_is_under_the_apps_state_which_no_chat_writes() {
@@ -574,6 +574,93 @@ mod claude_route {
             0,
             "nothing written behind the link"
         );
+    }
+
+    /// A pid that names no live process: a child that ran and was waited for.
+    fn a_gone_pid() -> u32 {
+        let mut child =
+            crate::forklock::spawn(&mut std::process::Command::new("true")).expect("true runs");
+        let pid = child.id();
+        child.wait().expect("waited for");
+        assert!(
+            !crate::process::alive(pid),
+            "the test needs a pid that is gone"
+        );
+        pid
+    }
+
+    #[test]
+    fn a_chats_route_folder_names_the_process_that_holds_it() {
+        let root = tempfile::tempdir().expect("a project");
+        let (dir, _) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            name.starts_with(&format!("chat-{}-", std::process::id())),
+            "{name}"
+        );
+    }
+
+    /// #1708: a route whose app was killed is never dropped, so its folder stays; the next
+    /// open of the project sweeps it. Only a folder of purlis's own shape, made by a process
+    /// that is gone, goes: a live chat's route, this process's, a name purlis did not make, a
+    /// file and a link (and what it names) all stay.
+    #[cfg(unix)]
+    #[test]
+    fn a_route_folder_whose_process_is_gone_is_swept_and_nothing_else_is() {
+        let root = tempfile::tempdir().expect("a project");
+        let within = routes_folder(root.path());
+        let (live, _) = routed_in(&within, 1).expect("written");
+        let gone = a_gone_pid();
+        let left = within.join(format!("chat-{gone}-a1b2c3"));
+        SshRoute::write(&left, 1).expect("a crashed chat's route");
+        let never = within.join(format!("chat-{}-zzzzzz", u32::MAX));
+        std::fs::create_dir(&never).expect("made");
+        let foreign = within.join("notes");
+        std::fs::create_dir(&foreign).expect("made");
+        let old_shape = within.join("chat-a1b2c3");
+        std::fs::create_dir(&old_shape).expect("made");
+        let file = within.join(format!("chat-{gone}-file"));
+        std::fs::write(&file, "").expect("written");
+        let elsewhere = tempfile::tempdir().expect("elsewhere");
+        std::fs::write(elsewhere.path().join("kept"), "").expect("written");
+        let link = within.join(format!("chat-{gone}-link"));
+        std::os::unix::fs::symlink(elsewhere.path(), &link).expect("a link");
+
+        assert_eq!(sweep_routes(root.path()), 2);
+        assert!(!left.exists(), "a gone process's route is swept");
+        assert!(!never.exists(), "a pid no process can have is gone too");
+        assert!(live.path().exists(), "this process's route stays");
+        assert!(foreign.exists() && old_shape.exists() && file.exists());
+        assert!(link.symlink_metadata().is_ok(), "a link is not removed");
+        assert!(elsewhere.path().join("kept").exists(), "nor swept through");
+        assert_eq!(sweep_routes(root.path()), 0, "once");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_routes_folder_that_is_a_link_is_not_swept_through() {
+        let root = tempfile::tempdir().expect("a project");
+        let elsewhere = tempfile::tempdir().expect("elsewhere");
+        let within = routes_folder(root.path());
+        std::fs::create_dir_all(within.parent().unwrap()).expect("the app's state");
+        std::os::unix::fs::symlink(elsewhere.path(), &within).expect("a link");
+        let behind = elsewhere
+            .path()
+            .join(format!("chat-{}-a1b2c3", a_gone_pid()));
+        std::fs::create_dir(&behind).expect("made");
+        assert_eq!(sweep_routes(root.path()), 0);
+        assert!(behind.exists());
+    }
+
+    #[test]
+    fn a_project_with_no_routes_folder_sweeps_nothing() {
+        let root = tempfile::tempdir().expect("a project");
+        assert_eq!(sweep_routes(root.path()), 0);
     }
 
     fn path_line(text: &str) -> &str {
