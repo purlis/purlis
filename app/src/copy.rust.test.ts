@@ -1897,8 +1897,9 @@ describe("the window's copy written in Rust", { timeout: 30_000 }, () => {
     );
     expect(files).toContain(`${COMMANDS_DIR}/firsttask.rs`);
     expect(files).toContain(`${COMMANDS_DIR}/references.rs`);
-    // And the core's reason it hands them (`why_drawn_as_a_placeholder`, harness.rs).
-    expect(files).toContain(`${CORE_DIR}/harness.rs`);
+    // And the core's reason it hands them (`why_drawn_as_a_placeholder`, one rule for a
+    // built-in and a declared harness, on their declaration since #967).
+    expect(files).toContain(`${CORE_DIR}/harness_declaration.rs`);
   });
 
   it("reads every call an in_window body or a command's error makes, or names why it need not", () => {
