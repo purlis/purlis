@@ -4,6 +4,7 @@
 import { useState } from "react";
 import {
   commands,
+  type CertificateCheck,
   type PersonaHosts,
   type PlaneId,
   type SandboxPolicy,
@@ -16,10 +17,12 @@ import {
   allowLabel,
   allowPersonaHosts,
   FROM_NEXT_START,
+  inTheWindow,
   mayAllowPersonaHosts,
   whatItLets,
   whatWaits,
 } from "../personaHostsAllow";
+import { sandboxCommandReturned } from "../sandboxAsked";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
 import type { Collection, LiveSetting } from "./groups";
@@ -260,11 +263,117 @@ function certificateChecks(): Control {
   return onOffAt(
     CERTIFICATE_CHECKS,
     "Certificate checks",
-    "Says this project's Go tools, such as gh, need the system's certificate check on macOS. It allows nothing by itself: the first time a tool asks, each person is asked once on their own machine, because the system then fetches addresses a certificate names, outside the hosts above.",
+    "Says this project's Go tools, such as gh, need the system's certificate check on macOS. It allows nothing by itself: each person allows it on their own machine, in the row below or from the Notice the first time a tool asks, because the system then fetches addresses a certificate names, outside the hosts above.",
     "not set — off",
     // Off while the file does not set it (D-1337-7): the switch shows that, and Reset goes back.
     false,
   );
+}
+
+/** The row that says whether the certificate check is allowed on this machine (ADR 0093). */
+export const CERTIFICATE_CHECK_HERE = "project.sandbox.certificate-check-here";
+
+/** What Settings' own Allow of the certificate check says. */
+export const ALLOW_CERTIFICATE_CHECK = "Allow on this machine";
+
+/** Whether this page may allow the certificate check: the window's alone (`WINDOW_ONLY`). */
+export const mayAllowCertificateCheck = (): boolean =>
+  inTheWindow(commands, "allowCertificateCheck");
+
+/**
+ * **What the certificate check comes to on this machine** (ADR 0093): what a chat's next start
+ * has, never what the committed switch says. A switch that is on there and nothing allowed here
+ * is said plainly, with what fails until it is allowed.
+ */
+export function certificateCheckSaid(one: CertificateCheck): string {
+  if (one.locked !== null)
+    return `Not allowed on this machine, so Go tools such as gh cannot check certificates in a sandboxed chat. ${one.locked}`;
+  if (one.allowed)
+    return "Allowed on this machine: every chat of this project can check certificates from its next start, and a chat already running takes it when it restarts. Remove it under Network, in the Allowed list.";
+  const fails =
+    "Go tools such as gh fail in a sandboxed chat with a certificate error (x509: OSStatus -26276)";
+  return one.expected
+    ? `This project expects certificate checks, and they are not allowed on this machine yet: ${fails} until you allow them here.`
+    : `Not allowed on this machine: ${fails} until you allow them here.`;
+}
+
+/** **Allow on this machine**, or what stands: the window-only call an Allow on a block's
+ *  Notice makes too, kept in this machine's own file. */
+function CertificateCheckHere({
+  plane,
+  one,
+  ids,
+}: {
+  plane: PlaneId;
+  one: CertificateCheck;
+  ids: RowIds;
+}) {
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const offered =
+    said === undefined && !one.allowed && one.locked === null && mayAllowCertificateCheck();
+  const allow = () => {
+    if (busy) return;
+    setBusy(true);
+    void commands
+      .allowCertificateCheck(plane)
+      .then((answer) => {
+        if (answer.status !== "ok") {
+          setSaid(answer.error);
+          return;
+        }
+        setSaid(
+          answer.data.certificate_check != null
+            ? certificateCheckSaid(answer.data.certificate_check)
+            : certificateCheckSaid({ ...one, allowed: true }),
+        );
+        // The chats open now keep the sandbox they started with: their Notice asks again.
+        sandboxCommandReturned();
+      })
+      .catch((err: unknown) => setSaid(`purlis could not allow it: ${String(err)}`))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div
+      id={ids.id}
+      className="ui-setting-status"
+      aria-labelledby={ids.labelledBy}
+      aria-describedby={ids.describedBy}
+    >
+      <p>{said ?? certificateCheckSaid(one)}</p>
+      {offered && (
+        <button type="button" disabled={busy} onClick={allow}>
+          {ALLOW_CERTIFICATE_CHECK}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * **The certificate check on this machine, as a row of its own** under the committed switch
+ * (ADR 0093): the switch declares, this row says what a chat here has and allows it. None where
+ * the sandbox is off, or the core has not said.
+ */
+export function certificateCheckRows(
+  plane: PlaneId,
+  sandbox: SandboxState | undefined,
+): LiveSetting[] {
+  const one = sandbox?.certificate_check;
+  if (one === undefined || one === null) return [];
+  return [
+    {
+      id: CERTIFICATE_CHECK_HERE,
+      label: "Certificate checks on this machine",
+      // The Allow is this machine's, never the committed file's (#1759).
+      writes: "this machine" as const,
+      help: "What a chat here has, whatever the switch above says: the committed setting only says the project expects it. Allowing it lets Go and similar tools check certificates; that service can make its own network requests.",
+      useControl: () => ({
+        grouped: true,
+        control: (ids) => <CertificateCheckHere plane={plane} one={one} ids={ids} />,
+      }),
+    },
+  ];
 }
 
 /** The sandbox's settings kept in the committed file, in the order the page draws them. */

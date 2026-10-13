@@ -413,6 +413,16 @@ export const commands = {
 	 */
 	allowPersonaHosts: (plane: PlaneId, persona: string, digest: string) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_persona_hosts", { plane, persona, digest })),
 	/**
+	 *  **Allow certificate checks on this machine**, on Settings › Sandbox (qw351; ADR 0093): the
+	 *  person lets every chat of this project ask the system's certificate check, as "Allow for me
+	 *  on this machine" on a block's Notice does, without waiting for a Go tool to fail first. Kept
+	 *  in this machine's file, never the project's; audited; refused where policy forbids it. A
+	 *  chat takes it from its next start, and the chats open now are asked about on the Notice
+	 *  after a sandbox setting changed. The window's alone (`WINDOW_ONLY`): no link and no chat
+	 *  makes it.
+	 */
+	allowCertificateCheck: (plane: PlaneId) => typedError<SandboxState, string>(__TAURI_INVOKE("allow_certificate_check", { plane })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 */
@@ -3381,6 +3391,24 @@ export type ByHand = {
 	 *  place starts.
 	 */
 	cwd: string | null,
+};
+
+/**
+ *  **Whether a chat here may ask the system's certificate check, on this machine** (ADR 0093):
+ *  what a chat's next start compiles in, never what the committed file says. Settings draws it
+ *  beside the committed `certificate-checks`, so a switch that is on there never reads as an
+ *  Allow nobody made here.
+ */
+export type CertificateCheck = {
+	/**  The project's committed file declares it expects the certificate check. */
+	expected: boolean,
+	/**
+	 *  The person allowed it for every chat of this project on this machine, and no policy
+	 *  takes it away: a chat has it from its next start.
+	 */
+	allowed: boolean,
+	/**  Why it cannot be allowed here, where an administrator's policy forbids it. */
+	locked: string | null,
 };
 
 /**
@@ -7712,6 +7740,12 @@ export type SandboxState = {
 	 *  place of the mode. Such a project never reads as "off". `null` where the manifest reads.
 	 */
 	manifest?: string | null,
+	/**
+	 *  The certificate check on this machine (ADR 0093), where chats here run sandboxed: what
+	 *  Settings says beside the committed `certificate-checks`, which declares it and grants
+	 *  nothing. `null` where the sandbox is off.
+	 */
+	certificate_check?: CertificateCheck | null,
 };
 
 /**  One save attempt, as the journal holds it. */

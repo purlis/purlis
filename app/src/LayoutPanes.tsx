@@ -44,7 +44,13 @@ import { qualifierOf, shownOf } from "./finished";
 import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { closesOnly, markOf } from "./StripMarks";
-import { type RestartSaid, type ByHandNote, type StartNotes, ChatNotices } from "./ChatNotices";
+import {
+  type RestartAct,
+  type RestartSaid,
+  type ByHandNote,
+  type StartNotes,
+  ChatNotices,
+} from "./ChatNotices";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -400,7 +406,7 @@ export function LayoutPanes({
   onAllowed: (session: number) => void;
   /** What each chat's pane says of its restart, by session (#1342, #1428). */
   restartsSaid: Readonly<Record<number, RestartSaid>>;
-  onRestartAnswer: (session: number, act: "now" | "dismiss") => void;
+  onRestartAnswer: (session: number, act: RestartAct) => void;
   /** The views approved extensions offer, for the buttons a view draws beside itself. */
   offered: readonly ExtensionView[];
   onOpenView: (view: ViewRef, title: string) => void;

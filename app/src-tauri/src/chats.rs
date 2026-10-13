@@ -5674,6 +5674,113 @@ pub(crate) mod tests {
         confines.hosts.iter().any(|one| one.contains(host))
     }
 
+    /// qw351: **every Allow of the certificate check ends with the chat restarted and holding
+    /// it**, whichever answer the person pressed: once, only this chat, or for them on this
+    /// machine. The committed `certificate-checks` declares it and grants nothing (ADR 0093),
+    /// so before the Allow no chat has it.
+    #[test]
+    fn each_allow_of_the_certificate_check_owes_a_restart_that_starts_with_it() {
+        use crate::sandboxing::{GrantLevel, GrantWhat, judged, kept};
+        use purlis_core::sandbox::services::TRUSTD;
+        let trusts = |chats: &Chats, session: u32| {
+            chats
+                .confines_of(session)
+                .expect("it started sandboxed")
+                .widened
+                .trust
+        };
+        for level in [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You] {
+            let plane = a_sandboxed_plane();
+            the_sandbox_becomes(plane.path(), "certificate-checks = true\n");
+            let chats = restartable_chats_of(plane.path(), Pretend::default());
+            let session = chats
+                .start(&a_resumable_chat_in(plane.path()), SIZE)
+                .expect("starts");
+            assert!(
+                !trusts(&chats, session),
+                "the committed file declares it and grants nothing"
+            );
+            let allow = |chats: &Chats, session: u32| {
+                let (what, at) = judged(
+                    plane.path(),
+                    &a_machine(),
+                    Some(plane.path()),
+                    session,
+                    (GrantWhat::Service, TRUSTD, level),
+                )
+                .expect("judged");
+                kept(plane.path(), chats, session, (&what, at), &|_, _| Ok(()), 7).expect("kept")
+            };
+            let first = allow(&chats, session);
+            assert!(!first.already, "{level:?}");
+            assert!(
+                first.live.is_empty(),
+                "{level:?}: a service is never taken live"
+            );
+            assert_eq!(chats.owed_restarts(), [session], "{level:?}");
+            let started = chats.restart(session, SIZE).expect("restarts");
+            chats.close(session).expect("the old run ends");
+            assert!(trusts(&chats, started), "{level:?}: the new run holds it");
+            assert!(chats.owed_restarts().is_empty(), "{level:?}");
+
+            // The same answer pressed again, for a grant that stands: nothing new is kept, and
+            // the chat is still owed the restart that takes it.
+            if level == GrantLevel::You {
+                let again = allow(&chats, started);
+                assert!(again.already);
+                assert_eq!(chats.owed_restarts(), [started]);
+                let once_more = chats.restart(started, SIZE).expect("restarts");
+                chats.close(started).expect("the old run ends");
+                assert!(trusts(&chats, once_more));
+                chats.close(once_more).expect("ends");
+            } else {
+                chats.close(started).expect("ends");
+            }
+            // For me on this machine: every later chat of the project starts with it. Once, or
+            // only that chat: no other chat does.
+            let later = restartable_chats_of(plane.path(), Pretend::default());
+            let next = later
+                .start(&a_resumable_chat_in(plane.path()), SIZE)
+                .expect("starts");
+            assert_eq!(
+                trusts(&later, next),
+                level == GrantLevel::You,
+                "{level:?}: another chat's start"
+            );
+            later.close(next).expect("ends");
+        }
+    }
+
+    /// qw351: the person allows the certificate check for themselves on this machine while
+    /// other chats of the project are open. Those keep the sandbox they started with, and the
+    /// Notice after a sandbox setting changed lists them, with Restart.
+    #[test]
+    fn chats_open_when_the_certificate_check_is_allowed_are_on_an_older_sandbox() {
+        use purlis_core::sandbox::services::TRUSTD;
+        let plane = a_sandboxed_plane();
+        let chats = restartable_chats_of(plane.path(), Pretend::default());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(older(&chats), None);
+        purlis_core::sandbox::local::grant_service(plane.path(), TRUSTD).expect("kept");
+        assert_eq!(
+            older(&chats).expect("told").sessions(),
+            [session],
+            "it runs without what was allowed since it started"
+        );
+        chats.ask_restart(session).expect("asked");
+        let started = chats.restart(session, SIZE).expect("restarts");
+        chats.close(session).expect("the old run ends");
+        assert!(chats.confines_of(started).expect("sandboxed").widened.trust);
+        assert_eq!(
+            older(&chats),
+            None,
+            "restarted, it is on the sandbox of now"
+        );
+        chats.close(started).expect("ends");
+    }
+
     #[test]
     fn a_restart_keeps_the_conversation_and_compiles_the_sandbox_the_project_has_now() {
         let plane = a_sandboxed_plane();

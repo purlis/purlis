@@ -109,6 +109,30 @@ certificate check is ask once, then always). A project that sets it gets the Not
 first time a Go tool checks a certificate, Always allow among the choices. Projects that set
 it now get one Allow per machine the first time a Go tool checks a certificate.
 
+## Allowing the certificate check is one press, and said where the person looks (2026-10-13)
+
+The first day of the change above, the person who made the rulings had `certificate-checks = true`
+in two projects, saw the switch on in Settings, and had `gh` fail in every chat. The Notice's main
+button was Allow once, so each chat asked again; and "Allow for me on this machine", pressed while
+the chat was mid-turn, was kept and changed nothing they could see until that turn ended. Nothing
+granted wrongly, and nothing here moves a ruling: the committed file still declares and never
+grants. What changed is that the Allow is easy to make and its state is said:
+
+- **The certificate check's main button is "Allow for me on this machine"** (ruling 3: ask once,
+  then always). Only this chat, and once, are the narrower choices beside it. A container
+  engine's socket and a service purlis cannot tell keep Allow once first.
+- **Settings says what a chat here has, and allows it.** Under the committed switch, a row
+  "Certificate checks on this machine" says whether the person allowed it here, in words that
+  name what fails until they do, with **Allow on this machine**: the same grant the Notice
+  makes, kept in the same file, audited, the window's alone, refused under `socket-grants:
+  false`. A project need not wait for a tool to fail first.
+- **A block of what is allowed already says so.** A socket or a service the person allowed for
+  the project on this machine is refused still to a chat that started before the Allow. Its
+  Notice says the Allow stands and offers Restart this chat, never the same Allow again.
+- **A restart that waits for a turn says so.** A grant reaches a chat when it restarts, and
+  purlis never ends a turn by itself. While a chat owed a restart is mid-turn its pane says the
+  restart waits for the turn to end, with Restart now, which ends the turn.
+
 ## What is not done
 
 - **Brokered Docker**, purlis running `docker` for the chat after checking the command, is a

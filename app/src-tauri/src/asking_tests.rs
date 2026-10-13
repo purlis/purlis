@@ -425,6 +425,68 @@ fn a_refused_folder_write_offers_its_notice_s_allow_and_keep_blocked_bound_to_th
     );
 }
 
+fn a_local_block(what: GrantWhat, kind: &str, target: &str) -> HeldBlock {
+    HeldBlock {
+        operation: if what == GrantWhat::Socket {
+            "connect"
+        } else {
+            "lookup"
+        }
+        .to_owned(),
+        kind: kind.to_owned(),
+        what,
+        target: target.to_owned(),
+    }
+}
+
+/// qw351, ADR 0093 ruling 3 ("ask once, then always"): the certificate check's main button
+/// allows it for this project on this machine, so one press is the last one. With "Allow once"
+/// first, a person pressing the main button was asked again in every chat.
+#[test]
+fn the_certificate_check_is_asked_with_this_machine_s_allow_first_and_a_socket_with_once_first() {
+    let ids =
+        |shown: &Shown| -> Vec<String> { shown.options.iter().map(|one| one.id.clone()).collect() };
+    let trust = sandbox_block(
+        5,
+        &a_local_block(
+            GrantWhat::Service,
+            "certificate-check",
+            purlis_core::sandbox::services::TRUSTD,
+        ),
+        &Locks::none(),
+    )
+    .expect("an ask");
+    assert_eq!(trust.source, AskSource::SandboxLocal);
+    assert_eq!(ids(&trust), ["you", "chat", "once", KEEP]);
+    assert_eq!(trust.options[0].label, "Allow for me on this machine");
+    // Never for everyone in the project: it is this machine's.
+    assert!(!ids(&trust).contains(&"project".to_owned()));
+    // A container engine's socket, and a service purlis cannot tell: the narrowest first.
+    for other in [
+        a_local_block(GrantWhat::Socket, "local-socket", "/var/run/docker.sock"),
+        a_local_block(GrantWhat::Service, "system-service", "com.example.helper"),
+    ] {
+        let shown = sandbox_block(5, &other, &Locks::none()).expect("an ask");
+        assert_eq!(ids(&shown), ["once", "chat", "you", KEEP], "{other:?}");
+    }
+    // Policy's scopes still have the last word on the certificate check's.
+    let locks = Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["chat"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    let narrowed = sandbox_block(
+        5,
+        &a_local_block(
+            GrantWhat::Service,
+            "certificate-check",
+            purlis_core::sandbox::services::TRUSTD,
+        ),
+        &locks,
+    )
+    .expect("an ask");
+    assert_eq!(ids(&narrowed), ["chat", KEEP]);
+}
+
 #[test]
 fn what_an_ask_names_is_said_with_every_character_that_draws_as_nothing_written_out() {
     // A folder's name, or a chat's, is drawn in the Inbox and in a notification's group: one

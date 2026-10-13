@@ -431,6 +431,56 @@ fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_the_certifi
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
+/// qw351: "Allow for me on this machine" on the certificate check's Notice, or Settings' own
+/// Allow, is kept in this machine's file and reaches **every** chat's next start in the
+/// project, whichever harness: Claude Code as `enableWeakerNetworkIsolation`, purlis's own wrap
+/// (Codex, opencode) as the one `mach-lookup` rule. The committed `certificate-checks` alone
+/// compiles nothing (ADR 0093), so a project that sets it is refused until the person allows it.
+#[test]
+fn the_certificate_check_allowed_on_this_machine_reaches_every_harness_s_next_start() {
+    let (_dir, root) = project();
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    std::fs::write(
+        crate::names::manifest(&root),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\ncertificate-checks = true\n",
+    )
+    .expect("written");
+    let declared_only = compiled_at(&root, &Grants::default());
+    assert!(!declared_only.widened.trust, "a declaration grants nothing");
+    assert_eq!(
+        claude::settings(&declared_only).expect("compiles").sandbox["enableWeakerNetworkIsolation"],
+        false
+    );
+
+    local::grant_service(&root, TRUSTD).expect("kept");
+    let compiled = compiled_at(&root, &Grants::default());
+    assert!(compiled.widened.trust);
+    // Its own switch, never a service by name beside it.
+    assert!(compiled.widened.services.is_empty());
+    assert_eq!(
+        claude::settings(&compiled).expect("compiles").sandbox["enableWeakerNetworkIsolation"],
+        true
+    );
+    let mut own = seatbelt::Own::default();
+    seatbelt::widen(&mut own, &compiled.widened).expect("widened");
+    assert!(own.after.contains(&seatbelt::TRUST.to_owned()));
+    // The certificate check's own service and no other: nothing wider is compiled for it.
+    assert_eq!(
+        own.after
+            .iter()
+            .filter(|rule| rule.contains("mach-lookup"))
+            .count(),
+        1,
+        "{:?}",
+        own.after
+    );
+
+    local::revoke_service(&root, TRUSTD).expect("revoked");
+    assert!(!compiled_at(&root, &Grants::default()).widened.trust);
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
 /// MF-2 fold-in of #1808's review: an administrator's `socket-grants` lock drops every socket
 /// and service at a start, this chat's and yours, and the certificate check with them.
 #[test]
