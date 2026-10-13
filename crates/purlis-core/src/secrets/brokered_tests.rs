@@ -312,6 +312,66 @@ fn a_run_hands_the_chats_ssh_agent_on_as_it_is() {
     assert_eq!(stdout(&frames), "[/agents/chat-7.sock]\n");
 }
 
+/// #1407 review: a variable that is not UTF-8 (a path in another encoding) is handed on as its
+/// bytes, where it used to be dropped without a word.
+#[cfg(unix)]
+#[test]
+fn a_variable_that_is_not_utf8_reaches_the_child_as_its_bytes() {
+    use std::os::unix::ffi::OsStringExt;
+    let project = project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"printf '%s' "$RAW" | od -An -tx1 | tr -d ' \n'"#),
+    );
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("RAW".into(), OsString::from_vec(vec![b'a', 0xff, b'b'])));
+    let line = serde_json::to_string(&want).unwrap();
+    let want: Wanted = serde_json::from_str(&line).unwrap();
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "61ff62");
+}
+
+/// The line keeps the shape an app of an earlier build reads: each UTF-8 variable as a pair of
+/// strings under `environment`, and only the others, as base64, under a field of their own
+/// that such an app skips. It round-trips whole.
+#[cfg(unix)]
+#[test]
+fn the_asked_environment_keeps_its_old_shape_and_carries_the_rest_beside_it() {
+    use std::os::unix::ffi::OsStringExt;
+    let want = Wanted {
+        environment: vec![
+            ("PATH".into(), "/usr/bin:/bin".into()),
+            ("RAW".into(), OsString::from_vec(vec![0xff])),
+        ],
+        ..Wanted::default()
+    };
+    let line = serde_json::to_value(&want).unwrap();
+    assert_eq!(
+        line["environment"],
+        serde_json::json!([["PATH", "/usr/bin:/bin"]])
+    );
+    assert_eq!(
+        line["environment_bytes"],
+        serde_json::json!([["UkFX", "/w=="]])
+    );
+    assert_eq!(serde_json::from_value::<Wanted>(line).unwrap(), want);
+
+    let mut old = serde_json::to_value(Wanted {
+        environment: vec![("PATH".into(), "/bin".into())],
+        ..Wanted::default()
+    })
+    .unwrap();
+    assert!(old.get("environment_bytes").is_none(), "{old}");
+    old.as_object_mut().unwrap().remove("environment");
+    assert_eq!(
+        serde_json::from_value::<Wanted>(old).unwrap().environment,
+        Vec::<(OsString, OsString)>::new()
+    );
+}
+
 #[test]
 fn the_childs_status_and_stderr_come_back_redacted() {
     let project = project();
@@ -657,11 +717,11 @@ fn nothing_in_a_chats_environment_chooses_the_providers_program() {
     want.environment = vec![
         (
             "PATH".into(),
-            format!("{}:/usr/bin:/bin", planted.display()),
+            format!("{}:/usr/bin:/bin", planted.display()).into(),
         ),
         (
             "HOME".into(),
-            project.path().join("work").display().to_string(),
+            project.path().join("work").display().to_string().into(),
         ),
     ];
     let asker = asker_from_the_dock(project.path(), home.path());
@@ -2555,7 +2615,7 @@ fn a_host_alone_in_pghost_the_chat_may_reach_goes_through_a_tunnel() {
     );
     want.env = vec!["PGHOST=DSN".into()];
     want.environment
-        .push(("PGPORT".into(), at.port().to_string()));
+        .push(("PGPORT".into(), at.port().to_string().into()));
     let listed = format!("127.0.0.1:{}", at.port());
     let (frames, told, reached) = served_recorded(
         &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
@@ -2648,7 +2708,7 @@ fn a_declared_tool_runs_its_own_program_from_a_path_without_the_chats_folders() 
     let path = format!("{}:/usr/bin:/bin", planted.display());
     let mut want = wanted(project.path(), "team", vec!["printenv".into(), "X".into()]);
     want.env = vec!["X=TOKEN".into()];
-    want.environment = vec![("PATH".into(), path.clone())];
+    want.environment = vec![("PATH".into(), path.clone().into())];
     let frames = served_as_asked(&asker, want.clone());
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     assert_eq!(
@@ -2852,9 +2912,12 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
         want.file = vec!["BROWSER_LOGIN_PASS=TOKEN".into()];
         // What a chat might set to steer the login: none of it reaches the run.
         want.environment.extend([
-            ("HOME".into(), work.clone()),
-            ("BROWSER_LOGIN_USER".into(), format!("{work}/chosen-user")),
-            ("PURLIS_LOGIN_DIR".into(), work.clone()),
+            ("HOME".into(), work.clone().into()),
+            (
+                "BROWSER_LOGIN_USER".into(),
+                format!("{work}/chosen-user").into(),
+            ),
+            ("PURLIS_LOGIN_DIR".into(), work.clone().into()),
         ]);
         served_as_asked(asker, want)
     };

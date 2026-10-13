@@ -111,12 +111,96 @@ pub struct Wanted {
     /// The directory the asker runs in, which the child starts in when it is a directory.
     #[serde(default)]
     pub cwd: Option<PathBuf>,
-    /// The asker's environment, which the child's starts from.
-    #[serde(default)]
-    pub environment: Vec<(String, String)>,
+    /// The asker's environment, which the child's starts from, as the operating system gives
+    /// it: a variable that is not UTF-8 is handed on too ([`asked_environment`]).
+    #[serde(flatten, with = "asked_environment")]
+    pub environment: Vec<(OsString, OsString)>,
     /// Whether the asker sends its stdin ([`Input`]). The child's is empty otherwise.
     #[serde(default)]
     pub stdin: bool,
+}
+
+/// **How [`Wanted::environment`] is written on the line** (#1407 review). Each variable whose
+/// name and value are UTF-8 is a pair of strings under `environment`, the shape an app of an
+/// earlier build reads; each other one is a pair of base64 strings of its bytes under
+/// `environment_bytes`, which such an app skips, as it skipped the variable before. Off unix
+/// no bytes are read from an `OsString`, so such a variable is not handed on there.
+mod asked_environment {
+    use std::ffi::OsString;
+
+    use base64::Engine as _;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Default, Serialize, Deserialize)]
+    struct Line {
+        #[serde(default)]
+        environment: Vec<(String, String)>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        environment_bytes: Vec<(String, String)>,
+    }
+
+    #[cfg(unix)]
+    fn bytes_of(text: &OsString) -> Option<String> {
+        use std::os::unix::ffi::OsStrExt;
+        Some(base64::engine::general_purpose::STANDARD.encode(text.as_bytes()))
+    }
+
+    #[cfg(not(unix))]
+    fn bytes_of(_text: &OsString) -> Option<String> {
+        None
+    }
+
+    #[cfg(unix)]
+    fn from_bytes(text: &str) -> Option<OsString> {
+        use std::os::unix::ffi::OsStringExt;
+        base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .ok()
+            .map(OsString::from_vec)
+    }
+
+    #[cfg(not(unix))]
+    fn from_bytes(_text: &str) -> Option<OsString> {
+        None
+    }
+
+    pub fn serialize<S: Serializer>(
+        vars: &[(OsString, OsString)],
+        to: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut line = Line::default();
+        for (name, value) in vars {
+            match (name.to_str(), value.to_str()) {
+                (Some(name), Some(value)) => {
+                    line.environment.push((name.to_owned(), value.to_owned()));
+                }
+                _ => {
+                    if let (Some(name), Some(value)) = (bytes_of(name), bytes_of(value)) {
+                        line.environment_bytes.push((name, value));
+                    }
+                }
+            }
+        }
+        line.serialize(to)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        from: D,
+    ) -> Result<Vec<(OsString, OsString)>, D::Error> {
+        let line = Line::deserialize(from)?;
+        let mut vars: Vec<(OsString, OsString)> = line
+            .environment
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        // A pair that is not base64 is not the asker's, and is not handed on.
+        vars.extend(
+            line.environment_bytes
+                .iter()
+                .filter_map(|(name, value)| Some((from_bytes(name)?, from_bytes(value)?))),
+        );
+        Ok(vars)
+    }
 }
 
 /// What the app writes back, one JSON line each.
@@ -301,10 +385,10 @@ fn converse(
                 .env
                 .vars()
                 .iter()
-                .filter_map(|(k, v)| Some((k.to_str()?.to_owned(), v.to_str()?.to_owned())))
                 // The line has a cap (`hookwire`'s), and an environment is a few kilobytes: a
                 // variable past this is not handed on, so the line is never cut.
                 .filter(|(_, v)| v.len() <= A_VARIABLE_IS_AT_MOST)
+                .cloned()
                 .collect(),
             stdin: stdin.is_some(),
         },
@@ -1103,13 +1187,19 @@ pub(crate) fn serve_recorded(
     // The asker's environment, less the hook channel and what makes a program load code
     // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
     // temp directory), then every other vault's identity variables taken out.
+    // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
+    // let through for not spelling the name it is judged by.
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
-        .iter()
-        .filter(|(k, _)| !not_handed_on(k) && !crate::sandbox::tools::loads_code(k))
-        // A login's files and folder are the app's to name, never the chat's (D-PE-browser-1).
-        .filter(|(k, _)| !(a_login && login_var(k)))
-        .map(|(k, v)| (OsString::from(k), OsString::from(v)))
+        .into_iter()
+        .filter(|(k, _)| {
+            let k = k.to_string_lossy();
+            !not_handed_on(&k)
+                && !crate::sandbox::tools::loads_code(&k)
+                // A login's files and folder are the app's to name, never the chat's
+                // (D-PE-browser-1).
+                && !(a_login && login_var(&k))
+        })
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
     // (D-PE-ruling-2): the project, the chat's folder, its grants and the temporary folders
