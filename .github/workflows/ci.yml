@@ -500,7 +500,10 @@ jobs:
           APP: ${{ steps.main-app.outputs.change }}
           BASELINE_APP: ${{ steps.main-app.outputs.app }}
           # Report-only on pull requests too, for now (#1876): the relative gate's first runs
-          # held the same app code at 0.98 in one job and 1.20 in another.
+          # held the same app code at 0.98 in one job and 1.20 in another. While it is, a case
+          # that could not be measured at all (no X server, no i3, a window that never appeared)
+          # is a warning naming its cause and passes; this change's own build leaving before
+          # its first frame still fails (`tools/coldstart-linux.sh`).
           EVIDENCE_ONLY: "1"
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus

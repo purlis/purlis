@@ -53,7 +53,17 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { removeProfile } from "./cleanup.mjs";
-import { coldStartAgainstMain, coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
+import {
+  FIRST_FRAME_MS,
+  NoMeasurement,
+  annotation,
+  coldStartAgainstMain,
+  coldStartAnnotation,
+  coldStartGate,
+  firstFrame,
+  launchSteps,
+  noMeasurement,
+} from "./coldstart-gate.mjs";
 import { latencyGate } from "./latency-gate.mjs";
 import { RESTORE_SIZES, restoreIsWhole, restoreMarks, restoreTable, restoreVerdict } from "./restore-case.mjs";
 import { windowVerdicts } from "./window-verdicts.mjs";
@@ -101,6 +111,8 @@ const { values: options } = parseArgs({
     // A run that records and decides nothing (a push to main, a nightly): a missed gate is a
     // warning, and the run does not fail for it.
     evidence: { type: "boolean", default: false },
+    // How long a launch may take to its first frame, in ms, before the run has no measurement.
+    "first-frame-timeout": { type: "string", default: `${FIRST_FRAME_MS}` },
     // The session layer's bench (`charter-session-bench`), when it is not this tree's build.
     "host-bench": { type: "string" },
     // main's build of the same bench: with it, `host` is the relative gate (SC-16), main's
@@ -272,7 +284,7 @@ function freshProfile() {
 }
 
 /** One launch of the app in `cwd`, to its first frame, with `profile` on top of the env. */
-async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_START_APP } = {}) {
+async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_START_APP, ofMain = false } = {}) {
   // The runner's one-minute load as the launch begins: a busy runner, not a slow app.
   const [load] = loadavg();
   const from = performance.now();
@@ -299,26 +311,22 @@ async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_STA
   // dock would: the time that takes is part of the measurement.
   const activating = setInterval(() => activate(app.pid), 50);
   let said = "";
-  const own = await new Promise((resolve, reject) => {
-    let seen = "";
-    const giveUp = setTimeout(() => reject(new Error("no first frame within 30 s")), 30_000);
-    app.stdout.on("data", (chunk) => {
-      seen += chunk;
-      said += chunk;
-      const found = seen.match(/charter-bench first-frame (\d+)/);
-      if (found) {
-        clearTimeout(giveUp);
-        resolve({ at: performance.now(), appMs: Number(found[1]) });
-      }
-    });
-    app.on("exit", (code) => reject(new Error(`the app exited (${code}) before its first frame`)));
+  const own = await firstFrame(app, {
+    timeoutMs: Number(options["first-frame-timeout"]),
+    ofMain,
     // What the app says on its way up — a slow start, a portal it did not wait for — is
     // part of the measurement's record, so it is passed through.
-    app.stderr.on("data", (chunk) => {
+    heard(chunk, stream) {
       said += chunk;
-      process.stderr.write(chunk);
-    });
-  }).finally(() => clearInterval(activating));
+      if (stream === "stderr") process.stderr.write(chunk);
+    },
+  })
+    .catch((error) => {
+      // A launch with no frame is over: only the process this started, and not left behind.
+      app.kill("SIGKILL");
+      throw error;
+    })
+    .finally(() => clearInterval(activating));
   clearInterval(activating);
   // Only the process this started.
   app.removeAllListeners("exit");
@@ -342,7 +350,7 @@ async function againstMainPass(cwd, profile, baseline, rounds) {
   const pass = [];
   const launches = [];
   for (let round = 0; round < rounds; round++) {
-    const ofMain = () => launchOnce(cwd, profile(), { app: baseline });
+    const ofMain = () => launchOnce(cwd, profile(), { app: baseline, ofMain: true });
     const ofHead = () => launchOnce(cwd, profile());
     const first = round % 2 ? await ofHead() : await ofMain();
     const second = round % 2 ? await ofMain() : await ofHead();
@@ -358,7 +366,7 @@ async function coldStart(chats = 0) {
   const profile = () => (options["fresh-profile"] ? freshProfile() : undefined);
   const baseline = chats === 0 && options["baseline-app"] ? resolve(options["baseline-app"]) : undefined;
   // main's first launch pays the cold disk for its own binary, as this one's warm-up does.
-  if (baseline && options["warm-up"]) await launchOnce(cwd, profile(), { app: baseline });
+  if (baseline && options["warm-up"]) await launchOnce(cwd, profile(), { app: baseline, ofMain: true });
   const warmUp = options["warm-up"] ? await launchOnce(cwd, profile()) : undefined;
   const samples = [];
   let againstMain;
@@ -390,6 +398,39 @@ async function coldStart(chats = 0) {
     freshProfileEachLaunch: options["fresh-profile"],
     ...(againstMain && { againstMain }),
   };
+}
+
+/**
+ * The cold start, or the run's end when it could not be taken (#1876). A launch with no first
+ * frame is not a slow one: it is said as one annotation naming the cause and the case, and under
+ * `--evidence` the run passes, unless it is this change's build that left (`NoMeasurement`).
+ * Anything else that breaks is said the same way and fails, so no red run is only "exit code 1".
+ */
+async function coldStartOrNone() {
+  try {
+    return await coldStart();
+  } catch (error) {
+    const onCi = process.env.GITHUB_ACTIONS === "true";
+    if (!(error instanceof NoMeasurement)) {
+      if (onCi)
+        console.log(
+          annotation("error", `Cold start, ${options.case}: the measurement broke`, `${error.stack ?? error}`),
+        );
+      throw error;
+    }
+    const none = noMeasurement({
+      name: options.case,
+      cause: error.message,
+      detail: error.detail,
+      evidence: options.evidence,
+      fails: error.fails,
+    });
+    console.error(`\n${none.title}: ${error.message}`);
+    if (onCi) console.log(none.annotation);
+    if (process.env.GITHUB_STEP_SUMMARY)
+      writeFileSync(process.env.GITHUB_STEP_SUMMARY, `${none.summary}\n`, { flag: "a" });
+    process.exit(none.failed ? 1 : 0);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -785,7 +826,7 @@ function hostTable({ passes, verdicts }) {
 // ---------------------------------------------------------------------------------------------
 
 if (only.has("host")) results.host = hostArm();
-if (only.has("coldstart")) results.coldStart = await coldStart();
+if (only.has("coldstart")) results.coldStart = await coldStartOrNone();
 // The same launch with a record to put back, to its first frame: the window asks whether to
 // reopen, and nothing starts before the answer. `restore` is the launch that is told to.
 if (only.has("coldstart50")) results.coldStartReopening50 = await coldStart(50);

@@ -127,10 +127,107 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
     ...launches.map((launch, n) => `launch ${n + 1}: ${one(launch)}`),
     ...(traced ? [`with the launch log, not gated: ${one(traced)}`] : []),
   ];
-  const data = (text) => text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-  const property = (text) => data(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
   const level = met ? "notice" : evidence ? "warning" : "error";
-  return `::${level} title=${property(`Cold start, ${name}`)}::${data(lines.join("\n"))}`;
+  return annotation(level, `Cold start, ${name}`, lines.join("\n"));
+}
+
+/** One workflow command: an annotation on the run, with its title and text escaped. */
+export function annotation(level, title, text) {
+  const data = (value) => value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+  const property = (value) => data(value).replace(/:/g, "%3A").replace(/,/g, "%2C");
+  return `::${level} title=${property(title)}::${data(text)}`;
+}
+
+/** How long a launch may take to its first frame before the round is given up. */
+export const FIRST_FRAME_MS = 30_000;
+
+// **A cold start that could not be measured** (#1876): the window never drew, or a build left
+// before it did. It is not a slow launch, so no gate has a number to judge. `cause` names what
+// happened and to which build; `detail` is the last of what that build said on stderr.
+//
+// `fails` is the one case that is the change's own: its build left before its first frame. That
+// is an app that does not start, and it fails the run even where the gate only reports. main's
+// build doing the same, or either build's window never appearing, is the runner's.
+export class NoMeasurement extends Error {
+  constructor(cause, { detail = "", fails = false } = {}) {
+    super(cause);
+    this.name = "NoMeasurement";
+    this.detail = detail;
+    this.fails = fails;
+  }
+}
+
+/**
+ * A launched app's first frame: `{ at, appMs }` when it prints `charter-bench first-frame`.
+ * It rejects with `NoMeasurement` when the app leaves first or `timeoutMs` passes, and with a
+ * plain error when the binary could not be started at all. `heard` gets every chunk it reads.
+ */
+export function firstFrame(app, { timeoutMs = FIRST_FRAME_MS, ofMain = false, heard = () => {} } = {}) {
+  const build = ofMain ? "main's build" : "this change's build";
+  let seen = "";
+  let errors = "";
+  const last = () => errors.trim().split("\n").slice(-12).join("\n");
+  return new Promise((resolve, reject) => {
+    const giveUp = setTimeout(
+      () =>
+        reject(
+          new NoMeasurement(
+            `${build} drew no first frame within ${timeoutMs / 1000} s: its window never appeared`,
+            { detail: last() },
+          ),
+        ),
+      timeoutMs,
+    );
+    app.stdout.on("data", (chunk) => {
+      seen += chunk;
+      heard(chunk, "stdout");
+      const found = seen.match(/charter-bench first-frame (\d+)/);
+      if (found) {
+        clearTimeout(giveUp);
+        resolve({ at: performance.now(), appMs: Number(found[1]) });
+      }
+    });
+    app.stderr.on("data", (chunk) => {
+      errors += chunk;
+      heard(chunk, "stderr");
+    });
+    app.once("error", (error) => {
+      clearTimeout(giveUp);
+      reject(new Error(`${build} could not be started: ${error.message}`));
+    });
+    app.once("exit", (code, signal) => {
+      clearTimeout(giveUp);
+      // Its last words may still be in the pipe: they are the cause, so they are waited for.
+      setTimeout(
+        () =>
+          reject(
+            new NoMeasurement(`${build} exited (${code ?? signal}) before its first frame`, {
+              detail: last(),
+              fails: !ofMain,
+            }),
+          ),
+        50,
+      );
+    });
+  });
+}
+
+// **What a run says when it has no measurement** (#1876): one annotation that names the cause and
+// the case, so the next one is read without the log. A `warning`, and the run passes, where the
+// gate only reports (`evidence`) and the cause is not the change's own (`fails`); an `error`
+// otherwise. `failed` is what the caller exits with.
+export function noMeasurement({ name, cause, detail = "", evidence = false, fails = false }) {
+  const failed = fails || !evidence;
+  const lines = [
+    failed ? cause : `${cause}; reported, and the run does not fail for it (evidence only)`,
+    ...(detail ? [detail] : []),
+  ];
+  return {
+    failed,
+    title: `Cold start, ${name}: no measurement`,
+    annotation: annotation(failed ? "error" : "warning", `Cold start, ${name}: no measurement`, lines.join("\n")),
+    summary: `### Cold start, ${name}: no measurement\n\n${cause}\n`,
+  };
 }
 
 /** The steps a launch printed with `PURLIS_LAUNCH_LOG` (`reached` in the app's `lib.rs`). */

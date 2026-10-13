@@ -6,12 +6,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { EventEmitter } from "node:events";
+
 import {
   AGAINST_MAIN,
+  NoMeasurement,
   coldStartAgainstMain,
   coldStartAnnotation,
   coldStartGate,
+  firstFrame,
   launchSteps,
+  noMeasurement,
 } from "./coldstart-gate.mjs";
 
 const gate = { limit: 2000, ceiling: 2500 };
@@ -203,4 +208,86 @@ test("against main, a confirmed regression is an error annotation", () => {
     againstMain: { passes, ...coldStartAgainstMain({ passes }) },
   });
   assert.match(line, /^::error title=Cold start%2C i3::against main in this job: .*: REGRESSED/);
+});
+
+// A launched app, as much of one as `firstFrame` reads.
+function launched() {
+  const app = new EventEmitter();
+  app.stdout = new EventEmitter();
+  app.stderr = new EventEmitter();
+  return app;
+}
+
+test("a launch's first frame is the app's own line, whatever came before it", async () => {
+  const app = launched();
+  const heard = [];
+  const frame = firstFrame(app, { heard: (chunk, stream) => heard.push([stream, `${chunk}`]) });
+  app.stderr.emit("data", "a slow portal\n");
+  app.stdout.emit("data", "charter-bench first-");
+  app.stdout.emit("data", "frame 412\n");
+  assert.equal((await frame).appMs, 412);
+  assert.deepEqual(heard[0], ["stderr", "a slow portal\n"]);
+});
+
+test("a window that never appeared is no measurement, and not the change's to fail for", async () => {
+  const app = launched();
+  const frame = firstFrame(app, { timeoutMs: 20 });
+  app.stderr.emit("data", "Gdk: the display went away\n");
+  await assert.rejects(frame, (error) => {
+    assert.ok(error instanceof NoMeasurement);
+    assert.match(error.message, /this change's build drew no first frame within 0\.02 s/);
+    assert.match(error.detail, /the display went away/);
+    assert.equal(error.fails, false);
+    return true;
+  });
+});
+
+test("a build that left before its first frame fails when it is the change's, not when it is main's", async () => {
+  const change = launched();
+  const ofChange = firstFrame(change);
+  change.stderr.emit("data", "one\n".repeat(30) + "the last line\n");
+  change.emit("exit", 1, null);
+  await assert.rejects(ofChange, (error) => {
+    assert.match(error.message, /this change's build exited \(1\) before its first frame/);
+    assert.equal(error.fails, true);
+    // The last of what it said, not all of it.
+    assert.equal(error.detail.split("\n").length, 12);
+    assert.match(error.detail, /the last line$/);
+    return true;
+  });
+  const main = launched();
+  const ofMain = firstFrame(main, { ofMain: true });
+  main.emit("exit", null, "SIGSEGV");
+  await assert.rejects(ofMain, (error) => {
+    assert.match(error.message, /main's build exited \(SIGSEGV\) before its first frame/);
+    assert.equal(error.fails, false);
+    return true;
+  });
+});
+
+test("a binary that could not be started is an error of the run, not a missing measurement", async () => {
+  const app = launched();
+  const frame = firstFrame(app);
+  app.emit("error", new Error("spawn ENOENT"));
+  await assert.rejects(frame, (error) => !(error instanceof NoMeasurement) && /could not be started/.test(error.message));
+});
+
+test("no measurement is a warning that passes only where the gate reports and the cause is the runner's", () => {
+  const cause = "main's build drew no first frame within 30 s: its window never appeared";
+  const reported = noMeasurement({ name: "i3", cause, detail: "line one\nline two", evidence: true });
+  assert.equal(reported.failed, false);
+  assert.equal(
+    reported.annotation,
+    "::warning title=Cold start%2C i3%3A no measurement::" +
+      `${cause}; reported, and the run does not fail for it (evidence only)%0Aline one%0Aline two`,
+  );
+  assert.match(reported.summary, /^### Cold start, i3: no measurement\n\nmain's build drew/);
+
+  const gated = noMeasurement({ name: "bare", cause, evidence: false });
+  assert.equal(gated.failed, true);
+  assert.equal(gated.annotation, `::error title=Cold start%2C bare%3A no measurement::${cause}`);
+
+  const own = noMeasurement({ name: "i3", cause: "this change's build exited (1)", evidence: true, fails: true });
+  assert.equal(own.failed, true);
+  assert.match(own.annotation, /^::error /);
 });
