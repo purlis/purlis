@@ -202,7 +202,14 @@ fn a_dispatch_the_person_allowed_waits_on_memory_and_then_starts_on_the_grant_th
     .expect("it waits on memory");
     assert_eq!(held.chats().open_now().len(), before, "nothing started yet");
     // Told now that it waits, and that it hears more (#1617), not only once it starts.
-    let told = told_on_its_next_turn(&held, asking);
+    // **Waited for** (#1909): the Allow's answer runs on a thread of its own (`planes.rs`,
+    // `answers_with`), and it lists the dispatch as waiting before it writes the chat's word,
+    // so the list is full a moment before the word is there.
+    let told = eventually(|| {
+        let told = told_on_its_next_turn(&held, asking);
+        (!told.is_empty()).then_some(told)
+    })
+    .expect("the asking chat is told that it waits");
     assert_eq!(told.len(), 1, "{told:?}");
     assert_eq!(told[0].answered, Some(Answered::WaitingOnMemory));
     assert_eq!(told[0].from, "check the cluster");
