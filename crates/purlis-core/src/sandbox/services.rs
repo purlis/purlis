@@ -866,5 +866,4 @@ pub fn start_note(root: &Path, machine: &super::Machine, has: &super::Widened) -
 }
 
 #[cfg(test)]
-#[path = "services_tests.rs"]
 mod tests;

@@ -1177,5 +1177,4 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
 }
 
 #[cfg(test)]
-#[path = "sessionrecord_tests.rs"]
 mod tests;

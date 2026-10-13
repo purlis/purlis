@@ -1554,5 +1554,4 @@ pub const NOT_FROM_A_CHAT: &str = "a vault's token is never given from inside a 
 
 #[cfg(test)]
 #[cfg(unix)]
-#[path = "setup_tests.rs"]
 mod tests;
