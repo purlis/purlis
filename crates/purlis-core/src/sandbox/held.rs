@@ -88,7 +88,8 @@ fn held_below(target: &Path, names: &[&str]) -> bool {
     super::planted::directories(target).iter().any(|folder| {
         names.iter().any(|name| {
             let path = folder.join(name);
-            std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) && held(&path)
+            std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file())
+                && held_opening(&path, NOT_THROUGH_A_LINK)
         })
     })
 }
@@ -96,12 +97,30 @@ fn held_below(target: &Path, names: &[&str]) -> bool {
 /// Whether this process may not open `path`, an existing file, for writing, where its
 /// permissions would let it.
 pub fn held(path: &Path) -> bool {
+    held_opening(path, 0)
+}
+
+/// Opened in the walk below a delete: a name swapped for a link since it was looked at is not
+/// followed (`ELOOP`, held).
+#[cfg(unix)]
+const NOT_THROUGH_A_LINK: i32 = libc::O_NOFOLLOW;
+#[cfg(not(unix))]
+const NOT_THROUGH_A_LINK: i32 = 0;
+
+/// [`held`], opening with the further flags `extra`.
+fn held_opening(path: &Path, extra: i32) -> bool {
     let mut options = std::fs::OpenOptions::new();
     options.append(true);
-    // Never waits: a name swapped for a pipe since it was looked at is refused at once
-    // (`ENXIO`), and that doubt is held.
+    // Never waits, and never takes a terminal for this process's own: a name swapped for a
+    // pipe or a device since it was looked at is refused at once (`ENXIO`), and that doubt is
+    // held.
     #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
+    std::os::unix::fs::OpenOptionsExt::custom_flags(
+        &mut options,
+        libc::O_NONBLOCK | libc::O_NOCTTY | extra,
+    );
+    #[cfg(not(unix))]
+    let _ = extra;
     let opened = options.open(path).map(drop);
     verdict(opened, || permits_writing(path))
 }
@@ -324,6 +343,25 @@ mod tests {
         flags("nouchg");
         assert!(!in_tree, "a link in the tree was followed");
         assert!(!to_it, "a link to the tree was followed");
+    }
+
+    /// A name swapped for a link after the walk looked at it is not opened through the link:
+    /// that doubt is held, and the file it points at is left as it was.
+    #[cfg(unix)]
+    #[test]
+    fn the_walk_opens_no_file_through_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("elsewhere.toml");
+        std::fs::write(&file, "[core]\n").unwrap();
+        let link = dir.path().join("held.toml");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+
+        assert!(held_opening(&link, NOT_THROUGH_A_LINK));
+        assert!(
+            !held(&link),
+            "a manifest reached through a link is still asked"
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "[core]\n");
     }
 
     #[test]

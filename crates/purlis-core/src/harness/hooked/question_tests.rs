@@ -159,6 +159,13 @@ fn answers_that_cannot_be_told_apart_or_read_whole_offer_none() {
         vec!["Yes", "No\u{200B}"],
         vec!["Yes", "No\nreally"],
         vec!["Yes", long.as_str()],
+        // The same to the eye: one as a letter and its mark, one as a single character; case
+        // alone; a full-width letter.
+        vec!["Caf\u{E9}", "Cafe\u{301}"],
+        vec!["Yes", "yes"],
+        vec!["No", "\u{FF2E}o"],
+        // Marks stacked past ordinary text, drawn over the rows around it.
+        vec!["Yes", "No\u{301}\u{302}\u{303}\u{304}\u{305}"],
         vec![],
     ] {
         let payload = asked(serde_json::json!([one("Go on?", &labels)]));
@@ -171,6 +178,20 @@ fn answers_that_cannot_be_told_apart_or_read_whole_offer_none() {
         "question": "Go on?", "options": [{"label": "Yes"}, {"description": "no label"}]
     }]));
     assert!(ask(Source::ClaudeCode, &unlabeled).options.is_empty());
+}
+
+#[test]
+fn answers_in_ordinary_accented_text_are_offered() {
+    // A few marks on a letter are ordinary text, and two accented words that differ are told
+    // apart.
+    let payload = asked(serde_json::json!([one(
+        "Which?",
+        &["Cafe\u{301}", "The\u{301}", "Vie\u{302}\u{323}t"]
+    )]));
+    assert_eq!(
+        ids(&ask(Source::ClaudeCode, &payload)),
+        ["answer:0", "answer:1", "answer:2"]
+    );
 }
 
 #[test]

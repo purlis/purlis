@@ -10,7 +10,9 @@
 //!
 //! **One question, one choice, read whole, or the pane.** Several questions, a question that
 //! takes several choices, and answers the window cannot draw whole or tell apart (empty, cut,
-//! on two lines, holding a character drawn otherwise, or the same twice) offer no answer here:
+//! on two lines, holding a character drawn otherwise or a stack of marks drawn over the rows
+//! around it, or two that read the same: equal, or equal but for case or Unicode's
+//! compatibility forms) offer no answer here:
 //! the question is still listed, and the person answers it in its pane. A question the window
 //! cannot show whole offers none either ([`super::super::hooked::shown_in_full`]).
 
@@ -49,7 +51,7 @@ fn answers(question: &Value) -> Vec<Choice> {
     let Some(labels) = labels(question) else {
         return Vec::new();
     };
-    let distinct: std::collections::HashSet<&str> = labels.iter().copied().collect();
+    let distinct: std::collections::HashSet<String> = labels.iter().map(|l| read_as(l)).collect();
     if labels.is_empty() || distinct.len() != labels.len() || !labels.iter().all(|l| whole(l)) {
         return Vec::new();
     }
@@ -74,10 +76,42 @@ fn labels(question: &Value) -> Option<Vec<&str>> {
         .collect()
 }
 
-/// Whether a window draws `label` as it is: not empty, on one line, uncut, unmasked, and with
-/// no character drawn otherwise.
+/// Whether a window draws `label` as it is: not empty, on one line, uncut, unmasked, with no
+/// character drawn otherwise, and no run of marks stacked past what ordinary text carries.
 fn whole(label: &str) -> bool {
-    !label.is_empty() && Summary::of(label).as_str() == label && !label.chars().any(drawn_otherwise)
+    !label.is_empty()
+        && Summary::of(label).as_str() == label
+        && !label.chars().any(drawn_otherwise)
+        && !stacks_marks(label)
+}
+
+/// The most combining marks one character carries in ordinary text: as the window's own cap on
+/// a line (`MOST_MARKS` in `app/src/combiningMarks.ts`). Past it they draw over the rows around.
+const MOST_MARKS: usize = 4;
+
+/// Whether `label` holds a run of more than [`MOST_MARKS`] marks that draw over something
+/// (non-spacing and enclosing).
+fn stacks_marks(label: &str) -> bool {
+    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
+
+    let mut run = 0;
+    label.chars().any(|c| {
+        let mark = matches!(
+            c.general_category(),
+            GeneralCategory::NonspacingMark | GeneralCategory::EnclosingMark
+        );
+        run = if mark { run + 1 } else { 0 };
+        run > MOST_MARKS
+    })
+}
+
+/// What a person reads `label` as, to tell two answers apart: its compatibility form (an
+/// accented letter as one character or as the letter and its mark, a full-width letter as
+/// its plain one), lower case.
+fn read_as(label: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+
+    label.nfkc().collect::<String>().to_lowercase()
 }
 
 /// The tool input `choice` answers `payload`'s question with: its own input, and `answers`
