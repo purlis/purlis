@@ -35,6 +35,16 @@
   --font-size-lg: calc(16rem / 14);
   --font-size-xl: calc(20rem / 14);
 
+  /* The words' weights, line heights and monospace family (#1920): what a text role
+     (`primitives/text.css`) is built from beside a size and a theme's colour. Two weights and
+     no third. A line height is a share of the text's own size, so it has no unit: `body` is the
+     window's (`:root` in `App.css`), `tight` a compact line's. */
+  --font-weight-regular: 400;
+  --font-weight-strong: 600;
+  --line-height-tight: 1.2;
+  --line-height-body: 1.4;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+
   /* Corners. */
   --radius-sm: 3px;
   --radius-md: 4px;

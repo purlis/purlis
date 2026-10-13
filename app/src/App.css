@@ -2826,7 +2826,8 @@ button.show-more:focus-visible {
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
    on the first line; where it is and, trailing, its kind and age on the second. The second
    line's two halves share it: the meta takes at most its share and is cut, never the where
-   squeezed to nothing. */
+   squeezed to nothing. Each rank's size, weight and colour is its text role's
+   (`primitives/text.css`, #1920); the rules here only place it. */
 .inbox-says {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) fit-content(60%);
@@ -2850,9 +2851,6 @@ button.show-more:focus-visible {
 .inbox-primary {
   grid-area: 1 / 2 / auto / -1;
   min-width: 0;
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  color: var(--text-primary);
 }
 /* Two lines at most; the whole of it is the tooltip's, and still the page's for a screen
    reader. Never on the words of an ask whose answer here allows (#1146). */
@@ -2865,8 +2863,6 @@ button.show-more:focus-visible {
 }
 .inbox-secondary {
   grid-area: 2 / 2;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2877,8 +2873,6 @@ button.show-more:focus-visible {
   justify-content: flex-end;
   min-width: 0;
   overflow: hidden;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
   white-space: nowrap;
 }
 .inbox-meta > .inbox-source {
@@ -2972,13 +2966,16 @@ button.show-more:focus-visible {
 .inbox-update + .inbox-update {
   margin-top: var(--space-2);
 }
-/* One read: its words step back to the secondary text and the regular weight. */
+/* One read: its words step back to the secondary text and the regular weight, at the body's
+   size. That is no rank of the scale (#1920), so a read update wears no role and this rule is
+   the whole of it. */
 .inbox-update[data-read] .ask-says {
-  font-weight: 400;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
   color: var(--text-secondary);
 }
 .inbox-unread {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   color: var(--text-primary);
 }
 .inbox-more {

@@ -1,0 +1,73 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The text roles** (#1920): one class per rank of the window's words, and the whole of that
+   rank's size, weight and colour. `docs/ui-primitives.md` ("Text roles") says what each is for;
+   `primitives/text.test.ts` holds them to that table.
+
+   **A surface wears a role and writes no size, weight or colour of its own.** The audit behind
+   #1920 counted 152 font sizes in 25 values and one section label written five ways, because
+   each surface ranked its own words. `type.guard.test.ts` refuses a new one.
+
+   **Only tokens.** A size, a weight and the monospace family are core (`theme/geometry.css`),
+   so they are the same in every theme; a colour is the theme's (`theme.ts`). Colour follows the
+   role: `muted` is the meta's and nothing else's.
+
+   **It is in the `components` layer, above `App.css`** (`styles.css`), as the controls are: a
+   view's rule cannot re-rank a word that wears a role. A view still places it (grid area,
+   margin, cut and wrap). A role sets no line height: a word keeps the line of what it sits in.
+
+   `.ui-text-strong` is the last rule of the file on purpose: it outweighs a role's own weight
+   by coming after it. */
+
+.ui-text-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  color: var(--text-primary);
+}
+
+.ui-text-heading {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+  color: var(--text-primary);
+}
+
+.ui-text-body {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  color: var(--text-primary);
+}
+
+.ui-text-secondary {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--text-secondary);
+}
+
+.ui-text-meta {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--text-muted);
+}
+
+/* A section label over a group. Its capitals and their spacing are the label's own and have
+   no token: no other role spaces its letters. */
+.ui-text-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* A command, a path, a host: the family only. Its size and colour are those of the role it
+   sits in, or is worn with. */
+.ui-text-code {
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-regular);
+}
+
+/* The one strong line of a row: a body (or any role) at the strong weight, not a second role. */
+.ui-text-strong {
+  font-weight: var(--font-weight-strong);
+}
