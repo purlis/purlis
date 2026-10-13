@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791913054569,
+  "lastUpdate": 1791913090349,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2190,6 +2190,42 @@ window.BENCHMARK_DATA = {
             "value": 448.2,
             "unit": "MB",
             "extra": "median of 6 samples: 411.8, 429.4, 437.5, 458.9, 459.5, 533.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "0854cd21f1eb308c51b2e9da31e8d99b460e3754",
+          "message": "fix(app): the status bar's project name takes its weight from the token\n\nMain is red on the type guard: the guard (#1920) and the status bar's\nrework landed one after the other, each green without the other. The\nproject's name wrote a weight the guard refuses, and the allowance still\nlisted a size the status line no longer writes.\n\nThe name's weight is the strong token, the stale line is deleted and the\nceiling goes down with it. Nothing drawn changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T20:46:51+04:00",
+          "tree_id": "eb78a59e4735a252fd2897550615d51b09d44d3a",
+          "url": "https://github.com/purlis/purlis/commit/0854cd21f1eb308c51b2e9da31e8d99b460e3754"
+        },
+        "date": 1791913088890,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1399.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1341.7, 1399.2, 1551.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 448.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 400.6, 427.7, 443, 454.3, 454.7, 536.3 MB"
           }
         ]
       }
