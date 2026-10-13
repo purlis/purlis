@@ -1,9 +1,8 @@
 # Claude Code, as charter ships it (ADR 0073 §3). Read by the same reader as a project's
 # `harnesses/<name>.toml`; a project may not take this name.
 #
-# Every fact here was measured on one version of Claude Code, and each is cited beside the
-# `Harness` method that still answers it (`crates/purlis-core/src/harness.rs`). A test holds
-# the two equal until `Harness` reads them from here.
+# Every fact here was measured on one version of Claude Code, and this file is where purlis reads
+# it: `Harness` answers each from here (`crates/purlis-core/src/harness.rs`, FD-14b).
 name = "claude"
 title = "Claude Code"
 program = "claude"

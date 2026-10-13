@@ -211,8 +211,14 @@ fn passes(name: &str, harness: Option<Harness>, operator: &[String]) -> bool {
     }
     PASSED
         .iter()
-        .chain(harness.map(Harness::env_passed).unwrap_or_default())
         .copied()
+        .chain(
+            harness
+                .map(Harness::env_passed)
+                .unwrap_or_default()
+                .iter()
+                .map(String::as_str),
+        )
         .chain(operator.iter().map(String::as_str))
         .any(|pattern| matches(pattern, name))
 }

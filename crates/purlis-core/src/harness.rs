@@ -3,9 +3,9 @@
 
 //! Which harness a session is running, and the arguments that start or resume one.
 //!
-//! Every value here is a reading of one harness version, measured by the Python charter and
-//! cited where it is declared (`charter/harness/claude_code.py`, `charter/harness/codex.py`,
-//! ADR 0024). Nothing here reads a harness's output: the arguments are decided before the
+//! Every measured value here is a reading of one harness version, and is read from that
+//! harness's built-in declaration (`harness_declaration/*.toml`, FD-14b): the facts are data,
+//! and only what arms a harness is code. Nothing here reads a harness's output: the arguments are decided before the
 //! program starts, and a resume is decided from what the app itself recorded.
 
 use std::fmt;
@@ -97,12 +97,10 @@ impl Harness {
     pub fn of_command(program: &str) -> Option<Self> {
         // The file name, so an absolute path to the same binary is the same harness. The
         // word is matched whole: `claude-something` is not Claude Code.
-        match std::path::Path::new(program).file_name()?.to_str()? {
-            "claude" => Some(Self::ClaudeCode),
-            "codex" => Some(Self::Codex),
-            "opencode" => Some(Self::Opencode),
-            _ => None,
-        }
+        let named = std::path::Path::new(program).file_name()?.to_str()?;
+        Self::ALL
+            .into_iter()
+            .find(|harness| harness.declared().program == named)
     }
 
     /// The harness a profile's DECLARED `kind` names, or none for a kind this app does not
@@ -117,21 +115,25 @@ impl Harness {
     ///
     /// All three kinds `profiles` reads are started since #371, when opencode joined.
     pub fn of_kind(kind: &str) -> Option<Self> {
-        match kind {
-            "claude" => Some(Self::ClaudeCode),
-            "codex" => Some(Self::Codex),
-            "opencode" => Some(Self::Opencode),
-            _ => None,
-        }
+        Self::ALL
+            .into_iter()
+            .find(|harness| harness.declared().name == kind)
+    }
+
+    /// This harness's built-in declaration (FD-14b, #966): every fact measured on it is read
+    /// from there, and only what arms it (its adapter) is code.
+    pub fn declared(self) -> &'static crate::harness_declaration::Declaration {
+        crate::harness_declaration::of(self)
+    }
+
+    /// Whether this harness's declaration answers `capability` yes.
+    fn holds(self, capability: &str) -> bool {
+        self.declared().capability(capability).holds()
     }
 
     /// The word the plane calls this harness by (`charter.local.toml`'s `kind`).
     pub fn name(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude",
-            Self::Codex => "codex",
-            Self::Opencode => "opencode",
-        }
+        &self.declared().name
     }
 
     /// Whether this harness tells a hook which process it is running under.
@@ -143,10 +145,7 @@ impl Harness {
     /// report of a chat is adopted and a later different id is ignored. opencode names none
     /// either, and gets the same rule.
     pub fn reports_its_process(self) -> bool {
-        match self {
-            Self::ClaudeCode => true,
-            Self::Codex | Self::Opencode => false,
-        }
+        self.holds("reports_its_process")
     }
 
     /// The variables of the app's own environment this harness reads for itself, passed to a
@@ -155,31 +154,20 @@ impl Harness {
     /// Each harness's own configuration namespace, and nothing else: a name in it that reads
     /// as a credential is still held back unless the operator lists it
     /// ([`crate::chatenv::inherited`]), and a harness's identity is never passed at all.
-    pub fn env_passed(self) -> &'static [&'static str] {
-        match self {
-            // `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_*`.
-            Self::ClaudeCode => &["CLAUDE_*"],
-            // `CODEX_HOME`.
-            Self::Codex => &["CODEX_*"],
-            // `OPENCODE_CONFIG`, `OPENCODE_CONFIG_DIR`.
-            Self::Opencode => &["OPENCODE_*"],
-        }
+    pub fn env_passed(self) -> &'static [String] {
+        &self.declared().env
     }
 
     /// Whether charter chooses this harness's session id and hands it over at the start, so
     /// the link exists before the harness does.
+    ///
+    /// Measured live on Claude Code 2.1.272 (C1): `--session-id` is reported at SessionStart as
+    /// given. Codex names no flag to choose an id (openai/codex#14482), so its id is only ever
+    /// what it reports itself — through a hook, inside its first turn (X1). opencode has no
+    /// flag that takes an id for a new session: `-s` resumes one that exists, and its id is
+    /// what its plugin reports, at the first prompt (ADR 0058).
     pub fn chooses_session_id(self) -> bool {
-        match self {
-            // Measured live on Claude Code 2.1.272 (C1): `--session-id` is reported at
-            // SessionStart as given.
-            Self::ClaudeCode => true,
-            // Codex names no flag to choose an id (openai/codex#14482), so its id is only
-            // ever what it reports itself — through a hook, inside its first turn (X1).
-            Self::Codex => false,
-            // opencode has no flag that takes an id for a new session: `-s` resumes one that
-            // exists. Its id is what its plugin reports, at the first prompt (ADR 0058).
-            Self::Opencode => false,
-        }
+        self.declared().session.chosen_by == crate::harness_declaration::ChosenBy::Charter
     }
 
     /// Whether this harness finds a conversation by the directory it ran in, so a chat whose
@@ -194,67 +182,30 @@ impl Harness {
     /// - **opencode** keys a session by its project, which is the repository's first commit
     ///   (or `global` outside git), not by a path, and `-s <id>` names the session itself.
     pub fn keeps_conversations_by_directory(self) -> bool {
-        match self {
-            Self::ClaudeCode => true,
-            Self::Codex | Self::Opencode => false,
-        }
+        self.holds("keeps_conversations_by_directory")
     }
 
     /// The arguments that start a new session under `id`, or none for a harness that
     /// chooses its own id.
     pub fn new_session_argv(self, id: &SessionId, name: &str) -> Vec<String> {
-        match self {
-            Self::ClaudeCode => words(["--session-id", id.as_str(), "--name", name]),
-            Self::Codex | Self::Opencode => Vec::new(),
-        }
+        self.declared().new_session_argv(id, name)
     }
 
     /// Whether `args` already name a session themselves, so charter adds none of its own.
     ///
     /// The operator's flag wins: two `--resume` on one command line is not a harness charter
-    /// has measured, and the one the operator typed is the one they meant.
-    pub fn session_named_in(self, args: &[String]) -> bool {
-        args.iter().any(|arg| {
-            self.session_words().iter().any(|word| {
-                // A flag may carry its value attached (`--resume=<id>`); a longer flag that
-                // merely starts the same way (`--resume-later`) is a different flag.
-                arg == word
-                    || (word.starts_with('-')
-                        && arg.starts_with(word)
-                        && arg.as_bytes().get(word.len()) == Some(&b'='))
-            })
-        })
-    }
-
-    /// The arguments by which an operator already names a session themselves.
-    ///
-    /// `charter/harness/claude_code.py:298` and `charter/harness/codex.py:261`. Codex's are
+    /// has measured, and the one the operator typed is the one they meant. The words are the
+    /// declaration's `named_by` (`charter/harness/claude_code.py:298`,
+    /// `charter/harness/codex.py:261`, and `opencode --help` on 1.18.23); Codex's are
     /// subcommands rather than flags, which is why they carry no dashes.
-    fn session_words(self) -> &'static [&'static str] {
-        match self {
-            Self::ClaudeCode => &[
-                "--session-id",
-                "--resume",
-                "-r",
-                "--continue",
-                "-c",
-                "--fork-session",
-            ],
-            Self::Codex => &["resume", "fork"],
-            // `opencode --help` on 1.18.23: `-s/--session <id>` and `-c/--continue`.
-            Self::Opencode => &["-s", "--session", "-c", "--continue"],
-        }
+    pub fn session_named_in(self, args: &[String]) -> bool {
+        self.declared().session_named_in(args)
     }
 
     /// The arguments that bring the conversation `id` back, or none where charter has not
     /// measured how this harness resumes.
     pub fn resume_argv(self, id: &SessionId, name: &str) -> Option<Vec<String>> {
-        Some(match self {
-            Self::ClaudeCode => words(["--resume", id.as_str(), "--name", name]),
-            Self::Codex => words(["resume", id.as_str()]),
-            // `opencode -s <id>`; opencode has no flag that names a session.
-            Self::Opencode => words(["-s", id.as_str()]),
-        })
+        self.declared().resume_argv(id, name)
     }
 }
 
@@ -355,18 +306,16 @@ impl Harness {
 
     /// The arguments that start this harness's program as an ACP agent, for a chat at level 3
     /// over [`crate::acp`], or `None` where charter does not run it over ACP yet (HP-3 and HP-4,
-    /// #670 and #783). A fact, as
-    /// the `[levels] acp` argv of its declaration will be once FD-14 moves it there.
+    /// #670 and #783): the `[levels] acp` argv of its declaration, after the program.
     ///
     /// opencode's ACP agent is opencode itself, `opencode acp` (ADR 0080 §3, measured on
     /// 1.18.33: protocol version 1, `loadSession`, and a session run with `fs` and `terminal`
     /// both off). Codex and Claude Code reach ACP through ACP adapter programs, which HP-3 and
     /// HP-4 decide.
-    pub fn acp_args(self) -> Option<&'static [&'static str]> {
-        match self {
-            Self::Opencode => Some(&["acp"]),
-            Self::ClaudeCode | Self::Codex => None,
-        }
+    pub fn acp_args(self) -> Option<&'static [String]> {
+        // The declared argv starts with the program, which the chat's own start names.
+        let argv = self.declared().levels.acp.as_deref()?;
+        Some(argv.get(1..).unwrap_or_default())
     }
 
     /// The adapter that arms this harness at level 2 (ADR 0073 §3): the enum is their
@@ -416,9 +365,8 @@ impl Harness {
     /// A harness's and not the pane's, because it is a fact about the program reading the
     /// keys; a chat that runs no harness — a shell — keeps the terminal's own Enter.
     pub fn newline(self) -> &'static str {
-        match self {
-            Self::ClaudeCode | Self::Codex | Self::Opencode => "\x1b\r",
-        }
+        // A declaration that names none keeps the terminal's own Enter, a bare CR.
+        self.declared().terminal.newline.as_deref().unwrap_or("\r")
     }
 
     /// Whether this harness reports `SessionStart` when it starts, before anyone has typed a
@@ -433,10 +381,7 @@ impl Harness {
     /// sent something, so that report never types one ([`Harness::ready_to_type`] says what
     /// does).
     pub fn reports_its_start_before_the_first_prompt(self) -> bool {
-        match self {
-            Self::ClaudeCode => true,
-            Self::Codex | Self::Opencode => false,
-        }
+        self.holds("reports_its_start_before_the_first_prompt")
     }
 
     /// How charter tells that a chat it has just opened on this harness is ready to have a
@@ -455,10 +400,11 @@ impl Harness {
     /// period long enough to cover it is short enough to wait for (ADR 0061, amended
     /// 2026-09-27).
     pub fn ready_to_type(self) -> Option<ReadyToType> {
-        match self {
-            Self::ClaudeCode => Some(ReadyToType::WhenItReportsItsStart),
-            Self::Codex => Some(ReadyToType::WhenRawAndQuiet),
-            Self::Opencode => None,
+        use crate::harness_declaration::ReadyToType as Declared;
+        match self.declared().terminal.ready_to_type {
+            Declared::OnStart => Some(ReadyToType::WhenItReportsItsStart),
+            Declared::RawAndQuiet => Some(ReadyToType::WhenRawAndQuiet),
+            Declared::Never => None,
         }
     }
 
@@ -478,20 +424,15 @@ impl Harness {
     ///   opencode is never typed into ([`Harness::ready_to_type`]); its limit is here so that a
     ///   harness is judged the moment it can be.
     pub fn longest_paste_drawn_whole(self) -> DrawnWhole {
-        match self {
-            Self::ClaudeCode => DrawnWhole {
-                lines: 3,
-                chars: 800,
-            },
-            Self::Codex => DrawnWhole {
+        // A declaration that measured none limits nothing; every built-in names one, and a
+        // test holds each to its measurement.
+        self.declared()
+            .terminal
+            .paste_drawn_whole
+            .unwrap_or(DrawnWhole {
                 lines: usize::MAX,
-                chars: 1000,
-            },
-            Self::Opencode => DrawnWhole {
-                lines: 2,
-                chars: 150,
-            },
-        }
+                chars: usize::MAX,
+            })
     }
 
     /// Why `pasted`, handed to this harness as one paste, would be drawn as a placeholder in
@@ -526,7 +467,7 @@ impl Harness {
 
     /// What the operator calls this harness: `Claude Code`, `Codex`, `opencode`.
     pub fn title(self) -> &'static str {
-        self.adapter().plugins().title()
+        &self.declared().title
     }
 
     /// What a chat on this harness cannot tell purlis, in a sentence the chat shows — or
@@ -614,7 +555,7 @@ mod tests {
     fn opencode_offers_level_3_through_its_own_acp_mode_and_the_others_wait_for_their_tickets() {
         // ADR 0080 §3: opencode's ACP agent is the same program (HP-2, first); Codex's and
         // Claude Code's are ACP adapter programs HP-3 and HP-4 decide.
-        assert_eq!(Harness::Opencode.acp_args(), Some(&["acp"][..]));
+        assert_eq!(Harness::Opencode.acp_args(), Some(&["acp".to_owned()][..]));
         assert_eq!(Harness::Codex.acp_args(), None);
         assert_eq!(Harness::ClaudeCode.acp_args(), None);
     }
@@ -2232,6 +2173,12 @@ mod tests {
             );
         }
         assert!(!Harness::Opencode.session_named_in(&["--prompt".to_owned()]));
+    }
+
+    #[test]
+    fn each_harness_is_called_what_its_operator_calls_it() {
+        let titles: Vec<&str> = Harness::ALL.iter().map(|h| h.title()).collect();
+        assert_eq!(titles, ["Claude Code", "Codex", "opencode"]);
     }
 
     #[test]

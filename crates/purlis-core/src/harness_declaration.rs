@@ -30,7 +30,7 @@ use std::sync::LazyLock;
 
 use sha2::Digest as _;
 
-use crate::harness::{DrawnWhole, SessionId};
+use crate::harness::{DrawnWhole, Harness, SessionId};
 use crate::shown;
 
 /// The directory a project declares its harnesses in, at the project root.
@@ -264,23 +264,44 @@ impl Declarations {
     }
 }
 
+/// The harnesses purlis ships, in REGISTRY order: the order the built-ins are listed in and a
+/// refusal names them in (`claude`, `opencode`, `codex`), which is not alphabetical.
+const REGISTRY: [Harness; 3] = [Harness::ClaudeCode, Harness::Opencode, Harness::Codex];
+
+/// The file that declares `harness`: the one link between a harness purlis arms in code (its
+/// adapter, [`Harness::adapter`]) and the facts measured on it, which are all in the file.
+fn built_in_text(harness: Harness) -> &'static str {
+    match harness {
+        Harness::ClaudeCode => include_str!("harness_declaration/claude.toml"),
+        Harness::Codex => include_str!("harness_declaration/codex.toml"),
+        Harness::Opencode => include_str!("harness_declaration/opencode.toml"),
+    }
+}
+
 static BUILT_IN: LazyLock<Vec<Declaration>> = LazyLock::new(|| {
-    [
-        include_str!("harness_declaration/claude.toml"),
-        include_str!("harness_declaration/opencode.toml"),
-        include_str!("harness_declaration/codex.toml"),
-    ]
-    .iter()
-    .map(|text| {
-        parse(text, Origin::BuiltIn, "built-in")
-            .unwrap_or_else(|why| panic!("a built-in declaration purlis ships is refused: {why}"))
-    })
-    .collect()
+    REGISTRY
+        .iter()
+        .map(|&harness| {
+            parse(built_in_text(harness), Origin::BuiltIn, "built-in").unwrap_or_else(|why| {
+                panic!("a built-in declaration purlis ships is refused: {why}")
+            })
+        })
+        .collect()
 });
 
 /// The declarations charter ships, in registry order (`claude`, `opencode`, `codex`).
 pub fn builtins() -> &'static [Declaration] {
     &BUILT_IN
+}
+
+/// The built-in declaration of `harness`: where every fact [`Harness`] answers is read from
+/// (FD-14b, #966).
+pub fn of(harness: Harness) -> &'static Declaration {
+    let at = REGISTRY
+        .iter()
+        .position(|&one| one == harness)
+        .expect("every harness purlis ships is in its registry");
+    &BUILT_IN[at]
 }
 
 /// The built-in declaration named `name`.

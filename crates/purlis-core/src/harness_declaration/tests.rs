@@ -381,96 +381,20 @@ fn an_approval_is_of_the_bytes_so_any_change_is_a_new_digest() {
     assert_ne!(one.digest, two.digest);
 }
 
-/// The built-ins are declarations, and until `Harness` reads them (after FD-13's registry,
-/// #921) every fact they hold is the one `Harness` answers. Each value on the right is the
-/// measured one, cited in `harness.rs`.
+/// Every harness purlis ships is a declaration, and the facts [`crate::harness::Harness`]
+/// answers are read from it (FD-14b, #966): one declaration per harness, each armed by an
+/// adapter purlis ships, listed in the order profiles' registry names the kinds. The values
+/// themselves are pinned by the behaviour tests beside `Harness` and the profiles.
 #[test]
-fn every_built_in_declaration_says_what_harness_measured() {
-    use crate::harness::{Harness, ReadyToType as Measured};
-    let id = SessionId::new("11111111-2222-4333-8444-555555555555").unwrap();
+fn every_harness_purlis_ships_is_declared_once_in_registry_order() {
     for harness in Harness::ALL {
-        let d = builtin(harness.name()).expect("a declaration per harness");
-        let who = harness.name();
-        assert_eq!(d.origin, Origin::BuiltIn);
-        assert_eq!(d.title, harness.title(), "{who}");
-        assert_eq!(d.env, harness.env_passed(), "{who}");
-        assert_eq!(
-            d.session.chosen_by == ChosenBy::Charter,
-            harness.chooses_session_id(),
-            "{who}"
-        );
-        assert_eq!(
-            d.new_session_argv(&id, "ide.7"),
-            harness.new_session_argv(&id, "ide.7"),
-            "{who}"
-        );
-        assert_eq!(
-            d.resume_argv(&id, "ide.7"),
-            harness.resume_argv(&id, "ide.7"),
-            "{who}"
-        );
-        for word in &d.session.named_by {
-            assert!(
-                harness.session_named_in(std::slice::from_ref(word)),
-                "{who}: {word}"
-            );
-        }
-        for word in ["--resume", "resume", "-s", "--session-id", "fork", "-c"] {
-            assert_eq!(
-                d.session_named_in(&[word.to_owned()]),
-                harness.session_named_in(&[word.to_owned()]),
-                "{who}: {word}"
-            );
-        }
-        assert_eq!(
-            d.terminal.newline.as_deref(),
-            Some(harness.newline()),
-            "{who}"
-        );
-        assert_eq!(
-            d.terminal.paste_drawn_whole,
-            Some(harness.longest_paste_drawn_whole()),
-            "{who}"
-        );
-        let ready = match harness.ready_to_type() {
-            Some(Measured::WhenItReportsItsStart) => ReadyToType::OnStart,
-            Some(Measured::WhenRawAndQuiet) => ReadyToType::RawAndQuiet,
-            None => ReadyToType::Never,
-        };
-        assert_eq!(d.terminal.ready_to_type, ready, "{who}");
-        // HP-2: the ACP agent `Harness::acp_args` starts, after the harness's own program.
-        let acp = harness.acp_args().map(|args| {
-            std::iter::once(harness.name().to_owned())
-                .chain(args.iter().map(|arg| (*arg).to_owned()))
-                .collect::<Vec<_>>()
-        });
-        assert_eq!(d.levels.acp, acp, "{who}");
-        assert_eq!(
-            d.capability("reports_its_process").holds(),
-            harness.reports_its_process(),
-            "{who}"
-        );
-        assert_eq!(
-            d.capability("reports_its_start_before_the_first_prompt")
-                .holds(),
-            harness.reports_its_start_before_the_first_prompt(),
-            "{who}"
-        );
-        assert_eq!(
-            d.capability("keeps_conversations_by_directory").holds(),
-            harness.keeps_conversations_by_directory(),
-            "{who}"
-        );
-        assert!(d.capability("resumes_by_id").holds(), "{who}");
-        assert!(d.has_adapter(), "{who}");
-        let kind = crate::profiles::KINDS
-            .iter()
-            .find(|k| k.word == who)
-            .expect("a kind per harness");
-        assert_eq!(d.program, kind.binary, "{who}");
-        assert_eq!(d.login.as_deref(), Some(kind.login()), "{who}");
+        let d = of(harness);
+        assert_eq!(d.origin, Origin::BuiltIn, "{harness:?}");
+        assert_eq!(builtin(harness.name()), Some(d), "{harness:?}");
+        assert!(d.has_adapter(), "{harness:?}");
+        assert!(d.capability("resumes_by_id").holds(), "{harness:?}");
     }
-    // In the order profiles' registry lists them.
+    assert_eq!(builtins().len(), Harness::ALL.len());
     let names: Vec<&str> = builtins().iter().map(|d| d.name.as_str()).collect();
     let kinds: Vec<&str> = crate::profiles::KINDS.iter().map(|k| k.word).collect();
     assert_eq!(names, kinds);

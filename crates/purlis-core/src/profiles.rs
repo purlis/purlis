@@ -75,8 +75,9 @@ const DEFAULT: &str = "default";
 /// Everything a profile's table may hold.
 const PROFILE_KEYS: [&str; 3] = ["kind", "command", "env"];
 
-/// A harness kind: the word typed after `charter`, the name the registry calls it, and the
-/// program a built-in profile of that kind runs.
+/// A harness kind: the word typed after `charter` and the name the registry calls it. What a
+/// built-in profile of the kind runs and where its operator logs in are facts of the harness,
+/// read from its built-in declaration ([`crate::harness_declaration`], FD-14b).
 ///
 /// **All three kinds.** Parsing is not launching: when this app could not yet start an
 /// `opencode` chat, it still read the profile, because the Python charter beside it accepted
@@ -85,14 +86,11 @@ const PROFILE_KEYS: [&str; 3] = ["kind", "command", "env"];
 /// where a sandboxed plane still refuses an opencode chat on Linux today (#1040).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Kind {
-    /// The word typed after `charter`, and a profile's `kind`.
+    /// The word typed after `charter`, and a profile's `kind`: the `name` of the built-in
+    /// declaration the kind's facts are read from.
     pub word: &'static str,
     /// The registry's own name for it, which is what `CHARTER_HARNESS` carries.
     pub registry: &'static str,
-    /// What a built-in profile of this kind runs.
-    pub binary: &'static str,
-    /// Where an operator logs in, named by a refusal that will not hold their credential.
-    login: &'static str,
 }
 
 /// Every kind, in REGISTRY order — which is the order the built-ins are listed in, and the
@@ -101,27 +99,35 @@ pub const KINDS: [Kind; 3] = [
     Kind {
         word: "claude",
         registry: "claude-code",
-        binary: "claude",
-        login: "set CLAUDE_CONFIG_DIR and run /login inside Claude Code",
     },
     Kind {
         word: "opencode",
         registry: "opencode",
-        binary: "opencode",
-        login: "set XDG_DATA_HOME and run opencode auth login",
     },
     Kind {
         word: "codex",
         registry: "codex",
-        binary: "codex",
-        login: "set CODEX_HOME and run codex login",
     },
 ];
 
 impl Kind {
-    /// Where an operator of this kind logs in.
+    /// The built-in declaration this kind's facts are read from.
+    fn declared(&self) -> &'static crate::harness_declaration::Declaration {
+        crate::harness_declaration::builtin(self.word)
+            .expect("every kind is a harness purlis ships a declaration for")
+    }
+
+    /// What a built-in profile of this kind runs: its declaration's `program`.
+    pub fn binary(&self) -> &'static str {
+        &self.declared().program
+    }
+
+    /// Where an operator of this kind logs in: its declaration's `login`.
     pub fn login(&self) -> &'static str {
-        self.login
+        self.declared()
+            .login
+            .as_deref()
+            .unwrap_or("log in inside that harness")
     }
 }
 
@@ -335,7 +341,7 @@ pub fn builtins() -> Vec<Profile> {
             name: k.word.to_owned(),
             kind: k.word.to_owned(),
             harness: k.registry.to_owned(),
-            command: vec![k.binary.to_owned()],
+            command: vec![k.binary().to_owned()],
             env: Vec::new(),
             source: Source::BuiltIn,
         })
@@ -874,7 +880,7 @@ pub(crate) fn refusals_of(
     let kind = inner.get("kind");
     let word = kind.and_then(toml::Value::as_str).unwrap_or_default();
     let login = match (kind_of(word), declared.get(word)) {
-        (Some(kind), _) => Some(kind.login),
+        (Some(kind), _) => Some(kind.login()),
         (None, Some(d)) => Some(d.login.as_deref().unwrap_or("log in inside that harness")),
         (None, None) => None,
     };

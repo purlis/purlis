@@ -217,7 +217,7 @@ fn name_refusals(cfg: &toml::Table, name: &str, but: Option<&str>) -> Vec<FieldR
             ),
             (
                 "command".to_owned(),
-                toml::Value::Array(vec![toml::Value::from(profiles::KINDS[0].binary)]),
+                toml::Value::Array(vec![toml::Value::from(profiles::KINDS[0].binary())]),
             ),
         ]
         .into_iter()
