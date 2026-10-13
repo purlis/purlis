@@ -87,8 +87,10 @@ use crate::shellwrap::{self, base_lower};
 /// [`shellwrap::split_env`] names that program.
 ///
 /// This is a NAME list: a shell spelled a way this set misses is a missed *deny*, never a wrong
-/// one, because the fallback is to keep the body VISIBLE rather than to strip it.
-const EXECUTORS: [&str; 42] = [
+/// one, because the fallback is to keep the body VISIBLE rather than to strip it. It holds every
+/// shell [`shellwrap::is_string_shell`] knows, charter's own beside the Python's (#1325): the
+/// ksh family by each name it ships under, busybox's `hush`, `rbash`, `yash` and `posh`.
+const EXECUTORS: [&str; 50] = [
     "sh",
     "bash",
     "zsh",
@@ -96,9 +98,17 @@ const EXECUTORS: [&str; 42] = [
     "dash",
     "ksh",
     "mksh",
+    "lksh",
+    "oksh",
+    "loksh",
+    "pdksh",
+    "rbash",
+    "yash",
+    "posh",
     "csh",
     "tcsh",
     "ash",
+    "hush",
     "busybox",
     "python",
     "python2",
@@ -2349,6 +2359,34 @@ mod tests {
             "glab mr note 1 -m -",
         ] {
             assert!(!gh_body_on_stdin(&argv(line)), "{line}");
+        }
+    }
+
+    /// Every shell the readers run a string for runs a heredoc body it is fed as well, so the
+    /// body is commands to every guard and never data the leak guard drops (#1325). A name the
+    /// list misses is a missed deny, so the two lists are held together here.
+    #[test]
+    fn every_shell_that_runs_a_string_runs_a_body_it_is_fed() {
+        for sh in shellwrap::STRING_SHELLS
+            .iter()
+            .chain(shellwrap::OWN_STRING_SHELLS.iter())
+        {
+            assert!(is_executor(sh), "{sh}");
+            assert!(is_executor(&sh.to_uppercase()), "{sh}");
+            for cmd in [
+                format!("{sh} <<'EOF'\nx y\nEOF"),
+                format!("env {sh} <<'EOF'\nx y\nEOF"),
+                format!("cat <<'EOF' | /bin/{sh}\nx y\nEOF"),
+            ] {
+                let body: Vec<LayoutLine> = heredoc_layout(&cmd)
+                    .into_iter()
+                    .filter(|l| l.body)
+                    .collect();
+                assert!(!body.is_empty(), "{cmd:?}");
+                for l in body {
+                    assert!(l.executed && !l.drop, "{cmd:?}: {l:?}");
+                }
+            }
         }
     }
 

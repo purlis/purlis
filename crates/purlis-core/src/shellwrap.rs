@@ -1239,7 +1239,7 @@ pub const STRING_SHELLS: [&str; 5] = ["sh", "bash", "zsh", "dash", "ksh"];
 /// read in [`fish_options`]. The strings of fish and the csh family are read as sh reads a
 /// line: their simple commands, lists and pipelines are spelt the same, and fish's keywords
 /// are read past first ([`as_sh_reads_fish`]).
-const OWN_STRING_SHELLS: [&str; 13] = [
+pub(crate) const OWN_STRING_SHELLS: [&str; 13] = [
     "ash", "hush", "mksh", "lksh", "oksh", "loksh", "pdksh", "rbash", "yash", "posh", "csh",
     "tcsh", "fish",
 ];
