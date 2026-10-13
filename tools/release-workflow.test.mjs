@@ -247,6 +247,53 @@ test("plan asks whether the dev channel already serves this commit or a later on
   assert.equal(value(job("publish"), 4, "needs"), "[plan, build, manifest, provenance]");
 });
 
+test("the publish job asks again before it replaces the first dev asset, and stops unless told to publish", () => {
+  // "Re-run failed jobs" on an old run keeps `plan`'s answer and runs only `publish`.
+  const publish = job("publish").map((line) => line.trim());
+  const step = publish.indexOf("- name: Dev — replace the assets of the one `dev` prerelease");
+  assert.notEqual(step, -1, "publish has no dev step");
+  const ask = publish.indexOf(
+    'order=$(node tools/dev-build-order.mjs --version "$VERSION" --sha "$SHA")',
+  );
+  assert.ok(ask > step, "the dev step does not ask tools/dev-build-order.mjs");
+  assert.deepEqual(publish.slice(ask + 1, ask + 5), [
+    'case "$order" in',
+    'publish:*) echo "$order" ;;',
+    '*) echo "::error::not published, and no asset was replaced: ${order#skip: }"; exit 1 ;;',
+    "esac",
+  ]);
+  assert.ok(publish.slice(step, ask).includes("set -euo pipefail"));
+  // Nothing of the dev release is written, replaced or deleted before the answer.
+  const writes = publish
+    .map((line, i) => [line, i])
+    .filter(([line, i]) => i > step && /replace-release-assets\.sh dev|gh release edit dev|-X DELETE/.test(line));
+  assert.ok(writes.length >= 4, `the dev step's writes were not found: ${writes}`);
+  for (const [line, i] of writes) assert.ok(i > ask, `written before the order is asked: ${line}`);
+  // The job has what the tool needs: the token, and the version and commit `plan` gave.
+  for (const want of [
+    "GH_TOKEN: ${{ github.token }}",
+    "VERSION: ${{ needs.plan.outputs.version }}",
+    "SHA: ${{ needs.plan.outputs.sha }}",
+  ]) {
+    assert.ok(publish.includes(want), `publish lacks ${want}`);
+  }
+});
+
+test("every job has a deadline, so a hung one cannot hold the dev builds' group for six hours", () => {
+  const names = block("jobs")
+    .filter((line) => /^ {2}\S/.test(line))
+    .map((line) => line.trim().slice(0, -1));
+  assert.deepEqual(names, ["plan", "build", "sbom", "manifest", "provenance", "publish", "profile-guard"]);
+  let whole = 0;
+  for (const name of names) {
+    const minutes = Number(value(job(name), 4, "timeout-minutes"));
+    assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= 90, `${name}: ${minutes}`);
+    whole += minutes;
+  }
+  // The longest a run can hold the group, every job at its deadline one after another.
+  assert.ok(whole <= 240, `a run may hold the group for ${whole} minutes`);
+});
+
 test("the tool reads the commit from the notes the manifest job writes, and the version plan gives", () => {
   const manifest = job("manifest").map((line) => line.trim());
   const notes = 'notes="charter $VERSION, a dev build of $SHA."';
