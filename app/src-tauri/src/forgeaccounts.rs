@@ -408,6 +408,15 @@ pub async fn forge_device_sign_in_start(
         let registration = registration::on(kind, &host)
             .filter(|r| r.flow == registration::Flow::Device)
             .ok_or_else(|| no_device_flow(kind, &host))?;
+        // A test build (the e2e build among them) has no person at a browser, and must never
+        // reach the real forge: the same refusal as the other browser sign-in's.
+        if purlis_core::fence::FENCED {
+            return Err(
+                "A test build of purlis does not sign in through the browser. Sign in with a \
+                 token instead."
+                    .to_string(),
+            );
+        }
         let started = device::start(
             &oauth::Https::new(),
             &oauth::Endpoints::of(registration),

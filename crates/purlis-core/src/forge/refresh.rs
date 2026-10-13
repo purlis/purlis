@@ -20,7 +20,8 @@
 //! sentence that names the account and where to sign in again. It is never retried under
 //! another account or through the forge's CLI (ADR 0070 §5).
 //!
-//! **A forge that cannot be reached ends nothing.** While the token still has time left it is
+//! **A forge that cannot be reached ends nothing**, and neither does an answer that is not the
+//! forge's refusal of the grant (a rate limit, a proxy's refusal, OAuth's own "not now"). While the token still has time left it is
 //! used as it is; once it has none the request fails saying the forge could not be reached, and
 //! the sign-in is kept for the next try.
 //!
@@ -211,6 +212,10 @@ fn due(account: &ForgeAccount, kept: &Kept, now: u64) -> bool {
             .is_some_and(|at| at <= now.saturating_add(AHEAD.as_secs()))
 }
 
+/// OAuth's `error` words that say "not now" and nothing about the grant (RFC 6749 §4.1.2.1,
+/// RFC 8628 §3.5).
+const NOT_NOW: [&str; 3] = ["temporarily_unavailable", "server_error", "slow_down"];
+
 /// How a refresh went.
 enum Renewed {
     Granted(super::oauth::Granted),
@@ -240,10 +245,22 @@ fn renewed(
         Err(why) => return Renewed::Unreachable(why),
     };
     let status = answer.status;
-    if answer.error().is_some() || (400..500).contains(&status) {
+    match answer.error() {
+        // The forge's own word that it is busy: nothing is known about the sign-in.
+        Some(word) if NOT_NOW.contains(&word) => {
+            return Renewed::Unreachable(format!("it answered HTTP {status}"));
+        }
         // `bad_refresh_token`, `invalid_grant`, an app the person revoked: the forge's answer,
         // whatever its word.
-        return Renewed::Refused;
+        Some(_) => return Renewed::Refused,
+        // A bare 400 or 401 is how a token endpoint refuses a grant.
+        None if matches!(status, 400 | 401) => return Renewed::Refused,
+        // Any other refusal without OAuth's word (a rate limit, a proxy between here and the
+        // forge) says nothing about the sign-in, and ending it cannot be undone.
+        None if (400..500).contains(&status) => {
+            return Renewed::Unreachable(format!("it answered HTTP {status}"));
+        }
+        None => {}
     }
     match answer.granted() {
         Some(granted) => Renewed::Granted(granted),
@@ -503,6 +520,47 @@ mod tests {
             machine.kept().unwrap().refresh.unwrap().expose_secret(),
             "first-refresh-value"
         );
+    }
+
+    #[test]
+    fn a_browser_sign_ins_item_is_never_handed_out_whole_as_a_token() {
+        // The keyring was written and the list was not: the account still reads as a token's.
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let keyring = accounts::keyring_at(machine.home.path());
+        let listed_as_a_tokens = ForgeAccount {
+            method: Method::Pat,
+            ..machine.account.clone()
+        };
+        let why = accounts::token(keyring.as_ref(), &listed_as_a_tokens).unwrap_err();
+        assert!(why.contains("cannot be read from the keychain"), "{why}");
+        assert!(!why.contains("first-"), "{why}");
+    }
+
+    #[test]
+    fn an_answer_that_is_no_refusal_of_the_grant_ends_nothing() {
+        // A rate limit, a proxy in between, a forge that says it is busy: none of them is the
+        // forge ending the sign-in, and a sign-in that was ended cannot be put back.
+        for answer in [
+            (429, "<html>slow down</html>"),
+            (403, "<html>blocked by the gateway</html>"),
+            (407, ""),
+            (503, r#"{"error": "temporarily_unavailable"}"#),
+            (400, r#"{"error": "server_error"}"#),
+        ] {
+            let machine = machine(Kind::GitHub, "github.com", Method::Device);
+            let forge = Arc::new(StandIn::answering(&[Ok(answer), Ok(answer)]));
+            let refresher = machine.refresher(&forge);
+            let token = refresher
+                .token_at(&machine.account, machine.expires_at - 60)
+                .unwrap();
+            assert_eq!(token.expose_secret(), "first-access-value");
+            let why = refresher
+                .token_at(&machine.account, machine.expires_at + 1)
+                .unwrap_err();
+            assert_eq!(why.failure(), &Failure::Transport, "{answer:?}");
+            assert_eq!(machine.listed().state, State::SignedIn, "{answer:?}");
+            assert!(machine.kept().unwrap().refresh.is_some(), "{answer:?}");
+        }
     }
 
     #[test]
