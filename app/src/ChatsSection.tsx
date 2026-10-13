@@ -846,7 +846,7 @@ export function ChatsSection({
               to say is announced, and they stand beside the title, so saying it moves no row
               and they take no line of their own while they have nothing to say. */}
           {every.length > 0 && (
-            <div className="chats-notes">
+            <div className="chats-notes ui-text-secondary">
               {hiddenFirst !== undefined && goesTo !== undefined && (
                 <button
                   type="button"
@@ -930,7 +930,7 @@ export function ChatsSection({
         )}
       </div>
       {rows.length === 0 ? (
-        <p className="empty">
+        <p className="empty ui-text-secondary">
           {every.length === 0
             ? "No chats are running in this project."
             : scope === "tab"
@@ -1474,7 +1474,11 @@ const Row = memo(function Row({
       {atLimit !== null && (
         /* **At its task limit** (#1498, V100-54): said where the limit binds, on a refusal,
            until a slot frees; with the number and the way to where it is changed. */
-        <span className="at-limit" data-testid={`at-limit-${session}`} title={atLimit.said}>
+        <span
+          className="at-limit ui-text-secondary"
+          data-testid={`at-limit-${session}`}
+          title={atLimit.said}
+        >
           {/* Which limit binds, with its number: only its own is "its task limit". */}
           <span>{atLimit.row}</span>
           <button type="button" className="at-limit-settings" onClick={onLimits}>
@@ -1485,14 +1489,22 @@ const Row = memo(function Row({
       {waitingOnMemory !== null && waitingOnMemory > 0 && (
         /* **Its dispatches waiting on memory** (#1617): said on the asking chat's row, in the
            at-limit line's place and style, as the Dispatches tab's Not started list names them. */
-        <span className="at-limit" data-testid={`on-memory-${session}`} title={ON_MEMORY_SAID}>
+        <span
+          className="at-limit ui-text-secondary"
+          data-testid={`on-memory-${session}`}
+          title={ON_MEMORY_SAID}
+        >
           {onMemoryWords(waitingOnMemory)}
         </span>
       )}
       {restartSaid !== null && (
         /* **A restart asked for from this row, refused or waiting** (#1462): said here, in
            the core's words, for a chat with no pane to say it on. */
-        <span className="restart-said" role="status" aria-label={`Restart of ${name}`}>
+        <span
+          className="restart-said ui-text-secondary"
+          role="status"
+          aria-label={`Restart of ${name}`}
+        >
           {restartSaid}
         </span>
       )}

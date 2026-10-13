@@ -98,7 +98,7 @@ export const FinishedTasks = memo(function FinishedTasks({
           <div className="finished-fold">
             <button
               type="button"
-              className="ui-row ui-tree-row finished-count"
+              className="ui-row ui-tree-row finished-count ui-text-secondary"
               // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
               tabIndex={0}
               aria-expanded={open}
@@ -221,7 +221,7 @@ function FinishedRow({
           {/* Cut short in a narrow sidebar (#1499), and whole here for a pointer that rests on
               it; a screen reader is told the text. */}
           <span
-            className="session"
+            className="session ui-text-secondary"
             title={
               waits === null && used.said !== undefined ? `${task.name}\n${used.said}` : task.name
             }
@@ -389,9 +389,15 @@ function FinishedRow({
       )}
       {/* The last Reopen started a chat that ended at once: the core's sentence, kept on the
           row until the next try. */}
-      {task.not_reopened !== null && <p className="finished-note">{task.not_reopened}</p>}
+      {task.not_reopened !== null && (
+        <p className="finished-note ui-text-secondary">{task.not_reopened}</p>
+      )}
       {shown && (
-        <div className="finished-report ui-text-body" role="region" aria-label={`Report of ${task.name}`}>
+        <div
+          className="finished-report ui-text-body"
+          role="region"
+          aria-label={`Report of ${task.name}`}
+        >
           {/* Text nodes, every one: a report is a chat's words, and is never markup here. */}
           <p className="report-text">{task.report}</p>
           {/* The task's own words for what it changed, as text; the line opens what purlis
@@ -418,11 +424,11 @@ function FinishedRow({
               It is still recorded, and will be tried again at the next launch.
             </p>
           )}
-          <p className="report-where">
+          <p className="report-where ui-text-secondary">
             {task.place}
             {task.branch !== null && ` · own branch ${task.branch}`}
           </p>
-          {cannot !== undefined && <p className="report-where">{cannot}</p>}
+          {cannot !== undefined && <p className="report-where ui-text-secondary">{cannot}</p>}
         </div>
       )}
     </div>
