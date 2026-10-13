@@ -139,13 +139,14 @@ fn colour_is_drawn_only_when_asked_for() {
 
 // ---- every row is there, and none that could not look is green -------------------------------
 
-/// Python's `_FIXED_CHECK_NAMES`, with the forge pair spliced in after `git identity` as
-/// `check_names` does. No row may go missing: a doctor that stops printing one tells its
-/// reader the problem it reported has gone.
-const PYTHON_ROWS: [&str; 40] = [
+/// Python's `_FIXED_CHECK_NAMES`, with `git bare repos` (#1100) and then the forge pair spliced
+/// in after `git identity`, as `check_names` splices the pair. No row may go missing: a doctor
+/// that stops printing one tells its reader the problem it reported has gone.
+const PYTHON_ROWS: [&str; 41] = [
     "python3",
     "git",
     "git identity",
+    "git bare repos",
     "gh",
     "gh auth",
     "git auth",
@@ -1778,6 +1779,60 @@ fn the_name_column_is_a_floor_and_a_wider_name_pushes_only_its_own_row() {
         render(&r, 0, false)
     );
     assert!(render(&r, 8, false).ends_with("git     2.50"));
+}
+
+// ---- git bare repos (#1100) ----------------------------------------------------------------
+
+#[test]
+fn git_bare_repos_is_green_only_where_a_config_sets_explicit() {
+    let r = git::bare_row("command\texplicit\nglobal\texplicit\n");
+    assert_eq!(r.name, "git bare repos");
+    assert_eq!(
+        (r.status, r.detail.as_str()),
+        (Status::Ok, "explicit (the global config)")
+    );
+}
+
+#[test]
+fn git_bare_repos_leaves_out_the_value_purlis_passes_on_its_own_command_line() {
+    // The runner passes `-c safe.bareRepository=explicit` on every call, so that one says
+    // nothing of the git a person runs.
+    let r = git::bare_row("command\texplicit\n");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    assert_eq!(
+        r.detail,
+        "safe.bareRepository is not set, so git reads a bare repository wherever it is run"
+    );
+    assert!(
+        r.hint
+            .starts_with("Run: git config --global safe.bareRepository explicit."),
+        "{}",
+        r.hint
+    );
+    assert!(r.hint.contains("outside the sandbox"), "{}", r.hint);
+}
+
+#[test]
+fn git_bare_repos_names_a_config_that_allows_every_bare_repository() {
+    // The last value wins, as it does for git: a repo-less read from `/` sees system, then
+    // global.
+    let r = git::bare_row("system\texplicit\nglobal\tall\ncommand\texplicit\n");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    assert_eq!(
+        r.detail,
+        "safe.bareRepository is 'all' in the global config, so git reads a bare repository \
+         wherever it is run"
+    );
+}
+
+#[test]
+fn git_bare_repos_is_asked_of_git_and_never_says_it_did_not_look_when_git_answers() {
+    let r = git::bare_repositories();
+    assert_eq!(r.name, "git bare repos");
+    assert!(!r.deferred(), "{r:?}");
+    if r.status == Status::Ok {
+        assert!(r.detail.starts_with("explicit (the "), "{r:?}");
+    }
 }
 
 // ---- git auth: the one-credential policy, checked and never applied (charter-app#198) --------

@@ -87,6 +87,70 @@ pub(super) fn identity(d: &Doctor) -> Row {
     .fixed_by(super::fix::FixId::GitIdentity)
 }
 
+/// The `git bare repos` row's name (#1100).
+pub(super) const BARE: &str = "git bare repos";
+
+/// `git bare repos`: whether the operator's git reads a bare repository only where one is named,
+/// `safe.bareRepository = explicit` (#1100, SECURITY.md's embedded bare repositories).
+///
+/// **purlis's own git calls set it already** ([`runner::BARE_ONLY_WHEN_NAMED`]). This asks about
+/// the git a person, an editor or another tool runs in a folder a chat wrote: a sandboxed chat
+/// can make one that git takes for a bare repository, and a git run inside it reads that
+/// folder's config, which can name a program git runs outside the sandbox.
+///
+/// Asked from `/` of every config git reads there, with the scope each value came from, so the
+/// value purlis's own runner passes on the command line is told apart and left out.
+pub(super) fn bare_repositories() -> Row {
+    match git_in(
+        Path::new("/"),
+        &["config", "--show-scope", "--get-all", "safe.bareRepository"],
+    ) {
+        Ok(run) if run.ok() => bare_row(&run.out),
+        // Nothing set anywhere: git's answer for a key with no value.
+        Ok(run) if run.code == Some(1) => bare_row(""),
+        Ok(run) => Row::not_checked(
+            BARE,
+            format!(
+                "git could not say which config sets safe.bareRepository: {}",
+                super::one_line(first_line(&run.err).as_str(), super::DISPLAY_LIMIT)
+            ),
+        ),
+        Err(why) => Row::not_checked(BARE, why),
+    }
+}
+
+/// The row for git's `--show-scope --get-all` answer `out`: the last value a config sets wins,
+/// as it does for git, and the command line's is purlis's own.
+pub(super) fn bare_row(out: &str) -> Row {
+    let set = out
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter(|(scope, _)| *scope != "command")
+        .last();
+    let hint = "Run: git config --global safe.bareRepository explicit. A sandboxed chat can \
+                write a folder that git takes for a bare repository; a git run inside it later \
+                reads that folder's config, which can name a program that runs outside the \
+                sandbox. With this set, git reads a bare repository only where one is named. \
+                purlis's own git calls set it already.";
+    match set {
+        Some((scope, "explicit")) => Row::ok(BARE, format!("explicit (the {scope} config)")),
+        Some((scope, value)) => Row::warn(
+            BARE,
+            format!(
+                "safe.bareRepository is '{}' in the {scope} config, so git reads a bare \
+                 repository wherever it is run",
+                super::one_line(value, super::DISPLAY_LIMIT)
+            ),
+            hint,
+        ),
+        None => Row::warn(
+            BARE,
+            "safe.bareRepository is not set, so git reads a bare repository wherever it is run",
+            hint,
+        ),
+    }
+}
+
 /// `git auth`: golden rule 0 — does every repo in scope carry ITS forge's token-only policy.
 /// Python's `check_ssh`.
 ///

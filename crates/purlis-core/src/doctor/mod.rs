@@ -513,7 +513,12 @@ impl Doctor {
 
     /// Every row, in the order Python's `doctor._checks` runs them: cheap and local first.
     pub fn run(&self) -> Vec<Row> {
-        let mut rows = vec![python3(), git::git(), git::identity(self)];
+        let mut rows = vec![
+            python3(),
+            git::git(),
+            git::identity(self),
+            git::bare_repositories(),
+        ];
         rows.extend(forgecli::rows(self));
         rows.push(git::git_auth(self));
         rows.push(config::charter_toml(self));

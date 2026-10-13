@@ -219,7 +219,8 @@ it, and never sends that count anywhere.
 - **An embedded bare repository.** A chat can write a directory that git takes for a bare
   repository, and a git run *inside* it later reads its config. No protected name is in it,
   so the sandbox cannot tell it apart. Setting git's `safe.bareRepository = explicit` closes
-  this (#1100).
+  this, purlis's own git calls set it, and `purlis doctor`'s `git bare repos` row warns while
+  your git does not (#1100).
 - **What a person does inside a chat.** A harness's own screen can offer the person at it a
   way to widen its own sandbox. In a sandboxed project that cannot widen purlis's: Codex runs
   inside purlis's sandbox with its own turned off, so its `/permissions` picker, full access
