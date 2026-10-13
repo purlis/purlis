@@ -3744,14 +3744,11 @@ h2.sidebar-title .node-icon {
   color: var(--needs-you-base);
 }
 
-/* A workspace's name over its sessions, where the list is grouped by workspace. */
+/* A workspace's name over its sessions, where the list is grouped by workspace: a label over a
+   group, so the one section label (`ui-text-label`, #1920), as the section's own title is. */
 .chats-section li.chats-group {
   margin-block-start: 0.3rem;
   padding-inline-start: var(--chats-name-at);
-  color: var(--text-muted);
-  font-size: 0.85em;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its

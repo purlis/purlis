@@ -837,7 +837,7 @@ export function ChatsSection({
       {/* The title and the filter stay at the top of the section while its rows scroll. */}
       <div className="chats-head">
         <div className="chats-top">
-          <h2 className="sidebar-title" id="chats-title">
+          <h2 className="sidebar-title ui-text-label" id="chats-title">
             <MessagesSquare className="node-icon" aria-hidden="true" />
             Chats
           </h2>
@@ -986,7 +986,7 @@ export function ChatsSection({
                       <li
                         key={`group:${row.session}`}
                         role="none"
-                        className="chats-group"
+                        className="chats-group ui-text-label"
                         aria-hidden="true"
                       >
                         {row.workspace}
