@@ -3543,8 +3543,9 @@ h2.sidebar-title .node-icon {
   padding: 0 var(--space-4) var(--space-4);
   /* **Its words wear text roles** (#1920, `primitives/text.css`): the section is a body's
      surface (`ui-text-body` on it, 13px), a name is a body, what is said under or beside a row
-     is secondary, a count is meta and a heading is the section label. No rule below writes a
-     size, a weight or a colour of text. */
+     is secondary, a count is meta and a heading is the section label. Two rules below write a
+     size, each a token and for something no role draws: the line the scope switch is on
+     (`.chats-top`) and a finished task's refusal (`.finished-task > .trouble`). */
   /* **Where a top-level chat's name starts** (DS-11): the tree's first step, where a parent's
      twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
      and the row's gap. The filter's text starts here too, and the group headings, so the list
@@ -3834,6 +3835,13 @@ h2.sidebar-title .node-icon {
   align-items: center;
   gap: 0 var(--space-3);
   min-width: 0;
+}
+
+/* **Why a finished task was not reopened**: a word that says something is wrong keeps the
+   danger colour (`.trouble`), which no role has, so it wears none. It is a line under the
+   task's name and is that name's size, the secondary's, by this one rule built from a token. */
+.chats-section .finished-task > .trouble {
+  font-size: var(--font-size-sm);
 }
 
 .chats-section .finished-name,
