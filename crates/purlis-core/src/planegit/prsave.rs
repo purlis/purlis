@@ -1008,6 +1008,16 @@ pub(super) fn settle(
             );
         }
     }
+    // Under a chat's sandbox the move would stop at a file it may not write, part-way (qw346):
+    // the plane waits, and the window's own look, under no sandbox, makes it.
+    let stops = super::sandbox_would_stop(root, &theirs);
+    if !stops.is_empty() {
+        return Settled::Waiting(format!(
+            "{request} merged, and {target} moves onto the remote's from the window, not from \
+             this chat: {}",
+            super::said_sandbox_stops(&stops)
+        ));
+    }
     let newer = count(root, &format!("{head}..HEAD")).unwrap_or(0);
     if newer == 0 {
         // `--keep` keeps uncommitted work, and refuses rather than overwrite a file with some:

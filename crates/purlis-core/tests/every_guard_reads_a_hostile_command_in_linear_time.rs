@@ -23,7 +23,7 @@ use purlis_core::handoffguard::Caller;
 use purlis_core::toolgate::{self, Call, Launched, Plane};
 use purlis_core::{
     commitguard, consentspelling, credguard, floorguard, guardcaps, handoffguard, leakguard,
-    planeroot, projectgit, proseguard,
+    planeroot, projectgit, proseguard, rootupdate,
 };
 
 /// A hostile shape: its name, and the command at a given size in bytes.
@@ -224,6 +224,42 @@ fn shapes(deep: usize) -> Vec<Shape> {
         ),
         ("many heredocs", Box::new(|b| fill("cat <<A\nx\nA\n", b))),
         (
+            // The project-root update guard reads every git on the line that it does not
+            // refuse: restores to the current commit, ended operations, the index (qw346).
+            "restores and ended operations in the root, one after another",
+            Box::new(|b| {
+                fill(
+                    "git restore --source=HEAD --worktree -- a b/c d; git checkout HEAD -- x y; \
+                     git reset --hard HEAD; git rebase --abort; git stash list; \
+                     git restore --staged --source=origin/main q; git checkout -- z\n",
+                    b,
+                )
+            }),
+        ),
+        (
+            // And every path of one restore, each asked whether the sandbox denies it (qw346).
+            "a restore of a long run of paths",
+            Box::new(|b| {
+                format!(
+                    "git restore --source=HEAD --worktree -- {}",
+                    fill("a/b.md docs/.claude/notes.md ../c ", b)
+                )
+            }),
+        ),
+        (
+            // An update behind every wrapper and inside strings handed to shells (qw346).
+            "updates of the root inside strings handed to shells, nested",
+            Box::new(move |b| {
+                let unit =
+                    (0..deep).fold("git pull --rebase".to_string(), |inner, k| match k % 3 {
+                        0 => format!("cd x && sh -c {inner:?}"),
+                        1 => format!("env -C y bash -c {inner:?}; git rebase --abort"),
+                        _ => format!("echo {inner:?} | sh"),
+                    });
+                fill(&format!("{unit}\n"), b)
+            }),
+        ),
+        (
             // Every level of a string a shell runs is read (#1419, #1426): heredocs fed to a
             // shell, each holding a string handed to another, as deep as a shape nests.
             "strings and heredocs handed on to shells, nested",
@@ -306,10 +342,20 @@ fn families(root: &Path) -> Vec<Family<'_>> {
                 let _ = commitguard::hook_skip_hit(c, "");
             }),
         ),
-        (
-            "the project-lock guard",
+        ("the project-lock guard", {
+            let r = r.clone();
             Box::new(move |c| {
                 let _ = projectgit::refusal(c, &r, &r, &root.join("workspaces/x"));
+            })
+        }),
+        (
+            // With a name the sandbox denies said to be in the root, so every git on the line
+            // is judged rather than passed over; and with none, as the root here has.
+            "the project-root update guard",
+            Box::new(move |c| {
+                let held = |_: &Path| vec!["purlis.toml".to_string()];
+                let _ = rootupdate::refusal_where(c, &r, &r, None, &held);
+                let _ = rootupdate::refusal(c, &r, &r, Some(root));
             }),
         ),
     ]

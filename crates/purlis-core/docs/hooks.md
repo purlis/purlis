@@ -256,6 +256,38 @@ rule while one who reads a bare refusal files an issue.
   guard does — `wipe = reset --hard` makes `git wipe origin/main` the same command, and so
   does `git -c alias.z='reset --hard origin/main' z` — and shares every route above,
   so `git --git-dir=<plane>/.git reset --hard <ref>` from a clone is refused too.
+- **Project-root update a sandbox would stop partway.** Asked only of a chat the app sandboxed
+  that may write the project's root folder. A chat's sandbox never lets it write the project's manifest
+  or what a program run later loads code from (`.claude/skills`, `.mcp.json`, `.vscode` and
+  the rest of ADR 0067 §5), and git checks a tree out file by file: it writes each file it may
+  and skips each it may not. A `git rebase origin/main` there left most files as the remote
+  has them and the rest, and HEAD, as they were, with no `rebase-merge` or `ORIG_HEAD` to say
+  an update was tried. So a command that rewrites the tree from another commit is refused
+  before it starts: `pull`, `rebase`, `merge`, `cherry-pick`, `revert`, `am`, `stash pop`,
+  `stash apply`, `stash branch`, `bisect`, `read-tree -u`, a `reset --hard` (or `--merge`,
+  `--keep`) to another commit, and a `checkout` or `switch` of a branch the root is not on,
+  the default branch included. The refusal says why, and that the person updates the
+  project: the window brings incoming commits in by itself where auto-save is on and nothing
+  unsaved or unpushed is in the way, and otherwise the person runs the command in their own
+  terminal.
+
+  **The way back is never refused.** Putting files back as the current commit has them
+  writes only towards it: `git restore --source=HEAD --worktree -- <paths>` (with
+  `--pathspec-from-file` too), `git restore <paths>`, `git checkout -- <paths>`, `git
+  checkout HEAD -- <paths>`, `git reset --hard` with no commit or with `HEAD`, and `--abort`
+  or `--quit` of a rebase, merge, cherry-pick, revert or `am`. One that names a file the
+  sandbox denies is refused up front and names it, with the `git restore` command the person
+  runs for that file. A restore from another commit runs where every path on the line is a
+  file that is there now; a folder, a pattern or a list in a file is refused, since purlis
+  cannot tell what it reaches.
+
+  `git checkout HEAD` with no path after a `--` on the line (the paths in a file, or handed
+  over by `xargs`) is still read as a branch move, by every chat's guard, and its refusal
+  names the `git restore` spelling above, which cannot move HEAD.
+
+  The same holds for purlis's own saves. `purlis save` and `purlis save --pull` run inside
+  the chat's sandbox, so where the remote's commits change a file the sandbox denies they
+  bring nothing in, say which files, and leave the commit local for the window's save.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*
