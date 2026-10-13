@@ -19,6 +19,8 @@ fn a_command_that_leaves_a_process_behind_fails_and_names_it() {
     let said = Command::new(the_check())
         .args(["--grace", "1", "--", "/bin/sh", "-c"])
         .arg("sleep 47.923 </dev/null >/dev/null 2>&1 & exit 0")
+        // As on a runner, where the list is an annotation on the run too.
+        .env("GITHUB_ACTIONS", "true")
         .output()
         .expect("the check runs");
 
@@ -34,6 +36,40 @@ fn a_command_that_leaves_a_process_behind_fails_and_names_it() {
     }
     assert_eq!(said.status.code(), Some(1), "{stderr}");
     assert!(orphan.is_some(), "the orphan was not named: {stderr}");
+    // A red run is read through its annotations, never its log: the orphan is named there,
+    // under the title a failed test has.
+    let stdout = String::from_utf8_lossy(&said.stdout);
+    assert!(
+        stdout.lines().any(|line| line
+            .starts_with("::error title=Failed%3A processes left running after the command::")
+            && line.contains("sleep 47.923")
+            && line.contains(", running for ")),
+        "the orphan was not annotated: {stdout}"
+    );
+}
+
+#[test]
+fn off_a_runner_the_orphan_is_named_on_stderr_only() {
+    let said = Command::new(the_check())
+        .args(["--grace", "1", "--", "/bin/sh", "-c"])
+        .arg("sleep 47.375 </dev/null >/dev/null 2>&1 & exit 0")
+        .env_remove("GITHUB_ACTIONS")
+        .output()
+        .expect("the check runs");
+
+    let stderr = String::from_utf8_lossy(&said.stderr);
+    let orphan = stderr.lines().find_map(|line| {
+        let rest = line.trim().strip_prefix("pid ")?;
+        let (pid, cmd) = rest.split_once(": ")?;
+        cmd.contains("sleep 47.375")
+            .then(|| pid.parse::<u32>().ok())?
+    });
+    if let Some(pid) = orphan {
+        drop(stand_in::Ends::group(pid));
+    }
+    assert_eq!(said.status.code(), Some(1), "{stderr}");
+    let stdout = String::from_utf8_lossy(&said.stdout);
+    assert!(!stdout.contains("::error"), "{stdout}");
 }
 
 #[test]

@@ -11,6 +11,9 @@
 # started itself. Each one is named with its pid and command line, and the exit status is 1
 # even when COMMAND passed. Otherwise the exit status is COMMAND's own.
 #
+# Under GitHub Actions (`GITHUB_ACTIONS=true`) the list is also written as one `::error`
+# annotation titled `Failed: processes left running after the command`.
+#
 # --reap also kills each one, by its pid, never by name. CI passes it: the runner is the
 # job's own machine, so every new process on it is the job's. On a machine shared with other
 # work, leave it off — a process another session started while COMMAND ran is counted too,
@@ -105,6 +108,22 @@ echo "no-orphans: '$*' left these processes running:" >&2
 while IFS='|' read -r pid cmd; do
   echo "  pid $pid: $cmd" >&2
 done <<<"$left"
+# On a GitHub runner, the same list as an error on the run: this exit of 1 is otherwise the
+# one red of the `rust` job that names nothing through the checks API, where a failed test is
+# named by `tools/slowest-tests.mjs` (`Failed: <binary> <test>`). With how long each process
+# has run, which places the test that started it. Workflow command escaping: `%`, CR and LF.
+if [ "${GITHUB_ACTIONS-}" = true ]; then
+  said=""
+  while IFS='|' read -r pid cmd; do
+    ran=$(LC_ALL=C ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+    said="${said}pid $pid, running for ${ran:-an unread time}: $cmd"$'\n'
+  done <<<"$left"
+  said=${said%$'\n'}
+  said=${said//'%'/%25}
+  said=${said//$'\r'/%0D}
+  said=${said//$'\n'/%0A}
+  echo "::error title=Failed%3A processes left running after the command::$said"
+fi
 if [ "$reap" = 1 ]; then
   while IFS='|' read -r pid _; do
     kill -KILL "$pid" 2>/dev/null || true
