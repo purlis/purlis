@@ -2753,6 +2753,50 @@ button.show-more:focus-visible {
   background: var(--surface-raised);
   overflow-wrap: anywhere;
 }
+/* **The scope switch** (qw359): the Chats view's own segments (`ScopeSwitch.tsx`), at the top of
+   the Inbox. In a narrow side a segment's words are cut before its count is, and the group is
+   never wider than the view. */
+.inbox-scope {
+  display: flex;
+  min-width: 0;
+  margin-bottom: var(--space-4);
+}
+.inbox-scope > .ui-levels {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.inbox-scope .ui-level {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ui-level-says {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-level-count {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ui-level[data-state="checked"] .ui-level-count {
+  color: var(--text-secondary);
+}
+/* A scope with nothing in it: the sentence, how many wait wider, and the one press to widen. */
+.inbox-scope-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.inbox-scope-empty > .inbox-none {
+  margin: 0;
+}
+/* A group's heading. A chat's chain is data, so it is drawn as written; a section of the Inbox
+   itself (Notices, Updates) wears the sidebar's own title beside it (`.sidebar-title`). */
 .inbox-chain {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
@@ -2761,31 +2805,106 @@ button.show-more:focus-visible {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+.inbox-chain.sidebar-title {
+  margin: 0 0 var(--space-3);
+}
 /* An ask is a card: its words, then its answers (the shared button), its reply (the shared field
-   and button), and Go to chat and Ignore as small ghost buttons at its foot (DS-12). */
+   and button), and Go to chat and Ignore as small ghost buttons side by side at its foot
+   (DS-12). */
 .inbox-ask {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--state-waiting);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
 }
 .inbox-ask + .inbox-ask {
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
 }
+/* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
+   on the first line; where it is and, trailing, its kind and age on the second. The second
+   line's two halves share it: the meta takes at most its share and is cut, never the where
+   squeezed to nothing. */
 .inbox-says {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(60%);
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
   margin: 0;
   overflow-wrap: anywhere;
 }
-.inbox-source,
-.inbox-where {
+.inbox-kind {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-self: center;
+  color: var(--text-secondary);
+}
+.inbox-kind[data-kind="decision"] {
+  color: var(--state-waiting);
+}
+.inbox-kind[data-kind="trouble"] {
+  color: var(--state-failed);
+}
+.inbox-primary {
+  grid-area: 1 / 2 / auto / -1;
+  min-width: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+/* Two lines at most; the whole of it is the tooltip's, and still the page's for a screen
+   reader. Never on the words of an ask whose answer here allows (#1146). */
+.inbox-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.inbox-secondary {
+  grid-area: 2 / 2;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-meta {
+  grid-area: 2 / 3;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.inbox-meta > .inbox-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: inherit;
+  color: inherit;
+}
+.inbox-meta > .inbox-meta-dot,
+.inbox-meta > time {
+  flex: none;
+  white-space: pre;
+}
+.inbox-source {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
+}
+/* Another project's asks, under its line: read here, answered there. */
+.inbox-there {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.inbox-acts {
+  margin-top: 0;
 }
 /* The answers are the shared row whose buttons wrap their words (`.ui-button-row`, #1855): an
    answer's label is the source's, and in a narrow sidebar a long one must wrap, not widen the
@@ -2814,10 +2933,6 @@ button.show-more:focus-visible {
   max-height: 40vh;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-}
-.inbox-ask > .inbox-go,
-.inbox-update > .inbox-go {
-  align-self: flex-start;
 }
 .inbox-notice .notice-pane-box {
   max-width: 100%;
@@ -2849,19 +2964,17 @@ button.show-more:focus-visible {
 .inbox-update {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
 }
 .inbox-update + .inbox-update {
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
 }
+/* One read: its words step back to the secondary text and the regular weight. */
 .inbox-update[data-read] .ask-says {
-  color: var(--text-secondary);
-}
-.inbox-update time {
-  font-size: var(--font-size-xs);
+  font-weight: 400;
   color: var(--text-secondary);
 }
 .inbox-unread {

@@ -4,7 +4,10 @@
 import { useId } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import type { Offer } from "./actions";
+import type { Shown } from "./bindings";
 import { backSaid } from "./chatState";
+import { capMarks } from "./combiningMarks";
+import { KindMark, kindOfAsk, RowAge } from "./InboxRow";
 import { Notice } from "./Notice";
 import type { Needing, Quiet } from "./NeedsYou";
 import { PersonaMark } from "./PersonaMark";
@@ -42,7 +45,30 @@ export type Elsewhere = {
 };
 
 /** A project of this window with something waiting, and how many asks. */
-export type WaitingHere = { plane: string; project: string; count: number };
+export type WaitingHere = {
+  plane: string;
+  project: string;
+  count: number;
+  /**
+   * **What waits there, ask by ask** (qw359): what each says and who asks, as that project's
+   * registry derived them, for the Inbox's All projects. Read here and answered there: no
+   * answer of an ask is carried to another project's Inbox, so none is offered on it.
+   */
+  asks?: readonly WaitingAsk[];
+};
+
+/** One ask of another project of this window, as much of it as is read here: data, as text. */
+export type WaitingAsk = Pick<Shown, "session" | "ask" | "says" | "source" | "chain" | "since">;
+
+/** What an ask is cut down to before it is told to the other projects' Inboxes. */
+export const waitingAsk = ({ session, ask, says, source, chain, since }: Shown): WaitingAsk => ({
+  session,
+  ask,
+  says,
+  source,
+  chain,
+  since,
+});
 
 /** What the lines for this window's other projects are called. */
 export const OTHER_PROJECTS = "Other projects in this window";
@@ -61,26 +87,58 @@ export const hereStops = (others: readonly WaitingHere[]) =>
 /**
  * **One line for each other project of this window that has something waiting** (#1700): its
  * name, how many asks wait there, and Go to project. It answers nothing: what waits is read and
- * answered in that project's own Inbox, where it is drawn whole.
+ * answered in that project's own Inbox, where it is drawn whole. Where the window says what
+ * each of them is (qw359), they are listed under the line: what it says, who asks, its kind and
+ * its age, as text.
  */
 export function OtherProjects({
   others,
   onOpen,
+  now,
 }: {
   others: readonly WaitingHere[];
   onOpen: (plane: string) => void;
+  /** The time an ask's age is said against. */
+  now?: number;
 }) {
   return (
     <section className="inbox-chat inbox-elsewhere" aria-label={OTHER_PROJECTS}>
-      <h3 className="inbox-chain">{OTHER_PROJECTS}</h3>
+      <h3 className="inbox-chain sidebar-title">{OTHER_PROJECTS}</h3>
       <ul>
         {others.map((one) => (
           <RovingFocusGroup.Item asChild tabStopId={hereKey(one.plane)} key={one.plane}>
             <li className="inbox-ask" data-source="here">
               <p className="inbox-says">
+                <KindMark kind="elsewhere" />
                 {/* A project's name is data: drawn as text. */}
-                <span className="ask-says">{`${one.project} · ${one.count} waiting on you`}</span>
+                <span className="ask-says inbox-primary">{`${one.project} · ${one.count} waiting on you`}</span>
               </p>
+              {one.asks !== undefined && one.asks.length > 0 && (
+                <ul className="inbox-there">
+                  {one.asks.map((ask) => {
+                    const says = capMarks(ask.says).text;
+                    const who = ask.chain.join(" › ");
+                    return (
+                      <li key={`${ask.session}\u0000${ask.ask}`} className="inbox-says">
+                        <KindMark kind={kindOfAsk(ask.source)} />
+                        <span className="ask-says inbox-primary inbox-clamped" title={says}>
+                          {says}
+                        </span>
+                        {who !== "" && (
+                          <span className="inbox-where inbox-secondary" title={who}>
+                            {who}
+                          </span>
+                        )}
+                        {typeof ask.since === "number" && now !== undefined && (
+                          <span className="inbox-meta">
+                            <RowAge when={ask.since * 1000} now={now} since="Waiting since" />
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               <RovingFocusGroup.Item asChild tabStopId={`${hereKey(one.plane)}:go`}>
                 <button
                   type="button"
@@ -163,37 +221,44 @@ export function ElsewhereGroup({
             aria-describedby={`${id}-whose`}
           >
             <p className="inbox-says">
-              <span id={`${id}-whose`} className="inbox-source">
-                {IN_ANOTHER_WINDOW}
-              </span>
-              <span id={`${id}-says`} className="ask-says">
+              <KindMark kind="elsewhere" />
+              <span id={`${id}-says`} className="ask-says inbox-primary inbox-clamped" title={says}>
                 {says}
               </span>
-              <span className="inbox-where">{where}</span>
+              <span className="inbox-where inbox-secondary" title={where}>
+                {where}
+              </span>
+              <span className="inbox-meta">
+                <span id={`${id}-whose`} className="inbox-source">
+                  {IN_ANOTHER_WINDOW}
+                </span>
+              </span>
             </p>
-            <RovingFocusGroup.Item asChild tabStopId={`${key}:go`}>
-              <button
-                type="button"
-                className="ui-button ui-button-ghost ui-button-sm inbox-go"
-                aria-label={`Go to chat ${item.name} · ${where}, in another window`}
-                onClick={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
-              >
-                Go to chat
-              </button>
-            </RovingFocusGroup.Item>
-            {item.ignore?.available && (
-              <RovingFocusGroup.Item asChild tabStopId={`${key}:ignore`}>
+            <div className="inbox-acts ui-button-row">
+              <RovingFocusGroup.Item asChild tabStopId={`${key}:go`}>
                 <button
                   type="button"
                   className="ui-button ui-button-ghost ui-button-sm inbox-go"
-                  aria-label={item.ignore.title}
-                  title={item.ignore.title}
-                  onClick={() => item.ignore && onPress(item.plane, item.ignore)}
+                  aria-label={`Go to chat ${item.name} · ${where}, in another window`}
+                  onClick={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
                 >
-                  Ignore
+                  Go to chat
                 </button>
               </RovingFocusGroup.Item>
-            )}
+              {item.ignore?.available && (
+                <RovingFocusGroup.Item asChild tabStopId={`${key}:ignore`}>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                    aria-label={item.ignore.title}
+                    title={item.ignore.title}
+                    onClick={() => item.ignore && onPress(item.plane, item.ignore)}
+                  >
+                    Ignore
+                  </button>
+                </RovingFocusGroup.Item>
+              )}
+            </div>
           </li>
         </RovingFocusGroup.Item>
       </ul>

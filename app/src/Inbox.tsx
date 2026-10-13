@@ -27,6 +27,18 @@ import {
   QuietNotices,
   type Elsewhere,
 } from "./InboxElsewhere";
+import { KindMark, kindOfAsk, kindOfUpdate, RowAge, useNow } from "./InboxRow";
+import {
+  INBOX_SCOPES,
+  keepInboxScope,
+  keptInboxScope,
+  scopeDrawn,
+  scopeOf,
+  useInboxScope,
+  widerWaiting,
+  type InboxScope,
+  type ScopeCounts,
+} from "./inboxScope";
 import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
@@ -47,6 +59,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { useNoticeSettle } from "./noticeSettle";
 import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
+import { ScopeSwitch } from "./ScopeSwitch";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -96,6 +109,17 @@ const timeSaid = (at: number) =>
  * **What an ask says is data** (I-1, #1690): a chain a chat named, a command line, a host are
  * drawn as text, and the only controls are the fixed words of the answers it offers.
  *
+ * **A switch at the top picks whose asks are listed** (qw359, `inboxScope.ts`): every project's
+ * this window knows of, this project's (the default) or those of the workspace in front on the
+ * strip, each with its count, the pick kept for the project as the Chats view's is. Only the
+ * scopes the window can list are offered. A scope with nothing in it says how many wait in the
+ * nearest wider one, with one press to widen. Notices and updates are the project's and are
+ * listed whatever the scope.
+ *
+ * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
+ * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
+ * and last. Its kind is a mark and words together, never a colour alone.
+ *
  * **Empty, it says so** (I-12) — "Nothing is waiting on you" — and lists what was answered here
  * lately, read-only: when, which chat, what it asked and the answer.
  *
@@ -130,6 +154,9 @@ export function Inbox({
   onNotices,
   onNoticeAnswer,
   elsewhere,
+  here,
+  workspaceOf,
+  workspaceNamed,
 }: {
   plane: PlaneId;
   /** The project's asks, as the registry derived them last; nothing before the first read. */
@@ -176,6 +203,17 @@ export function Inbox({
    *  the top of the Notices while this project is in front. The window draws its one list
    *  into the element `at` is handed, and says how many it lists. */
   windowLines?: WindowLines;
+  /**
+   * **The workspace in front on the strip** (qw359), by the key {@link workspaceOf} answers
+   * with: This workspace lists the asks of the chats filed there, and follows the strip. The
+   * plane root has a key of its own, so there it lists the asks of no workspace. Without it
+   * and `workspaceOf`, no workspace scope is offered.
+   */
+  here?: string;
+  /** Where chat `session` is filed, by the strip's own key. */
+  workspaceOf?: (session: number) => string | undefined;
+  /** What the strip calls the workspace with that key: its name, or the plane root's words. */
+  workspaceNamed?: (key: string) => string;
 }) {
   if (asks !== undefined) noteSeen(plane, asks);
   /** How many lines the window lists in this Inbox, and where it draws them. */
@@ -185,12 +223,54 @@ export function Inbox({
   const quiet = elsewhere?.quiet ?? [];
   // Named only where the window can bring the project forward.
   const others = elsewhere?.onOpen === undefined ? [] : othersWaiting(plane, elsewhere);
-  const groups = asks === undefined ? [] : byChat(asks, (ask) => ageOf(plane, ask));
+  /**
+   * **Whose asks are listed** (qw359). Each scope the window can list is counted, and only
+   * those are offered: the project's always; the workspace's where the window says which is
+   * in front; every project's where it says what waits elsewhere.
+   */
+  const picked = useInboxScope(plane);
+  const inHere = (ask: Shown) => workspaceOf?.(ask.session) === here;
+  const counts: ScopeCounts = {
+    project: asks?.length ?? 0,
+    ...(here !== undefined && workspaceOf !== undefined
+      ? { workspace: (asks ?? []).filter(inHere).length }
+      : {}),
+    ...(elsewhere !== undefined
+      ? {
+          all:
+            (asks?.length ?? 0) + asking.length + others.reduce((sum, one) => sum + one.count, 0),
+        }
+      : {}),
+  };
+  const scope = scopeDrawn(picked, counts);
+  const listed = asks === undefined ? [] : scope === "workspace" ? asks.filter(inHere) : asks;
+  /** What waits in other projects is listed among every project's alone. */
+  const askingShown = scope === "all" ? asking : [];
+  const othersShown = scope === "all" ? others : [];
+  /** This project's name, as its tab says it: said on a row only among other projects'. */
+  const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
+  const whereOf = (session: number): string => {
+    const filed = workspaceOf?.(session);
+    return [
+      scope === "all" ? project : undefined,
+      filed === undefined ? undefined : (workspaceNamed?.(filed) ?? filed),
+      personaOf?.(session),
+    ]
+      .filter((part): part is string => typeof part === "string" && part !== "")
+      .join(" · ");
+  };
+  const now = useNow();
+  /** The nearest wider scope with something waiting: an empty scope's way out. */
+  const wider = widerWaiting(scope, counts);
+  const widen = () => {
+    if (wider !== undefined) keepInboxScope(plane, wider.scope);
+  };
+  const groups = byChat(listed, (ask) => ageOf(plane, ask));
   const recent = useAnswered(plane);
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
-    asks !== undefined && groups.length === 0 && asking.length === 0 && others.length === 0,
+    asks !== undefined && asks.length === 0 && asking.length === 0 && others.length === 0,
   );
   /** A way out of a Notice drawn here was pressed on an ask: answered here once it goes. */
   const touch = useAnsweredWhenGone(plane, asks);
@@ -217,8 +297,8 @@ export function Inbox({
         const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
         return stopIds(askKey(ask), shape, shape.answers ? shape.offers : []);
       }),
-    ...elsewhereStops(asking),
-    ...hereStops(others),
+    ...elsewhereStops(askingShown),
+    ...hereStops(othersShown),
     ...updateStops(updates),
   ];
   // The keyboard comes in on the first ask, or the first update where none asks: an item, and
@@ -228,10 +308,10 @@ export function Inbox({
   const stop = useTabStop(
     firstAsk !== undefined
       ? askKey(firstAsk)
-      : asking[0] !== undefined
-        ? elsewhereKey(asking[0])
-        : others[0] !== undefined
-          ? hereKey(others[0].plane)
+      : askingShown[0] !== undefined
+        ? elsewhereKey(askingShown[0])
+        : othersShown[0] !== undefined
+          ? hereKey(othersShown[0].plane)
           : firstUpdate === undefined
             ? undefined
             : `update:${firstUpdate.key}`,
@@ -281,6 +361,23 @@ export function Inbox({
 
   return (
     <section className="inbox" data-view="inbox" aria-label="Inbox">
+      {/* Drawn while any scope lists something, as the Chats view's is: nothing to narrow
+          otherwise, and an empty Inbox is its one sentence. */}
+      {Object.keys(counts).length > 1 && Object.values(counts).some((count) => count > 0) && (
+        <div className="inbox-scope">
+          <ScopeSwitch
+            label={SCOPE_LABEL}
+            scopes={INBOX_SCOPES.flatMap((one) => {
+              const count = counts[one.scope];
+              return count === undefined
+                ? []
+                : [{ ...one, count, name: `${one.says}, ${count} waiting on you` }];
+            })}
+            scope={scope}
+            onPick={(to) => keepInboxScope(plane, to)}
+          />
+        </div>
+      )}
       <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
         <div
           className="inbox-list"
@@ -296,13 +393,22 @@ export function Inbox({
           }}
         >
           {asks === undefined ? (
-            <p className="inbox-none">{NOT_READ_YET}</p>
-          ) : rows.length === 0 && asking.length === 0 && others.length === 0 ? (
-            <Empty
-              recent={recent}
-              allowed={allowedLately}
-              quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
-            />
+            // Not read yet is not empty; what the window already knows waits wider is offered.
+            <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
+          ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
+            wider === undefined ? (
+              <Empty
+                recent={recent}
+                allowed={allowedLately}
+                quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
+              />
+            ) : (
+              <EmptyScope
+                said={`Nothing is waiting on you in ${scopeOf(scope)}.`}
+                wider={wider}
+                onWiden={widen}
+              />
+            )
           ) : (
             rows.map((group) => (
               <section
@@ -328,6 +434,8 @@ export function Inbox({
                         (one) => one.session === ask.session && one.source === "dispatch",
                       )}
                       shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
+                      where={whereOf(ask.session)}
+                      now={now}
                       onGo={() => onGo(ask.session)}
                       onAnswered={onAnswered}
                       onIgnore={onIgnore}
@@ -340,11 +448,11 @@ export function Inbox({
             ))
           )}
           {elsewhere !== undefined &&
-            asking.map((item) => (
+            askingShown.map((item) => (
               <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
             ))}
-          {elsewhere?.onOpen !== undefined && others.length > 0 && (
-            <OtherProjects others={others} onOpen={elsewhere.onOpen} />
+          {elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
+            <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} now={now} />
           )}
           {(notices !== undefined || quiet.length > 0 || windowLines !== undefined) && (
             <section
@@ -354,7 +462,7 @@ export function Inbox({
               ref={noticesAt}
               onClickCapture={guardNotices}
             >
-              <h3 className="inbox-chain">{NOTICES}</h3>
+              <h3 className="inbox-chain sidebar-title">{NOTICES}</h3>
               <NothingDone said={noticesSaid} />
               {/* The window's own lines, listed first: the window draws its one list here. */}
               {placeWindowLines !== undefined && (
@@ -499,9 +607,15 @@ function Ask({
   onIgnore,
   onTouched,
   above,
+  where,
+  now,
 }: {
   plane: PlaneId;
   ask: Shown;
+  /** Where its chat is: project · workspace · persona, as much as the window says. */
+  where: string;
+  /** The time its age is said against. */
+  now: number;
   /** Its chat's dispatch asks, which its dispatch Notice draws its answers from (#1700). */
   dispatches: readonly Shown[];
   shape: Shape;
@@ -518,6 +632,9 @@ function Ask({
   const [busy, setBusy] = useState(false);
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
+  /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
+  const whole =
+    ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
 
   // An edit's change arrives after its row (#1146): its Allow waits to settle from then.
   const [changeDrawn, setChangeDrawn] = useState(false);
@@ -620,12 +737,26 @@ function Ask({
         aria-describedby={`${id}-whose`}
       >
         <p className="inbox-says">
-          <span id={`${id}-whose`} className="inbox-source">
-            {SOURCE_SAID[ask.source]}
-          </span>
-          {/* The ask's words are the source's, drawn as text and never as a control. */}
-          <span id={`${id}-says`} className="ask-says">
+          <KindMark kind={kindOfAsk(ask.source)} />
+          {/* The ask's words are the source's, drawn as text and never as a control. What an
+              Allow here would let run is never cut (#1146): it is read whole first. */}
+          <span
+            id={`${id}-says`}
+            className={`ask-says inbox-primary${whole ? "" : " inbox-clamped"}`}
+            title={shape.line}
+          >
             {shape.line}
+          </span>
+          {where !== "" && (
+            <span className="inbox-where inbox-secondary" title={where}>
+              {where}
+            </span>
+          )}
+          <span className="inbox-meta" title={SOURCE_SAID[ask.source]}>
+            <span id={`${id}-whose`} className="inbox-source">
+              {SOURCE_SAID[ask.source]}
+            </span>
+            <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
           </span>
         </p>
         {body}
@@ -634,29 +765,32 @@ function Ask({
             {said}
           </p>
         )}
-        <Stop id={`${key}:go`}>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost ui-button-sm inbox-go"
-            aria-label={`Go to chat ${who}`}
-            onClick={onGo}
-          >
-            Go to chat
-          </button>
-        </Stop>
-        {shape.ignore && onIgnore !== undefined && (
-          <Stop id={`${key}:ignore`}>
+        {/* Its ways on, side by side at its foot: one line, never one each. */}
+        <div className="inbox-acts ui-button-row">
+          <Stop id={`${key}:go`}>
             <button
               type="button"
               className="ui-button ui-button-ghost ui-button-sm inbox-go"
-              aria-label={`Ignore ${who} until it asks again`}
-              title={`Ignore ${who} until it asks again`}
-              onClick={() => onIgnore(ask.session)}
+              aria-label={`Go to chat ${who}`}
+              onClick={onGo}
             >
-              Ignore
+              Go to chat
             </button>
           </Stop>
-        )}
+          {shape.ignore && onIgnore !== undefined && (
+            <Stop id={`${key}:ignore`}>
+              <button
+                type="button"
+                className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                aria-label={`Ignore ${who} until it asks again`}
+                title={`Ignore ${who} until it asks again`}
+                onClick={() => onIgnore(ask.session)}
+              >
+                Ignore
+              </button>
+            </Stop>
+          )}
+        </div>
       </li>
     </Stop>
   );
@@ -815,7 +949,7 @@ function Empty({
       <p className="inbox-none">{quiet ?? NOTHING_WAITS}</p>
       {recent.length > 0 && (
         <section className="inbox-recent" aria-label="Recently answered">
-          <h3 className="inbox-chain">Recently answered</h3>
+          <h3 className="inbox-chain sidebar-title">Recently answered</h3>
           <ul>
             {recent.map((one) => (
               <li key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}>
@@ -832,7 +966,7 @@ function Empty({
       )}
       {allowed.length > 0 && (
         <section className="inbox-recent" aria-label={ALLOWED_LATELY}>
-          <h3 className="inbox-chain">{ALLOWED_LATELY}</h3>
+          <h3 className="inbox-chain sidebar-title">{ALLOWED_LATELY}</h3>
           <ul>
             {allowed.map((one) => (
               <li key={one.key}>
@@ -853,6 +987,38 @@ function Empty({
         </section>
       )}
     </>
+  );
+}
+
+/** What the scope switch is called. */
+export const SCOPE_LABEL = "Show what needs you in";
+
+/**
+ * **A scope with nothing in it, while a wider one has something** (qw359): it says so, says how
+ * many wait in the nearest wider scope, and widens in one press, so a narrow pick never reads
+ * as "nothing needs you".
+ */
+function EmptyScope({
+  said,
+  wider,
+  onWiden,
+}: {
+  /** What the scope says of itself: that nothing waits in it, or that it is not read yet. */
+  said: string;
+  wider: { scope: InboxScope; count: number } | undefined;
+  onWiden: () => void;
+}) {
+  if (wider === undefined) return <p className="inbox-none">{said}</p>;
+  return (
+    <div className="inbox-scope-empty">
+      <p className="inbox-none">{said}</p>
+      <p className="inbox-none">
+        {`${wider.count} ${wider.count === 1 ? "waits" : "wait"} in ${scopeOf(wider.scope)}.`}
+      </p>
+      <button type="button" className="ui-button ui-button-sm" onClick={onWiden}>
+        {`Show ${scopeOf(wider.scope)}`}
+      </button>
+    </div>
   );
 }
 
@@ -932,7 +1098,7 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
   return (
     <section className="inbox-updates" aria-label={UPDATES}>
       <div className="inbox-updates-head">
-        <h3 className="inbox-chain">{UPDATES}</h3>
+        <h3 className="inbox-chain sidebar-title">{UPDATES}</h3>
         <Stop id={READ_ALL_STOP} focusable={unread}>
           <button
             type="button"
@@ -1050,16 +1216,25 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
         aria-describedby={`${id}-kind`}
       >
         <p className="inbox-says">
-          <span id={`${id}-kind`} className="inbox-source">
-            {KIND_SAID[update.kind]}
-            {!update.read && <span className="inbox-unread"> · new</span>}
-          </span>
-          <time dateTime={new Date(update.at * 1000).toISOString()}>
-            {timeSaid(update.at * 1000)}
-          </time>
-          {/* Every word here is its source's, drawn as text and never as a control. */}
-          <span id={`${id}-says`} className="ask-says">
+          <KindMark kind={kindOfUpdate(update.kind)} />
+          {/* Every word here is its source's, drawn as text and never as a control. An update
+              whose answer allows is read whole, as an ask is (#1146). */}
+          <span
+            id={`${id}-says`}
+            className={`ask-says inbox-primary${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`}
+            title={about}
+          >
             {about}
+          </span>
+          <span className="inbox-meta">
+            <span id={`${id}-kind`} className="inbox-source">
+              {KIND_SAID[update.kind]}
+              {!update.read && <span className="inbox-unread"> · new</span>}
+            </span>
+            <span className="inbox-meta-dot">{" · "}</span>
+            <time dateTime={new Date(update.at * 1000).toISOString()}>
+              {timeSaid(update.at * 1000)}
+            </time>
           </span>
         </p>
         {more !== undefined && <p className="inbox-more">{more}</p>}
@@ -1087,29 +1262,31 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
           </div>
         )}
         <NothingDone said={said} />
-        {go !== undefined && (
-          <Stop id={`${key}:go`}>
+        <div className="inbox-acts ui-button-row">
+          {go !== undefined && (
+            <Stop id={`${key}:go`}>
+              <button
+                type="button"
+                className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                aria-label={`Go to chat ${who}`}
+                onClick={go}
+              >
+                Go to chat
+              </button>
+            </Stop>
+          )}
+          <Stop id={`${key}:dismiss`}>
             <button
               type="button"
               className="ui-button ui-button-ghost ui-button-sm inbox-go"
-              aria-label={`Go to chat ${who}`}
-              onClick={go}
+              aria-label={`Dismiss: ${about}`}
+              title={dismissSays ?? "Put this update away"}
+              onClick={dismiss}
             >
-              Go to chat
+              Dismiss
             </button>
           </Stop>
-        )}
-        <Stop id={`${key}:dismiss`}>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost ui-button-sm inbox-go"
-            aria-label={`Dismiss: ${about}`}
-            title={dismissSays ?? "Put this update away"}
-            onClick={dismiss}
-          >
-            Dismiss
-          </button>
-        </Stop>
+        </div>
       </li>
     </Stop>
   );
@@ -1130,4 +1307,16 @@ export function landOnGroup(session: number): boolean {
   group.scrollIntoView?.({ block: "nearest" });
   first.focus();
   return true;
+}
+
+/**
+ * **The same landing, through a scope that leaves the chat out** (qw359): a notification is
+ * about one ask, and This workspace may not list its chat. So where the group is not drawn and
+ * the scope is the workspace's, the scope widens to the project's, as revealing a row a filter
+ * hides clears the filter, and the landing is tried again once that is drawn.
+ */
+export function landOnGroupIn(plane: PlaneId, session: number): void {
+  if (landOnGroup(session) || keptInboxScope(plane) !== "workspace") return;
+  keepInboxScope(plane, "project");
+  requestAnimationFrame(() => landOnGroup(session));
 }

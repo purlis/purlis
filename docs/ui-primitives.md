@@ -839,8 +839,8 @@ arrow in the capture phase on the group, picks the option the focus then lands o
 the arrow when the key comes up or the focus leaves the group. The repair is one hook,
 `useArrowPick`, in the same file: every radio drawn with `Choice` has it, and so has
 `SettingsLayout`'s level switcher (#626, D-626-4), whose level follows the arrow as a `Choice`
-radio's pick does, and so has the Chats view's scope switch (`ChatsSection.tsx`, #1679), which
-imports it; a hand-built `RadioGroup` without it does not. Because `SettingsTab` draws each
+radio's pick does, and so has a side view's scope switch (`ScopeSwitch.tsx`: the Chats view's,
+#1679, and the Inbox's), which imports it; a hand-built `RadioGroup` without it does not. Because `SettingsTab` draws each
 level with a layout of its own, the switcher an arrow left is unmounted, and the layout drawn at
 the level arrowed to takes the focus back (D-626-5). The guards are `components.test.tsx`'s
 "picks the next option on a single arrow, once" and its level switcher's tests, and
@@ -1581,6 +1581,35 @@ move from an ask to its buttons and on to the next ask, Home and End go to the e
 presses the focused button as it does anywhere, and Escape gives the keyboard back to the chat in
 front. A dispatch's Notice drawn in it keeps its own buttons as Tab stops. There is no key of a
 single letter (I-11).
+
+**A switch at its top picks whose asks it lists**: All projects, This project (the default) or
+This workspace, each with its count. It is the Chats view's own scope switch (`ScopeSwitch.tsx`,
+one piece for both views), a Tab stop of its own before the list, and the keyboard still comes
+in on the first ask. Only the scopes the window can list are offered, and none while nothing
+waits anywhere. This workspace follows the strip, and at the plane root lists the asks of chats
+filed in no workspace. All projects adds what waits in other windows' projects and, for each
+other project of this window, its asks as text under its line, answered there: no answer is
+carried from one project's Inbox to another's. The pick is kept for the project in the layout
+file (`inboxScope.ts`, `projects[path].inbox.scope`). A scope with nothing in it says how many
+wait in the nearest wider scope and widens in one press, and a notification about a chat the
+scope leaves out widens it to the project's before it lands. Notices and updates are the
+project's and are listed whatever the scope.
+
+**An Inbox row reads in three ranks** (`InboxRow.tsx`), from the existing tokens only:
+
+| Rank      | Says                                 | Class             | Size               | Weight | Colour             |
+| --------- | ------------------------------------ | ----------------- | ------------------ | ------ | ------------------ |
+| primary   | what needs you: the ask's words      | `inbox-primary`   | `--font-size-md`   | 600    | `--text-primary`   |
+| secondary | where: project · workspace · persona | `inbox-secondary` | `--font-size-sm`   | 400    | `--text-secondary` |
+| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs`   | 400    | `--text-muted`     |
+
+The kind is a mark and its words together (`KindMark`, `data-kind`): a decision in
+`--state-waiting`, an update that went wrong in `--state-failed`, anything else in the secondary
+text, and the words in the meta beside it, so nothing is told by colour alone. The primary line
+is cut to two lines (`inbox-clamped`) with the whole of it in its tooltip and in the page for a
+screen reader. **The words of an ask whose answer here allows are never cut** (#1146): what an
+Allow lets run is read whole first. A section of the Inbox itself (Notices, Updates) wears the
+sidebar's title (`.sidebar-title`); a chat's chain is data and is drawn as written.
 
 **Its updates follow the asks** (#1693), on the same roving focus: Mark all read and Dismiss all,
 then each update and its buttons. With no ask, the keyboard comes in on the first update, never
