@@ -201,6 +201,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's yes that copies one into purlis's keyring item. No link offers or imports one.
     "forge_cli_logins",
     "forge_import_cli_login",
+    // Signing in to a forge through the browser by the device flow (#729, ADR 0077 §3): the
+    // start, the wait that signs the account in, and the cancel. No link signs anyone in.
+    "forge_device_sign_in_start",
+    "forge_device_sign_in_wait",
+    "forge_device_sign_in_cancel",
     // Whether a folder on this machine is in a project (#1822): the welcome's question before
     // it offers to make one. A probe of the person's folders, which no link needs.
     "folder_is_a_project",

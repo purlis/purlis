@@ -97,6 +97,13 @@ impl HostScope {
         HostScope(())
     }
 
+    /// The same proof again, for a part of the forge module that keeps one for the acts it
+    /// performs later in this process ([`super::refresh::Refresher`]). Only a scope already
+    /// claimed gives one.
+    pub(super) fn again(&self) -> HostScope {
+        HostScope(())
+    }
+
     /// [`HostScope::claim`], with the environment asked through `env`.
     pub(crate) fn claim_in(env: &dyn Fn(&str) -> Option<String>) -> Option<HostScope> {
         let in_a_chat = CHAT_MARKS

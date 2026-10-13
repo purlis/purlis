@@ -3,14 +3,17 @@
 
 import { useSyncExternalStore } from "react";
 import { commands, type ForgeAccountRow } from "../bindings";
+import { ForgeBrowserSignIn } from "../ForgeBrowserSignIn";
+import { ACCOUNTS_CHANGED, forgeAccountsChanged } from "../ForgeSignInEnded";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
- * **You › Accounts** (#1814, ADR 0077 §6): this machine's forge accounts, each with Sign out,
- * and **Sign in with a token…**, which opens the same dialog the welcome's "Sign in" does
- * ({@link ForgeTokenSignIn}).
+ * **You › Accounts** (#1814, ADR 0077 §6): this machine's forge accounts, each with Sign out;
+ * **Sign in with GitHub**, the browser sign-in on github.com ({@link ForgeBrowserSignIn}, #729);
+ * and **Sign in with a token…** ({@link ForgeTokenSignIn}). Both open the same dialogs the
+ * welcome's "Sign in" does.
  *
  * An account holds for the whole machine (ADR 0077), so it is under You, beside This machine,
  * and reaches no project's files. The list is the core's (`forge_accounts`), read when the group
@@ -19,7 +22,13 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  *
  * **Sign out** deletes the token from the keychain and takes the account off this machine. A
  * token the person made stays valid at the forge until they delete it there, which the row says
- * once it is done.
+ * once it is done. A browser sign-in cannot be revoked from here either (GitHub's revocation
+ * needs a secret purlis does not have, ADR 0077 §3): the row says it lapses within eight hours
+ * and where on GitHub to revoke it now.
+ *
+ * **An account whose sign-in the forge ended** stays listed, as signed out: the window's Notice
+ * says so with Sign in again ({@link ForgeSignInEnded}), and signing in here as the same login
+ * signs that same account in.
  *
  * **Use your existing gh or glab login** ({@link ImportCliLogin}, #1376) is offered under the
  * list for a forge tool signed in where purlis has no account: never imported unless pressed,
@@ -81,14 +90,19 @@ async function reread() {
   }));
 }
 
+/** Read again when another surface of this window signed an account in or out. */
+const rereadWhenChanged = () => void reread();
+
 function subscribe(listener: () => void) {
   if (listeners.size === 0) {
     held = START;
     void reread();
+    window.addEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
   }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0) window.removeEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
   };
 }
 
@@ -105,12 +119,20 @@ async function signOut(account: ForgeAccountRow) {
   set((was) => ({
     ...was,
     refused: done.status === "error" ? done.error : undefined,
-    said:
-      done.status === "error"
-        ? undefined
-        : `Signed out of ${account.login} on ${account.host}. The token still works on ${account.host} until you delete it there.`,
+    said: done.status === "error" ? undefined : signedOutSays(account),
   }));
   await reread();
+  forgeAccountsChanged();
+}
+
+/** What a sign-out leaves for the person to do at the forge, which purlis cannot do for them. */
+function signedOutSays(account: ForgeAccountRow): string {
+  const gone = `Signed out of ${account.login} on ${account.host}.`;
+  if (account.method !== "browser")
+    return `${gone} The token still works on ${account.host} until you delete it there.`;
+  return account.kind === "github"
+    ? `${gone} purlis deleted its sign-in from your keychain. GitHub lets it lapse within eight hours; to end it now, revoke purlis at https://${account.host}/settings/applications.`
+    : `${gone} purlis deleted its sign-in from your keychain.`;
 }
 
 /** What the row says about an account beside its name. */
@@ -123,7 +145,7 @@ function note(account: ForgeAccountRow): string {
 const forgeAccounts: LiveSetting = {
   id: "you.accounts.forges",
   label: "Forge accounts",
-  help: "Sign in with a token on github.com, gitlab.com, a GitHub Enterprise server or a self-managed GitLab. Sign out deletes the token from your keychain.",
+  help: "Sign in to github.com through your browser, or with a token on github.com, gitlab.com, a GitHub Enterprise server or a self-managed GitLab. Sign out deletes the sign-in from your keychain.",
   useControl: function useForgeAccounts() {
     const now = useSyncExternalStore(subscribe, () => held);
     return {
@@ -166,6 +188,13 @@ const forgeAccounts: LiveSetting = {
               {now.said}
             </p>
           )}
+          <ForgeBrowserSignIn
+            onSignedIn={() => {
+              set((was) => ({ ...was, refused: undefined, said: undefined }));
+              void reread();
+              forgeAccountsChanged();
+            }}
+          />
           <button type="button" tabIndex={0} onClick={openSignIn}>
             Sign in with a token…
           </button>
@@ -178,6 +207,7 @@ const forgeAccounts: LiveSetting = {
               onSignedIn={() => {
                 set((was) => ({ ...was, signingIn: false }));
                 void reread();
+                forgeAccountsChanged();
               }}
             />
           )}

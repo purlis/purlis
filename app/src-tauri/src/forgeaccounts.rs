@@ -20,16 +20,28 @@
 //! is signed in, and [`forge_import_cli_login`] is the person's yes, the one call that asks a CLI
 //! for its token. Both are the window's alone (`WINDOW_ONLY`).
 //!
+//! **Signing in to github.com through the browser** (#729, ADR 0077 §3 as amended 2026-10-12) is
+//! the OAuth device flow, in three calls: [`forge_device_sign_in_start`] asks the forge for a
+//! code and answers what the window shows, [`forge_device_sign_in_wait`] polls until the person
+//! confirmed it and signs the account in, and [`forge_device_sign_in_cancel`] stops the
+//! polling. The flow is held in this process's memory for its length and nowhere else; the
+//! device code never crosses to the window, and the token it is traded for never does either.
+//! All three are the window's alone (`WINDOW_ONLY`).
+//!
 //! **The git the window runs signs in with these accounts** (#752, ADR 0070 amended 2026-10-12):
 //! [`window_git`] runs a save, a fetch, a push or a clone with purlis's own credential helper for
 //! a host the person has an account on.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::{self, ForgeAccount, Method, Pasted, State};
 use purlis_core::forge::cliimport::{self, CliLogin};
+use purlis_core::forge::registration::{self, Registration};
 use purlis_core::forge::route::HostScope;
+use purlis_core::forge::{device, oauth};
 
 /// One forge account, as Settings lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -157,6 +169,25 @@ pub fn hand_over_sign_ins() {
     if !purlis_core::forge::signin::hand_over_unless_in_a_chat(&root) {
         tracing::warn!("purlis: forge sign-ins are not handed over inside a chat");
     }
+}
+
+/// The event the window is sent when a forge ended one of its sign-ins (#729): it reads the
+/// accounts again and draws the Notice with Sign in again. `ForgeSignInEnded.tsx` holds the
+/// window's spelling to this one. It carries nothing: no account, no login.
+pub const SIGN_IN_ENDED: &str = "forge-sign-in-ended";
+
+/// From now on the window is told when a forge refuses to renew a sign-in (ADR 0077 §3), so
+/// the person reads which sign-in ended, and how to sign in again, when it happens rather than
+/// at the next thing that fails. Called once, as the app starts.
+pub fn tell_the_window_when_a_sign_in_ends(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    let Some(scope) = HostScope::claim() else {
+        return;
+    };
+    let app = app.clone();
+    purlis_core::forge::refresh::tell_when_ended(&scope, move |_account| {
+        let _ = app.emit(SIGN_IN_ENDED, ());
+    });
 }
 
 /// Run `work` on a blocking thread: each act may wait on the keychain or the forge.
@@ -296,6 +327,176 @@ pub async fn forge_import_cli_login(kind: String, host: String) -> Result<ForgeA
     .await
 }
 
+/// What the window shows while a device flow waits: the code to type, and the forge's own page
+/// to type it on. Nothing here is secret: the code is of no use without the person's own
+/// confirmation on that page.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ForgeDeviceCode {
+    /// Which flow this is: what waiting and cancelling name it by.
+    pub flow: u32,
+    pub host: String,
+    /// The forge, as a sentence names it (`GitHub`).
+    pub title: String,
+    /// The code the person types on the forge's page.
+    pub user_code: String,
+    /// The forge's own page, opened in the system browser.
+    pub verification_uri: String,
+    /// How many seconds the code lasts.
+    pub expires_in: u32,
+    /// The scopes the sign-in asks for, each explained on the page.
+    pub scopes: Vec<String>,
+}
+
+/// A device flow this process is running: held in memory for its length, and nowhere else.
+struct DeviceFlow {
+    number: u32,
+    registration: &'static Registration,
+    started: Arc<device::Started>,
+    cancelled: Arc<AtomicBool>,
+}
+
+/// The one device flow in progress. Starting another ends this one.
+static DEVICE_FLOW: Mutex<Option<DeviceFlow>> = Mutex::new(None);
+
+/// The number the next flow gets.
+static NEXT_FLOW: AtomicU32 = AtomicU32::new(1);
+
+/// How often a waiting flow looks for a cancel.
+const CANCEL_CHECK: Duration = Duration::from_millis(200);
+
+/// Waits between a flow's polls, a slice at a time, so a cancel ends it within a moment.
+struct UntilCancelled(Arc<AtomicBool>);
+
+impl device::Pace for UntilCancelled {
+    fn wait(&self, for_: Duration) -> bool {
+        let mut left = for_;
+        while !left.is_zero() {
+            if self.0.load(Ordering::SeqCst) {
+                return false;
+            }
+            let slice = left.min(CANCEL_CHECK);
+            std::thread::sleep(slice);
+            left -= slice;
+        }
+        !self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// Why `kind` on `host` has no browser sign-in, when it has none.
+fn no_device_flow(kind: Kind, host: &str) -> String {
+    format!(
+        "purlis signs in through the browser on github.com only. On {host}, sign in to {} with \
+         a token.",
+        kind.display()
+    )
+}
+
+/// Start signing in to `kind` on `host` by the device flow: the forge is asked for a code with
+/// purlis's public client id, and the code and the forge's page are answered for the window to
+/// show. A flow already waiting is ended. Refused, with the token named as the way, on a host
+/// purlis has no registration on.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_device_sign_in_start(
+    kind: String,
+    host: String,
+) -> Result<ForgeDeviceCode, String> {
+    let kind = kind_of(&kind)?;
+    blocking(move || {
+        host_scope()?;
+        let host = accounts::host_named(kind, &host)?;
+        let registration = registration::on(kind, &host)
+            .filter(|r| r.flow == registration::Flow::Device)
+            .ok_or_else(|| no_device_flow(kind, &host))?;
+        let started = device::start(
+            &oauth::Https::new(),
+            &oauth::Endpoints::of(registration),
+            registration,
+        )?;
+        let number = NEXT_FLOW.fetch_add(1, Ordering::SeqCst);
+        let code = ForgeDeviceCode {
+            flow: number,
+            host: registration.host.to_string(),
+            title: kind.display().to_string(),
+            user_code: started.user_code.clone(),
+            verification_uri: started.verification_uri.clone(),
+            expires_in: u32::try_from(started.expires_in.as_secs()).unwrap_or(u32::MAX),
+            scopes: registration
+                .scopes()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        };
+        let mut held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(before) = held.replace(DeviceFlow {
+            number,
+            registration,
+            started: Arc::new(started),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }) {
+            before.cancelled.store(true, Ordering::SeqCst);
+        }
+        Ok(code)
+    })
+    .await
+}
+
+/// Wait for the person to confirm the code of `flow` on the forge's page, then sign the account
+/// in: the token is checked with the forge and kept, with its refresh token, in the account's
+/// own keyring item. The account as Settings lists it, or a sentence saying how the flow ended
+/// and what to do next.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_device_sign_in_wait(flow: u32) -> Result<ForgeAccountRow, String> {
+    blocking(move || {
+        let scope = host_scope()?;
+        let (registration, started, cancelled) = {
+            let held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+            match held.as_ref().filter(|held| held.number == flow) {
+                Some(held) => (
+                    held.registration,
+                    held.started.clone(),
+                    held.cancelled.clone(),
+                ),
+                None => return Err(device::Ended::Cancelled.said("the forge")),
+            }
+        };
+        let root = config_root()?;
+        let keyring = accounts::keyring_at(&root);
+        let ended = device::finish(
+            &scope,
+            &root,
+            keyring.as_ref(),
+            &token_check,
+            &oauth::Https::new(),
+            &oauth::Endpoints::of(registration),
+            registration,
+            &started,
+            &UntilCancelled(cancelled),
+        );
+        // The flow is over either way: nothing of it is kept.
+        let mut held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+        if held.as_ref().is_some_and(|held| held.number == flow) {
+            *held = None;
+        }
+        ended
+            .map(ForgeAccountRow::from)
+            .map_err(|why| why.said(registration.kind.display()))
+    })
+    .await
+}
+
+/// Stop waiting on `flow`: the polling ends within a moment, and nothing of the flow is kept.
+/// The code may still be confirmed on the forge's page; nothing is listening for it then.
+#[tauri::command]
+#[specta::specta]
+pub fn forge_device_sign_in_cancel(flow: u32) {
+    let mut held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(flow) = held.take_if(|held| held.number == flow) {
+        flow.cancelled.store(true, Ordering::SeqCst);
+    }
+}
+
 /// Sign out of the account `id`: its token deleted from the keychain and the account taken off
 /// this machine.
 #[tauri::command]
@@ -335,6 +536,31 @@ mod tests {
         assert_eq!(row.kind, "github");
         assert!(row.signed_in);
         assert_eq!(row.wider, ["gist"]);
+    }
+
+    #[test]
+    fn a_cancel_ends_a_wait_within_a_moment() {
+        use device::Pace;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let pace = UntilCancelled(cancelled.clone());
+        assert!(pace.wait(Duration::from_millis(1)));
+        let flag = cancelled.clone();
+        let canceller = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            flag.store(true, Ordering::SeqCst);
+        });
+        let began = std::time::Instant::now();
+        assert!(!pace.wait(Duration::from_secs(600)));
+        assert!(began.elapsed() < Duration::from_secs(30));
+        canceller.join().unwrap();
+        assert!(!pace.wait(Duration::from_millis(1)), "a cancel is final");
+    }
+
+    #[test]
+    fn a_cancel_or_a_wait_for_a_flow_that_is_not_running_changes_nothing() {
+        forge_device_sign_in_cancel(u32::MAX);
+        assert!(no_device_flow(Kind::GitLab, "gitlab.com").contains("with a token"));
+        assert!(no_device_flow(Kind::GitHub, "ghe.example.com").contains("ghe.example.com"));
     }
 
     #[test]

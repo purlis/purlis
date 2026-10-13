@@ -3,8 +3,10 @@
 
 //! **A token signed in through the account store reaches no chat** (#1814, FI3, ADR 0077 §7).
 //!
-//! A canary token is signed in for an account, the forge answering from a recording. Then
-//! everything a chat is given or can ask for is searched for it:
+//! A canary token is signed in for an account, the forge answering from a recording, and a
+//! second account is signed in as a browser sign-in is (#729): what the device flow granted, an
+//! access token and a refresh token, each a canary of its own. Then everything a chat is given
+//! or can ask for is searched for all three:
 //!
 //! - the environment a chat is started with, composed from this process's own as the app
 //!   composes it;
@@ -30,6 +32,59 @@ use purlis_core::forge::{Forge, ForgeError, Kind};
 
 /// Not shaped like any forge's token, so only its value can find it.
 const CANARY: &str = "canaryFORGEsignin41c7e";
+
+/// What a browser sign-in keeps: the access token it was granted, and its refresh token.
+const CANARY_ACCESS: &str = "canaryDEVICEaccess77b2d";
+const CANARY_REFRESH: &str = "canaryDEVICErefresh9e03a";
+
+/// Whether `text` holds any of the canaries.
+fn holds_a_canary(text: &str) -> bool {
+    [CANARY, CANARY_ACCESS, CANARY_REFRESH]
+        .iter()
+        .any(|canary| text.contains(canary))
+}
+
+/// Signs in to github.com as the device flow does, under the config home `config`: the grant
+/// kept through the account store, its pair in the account's own keyring item.
+fn signed_in_through_the_browser(config: &Path) {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/forge_contract/accounts/github/token_check.json"),
+    )
+    .unwrap();
+    let recorded = Arc::new(Recorded::parse(&text).unwrap());
+    let reach = |_: &Forge, _: Arc<dyn TokenSource>| -> Result<Arc<dyn Transport>, ForgeError> {
+        Ok(recorded.clone() as Arc<dyn Transport>)
+    };
+    let granted = purlis_core::forge::oauth::Answer::of(
+        200,
+        &format!(
+            r#"{{"access_token": "{CANARY_ACCESS}", "scope": "repo,read:org",
+                 "expires_in": 28800, "refresh_token": "{CANARY_REFRESH}"}}"#
+        ),
+    )
+    .granted()
+    .unwrap();
+    let keyring = accounts::keyring_at(config);
+    let account = accounts::sign_in_with_grant(
+        &HostScope::for_a_test(),
+        config,
+        keyring.as_ref(),
+        &reach,
+        Kind::GitHub,
+        "github.com",
+        granted,
+        accounts::Method::Device,
+    )
+    .unwrap();
+    // The control: both ARE kept, in the account's own keyring item.
+    let item = keyring
+        .get(&accounts::service(&account), "token")
+        .unwrap()
+        .map(|s| s.into_inner())
+        .unwrap();
+    assert!(item.contains(CANARY_ACCESS) && item.contains(CANARY_REFRESH));
+}
 
 /// A project with one workspace, as the MCP tool tests make one.
 fn project() -> tempfile::TempDir {
@@ -145,6 +200,7 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
     );
     let plane = project();
     signed_in(&config);
+    signed_in_through_the_browser(&config);
 
     // 1. The environment a chat starts with.
     let env = compose(
@@ -160,7 +216,7 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
     );
     for (name, value) in &env {
         assert!(
-            !value.to_string_lossy().contains(CANARY),
+            !holds_a_canary(&value.to_string_lossy()),
             "{} holds the token",
             name.to_string_lossy()
         );
@@ -185,7 +241,7 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
             Ok(said) | Err(said) => said,
         };
         assert!(
-            !said.contains(CANARY),
+            !holds_a_canary(&said),
             "{} answered with the token",
             tool.name
         );
@@ -198,7 +254,7 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
     let mut searched = 0;
     for path in files(plane.path()).into_iter().chain(files(&config)) {
         let text = String::from_utf8_lossy(&std::fs::read(&path).unwrap()).into_owned();
-        assert!(!text.contains(CANARY), "{} holds the token", path.display());
+        assert!(!holds_a_canary(&text), "{} holds the token", path.display());
         searched += 1;
     }
     assert!(
@@ -220,7 +276,8 @@ fn the_keychain_holding_the_token_is_denied_to_every_chat() {
 /// Signing in and reading the account store's tokens take the host's scope, and the `purlis`
 /// binary, which a chat can run, never names the account store's sign-in or sign-out, nor
 /// purlis's git credential helper (#752): it neither serves it nor names it for its own git. Nor
-/// does it import a forge CLI's login (#1376).
+/// does it import a forge CLI's login (#1376), nor sign in through the browser or refresh what
+/// that granted (#729).
 #[test]
 fn the_purlis_binary_never_signs_in_or_out_of_a_forge_account() {
     purlis_core::unsteered!();
@@ -238,6 +295,12 @@ fn the_purlis_binary_never_signs_in_or_out_of_a_forge_account() {
                 "as_the_window",
                 // Importing a forge CLI's login (#1376) is the window's too.
                 "cliimport",
+                // And so are the browser sign-in, what it grants, and its refresh (#729).
+                "sign_in_with_grant",
+                "forge::device",
+                "forge::oauth",
+                "forge::refresh",
+                "Refresher",
             ] {
                 assert!(
                     !text.contains(word),

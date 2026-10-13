@@ -77,8 +77,14 @@ gone.
 Under **On this machine**, the page shows which harnesses it found and whether each is signed
 in.
 
-**Sign in to GitHub or GitLab** offers **Sign in with a token…**, which keeps a GitHub token
-in your system keychain. The window's GitHub work then uses it, with no `gh` needed: the repo
+**Sign in to GitHub or GitLab** offers **Sign in with GitHub**. purlis shows a short code and
+a button that opens GitHub's own page in your browser; enter the code there, approve purlis,
+and you come back signed in to github.com. GitHub asks you to let purlis reach your repositories
+(`repo`) and the names of your organisations (`read:org`). purlis keeps the sign-in in your
+system keychain, renews it before it expires, and never hands it to a chat. If GitHub ends it,
+a notice names the account and offers **Sign in again**. Beside it, **Sign in with a token…**
+keeps a GitHub token in your system keychain instead, and is the way on a GitHub Enterprise
+server. The window's GitHub work then uses your sign-in, with no `gh` needed: the repo
 picker, discover, saves and the pull requests they open, and each workspace's pull request and
 checks. The page also shows whether `gh` and `glab` are installed and signed in: a host you
 have not signed in to through purlis still uses `gh`, and chats always do. If `gh` is

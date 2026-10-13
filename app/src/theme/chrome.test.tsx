@@ -49,6 +49,7 @@ import { Health } from "../Doctor";
 import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
+import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { LinkWorkItem } from "../LinkWorkItem";
 import { LiveDialog } from "../LiveDialog";
@@ -398,6 +399,19 @@ function dialogCore() {
         };
       case "reachable_repos":
         return { repos: [{ name: "svc", path: "acme/svc", description: "" }], trouble: [] };
+      case "forge_device_sign_in_start":
+        return {
+          flow: 1,
+          host: "github.com",
+          title: "GitHub",
+          user_code: "WDJB-MJHT",
+          verification_uri: "https://github.com/login/device",
+          expires_in: 900,
+          scopes: ["repo", "read:org"],
+        };
+      case "forge_device_sign_in_wait":
+        // Still waiting for the person: the dialog is drawn with its code up.
+        return new Promise(() => undefined);
       case "vault_open":
         return VAULT;
       case "plane_saving":
@@ -698,6 +712,14 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<Extensions onClose={nothing} />);
       await screen.findByRole("button", { name: "Review" });
+    },
+  },
+  {
+    name: "the GitHub browser sign-in, showing its code",
+    file: "ForgeDeviceSignIn.tsx",
+    open: async () => {
+      render(<ForgeDeviceSignIn onSignedIn={nothing} onCancel={nothing} />);
+      await screen.findByText("WDJB-MJHT");
     },
   },
   {

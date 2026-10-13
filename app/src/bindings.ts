@@ -1120,6 +1120,25 @@ export const commands = {
 	 */
 	forgeImportCliLogin: (kind: string, host: string) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_import_cli_login", { kind, host })),
 	/**
+	 *  Start signing in to `kind` on `host` by the device flow: the forge is asked for a code with
+	 *  purlis's public client id, and the code and the forge's page are answered for the window to
+	 *  show. A flow already waiting is ended. Refused, with the token named as the way, on a host
+	 *  purlis has no registration on.
+	 */
+	forgeDeviceSignInStart: (kind: string, host: string) => typedError<ForgeDeviceCode, string>(__TAURI_INVOKE("forge_device_sign_in_start", { kind, host })),
+	/**
+	 *  Wait for the person to confirm the code of `flow` on the forge's page, then sign the account
+	 *  in: the token is checked with the forge and kept, with its refresh token, in the account's
+	 *  own keyring item. The account as Settings lists it, or a sentence saying how the flow ended
+	 *  and what to do next.
+	 */
+	forgeDeviceSignInWait: (flow: number) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_device_sign_in_wait", { flow })),
+	/**
+	 *  Stop waiting on `flow`: the polling ends within a moment, and nothing of the flow is kept.
+	 *  The code may still be confirmed on the forge's page; nothing is listening for it then.
+	 */
+	forgeDeviceSignInCancel: (flow: number) => __TAURI_INVOKE<void>("forge_device_sign_in_cancel", { flow }),
+	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
 	 */
@@ -4966,6 +4985,27 @@ export type ForgeCliLogin = {
 	cli: string,
 	/**  The forge, as a sentence names it (`GitHub`, `GitLab`). */
 	title: string,
+};
+
+/**
+ *  What the window shows while a device flow waits: the code to type, and the forge's own page
+ *  to type it on. Nothing here is secret: the code is of no use without the person's own
+ *  confirmation on that page.
+ */
+export type ForgeDeviceCode = {
+	/**  Which flow this is: what waiting and cancelling name it by. */
+	flow: number,
+	host: string,
+	/**  The forge, as a sentence names it (`GitHub`). */
+	title: string,
+	/**  The code the person types on the forge's page. */
+	user_code: string,
+	/**  The forge's own page, opened in the system browser. */
+	verification_uri: string,
+	/**  How many seconds the code lasts. */
+	expires_in: number,
+	/**  The scopes the sign-in asks for, each explained on the page. */
+	scopes: string[],
 };
 
 /**  A `[[forge]]` block as the Add form sends it, each field as typed. */

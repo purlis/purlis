@@ -221,7 +221,7 @@ describe("the welcome's doors and recents", function () {
     await backToTheDoor("Get a project from your forge");
   });
 
-  it("says plainly that signing in from purlis comes later, and lists the forge tools", async () => {
+  it("offers the browser sign-in beside the token, and lists the forge tools", async () => {
     await drawTheWelcome();
 
     await press(WELCOME, SIGN_IN);
@@ -229,7 +229,11 @@ describe("the welcome's doors and recents", function () {
       timeout: 20_000,
       timeoutMsg: `Sign in never drew its page; the page says ${await pageHeading()}`,
     });
-    await untilSays(WELCOME, "comes in a later update");
+    // The browser sign-in on github.com and the token, side by side (#729). Neither is
+    // pressed: a scenario run never reaches github.com.
+    await untilSays(WELCOME, "Sign in to github.com through your browser");
+    await untilSays(WELCOME, "Sign in with GitHub");
+    await untilSays(WELCOME, "Sign in with a token");
     // The machine was read: each forge tool has its row, whatever this runner has installed.
     await untilSays(WELCOME, "gh:");
     await untilSays(WELCOME, "glab:");

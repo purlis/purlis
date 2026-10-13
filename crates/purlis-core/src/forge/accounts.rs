@@ -20,6 +20,14 @@
 //! account. Signing in again as the same login on the same host replaces the token and keeps the
 //! account. **Sign-out** ([`sign_out`]) deletes the keyring item and the account.
 //!
+//! **A browser sign-in** ([`sign_in_with_grant`], ADR 0077 §3) lands in the same two stores. What
+//! the forge granted (the device flow on github.com, [`super::device`]; PKCE on gitlab.com) is
+//! checked the same way and kept in the same keyring item, which then holds the access token
+//! with its refresh token and expiry, written together in one write. [`token`] answers the
+//! access token whichever way the account was signed in, so nothing that sends one need know.
+//! Only [`super::refresh`] reads the refresh token, and a refresh the forge refuses leaves the
+//! account listed, signed out, with nothing in the keyring ([`signed_out_by_the_forge`]).
+//!
 //! **Only the host signs in or out.** Each takes a [`HostScope`], which is refused inside a chat's
 //! process tree, and the `purlis` binary never claims one (ADR 0077 §3, V22c): a `purlis` a chat
 //! runs is part of that chat. The window runs these on the `local-ui` scope.
@@ -34,9 +42,10 @@ use std::sync::{Arc, Mutex};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::http::{ApiRoot, Http, TokenSource};
+use super::oauth::Granted;
 use super::route::HostScope;
 use super::transport::{Call, Reply, Transport};
 use super::{Forge, ForgeError, Kind, host_ok};
@@ -52,8 +61,8 @@ const VERSION: u64 = 1;
 /// The most [`FILE`] may be. A machine has a handful of accounts.
 const MOST_BYTES: u64 = 1 << 20;
 
-/// The keyring item's account field: the token. A later flow that refreshes keeps its pair under
-/// the same item (ADR 0077 §3, one write).
+/// The keyring item's account field: the token. A browser sign-in keeps its pair under the same
+/// item (ADR 0077 §3, one write): see [`Pair`].
 const ITEM_ACCOUNT: &str = "token";
 
 /// Where [`FILE`] is under the config home `config_root`.
@@ -399,7 +408,10 @@ fn object(forge: &Forge, reply: &Reply) -> Result<Map<String, Value>, String> {
 /// GitHub: `GET /user`, with the classic token's scopes in its `X-OAuth-Scopes` header (absent
 /// for a fine-grained token). GitLab: `GET /user`, then the token's own record,
 /// `GET /personal_access_tokens/self`, for its scopes and whether it is still active.
-fn check(transport: &dyn Transport, forge: &Forge) -> Result<Checked, String> {
+///
+/// A token a browser sign-in was `granted` is no personal access token, so GitLab has no such
+/// record of it: its scopes are the grant's own, which the caller holds.
+fn check(transport: &dyn Transport, forge: &Forge, granted: bool) -> Result<Checked, String> {
     let user = asked(transport, forge, &Call::get("user", super::STATUS_TIMEOUT))?;
     let me = object(forge, &user)?;
     let login_key = match forge.kind {
@@ -426,6 +438,7 @@ fn check(transport: &dyn Transport, forge: &Forge) -> Result<Checked, String> {
                 .map(str::to_string)
                 .collect()
         }),
+        Kind::GitLab if granted => None,
         Kind::GitLab => {
             let call = Call::get("personal_access_tokens/self", super::STATUS_TIMEOUT);
             let token = asked(transport, forge, &call).map_err(|why| {
@@ -474,6 +487,91 @@ fn lacks(kind: Kind, host: &str, missing: &[&str]) -> String {
         if missing.len() == 1 { "it" } else { "them" },
         make_one_at(kind, host)
     )
+}
+
+/// The sentence refusing a browser sign-in the forge granted without `missing`.
+fn lacks_granted(kind: Kind, host: &str, missing: &[&str]) -> String {
+    let named = match missing {
+        [one] => format!("the {one} scope"),
+        many => format!("the {} scopes", many.join(" and ")),
+    };
+    format!(
+        "{host} signed you in without {named}, and purlis needs {}. Sign in again and approve \
+         what {} asks for, or sign in with a token instead.",
+        needed(kind).join(" and "),
+        forge_name(kind)
+    )
+}
+
+// ---------------------------------------------------------------------------------------
+// What the keyring item holds.
+
+/// What a browser sign-in's keyring item holds, as JSON: the access token, and the refresh
+/// token and the access token's expiry where the forge gave them (ADR 0077 §8). A pasted or
+/// imported token's item holds the token alone, as text.
+#[derive(Serialize, Deserialize)]
+struct Pair {
+    access: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    refresh: Option<String>,
+    /// When the access token expires, in seconds since the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expires_at: Option<u64>,
+}
+
+impl Drop for Pair {
+    fn drop(&mut self) {
+        self.access.zeroize();
+        if let Some(refresh) = &mut self.refresh {
+            refresh.zeroize();
+        }
+    }
+}
+
+/// An account's keyring item, read: its access token, and what a refresh needs.
+pub struct Kept {
+    pub access: SecretString,
+    /// The refresh token, for an account a browser sign-in made on a forge whose tokens expire.
+    pub refresh: Option<SecretString>,
+    /// When the access token expires, in seconds since the epoch, when it does.
+    pub expires_at: Option<u64>,
+}
+
+impl std::fmt::Debug for Kept {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Kept")
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Whether `method` is a browser sign-in, whose item holds a [`Pair`].
+fn granted_by_a_flow(method: Method) -> bool {
+    matches!(method, Method::Device | Method::Pkce)
+}
+
+/// Now, in seconds since the epoch.
+pub(super) fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// The item text for what was `granted` at `now`: one value, so one write. `refresh_else` is
+/// the refresh token kept when the forge granted no new one.
+fn pair_of(granted: &Granted, refresh_else: Option<&SecretString>, now: u64) -> Zeroizing<String> {
+    let pair = Pair {
+        access: granted.access.expose_secret().to_string(),
+        refresh: granted
+            .refresh
+            .as_ref()
+            .or(refresh_else)
+            .map(|refresh| refresh.expose_secret().to_string()),
+        expires_at: granted
+            .expires_in
+            .map(|lasts| now.saturating_add(lasts.as_secs())),
+    };
+    Zeroizing::new(serde_json::to_string(&pair).unwrap_or_default())
 }
 
 // ---------------------------------------------------------------------------------------
@@ -642,10 +740,19 @@ pub fn imported_on(config_root: &Path, kind: Kind, host: &str) -> bool {
 }
 
 /// `account`'s token, read from its own keyring item for one request (ADR 0077 §7), or `None`
-/// when the item is provably gone. The `String` the keyring answered with is wiped before this
-/// returns, so the only copy left is the `SecretString`, and the value is registered with
-/// [`crate::applog::keep_out`] so no log line or error carries it.
+/// when the item is provably gone: the access token, whichever way the account was signed in.
+/// The `String` the keyring answered with is wiped before this returns, so the only copy left
+/// is the `SecretString`, and the value is registered with [`crate::applog::keep_out`] so no log
+/// line or error carries it.
 pub fn token(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<SecretString>, String> {
+    Ok(kept(keyring, account)?.map(|kept| kept.access))
+}
+
+/// `account`'s keyring item, read whole: [`token`]'s access token, and for a browser sign-in
+/// the refresh token and the expiry kept beside it. Every value is wiped and kept out of the
+/// log as [`token`] says. An item of a browser sign-in that is not the pair it wrote is an
+/// error, never sent anywhere as a token.
+pub(super) fn kept(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<Kept>, String> {
     let read = keyring.get(&service(account), ITEM_ACCOUNT).map_err(|e| {
         format!(
             "purlis could not read the token for {} on {} from the keychain: {}",
@@ -658,10 +765,36 @@ pub fn token(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<Secre
         return Ok(None);
     };
     let mut text = secret.into_inner();
-    let held = SecretString::from(text.as_str());
+    if !granted_by_a_flow(account.method) {
+        let held = SecretString::from(text.as_str());
+        text.zeroize();
+        crate::applog::keep_out(&held);
+        return Ok(Some(Kept {
+            access: held,
+            refresh: None,
+            expires_at: None,
+        }));
+    }
+    let pair = serde_json::from_str::<Pair>(&text);
     text.zeroize();
-    crate::applog::keep_out(&held);
-    Ok(Some(held))
+    let Ok(pair) = pair else {
+        return Err(format!(
+            "purlis's sign-in to {} as {} cannot be read from the keychain. Sign in again in \
+             Settings › You › Accounts.",
+            account.host, account.login
+        ));
+    };
+    let access = SecretString::from(pair.access.as_str());
+    let refresh = pair.refresh.as_deref().map(SecretString::from);
+    crate::applog::keep_out(&access);
+    if let Some(refresh) = &refresh {
+        crate::applog::keep_out(refresh);
+    }
+    Ok(Some(Kept {
+        access,
+        refresh,
+        expires_at: pair.expires_at,
+    }))
 }
 
 /// Sign in to `kind` on the host `typed` with the pasted `token` (ADR 0077 §4): checked with the
@@ -716,24 +849,121 @@ pub(super) fn sign_in(
             make_one_at(kind, &host)
         ));
     }
-    let secret = token.0;
+    keep(
+        config_root,
+        keyring,
+        reach,
+        kind,
+        host,
+        Held::Token(token.0),
+        method,
+    )
+}
+
+/// Sign in to `kind` on the host `typed` with what a browser sign-in was `granted` (ADR 0077
+/// §3): the device flow ([`Method::Device`]) or PKCE ([`Method::Pkce`]). The forge is asked
+/// whose token it is through `reach`, the scopes are the grant's own, and a grant that lacks a
+/// scope [`needed`] names is refused. Then the access token, the refresh token and the expiry
+/// are kept together in the account's keyring item, in one write, and the account is listed in
+/// [`FILE`]: the same account, with the same id, when that login was already signed in on that
+/// host. The account, as listed.
+///
+/// `typed` is the host of the registration the grant came from, and the account is that host's
+/// alone: the token is checked with, and only ever sent to, the forge at that host.
+#[allow(clippy::too_many_arguments)]
+pub fn sign_in_with_grant(
+    _host: &HostScope,
+    config_root: &Path,
+    keyring: &dyn Store,
+    reach: Reach<'_>,
+    kind: Kind,
+    typed: &str,
+    granted: Granted,
+    method: Method,
+) -> Result<ForgeAccount, String> {
+    if !granted_by_a_flow(method) {
+        return Err("A browser sign-in is by the device flow or by PKCE.".to_string());
+    }
+    let host = host_named(kind, typed)?;
+    if granted.access.expose_secret().is_empty() {
+        return Err(format!(
+            "{host} signed you in without a token. Sign in again."
+        ));
+    }
+    keep(
+        config_root,
+        keyring,
+        reach,
+        kind,
+        host,
+        Held::Grant(granted),
+        method,
+    )
+}
+
+/// What is being signed in with: a token alone, or what a browser sign-in granted.
+enum Held {
+    Token(SecretString),
+    Grant(Granted),
+}
+
+/// Checks what is `held` with the forge and keeps it as the account's keyring item and its
+/// line in [`FILE`]: the end of every sign-in.
+fn keep(
+    config_root: &Path,
+    keyring: &dyn Store,
+    reach: Reach<'_>,
+    kind: Kind,
+    host: String,
+    held: Held,
+    method: Method,
+) -> Result<ForgeAccount, String> {
+    let secret = match &held {
+        Held::Token(token) => token.clone(),
+        Held::Grant(granted) => granted.access.clone(),
+    };
     // From here on no log line or error carries it, whatever its shape (a GitLab or a
     // self-managed token has no prefix a shape rule knows).
     crate::applog::keep_out(&secret);
+    if let Held::Grant(Granted {
+        refresh: Some(refresh),
+        ..
+    }) = &held
+    {
+        crate::applog::keep_out(refresh);
+    }
     let forge = Forge {
         kind,
         host: host.clone(),
     };
-    let checked = reach(&forge, Arc::new(Checking(secret.clone())))
+    let granted = matches!(held, Held::Grant(_));
+    let mut checked = reach(&forge, Arc::new(Checking(secret.clone())))
         .map_err(|e| e.to_string())
-        .and_then(|transport| check(transport.as_ref(), &forge))
+        .and_then(|transport| check(transport.as_ref(), &forge, granted))
         .map_err(|why| unechoed(why, &secret))?;
+    if let Held::Grant(Granted {
+        scopes: Some(scopes),
+        ..
+    }) = &held
+    {
+        // The grant's own word on its scopes, where the forge gave one.
+        checked.scopes = Some(scopes.clone());
+    }
     if let Some(scopes) = &checked.scopes {
         let missing = missing(kind, scopes);
         if !missing.is_empty() {
-            return Err(lacks(kind, &host, &missing));
+            return Err(if granted {
+                lacks_granted(kind, &host, &missing)
+            } else {
+                lacks(kind, &host, &missing)
+            });
         }
     }
+    let item = match &held {
+        Held::Token(token) => Zeroizing::new(token.expose_secret().to_string()),
+        Held::Grant(granted) => pair_of(granted, None, now()),
+    };
+    drop(held);
 
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
@@ -759,8 +989,9 @@ pub(super) fn sign_in(
         scopes: checked.scopes,
     };
     keyring
-        .set(&service(&account), ITEM_ACCOUNT, secret.expose_secret())
+        .set(&service(&account), ITEM_ACCOUNT, &item)
         .map_err(|e| unechoed(e.message, &secret))?;
+    drop(item);
     drop(secret);
     let value = written(&account, rest);
     match same {
@@ -806,6 +1037,68 @@ pub fn sign_out(
     file.accounts.remove(at);
     write(config_root, file)?;
     Ok(account)
+}
+
+/// Keeps what a refresh `granted` for `account`, at `now`: the new access token, its expiry and
+/// the new refresh token replace the old pair in the account's keyring item, in one write (ADR
+/// 0077 §3: a refresh rotates the refresh token). `was` is the refresh token that was spent,
+/// kept only when the forge granted no new one. Only [`super::refresh`] calls this, in the
+/// host's process.
+pub(super) fn keep_refreshed(
+    _host: &HostScope,
+    keyring: &dyn Store,
+    account: &ForgeAccount,
+    granted: &Granted,
+    was: Option<&SecretString>,
+    now: u64,
+) -> Result<(), String> {
+    crate::applog::keep_out(&granted.access);
+    if let Some(refresh) = &granted.refresh {
+        crate::applog::keep_out(refresh);
+    }
+    let item = pair_of(granted, was, now);
+    keyring
+        .set(&service(account), ITEM_ACCOUNT, &item)
+        .map_err(|e| {
+            format!(
+                "purlis could not keep the renewed sign-in in the keychain: {}",
+                unechoed(e.message, &granted.access)
+            )
+        })
+        .map(|_| ())
+}
+
+/// The forge ended the sign-in of the account `id` (ADR 0077 §3: a refresh it refuses): the
+/// keyring item is deleted, and the account stays listed, **signed out**, so the window can say
+/// which sign-in ended and offer it again. Nothing else of the account changes.
+pub(super) fn signed_out_by_the_forge(
+    _host: &HostScope,
+    config_root: &Path,
+    keyring: &dyn Store,
+    id: &str,
+) -> Result<(), String> {
+    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = read(config_root)?;
+    let Some(at) = file
+        .accounts
+        .iter()
+        .position(|value| account_of(value).is_some_and(|a| a.id == id))
+    else {
+        return Ok(());
+    };
+    let Some(account) = account_of(&file.accounts[at]) else {
+        return Ok(());
+    };
+    // The item first: an account listed signed in must never be left with a token that the
+    // forge has ended.
+    let _ = keyring.delete(&service(&account), ITEM_ACCOUNT);
+    if let Some(Value::Object(fields)) = file.accounts.get_mut(at) {
+        fields.insert(
+            "state".to_string(),
+            serde_json::to_value(State::SignedOut).unwrap_or(Value::Null),
+        );
+    }
+    write(config_root, file)
 }
 
 #[cfg(test)]

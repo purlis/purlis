@@ -2865,6 +2865,8 @@ pub fn run() {
             }
             // The person's forge sign-ins, for the window's own forge calls (#1816).
             forgeaccounts::hand_over_sign_ins();
+            // And the window is told when a forge ends one of them (#729).
+            forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,

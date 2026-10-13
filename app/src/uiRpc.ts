@@ -4092,6 +4092,27 @@ export type ForgeCliLogin = {
 	title: string,
 };
 
+/**
+ *  What the window shows while a device flow waits: the code to type, and the forge's own page
+ *  to type it on. Nothing here is secret: the code is of no use without the person's own
+ *  confirmation on that page.
+ */
+export type ForgeDeviceCode = {
+	/**  Which flow this is: what waiting and cancelling name it by. */
+	flow: number,
+	host: string,
+	/**  The forge, as a sentence names it (`GitHub`). */
+	title: string,
+	/**  The code the person types on the forge's page. */
+	user_code: string,
+	/**  The forge's own page, opened in the system browser. */
+	verification_uri: string,
+	/**  How many seconds the code lasts. */
+	expires_in: number,
+	/**  The scopes the sign-in asks for, each explained on the page. */
+	scopes: string[],
+};
+
 /**  A `[[forge]]` block as the Add form sends it, each field as typed. */
 export type ForgeEntry = {
 	kind: string,

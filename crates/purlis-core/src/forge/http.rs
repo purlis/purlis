@@ -108,7 +108,7 @@ impl ApiRoot {
 
 /// The parts of a URL a token's safety turns on: its scheme and its authority, or why it is
 /// refused.
-fn checked(url: &str) -> Result<(String, String), String> {
+pub(super) fn checked(url: &str) -> Result<(String, String), String> {
     let uri: http::Uri = url
         .parse()
         .map_err(|e| format!("{url} is not a URL: {e}"))?;
