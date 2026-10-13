@@ -637,6 +637,11 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
       "---",
       "personas/ops/curation/bad.md is left out",
     ]);
+    // **A persona's name is data, and is written as it was given** (ruling T4): its group's
+    // label does not wear the label role, whose capitals would head it "OPS".
+    const ops = within(sub).getByText("ops");
+    expect(ops).toHaveClass("ui-menu-label", "ui-menu-label-named", "ui-text-secondary");
+    expect(ops).not.toHaveClass("ui-text-label");
   });
 
   it("draws an action the core left out as a row that cannot run, saying why", async () => {

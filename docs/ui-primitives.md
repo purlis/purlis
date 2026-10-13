@@ -502,8 +502,8 @@ What every class holds to:
   tall (28px at the default text size); a small button and a small segmented control are
   `--size-chrome` (21px), for strips and pane headers. A menu's row is at least a control tall.
 - **A menu's row is one line, a control tall, and the menu scrolls.** Its words give way to an
-  ellipsis and never wrap. A row with the one line that may stand under its words
-  (`.ui-menu-note`, [Menus](#menus)) is as tall as the two say, and its height is never fixed.
+  ellipsis and never wrap. A row with something under its words (`.ui-menu-note`,
+  [Menus](#menus)) is as tall as the two say, and its height is never fixed.
   No row, line or label gives way when the menu is short of room (`flex-shrink: 0`): the menu is
   capped at the room the window has where it opened, which Radix measures
   (`--radix-context-menu-content-available-height`, `--radix-dropdown-menu-content-available-height`),
@@ -567,15 +567,23 @@ words are written once, in `app/src/menuWords.ts`; and what is inside a row is
 2. **A row's note is its tooltip and its description, not a line under it.** The tooltip is the
    window's (Radix Tooltip, `.ui-tooltip`), shown beside the menu once the keyboard or the
    pointer has rested on the row for `TIP_AFTER_MS`; the description is the row's
-   `aria-describedby`. **Two kinds of line stay under a row's words, one line each**: what a
-   row that cannot be undone costs (*Ends the program it runs. There is no undo.*), and why a
-   row cannot run. Each changes a decision the person is about to make.
+   `aria-describedby`. **Two things stay under a row's words**: what a row that cannot be
+   undone costs (*Ends the program it runs. There is no undo.*), and why a row cannot run. Each
+   changes a decision the person is about to make. **Neither is ever cut**: it wraps inside the
+   menu's width. A warning that lost "There is no undo." to an ellipsis would say less than
+   nothing, and a row that cannot run takes no keyboard, so nothing would open the rest of its
+   reason. The warning is a short sentence written for the menu (`menuWords.ts`, `WARNS`) that
+   says no more than the catalogue's note for its row; the whole note is the tooltip.
 3. **Rows of one kind are one row that opens a submenu.** *Open ▸* holds the views that open in
    a tab of their own (Activity, Network); *Ask ▸* a row per persona, named by the persona
    alone; *Stop ▸* the ways to stop a chat; *Curate ▸* and *Move to ▸* the rows the catalogue
    decides the length of. What every row of a submenu does is said once, as the tooltip of the
    row that opens it. A menu's top level is **at most ten rows in at most four groups**: the
-   thing itself, what it opens or starts, how it runs, and last what ends or deletes it.
+   thing itself, what it opens or starts, how it runs, and last what ends or deletes it. A
+   submenu whose rows end something (*Stop ▸*) is in that last group too, above the row that
+   ends the thing itself, so no row that cannot be undone is anywhere but last. **A group's
+   name in purlis's own words wears the label role; a group named by data** (a persona's group
+   under *Curate ▸*) **is written as the name is**, in the secondary role and with no capitals.
 4. **The danger colour is for what cannot be undone**: a program ended (End, the ways to stop,
    Close a project) or a thing deleted (a workspace, a persona, a vault, a forgotten todo). A
    row that loses nothing wears none, wherever it stands: Restart keeps the conversation,
@@ -607,6 +615,17 @@ tooltip is the top layer while it is up and would otherwise take the first one.
 **Not a filter field in a long submenu.** A text field inside a Radix menu fights its type-ahead
 and its roving focus, and typing already finds a row. A submenu with more rows than the window
 has room for scrolls.
+
+**A menu whose rows are not the catalogue's declares them the same way.** A context menu on
+something `actions.menuRows` does not know (a terminal's own menu) builds its `GroupDrawn[]`
+itself: each row a `RowDrawn` around an `Offer` made for that row, as `actions.fileRows` makes
+a file's, with its `said`, `danger`, `warns`, `checked` and `keys`. It draws them with
+`Menus.tsx`'s exported `Groups`, inside its own `ContextMenu.Content` wearing `ui-menu` and
+named by `aria-label`, so its rows, tooltips, submenus and keyboard are every other menu's. A
+dropdown, which is not a context menu, puts `MenuWords`, `MenuKeys` and `MenuTip`
+(`primitives/MenuRow.tsx`) inside its own `ui-menu-item`s, as a secret's menu and a setting's
+*Move to…* do. **The show-more and the away menus are the exception to the width**: their rows
+are tabs and sentences with no part that gives way, so `.more-menu` hands `--ui-menu-max: none`.
 
 ## The overlay surface
 

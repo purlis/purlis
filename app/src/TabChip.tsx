@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
+import { MenuTip, useRested } from "./primitives/MenuRow";
 import {
   Check,
   ChevronDown,
@@ -738,26 +739,14 @@ function Chip({
               {own !== undefined && onActivity !== undefined && (
                 /* **The session's Activity** (#1495, V100-44): what its chat and its tasks
                    said to each other, in a tab of its own. It only reads. */
-                <Menu.Item
-                  className="ui-menu-item tasks-menu-row tasks-menu-activity"
-                  textValue="Activity"
-                  title={ACTIVITY_SAYS}
-                  aria-label="Activity"
-                  aria-describedby={`${id}-activity`}
-                  onPointerMove={quiet ? keepsNoKeyboard : undefined}
-                  onPointerLeave={quiet ? keepsNoKeyboard : undefined}
-                  onSelect={() => {
+                <ActivityRow
+                  id={`${id}-activity`}
+                  quiet={quiet}
+                  onPick={() => {
                     picked.current = true;
                     onActivity(own);
                   }}
-                >
-                  <span className="name">Activity</span>
-                  {/* What it opens is its tooltip and its description, not a line beside its
-                      word (the menus' rule 2, `docs/ui-primitives.md`). */}
-                  <span id={`${id}-activity`} hidden>
-                    {ACTIVITY_SAYS}
-                  </span>
-                </Menu.Item>
+                />
               )}
               {finished.length > 0 && (
                 <Menu.Item
@@ -831,6 +820,60 @@ function keepsNoKeyboard(event: ReactPointerEvent) {
 
 /** What the menu's Activity row opens: its tooltip and its description. */
 const ACTIVITY_SAYS = "What its chats said to each other, in a tab of its own.";
+
+/**
+ * The menu's Activity row. What it opens is its tooltip and its description, not a line beside
+ * its word (the menus' rule 2, `docs/ui-primitives.md`): the menus' own tooltip (`MenuTip`),
+ * shown once the keyboard has rested on the row, or the pointer in a menu that took no keyboard.
+ */
+function ActivityRow({
+  id,
+  quiet,
+  onPick,
+}: {
+  /** The id of the row's description. */
+  id: string;
+  /** Whether the menu took no keyboard: the pointer's moves are then kept from Radix. */
+  quiet: boolean;
+  onPick: () => void;
+}) {
+  const { rested, rest, wake } = useRested(true);
+  return (
+    <Menu.Item
+      className="ui-menu-item tasks-menu-row tasks-menu-activity"
+      textValue="Activity"
+      aria-label="Activity"
+      aria-describedby={id}
+      {...rest}
+      // In a menu that took no keyboard the row is never focused, so the pointer's own coming
+      // and going say whether it rests here.
+      onPointerEnter={quiet ? rest.onFocus : undefined}
+      onPointerMove={quiet ? keepsNoKeyboard : undefined}
+      onPointerLeave={
+        quiet
+          ? (event: ReactPointerEvent) => {
+              keepsNoKeyboard(event);
+              wake();
+            }
+          : undefined
+      }
+      onSelect={() => {
+        wake();
+        onPick();
+      }}
+    >
+      <span className="name">Activity</span>
+      <span id={id} hidden>
+        {ACTIVITY_SAYS}
+      </span>
+      {rested && (
+        <MenuTip side="right" onClose={wake}>
+          {ACTIVITY_SAYS}
+        </MenuTip>
+      )}
+    </Menu.Item>
+  );
+}
 
 /** How long the pointer rests on "End a task" before its rows open: Radix's own wait. */
 const ENDS_OPEN_AFTER = 100;

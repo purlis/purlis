@@ -3,8 +3,9 @@
 - **Every right-click menu is shorter and says less twice.** A row is now a short verb and no
   longer repeats the name of the thing you right-clicked: *Rename…*, *Pinned*, *End*, where a
   chat tab's menu said *Rename chat console-developer 16…*. The sentence that stood under almost
-  every row is now the row's tooltip, shown when the pointer or the keyboard rests on it; one
-  short line stays under a row only where it cannot be undone, or to say why a row cannot run.
+  every row is now the row's tooltip, shown when the pointer or the keyboard rests on it; a
+  short sentence stays under a row only where it cannot be undone, or to say why a row cannot
+  run, and it is never cut short.
   A chat tab's personas are behind one *Ask* row instead of a row each, its Activity and Network
   behind *Open*, and its three ways to stop behind *Stop*, so the menu is at most ten rows
   whatever the project holds. Red is kept for what cannot be undone: *End*, the ways to stop,

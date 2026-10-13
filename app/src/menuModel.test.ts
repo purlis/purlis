@@ -9,6 +9,7 @@ import {
   ENDS_IT,
   memoryOffers,
   menuRows,
+  sessionOffers,
   OUTSIDE,
   type Catalogued,
   type MenuOn,
@@ -73,6 +74,17 @@ const chat = (session: number, more: Partial<ListedChat> = {}): ListedChat => ({
 });
 
 const CUT = { workspace: "beta", repo: "svc", piece: "fix-it", branch: "fix-it" };
+const RECORD = "workspaces/beta/sessions/ship-the-widget.md";
+const MEMORY = { scope: { kind: "shared" as const }, slug: "a-lesson" };
+/** A finished task that worked on a branch purlis cut for it: all its menu reads of it. */
+const FINISHED = {
+  id: "d-1",
+  name: "lint",
+  branch: "task/lint",
+  waits: null,
+} as unknown as NonNullable<Now["finished"]> extends ReadonlyMap<number, readonly (infer T)[]>
+  ? T
+  : never;
 
 /** A window with one of everything a menu can be opened on. Tab 1 is a chat behind, tab 2 the
  *  chat in front, tab 3 a view's tab. */
@@ -117,9 +129,18 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; tabs: N
     vaults: ["forge"],
     todos: [{ slug: "ship-it", title: "Ship it" }],
     memoryStores: [{ kind: "shared" }, { kind: "workspace", name: "beta" }],
+    // A read of beta stands refused, and a task of chat 7 finished on a branch of its own.
+    readRefused: true,
+    finished: new Map([[7, [FINISHED]]]),
     ...over,
   };
-  return { now, offers: catalogued(catalogue(now)), tabs };
+  // And the rows a panel adds for what it lists: a session record's, and a memory's.
+  const offers = catalogued([
+    ...catalogue(now),
+    ...sessionOffers([{ path: RECORD, title: "Ship the widget", resumable: true }]),
+    ...memoryOffers(MEMORY, "A lesson", now.memoryStores),
+  ]);
+  return { now, offers, tabs };
 }
 
 /** Every thing the world's menus are opened on, by what the test calls it. */
@@ -153,6 +174,10 @@ function everyMenu(): { said: string; on: MenuOn; offers: Catalogued }[] {
       offers,
     },
     { said: "a view's icon", on: { on: "view", view: "explorer", to: "panel" }, offers },
+    { said: "a session record", on: { on: "session", path: RECORD }, offers },
+    { said: "a memory", on: { on: "memory", key: memoryKey(MEMORY) }, offers },
+    { said: "a finished task", on: { on: "finished", id: "d-1" }, offers },
+    { said: "a refused read", on: { on: "refusal" }, offers },
   ];
 }
 
@@ -252,6 +277,8 @@ describe("every menu", () => {
       "a vault",
       "a todo",
       "a file",
+      "a session record",
+      "a memory",
     ]);
   });
 
@@ -275,16 +302,30 @@ describe("every menu", () => {
         );
   });
 
-  it("has at most four groups, and what cannot be undone in the last", () => {
+  it("has at most four groups, and what cannot be undone in the last, a submenu's rows too", () => {
+    let folded = 0;
     for (const { said: which, on, offers } of everyMenu()) {
       const menu = menuOf(on, offers);
       expect(menu.groups.length, which).toBeLessThanOrEqual(4);
-      menu.groups.slice(0, -1).forEach((group) =>
-        group.entries.forEach((entry) => {
-          if (entry.kind === "row") expect(entry.danger, `${which}: ${entry.said}`).toBe(false);
-        }),
-      );
+      // Every row of every group but the last, through the submenus a group's rows open.
+      for (const group of menu.groups.slice(0, -1))
+        for (const row of rowsOf({ ...menu, groups: [group] })) {
+          expect(row.danger, `${which}: ${row.said}`).toBe(false);
+        }
+      // And in the last group a submenu of such rows stands above the rows themselves, so the
+      // menu ends with the row that ends the thing.
+      const last = menu.groups.at(-1)?.entries ?? [];
+      const sub = last.findIndex((entry) => entry.kind === "sub");
+      if (sub === -1) continue;
+      folded += 1;
+      expect(sub, which).toBe(0);
+      expect(
+        last.slice(1).every((entry) => entry.kind === "row"),
+        which,
+      ).toBe(true);
     }
+    // The ways to stop a chat are such a submenu, on its tab and on its row.
+    expect(folded).toBeGreaterThanOrEqual(3);
   });
 
   it("colours only what cannot be undone: a program ended, a thing deleted", () => {
@@ -310,6 +351,8 @@ describe("every menu", () => {
         "persona.remove",
         "vault.remove",
         "todo.forget",
+        // Removes a finished task's branch folder. It asks first.
+        "task.discard",
       ].sort(),
     );
     // Restart keeps the conversation; a branch's folder goes and its branch stays; a repo
@@ -318,17 +361,49 @@ describe("every menu", () => {
       expect(plain, stem).toContain(stem);
   });
 
-  it("says what a row that cannot be undone costs in one short line, and only on such a row", () => {
+  it("says what a row that cannot be undone costs under it, on such a row only, and no more than its note says", () => {
     for (const { said: which, on, offers } of everyMenu())
       for (const row of rowsOf(menuOf(on, offers))) {
         if (row.warns === undefined) continue;
         expect(row.danger, `${which}: ${row.said}`).toBe(true);
         expect(row.offer.available, `${which}: ${row.said}`).toBe(true);
-        // One line of a menu at its widest.
-        expect(row.warns.length, row.warns).toBeLessThanOrEqual(48);
+        // The whole of it is the catalogue's note, which is the row's tooltip.
+        expect(row.offer.note, `${which}: ${row.said}`).toBeTruthy();
       }
-    // The catalogue's own sentence, where it is short enough to be the line.
+    // That it is never cut is the stylesheet's, held in `primitives/controls.test.tsx`.
+    // The catalogue's own sentence, where it is short enough.
     expect(WARNS.ends).toBe(ENDS_IT);
+    // Only a keychain vault's secrets are destroyed (the catalogue's note): the warning says
+    // which, and claims nothing of a vault kept elsewhere.
+    expect(WARNS.deletesVault).toMatch(/^A keychain vault's secrets/);
+    // Stop all tasks keeps the session, and says so.
+    expect(WARNS.stopsTasks).toContain("The chat keeps running.");
+  });
+
+  it("marks a group named by data, which wears no capitals: a persona's group under Curate", () => {
+    const subject = {
+      subject: "workspace:alpha",
+      name: "alpha",
+      actions: [
+        {
+          id: "devops/tidy",
+          label: "Tidy",
+          declared_by: "devops",
+          runner: "devops",
+          cwd: "/plane/workspaces/alpha",
+          prompt: "Tidy alpha.",
+        },
+      ],
+      left_out: [],
+      trouble: null,
+    };
+    const { offers } = world({ curations: { subjects: [subject], cannot: null } });
+    const curate = menuOf({ on: "workspace", workspace: "alpha" }, offers)
+      .groups.flatMap((group) => group.entries)
+      .find((entry) => entry.kind === "sub" && entry.key === "curate");
+    if (curate?.kind !== "sub") throw new Error("no Curate submenu");
+
+    expect(curate.groups.map((group) => [group.label, group.named])).toEqual([["devops", true]]);
   });
 });
 
@@ -342,8 +417,9 @@ describe("a chat tab's menu", () => {
     expect(said(menu)).toEqual([
       ["Switch to", "Rename…", "Pinned", "Link to work item…", "Unlink work item"],
       [`Open ▸ [Activity, Network]`, `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`],
-      ["Restart", "Stop ▸ [Stop, Stop and everything below it, Stop all tasks]"],
-      ["End"],
+      ["Restart"],
+      // The ways to stop it end something too: in the last group, above the row that ends it.
+      ["Stop ▸ [Stop, Stop and everything below it, Stop all tasks]", "End"],
     ]);
     const top = menu.groups.flatMap((group) => group.entries);
     expect(top.length).toBeLessThanOrEqual(10);
@@ -420,7 +496,11 @@ describe("a chat tab's menu", () => {
     const changed = world({ planeUpdated: { 7: ["CLAUDE.md"] } });
     const menu = menuOf({ on: "chat", tab: behind, session: 7 }, changed.offers);
 
-    expect(said(menu).at(-1)).toEqual(["Start fresh", "End"]);
+    expect(said(menu).at(-1)).toEqual([
+      "Stop ▸ [Stop, Stop and everything below it, Stop all tasks]",
+      "Start fresh",
+      "End",
+    ]);
     const fresh = rowsOf(menu).find((row) => row.said === SAID.startFresh);
     expect(fresh?.danger).toBe(true);
     expect(fresh?.warns).toBe(WARNS.fresh);
@@ -499,11 +579,8 @@ describe("the other tabs' menus", () => {
 
 describe("a memory's menu", () => {
   it("opens and edits it, moves it from one row, and deletes it under the line uncoloured", () => {
-    const ref = { scope: { kind: "shared" as const }, slug: "a-lesson" };
-    const offers = catalogued(
-      memoryOffers(ref, "A lesson", [{ kind: "shared" }, { kind: "workspace", name: "beta" }]),
-    );
-    const menu = menuOf({ on: "memory", key: memoryKey(ref) }, offers);
+    const { offers } = world();
+    const menu = menuOf({ on: "memory", key: memoryKey(MEMORY) }, offers);
 
     expect(said(menu)).toEqual([["Open", "Edit"], ["Move to ▸ [beta — workspace]"], ["Delete"]]);
     expect(menu.about).toBe("Memory A lesson");

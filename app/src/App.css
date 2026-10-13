@@ -764,10 +764,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The menu itself is the one menu style (`.ui-menu`, `primitives/controls.css`), its width
-   too. Past about twenty hidden tabs it would run off the window; it scrolls instead (the one
-   menu style caps it at the room the window has), and the palette remains the surface for
-   finding one by name. */
+/* The menu itself is the one menu style (`.ui-menu`, `primitives/controls.css`). Past about
+   twenty hidden tabs it would run off the window; it scrolls instead (the one menu style caps
+   it at the room the window has), and the palette remains the surface for finding one by name.
+
+   **As wide as its widest row, with no most width.** Its rows are not a menu row's words: a
+   show-more row is a tab drawn as its strip draws it, and an away row is a sentence. Neither
+   has a part that gives way to an ellipsis, so the one style's most width would wrap or clip
+   them. */
+.more-menu {
+  --ui-menu-max: none;
+}
 
 /* **The `×` is inline with the title, on one line** (charter-app#130). It was drawn below it,
    which made the strip two rows tall and made the close read as a control of its own rather
