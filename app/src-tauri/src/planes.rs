@@ -328,6 +328,15 @@ pub struct PlaneUpdated {
 /// only where its brief cannot be handed to it again (#1609, [`Held::start_chat_fresh`]).
 pub const A_TASK_IS_NOT_STARTED_FRESH: &str = "This chat is a task, and a fresh start would drop the brief it was given. Restart chat keeps its conversation. To change what it was asked, stop it and ask again.";
 
+/// A project's reopen between its two halves ([`Held::begin_reopen`], [`Held::finish_reopen`]).
+pub(crate) struct Reopening {
+    begun: crate::restored::Begun,
+    /// How many chats the record held.
+    wanted: usize,
+    /// Whether the record was read: only then does a dispatch nothing brings back end (#1513).
+    read: bool,
+}
+
 impl Held {
     pub fn root(&self) -> &Path {
         &self.root
@@ -666,7 +675,19 @@ impl Held {
     /// always did. A fresh start writes the cleared record at once — the choice is the moment
     /// the old one stops being wanted, and a record left as it was would ask again at the next
     /// launch about chats the operator already declined.
+    ///
+    /// **In two halves** (`crate::restoring`): [`Self::begin_reopen`] reads and registers, and
+    /// starts nothing; [`Self::finish_reopen`] starts the chats. This is both, in turn, on the
+    /// thread that asks. A launch does the second behind the window ([`Planes::reopen`]).
     pub(crate) fn reopen(&self, size: Size, record: Read, choice: Choice) {
+        let begun = self.begin_reopen(record, choice);
+        self.finish_reopen(begun, size);
+    }
+
+    /// The first half of [`Self::reopen`]: everything it decides from the record, and the
+    /// chats registered as coming back. Quick however many chats the record holds, and from
+    /// here the window can draw each one's tab (`Chats::restoring_now`).
+    pub(crate) fn begin_reopen(&self, record: Read, choice: Choice) -> Reopening {
         self.records.allow();
         // Whether the record was read: only then, or where the person chose to start fresh,
         // does a dispatch nothing brings back end (#1513). A record that could not be read
@@ -716,7 +737,24 @@ impl Held {
         // one that cannot has ended by itself (#1513). **It reads the dispatch records as they
         // are now**: a conversion of those records (#1519) runs when the project is opened
         // (`Planes::open`), before this, and must stay there.
-        let back = crate::restored::put_back(self, &record, size, read).len();
+        let begun = crate::restored::begin(self, &record);
+        Reopening {
+            begun,
+            wanted,
+            read,
+        }
+    }
+
+    /// The second half of [`Self::reopen`]: starts the chats [`Self::begin_reopen`]
+    /// registered and settles what the launch owes its tasks. It answers when every chat has
+    /// been tried.
+    pub(crate) fn finish_reopen(&self, reopening: Reopening, size: Size) {
+        let Reopening {
+            begun,
+            wanted,
+            read,
+        } = reopening;
+        let back = crate::restored::finish(self, begun, size, read).len();
         if wanted > 0 {
             tracing::info!(
                 "purlis: plane {}, {back} of {wanted} chats back",
@@ -1372,6 +1410,10 @@ pub struct Planes {
     shipped: crate::Shipped,
     /// Where this machine's store lives, or none on a machine with no config home at all.
     config: Option<PathBuf>,
+    /// Whether a project's chats are started behind the window, on a thread of their own,
+    /// once its record is registered ([`Self::restoring_behind_the_window`]). The app's own
+    /// registry does; one a test makes starts them in turn, so what it asks next is settled.
+    restores_behind: bool,
     open: Mutex<HashMap<PlaneId, Arc<Held>>>,
     /// Told when a handoff has opened a chat in any plane (charter-app#204).
     arrivals: crate::handoff::Arrivals,
@@ -1526,6 +1568,7 @@ impl Planes {
             shipped,
             kill_switch: crate::killswitch::KillSwitch::kept_in(config.clone()),
             config,
+            restores_behind: false,
             open: Mutex::new(HashMap::new()),
             // Nobody to tell yet. A registry with no window still opens a handed-off chat;
             // it simply has no strip to put it on until one asks what is open.
@@ -1554,6 +1597,14 @@ impl Planes {
             opened: Condvar::new(),
             network: None,
         }
+    }
+
+    /// Starts each project's chats behind the window (`crate::restoring`): an open answers
+    /// once the record is registered, and the chats start a few at a time on a thread of
+    /// their own, each told to the window as it does.
+    pub fn restoring_behind_the_window(mut self) -> Self {
+        self.restores_behind = true;
+        self
     }
 
     /// What this build ships that a chat is armed with: the `charter` its hooks run and the
@@ -2220,7 +2271,32 @@ impl Planes {
         } else {
             Choice::ReopenAll
         };
-        held.reopen(STARTING, record, choice);
+        // **Registered here, started behind the window** (`crate::restoring`): the open that
+        // asked answers at once, with every chat's tab to draw, and the programs start on a
+        // thread of their own. Where no thread can be had, or a test asked for it, in turn.
+        let begun = held.begin_reopen(record, choice);
+        if !self.restores_behind {
+            held.finish_reopen(begun, STARTING);
+            return;
+        }
+        let behind = Arc::clone(&held);
+        let begun = Mutex::new(Some(begun));
+        let begun = Arc::new(begun);
+        let taken = Arc::clone(&begun);
+        let spawned = std::thread::Builder::new()
+            .name("purlis-restore".into())
+            .spawn(move || {
+                let begun = taken.lock().unwrap_or_else(PoisonError::into_inner).take();
+                if let Some(begun) = begun {
+                    behind.finish_reopen(begun, STARTING);
+                }
+            });
+        if spawned.is_err() {
+            let begun = begun.lock().unwrap_or_else(PoisonError::into_inner).take();
+            if let Some(begun) = begun {
+                held.finish_reopen(begun, STARTING);
+            }
+        }
     }
 
     /// What this launch would put back, or nothing when there is nothing to ask about — no

@@ -377,6 +377,26 @@ pub(crate) struct WaitingChat {
     pub told: Option<&'static str>,
 }
 
+/// A chat a launch has registered and not started yet ([`Chats::begin_put_back`]).
+#[derive(Debug, Clone)]
+struct Coming {
+    /// The chat as it was recorded, under the id and the number it will start with.
+    chat: Chat,
+    /// The number its tab is drawn under until it starts, which is the one it starts as.
+    number: u32,
+    why: Why,
+    /// What the launch tells it as it starts (#1513).
+    told: Option<&'static str>,
+    /// Whether its start is under way, so no second one takes it.
+    starting: bool,
+}
+
+thread_local! {
+    /// Whether this thread is starting a launch's chats: their record is written once, when
+    /// the last has been tried, and not once per chat ([`Chats::finish_put_back`]).
+    static PUTTING_BACK_HERE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Every chat the app has open, and which of them is in front.
 pub struct Chats {
     /// The open project's root, as the app holds it (#1410): the project of every chat
@@ -414,6 +434,16 @@ pub struct Chats {
     /// keep them: a workspace directory that has moved, or a harness mid-reinstall, must
     /// not silently delete the chat on the next write.
     would_not_start: Mutex<Vec<Waiting>>,
+    /// The chats a launch is still putting back, in the record's order: each registered
+    /// before any starts, and taken out as it starts or is found not to
+    /// ([`Self::begin_put_back`], `crate::restoring`). The window draws their tabs as
+    /// restoring, and every record written meanwhile holds them as they were recorded.
+    coming: Mutex<Vec<Coming>>,
+    /// What lets a few of them start at once, across every project.
+    gate: Arc<crate::restoring::Gate>,
+    /// The ids of the chats launches registered, in the order their records held them: a
+    /// chat that did not start keeps its place among the others that did not.
+    recorded_order: Mutex<Vec<String>>,
     /// The tabs the window has open that hold a view rather than a chat, as it last said.
     ///
     /// **The window's to say and this layer's to write down**, and nothing else: a view has no
@@ -441,7 +471,6 @@ pub struct Chats {
     /// Set while a record is being put back, so reading one does not write it again once
     /// for every chat in it — fifty chats would be fifty writes of the same file, at the
     /// one moment the app is being measured for cold start.
-    putting_back: AtomicBool,
     /// Set when every chat is being ended, at quit or when the project is closed: from then on
     /// nothing writes the record ([`Self::write_it_down`]).
     ending: AtomicBool,
@@ -797,12 +826,14 @@ impl Chats {
             open: Mutex::new(HashMap::new()),
             front: Mutex::new(None),
             would_not_start: Mutex::new(Vec::new()),
+            coming: Mutex::new(Vec::new()),
+            gate: crate::restoring::Gate::shared(),
+            recorded_order: Mutex::new(Vec::new()),
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
             order: Mutex::new(Vec::new()),
             record_it,
             writing: Mutex::new(()),
-            putting_back: AtomicBool::new(false),
             ending: AtomicBool::new(false),
             most_at_once: MOST_AT_ONCE,
             grants: Mutex::new(HashMap::new()),
@@ -3135,6 +3166,28 @@ impl Chats {
         ordered
     }
 
+    /// [`Self::in_order`], with the chats a launch has still to start where the strip has
+    /// them: the order a record is written in while they come back.
+    fn in_order_with(&self, coming: &[Coming]) -> Vec<u32> {
+        let running = self.sessions.running();
+        let placed = lock(&self.order).clone();
+        let is_coming = |session: &u32| coming.iter().any(|one| one.number == *session);
+        let mut ordered: Vec<u32> = placed
+            .iter()
+            .copied()
+            .filter(|session| running.contains(session) || is_coming(session))
+            .collect();
+        let unplaced = |session: &u32| !placed.contains(session);
+        ordered.extend(running.iter().copied().filter(unplaced));
+        ordered.extend(
+            coming
+                .iter()
+                .map(|one| one.number)
+                .filter(|session| unplaced(session) && !running.contains(session)),
+        );
+        ordered
+    }
+
     /// Says which chat is in front, so the record knows which one to bring back in front.
     pub fn bring_to_front(&self, session: Option<u32>) {
         let changed = std::mem::replace(&mut *lock(&self.front), session) != session;
@@ -3240,7 +3293,10 @@ impl Chats {
 
     /// What was open, to write down.
     pub fn record(&self) -> Record {
-        let ordered = self.in_order();
+        // The chats a launch has still to start are written as they were recorded, each in
+        // its place: a record written before one starts still holds it.
+        let coming = lock(&self.coming).clone();
+        let ordered = self.in_order_with(&coming);
         // Asked before `open` is taken: a program being ended answers only once it is gone,
         // and nothing else may wait on `open` that long (R2-2).
         let pids: HashMap<u32, Option<u32>> = ordered
@@ -3282,7 +3338,20 @@ impl Chats {
         // Then the running ones, in the strip's order — which is the order the next launch
         // puts them back in.
         chats.extend(ordered.into_iter().filter_map(|session| {
-            let chat = &open.get(&session)?.chat;
+            let Some(running) = open.get(&session) else {
+                let one = coming.iter().find(|one| one.number == session)?;
+                // Open already, under this id: its start has just returned.
+                if superseded(&one.chat, None) {
+                    return None;
+                }
+                return Some(Chat {
+                    active: front == Some(session),
+                    pid: None,
+                    model: None,
+                    ..one.chat.clone()
+                });
+            };
+            let chat = &running.chat;
             if superseded(chat, Some(session)) {
                 return None;
             }
@@ -3338,23 +3407,36 @@ impl Chats {
         size: Size,
         told: &dyn Fn(&Chat) -> Option<&'static str>,
     ) -> Vec<Open> {
-        self.putting_back.store(true, Ordering::SeqCst);
+        self.begin_put_back(record, told);
+        self.finish_put_back(size)
+    }
+
+    /// The first half of putting a record back: **registers** every chat it holds and starts
+    /// none (`crate::restoring`). From here each has the number it will start under, the
+    /// window can draw its tab ([`Self::restoring_now`]), and every record written holds it
+    /// as it was recorded, so a quit before its start loses nothing.
+    /// [`Self::finish_put_back`] starts them.
+    pub(crate) fn begin_put_back(
+        &self,
+        record: &Record,
+        told: &dyn Fn(&Chat) -> Option<&'static str>,
+    ) {
         // Before a single chat starts, so that a number the record spent on a chat it no
         // longer holds — one the operator closed before quitting — is not dealt again to a
         // chat that would then read its workspace pointer and take its lock
-        // (charter-app#90). The chats below raise the counter past their own numbers as they
-        // go; this is the part of it no chat in the record can say.
-        self.sessions.already_dealt(record.dealt);
+        // (charter-app#90). Past every number the record's own chats hold too: each keeps
+        // its own, and a chat opened while they are still starting must not be dealt one.
+        let kept = record.chats.iter().filter_map(|chat| chat.number).max();
+        self.sessions
+            .already_dealt(record.dealt.max(kept.unwrap_or(0)));
         // The view tabs start nothing, so they are simply held until the window asks for them
         // (`reopened_views`) — and written back out with everything else at the next change.
         *lock(&self.views) = record.views.clone();
         *lock(&self.focus) = record.focus.clone();
-        // Every chat here starts a program, synchronously, before it has a pane. A
-        // record with thousands in it — a runaway, or a file nobody meant — would give an
-        // app that hangs on launch with no way to intervene. The cap is far above the
-        // fifty the product is for, so it never meets an operator; it is only ever a
-        // backstop. What it leaves out stays recorded, like anything else that did not
-        // start.
+        // Every chat here starts a program. A record with thousands in it — a runaway, or a
+        // file nobody meant — would start them all. The cap is far above the fifty the
+        // product is for, so it never meets an operator; it is only ever a backstop. What it
+        // leaves out stays recorded, like anything else that did not start.
         //
         // A chat the record holds no id for is given one here, before it is tried, so the
         // one that does not start is kept under it too and is not given another at every
@@ -3394,49 +3476,267 @@ impl Chats {
                 told: told(chat),
             });
         }
-        let mut front = None;
-        let mut opened: Vec<u32> = Vec::new();
-        for (chat, why) in starting {
-            let first = self.told_put_back(chat, told(chat));
-            match self.start_recorded_told(chat, size, *why, first.as_deref(), None) {
-                Ok(session) => {
-                    if chat.active {
-                        front = Some(session);
+        // Each under the number it starts as: the one it was recorded with, which is the key
+        // its workspace pointer and session lock are under, or one dealt now for a chat
+        // recorded with none, or with one another chat of the record or a running chat has.
+        let mut taken: std::collections::HashSet<u32> =
+            self.sessions.running().into_iter().collect();
+        let coming: Vec<Coming> = starting
+            .iter()
+            .map(|(chat, why)| {
+                let number = match chat.number {
+                    Some(number) if taken.insert(number) => number,
+                    _ => {
+                        let dealt = self.sessions.deal();
+                        taken.insert(dealt);
+                        dealt
                     }
-                    opened.push(session);
+                };
+                Coming {
+                    told: told(chat),
+                    chat: Chat {
+                        number: Some(number),
+                        ..chat.clone()
+                    },
+                    number,
+                    why: *why,
+                    starting: false,
                 }
-                // Kept, not dropped: the next record has to hold it too, or a directory
-                // that has moved deletes the chat for good.
-                Err(why) => {
-                    // Read before the lock is taken, as Retry does: it reads the profile's
-                    // file and runs git, and the list must not wait on either.
-                    let approval = NeedsApproval::of(chat, &self.project);
-                    lock(&self.would_not_start).push(Waiting {
-                        approval,
-                        chat: chat.clone(),
-                        why,
-                        told: told(chat),
-                    });
-                }
-            }
-        }
-        self.bring_to_front(front);
+            })
+            .collect();
         // The strip comes back in the record's order, which is the order it was drawn in when
         // it was written — not the order of the numbers the chats kept (charter-app#90).
-        *lock(&self.order) = opened.clone();
-        self.putting_back.store(false, Ordering::SeqCst);
+        let mut order = lock(&self.order);
+        order.retain(|session| !coming.iter().any(|one| one.number == *session));
+        order.extend(coming.iter().map(|one| one.number));
+        drop(order);
+        // And the chat that was in front is the one in front, from before it starts: what it
+        // goes first for, and what a record written meanwhile says.
+        if let Some(front) = coming.iter().find(|one| one.chat.active) {
+            *lock(&self.front) = Some(front.number);
+        }
+        lock(&self.recorded_order)
+            .extend(coming.iter().filter_map(|one| one.chat.identity.id.clone()));
+        lock(&self.coming).extend(coming);
+    }
+
+    /// The second half of putting a record back: **starts** what
+    /// [`Self::begin_put_back`] registered, a few at a time, the chat in front first, and
+    /// answers once every one has been tried, with the ones that started.
+    ///
+    /// A chat whose program cannot be started is kept as one that would not start and the
+    /// rest still open — a relaunch that failed whole because one harness had been
+    /// uninstalled would be worse than one that came back short.
+    ///
+    /// Each chat is told to the window as it starts or is found not to
+    /// (`crate::restoring::tell`). **Call it off the window's thread**: it starts programs.
+    pub(crate) fn finish_put_back(&self, size: Size) -> Vec<Open> {
+        let wanted = lock(&self.coming)
+            .iter()
+            .filter(|one| !one.starting)
+            .count();
+        let opened: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+        // Twice the starts the gate lets through at once: a start that hangs holds its
+        // thread, and the ones behind it need one to go on with.
+        let hands = wanted.min(crate::restoring::at_once() * 2);
+        if hands <= 1 {
+            // One chat, or none: on this thread, in turn.
+            self.start_what_is_coming(size, &opened);
+        } else {
+            std::thread::scope(|scope| {
+                for _ in 0..hands {
+                    scope.spawn(|| self.start_what_is_coming(size, &opened));
+                }
+            });
+        }
+        let opened = opened.into_inner().unwrap_or_else(PoisonError::into_inner);
         // Written ONCE, when every chat has been tried, and not once per chat (fifty writes of
-        // one file at the moment cold start is measured). What came back holds what the file
-        // did not: a run each, begun at this launch, and an id for a chat recorded before ids
-        // (ADR 0066). An id only in memory is minted again after a crash (#856 review F1).
-        // The chats that did not start are written too, first, as every write writes them.
-        if !record.chats.is_empty() {
+        // one file as a launch settles). What came back holds what the file did not: a run
+        // each, begun at this launch, and an id for a chat recorded before ids (ADR 0066). An
+        // id only in memory is minted again after a crash (#856 review F1). The chats that did
+        // not start are written too, first, as every write writes them.
+        if wanted > 0 {
             self.write_it_down();
         }
         let open = self.open_now();
         open.into_iter()
             .filter(|one| opened.contains(&one.session))
             .collect()
+    }
+
+    /// One hand of [`Self::finish_put_back`]: takes a place at the gate, then the chat that
+    /// matters most among the ones still to start, until none is left.
+    fn start_what_is_coming(&self, size: Size, opened: &Mutex<Vec<u32>>) {
+        PUTTING_BACK_HERE.set(true);
+        loop {
+            let place = self.gate.enter(&|| crate::restoring::Rank {
+                behind: crate::restoring::is_behind(&self.project),
+                hidden: !self.front_is_coming(),
+            });
+            // A quit that began while this waited starts nothing more: the chats still to
+            // start are in the record the quit writes.
+            if self.ending.load(Ordering::SeqCst) {
+                break;
+            }
+            let Some(next) = self.take_coming() else {
+                break;
+            };
+            let first = self.told_put_back(&next.chat, next.told);
+            let started =
+                self.start_recorded_told(&next.chat, size, next.why, first.as_deref(), None);
+            drop(place);
+            let session = match started {
+                Ok(session) => {
+                    lock(opened).push(session);
+                    // It started under another number than its tab was drawn under (the
+                    // host refused that one): the strip and the front follow it.
+                    if session != next.number {
+                        for placed in lock(&self.order).iter_mut() {
+                            if *placed == next.number {
+                                *placed = session;
+                            }
+                        }
+                        let mut front = lock(&self.front);
+                        if *front == Some(next.number) {
+                            *front = Some(session);
+                        }
+                    }
+                    Some(session)
+                }
+                // Kept, not dropped: the next record has to hold it too, or a directory
+                // that has moved deletes the chat for good.
+                Err(why) => {
+                    // Read before the lock is taken, as Retry does: it reads the profile's
+                    // file and runs git, and the list must not wait on either.
+                    let approval = NeedsApproval::of(&next.chat, &self.project);
+                    self.did_not_come(Waiting {
+                        approval,
+                        chat: next.chat.clone(),
+                        why,
+                        told: next.told,
+                    });
+                    let mut front = lock(&self.front);
+                    if *front == Some(next.number) {
+                        *front = None;
+                    }
+                    None
+                }
+            };
+            // Out of the ones still to start only now, when it is open or among the ones that
+            // would not start: a record written at any moment holds it once.
+            let left = {
+                let mut coming = lock(&self.coming);
+                coming.retain(|one| one.number != next.number);
+                coming.len()
+            };
+            // A quit that began while it started ends it with the rest.
+            if let Some(session) = session
+                && self.ending.load(Ordering::SeqCst)
+            {
+                let _ = self.sessions.close(session);
+            }
+            crate::restoring::tell(crate::restoring::Moved {
+                root: self.project.clone(),
+                number: next.number,
+                session,
+                left,
+            });
+        }
+        PUTTING_BACK_HERE.set(false);
+    }
+
+    /// Whether the chat in front is among the ones a launch has still to start.
+    fn front_is_coming(&self) -> bool {
+        let front = *lock(&self.front);
+        lock(&self.coming)
+            .iter()
+            .any(|one| !one.starting && Some(one.number) == front)
+    }
+
+    /// Takes the next chat to start: the one in front, where it is still to start, or else
+    /// the first in the record's order. It stays listed, marked as starting, until it has.
+    fn take_coming(&self) -> Option<Coming> {
+        let front = *lock(&self.front);
+        let mut coming = lock(&self.coming);
+        let at = coming
+            .iter()
+            .position(|one| !one.starting && Some(one.number) == front)
+            .or_else(|| coming.iter().position(|one| !one.starting))?;
+        coming[at].starting = true;
+        Some(coming[at].clone())
+    }
+
+    /// Lists a chat of the launch among the ones that would not start, **in the record's
+    /// order**: ahead of any that came after it in the record and was found out first.
+    fn did_not_come(&self, waiting: Waiting) {
+        let recorded = lock(&self.recorded_order).clone();
+        let place = |chat: &Chat| {
+            let id = chat.identity.id.as_ref()?;
+            recorded.iter().position(|one| one == id)
+        };
+        let mine = place(&waiting.chat);
+        let mut would_not = lock(&self.would_not_start);
+        let at = would_not
+            .iter()
+            .position(|one| mine.is_some() && place(&one.chat) > mine)
+            .unwrap_or(would_not.len());
+        would_not.insert(at, waiting);
+    }
+
+    /// The chats a launch has registered and not started yet, as the window draws their
+    /// tabs: in the record's order, each under the number it will start as.
+    ///
+    /// What only a start settles is not said: its harness, the workspace its folder is in
+    /// and how it came back are the started chat's, told when it starts.
+    pub fn restoring_now(&self) -> Vec<Open> {
+        let front = *lock(&self.front);
+        lock(&self.coming)
+            .iter()
+            .map(|one| Open {
+                session: one.number,
+                name: one.chat.name.clone(),
+                cwd: one.chat.cwd.clone(),
+                workspace: None,
+                harness: None,
+                profile: one.chat.profile.clone(),
+                persona: one.chat.persona.clone(),
+                in_front: front == Some(one.number),
+                how: Reopened::Fresh(purlis_core::reopen::Fresh::NoConversationRecorded),
+                pinned: one.chat.pinned,
+                label: one.chat.label.clone(),
+                from: one.chat.from.clone(),
+                tab: one.chat.has_tab(),
+                shows: one.chat.shows,
+                beside: one.chat.beside,
+            })
+            .collect()
+    }
+
+    /// Every chat the window draws a tab for: the open ones and the ones a launch has still
+    /// to start, in the strip's order, each with whether it is still to start.
+    ///
+    /// The ones still to start are read first: a chat leaves them only once it is open or
+    /// among the ones that would not start, so read this way round none is missed.
+    pub fn drawn_now(&self) -> Vec<(Open, bool)> {
+        let restoring = self.restoring_now();
+        let coming = lock(&self.coming).clone();
+        let order = self.in_order_with(&coming);
+        let open = self.open_now();
+        let mut drawn: Vec<(Open, bool)> = Vec::new();
+        for session in order {
+            if let Some(one) = open.iter().find(|one| one.session == session) {
+                drawn.push((one.clone(), false));
+            } else if let Some(one) = restoring.iter().find(|one| one.session == session) {
+                drawn.push((one.clone(), true));
+            }
+        }
+        // An open chat the order has not caught up with is still an open chat.
+        for one in open {
+            if !drawn.iter().any(|(seen, _)| seen.session == one.session) {
+                drawn.push((one, false));
+            }
+        }
+        drawn
     }
 
     /// Writes the record again because a chat's program ended on its own, so it no longer
@@ -3468,7 +3768,9 @@ impl Chats {
     fn write_it_down(&self) {
         // Nothing is written once the quit has begun: its own write is the last, and a
         // program's end heard after it would write a record with no chats in it.
-        if self.putting_back.load(Ordering::SeqCst) || self.ending.load(Ordering::SeqCst) {
+        // Nor by a thread putting a launch's chats back, which writes once when every one has
+        // been tried. Any other change meanwhile is written, and holds the ones still to start.
+        if PUTTING_BACK_HERE.get() || self.ending.load(Ordering::SeqCst) {
             return;
         }
         // The record is built and handed over under one lock, so that two changes landing
@@ -3712,6 +4014,7 @@ impl Chats {
         self.sessions.end_all();
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
+        lock(&self.coming).clear();
         lock(&self.views).clear();
         *lock(&self.focus) = None;
         *lock(&self.front) = None;
@@ -10139,3 +10442,7 @@ pub(crate) mod tests {
         assert!(!chats.is_shell_at(9999, root.path()), "no such session");
     }
 }
+
+#[cfg(test)]
+#[path = "chats_restoring_tests.rs"]
+mod restoring_tests;

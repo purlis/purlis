@@ -92,6 +92,7 @@ mod references;
 mod remotequestion;
 mod repolist;
 mod restored;
+mod restoring;
 mod sandboxchoose;
 mod sandboxing;
 mod saving;
@@ -597,6 +598,11 @@ struct OpenChat {
     /// Where a handoff opened it from, where one did: the note its tab's tooltip and its header
     /// draw, `↳ from steward 3 · ops` (charter-app#258). Never the parent's number.
     from: Option<HandedFromNote>,
+    /// Whether a launch has registered it and not started it yet (`restoring.rs`): its tab is
+    /// drawn in its place, as restoring, under the number it will start as, and
+    /// `chat-restored` says when it has. `null` for a chat that is open.
+    #[specta(optional)]
+    restoring: Option<bool>,
 }
 
 /// Where a chat another chat started came from, as the window draws it: its note, and its
@@ -1663,15 +1669,31 @@ fn task_failure_seen(
 /// The window asks this instead of opening its own: the core puts the record back, once the
 /// window has sent the operator's answer to the launch's question (`opener::relaunch`,
 /// charter-app#250), and a window that reloads asks again rather than starting a second copy.
+///
+/// **With the ones the launch has still to start** (`restoring.rs`), each in its place and
+/// marked `restoring`: the window draws every tab at once and hears `chat-restored` as each
+/// starts, when it asks this again.
 #[tauri::command]
 #[specta::specta]
 fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<OpenChat>, String> {
     let held = planes.held(&plane)?;
     Ok(held
         .chats()
-        .open_now()
+        .drawn_now()
         .into_iter()
-        .map(|open| drawn_of(&held, open))
+        .map(|(open, restoring)| {
+            if restoring {
+                OpenChat {
+                    restoring: Some(true),
+                    // How it comes back is its start's to say.
+                    resumed: None,
+                    fresh: None,
+                    ..OpenChat::from(open)
+                }
+            } else {
+                drawn_of(&held, open)
+            }
+        })
         .collect())
 }
 
@@ -2236,6 +2258,7 @@ impl From<chats::Open> for OpenChat {
                 .as_ref()
                 .map(|from| HandedFromNote::of(from, open.tab)),
             guessed: None,
+            restoring: None,
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
                 Reopened::Fresh(_) => None,
@@ -3064,6 +3087,34 @@ pub fn run() {
                     );
                 })
             });
+            // Each chat of a launch as it starts behind the window, or does not: the window
+            // makes the tab it drew as restoring the chat (`restoring.rs`).
+            restoring::telling({
+                let window = app.handle().clone();
+                std::sync::Arc::new(move |moved: restoring::Moved| {
+                    restoring::said_for_the_bench(&moved, STARTED.elapsed());
+                    // The id the registry minted for that root, never one spelt here.
+                    let Some(plane) = window
+                        .state::<Planes>()
+                        .open_now()
+                        .into_iter()
+                        .find(|plane| plane.root() == moved.root)
+                    else {
+                        return;
+                    };
+                    windows::emit_for_plane(
+                        &window,
+                        &plane.clone(),
+                        restoring::RESTORED,
+                        restoring::ChatRestored {
+                            plane,
+                            number: moved.number,
+                            session: moved.session,
+                            left: u32::try_from(moved.left).unwrap_or(u32::MAX),
+                        },
+                    );
+                })
+            });
             // What sends a system notification for an ask (#1694): managed before any plane is
             // opened, since the first chat to move may bring one.
             app.manage(asknotify::Notifier::start(app.handle()));
@@ -3086,6 +3137,8 @@ pub fn run() {
                     // second reader of it is a second answer to where this machine's store is.
                     purlis_core::machine::config_root(),
                 )
+                // A project's chats start behind the window, a few at a time (`restoring.rs`).
+                .restoring_behind_the_window()
                 // The host's event log (FD-9): one event per hook call, from every project.
                 .recording_events(events())
                 // This machine's network record (#1662): every block and Allow, for the

@@ -56,12 +56,22 @@ use crate::planes::Held;
 /// **Puts back `record` at a launch** (#1513), as `Chats::put_back_telling` does, with what is
 /// said above: the chats that came back. `settles` says the record was read, or the person
 /// chose to start fresh: only then is a dispatch nothing brings back ended.
-pub(crate) fn put_back(
-    held: &Held,
-    record: &Record,
-    size: purlis_core::engine::Size,
-    settles: bool,
-) -> Vec<crate::chats::Open> {
+///
+/// In two halves, so a launch can do the second behind the window (`crate::restoring`):
+/// [`begin`], then [`finish`].
+///
+/// A launch's put-back between its two halves: what [`begin`] read and registered, for
+/// [`finish`] to start.
+pub(crate) struct Begun {
+    records: Vec<dispatchrecord::Record>,
+    launch: AtLaunch,
+    coming: AskerComing,
+}
+
+/// The first half of [`put_back`]: reads the dispatch store once, decides what each chat is
+/// told, takes the reports kept for the chats coming back, and **registers** those chats
+/// (`Chats::begin_put_back`). It starts nothing, so it is quick however many there are.
+pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
     let records = dispatchrecord::list(held.root());
     let launch = dispatchrestart::at_launch(held.root(), record, &records);
     for chat in &launch.not_resumed {
@@ -72,9 +82,30 @@ pub(crate) fn put_back(
         );
     }
     let coming = coming_back(held, &launch.back);
-    let opened = held
-        .chats()
-        .put_back_telling(&launch.back, size, &|chat| launch.told(chat));
+    held.chats()
+        .begin_put_back(&launch.back, &|chat| launch.told(chat));
+    Begun {
+        records,
+        launch,
+        coming,
+    }
+}
+
+/// The second half of [`put_back`]: starts the chats [`begin`] registered
+/// (`Chats::finish_put_back`), and then settles what the launch owes its tasks. It answers
+/// when every chat has been tried, so a launch calls it off the window's thread.
+pub(crate) fn finish(
+    held: &Held,
+    begun: Begun,
+    size: purlis_core::engine::Size,
+    settles: bool,
+) -> Vec<crate::chats::Open> {
+    let Begun {
+        records,
+        launch,
+        coming,
+    } = begun;
+    let opened = held.chats().finish_put_back(size);
     // Only the chats that started: one waiting to start is marked if it starts (`retrying`).
     for open in &opened {
         // As old as its dispatch's record says, which the ledger did not see (#1463).
