@@ -57,6 +57,7 @@ pub mod pr;
 pub mod recorded;
 pub mod refresh;
 pub mod registration;
+pub mod revoke;
 pub mod route;
 pub mod signin;
 pub mod transport;

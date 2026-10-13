@@ -40,6 +40,10 @@ pub struct Endpoints {
     pub device_code: Option<String>,
     /// Where a code is exchanged, a device flow is polled, and a token is refreshed.
     pub token: String,
+    /// Where a token is revoked without a secret (RFC 7009), on a forge that lets a public
+    /// client do it: GitLab. `None` on GitHub, whose revocation needs the app's client secret,
+    /// which purlis does not have (ADR 0077 §3).
+    pub revoke: Option<String>,
     /// The authority a page the person is sent to must be on.
     pub host: String,
 }
@@ -53,11 +57,13 @@ impl Endpoints {
                 device_code: (registration.flow == Flow::Device)
                     .then(|| format!("https://{host}/login/device/code")),
                 token: format!("https://{host}/login/oauth/access_token"),
+                revoke: None,
                 host: host.to_string(),
             },
             Kind::GitLab => Endpoints {
                 device_code: None,
                 token: format!("https://{host}/oauth/token"),
+                revoke: Some(format!("https://{host}/oauth/revoke")),
                 host: host.to_string(),
             },
         }
@@ -76,11 +82,13 @@ impl Endpoints {
             Kind::GitHub => Endpoints {
                 device_code: Some(format!("{base}/login/device/code")),
                 token: format!("{base}/login/oauth/access_token"),
+                revoke: None,
                 host,
             },
             Kind::GitLab => Endpoints {
                 device_code: None,
                 token: format!("{base}/oauth/token"),
+                revoke: Some(format!("{base}/oauth/revoke")),
                 host,
             },
         }

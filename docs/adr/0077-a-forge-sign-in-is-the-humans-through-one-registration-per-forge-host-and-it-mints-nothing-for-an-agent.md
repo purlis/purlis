@@ -727,6 +727,15 @@ building it:
 - **The refresh of §3** is one writer for both forges, built with the GitHub sign-in (#729).
   GitLab's is `grant_type=refresh_token` with the client id and no secret, and GitLab answers
   with a new refresh token each time.
-- **A test build signs in through no browser.** The flow's stand-ins are a scripted listener,
+- **Sign-out revokes at gitlab.com** (§3), in `forge/revoke.rs`: one form to `/oauth/revoke`
+  with the client id and the token (the refresh token where the item holds one; GitLab keeps a
+  grant's two tokens as one record), and no secret. The sign-out on this machine happens
+  first and never waits on GitLab's yes: when GitLab cannot be asked or will not, the person is
+  signed out here all the same, and the row says so and where on gitlab.com to end the token.
+  A pasted or imported token is never revoked, nor one on a host with no registration.
+  **GitHub is not asked**, as §3 says: ending an app's grant there is authenticated with the
+  app's client secret, and the registration has none. A sign-out waits for a refresh in
+  flight, so a renewed pair is never written back for an account just signed out.
+- **A test build signs in through no browser**, and revokes at no forge. The flow's stand-ins are a scripted listener,
   browser and token address; one case runs the real listener over this machine's loopback
   against a stand-in token address. Nothing in a test reaches gitlab.com.

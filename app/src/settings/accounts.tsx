@@ -23,9 +23,10 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  *
  * **Sign out** deletes the token from the keychain and takes the account off this machine. A
  * token the person made stays valid at the forge until they delete it there, which the row says
- * once it is done. A browser sign-in cannot be revoked from here either (GitHub's revocation
- * needs a secret purlis does not have, ADR 0077 §3): the row says it lapses within eight hours
- * and where on GitHub to revoke it now.
+ * once it is done. A browser sign-in to gitlab.com is ended there too, and the row says so, or
+ * says where to end it when GitLab could not be asked. One to GitHub cannot be revoked from
+ * here (GitHub's revocation needs a secret purlis does not have, ADR 0077 §3): the row says it
+ * lapses within eight hours and where on GitHub to revoke it now.
  *
  * **An account whose sign-in the forge ended** stays listed, as signed out: the window's Notice
  * says so with Sign in again ({@link ForgeSignInEnded}), and signing in here as the same login
@@ -120,20 +121,28 @@ async function signOut(account: ForgeAccountRow) {
   set((was) => ({
     ...was,
     refused: done.status === "error" ? done.error : undefined,
-    said: done.status === "error" ? undefined : signedOutSays(account),
+    said: done.status === "error" ? undefined : signedOutSays(account, done.data),
   }));
   await reread();
   forgeAccountsChanged();
 }
 
-/** What a sign-out leaves for the person to do at the forge, which purlis cannot do for them. */
-function signedOutSays(account: ForgeAccountRow): string {
+/**
+ * What a sign-out leaves for the person to do at the forge, which purlis cannot do for them.
+ * `ended` is the core's word on a browser sign-in's token there: `true` when the forge ended
+ * it, `false` when it was asked and did not, nothing when no forge was asked.
+ */
+function signedOutSays(account: ForgeAccountRow, ended: boolean | null): string {
   const gone = `Signed out of ${account.login} on ${account.host}.`;
   if (account.method !== "browser")
     return `${gone} The token still works on ${account.host} until you delete it there.`;
-  return account.kind === "github"
-    ? `${gone} purlis deleted its sign-in from your keychain. GitHub lets it lapse within eight hours; to end it now, revoke purlis at https://${account.host}/settings/applications.`
-    : `${gone} purlis deleted its sign-in from your keychain.`;
+  const deleted = `${gone} purlis deleted its sign-in from your keychain`;
+  if (account.kind === "github")
+    return `${deleted}. GitHub lets it lapse within eight hours; to end it now, revoke purlis at https://${account.host}/settings/applications.`;
+  if (ended === true) return `${deleted}, and ${account.host} ended its token.`;
+  if (ended === false)
+    return `${deleted}, but ${account.host} could not be asked to end its token. To end it now, revoke purlis at https://${account.host}/-/user_settings/applications.`;
+  return `${deleted}.`;
 }
 
 /** What the row says about an account beside its name. */

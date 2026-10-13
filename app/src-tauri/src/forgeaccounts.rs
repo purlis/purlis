@@ -507,15 +507,36 @@ pub fn forge_device_sign_in_cancel(flow: u32) {
 }
 
 /// Sign out of the account `id`: its token deleted from the keychain and the account taken off
-/// this machine.
+/// this machine. Then, for a browser sign-in on a forge that takes a revocation with no secret
+/// (gitlab.com), the forge is asked to end the token (ADR 0077 §3).
+///
+/// Answers what became of the token at the forge: `true` when the forge ended it, `false` when
+/// it was asked and did not (the person is signed out here all the same, and the row says
+/// where to end it), and nothing when no forge was asked: a token the person made, or GitHub,
+/// whose revocation needs a secret purlis does not have.
 #[tauri::command]
 #[specta::specta]
-pub async fn forge_sign_out(id: String) -> Result<(), String> {
+pub async fn forge_sign_out(id: String) -> Result<Option<bool>, String> {
+    use purlis_core::forge::revoke::{self, AtTheForge};
     blocking(move || {
         let scope = host_scope()?;
         let root = config_root()?;
         let keyring = accounts::keyring_at(&root);
-        accounts::sign_out(&scope, &root, keyring.as_ref(), &id).map(|_| ())
+        // A test build (the e2e build among them) never reaches the real forge.
+        let endpoint = (!purlis_core::fence::FENCED).then(oauth::Https::new);
+        let (_, at) = revoke::sign_out(
+            &scope,
+            &root,
+            keyring.as_ref(),
+            endpoint.as_ref().map(|https| https as &dyn oauth::Endpoint),
+            None,
+            &id,
+        )?;
+        Ok(match at {
+            AtTheForge::Ended => Some(true),
+            AtTheForge::NotEnded => Some(false),
+            AtTheForge::NotAsked => None,
+        })
     })
     .await
 }
