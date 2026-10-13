@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791913090349,
+  "lastUpdate": 1791915345755,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1148,6 +1148,42 @@ window.BENCHMARK_DATA = {
             "value": 183.5,
             "unit": "MB",
             "extra": "median of 6 samples: 204.1, 213.3, 184.4, 181.9, 182.6, 131.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "08ef4207362c3468209ce613f79dec9c09fe1495",
+          "message": "feat(app): the Explorer's and the panels' words wear the text roles\n\nThe second surface of the text roles. The Explorer set 12px on its root and\na panel 11.9px, and both told their words apart by opacity and three greys.\nEach word is now one of the roles: a section's title the label, a row's name\nthe body (13px), a sentence the secondary (12px, undimmed), a count and a\nnote the meta. A changed file's name keeps its change's colour, so a row's\nname takes the body from the root rather than from a class of its own.\n\nThe type guard's App.css list is 13 lines shorter and the geometry guard's 2.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T21:35:52+04:00",
+          "tree_id": "d40c20a12f172e2029bf8729f308ac2c93f53837",
+          "url": "https://github.com/purlis/purlis/commit/08ef4207362c3468209ce613f79dec9c09fe1495"
+        },
+        "date": 1791915344622,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 937,
+            "unit": "MB",
+            "extra": "median of 3 samples: 823, 937, 1005 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 210.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 218.3, 217.9, 210, 210.3, 210.9, 127.4 MB"
           }
         ]
       }
