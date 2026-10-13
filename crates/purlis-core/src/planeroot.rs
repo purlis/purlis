@@ -78,6 +78,10 @@
 //!   to the cwd as written. And a subject that IS the root's git directory reaches the root,
 //!   wherever that directory lives.
 
+//! * **qw346** — `git checkout HEAD` (or `@`) with no path after a `--` on the line is refused as
+//!   before, in a sentence of its own that names the restore that cannot move HEAD. The verdict
+//!   is the Python's; the words are not.
+
 use crate::gitconfig;
 use crate::guardcaps;
 use crate::memstore::py_strip;
@@ -1872,6 +1876,29 @@ pub fn checkout_operand_kind(root: &str, op: &str) -> OperandKind {
     }
 }
 
+/// Whether HEAD in `root` is already at the commit `target` names, so a checkout of it rewrites
+/// no file (qw346, [`crate::rootupdate`]). `false` wherever git could not be asked or either
+/// name resolves to no commit: a caller that cannot tell takes it that the tree would move.
+pub fn head_is_at(root: &str, target: &str) -> bool {
+    let commit = |name: &str| {
+        let spec = format!("{name}^{{commit}}");
+        git_in(root, &["rev-parse", "--verify", "--quiet", &spec])
+            .ok()
+            .filter(|a| a.ok)
+            .map(|a| py_strip(&a.out).to_string())
+            .filter(|oid| !oid.is_empty())
+    };
+    // `-` is the previous branch, and never handed to git, where it would read as an option.
+    let target = if target == "-" { "@{-1}" } else { target };
+    if target.starts_with('-') {
+        return false;
+    }
+    match (commit("HEAD"), commit(target)) {
+        (Some(head), Some(there)) => head == there,
+        _ => false,
+    }
+}
+
 /// Aliases defined ON THE COMMAND LINE: `git -c alias.co=checkout co feature` —
 /// `_inline_aliases`. Only the separated `-c <name>=<value>`: git rejects the attached form.
 /// Later definitions win, as a dict's later assignment does. The NAME is kept LOWER-CASED, git's
@@ -2614,6 +2641,24 @@ pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<Stri
                          is one that may move HEAD — `git checkout --orphan <file>` reads exactly \
                          like a restore and creates a branch. Only a form purlis can show is a \
                          restore opens that gate. {hint}"
+                        )
+                    }
+                    // `git checkout HEAD` with its paths out of sight: still read as a move,
+                    // and told the spelling that cannot move HEAD (qw346).
+                    _ if sub == "checkout"
+                        && !creating
+                        && !detaching
+                        && wants.len() == 1
+                        && matches!(want0.as_str(), "HEAD" | "@") =>
+                    {
+                        format!(
+                            "cannot read this `git checkout {want0}` as a file restore in the \
+                         PLANE ROOT: no path follows a `--` on the line, and paths git is handed \
+                         from a file or by `xargs` are out of purlis's sight, so '{want0}' reads \
+                         as a ref to move to. To put files back as the current commit has them, \
+                         use the spelling that cannot move HEAD, which purlis allows here: \
+                         `git restore --source=HEAD --worktree -- <paths>`, or with \
+                         `--pathspec-from-file=<file>` in place of the paths. "
                         )
                     }
                     _ => {

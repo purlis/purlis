@@ -3515,6 +3515,126 @@ fn incoming_commits_are_held_off_by_a_commit_of_the_planes_own() {
     assert!(!got.moved, "{got:?}");
 }
 
+/// Under a chat's sandbox, incoming commits that change a file the sandbox denies are left
+/// on the remote-tracking branch: git would write the files it may, skip that one, and leave
+/// the project half-updated with HEAD unmoved (qw346). Outside one they come in as before.
+#[test]
+fn incoming_commits_a_chats_sandbox_would_stop_partway_are_left_for_the_window() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote_that_moved();
+    let before = ask(&fixture.root, &["rev-parse", "HEAD"]);
+
+    let got = {
+        let _sandbox = crate::sandbox::held::stand_in(&["theirs.md"]);
+        fetch(&fixture.root, true).expect("fetched")
+    };
+
+    assert_eq!((got.behind, got.moved), (1, false), "{got:?}");
+    let Some(Held::Sandbox(files)) = &got.held else {
+        panic!("{got:?}");
+    };
+    assert_eq!(files, &["theirs.md"]);
+    let why = got.held.as_ref().unwrap().why();
+    assert!(
+        why.starts_with("this chat's sandbox does not let it write `theirs.md`"),
+        "{why}"
+    );
+    assert!(why.contains("half-updated"), "{why}");
+    assert!(
+        why.contains("`purlis save --pull` in their own terminal"),
+        "{why}"
+    );
+    // Nothing was started: the commit, the tree and git's own state are as they were.
+    assert_eq!(ask(&fixture.root, &["rev-parse", "HEAD"]), before);
+    assert!(
+        !fixture.root.join("theirs.md").exists(),
+        "a file was written"
+    );
+    assert_eq!(ask(&fixture.root, &["status", "--porcelain"]), "");
+
+    // A sandbox that denies none of the files the commits change holds nothing off.
+    let got = {
+        let _sandbox = crate::sandbox::held::stand_in(&["other.md"]);
+        fetch(&fixture.root, true).expect("fetched")
+    };
+    assert_eq!((got.moved, &got.held), (true, &None), "{got:?}");
+    assert!(fixture.root.join("theirs.md").is_file());
+}
+
+/// `purlis save --pull` under a chat's sandbox says why nothing came in, and does not stop
+/// the save that follows: what it commits is still the person's work (qw346).
+#[test]
+fn a_pull_a_chats_sandbox_would_stop_partway_says_so_and_brings_nothing_in() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote_that_moved();
+    let mut said = String::new();
+    let code = {
+        let _sandbox = crate::sandbox::held::stand_in(&["theirs.md"]);
+        pull(&fixture.root, &mut |line: Say| {
+            said.push_str(&line.to_string());
+            said.push('\n');
+        })
+    };
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        said.contains(
+            "1 incoming commit not brought in: this chat's sandbox does not let it write \
+             `theirs.md`"
+        ),
+        "{said}"
+    );
+    assert!(
+        !fixture.root.join("theirs.md").exists(),
+        "a file was written"
+    );
+}
+
+/// A save whose push the remote refuses because it moved rebases onto it. Under a chat's
+/// sandbox that rebase is not started where it would stop partway: the commit stays local,
+/// nothing is called a conflict, and the tree is left whole (qw346).
+#[test]
+fn a_saves_rebase_a_chats_sandbox_would_stop_partway_is_not_started() {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    let mine = ask(&fixture.root, &["rev-parse", "HEAD"]);
+
+    let (pushed, said) = {
+        let _sandbox = crate::sandbox::held::stand_in(&["theirs.md"]);
+        push_within(&fixture, false, WRITE)
+    };
+
+    assert_eq!(pushed.outcome, Outcome::Failed, "{said}");
+    assert!(
+        said.contains(
+            "Committed locally, but this chat's sandbox does not let it write `theirs.md`"
+        ),
+        "{said}"
+    );
+    assert!(said.contains("Nothing was rebased or pushed."), "{said}");
+    assert!(!said.contains("conflict"), "{said}");
+    assert_eq!(ask(&fixture.root, &["rev-parse", "HEAD"]), mine);
+    assert!(
+        !fixture.root.join("theirs.md").exists(),
+        "a file was written"
+    );
+    assert!(fixture.root.join("mine.md").is_file());
+    assert_eq!(ask(&fixture.root, &["status", "--porcelain"]), "");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "theirs"
+    );
+    let record = push_record(&fixture.root).expect("a record");
+    assert_eq!(record["outcome"], "failed");
+
+    // The same save from the window, under no sandbox, lands it.
+    let (pushed, said) = push_within(&fixture, false, WRITE);
+    assert_eq!(pushed.outcome, Outcome::Pushed, "{said}");
+    assert!(fixture.root.join("theirs.md").is_file());
+}
+
 #[test]
 fn incoming_commits_wait_while_another_git_holds_the_index() {
     let fixture = Fixture::plane();
