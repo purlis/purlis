@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SandboxGrant } from "../bindings";
+import { commands, type SandboxGrant } from "../bindings";
 import { networkGroup, grantSaid } from "./GrantedList";
 import type { LiveSetting } from "./groups";
 import { useSandboxCommands } from "../sandboxAsked";
@@ -106,6 +106,31 @@ describe("the Allowed list's links (#1388)", () => {
     ]);
     // A host names neither.
     expect(within(chat).queryByRole("button", { name: /^(Open vault|Show) / })).toBeNull();
+  });
+});
+
+describe("the Allowed list off the window (#1927)", () => {
+  it("lists what is allowed and offers no Remove where the press could not work", async () => {
+    // Remove is the window's alone: a page shown anywhere else cannot make that call, so it
+    // draws none and says where the person takes a grant back.
+    const held = commands as Record<string, unknown>;
+    const was = held.revokeSandboxGrant;
+    delete held.revokeSandboxGrant;
+    onTestFinished(() => {
+      held.revokeSandboxGrant = was;
+    });
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return cmd === "sandbox_grants" ? [CHAT, MINE] : null;
+    });
+    render(<Granted />);
+
+    const list = await screen.findByRole("list", { name: "Allowed" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(list).queryAllByRole("button", { name: /^Remove / })).toHaveLength(0);
+    expect(screen.getByText(/Remove one from purlis's own window on this machine\./)).toBeVisible();
+    expect(asked).not.toContain("revoke_sandbox_grant");
   });
 });
 

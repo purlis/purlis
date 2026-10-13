@@ -322,6 +322,22 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // window's own Delete workspace.
     assert!(ui::WINDOW_ONLY.contains(&"keep_asked_workspace"));
     assert!(!ui::window_only_commands().any(|one| one == "remove_asked_workspace"));
+    // #1927: removal, grant, settings and credential commands are the window's alone. The
+    // list is the source; one of each class is named here, so taking a class off the list
+    // fails this test and not only a generated file's diff.
+    for command in [
+        "revoke_sandbox_grant",
+        "workspace_remove",
+        "allow_refused_vault",
+        "save_project_settings",
+        "install_extension",
+        "reference_into_chat",
+    ] {
+        assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
+    }
+    for command in ["vault_secret_reveal", "vault_secret_set"] {
+        assert!(ui::WINDOW_ONLY_CREDENTIALS.contains(&command), "{command}");
+    }
 }
 
 #[tokio::test]
@@ -352,7 +368,9 @@ async fn every_command_that_is_the_windows_alone_is_refused_on_a_link_before_it_
     );
     let ui = ui::Server::new(
         BUILD,
-        all.iter().copied().chain(["rename_chat"]),
+        all.iter()
+            .copied()
+            .chain(["rename_chat", "a_command_added_later"]),
         commands.clone(),
     );
     tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
@@ -364,9 +382,15 @@ async fn every_command_that_is_the_windows_alone_is_refused_on_a_link_before_it_
         let refused = ui.call(command, json!({"plane": 1})).await.unwrap();
         assert!(refused.is_err(), "{command}: {refused:?}");
     }
+    // #1927: and a command on neither list, as one added to the app and not yet listed would
+    // be, is refused the same way although the host was built with it: a link is served a
+    // command only where the served list names it.
+    assert!(!ui::served_on_a_link("a_command_added_later"));
+    let unlisted = ui.call("a_command_added_later", json!({})).await.unwrap();
+    assert!(unlisted.is_err(), "{unlisted:?}");
     assert!(
         commands.asked.lock().unwrap().is_empty(),
-        "a command of the window's alone reached the host's handler"
+        "a command of the window's alone, or one no list names, reached the host's handler"
     );
     // And the one beside them that is not the window's alone is served.
     let renamed = ui

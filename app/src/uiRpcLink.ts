@@ -72,6 +72,38 @@ export function closeUiRpc(): void {
   link = null;
 }
 
+/** What a command that is the window's alone answers where a page on a link calls it. */
+export const WINDOW_ONLY_SAID =
+  "That is done in purlis's own window on this machine, so it was not done here.";
+
+/** Marks a call as one no link sends: `inTheWindow` reads the mark, and pages hide by it. */
+const noLinkSends = <F extends (...args: never[]) => unknown>(call: F) =>
+  Object.assign(call, { windowOnly: true as const });
+
+/**
+ * **A command that is the window's alone, on the link's client** (`WINDOW_ONLY` in the session
+ * protocol): nothing is sent, and the call fails saying where it is done, as a command's own
+ * error would. A page that asks first (`inTheWindow`) draws no control for it; one that does not
+ * says this where it says any command's error.
+ */
+export const windowOnly = noLinkSends((): Promise<never> =>
+  Promise.reject(new Error(WINDOW_ONLY_SAID)),
+);
+
+/** {@link windowOnly} for a command with a typed result: its error, and nothing sent. */
+export const windowOnlyResult = noLinkSends((): Promise<{ status: "error"; error: string }> =>
+  Promise.resolve({ status: "error", error: WINDOW_ONLY_SAID }),
+);
+
+/**
+ * {@link windowOnly} for a command whose error is a refusal with what was at risk (a workspace's
+ * or a repo's removal): that shape, saying where it is done and naming nothing at risk.
+ */
+export const windowOnlyRefused = noLinkSends(
+  (): Promise<{ status: "error"; error: { said: string; at_risk: never[] } }> =>
+    Promise.resolve({ status: "error", error: { said: WINDOW_ONLY_SAID, at_risk: [] } }),
+);
+
 /**
  * Tauri's `invoke`, over the link: `method` is the command's name and `args` its arguments by
  * name. A command's own error rejects with that error, as Tauri's does, so the generated client's

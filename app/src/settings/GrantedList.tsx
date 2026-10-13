@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type PlaneId, type SandboxGrant } from "../bindings";
 import { Notice } from "../Notice";
+import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import { Field, type RowIds } from "./components";
@@ -67,6 +68,12 @@ function removed(one: SandboxGrant): string {
   return `writing ${one.target}`;
 }
 
+/**
+ * Whether this page may take a grant back: Remove is the window's alone (`WINDOW_ONLY`, #1927),
+ * so a page shown anywhere else draws no button that could not work.
+ */
+export const mayRemoveGrants = (): boolean => inTheWindow(commands, "revokeSandboxGrant");
+
 /** What the core said went wrong, through the Notice every surface says it with. */
 function Trouble({ said, onDismiss }: { said: string; onDismiss: () => void }) {
   return (
@@ -92,6 +99,8 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
   const [said, setSaid] = useState<string>();
   /** Why a project host's Remove is off: the project is read-only (#1759). */
   const readOnly = useReadOnlySaid();
+  /** Whether Remove can be pressed here: in the window, never on a link (#1927). */
+  const canRemove = mayRemoveGrants();
   /** The newest list asked for. Both commands answer off the window's thread (#1543), so an
    *  older answer can land after a newer one, and only the newest is drawn. */
   const asking = useRef(0);
@@ -168,20 +177,25 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
                 // with who set it. Still yours to take away (#1431).
                 <span className="granted-locked"> Not in force. {one.locked}</span>
               )}
-              <button
-                type="button"
-                tabIndex={0}
-                // A project host's removal edits the committed file (#1759).
-                disabled={one.level === "project" && readOnly !== undefined}
-                title={one.level === "project" ? readOnly : undefined}
-                aria-label={`Remove ${removed(one)}`}
-                onClick={() => remove(one)}
-              >
-                Remove
-              </button>
+              {canRemove && (
+                <button
+                  type="button"
+                  tabIndex={0}
+                  // A project host's removal edits the committed file (#1759).
+                  disabled={one.level === "project" && readOnly !== undefined}
+                  title={one.level === "project" ? readOnly : undefined}
+                  aria-label={`Remove ${removed(one)}`}
+                  onClick={() => remove(one)}
+                >
+                  Remove
+                </button>
+              )}
             </li>
           ))}
         </ul>
+      )}
+      {!canRemove && grants !== undefined && grants.length > 0 && (
+        <p className="granted-note">Remove one from purlis's own window on this machine.</p>
       )}
       {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
     </div>

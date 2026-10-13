@@ -2522,9 +2522,11 @@ fn ui_rpc_client() -> String {
     let client = without_channel_commands(&bindings);
     // `Channel` stays imported only while something the client keeps still names it.
     let names = if client.contains("Channel<") {
-        "invoke as __TAURI_INVOKE, Channel"
+        "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, Channel"
     } else {
-        "invoke as __TAURI_INVOKE"
+        "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -2588,9 +2590,38 @@ fn without_channel_commands(bindings: &str) -> String {
         let command = lines[pair[0]..pair[1]].concat();
         let window_only = purlis_session_protocol::ui::window_only_commands()
             .any(|name| command.contains(&format!("(\"{name}\"")));
-        if !command.contains("Channel<") && !window_only {
-            out.push_str(&command);
+        if command.contains("Channel<") {
+            continue;
         }
+        if window_only {
+            // The window's alone (#1927): the link's client has the name and sends nothing.
+            // Called there, it answers that it is done in purlis's own window, so a page
+            // shown off the window says so where it has not hidden the control, and
+            // `inTheWindow` reads it as a call the page cannot make.
+            let first = lines[pair[0]..pair[1]]
+                .iter()
+                .find(|line| starts_a_command(line))
+                .copied()
+                .unwrap_or_default();
+            let name = first.trim_start().split(':').next().unwrap_or_default();
+            // A command with a typed result answers its own error's shape, so a page reads
+            // the refusal as it reads any of that command's errors. A shape not known here
+            // stops the generator: say what its refusal is before the client has it.
+            let stub = if !command.contains("typedError<") {
+                "__WINDOW_ONLY"
+            } else if command.contains(", string>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_RESULT"
+            } else if command.contains(", Refused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_REFUSED"
+            } else {
+                panic!(
+                    "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"
+                )
+            };
+            out.push_str(&format!("\t{name}: {stub},\n"));
+            continue;
+        }
+        out.push_str(&command);
     }
     out.push_str(&lines[close..].concat());
     out

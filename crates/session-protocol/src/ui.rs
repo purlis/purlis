@@ -167,6 +167,18 @@ pub struct Server {
 /// connection the chat's proxy holds while the person is asked, so it is theirs alone too; no
 /// chat answers its own ask (V16a).
 ///
+/// **Removal, grant, settings and credential commands are the window's alone** (#1927): what
+/// takes something away for good, what gives, answers or takes back a consent, what saves a
+/// setting that decides what chats may do, what installs, runs or publishes for the person,
+/// and what carries a credential. Each is the person's own act, made in their own window.
+/// This list is the source of which commands those are; the classes are named beside the
+/// entries below.
+///
+/// **A link is served a command only by name** ([`SERVED_ON_A_LINK`]): every command of the
+/// app is on that list or on these, and the app's test fails for one on neither or on both.
+/// So a command added later is the window's alone until someone lists it as served, on
+/// purpose and in a place a review reads.
+///
 /// `open_extension_record` starts the person's editor on this machine's extension record
 /// (#1296): a program of theirs run on a machine file, from the Extensions dialog, which no link
 /// asks for.
@@ -318,6 +330,70 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answers the question before it is asked.
     "allow_project_expects",
     "decline_project_expects",
+    // Remove on the Allowed list (#1927): the person's standing answers are taken back in
+    // their own window.
+    "revoke_sandbox_grant",
+    // Removal commands (#1927): what takes something away for good.
+    "workspace_remove",
+    "drop_repo",
+    "drop_repo_membership",
+    "persona_remove",
+    "vault_remove",
+    "vault_secret_delete",
+    "todo_forget",
+    "clear_finished_tasks",
+    // Grant commands (#1927): a consent given, answered or taken back.
+    "allow_refused_vault",
+    "keep_vault_blocked",
+    "allow_persona_grants",
+    "confirm_sandbox_host",
+    "list_grantable_folder",
+    "unlist_grantable_folder",
+    "approve_extension",
+    "forget_extension",
+    "approve_plane",
+    "approve_profile",
+    "revoke_approval",
+    "answer_sandbox_offer",
+    "rearm_agents",
+    // Settings commands (#1927): a saved setting decides what chats may reach and run.
+    "save_project_settings",
+    "save_workspace_settings",
+    "move_project_settings",
+    "add_sandbox_host",
+    "remove_sandbox_host",
+    "add_project_forge",
+    "remove_project_forge",
+    "add_project_profile",
+    "remove_project_profile",
+    "rename_project_profile",
+    "persona_set_profile",
+    // Install, run and publish commands (#1927): a program installed or run, or work sent
+    // out, as the person.
+    "install_extension",
+    "set_extension_on",
+    "pick_extension",
+    "install_update",
+    "set_update_channel",
+    "run_action",
+    "extension_programs_run",
+    "install_cli_on_path",
+    "type_installer",
+    "type_sandbox_install",
+    "plane_doctor_fix",
+    "plane_doctor_fix_identity",
+    "change_land",
+    "change_push",
+    "publish_project",
+    "create_project_on_forge",
+    "save_plane",
+    "save_repo",
+    "choose_plane_mode",
+    // Typed into a session as the person: one of the explorer's rows, as several are
+    // (#1151), and the keys themselves.
+    "reference_into_chat",
+    "send_input",
+    "send_input_bytes",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
@@ -424,7 +500,20 @@ pub const STANDING_DISPATCH: &[&str] = &[
 /// amended 2026-10-09): a credential the person gives purlis reaches it through the window's
 /// own IPC, from the window that began the set-up, and is never carried by a link. The window's
 /// alone, as [`WINDOW_ONLY`]'s are.
+///
+/// **With them, every credential command** (#1927): the whole value-bearing class (ADR 0052's
+/// `vault_values`), which the app's test holds this list to, and the commands that give a
+/// vault a secret's value or its identity.
 pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
+    "vault_secret_reveal",
+    "vault_secret_copy",
+    // A secret's value given to a vault, or a vault's identity put or moved.
+    "vault_secret_add",
+    "vault_secret_set",
+    "vault_secret_rename",
+    "vault_identity_put",
+    "vault_identity_move",
+    "finish_moving_vaults",
     "vault_setup_accounts",
     "vault_setup_begin",
     "vault_setup_test",
@@ -515,6 +604,211 @@ fn replace(value: &mut Value, kept: &WindowOnlyField) {
     }
 }
 
+/// **The commands a link may be served**, each by name (#1927). Every command of the app
+/// (`ipc_commands.rs`) is here or is the window's alone ([`window_only_commands`]), never both
+/// and never neither: the app's test holds that, so a command added later is refused to a
+/// link until someone adds it here on purpose. What is here reads, or acts on what the window
+/// shows (a tab, a pin, a search, a terminal's bytes), or is one of the person's edits whose
+/// place among the window's alone awaits the ruling [`WINDOW_ONLY`] names.
+pub const SERVED_ON_A_LINK: &[&str] = &[
+    "about_charter",
+    "activity_chat",
+    "adopt_layout",
+    "agents_stopped",
+    "alerts_everywhere",
+    "arrange_workspace_pins",
+    "ask_persona_offer",
+    "ask_to_quit",
+    "branch_ahead_behind",
+    "branch_status",
+    "branch_tree",
+    "branch_watch",
+    "cancel_smart_close",
+    "change_land_question",
+    "change_push_question",
+    "charter_windows",
+    "chat_attended",
+    "chat_doings",
+    "chat_in_front",
+    "chat_network",
+    "chat_order",
+    "chat_states",
+    "chat_usage",
+    "chat_work_item",
+    "chat_work_link",
+    "chat_work_unlink",
+    "chats_on_older_sandbox",
+    "chats_plane_updated",
+    "chats_that_would_not_start",
+    "check_for_update",
+    "check_sandbox_host",
+    "clone_repo",
+    "close_chat_tab",
+    "copy_branch_path",
+    "create_project",
+    "curation_offers",
+    "dispatch_limits",
+    "dispatch_worktree_loss",
+    "dispatches",
+    "extension_commands",
+    "extension_facts",
+    "extension_icon_themes",
+    "extension_panels",
+    "extension_themes",
+    "extension_views",
+    "extensions_on",
+    "files_watch",
+    "find_files",
+    "find_files_end",
+    "finished_tasks",
+    "first_frame",
+    "first_run_found",
+    "forge_token_help",
+    "get_project",
+    "git_presence",
+    "grantable_folders",
+    "harness_cards",
+    "harness_setup_found",
+    "hide_window",
+    "ignore_needs_you",
+    "import_instructions",
+    "inbox_shown",
+    "installed_extensions",
+    "locate_project",
+    "memory_archive",
+    "memory_archived",
+    "memory_create",
+    "memory_edit",
+    "memory_move",
+    "memory_read",
+    "memory_scopes",
+    "memory_unarchive",
+    "move_projects",
+    "move_their_agents_md_aside",
+    "open_chat_tab",
+    "open_local_project",
+    "open_plane",
+    "open_planes",
+    "open_repo",
+    "open_view",
+    "opened_chats",
+    "owed_restarts",
+    "pending_asks",
+    "persona_chats_of",
+    "persona_create",
+    "persona_edit",
+    "persona_grants_held",
+    "persona_mark_set",
+    "persona_marks",
+    "persona_profile",
+    "pick_project",
+    "piece_file",
+    "pin_chat",
+    "pin_on_this_machine",
+    "pin_project",
+    "pin_workspace",
+    "plane_at_launch",
+    "plane_doctor",
+    "plane_doctor_identity",
+    "plane_fetch",
+    "plane_pin",
+    "plane_pins",
+    "plane_remote_readers",
+    "plane_root_panels",
+    "plane_saving",
+    "plane_sidebar",
+    "planes_to_restore",
+    "project_extensions",
+    "project_harness_plugins",
+    "project_icons_drawn",
+    "project_saving_in_force",
+    "project_settings",
+    "project_theme",
+    "project_theme_drawn",
+    "projects_handed",
+    "quit",
+    "quit_cancelled",
+    "reachable_repos",
+    "recent_planes",
+    "relaunch_ask",
+    "rename_chat",
+    "reopened_focus",
+    "reopened_views",
+    "repo_instructions",
+    "resize_session",
+    "reveal_branch_path",
+    "running_sessions",
+    "sandbox_block_report",
+    "sandbox_grants",
+    "sandbox_network",
+    "sandbox_state",
+    "search_files",
+    "search_files_end",
+    "search_files_more",
+    "see_on_this_machine",
+    "seen_on_this_machine",
+    "session_bus",
+    "session_record",
+    "set_dismissed",
+    "show_window_holding",
+    "smart_close_offer",
+    "smart_closing",
+    "start_options",
+    "stopping_chats",
+    "tab_shows",
+    "take_repos",
+    "task_branch_merge_question",
+    "task_changes",
+    "task_failure_seen",
+    "task_folder_shared",
+    "tasks_sharing_a_folder",
+    "tasks_used",
+    "template_that_fits",
+    "this_machine",
+    "title_bar_room",
+    "todo_add",
+    "todo_done",
+    "todo_read",
+    "unwatch_session",
+    "update_channel",
+    "use_built_in_theme",
+    "use_default_layout",
+    "vault_create",
+    "vault_list",
+    "vault_open",
+    "vault_refresh",
+    "vault_refusals",
+    "vaults_to_move",
+    "watch_session",
+    "what_changed",
+    "window_focus",
+    "window_holds_planes",
+    "window_showing",
+    "window_views",
+    "workspace_at_risk",
+    "workspace_create",
+    "workspace_focused",
+    "workspace_live",
+    "workspace_live_preview",
+    "workspace_panels",
+    "workspace_rename",
+    "workspace_repos",
+    "workspace_saving",
+    "workspace_settings",
+    "workspace_starts_fresh",
+    "worktree_add",
+    "worktree_done",
+    "worktree_list",
+    "worktree_of_chat",
+    "write_layout",
+];
+
+/// Whether a link may be served `method`: one of [`SERVED_ON_A_LINK`], and not the window's
+/// alone.
+pub fn served_on_a_link(method: &str) -> bool {
+    SERVED_ON_A_LINK.contains(&method) && !window_only(method)
+}
+
 /// **Every command that is the window's alone**, each once: [`WINDOW_ONLY`]'s and
 /// [`WINDOW_ONLY_CREDENTIALS`]' (#1542). The one reading of the two lists: a command is
 /// declared the window's alone by adding it to one of them, and whatever asks which commands
@@ -531,8 +825,10 @@ pub fn window_only(method: &str) -> bool {
 
 impl Server {
     /// `methods` is the app's command list (`ipc_commands.rs`), or the part of it this host
-    /// answers; a method not in it, or the window's alone ([`window_only`]), is refused before
-    /// `handler` is asked.
+    /// answers. **Only a method the served list names is served** ([`served_on_a_link`]): one
+    /// that is the window's alone, and one on neither list, is refused before `handler` is
+    /// asked, whatever the host passes. One filter, so a command reaches a link by being
+    /// listed as served and in no other way.
     pub fn new(
         build: impl Into<String>,
         methods: impl IntoIterator<Item = impl Into<String>>,
@@ -543,8 +839,25 @@ impl Server {
             methods: methods
                 .into_iter()
                 .map(Into::into)
-                .filter(|method: &String| !window_only(method))
+                .filter(|method: &String| served_on_a_link(method))
                 .collect(),
+            handler: Arc::new(handler),
+        }
+    }
+
+    /// [`Self::new`] answering `methods` whatever they are called: for this crate's own tests
+    /// of the link itself, which call methods no app has. Only a test build has it
+    /// (`any-stream` is turned on from `[dev-dependencies]` alone), so no host serves a
+    /// method the served list does not name.
+    #[cfg(any(test, feature = "any-stream"))]
+    pub fn of_any_methods_for_tests(
+        build: impl Into<String>,
+        methods: impl IntoIterator<Item = impl Into<String>>,
+        handler: impl Handler,
+    ) -> Server {
+        Server {
+            build: build.into(),
+            methods: methods.into_iter().map(Into::into).collect(),
             handler: Arc::new(handler),
         }
     }
@@ -841,6 +1154,57 @@ mod tests {
             "branch_tree",
             &watch(vec![folder("", "")])
         ));
+    }
+
+    #[test]
+    fn a_host_serves_only_what_the_served_list_names_whatever_it_is_built_with() {
+        // #1927: a command on neither list (one added to the app and not yet listed) is
+        // refused to a link at the host, not only by a test of the lists.
+        struct Nothing;
+        impl Handler for Nothing {
+            fn call(&self, _: String, _: Value) -> BoxFuture<'_, Result<Value, Value>> {
+                Box::pin(async { Ok(Value::Null) })
+            }
+        }
+        let server = Server::new(
+            "0.0.0+test",
+            [
+                "rename_chat",
+                "a_command_added_later",
+                "send_input",
+                "answer_ask",
+            ],
+            Nothing,
+        );
+        assert_eq!(
+            server
+                .methods
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["rename_chat"]
+        );
+    }
+
+    #[test]
+    fn no_command_is_both_served_on_a_link_and_the_windows_alone() {
+        // #1927: the two lists part the app's commands. The app's own test holds that every
+        // command is on one; this holds that none is on both, and each list names one once.
+        for command in SERVED_ON_A_LINK {
+            assert!(!window_only(command), "{command} is on both lists");
+            assert!(served_on_a_link(command), "{command}");
+        }
+        for command in window_only_commands() {
+            assert!(!served_on_a_link(command), "{command}");
+        }
+        let mut once = SERVED_ON_A_LINK.to_vec();
+        once.sort_unstable();
+        once.dedup();
+        assert_eq!(
+            once.len(),
+            SERVED_ON_A_LINK.len(),
+            "a command is listed twice"
+        );
     }
 
     #[test]

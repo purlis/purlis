@@ -9,7 +9,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Channel } from "@tauri-apps/api/core";
 import { commands } from "./uiRpc";
-import { closeUiRpc, invoke, openUiRpc, type UiRpcTransport } from "./uiRpcLink";
+import { inTheWindow } from "./personaHostsAllow";
+import {
+  closeUiRpc,
+  invoke,
+  openUiRpc,
+  type UiRpcTransport,
+  WINDOW_ONLY_SAID,
+  windowOnly,
+  windowOnlyRefused,
+  windowOnlyResult,
+} from "./uiRpcLink";
 
 /** A link the test plays the host of. */
 function fakeLink() {
@@ -106,5 +116,36 @@ describe("the UI RPC's client", () => {
     const output = Object.create(Channel.prototype) as Channel<string>;
     await expect(invoke("watch_session", { output })).rejects.toThrow("channel");
     expect(link.sent).toEqual([]);
+  });
+});
+
+describe("a command that is the window's alone, on the link's client (#1927)", () => {
+  it("is named, sends nothing, and says where it is done", async () => {
+    // One with a typed result answers its error; one without rejects, as a command's own
+    // error does. Neither goes to the link: with no link open, a sent command would say so.
+    const typed = (commands as Record<string, unknown>)
+      .revokeSandboxGrant as typeof windowOnlyResult;
+    const plain = (commands as Record<string, unknown>).installUpdate as typeof windowOnly;
+    expect(typed).toBe(windowOnlyResult);
+    expect(await typed()).toEqual({ status: "error", error: WINDOW_ONLY_SAID });
+    expect(plain).toBe(windowOnly);
+    await expect(plain()).rejects.toThrow(WINDOW_ONLY_SAID);
+    // One whose error is an object answers that shape, so a page reads it as it reads any
+    // of that command's refusals.
+    const refused = (commands as Record<string, unknown>)
+      .workspaceRemove as typeof windowOnlyRefused;
+    expect(refused).toBe(windowOnlyRefused);
+    expect(await refused()).toEqual({
+      status: "error",
+      error: { said: WINDOW_ONLY_SAID, at_risk: [] },
+    });
+  });
+
+  it("is a call a page cannot make, so a page that asks first draws no control for it", () => {
+    expect(inTheWindow(commands, "revokeSandboxGrant")).toBe(false);
+    expect(inTheWindow(commands, "saveProjectSettings")).toBe(false);
+    expect(inTheWindow(commands, "vaultSecretReveal")).toBe(false);
+    // And one a link is served is a call it can make.
+    expect(inTheWindow(commands, "sandboxGrants")).toBe(true);
   });
 });
