@@ -738,6 +738,26 @@ describe("the Panel", () => {
     expect(plus.bottom).toBeLessThanOrEqual(line.bottom + 1);
   });
 
+  it("draws each half's title as the section label and its words as a body (#1920)", async () => {
+    // The text roles, as the window draws them: a label is 11/14 of the window's text and a
+    // body 13/14, whatever that text is set to. A range, never a pixel.
+    const drawn = (await browser.execute(() => {
+      const px = (one: Element | null) =>
+        one === null ? Number.NaN : Number.parseFloat(getComputedStyle(one).fontSize);
+      return {
+        text: px(document.documentElement),
+        titles: [...document.querySelectorAll(".panel-half .half-head .sidebar-title")].map(px),
+        memory: px(document.querySelector('.panel-half .panels[data-view="memory"]')),
+        repos: px(document.querySelector(".panel-half .explorer")),
+      };
+    })) as { text: number; titles: number[]; memory: number; repos: number };
+    expect(drawn.titles).toHaveLength(2);
+    for (const title of drawn.titles)
+      expect(Math.abs(title - (drawn.text * 11) / 14)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(drawn.memory - (drawn.text * 13) / 14)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(drawn.repos - (drawn.text * 13) / 14)).toBeLessThanOrEqual(0.5);
+  });
+
   it("draws one hairline between its halves, each half's content the same step clear of it (qw337)", async () => {
     const line = await boxOf(BETWEEN);
     const panel = await boxOf(PANEL);

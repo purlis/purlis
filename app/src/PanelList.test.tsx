@@ -9,6 +9,7 @@ import { PAGE, PanelList, SHORTEST, codeSpans, shorten } from "./PanelList";
 import type { Offer } from "./actions";
 import type { PanelRow } from "./bindings";
 import { drawnWith } from "./cascade.testkit";
+import { wears } from "./textRoles.testkit";
 
 afterEach(cleanup);
 
@@ -256,6 +257,11 @@ describe("the search", () => {
     // A short part and not the whole body: a list is still a list while it is searched.
     expect((snippet.textContent ?? "").length).toBeLessThan(body.length / 2);
     expect(snippet.querySelector("mark")).toHaveTextContent(/^freeze$/i);
+    // The line is meta (#1920); the match stands out of it in the primary colour, strong.
+    wears(snippet, "meta", "the matching part of a body");
+    expect(drawnWith(snippet.querySelector("mark") as Element, "font-weight")).toBe(
+      "var(--font-weight-strong)",
+    );
 
     await userEvent.clear(screen.getByRole("searchbox"));
 
@@ -495,6 +501,9 @@ describe("a row on the right is its title alone (#1674)", () => {
     draw([row("a", "Ship it", { note: "#7 open", runs: "x" })]);
 
     expect(screen.getByRole("button")).toHaveTextContent("Ship it · #7 open");
+    // The title is a body and the note beside it meta (#1920): two ranks, not one size in two greys.
+    wears(screen.getByRole("button").querySelector(".row-text"), "body", "a row's title");
+    wears(screen.getByRole("button").querySelector(".row-note"), "meta", "a row's note");
   });
 
   it("groups dated rows under Today, Yesterday and Earlier, newest group first", () => {

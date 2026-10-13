@@ -277,7 +277,7 @@ export function PanelList({
       {matching.length === 0 ? (
         // Not the empty state: the list is not empty, the search found nothing in it, and
         // those are different facts about a panel whose rows the reader can still get back.
-        <p className="none">Nothing here matches “{query.trim()}”.</p>
+        <p className="none ui-text-secondary">Nothing here matches “{query.trim()}”.</p>
       ) : (
         <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
           {days === undefined ? (
@@ -307,7 +307,7 @@ export function PanelList({
           onClick={() => setLimit((was) => was + page)}
         >
           {`Show ${Math.min(more, page)} more`}
-          <span className="note">{` · ${more} left`}</span>
+          <span className="note ui-text-meta">{` · ${more} left`}</span>
         </button>
       )}
     </div>
@@ -411,10 +411,15 @@ function Row({
       ) : (
         <Mark className="node-icon" />
       )}
-      <span className="row-text" title={hover === undefined ? tooltip : undefined}>
+      <span
+        className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}
+        title={hover === undefined ? tooltip : undefined}
+      >
         {shortened}
       </span>
-      {row.note !== null && !titleOnly && <span className="row-note">{` · ${row.note}`}</span>}
+      {row.note !== null && !titleOnly && (
+        <span className="row-note ui-text-meta">{` · ${row.note}`}</span>
+      )}
       {row.tone === "default" && <Star className="node-icon" />}
     </>
   );
@@ -511,7 +516,7 @@ function Row({
       {inner}
       {acts}
       {snippet !== undefined && (
-        <p className="row-snippet" data-testid={`row-snippet-${row.key}`}>
+        <p className="row-snippet ui-text-meta" data-testid={`row-snippet-${row.key}`}>
           {snippet.before}
           <mark>{snippet.match}</mark>
           {snippet.after}

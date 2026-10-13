@@ -28,8 +28,10 @@ export function WorktreeMark({
   withBranch?: boolean;
 }) {
   return (
-    <span className="worktree">
-      {withBranch && worktree.branch && <code className="branch">{worktree.branch}</code>}
+    <span className="worktree ui-text-meta">
+      {withBranch && worktree.branch && (
+        <code className="branch ui-text-code">{worktree.branch}</code>
+      )}
       {worktree.stale && (
         <span
           className="label stale"
