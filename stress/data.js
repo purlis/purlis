@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791904112269,
+  "lastUpdate": 1791904129712,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1974,6 +1974,42 @@ window.BENCHMARK_DATA = {
             "value": 451.3,
             "unit": "MB",
             "extra": "median of 6 samples: 404.5, 432.1, 453.5, 451.1, 451.5, 542.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "96d5e152bb4463d0a3f617021ec90a9a3ac62360",
+          "message": "fix(explorer): a files browser for the strip's workspace; tree chevrons centred\n\nExplorer no longer lists the workspaces: the strip is the one place a\nworkspace is selected, and its tab already carries the press, the menu and\nthe live mark the section's rows repeated. The Explorer view is Files, of\nthe workspace the strip is on, named in its heading. On the plane root's\ntab the heading names the plane root and the section says it lists a\nworkspace's files. A layout file that folded the retired section is read\npast without an Inbox line.\n\nThe shared tree twist is a box one step wide and one row high, held in\nthe middle of its row by its margins. Explorer gave the class to the icon\nitself, which kept its own height between two insets and sat at the top\nof the row; its twists now use the documented span holding the icon.\n\nADR 0038 gets a dated amendment for the removed section.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T18:23:44+04:00",
+          "tree_id": "3c89b486dc48e07ea7cbc7a04a350b6ec32478a8",
+          "url": "https://github.com/purlis/purlis/commit/96d5e152bb4463d0a3f617021ec90a9a3ac62360"
+        },
+        "date": 1791904128744,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1538.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1364.1, 1538.2, 1645.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 434.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 404, 417, 422.3, 447.4, 447.8, 557.7 MB"
           }
         ]
       }
