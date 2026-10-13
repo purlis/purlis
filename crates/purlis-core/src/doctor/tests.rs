@@ -1861,11 +1861,14 @@ fn a_forge_a_workspace_repo_is_on_has_its_cli_looked_for_and_its_sign_in_asked_f
             || gh.detail == "not found, and 1 workspace repo(s) have their origin on github.com",
         "{gh:?}"
     );
-    // A doctor a test names asks no forge, so the CLI is never started from here.
+    // This file's doctor is the preflight, which asks no forge, so the CLI is never started
+    // from here.
     let auth = row(&rows, "gh auth");
     assert_eq!(auth.status, Status::Warn, "{auth:?}");
     assert!(
-        auth.detail == "not checked (this doctor asks no forge)"
+        auth.detail
+            == "not checked (the preflight a chat's start runs asks no forge CLI; `purlis \
+                doctor` asks gh)"
             || auth.detail == "not checked (gh is not found; the `gh` row says so)",
         "{auth:?}"
     );
