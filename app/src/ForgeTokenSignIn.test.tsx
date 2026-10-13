@@ -38,10 +38,14 @@ function row(login: string, host: string, more: Partial<ForgeAccountRow> = {}): 
   };
 }
 
+/** What the core says became of a signed-out account's token at its forge. */
+let ended: boolean | null = null;
+
 beforeEach(() => {
   accounts = [];
   sent = [];
   refuse = undefined;
+  ended = null;
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     sent.push({ cmd, args: given });
@@ -71,7 +75,7 @@ beforeEach(() => {
         return structuredClone(accounts);
       case "forge_sign_out":
         accounts = accounts.filter((one) => one.id !== given.id);
-        return null;
+        return ended;
       case "plugin:opener|open_url":
         return null;
       default:
@@ -178,6 +182,25 @@ describe("Settings › You › Accounts", () => {
     expect(sent.find((one) => one.cmd === "forge_sign_out")?.args).toEqual({ id: "01J9OCTOCAT" });
     await waitFor(() => expect(screen.queryByText("octocat")).toBeNull());
     expect(screen.getByRole("status").textContent).toContain("still works on github.com");
+  });
+
+  it("says a gitlab.com browser sign-in's token was ended there, or where to end it when it was not", async () => {
+    for (const [answer, says] of [
+      [true, "gitlab.com ended its token"],
+      [false, "revoke purlis at https://gitlab.com/-/user_settings/applications"],
+    ] as const) {
+      accounts = [row("jdoe", "gitlab.com", { method: "browser", scopes: ["api"] })];
+      ended = answer;
+      const view = render(<AccountsRow />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign out of jdoe on gitlab.com" }),
+      );
+      await waitFor(() => expect(screen.queryByText("jdoe")).toBeNull());
+      const said = screen.getByRole("status").textContent;
+      expect(said).toContain("Signed out of jdoe on gitlab.com");
+      expect(said).toContain(says);
+      view.unmount();
+    }
   });
 
   it("signs in through the token dialog and lists the new account", async () => {

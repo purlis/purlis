@@ -1125,9 +1125,15 @@ export const commands = {
 	forgeTokenHelp: (kind: string, host: string) => typedError<ForgeTokenHelp, string>(__TAURI_INVOKE("forge_token_help", { kind, host })),
 	/**
 	 *  Sign out of the account `id`: its token deleted from the keychain and the account taken off
-	 *  this machine.
+	 *  this machine. Then, for a browser sign-in on a forge that takes a revocation with no secret
+	 *  (gitlab.com), the forge is asked to end the token (ADR 0077 §3).
+	 * 
+	 *  Answers what became of the token at the forge: `true` when the forge ended it, `false` when
+	 *  it was asked and did not (the person is signed out here all the same, and the row says
+	 *  where to end it), and nothing when no forge was asked: a token the person made, or GitHub,
+	 *  whose revocation needs a secret purlis does not have.
 	 */
-	forgeSignOut: (id: string) => typedError<null, string>(__TAURI_INVOKE("forge_sign_out", { id })),
+	forgeSignOut: (id: string) => typedError<boolean | null, string>(__TAURI_INVOKE("forge_sign_out", { id })),
 	/**
 	 *  The `gh` and `glab` logins on this machine that purlis could import: offered, never taken.
 	 *  Each CLI is asked whether it is signed in, never for its token.

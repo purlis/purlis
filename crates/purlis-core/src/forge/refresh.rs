@@ -45,7 +45,7 @@ use super::{Failure, ForgeError};
 pub const AHEAD: Duration = Duration::from_secs(5 * 60);
 
 /// One refresh at a time in this process, whatever the account.
-static REFRESHING: Mutex<()> = Mutex::new(());
+pub(super) static REFRESHING: Mutex<()> = Mutex::new(());
 
 /// What the host is told with when a forge ended a sign-in.
 type Told = Box<dyn Fn(&ForgeAccount) + Send + Sync>;
@@ -269,7 +269,7 @@ fn renewed(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::forge::Forge;
     use crate::forge::Kind;
@@ -280,7 +280,7 @@ mod tests {
     use crate::forge::transport::{Call, NoAnswer, Reply, Transport};
 
     /// A forge that says whose token it is: `octocat`'s.
-    struct WhoAmI;
+    pub(crate) struct WhoAmI;
 
     impl Transport for WhoAmI {
         fn send(&self, _forge: &Forge, _call: &Call) -> Result<Reply, NoAnswer> {
@@ -302,13 +302,13 @@ mod tests {
 
     /// A config home with one account signed in by a browser sign-in, and when its token
     /// expires, read back from the item.
-    struct Machine {
-        home: tempfile::TempDir,
-        account: ForgeAccount,
-        expires_at: u64,
+    pub(crate) struct Machine {
+        pub(crate) home: tempfile::TempDir,
+        pub(crate) account: ForgeAccount,
+        pub(crate) expires_at: u64,
     }
 
-    fn machine(kind: Kind, host: &str, method: Method) -> Machine {
+    pub(crate) fn machine(kind: Kind, host: &str, method: Method) -> Machine {
         let home = tempfile::tempdir().unwrap();
         let keyring = accounts::keyring_at(home.path());
         let granted = Answer::of(
@@ -358,7 +358,7 @@ mod tests {
             )
         }
 
-        fn kept(&self) -> Option<Kept> {
+        pub(crate) fn kept(&self) -> Option<Kept> {
             accounts::kept(
                 accounts::keyring_at(self.home.path()).as_ref(),
                 &self.account,

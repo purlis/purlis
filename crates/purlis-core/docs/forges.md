@@ -403,6 +403,10 @@ registration (ADR 0077 §1 and §3, as amended 2026-10-12):
 - **Sign out cannot revoke it at GitHub**, which needs a client secret purlis does not have.
   The keyring item is deleted, the token lapses within eight hours, and the row says where on
   GitHub to revoke purlis now.
+- **Sign out revokes it at gitlab.com** (`forge/revoke.rs`), with the client id and no secret,
+  after the keyring item and the account are gone from this machine. If GitLab cannot be asked
+  or will not, the sign-out stands and the row says where on gitlab.com to end the token. A
+  pasted or imported token is never revoked.
 - **Each request is in the network log** by its host and path, and never its form or answer.
 
 
