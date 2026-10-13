@@ -2585,9 +2585,7 @@ fn without_channel_commands(bindings: &str) -> String {
     out.push_str(&lines[open + 1..begins[0]].concat());
     for pair in begins.windows(2) {
         let command = lines[pair[0]..pair[1]].concat();
-        let window_only = purlis_session_protocol::ui::WINDOW_ONLY
-            .iter()
-            .chain(purlis_session_protocol::ui::WINDOW_ONLY_CREDENTIALS)
+        let window_only = purlis_session_protocol::ui::window_only_commands()
             .any(|name| command.contains(&format!("(\"{name}\"")));
         if !command.contains("Channel<") && !window_only {
             out.push_str(&command);

@@ -483,9 +483,18 @@ fn replace(value: &mut Value, kept: &WindowOnlyField) {
     }
 }
 
-/// Whether `method` is the window's alone: in [`WINDOW_ONLY`] or [`WINDOW_ONLY_CREDENTIALS`].
+/// **Every command that is the window's alone**, each once: [`WINDOW_ONLY`]'s and
+/// [`WINDOW_ONLY_CREDENTIALS`]' (#1542). The one reading of the two lists: a command is
+/// declared the window's alone by adding it to one of them, and whatever asks which commands
+/// those are (a host's served methods, the client a link is generated, a test that holds the
+/// rule) asks here or [`window_only`], so none of them keeps a list or a count of its own.
+pub fn window_only_commands() -> impl Iterator<Item = &'static str> {
+    WINDOW_ONLY.iter().chain(WINDOW_ONLY_CREDENTIALS).copied()
+}
+
+/// Whether `method` is the window's alone: one of [`window_only_commands`].
 pub fn window_only(method: &str) -> bool {
-    WINDOW_ONLY.contains(&method) || WINDOW_ONLY_CREDENTIALS.contains(&method)
+    window_only_commands().any(|command| command == method)
 }
 
 impl Server {
