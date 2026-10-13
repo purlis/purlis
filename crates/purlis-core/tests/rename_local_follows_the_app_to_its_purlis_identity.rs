@@ -67,7 +67,14 @@ fn machine() -> Machine {
     let mut config = Map::new();
     config.insert("env".into(), json!({ "OP_SERVICE_ACCOUNT_TOKEN": SOURCE }));
     registry::add_vault(&ctx, "team", "1password", config, None, false, false).unwrap();
-    identity::put_in_keyring(&ctx, &vault(&plane, "team"), TOKEN).unwrap();
+    // A token is stored only where an `op` is found to pin (#1517): a stand-in, beside the
+    // machine's home.
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    stand_in::program(&bin, "op", "#!/bin/sh\n");
+    let path = bin.to_string_lossy().into_owned();
+    let storing = Ctx::new(&plane, Env::of(&[("PATH", path.as_str())]));
+    identity::put_in_keyring(&storing, &vault(&plane, "team"), TOKEN).unwrap();
 
     let m = Machine {
         _dir: dir,
