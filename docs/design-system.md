@@ -863,7 +863,8 @@ pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to w
 by the size or weight that was written.
 
 Its allowance, `type.guard.allowance.ts`, is today's offenders by file, one per line, with a
-frozen ceiling per file (`App.css` 159, of which 91 are font sizes), and it follows
+ceiling per file (`App.css` landed at 159, of which 91 were font sizes, and is 149 and 83 after
+the Chats list moved), and it follows
 [the same rule as the other two](#the-guards-and-the-lists-that-only-shrink): a new literal
 fails, a stale entry fails, and a ceiling may only go down. A font size is held by the
 geometry guard too, so a migration deletes its line from both lists.
@@ -876,7 +877,7 @@ words their roles.
 
 One change each, each checked against a screenshot (#1920):
 
-1. the Chats list;
+1. the Chats list (moved: [below](#the-chats-list-on-the-roles));
 2. the Inbox (its rows already wear the roles, #1919 and this change; its headings and its
    remaining lines follow);
 3. the Explorer, with the Panel's Repos and Memory halves (moved:
@@ -934,6 +935,43 @@ size of its own there (Todos, Sessions, Personas, Vaults, a refusal) follows it 
 and `.sidebar-title`'s own type, which goes when the Inbox's headings wear the label too.
 After this change the type guard's `App.css` list is 13 lines shorter and the geometry
 guard's 2.
+
+### The Chats list, on the roles
+
+The first surface to move (#1920). The list set `0.85rem` (11.9px) on its root, so a name, a
+note and a heading were one size told apart by colour, with four more literal sizes on its
+notes, two of them under 11px. Now:
+
+| word                                                                     | role                           | before                                  | after                          |
+| ------------------------------------------------------------------------ | ------------------------------ | --------------------------------------- | ------------------------------ |
+| the title, "Chats"                                                       | `ui-text-label`                | 11px, strong, secondary, capitals       | the same                       |
+| a chat's name                                                            | `ui-text-body`                 | 11.9px, regular, primary                | 13px, regular, primary         |
+| a line under a row (task limit, waiting on memory, a restart's answer)   | `ui-text-secondary`            | 10.1px, secondary                       | 12px, secondary                |
+| the notes beside the title ("The filter hides 3 of 12 chats.")           | `ui-text-secondary`            | 10.7px, muted                           | 12px, secondary                |
+| "No chats are running…"                                                  | `ui-text-secondary`            | 11.9px, primary at 60% opacity          | 12px, secondary, undimmed      |
+| a finished task's name, "Finished (n)", a finished task's note           | `ui-text-secondary`            | 11.9px, primary (the note muted)        | 12px, secondary                |
+| a finished task's report; where it was written                           | `ui-text-body`; `-secondary`   | 11.9px, primary; 11px, muted            | 13px, primary; 12px, secondary |
+| a folded row's task count; "Stopping…"                                   | `ui-text-meta`                 | 10.5px and 10.7px, muted                | 11px, muted                    |
+| a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.06em` |
+| a row's card: its name; its sentences and values; a fact's word          | body strong; secondary; meta   | 13px strong; 13px primary; 13px muted   | 13px strong; 12px secondary; 11px muted |
+
+What it settled, for the surfaces that follow:
+
+- **A surface whose words are mostly one role wears that role on its root** (`ui-text-body` on
+  the section, `ui-text-secondary` on the card), so a mark sized by the text beside it (`em`)
+  and a word no component ranks take that role's size, and each ranked word wears its own.
+- **No row is strong.** A chat that needs you says so by its mark, as it did; the list had no
+  heavier name and was given none.
+- **A count is meta at the regular weight.** No count in this list was heavier than its text.
+- **A row's height was not touched**: a chat's row was already the shared tree row
+  (`--ui-row-height`, 21px at the default text, a file's row's height in the Explorer), and
+  `workspace-explorer.e2e.ts` now measures the two against each other. What stands under or
+  beside a row (a line under it, the folded count, a workspace's heading) is spaced from the
+  geometry scale, and a line under a row starts where the row's name does.
+
+Not moved with it, and still on their own rules: the filter's chips and the scope switch
+(controls), the *Go* button beside the title, and the second step of ending a task
+(`.task-end-confirm`), which the pane's breadcrumb shares.
 
 ## Tailwind, shadcn and Lucide
 

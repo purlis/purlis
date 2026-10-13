@@ -638,6 +638,13 @@ title is `ui-text-label` on the element that holds its words (a folding section'
 count is `ui-text-meta ui-text-strong`, and a sentence (`.none`, `.pending`, `.empty`) is
 `ui-text-secondary` with no dimming on top.
 
+The Chats list is on them too (`ChatsSection.tsx`, `FinishedTasks.tsx`;
+`ChatsSection.roles.test.tsx` holds each word to its role). **A surface whose words are mostly
+one role wears it on its root**: the section is `ui-text-body` and a row's card
+`ui-text-secondary`, so a mark sized in `em` and a word nothing ranks take that size, and each
+ranked word wears its own: a name the body, a line under a row or a finished task the secondary,
+a count the meta, a heading over a group the label.
+
 `app/src/primitives/text.test.ts` holds each class to this table through the stylesheet's own
 cascade, and `InboxScope.window.test.tsx` that the Inbox's rows are drawn with what they had
 before. `app/src/type.guard.test.ts` refuses a size, weight, line height, family or text colour
