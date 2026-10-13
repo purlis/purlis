@@ -13,6 +13,11 @@
 //!   (`purlis_core::sandbox::services::discovered`), or the services purlis can allow;
 //! - **or, for a socket, a path they type**. A service has no path to check, so none is typed.
 //!
+//! **No service is listed today** (`services::GRANTABLE_SERVICES`): the certificate check was
+//! the one, and since the operator's ruling R1 of 2026-10-13 it is the project's setting and
+//! never a grant. A refused certificate check that names nothing gets the Notice a named one
+//! gets, which says what stands and the way on; nothing is chosen for it.
+//!
 //! # What holds
 //!
 //! - **The choice is the person's.** All three commands are the window's alone

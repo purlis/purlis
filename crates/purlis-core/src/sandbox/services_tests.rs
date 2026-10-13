@@ -1183,9 +1183,10 @@ fn a_candidate_is_judged_exactly_as_a_named_socket_is() {
 
 #[test]
 fn the_services_offered_to_choose_are_the_ones_a_grant_may_name() {
-    assert_eq!(GRANTABLE_SERVICES, [TRUSTD]);
+    // The certificate check is no grant (R1), so it is never one to choose.
+    assert!(!GRANTABLE_SERVICES.contains(&TRUSTD));
     for name in GRANTABLE_SERVICES {
-        assert_eq!(service(name), Ok(name.to_owned()));
+        assert_eq!(service(name), Ok((*name).to_owned()));
     }
     assert_eq!(Known::CertificateCheck.named(), "Certificate check");
     assert_eq!(Known::Containers.named(), "Container engine");

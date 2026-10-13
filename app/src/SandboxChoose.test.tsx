@@ -41,11 +41,13 @@ const UNNAMED: ChatBlocked = {
   choose: "socket",
 };
 
-const CERTIFICATE: ChatBlocked = {
+// No service is listed by purlis today (the certificate check is the project's setting, never a
+// grant): this draws the list a later one would be chosen from.
+const SERVICE: ChatBlocked = {
   ...UNNAMED,
   operation: "lookup",
-  kind: "certificate-check",
-  said: "a lookup of the system's certificate check",
+  kind: "system-service",
+  said: "a lookup of a system service",
   route:
     "The sandbox did not say which system service it refused, so you can choose it from the " +
     "ones purlis can allow.",
@@ -71,9 +73,9 @@ const FOUND: BlockChoices = {
 const SERVICES: BlockChoices = {
   choices: [
     {
-      target: "com.apple.trustd.agent",
-      named: "Certificate check",
-      says: "Allowing it lets Go and similar tools check certificates; that service can make its own network requests.",
+      target: "com.example.helper",
+      named: "Local service",
+      says: "It is a service on this machine; purlis can't tell what it does.",
     },
   ],
   typed: false,
@@ -264,9 +266,9 @@ describe("a socket the sandbox did not name", () => {
 
 describe("a system service the sandbox did not name", () => {
   it("is chosen from the ones purlis can allow, and none is typed", async () => {
-    const { sent } = drawn(CERTIFICATE, {
+    const { sent } = drawn(SERVICE, {
       choices: SERVICES,
-      chosen: () => ({ ...CERTIFICATE, offer: "service", target: "com.apple.trustd.agent" }),
+      chosen: () => ({ ...SERVICE, offer: "service", target: "com.example.helper" }),
     });
     await userEvent.click(screen.getByRole("button", { name: "Choose the service…" }));
 
@@ -275,15 +277,15 @@ describe("a system service the sandbox did not name", () => {
     expect(screen.queryByRole("radio", { name: "Another socket" })).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
 
-    await userEvent.click(within(list).getByRole("radio", { name: "com.apple.trustd.agent" }));
+    await userEvent.click(within(list).getByRole("radio", { name: "com.example.helper" }));
     await userEvent.click(screen.getByRole("button", { name: "Use this service" }));
     await waitFor(() =>
       expect(sent("choose_sandbox_block_target")).toEqual([
         {
           plane: PLANE,
           session: 4,
-          shown: { operation: "lookup", kind: "certificate-check", what: "service", target: "" },
-          target: "com.apple.trustd.agent",
+          shown: { operation: "lookup", kind: "system-service", what: "service", target: "" },
+          target: "com.example.helper",
         },
       ]),
     );

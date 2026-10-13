@@ -7,7 +7,7 @@
   sockets purlis finds on this machine (Docker's, Podman's, your SSH agent's, a database's) and
   a box to type a path. The socket you choose is checked as one the sandbox named is, with the
   same warning for a container engine's, and then offers *Allow once*, *Allow for this chat*
-  and *Always allow*. The certificate check is chosen the same way, from a list. Only you can
+  and *Always allow*. Only you can
   choose, in the window; nothing a chat printed fills the list or the box.
 
 ### Changed

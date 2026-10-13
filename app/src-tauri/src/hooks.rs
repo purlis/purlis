@@ -446,8 +446,9 @@ pub struct ChatBlocked {
     pub ruled: Option<String>,
     /// **What the person may choose, where the block named nothing a grant could name**
     /// (#1884, ADR 0093 as amended 2026-10-13): a local socket, from the ones purlis finds on
-    /// this machine or by a path they type, or a system service, from the ones purlis can
-    /// allow. Offered beside Start without the sandbox, in the window only
+    /// this machine or by a path they type. (A system service would be chosen from the ones
+    /// purlis can allow; it lists none since the certificate check became a setting, R1.)
+    /// Offered beside Start without the sandbox, in the window only
     /// (`choose_sandbox_block_target`), and what they choose is judged as a named one is. None
     /// where there is nothing to choose, or policy forbids every such grant.
     #[specta(optional)]
@@ -469,12 +470,8 @@ const CHOOSE_SOCKET_SAID: &str = "The sandbox did not say which socket it refuse
                                   choose it. purlis checks the socket you choose as it checks \
                                   one the sandbox names.";
 
-/// What an unnamed service's Notice says in place of "there is no service to allow" (#1884).
-const CHOOSE_SERVICE_SAID: &str = "The sandbox did not say which system service it refused, so \
-                                   you can choose it from the ones purlis can allow.";
-
 /// **What the person may choose for `block`** ([`ChatBlocked::choose`]), given what [`offered`]
-/// and the chat's harness came to (`offer`, and `named`, what it would show): only where the
+/// and the chat's harness came to (`offer`): only where the
 /// Notice would offer no Allow (Start without the sandbox), never for purlis's own operation,
 /// and never where policy forbids every socket and service grant. A socket only where its grant
 /// compiles (D-sock-7, macOS), also where the one the sandbox named may not be granted (one in
@@ -483,7 +480,6 @@ fn choosable(
     locks: &purlis_core::sandbox::policy::Locks,
     block: &purlis_core::sandboxblock::Block,
     offer: BlockOffer,
-    named: Option<&str>,
 ) -> Option<crate::sandboxing::GrantWhat> {
     use crate::sandboxing::GrantWhat;
     use purlis_core::sandboxblock::{Kind, Operation};
@@ -494,11 +490,9 @@ fn choosable(
         (Operation::Connect, Kind::LocalSocket) if cfg!(target_os = "macos") => {
             Some(GrantWhat::Socket)
         }
-        // A service the sandbox named and this chat's harness cannot take is not one of the
-        // ones listed, so there is nothing to choose in its place.
-        (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) if named.is_none() => {
-            Some(GrantWhat::Service)
-        }
+        // No service is chosen: purlis lists none it can allow
+        // (`services::GRANTABLE_SERVICES`). The certificate check, the one it listed, is the
+        // project's setting and never a grant (R1), and its Notice says what stands.
         _ => None,
     }
 }
@@ -611,10 +605,9 @@ pub(crate) fn blocked_on(
     let (first, named, why) = for_its_harness(harness, offered(plane.root(), block, target));
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
-    let choose = choosable(&locks, block, first, named.as_deref());
+    let choose = choosable(&locks, block, first);
     let why = match (choose, &named) {
-        (Some(crate::sandboxing::GrantWhat::Socket), None) => Some(CHOOSE_SOCKET_SAID.to_owned()),
-        (Some(_), None) => Some(CHOOSE_SERVICE_SAID.to_owned()),
+        (Some(_), None) => Some(CHOOSE_SOCKET_SAID.to_owned()),
         _ => why,
     };
     let (offer, target, route, levels) = held(&locks, (first, named, why));
@@ -1014,6 +1007,9 @@ fn offered(
         (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) => {
             match target.map(services::service) {
                 Some(Ok(name)) if name == services::TRUSTD => certificate_check_refused(root),
+                // A refused certificate check that reached the app naming nothing (down a
+                // pipe, read back later) is the certificate check all the same.
+                None if block.kind == Kind::CertificateCheck => certificate_check_refused(root),
                 Some(Ok(name)) => {
                     let said = services::said_of(
                         &grant::What::Service(name.clone()),
@@ -3678,18 +3674,19 @@ mod tests {
                 assert_eq!(offered(&root, &ours, None).0, BlockOffer::None);
             }
         }
-        // The two the review named: neither a host grant nor a folder would reach them.
-        for kind in [Kind::CertificateCheck, Kind::SystemService] {
+        // The two the review named: neither a host grant nor a folder would reach them. A
+        // service that names nothing has Start without the sandbox; the certificate check is
+        // the project's setting (R1), on here, so its way on is a restart, named or not.
+        for (kind, comes_to) in [
+            (Kind::CertificateCheck, BlockOffer::Allowed),
+            (Kind::SystemService, BlockOffer::Unsandboxed),
+        ] {
             let block = Block {
                 operation: Operation::Lookup,
                 kind,
                 ours: false,
             };
-            assert_eq!(
-                offered(&root, &block, None).0,
-                BlockOffer::Unsandboxed,
-                "{kind:?}"
-            );
+            assert_eq!(offered(&root, &block, None).0, comes_to, "{kind:?}");
         }
     }
 

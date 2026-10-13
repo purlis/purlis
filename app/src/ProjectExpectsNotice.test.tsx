@@ -39,12 +39,14 @@ const QUIET: SandboxState = {
 const DOCKER = {
   what: "socket",
   target: "/Users/op/.docker/run/docker.sock",
+  named: "/Users/op/.docker/run/docker.sock",
   says: "Allowing it lets this chat control containers, which can reach your whole machine: about the same as no sandbox.",
   refused: null,
 } as const;
 const HELPER = {
   what: "service",
   target: "com.example.helper",
+  named: "com.example.helper",
   says: "It is a service on this machine; purlis can't tell what it does.",
   refused: null,
 } as const;
@@ -118,7 +120,7 @@ describe("what a project expects, asked up front", () => {
   });
 
   it("the declaration changed: a new item is asked about, with the ones still waiting", async () => {
-    const OTHER = { ...HELPER, target: "com.example.other" };
+    const OTHER = { ...HELPER, target: "com.example.other", named: "com.example.other" };
     core(expecting({ asked: true, locked: null, items: [DOCKER, OTHER] }));
     drawn();
 
@@ -177,8 +179,8 @@ describe("what a project expects, asked up front", () => {
         asked: true,
         locked: null,
         items: [
-          { ...DOCKER, target: turned },
-          { ...DOCKER, target: spoken },
+          { ...DOCKER, target: turned, named: turned },
+          { ...DOCKER, target: spoken, named: spoken },
         ],
       }),
     );
@@ -188,6 +190,29 @@ describe("what a project expects, asked up front", () => {
     expect(notice.textContent).not.toContain("\u202e");
     const names = [...notice.querySelectorAll("code")].map((one) => one.textContent);
     expect(names).toEqual(["/run/a\\u202eb.sock", spoken]);
+  });
+
+  it("names the socket an Allow would keep, beside a path of the project's that leads to it", async () => {
+    const sent = core(
+      expecting({
+        asked: true,
+        locked: null,
+        items: [{ ...DOCKER, target: "/opt/tools/harmless.sock" }],
+      }),
+    );
+    drawn();
+
+    const notice = await screen.findByRole("status", { name: LABEL });
+    const names = [...notice.querySelectorAll("code")].map((one) => one.textContent);
+    expect(names).toEqual(["/Users/op/.docker/run/docker.sock", "/opt/tools/harmless.sock"]);
+    expect(notice.textContent).toContain("the project names it");
+    // The answer is sent by what the file wrote: the app finds the declaration by it.
+    await userEvent.click(screen.getByRole("button", { name: "Allow on this machine" }));
+    await waitFor(() =>
+      expect(sent("allow_project_expects")).toEqual([
+        { plane: PLANE, shown: ["/opt/tools/harmless.sock"] },
+      ]),
+    );
   });
 
   it("a page that is not the window draws no answer of its own", async () => {

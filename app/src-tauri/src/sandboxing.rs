@@ -183,6 +183,11 @@ pub struct ExpectedItem {
     /// The socket's path or the service's name, as the committed file writes it: what an
     /// answer is sent back by. Written by a repository, so the window draws it inertly.
     pub target: String,
+    /// **What an Allow would keep, and what the window names first**: the socket as the kernel
+    /// names it, links resolved, where it can be allowed. A path a repository wrote may be a
+    /// link to another socket, and the person is shown the one they would allow. As `target`
+    /// for a service, and for a socket that cannot be allowed here.
+    pub named: String,
     /// What allowing it means, in purlis's own words.
     pub says: String,
     /// Why it cannot be allowed on this machine now, where it cannot.
@@ -200,6 +205,7 @@ impl From<sandbox::services::Awaiting> for ProjectExpects {
                         sandbox::grant::What::Socket(_) => GrantWhat::Socket,
                         _ => GrantWhat::Service,
                     },
+                    named: item.what.target(),
                     target: item.written,
                     says: item.said,
                     refused: item.refused,
@@ -2575,6 +2581,46 @@ mod tests {
     /// (asked again); Allow (audited, kept in this machine's file for this project, and what
     /// cannot be allowed here is left out and said); and policy's lock (nothing is allowed,
     /// and who set it is said).
+    /// A path a repository declared may be a link to another socket. The window is told the
+    /// socket an Allow would keep, as the kernel names it, beside the path as written.
+    #[test]
+    fn a_declared_socket_is_named_as_the_grant_would_name_it() {
+        use sandbox::grant::What;
+        use sandbox::services::{Awaited, Awaiting};
+        let said: ProjectExpects = Awaiting {
+            items: vec![
+                Awaited {
+                    what: What::Socket("/Users/op/.docker/run/docker.sock".into()),
+                    written: "/opt/tools/harmless.sock".to_owned(),
+                    said: "said".to_owned(),
+                    refused: None,
+                },
+                Awaited {
+                    what: What::Service("com.example.helper".to_owned()),
+                    written: "com.example.helper".to_owned(),
+                    said: "said".to_owned(),
+                    refused: None,
+                },
+            ],
+            locked: None,
+            asked: true,
+        }
+        .into();
+        assert_eq!(
+            said.items
+                .iter()
+                .map(|item| (item.named.as_str(), item.target.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "/Users/op/.docker/run/docker.sock",
+                    "/opt/tools/harmless.sock"
+                ),
+                ("com.example.helper", "com.example.helper"),
+            ]
+        );
+    }
+
     #[test]
     fn what_a_project_expects_is_asked_once_allowed_by_the_person_and_never_by_the_file() {
         let project = tempfile::tempdir().expect("a project");

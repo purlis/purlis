@@ -266,7 +266,12 @@ fn discovered_by(
 /// **The system services purlis knows how to allow**, by their whole names: what a person is
 /// offered to choose from when a refusal named no service. A service has no path to check, so
 /// none is typed: one that is not listed here is not chosen in the window.
-pub const GRANTABLE_SERVICES: [&str; 1] = [TRUSTD];
+///
+/// **None today.** The certificate check was the one listed, and it is no grant any more (R1,
+/// 2026-10-13): every sandboxed chat has it unless the project or policy turns it off, so
+/// there is nothing of it to choose or allow. A service is listed here only once purlis can
+/// say what allowing it means.
+pub const GRANTABLE_SERVICES: &[&str] = &[];
 
 impl Known {
     /// What a person reads a known kind as, in a list to choose from.

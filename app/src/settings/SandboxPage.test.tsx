@@ -477,12 +477,14 @@ describe("Settings › Project › Sandbox", () => {
             {
               what: "socket",
               target: "/Users/op/.docker/run/docker.sock",
+              named: "/Users/op/.docker/run/docker.sock",
               says: "Allowing it lets this chat control containers, which can reach your whole machine: about the same as no sandbox.",
               refused: null,
             },
             {
               what: "service",
               target: "com.example.helper",
+              named: "com.example.helper",
               says: "It is a service on this machine; purlis can't tell what it does.",
               refused: null,
             },
@@ -524,6 +526,7 @@ describe("Settings › Project › Sandbox", () => {
             {
               what: "socket",
               target: "/var/run/docker.sock",
+              named: "/var/run/docker.sock",
               says: "Allowing it lets this chat control containers, which can reach your whole machine: about the same as no sandbox.",
               refused:
                 "That is not a local socket on this machine now, so there is nothing to allow.",

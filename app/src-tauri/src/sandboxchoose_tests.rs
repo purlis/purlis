@@ -9,7 +9,6 @@
 
 use super::*;
 use crate::hooks::{HeardBlock, READ_BACK_SAID, blocked, blocked_on};
-use crate::sandboxing::GrantLevel;
 use purlis_core::hookwire::SandboxBlocked;
 use purlis_core::sandbox::services::TRUSTD;
 use purlis_core::sandboxblock::{Block, Kind, Operation};
@@ -57,26 +56,52 @@ fn shown(block: Block, what: GrantWhat) -> BlockShown {
     }
 }
 
+const SERVICE: Block = Block {
+    operation: Operation::Lookup,
+    kind: Kind::SystemService,
+    ours: false,
+};
+
+/// R1 (2026-10-13): the certificate check is the project's setting and never a grant, so a
+/// refused one that names nothing is not something to choose. Its Notice says what stands and
+/// the way on, as a named one's does. No other service is listed either, so none is chosen.
 #[test]
-fn a_service_the_sandbox_did_not_name_is_the_persons_to_choose() {
+fn a_certificate_check_the_sandbox_did_not_name_says_what_stands_and_nothing_is_chosen() {
     let (_dir, plane) = plane();
     let told = told(&plane, CERTIFICATE, false);
-    // Start without the sandbox stays; the choice stands beside it.
-    assert_eq!(told.offer, BlockOffer::Unsandboxed);
-    assert_eq!(told.choose, Some(GrantWhat::Service));
-    assert_eq!(told.target, None);
-    let route = told.route.clone().expect("said");
-    assert!(route.contains("you can choose it"), "{route}");
-    assert!(!route.contains("there is no service to allow"), "{route}");
-    // Held, so a choice is bound to it; listed by no ask until something is named.
+    // What a refused certificate check the sandbox named says, word for word.
+    let named = blocked_on(&plane, 4, &CERTIFICATE, None, Some(TRUSTD));
     assert_eq!(
-        crate::taskblocks::held_of(&told),
-        Some(HeldBlock::unnamed(
-            "lookup",
-            "certificate-check",
-            GrantWhat::Service
-        ))
+        (told.offer, &told.route, &told.target),
+        (named.offer, &named.route, &named.target)
     );
+    assert_eq!(told.offer, BlockOffer::Allowed);
+    assert_eq!((told.choose, told.target.clone()), (None, None));
+    assert!(told.levels.is_empty(), "there is never an Allow for it");
+    let route = told.route.clone().expect("said");
+    assert!(route.contains("Certificate checks are on"), "{route}");
+    assert!(!route.contains("choose"), "{route}");
+    assert_eq!(crate::taskblocks::held_of(&told), None);
+
+    // Turned off by the project: said, with the way on, and still nothing to choose.
+    std::fs::write(
+        plane.root().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\ncertificate-checks = false\n",
+    )
+    .expect("toml");
+    let off = self::told(&plane, CERTIFICATE, false);
+    assert_eq!((off.offer, off.choose), (BlockOffer::Unsandboxed, None));
+    let route = off.route.clone().expect("said");
+    assert!(route.contains("turns certificate checks off"), "{route}");
+    std::fs::remove_file(plane.root().join("charter.toml")).expect("removed");
+
+    // Another service the sandbox did not name: none is listed, so none is chosen.
+    let other = self::told(&plane, SERVICE, false);
+    assert_eq!((other.offer, other.choose), (BlockOffer::Unsandboxed, None));
+    let route = other.route.clone().expect("said");
+    assert!(route.contains("there is no service to allow"), "{route}");
+    assert_eq!(crate::taskblocks::held_of(&other), None);
+
     // purlis's own operation is a bug to report: nothing to choose.
     let ours = blocked_on(
         &plane,
@@ -150,11 +175,8 @@ fn the_services_listed_are_the_ones_purlis_can_allow_and_none_is_typed() {
         GrantWhat::Service,
     );
     assert!(!listed.typed, "a service has no path to check");
-    assert_eq!(listed.choices.len(), 1);
-    let check = &listed.choices[0];
-    assert_eq!(check.target, TRUSTD);
-    assert_eq!(check.named, "Certificate check");
-    assert!(check.says.contains("check certificates"), "{}", check.says);
+    // None today: the certificate check is no grant (R1), and purlis lists no other.
+    assert_eq!(listed.choices, Vec::new());
 }
 
 #[test]
@@ -194,31 +216,33 @@ fn the_sockets_listed_come_from_the_apps_own_look_and_only_a_real_one_is_listed(
 }
 
 #[test]
-fn a_chosen_service_is_the_block_a_named_one_is_and_the_chat_is_held_on_it() {
+fn a_service_purlis_does_not_list_is_never_chosen_whatever_the_window_sends() {
     let (_dir, plane) = plane();
     let chats = crate::chats::Chats::new();
-    let unnamed_shown = shown(CERTIFICATE, GrantWhat::Service);
+    let unnamed_shown = shown(SERVICE, GrantWhat::Service);
     // Not held on it: refused whole.
     let why = chosen(&plane, &chats, 4, &unnamed_shown, TRUSTD).expect_err("not held");
     assert!(
         why.contains("not blocked on what this Notice showed"),
         "{why}"
     );
-    crate::taskblocks::heard(&chats, &told(&plane, CERTIFICATE, false));
-    let unnamed = HeldBlock::unnamed("lookup", "certificate-check", GrantWhat::Service);
-    assert!(chats.blocks().holds(4, &unnamed));
-    assert!(
-        !asks_a_block(&chats),
-        "nothing is asked until something is named"
-    );
-
-    // A service purlis does not list is not chosen, whatever is sent; nothing changes.
-    for other in ["com.example.helper", "com.apple.SecurityServer", "  "] {
+    // Held on an unnamed service block, as a build that listed one would hold it.
+    let unnamed = HeldBlock::unnamed("lookup", "system-service", GrantWhat::Service);
+    chats.blocks().heard(4, unnamed.clone());
+    // The certificate check is no grant (R1), and nothing else is listed: none is chosen,
+    // nothing changes, and no ask appears.
+    for other in [
+        TRUSTD,
+        "com.example.helper",
+        "com.apple.SecurityServer",
+        "  ",
+    ] {
         assert!(
             chosen(&plane, &chats, 4, &unnamed_shown, other).is_err(),
             "{other}"
         );
         assert!(chats.blocks().holds(4, &unnamed), "{other}");
+        assert!(!asks_a_block(&chats), "nothing named, so nothing asked");
     }
     // Another chat's block, or another kind's, is not this one.
     assert!(chosen(&plane, &chats, 5, &unnamed_shown, TRUSTD).is_err());
@@ -232,57 +256,7 @@ fn a_chosen_service_is_the_block_a_named_one_is_and_the_chat_is_held_on_it() {
         )
         .is_err()
     );
-    assert!(
-        chosen(
-            &plane,
-            &chats,
-            4,
-            &shown(CERTIFICATE, GrantWhat::Host),
-            TRUSTD
-        )
-        .is_err()
-    );
-
-    let named = chosen(&plane, &chats, 4, &unnamed_shown, TRUSTD).expect("chosen");
-    // Exactly what a block the sandbox named says: the same function made it.
-    assert_eq!(
-        named,
-        blocked_on(&plane, 4, &CERTIFICATE, None, Some(TRUSTD))
-    );
-    assert_eq!(named.offer, BlockOffer::Service);
-    assert_eq!(named.target.as_deref(), Some(TRUSTD));
-    assert_eq!(
-        named.levels,
-        [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
-    );
-    assert!(
-        named
-            .route
-            .as_deref()
-            .is_some_and(|said| said.contains("check certificates")),
-        "{:?}",
-        named.route
-    );
-    // Held on the named block now, which an Allow answers; the unnamed one is gone, so a
-    // second choice finds nothing to choose for.
-    let held = HeldBlock {
-        operation: "lookup".to_owned(),
-        kind: "certificate-check".to_owned(),
-        what: GrantWhat::Service,
-        target: TRUSTD.to_owned(),
-    };
-    assert!(chats.blocks().holds(4, &held));
-    assert!(!chats.blocks().holds(4, &unnamed));
-    assert!(asks_a_block(&chats), "a named block is an ask");
-    assert!(chosen(&plane, &chats, 4, &unnamed_shown, TRUSTD).is_err());
-    let answer = BlockShown {
-        target: TRUSTD.to_owned(),
-        ..unnamed_shown
-    };
-    assert_eq!(
-        crate::taskblocks::shown_one(chats.blocks(), 4, &answer),
-        Ok(held)
-    );
+    assert!(chosen(&plane, &chats, 4, &shown(SERVICE, GrantWhat::Host), TRUSTD).is_err());
 }
 
 /// Whether the asks registry would list a block of any chat.
