@@ -12,7 +12,8 @@
 # even when COMMAND passed. Otherwise the exit status is COMMAND's own.
 #
 # Under GitHub Actions (`GITHUB_ACTIONS=true`) the list is also written as one `::error`
-# annotation titled `Failed: processes left running after the command`.
+# annotation titled `Failed: processes left running after the command`: at most twenty
+# processes, and at most two hundred characters of each one's command line.
 #
 # --reap also kills each one, by its pid, never by name. CI passes it: the runner is the
 # job's own machine, so every new process on it is the job's. On a machine shared with other
@@ -112,12 +113,31 @@ done <<<"$left"
 # one red of the `rust` job that names nothing through the checks API, where a failed test is
 # named by `tools/slowest-tests.mjs` (`Failed: <binary> <test>`). With how long each process
 # has run, which places the test that started it. Workflow command escaping: `%`, CR and LF.
+#
+# Bounded, since an annotation is read whole through the API and GitHub cuts a long one where
+# it likes: the first $listed_most processes, and the first $line_most characters of each
+# one's command line. How many more there were is said; the log above names every one in full.
+listed_most=20
+line_most=200
 if [ "${GITHUB_ACTIONS-}" = true ]; then
   said=""
+  listed=0
+  more=0
   while IFS='|' read -r pid cmd; do
+    if [ "$listed" -ge "$listed_most" ]; then
+      more=$((more + 1))
+      continue
+    fi
+    listed=$((listed + 1))
     ran=$(LC_ALL=C ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [ "${#cmd}" -gt "$line_most" ]; then
+      cmd="${cmd:0:$line_most}..."
+    fi
     said="${said}pid $pid, running for ${ran:-an unread time}: $cmd"$'\n'
   done <<<"$left"
+  if [ "$more" -gt 0 ]; then
+    said="${said}and $more more, each named in the job's log"$'\n'
+  fi
   said=${said%$'\n'}
   said=${said//'%'/%25}
   said=${said//$'\r'/%0D}

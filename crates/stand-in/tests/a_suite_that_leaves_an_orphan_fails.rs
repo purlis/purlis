@@ -73,6 +73,83 @@ fn off_a_runner_the_orphan_is_named_on_stderr_only() {
 }
 
 #[test]
+fn the_annotation_lists_a_bounded_number_of_processes_and_a_bounded_part_of_each() {
+    // A `ps` of the test's own answers for the check, so nothing is started and nothing is
+    // left: one process before the command, and twenty-five more after it, this user's, each
+    // with a command line three hundred characters past its name.
+    let dir = tempfile::tempdir().expect("a directory");
+    let long = "x".repeat(300);
+    stand_in::program(
+        dir.path(),
+        "ps",
+        &format!(
+            "#!/bin/sh\nhere=$(dirname \"$0\")\n\
+             case \"$*\" in *etime*) echo ' 00:07'; exit 0 ;; esac\n\
+             echo '1 0 0 Wed Oct 14 01:00:00 2026 /sbin/init'\n\
+             if [ -e \"$here/asked\" ]; then\n\
+             me=$(id -u); i=1\n\
+             while [ \"$i\" -le 25 ]; do\n\
+             echo \"$((9000000 + i)) 1 $me Wed Oct 14 02:00:00 2026 left-$i-of-25 {long}\"\n\
+             i=$((i + 1))\n\
+             done\n\
+             fi\n\
+             : > \"$here/asked\"\n"
+        ),
+    );
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let said = Command::new(the_check())
+        .args(["--grace", "0", "--", "true"])
+        .env("PATH", path)
+        .env("GITHUB_ACTIONS", "true")
+        .output()
+        .expect("the check runs");
+
+    let stderr = String::from_utf8_lossy(&said.stderr);
+    assert_eq!(said.status.code(), Some(1), "{stderr}");
+    // The log still names every one, in full.
+    assert_eq!(
+        stderr
+            .lines()
+            .filter(|line| line.trim().starts_with("pid ") && line.ends_with(&long))
+            .count(),
+        25,
+        "{stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&said.stdout);
+    let annotation = stdout
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("::error title=Failed%3A processes left running after the command::")
+        })
+        .unwrap_or_else(|| panic!("no annotation: {stdout}"));
+    let lines: Vec<&str> = annotation.split("%0A").collect();
+    assert_eq!(
+        lines.len(),
+        21,
+        "twenty processes and what is left out: {lines:?}"
+    );
+    for (at, line) in lines[..20].iter().enumerate() {
+        let before = format!("pid {}, running for 00:07: ", 9_000_001 + at);
+        let command = line
+            .strip_prefix(before.as_str())
+            .unwrap_or_else(|| panic!("line {at} is {line}"));
+        assert!(
+            command.starts_with(&format!("left-{}-of-25 x", at + 1)),
+            "{line}"
+        );
+        // Two hundred characters of the command line, and the mark that it was cut.
+        assert_eq!(command.len(), 200 + "...".len(), "{line}");
+        assert!(command.ends_with("x..."), "{line}");
+    }
+    assert_eq!(lines[20], "and 5 more, each named in the job's log");
+}
+
+#[test]
 fn a_command_that_cleans_up_after_itself_keeps_its_own_status() {
     let said = Command::new(the_check())
         .args([
