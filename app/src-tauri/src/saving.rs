@@ -77,6 +77,10 @@ pub struct PlaneSaving {
     pub mode_from: String,
     /// The newest [`JOURNAL_SHOWN`] saves, newest first.
     pub journal: Vec<SaveEntry>,
+    /// Each file the save is blocked in by what looks like a credential: its path, line and
+    /// kind, and what was matched with the value hidden; `null` when that is not why.
+    #[specta(optional)]
+    pub secrets: Option<Vec<crate::blockedsave::SecretAt>>,
     /// What the window asks about the project's remote before automatic saves push it with the
     /// person's sign-in (#1848, #1852); `null` when nothing.
     #[specta(optional)]
@@ -195,6 +199,9 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .flatten();
     PlaneSaving {
         remote,
+        secrets: crate::blockedsave::shown(&standing.secrets),
+        // Said with the file and line for a secret-shaped value, so the title bar names it.
+        blocked: standing.blocked_said(),
         stage: standing.stage.word().to_owned(),
         changed: standing.changed,
         ahead: standing.ahead,
@@ -202,7 +209,6 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         request: purlis_core::forge::request_words_of(root, root)
             .request_noun()
             .to_owned(),
-        blocked: standing.blocked,
         branch: standing.branch,
         pushes: standing.pushes,
         behind: standing.behind,

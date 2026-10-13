@@ -715,6 +715,47 @@ passes — so a secret holding k separators passes at up to 32 + k characters, a
 up to more than 32 characters, `vault://secret/data/production/payments#stripe_api_key`, is
 refused as a credential.
 
+**The name of a variable is not a credential assignment either.** A note that says which
+environment variable or vault entry carries a token, `token = DEPLOY_TOKEN` or
+`` `password = KEYCLOAK_ADMIN_PASSWORD` ``, holds identifiers and no value, and the rule used
+to refuse it: a project could not be saved over a sentence in a persona's memory. A value
+whose first word is such a name is now let through, and the line is read on from the end of
+the name, so a second assignment on that line or the next is still asked. The name is held as
+narrowly as a reference is:
+
+- capitals, digits and underscores only, starting with a capital: two or more words parted by
+  single underscores, each of at most 20 characters, at most 64 characters and 4 digits in all;
+- one of its words is a word a credential's name carries: `TOKEN`, `SECRET`, `KEY`, `APIKEY`,
+  `PASSWORD`, `PASSWD`, `PASSPHRASE`, `PASS`, `PWD`, `PAT`, `CREDENTIAL`, `CREDS`, `AUTH`,
+  `BEARER` or `JWT` (the first five also in the plural);
+- it starts with none of purlis's credential prefixes as an issuer writes them (`AKIA`, `ASIA`);
+- it may be written as a shell writes a variable (`$NAME`, `${NAME}`), in one pair of quotes
+  or backticks, with one closing quote or backtick and up to three of `,` `.` `;` `)` after it,
+  and then the word ends, at a blank or the end of the text.
+
+So all of these are still refused:
+
+- a run of capitals and digits with no underscore, which is what a key in upper-case hex or
+  base32 is, and anything with a lower-case letter in it;
+- capitals and underscores with no such word (`SUMMER_2024`, `CHANGE_ME_NOW`), and one word
+  alone (`PASSWORD`);
+- a name with something written straight after it (`DEPLOY_TOKEN-x9…`, `DEPLOY_TOKEN:x9…`,
+  `${DEPLOY_TOKEN:-x9…}`), and a name that is itself given a value (`DEPLOY_TOKEN = x9…`);
+- a value in quotes that holds more than the name;
+- a name with what reads as a value in the next word on its line: eight or more characters
+  with a letter and a digit among them, or twenty-four or more of the characters a token is
+  written in.
+
+It has a ceiling too: a password that is itself capitals and underscores around one of those
+words reads as a name and passes, and so does a short word of letters alone written after a
+name on the same line. The four other kinds are checked on the whole text as before.
+
+**Where a blocked save is, in the window.** The Saving view names each file the next save
+would refuse: its path, the line, the kind, and what the rule matched with the value hidden
+(`token = ********` for an assignment, a masked head for a key), each with **Open the file**,
+which starts your editor there, and **Save again**. The title bar and the Inbox name the
+first file and line. No value is sent to the window.
+
 ## When a guard is wrong
 
 Every guard is eventually wrong about something, and the response a design invites at that

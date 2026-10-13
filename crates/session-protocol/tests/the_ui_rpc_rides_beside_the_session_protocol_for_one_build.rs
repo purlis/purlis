@@ -312,6 +312,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     ] {
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
     }
+    // And opening a file the project's save is blocked in, from the Saving view: the person's
+    // editor, started on their press.
+    assert!(ui::WINDOW_ONLY.contains(&"open_blocked_file"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -351,6 +354,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 2
             // The answer to what a project declares it expects (ADR 0093): Allow, and Not now.
             + 2
+            + 1
     );
 }
 

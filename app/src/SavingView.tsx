@@ -31,6 +31,7 @@ import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Notice } from "./Notice";
 import { AnswerBar } from "./AnswerBar";
 import { RemoteQuestionNotice } from "./RemoteQuestion";
+import { SaveBlockedBySecret } from "./SaveBlockedBySecret";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -186,6 +187,16 @@ export function SavingView({
             <p className="saving-note">
               {`Live workspaces, published by every save: ${saving.live.join(", ")}`}
             </p>
+          )}
+          {/* A save blocked by what looks like a credential says where and why, and opens the
+              file there: a block is never a line with nothing to press. */}
+          {saving.stage === "blocked" && (saving.secrets ?? []).length > 0 && (
+            <SaveBlockedBySecret
+              plane={plane}
+              secrets={saving.secrets ?? []}
+              busy={busy}
+              onSaveAgain={() => void save()}
+            />
           )}
           {saving.stage === "blocked" && (
             <div className="saving-question" role="group" aria-label="Ways out">

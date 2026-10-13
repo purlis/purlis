@@ -237,6 +237,7 @@ macro_rules! app_commands {
                 saving::plane_saving,
                 saving::choose_plane_mode,
                 saving::save_plane,
+                blockedsave::open_blocked_file,
                 saving::workspace_saving,
                 saving::save_repo,
                 remotequestion::confirm_remote,

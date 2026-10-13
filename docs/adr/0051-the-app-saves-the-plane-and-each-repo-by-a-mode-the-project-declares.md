@@ -99,6 +99,15 @@ all call it, so the CLI follows `mode` too. What a save does:
   or a nested repository outside memory and refs is committed as what it is, since neither
   carries text. There is no switch to turn the scan off; a vault reference is the documented
   way to name a credential in a plane file.
+  *Note, 2026-10-13, decided under delegation and flagged to the operator: the rule as built,
+  with nothing above changed.* The credential-assignment rule lets one more value through: the
+  name of a variable or vault entry (`token = DEPLOY_TOKEN`), held as narrowly as a vault
+  reference is (`crates/purlis-core/docs/hooks.md` has the rule). A blocked save names the file,
+  the line and the kind in the title bar, the Inbox and the Saving view, which opens the file
+  in the person's editor; the value is never shown. There is still no switch and no allowlist
+  for the project's save: `.charter-scan-allow.toml` is the commit scan's
+  ([ADR 0074](0074-a-chats-git-runs-charters-hooks-through-its-environment.md)), and whether a
+  person may let one finding of the save through from the window is an open ruling.
   A commit an agent makes itself, in any repository, is scanned by the git hooks a chat's
   environment arms ([ADR 0074](0074-a-chats-git-runs-charters-hooks-through-its-environment.md)).
 - **Commit message:** generated from what changed, grouped as `purlis save` already prints it.
