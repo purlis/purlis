@@ -335,10 +335,12 @@ pub fn said_update(sub: &str, held: &[String]) -> String {
          writes each file it may and skips each it may not, so the sandbox stops this partway \
          and would leave the project half-updated: most files as the other commit has them, \
          the rest as they were, the current commit unmoved, and nothing to say an update was \
-         tried. Nothing was run. Ask the person to update the project from the window: the app \
-         brings incoming commits in by itself where auto-save is on and nothing unsaved or \
-         unpushed is in the way, and otherwise the person runs this command in their own \
-         terminal. Read-only git works here (`git status`, `git log`, `git diff`), and so \
+         tried. Nothing was run. Ask the person to update the project from the window: its \
+         Update, in the Saving view and on the incoming count in the title bar, brings the \
+         remote's commits in outside this sandbox, replays the project's own commits on top, \
+         and leaves the project exactly as it was where it cannot. Where the app runs this \
+         chat, purlis has put that ask in front of the person. Anything else this command \
+         was for, the person runs in their own terminal. Read-only git works here (`git status`, `git log`, `git diff`), and so \
          does putting files back as the current commit has them: `git restore --source=HEAD \
          --worktree -- <paths>`.",
         named(held)

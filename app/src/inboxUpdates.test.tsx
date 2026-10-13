@@ -14,8 +14,11 @@ import type {
   OpenChat,
   UpdateNoted,
 } from "./bindings";
+import { needSays } from "./chatState";
 import {
   KEPT_FOR_MS,
+  KIND_SAID,
+  LIVE,
   awayUpdates,
   doctorUpdates,
   listed,
@@ -194,6 +197,14 @@ describe("each source, said as updates", () => {
         NOW + 60_000,
       ).map((one) => one.key),
     ).toEqual(said.map((one) => one.key));
+  });
+
+  it("makes a chat refused an update of the project an update of its own kind (qw348)", () => {
+    const said = reasonUpdates({ 4: [needSays({ kind: "root_update_refused" })] }, {}, nameOf, NOW);
+    expect(said.map((one) => [one.kind, one.session])).toEqual([["root-update-refused", 4]]);
+    expect(KIND_SAID[said[0].kind]).toBe("Asks you to update the project");
+    expect(said[0].says).toContain("Update, in Saving");
+    expect(LIVE.has(said[0].kind)).toBe(true);
   });
 
   it("makes a Smart close that stopped an update about its chat", () => {

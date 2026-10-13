@@ -31,6 +31,26 @@ export function askSavingTab(plane: string): void {
   window.dispatchEvent(new CustomEvent<{ plane: string }>(OPEN_SAVING, { detail: { plane } }));
 }
 
+/** The window event that asks a project's Saving view to run its Update from remote (qw348):
+ *  the title bar's `↓N` opens the Saving tab and asks, so the progress and the result are said
+ *  in one place. */
+export const UPDATE_ASKED = "charter-update-asked";
+
+/** The projects whose Update was asked and not yet taken: an ask outlives the moment it takes
+ *  the Saving tab to open. */
+const updatesAsked = new Set<string>();
+
+/** Ask the Saving view of the project `plane` to update it from its remote. */
+export function askUpdate(plane: string): void {
+  updatesAsked.add(plane);
+  window.dispatchEvent(new CustomEvent<{ plane: string }>(UPDATE_ASKED, { detail: { plane } }));
+}
+
+/** Whether an Update was asked of `plane` and not yet taken, taking it: asked once, run once. */
+export function takeUpdateAsk(plane: string): boolean {
+  return updatesAsked.delete(plane);
+}
+
 /** Say that a save of some project finished. */
 export function tellSaved(): void {
   window.dispatchEvent(new Event(PLANE_SAVED));

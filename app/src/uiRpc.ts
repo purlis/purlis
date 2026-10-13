@@ -5084,6 +5084,11 @@ export type Need =
 /**  Its report has nowhere to go: the chat that asked for it, `asker`, has gone. */
 { kind: "report_undelivered"; asker: string } | 
 /**
+ *  purlis refused it a git command that would rewrite the project's root from another
+ *  commit, so bringing the remote's commits in is the person's, with Update (qw348).
+ */
+{ kind: "root_update_refused" } | 
+/**
  *  A task it asked for, `task`, came to nothing (#1491), and `why` says why in a few
  *  words, where anything does. `id` names this failure and no other: its dispatch
  *  record's id, which its finished row carries. `chat` is the task's chat while it is
@@ -6354,6 +6359,31 @@ export type ProjectUnsettled =
  *  counts until it can. Each dispatch asks again first.
  */
 "unread";
+
+/**  How the window's Update from remote ended (qw348), as the Saving view says it. */
+export type ProjectUpdate = {
+	/**
+	 *  `updated`: the project is at the remote's commits. `nothing`: nothing was incoming.
+	 *  `left`: the project was left as it was, and `reason` and `said` say why.
+	 */
+	outcome: string,
+	/**
+	 *  Why it was left, as one word; `null` otherwise. `unsaved` is the one the view offers
+	 *  Save, then update for.
+	 */
+	reason: string | null,
+	/**  How it ended, as sentences for the person. */
+	said: string,
+	/**  The files the reason is about: where it conflicts, or what could not be written. */
+	files: string[],
+	/**
+	 *  Whether the project is exactly as it was, or at the new commit: `false` only where an
+	 *  update stopped part-way and purlis could not put every file back, which `said` says.
+	 */
+	whole: boolean,
+	/**  What the update said it was doing, in order. */
+	lines: string[],
+};
 
 /**
  *  What the person asked to publish: #1819's form, less the template and the folder, which the
@@ -7961,7 +7991,12 @@ export type UpdateKind =
 /**  A chat's report has nowhere to go: the chat that asked for it has gone (#1694). */
 "report-undelivered" | 
 /**  purlis's `pre-commit` refused a commit a chat made (#1694). */
-"commit-refused";
+"commit-refused" | 
+/**
+ *  purlis refused a chat a git command that would rewrite the project's root from another
+ *  commit, so bringing the remote's commits in is the person's (qw348).
+ */
+"root-update-refused";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

@@ -144,6 +144,9 @@ impl Moved {
 pub enum Need {
     /// Its report has nowhere to go: the chat that asked for it, `asker`, has gone.
     ReportUndelivered { asker: String },
+    /// purlis refused it a git command that would rewrite the project's root from another
+    /// commit, so bringing the remote's commits in is the person's, with Update (qw348).
+    RootUpdateRefused,
     /// A task it asked for, `task`, came to nothing (#1491), and `why` says why in a few
     /// words, where anything does. `id` names this failure and no other: its dispatch
     /// record's id, which its finished row carries. `chat` is the task's chat while it is
@@ -195,6 +198,7 @@ impl From<purlis_core::state::Need> for Need {
             purlis_core::state::Need::ReportUndelivered { asker } => {
                 Self::ReportUndelivered { asker }
             }
+            purlis_core::state::Need::RootUpdateRefused => Self::RootUpdateRefused,
         }
     }
 }
@@ -1611,6 +1615,20 @@ impl Hooks {
                     let recorded = record(&events, |log| {
                         log.tool(plane.root(), &call, std::time::Instant::now())
                     });
+                    // **A chat refused an update of the project's root asks the person for
+                    // it** (qw348): the guard's own verdict (arm A3c) raises a needs-you item
+                    // on that chat, in the app's words, which names the window's Update. No
+                    // word of the chat's is in it, and it presses nothing.
+                    if call.decision == purlis_core::hookwire::Decision::Deny
+                        && call.rule.as_deref() == Some(purlis_core::rootupdate::REASON)
+                    {
+                        let what = moving(&mut held_board(&board), &plane, call.chat, |board| {
+                            board.needs(call.chat, purlis_core::state::Need::RootUpdateRefused)
+                        });
+                        if let Some(what) = what {
+                            moved(what);
+                        }
+                    }
                     // A child agent's tool call shows it under its chat: a Codex child's
                     // first hook is one (FD-18). Built under the same hold as the change.
                     if let Some(agent) = &call.agent {
@@ -4407,6 +4425,63 @@ mod tests {
         assert!(moved.needs_you);
         assert_eq!(moved.queue, vec![3]);
         assert_eq!(moved.refusals, vec![said.to_owned()]);
+    }
+
+    /// A chat refused an update of the project's root asks the person for it (qw348): the
+    /// guard's own verdict raises the item, in the app's words. Another refusal raises none.
+    #[test]
+    fn a_chat_refused_an_update_of_the_root_asks_the_person_for_one() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let at = Where {
+            within: dir.path().to_path_buf(),
+            socket: dir.path().join("app").join("hooks.sock"),
+        };
+        let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx = Mutex::new(tx);
+        let hooks = Hooks::listening_on(
+            plane,
+            &at,
+            Arc::new(move |moved| tx.lock().unwrap().send(moved).unwrap()),
+            Arc::new(|_| panic!("a refused update is not a harness started by hand")),
+        )
+        .expect("listening");
+        hooks.board().opened(3, Some(Harness::ClaudeCode), None);
+        let refused_by = |rule: &str| purlis_core::hookwire::ToolCall {
+            chat: 3,
+            tool_hook: "pretooluse".to_owned(),
+            tool: Some("Bash".to_owned()),
+            call: None,
+            args: None,
+            decision: purlis_core::hookwire::Decision::Deny,
+            rule: Some(rule.to_owned()),
+            hook_ms: 1,
+            agent: None,
+            at_ms: 0,
+        };
+        let deliver = |call: &purlis_core::hookwire::ToolCall| {
+            purlis_core::hookwire::deliver_tool(
+                hooks.socket().expect("a socket"),
+                Some(&hooks.token_for(3)),
+                call,
+            )
+            .expect("told");
+        };
+
+        // Another guard's refusal first: heard, and no item of this kind.
+        deliver(&refused_by("project-root-branch"));
+        deliver(&refused_by(purlis_core::rootupdate::REASON));
+
+        let moved = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the window is told");
+        assert_eq!(moved.session, 3);
+        assert!(moved.needs_you);
+        assert_eq!(moved.needs, Some(vec![Need::RootUpdateRefused]));
+        assert_eq!(
+            hooks.board().needs_of(3),
+            vec![purlis_core::state::Need::RootUpdateRefused]
+        );
     }
 
     #[test]
