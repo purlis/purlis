@@ -59,26 +59,24 @@ export function fitCounts(counts: HTMLElement): void {
   const each = [...counts.querySelectorAll<HTMLElement>(":scope > .count")];
   if (cell === null) return;
   if (chip !== null) delete chip.dataset.away;
-  const name = cell.querySelector<HTMLElement>(".tab-name");
+  const name = cell.querySelector<HTMLElement>(':scope > [role="tab"] .tab-name');
   // Something the chip must not take: a part of the cell runs past its end, or the tab's title
-  // is cut to less than its floor, where the button's floor holds its mark and no letter of it.
-  const short = () => runsPast([...cell.children] as HTMLElement[], cell) || cutPast(name);
+  // is not drawn at all, where the button's floor holds its mark and no letter of it.
+  const short = () => runsPast([...cell.children] as HTMLElement[], cell) || undrawn(name);
   // The first, what is still working, is never set aside on its own: a cell too narrow even
   // for it is the stylesheet's (the hand alone, under 7.5rem), and then the chip's as a whole.
   setAsideUntilWhole(each, short, 1);
   if (chip !== null && short()) chip.dataset.away = "";
 }
 
-/** How much of a cut title is the least drawn beside a chip, in the title's own `em`: its first
- *  two letters, near enough. A title shorter than that, drawn whole, is never cut. */
-const TITLE_FLOOR_EM = 2;
-
-/** Whether `name` is cut to less than {@link TITLE_FLOOR_EM} (#1867): on a narrow strip the
- *  button's own floor can hold its mark and none of its name. */
-function cutPast(name: HTMLElement | null): boolean {
-  if (name === null) return false;
-  const em = parseFloat(getComputedStyle(name).fontSize) || 16;
-  return name.clientWidth + 0.5 < Math.min(name.scrollWidth, TITLE_FLOOR_EM * em);
+/** Whether the tab's title `name` has a name to draw and is drawn not even a pixel wide
+ *  (#1867): on a narrow strip the button's own floor can hold its mark and none of its name.
+ *  Measured by its box, as the strip is laid out; a button not laid out says nothing. */
+function undrawn(name: HTMLElement | null): boolean {
+  if (name === null || !name.textContent) return false;
+  const tab = name.closest<HTMLElement>('[role="tab"]');
+  if (tab === null || tab.getBoundingClientRect().width === 0) return false;
+  return name.getBoundingClientRect().width < 1;
 }
 
 /** Fits `counts` now, and again whenever its tab's cell changes size or what it holds. */
