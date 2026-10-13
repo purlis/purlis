@@ -670,7 +670,10 @@ were settled while building it:
 - **A refused refresh keeps the account listed, signed out** (§3, §6), and deletes its keyring
   item. The window is told at once and draws a Notice naming the account, with Sign in again;
   the request that needed the token fails with the same sentence. A forge that could not be
-  reached is not a refusal: the token is used while it lasts, and the sign-in is kept.
+  reached is not a refusal: the token is used while it lasts, and the sign-in is kept. Nor is
+  an answer that says nothing about the grant (a rate limit, a proxy's refusal on the way,
+  OAuth's `temporarily_unavailable` or `server_error`): only an OAuth `error` other than
+  those, or a bare 400 or 401 from the token address, ends a sign-in.
 - **The window refreshes for its git too.** The credential helper is another process, so it
   never refreshes (§3's one writer). The window renews a token that is about to expire before
   it starts the git that will ask the helper.
