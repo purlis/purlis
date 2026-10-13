@@ -21,10 +21,15 @@
 //! command a chat ran itself), one read before this process started, and one a chat changed
 //! (encoded, split, reversed) on its way into a message.
 //!
+//! **A caller that shows a text masks what it holds** ([`found_in`], #1047): an ask's one line
+//! is drawn with each value found in it replaced, so a value the person revealed, copied or
+//! stored in this process is not shown back in what a chat asks to run.
+//!
 //! **A value shorter than [`SHORTEST`] is not remembered**: three characters or fewer is an
 //! ordinary word as often as a secret, and every message holding it would be left out.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use hmac::{Hmac, KeyInit as _, Mac};
@@ -110,6 +115,57 @@ impl Seen {
                 .any(|run| digests.contains(&digest(keyed, run)))
         })
     }
+
+    /// Where in `text` a remembered value stands ([`found_in`]); the whole of a text that is
+    /// not empty once blind, or where a value was remembered and no key is at hand.
+    fn found_in(&self, keyed: Option<&Hmac<Sha256>>, text: &str) -> Vec<Range<usize>> {
+        let whole = || -> Vec<Range<usize>> {
+            (!text.is_empty())
+                .then_some(0..text.len())
+                .into_iter()
+                .collect()
+        };
+        if self.blind {
+            return whole();
+        }
+        if self.by_length.is_empty() {
+            return Vec::new();
+        }
+        let Some(keyed) = keyed else {
+            return whole();
+        };
+        let bytes = text.as_bytes();
+        let mut found: Vec<Range<usize>> = Vec::new();
+        for (length, digests) in &self.by_length {
+            for (at, run) in bytes.windows(*length).enumerate() {
+                if digests.contains(&digest(keyed, run)) {
+                    found.push(at..at + length);
+                }
+            }
+        }
+        joined(found, text)
+    }
+}
+
+/// `found` in order, each run of spans that overlap or touch joined into one, and each widened
+/// to fall between characters of `text`. A value's bytes stand between characters wherever
+/// they are found, so the widening changes nothing a digest did not get wrong.
+fn joined(mut found: Vec<Range<usize>>, text: &str) -> Vec<Range<usize>> {
+    found.sort_by_key(|span| (span.start, span.end));
+    let mut joined: Vec<Range<usize>> = Vec::new();
+    for mut span in found {
+        while !text.is_char_boundary(span.start) {
+            span.start -= 1;
+        }
+        while !text.is_char_boundary(span.end) {
+            span.end += 1;
+        }
+        match joined.last_mut() {
+            Some(last) if span.start <= last.end => last.end = last.end.max(span.end),
+            _ => joined.push(span),
+        }
+    }
+    joined
 }
 
 /// **Remembers `value`, read from or stored in a vault**: from now on [`holds`] finds it in any
@@ -123,6 +179,14 @@ pub fn remember(value: &str) {
 /// for every text once a value could not be remembered.
 pub fn holds(text: &str) -> bool {
     seen().holds(keyed(), text)
+}
+
+/// **Where in `text` a value [`remember`] was given stands**: each stretch of its bytes, in
+/// order, those that overlap or touch joined into one, for a caller that masks them (#1047).
+/// Once a value could not be remembered it is the whole of every text that is not empty, as
+/// [`holds`] is then true of every text.
+pub fn found_in(text: &str) -> Vec<Range<usize>> {
+    seen().found_in(keyed(), text)
 }
 
 #[cfg(test)]
@@ -158,6 +222,48 @@ mod tests {
     fn a_value_shorter_than_the_shortest_is_not_remembered() {
         remember("q7z");
         assert!(!holds("q7z"));
+    }
+
+    #[test]
+    fn each_place_a_remembered_value_stands_is_found_and_touching_ones_are_joined() {
+        remember("spans-vault-value-a1");
+        remember("value-a1-and-more-b2");
+        let text = "x spans-vault-value-a1 y spans-vault-value-a1-and-more-b2 z";
+        let found = found_in(text);
+        assert_eq!(
+            found
+                .iter()
+                .map(|span| &text[span.clone()])
+                .collect::<Vec<_>>(),
+            ["spans-vault-value-a1", "spans-vault-value-a1-and-more-b2"]
+        );
+        assert!(found_in("nothing of the kind").is_empty());
+        // Beside text in another script, each span still falls between characters.
+        remember("ключ-пролёта-5c0f");
+        let text = "значение: ключ-пролёта-5c0f.";
+        assert_eq!(
+            found_in(text)
+                .iter()
+                .map(|span| &text[span.clone()])
+                .collect::<Vec<_>>(),
+            ["ключ-пролёта-5c0f"]
+        );
+    }
+
+    #[test]
+    fn with_no_key_the_whole_of_every_text_is_where_a_value_stands() {
+        let mut alone = Seen {
+            by_length: BTreeMap::new(),
+            blind: false,
+        };
+        assert!(alone.found_in(None, "nothing remembered yet").is_empty());
+        alone.remember(None, "a value no key could digest");
+        let text = "any words at all";
+        let found = alone.found_in(None, text);
+        assert_eq!(found.len(), 1);
+        assert_eq!(&text[found[0].clone()], text);
+        // Nothing stands in no text.
+        assert!(alone.found_in(None, "").is_empty());
     }
 
     #[test]
