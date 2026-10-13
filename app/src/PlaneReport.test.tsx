@@ -35,6 +35,8 @@ function draw(plane: string, onReport: (plane: string, report: PlaneReport) => v
     <PlaneView
       plane={plane}
       inFront
+      kept
+      slot={document.body}
       projects={NO_PROJECTS}
       pinnedProjects={NO_PINS}
       window={windowDoes}

@@ -20,7 +20,8 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get(this: HTMLElement) {
-      return this.getAttribute("aria-label") === "Strip" ? 480 : 0;
+      // Nothing in no document has a width, as an engine answers.
+      return this.isConnected && this.getAttribute("aria-label") === "Strip" ? 480 : 0;
     },
   });
 });
@@ -30,8 +31,8 @@ afterEach(() => {
 });
 
 /** A strip that is drawn only while `shown`, writing down the width of every render. */
-function Strip({ shown, seen }: { shown: boolean; seen: number[] }) {
-  const { strip, width } = useRoom(3);
+function Strip({ shown, seen, holds = 3 }: { shown: boolean; seen: number[]; holds?: number }) {
+  const { strip, width } = useRoom(holds);
   seen.push(width);
   return shown ? <div aria-label="Strip" ref={strip} /> : null;
 }
@@ -54,6 +55,26 @@ describe("the room a strip has, when the strip goes and comes back", () => {
 
     act(() => rerender(<Strip shown seen={seen} />));
     expect(seen.slice(back)).not.toContain(0);
+    expect(seen.at(-1)).toBe(480);
+  });
+});
+
+describe("the room a strip has, while its project is kept off the window", () => {
+  // `projectShown.tsx`: the strip is still drawn, in an element that is in no document, where
+  // it measures as nothing. Nothing is not its width.
+  it("keeps the width it last measured, whatever it comes to hold meanwhile", () => {
+    const seen: number[] = [];
+    const { container, rerender } = render(<Strip shown seen={seen} />);
+    const window = container.parentElement;
+    container.remove();
+
+    act(() => rerender(<Strip shown seen={seen} holds={7} />));
+    expect(seen.at(-1)).toBe(480);
+
+    window?.appendChild(container);
+    act(() => rerender(<Strip shown seen={seen} holds={8} />));
+    // Zero only before it was ever measured: never again, in the window or out of it.
+    expect(seen.slice(1)).not.toContain(0);
     expect(seen.at(-1)).toBe(480);
   });
 });

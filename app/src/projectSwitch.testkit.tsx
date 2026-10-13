@@ -18,12 +18,13 @@ import { stripNamed } from "./test-strips";
  * spread over `workspaces` workspaces and some of them asking, then presses another project's
  * tab and reads what React did for it:
  *
- * - how long the press took until React had committed and run its effects (`syncMs`), and until
- *   everything the press started had settled (`settledMs`);
+ * - how long the press took until React had committed and run its effects (`syncMs`);
  * - how many components were drawn again, how many were mounted and how many unmounted, read
  *   off React's own commits (the DevTools hook, which is how the React profiler counts them);
- * - how many DOM nodes were put in and taken out;
+ * - how many DOM nodes were put in and taken out, which for a view that is kept is one element
+ *   moved with everything in it;
  * - how many panes (terminals) were started and stopped;
+ * - how many times the layout was read;
  * - which commands the window sent the core, and how many.
  *
  * **The counts are the measurement; the milliseconds are jsdom's.** jsdom lays nothing out and
@@ -161,7 +162,7 @@ export type Switch = {
   to: string;
   /** The press, until React had committed and run its effects. */
   syncMs: number;
-  /** The press, until everything it started had settled, less the waiting `settled` adds. */
+  /** How many times React committed for it, until everything it started had settled. */
   commits: number;
   rendered: number;
   mounted: number;
@@ -173,9 +174,11 @@ export type Switch = {
   /** Reads of the layout, by what was read, and how many in all. */
   layoutReads: Record<string, number>;
   layoutRead: number;
-  /** Commands sent to the core, by name. */
+  /** Commands sent to the core until everything settled, by name, and how many in all. */
   invokes: Record<string, number>;
   invoked: number;
+  /** How many of them were sent before the press returned: before the project was painted. */
+  invokedAtOnce: number;
   /** Whether the project's chat strip and its pane were on screen when the press returned,
    *  before any command it sent had been answered. */
   paintedAtOnce: boolean;
@@ -234,8 +237,10 @@ function nodesIn(node: Node): number {
 }
 
 /**
- * Mounts the window, brings every project to the front once (so nothing measured afterwards is
- * a first visit), then switches to each of `visits` in turn and answers with what each cost.
+ * Mounts the window, brings every project to the front once, then the ones in `visits` and the
+ * first again, so nothing measured afterwards is a first visit and each of them is a project the
+ * person was in lately. Then switches to each of `visits` in turn and answers with what each
+ * cost. The window starts on the first project, so `visits` should not start with it.
  */
 export async function switches(shape: Shape, visits: readonly number[]): Promise<Switch[]> {
   const asked = core(shape);
@@ -246,8 +251,10 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     fireEvent.click(projectTab(nameOf(n)));
     await settled(asked);
   }
-  fireEvent.click(projectTab(nameOf(0)));
-  await settled(asked);
+  for (const n of [...new Set(visits), 0]) {
+    fireEvent.click(projectTab(nameOf(n)));
+    await settled(asked);
+  }
 
   const out: Switch[] = [];
   for (const to of visits) {
@@ -271,6 +278,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       fireEvent.click(tab);
     });
     const syncMs = performance.now() - pressed;
+    const invokedAtOnce = asked.length - from;
     const paintedAtOnce =
       inFront() === nameOf(to) &&
       screen.queryByRole("tablist", { name: "Tabs" }) !== null &&
@@ -299,6 +307,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       layoutRead: [...reads.values()].reduce((sum, one) => sum + one, 0),
       invokes,
       invoked: asked.length - from,
+      invokedAtOnce,
       paintedAtOnce,
     });
   }

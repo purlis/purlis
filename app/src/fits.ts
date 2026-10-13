@@ -207,9 +207,13 @@ export function useRoom(holds: number): { strip: Ref; controls: Ref; width: numb
    * project with fifty chats came back to the front by drawing all fifty, measuring, and drawing
    * again — the slowest switch of FR-27's ten. So the last width is kept, the strip comes back at
    * it, and the measure on attach changes nothing unless the window was resized meanwhile.
+   *
+   * **Nor while it is drawn in no document**, which is what the strips of a project kept off
+   * the window are (`projectShown.tsx`): nothing there has a width, and nothing is not the
+   * strip's.
    */
   const measure = useCallback(() => {
-    if (!strip.current.element) return;
+    if (!strip.current.element?.isConnected) return;
     const whole = strip.current.element.clientWidth;
     const taken = controls.current.element?.offsetWidth ?? 0;
     setWidth(Math.max(0, whole - taken));
@@ -254,7 +258,7 @@ export function useWidth(holds: unknown): { ref: Ref; width: number } {
   const [width, setWidth] = useState(0);
   const slot = useRef<Watched>({ element: null });
   const measure = useCallback(() => {
-    if (!slot.current.element) return;
+    if (!slot.current.element?.isConnected) return;
     setWidth(slot.current.element.offsetWidth);
   }, []);
   const ref = useCallback(

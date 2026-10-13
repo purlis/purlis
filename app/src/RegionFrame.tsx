@@ -12,7 +12,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
+import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
+import { Separator } from "./shownSeparator";
 import { ChevronDown } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef } from "react";
+import { useOnShownAgain, useProjectShown } from "./projectShown";
 
 /**
  * **One scheduler for the window's timed reads, paused while the window is hidden** (#1392,
@@ -105,14 +106,23 @@ export function everyWhileShown(ms: number, read: Read): () => void {
 /**
  * {@link everyWhileShown} for a component: `read` on every beat of `ms` while `on` and mounted.
  * The latest `read` is the one called, so a caller need not keep it stable.
+ *
+ * **And only while the component's project is in front** (`projectShown.tsx`): a project that
+ * stays drawn behind another has nobody to read for, as a hidden window has not. It reads once
+ * as it comes back, after it is painted, as a window does when it is shown again, and its beat
+ * starts afresh from there.
  */
 export function useWhileShown(ms: number, read: Read, on = true): void {
   const latest = useRef(read);
   useEffect(() => {
     latest.current = read;
   });
+  const shown = useProjectShown();
   useEffect(() => {
-    if (!on) return;
+    if (!on || !shown) return;
     return everyWhileShown(ms, () => latest.current());
-  }, [ms, on]);
+  }, [ms, on, shown]);
+  useOnShownAgain(() => {
+    if (on) latest.current();
+  });
 }

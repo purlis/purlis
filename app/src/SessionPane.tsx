@@ -18,13 +18,19 @@ import { moveAlong } from "./tabSequence";
 import { onTextSizes, textSizes } from "./textSize";
 import { inForce, onDrawn, xtermTheme } from "./theme/theme";
 import { scrollByDistance } from "./wheel";
+import { useProjectShown } from "./projectShown";
 
 /**
  * One pane, drawing one session.
  *
- * A terminal here exists only while the pane is on screen. It opens a view of the session,
+ * A terminal here exists only while the pane is drawn. It opens a view of the session,
  * which is sent the screen the session already has and then its output, so a pane can come and
  * go without the session noticing — the core has held its terminal all along.
+ *
+ * **A pane of a project that is not in front stays drawn** (`projectShown.tsx`): its terminal
+ * and its view stay open and go on taking what the program writes, so the project comes back
+ * with its screen as it is now and nothing to start. It is not fitted and takes no keyboard
+ * until then.
  */
 export function SessionPane({
   plane,
@@ -60,10 +66,12 @@ export function SessionPane({
   }, [onFocus]);
 
   // A pane that becomes the focused one — by a split, or by its tab coming back — takes the
-  // keyboard without being clicked.
+  // keyboard without being clicked. **And so does the focused one of a project that comes back
+  // to the front**: its pane was kept, so nothing is opened that would take it.
+  const shown = useProjectShown();
   useEffect(() => {
-    if (focused) terminal.current?.focus();
-  }, [focused]);
+    if (focused && shown) terminal.current?.focus();
+  }, [focused, shown]);
 
   useEffect(() => {
     const where = holder.current;
@@ -85,8 +93,20 @@ export function SessionPane({
       // its rows as a list a screen reader reads, and says what is written as it arrives.
       screenReaderMode: screenReaderMode(),
     });
-    const fit = new FitAddon();
-    pane.loadAddon(fit);
+    const fitting = new FitAddon();
+    pane.loadAddon(fitting);
+    /**
+     * Fits the terminal to its pane, **only while the pane is in the window**. A project that
+     * is not in front keeps its panes in an element that is in no document (`projectShown.tsx`),
+     * where a pane has no size: fitting it there would tell the program its screen is two
+     * columns wide. Its size is the one it was left at, and it is fitted again when it is back
+     * and the pane's size is known (the observer below hears that).
+     */
+    const fit = {
+      fit: () => {
+        if (where.isConnected) fitting.fit();
+      },
+    };
     const search = new SearchAddon();
     pane.loadAddon(search);
     /** What Shift+Enter sends, once the view says which harness this is — none for a shell,

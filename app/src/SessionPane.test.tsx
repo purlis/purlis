@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane, screenReaderMode, setScreenReaderMode } from "./SessionPane";
+import { ProjectShownProvider } from "./projectShown";
 import { forgetScreenReaderMode } from "./screenReader";
 import { DEFAULT_TEXT, forgetTextSizes, setTextSize } from "./textSize";
 import { GLOBAL } from "./windowprefs";
@@ -132,6 +133,44 @@ describe("a terminal and the terminal text size (charter-app#283)", () => {
 
     expect(() => setTextSize("terminal", 19)).not.toThrow();
     expect(was.options.fontSize).toBe(13);
+  });
+});
+
+describe("a pane of a project that is not in front (`projectShown.tsx`)", () => {
+  it("is not fitted while its element is in no document, and is once it is back", () => {
+    const { container } = pane();
+    const fit = vi.spyOn(FitAddon.prototype, "fit");
+    const window = container.parentElement;
+
+    // The project leaves the front: its view is taken out of the window with the pane in it.
+    container.remove();
+    act(() => setTextSize("terminal", 17));
+    // A pane with no size would be fitted to two columns, and its program told so.
+    expect(fit).not.toHaveBeenCalled();
+    expect(made[0].options.fontSize).toBe(17);
+
+    window?.appendChild(container);
+    act(() => setTextSize("terminal", 18));
+    expect(fit).toHaveBeenCalled();
+    fit.mockRestore();
+  });
+
+  it("takes the keyboard as its project comes back to the front, where it is the focused pane", () => {
+    const drawn = (shown: boolean, focused: boolean) => (
+      <ProjectShownProvider value={shown}>
+        <SessionPane plane={PLANE} session={1} focused={focused} onFocus={() => {}} />
+      </ProjectShownProvider>
+    );
+    const { rerender } = render(drawn(false, true));
+    const focus = vi.spyOn(made[0], "focus");
+
+    rerender(drawn(true, true));
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    // And a pane that is not the focused one takes nothing.
+    rerender(drawn(false, false));
+    rerender(drawn(true, false));
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 });
 

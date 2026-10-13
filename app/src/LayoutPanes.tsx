@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Group, Panel } from "react-resizable-panels";
+import { Separator } from "./shownSeparator";
 import {
   type ChatBlocked,
   type HarnessGlance,

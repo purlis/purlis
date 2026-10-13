@@ -12,6 +12,7 @@ import {
 } from "./bindings";
 import { listen } from "./here";
 import { isPlaneRoot } from "./pieceViews";
+import { useProjectShown } from "./projectShown";
 
 /**
  * **The folders of branches the explorer has expanded, read one level at a time** (FM-1,
@@ -130,9 +131,16 @@ export function useBranchFolders(
 
   // The whole open set is what the core watches, and each folder newly open is read once the
   // watch naming it holds.
+  //
+  // **Nothing is watched for a project that is not in front** (`projectShown.tsx`): the core
+  // keeps one set for the window, of so many folders, and the tree a person can see is the one
+  // that has it. What was read stays drawn, and every open folder is watched and read again as
+  // the project comes back, for what moved meanwhile.
+  const shown = useProjectShown();
   useEffect(() => {
-    if (plane === undefined || workspace === undefined) {
+    if (plane === undefined || workspace === undefined || !shown) {
       void watch.current([]);
+      if (!shown) asked.current.keys = new Set();
       return;
     }
     const refs = keys === "" ? [] : keys.split("\0").map(unkey);
@@ -155,7 +163,7 @@ export function useBranchFolders(
       // Read before its watch held: read again once it holds, so a change in between is drawn.
       if (!inTime) void answered().then(readFresh);
     });
-  }, [keys, plane, workspace]);
+  }, [keys, plane, shown, workspace]);
 
   // Nothing watched once the explorer is gone.
   useEffect(() => {

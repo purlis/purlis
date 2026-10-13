@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
+import { useOnShownAgain, useProjectShown } from "./projectShown";
 import { listen } from "./here";
 
 import type { MemoryScope, PlaneAnswer, PlaneChange, PlaneChanged, PlaneId } from "./bindings";
@@ -216,12 +217,27 @@ function useCounted<T>(
     wanted.current = { mine, wants };
   });
 
+  // **A change heard while the caller's project is not in front is not counted**
+  // (`projectShown.tsx`): a view nobody can see reads nothing again. **It is counted once as the
+  // project comes back**, after it is painted, whether or not a change was heard: a view that
+  // was built again on every switch read the disk again each time, and what it shows is still
+  // owed that read. What listens outside any project's view, the window and each project's own
+  // state, is counted at once as before.
+  const shown = useProjectShown();
+  const shownNow = useRef(shown);
+  useEffect(() => {
+    shownNow.current = shown;
+  }, [shown]);
+  useOnShownAgain(() => setCount((was) => was + 1));
+
   useEffect(
     () =>
       followTold(
         holding.split("\n"),
         (told) => wanted.current.wants(told, wanted.current.mine),
-        () => setCount((was) => was + 1),
+        () => {
+          if (shownNow.current) setCount((was) => was + 1);
+        },
       ),
     [holding],
   );

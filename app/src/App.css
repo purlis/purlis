@@ -8309,3 +8309,10 @@ textarea.ui-field {
 .vault-signin-passed {
   margin: 0.4rem 0;
 }
+
+/* **The project in front's view, and where the window puts it** (`projectShown.ts`). Neither
+   draws a box: what a project draws is laid out as the window's own rows. */
+.project-views,
+.project-view {
+  display: contents;
+}
