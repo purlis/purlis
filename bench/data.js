@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791918106755,
+  "lastUpdate": 1791921511958,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9912,6 +9912,48 @@ window.BENCHMARK_DATA = {
             "value": 104.155275,
             "unit": "ms",
             "extra": "median of 5 runs: 102.773, 103.997, 104.155, 104.780, 107.454 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "2cd63f690c372e2f0330ecd27d933d82e7870ef2",
+          "message": "app: on the plane root's tab, Files lists the whole project's files\n\nThe operator's rulings of 2026-10-13: at the plane root Explorer shows the whole\nplane's files (G3), less what purlis keeps private, the exclusions a chat's\nsandbox applies to reads (F1), and with a workspace's clone as one row that leads\nto that workspace's tab (F2).\n\nThe core's branch type gains the plane root as a place no workspace, repo or\npiece name spells, read by the same bounded reader, tree, folder watch and file\ntab as a branch. files/kept.rs is the one place that decides what it leaves out.\nThe window's exclusion list and the sandbox's read denials are one list; a path\nis judged by spelling and by identity, so another name, a link or a second name\nof a kept file reaches nothing. A list that cannot be told whole lists nothing.\nNothing of the plane root is compared, found by name or searched.\n\nThe window reads it through two commands of its own, plane_tree and plane_file,\nwhich are the window's alone: no link is served them, the commands a link is\nserved still read a branch and nothing else, and a folder watch that names the\nplane root is refused on a link.\n\nADR 0038 and ADR 0081 are amended, and ADR 0067 notes the one list.\n\nRefs #1916\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T23:57:18+04:00",
+          "tree_id": "531c2173804ebb66d781ea2902d43e4738652c49",
+          "url": "https://github.com/purlis/purlis/commit/2cd63f690c372e2f0330ecd27d933d82e7870ef2"
+        },
+        "date": 1791921510570,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.28082250000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.274, 0.279, 0.281, 0.283, 0.290 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5273275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.508, 16.513, 16.527, 16.540, 16.635 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.8873505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.594, 100.403, 100.887, 101.586, 101.918 ms"
           }
         ]
       }
