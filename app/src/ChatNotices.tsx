@@ -36,11 +36,28 @@ import { askSettingsLink } from "./settings/links";
  * time: why the last one failed, else why it has not happened yet, else that it is under way,
  * else that it waits for the person.
  */
+/**
+ * What the person answers a restart's Notice with: `now` asks for it (it happens when the turn
+ * has ended), `mid-turn` restarts a chat that is owed one at once, ending the turn it is in, and
+ * `dismiss` puts the Notice away.
+ */
+export type RestartAct = "now" | "mid-turn" | "dismiss";
+
+/**
+ * What an owed restart says while the chat is mid-turn (qw351): an Allow reaches a chat only
+ * through the sandbox it starts with, and purlis never ends a turn by itself. Without this the
+ * person pressed Allow and saw nothing happen for as long as the turn ran.
+ */
+export const RESTART_WAITS_FOR_THE_TURN =
+  "What you allowed reaches this chat when it restarts on the same conversation. It restarts by itself once its turn ends. Restart now ends the turn it is in.";
+
 export type RestartSaid = {
   /** The window owes it a restart: one was asked for, or a grant needs it, and it is not made. */
   owed?: boolean;
   /** Its harness reports no state, so the person restarts it when ready. */
   byHand?: boolean;
+  /** It is mid-turn, so the restart waits for the turn to end: said, with Restart now. */
+  midTurn?: boolean;
   /** The restart is under way. */
   running?: boolean;
   /** Why it is not restarted yet, in the core's sentence: it waits on a permission prompt. */
@@ -297,7 +314,7 @@ export function ChatNotices({
   onAllowed: () => void;
   /** What this pane says of this chat's restart (#1342, #1428), while there is something to say. */
   restartSaid?: RestartSaid;
-  onRestartAnswer: (act: "now" | "dismiss") => void;
+  onRestartAnswer: (act: RestartAct) => void;
   /** The permission prompts this project's chats hold open on their hooks. */
   asks: readonly Shown[];
   /** This project's asks, as the registry derived them last; nothing before the first read. */
@@ -426,6 +443,20 @@ export function ChatNotices({
       {restartSaid?.running && restartSaid.notYet === undefined && (
         <RestartingLine session={session} />
       )}
+      {restartSaid?.midTurn &&
+        !restartSaid.byHand &&
+        !restartSaid.running &&
+        restartSaid.notYet === undefined &&
+        restartSaid.trouble === undefined && (
+          <Notice
+            cause={`restart-waits-for-the-turn:${session}`}
+            at="pane"
+            label="Restart"
+            fixes={[{ label: "Restart now", onPress: () => onRestartAnswer("mid-turn") }]}
+          >
+            {RESTART_WAITS_FOR_THE_TURN}
+          </Notice>
+        )}
       {restartSaid?.byHand && !restartSaid.running && restartSaid.notYet === undefined && (
         <Notice
           cause={`restart-by-hand:${session}`}

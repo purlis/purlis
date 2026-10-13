@@ -402,7 +402,13 @@ import { WorkspaceStrip } from "./WorkspaceStrip";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import { type FirstChat, type PlaneReport, type WindowDoing } from "./planeReport";
 import { Doer, Pin } from "./StripMarks";
-import { type RestartSaid, type Arrived, type ByHandNote, type StartNotes } from "./ChatNotices";
+import {
+  type RestartAct,
+  type RestartSaid,
+  type Arrived,
+  type ByHandNote,
+  type StartNotes,
+} from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 
 /** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
@@ -4946,8 +4952,11 @@ export const PlaneView = memo(function PlaneView({
   const restartsSaid = useMemo(() => {
     const states = chats.store.statesFor(chats.plane);
     const out: Record<number, RestartSaid> = {};
-    for (const session of owedRestarts)
-      out[session] = { owed: true, byHand: stateOf(states, session) === "unknown" };
+    for (const session of owedRestarts) {
+      const state = stateOf(states, session);
+      // Mid-turn it waits for the turn to end, and its pane says so, with Restart now (qw351).
+      out[session] = { owed: true, byHand: state === "unknown", midTurn: state === "running" };
+    }
     for (const session of restartsRunning) out[session] = { ...out[session], running: true };
     for (const [session, notYet] of Object.entries(restartNotYet))
       if (owedRestarts.includes(Number(session)))
@@ -4988,13 +4997,15 @@ export const PlaneView = memo(function PlaneView({
     [chats, oweRestart, plane, restartOwed],
   );
   const answerRestart = useCallback(
-    (session: number, act: "now" | "dismiss") => {
+    (session: number, act: RestartAct) => {
       setRestartTrouble((was) => withoutKey(was, session));
       setRestartNotYet((was) => withoutKey(was, session));
       // Asked again, so a restart the core no longer owes is owed once more.
       if (act === "now") void askRestart(session);
+      // Owed already, and the person will not wait for the turn to end: the driver's step, now.
+      if (act === "mid-turn") restartOwed(session);
     },
-    [askRestart],
+    [askRestart, restartOwed],
   );
   /** Restart chat, from a tab's menu or the palette. */
   useEffect(() => {

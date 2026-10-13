@@ -2518,6 +2518,24 @@ export type ByHand = {
 };
 
 /**
+ *  **Whether a chat here may ask the system's certificate check, on this machine** (ADR 0093):
+ *  what a chat's next start compiles in, never what the committed file says. Settings draws it
+ *  beside the committed `certificate-checks`, so a switch that is on there never reads as an
+ *  Allow nobody made here.
+ */
+export type CertificateCheck = {
+	/**  The project's committed file declares it expects the certificate check. */
+	expected: boolean,
+	/**
+	 *  The person allowed it for every chat of this project on this machine, and no policy
+	 *  takes it away: a chat has it from its next start.
+	 */
+	allowed: boolean,
+	/**  Why it cannot be allowed here, where an administrator's policy forbids it. */
+	locked: string | null,
+};
+
+/**
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
@@ -6846,6 +6864,12 @@ export type SandboxState = {
 	 *  place of the mode. Such a project never reads as "off". `null` where the manifest reads.
 	 */
 	manifest?: string | null,
+	/**
+	 *  The certificate check on this machine (ADR 0093), where chats here run sandboxed: what
+	 *  Settings says beside the committed `certificate-checks`, which declares it and grants
+	 *  nothing. `null` where the sandbox is off.
+	 */
+	certificate_check?: CertificateCheck | null,
 };
 
 /**  One save attempt, as the journal holds it. */

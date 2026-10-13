@@ -225,6 +225,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         // One chat's Keep blocked, which refuses a connection its proxy holds (#1666).
         "keep_sandbox_block",
         "allow_persona_hosts",
+        // Settings' Allow of the certificate check on this machine (ADR 0093).
+        "allow_certificate_check",
         "allow_blocked_host",
         "forget_sandbox_block",
     ] {
@@ -326,6 +328,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 2
             + 1
             + 2
+            // Settings' Allow of the certificate check on this machine (ADR 0093).
+            + 1
     );
 }
 

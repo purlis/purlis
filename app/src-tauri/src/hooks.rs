@@ -567,22 +567,41 @@ fn vault_said(name: &str) -> String {
         .to_owned()
 }
 
-/// **What a Notice says of a host that is allowed already** (#1666's fold-in): no Allow is
-/// offered for it, since one would allow nothing new. This chat started before it was allowed,
-/// so it reaches it once it restarts; a chat on purlis's proxy takes an Allow at once and is
-/// never shown this, as its held connection is let on as soon as it is asked
-/// (`chats::asked_by_the_proxy`). None for anything but a host offered to allow.
+/// **What a Notice says of a host, a local socket or a system service that is allowed
+/// already** (#1666's fold-in; ADR 0093): no Allow is offered for it, since one would allow
+/// nothing new. This chat started before it was allowed, so it reaches it once it restarts; a
+/// chat on purlis's proxy takes a host's Allow at once and is never shown this, as its held
+/// connection is let on as soon as it is asked (`chats::asked_by_the_proxy`). None for anything
+/// else offered.
+///
+/// **A socket or a service you allowed for every chat of this project on this machine** is one
+/// a chat takes only as it starts (D-sock-3), so a chat that started before the Allow is
+/// refused it still, and so is every other chat open then. Its Notice says the Allow stands
+/// and offers Restart this chat, never the same Allow over again.
 fn allowed_already(
     root: &std::path::Path,
     offer: BlockOffer,
     target: Option<&str>,
 ) -> Option<String> {
-    use purlis_core::sandbox::grant;
-    if offer != BlockOffer::Host {
-        return None;
-    }
-    let host = grant::host(target?).ok()?;
-    let level = grant::allowed_already(root, &host)?;
+    use purlis_core::sandbox::{grant, local};
+    let level = match offer {
+        BlockOffer::Host => grant::allowed_already(root, &grant::host(target?).ok()?)?,
+        BlockOffer::Socket => {
+            let target = std::path::Path::new(target?);
+            local::granted_sockets(root)
+                .iter()
+                .any(|socket| socket == target)
+                .then_some(grant::Level::You)?
+        }
+        BlockOffer::Service => {
+            let target = target?;
+            local::granted_services(root)
+                .iter()
+                .any(|service| service == target)
+                .then_some(grant::Level::You)?
+        }
+        _ => return None,
+    };
     Some(format!(
         "It is allowed already, {}. This chat started before that, so it reaches it once it \
          restarts on the same conversation.",
@@ -3704,6 +3723,45 @@ mod tests {
         // Only a host offered to allow is asked about.
         assert_eq!(
             allowed_already(root.path(), BlockOffer::Write, Some("/p/out")),
+            None
+        );
+    }
+
+    /// qw351: the person pressed "Allow for me on this machine" for the certificate check, and
+    /// a chat that started before that is refused it still. Its block says the Allow stands and
+    /// offers Restart this chat: never the same Allow again, which would keep nothing new.
+    #[test]
+    fn a_service_or_a_socket_allowed_on_this_machine_already_offers_a_restart_and_no_allow() {
+        use purlis_core::sandbox::local;
+        use purlis_core::sandbox::services::TRUSTD;
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path().canonicalize().expect("real");
+        assert_eq!(
+            allowed_already(&root, BlockOffer::Service, Some(TRUSTD)),
+            None,
+            "nothing is allowed yet, so Allow stays on offer"
+        );
+        local::grant_service(&root, TRUSTD).expect("kept");
+        let said = allowed_already(&root, BlockOffer::Service, Some(TRUSTD)).expect("said");
+        assert!(said.contains("allowed already"), "{said}");
+        assert!(said.contains("on this machine"), "{said}");
+        assert!(said.contains("once it restarts"), "{said}");
+        // By its whole name: another service is asked about as before.
+        assert_eq!(
+            allowed_already(&root, BlockOffer::Service, Some("com.example.helper")),
+            None
+        );
+        let socket = "/purlis-test-nowhere/docker.sock";
+        assert_eq!(
+            allowed_already(&root, BlockOffer::Socket, Some(socket)),
+            None
+        );
+        local::grant_socket(&root, std::path::Path::new(socket)).expect("kept");
+        assert!(allowed_already(&root, BlockOffer::Socket, Some(socket)).is_some());
+        // Revoked in Settings, it is asked about again.
+        local::revoke_service(&root, TRUSTD).expect("revoked");
+        assert_eq!(
+            allowed_already(&root, BlockOffer::Service, Some(TRUSTD)),
             None
         );
     }
