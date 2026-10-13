@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791910167516,
+  "lastUpdate": 1791913003698,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9702,6 +9702,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8633155,
             "unit": "ms",
             "extra": "median of 5 runs: 101.154, 101.529, 101.863, 101.896, 102.791 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "952c8fc580b95494160df067376524bac6866cea",
+          "message": "review(qw356): Remove… opens Delete workspace, and a fourth question is not asked\n\nReview of the workspace removal a chat asks the person for.\n\n- Remove… on the question removes nothing. It opens the window's own Delete\n  workspace dialog, the one the sidebar opens, and the person's press there\n  removes. As first built, one press on the Notice or on the Inbox row removed\n  a workspace the guard found nothing at risk in; the guard is about clones,\n  the Inbox row gave no counts, and it sat as a primary button among Allows. A\n  removal is for good and a chat raises the question, so it takes the dialog.\n  The command the first build added to remove for a question is taken out:\n  Keep is the one command the ask adds to the window. The Inbox notes no\n  answer for a press that only opened the dialog. Decided in review, for the\n  operator to reverse.\n- A chat with its three questions waiting is not asked a fourth, in a fixed\n  sentence. As first built the oldest was put away for it, so a chat going\n  round many names could turn over what the person was reading and raise a\n  new question each time.\n\nThe skill, the ADR 0067 note and the change fragment say the same.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T21:35:34+04:00",
+          "tree_id": "81ed2e8cc9f790e2f6263416c6cdf615898ff7cd",
+          "url": "https://github.com/purlis/purlis/commit/952c8fc580b95494160df067376524bac6866cea"
+        },
+        "date": 1791913002639,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3555965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.349, 0.353, 0.356, 0.359, 0.361 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.445821000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.351, 16.370, 16.446, 16.582, 16.586 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0507675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.687, 101.926, 102.051, 102.367, 102.373 ms"
           }
         ]
       }
