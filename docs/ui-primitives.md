@@ -1341,28 +1341,36 @@ component library gets added on.
   an edge) and the keyboard's ring. A class, not a component, so this rule needs no amendment; a
   new tree draws nothing of its own.
   `docs/design-system.md` has the tokens and why.
-- **The region buttons are `aria-pressed` toggles**, which is what the platform has for a
-  control that is on or off. They are **on the status line and icon-only** since purlis
-  #193, which the operator asked for twice — _"show hide buttons can be movet to bottom status
-  bar — again like ZED"_, and then _"let make them without labels, just small icons without
-  texts, texts only with tooltips"_. Three things about that are decisions:
-  - **The name did not go with the words.** `aria-label` carries it, which is the one condition
-    `docs/design-system.md` puts on an icon with no text beside it — and not a formality here:
-    `pressOnly("Navigation")` is how the palette and the specs reach a control, and a screen
-    reader reads the same string. An icon-only button whose accessible name is an icon is a
-    button nobody can find, by either route.
-  - **The `title` says what pressing does, not what the thing is.** _"Put the Navigation region
-    away"_ is where prose belongs once there is no visible text; a tooltip repeating the label
-    is a tooltip nobody reads twice.
-  - **The status line hosts every region's way back and has none of its own**, which is not a
-    contradiction of `StatusLine.tsx`'s argument for not being a region but the sharpest form
-    of it: it is the frame. `FourRegions.test.tsx`'s _"cannot be put away, because it is not a
-    region"_ is the guard, and it presses every toggle to get there.
-  - **A scenario reaches them by `[aria-label="Navigation"]` and no longer by `=Navigation`.**
-    WebdriverIO's `=` is a whole-text match, and there is no text. `regions.e2e.ts`,
-    `pane-fill.e2e.ts` and `status-line.e2e.ts` all moved; `StripMarks.test.tsx` is what holds
-    the name they match against. The left region was named _Explorer_ until #1673, when the
-    explorer became one of its views: it is _Navigation_, ADR 0038's own word for the left.
+- **No region has a toggle button, on the status line or anywhere** (qw357, 2026-10-13). They
+  were `aria-pressed` icons on the status line from purlis #193 until the operator called them
+  redundant: _"bottom toggle icons are redundant now … they can be removed fully"_. A side is
+  put away and brought back from its activity bar (below), by its key (⌘B, ⌥⌘B) and by the
+  palette's row, and nothing else draws that state.
+  - **A scenario puts a side away as a person does**: `app/e2e/sides.ts` presses the open view
+    on the side's bar and reads "away" as a bar with no open view. `regions.e2e.ts`,
+    `pane-fill.e2e.ts` and `status-line.e2e.ts` use it.
+  - **The status line still cannot be put away.** `FourRegions.test.tsx`'s _"cannot be put
+    away, because it is not a region"_ is the guard.
+- **The status line is one bar of status items, and added no primitive** (qw357). The
+  operator's _"notices and doctor buttons in bottom are not better UI integrated in bottom
+  bar"_ was three hand-drawn boxed buttons (`.status-alerts`, `.status-doctor`, `.status-pin`).
+  Each is the set's small ghost button now (`.ui-button.ui-button-ghost.ui-button-sm`): flat,
+  the chrome's height, the set's hover and focus ring, with an icon, a short word and a count.
+  - **Context on the left, health on the right.** The project and the workspace with its
+    counts; then Notices, the doctor and a drifting pin. The left end gives way in a narrow
+    window (`.status-context`), the right never does (`.status-health`).
+  - **The line's padding is the ring's room**: `--space-2`, which is `--focus-ring-width` and
+    `--focus-ring-offset` together, so the set's ring is drawn whole at the window's bottom
+    edge. The line is `--size-chrome` and that room tall.
+  - **Severity is a colour and a word.** The doctor's count is in `state.failed` or
+    `state.waiting` and reads _"2 blockers"_, _"10 warnings"_; a clean doctor draws no count.
+    The Notices count is a number in the neutral count pill beside a bell in `state.waiting`.
+    Each item's accessible name says its count (_"Notices: 6"_, _"Doctor: 10 warnings"_).
+  - **The project is its name, and its directory is the window's tooltip** (`.ui-tooltip`,
+    Radix Tooltip): words that press nothing, so a focusable span and no button, as a table's
+    shortened heading is. The tooltip opens under the pointer and on keyboard focus. A long
+    name is cut with an ellipsis. The item carries the directory as `data-directory`, which is
+    how a scenario learns which project is open.
 - **A side with views has an activity bar** (ADR 0038 as amended 2026-10-10, #1673;
   `app/src/ActivityBar.tsx`). It is VS Code's strip of icons at the window's edge, and it is
   built from what this file already allows:
@@ -1374,8 +1382,7 @@ component library gets added on.
     view's badge is inside its own tab, and the tab is described by it.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
     and its tabs select what the side shows. The explorer keeps `aria-current`.
-  - **Icon-only, with the words on `aria-label` and the press in the `title`**, as the region
-    toggles are: the tab is named for the view (`Chats`, `Explorer`) and its tooltip says what
+  - **Icon-only, with the words on `aria-label` and the press in the `title`**: the tab is named for the view (`Chats`, `Explorer`) and its tooltip says what
     pressing does, with the key (_"Show the Explorer view (⌘⇧E)"_, or _"Put the Navigation
     region away"_ on the open one). Its mark is what the view is, never which edge it is on.
   - **A press of the open view puts the side away**; any other opens. The bar is outside the

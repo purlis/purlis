@@ -337,6 +337,24 @@ async function focus(workspace: string) {
 const startedIn = (asked: { cmd: string; args: Record<string, unknown> }[]) =>
   asked.filter((one) => one.cmd === "start_chat").map((one) => one.args.cwd);
 
+/** A side's key, as a person presses it: ⌘B for the left, ⌥⌘B for the right (Ctrl off a Mac).
+ *  Since the status line's toggles went (qw357) a side is put away by its key, its activity
+ *  bar's open view or the palette's row. */
+function sideKey(side: "left" | "right") {
+  fireEvent.keyDown(document.body, {
+    key: "b",
+    code: "KeyB",
+    altKey: side === "right",
+    ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
+  });
+}
+/** Whether a side is put away: its activity bar stands and none of its views is the open one. */
+function away(region: "Navigation" | "Attention"): boolean {
+  return within(screen.getByRole("tablist", { name: region }))
+    .getAllByRole("tab")
+    .every((tab) => tab.getAttribute("aria-selected") !== "true");
+}
+
 describe("the four regions", () => {
   it("draws every region, and each one is named for what it holds", async () => {
     core();
@@ -579,12 +597,15 @@ describe("the four regions", () => {
     await screen.findByRole("tabpanel", { name: "Chats" });
     const chats = screen.getByTestId("chats-section");
 
-    await userEvent.click(screen.getByRole("button", { name: "Navigation", pressed: true }));
-    expect(screen.queryByRole("tabpanel", { name: "Chats" })).not.toBeInTheDocument();
-    // The centre is still there: a window with no panes is not a state a button can reach.
+    sideKey("left");
+    await waitFor(() =>
+      expect(screen.queryByRole("tabpanel", { name: "Chats" })).not.toBeInTheDocument(),
+    );
+    expect(away("Navigation")).toBe(true);
+    // The centre is still there: a window with no panes is not a state a key can reach.
     expect(stripNamed("Tabs")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Navigation", pressed: false }));
+    sideKey("left");
     expect(await screen.findByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
     // Hidden while it was away, never unmounted (#1673): the same list came back.
     expect(screen.getByTestId("chats-section")).toBe(chats);
@@ -595,36 +616,42 @@ describe("the four regions", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Inbox" });
 
-    await userEvent.click(screen.getByRole("button", { name: "Attention", pressed: true }));
+    sideKey("right");
 
-    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("tabpanel", { name: "Inbox" })).not.toBeInTheDocument(),
+    );
     // The Panel's right half is not the sidebar's (#1738).
     expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
   });
 
-  it("gives every region in the arrangement its own way back, on the status line", async () => {
-    // The buttons are drawn from the arrangement, so a region added to the catalogue cannot
-    // arrive with nowhere to bring it back from — which a list written out by hand allowed.
-    //
-    // **And they are on the status line, not on the bar** (charter-app#193, asked for twice).
-    // The `within` is over the line itself rather than over `.regions-doing` for that reason:
-    // the class would pass wherever the row was moved to, and where it is IS the claim.
-    //
-    // **Read by `aria-label` and not by text**, because there is no text — *"just small icons
-    // without texts, texts only with tooltips"*. That the name survived losing the words is
-    // the whole risk in that instruction, and it is what this line asserts.
+  it("gives every side its way back on its own activity bar, and none on the status line", async () => {
+    // The operator, 2026-10-13: *"bottom toggle icons are redundant now … they can be removed
+    // fully"* (qw357). They were on the status line since charter-app#193; a side's activity
+    // bar stands while the side is away, so the way back is where the side is.
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
 
-    expect(
-      within(screen.getByTestId("status-line"))
-        .getAllByRole("button")
-        .filter((one) => one.getAttribute("aria-pressed") !== null)
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Navigation", "Attention"]);
+    expect(screen.getByTestId("status-line").querySelector("[aria-pressed]")).toBeNull();
     // Nor on the chat strip, which is the editor's tab bar now (DS-6).
-    expect(document.querySelector("header.bar .regions-doing")).toBeNull();
+    expect(document.querySelector("header.bar [aria-pressed]")).toBeNull();
+
+    for (const [side, region, view] of [
+      ["left", "Navigation", "Chats"],
+      ["right", "Attention", "Inbox"],
+    ] as const) {
+      const tab = () =>
+        within(screen.getByRole("tablist", { name: region })).getByRole("tab", { name: view });
+      sideKey(side);
+      await waitFor(() => expect(away(region)).toBe(true));
+      // Away, the bar still says how to come back, on the view that would open.
+      expect(tab()).toHaveAttribute("title", expect.stringContaining(`Show the ${view} view`));
+
+      await userEvent.click(tab());
+      expect(await screen.findByRole("tabpanel", { name: view })).toBeInTheDocument();
+      expect(away(region)).toBe(false);
+    }
   });
 
   it("keeps a chat in another workspace running while the explorer is used", async () => {
@@ -684,7 +711,7 @@ describe("the left side's activity bar", () => {
 
     expect(screen.queryByRole("tabpanel", { name: "Chats" })).toBeNull();
     expect(bar()).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Navigation", pressed: false })).toBeInTheDocument();
+    expect(away("Navigation")).toBe(true);
 
     await userEvent.click(tab("Chats"));
 
@@ -1303,7 +1330,7 @@ describe("the right side's activity bar", () => {
 
     expect(screen.queryByRole("tabpanel", { name: "Personas" })).toBeNull();
     expect(bar()).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Attention", pressed: false })).toBeInTheDocument();
+    expect(away("Attention")).toBe(true);
 
     await userEvent.click(tab("Personas"));
 
@@ -1795,7 +1822,7 @@ describe("the window the stored arrangement asks for", () => {
     expect(screen.queryByRole("tabpanel", { name: /Chats|Explorer/ })).not.toBeInTheDocument();
     expect(screen.getByTestId("explorer")).toBeInTheDocument();
     expect(screen.getByTestId("region-left")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Navigation", pressed: false })).toBeInTheDocument();
+    expect(away("Navigation")).toBe(true);
   });
 
   it("writes what the operator did back where the next launch will read it", async () => {
@@ -1803,7 +1830,7 @@ describe("the window the stored arrangement asks for", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
 
-    await userEvent.click(screen.getByRole("button", { name: "Navigation", pressed: true }));
+    sideKey("left");
 
     await vi.waitFor(() => expect(asked.some((one) => one.cmd === "write_layout")).toBe(true));
     const written = asked.filter((one) => one.cmd === "write_layout").at(-1);
@@ -1850,14 +1877,17 @@ describe("the status line", () => {
     expect(document.querySelector(".regions")?.contains(line)).toBe(false);
   });
 
-  it("carries the project's directory, which is no longer in the corner of the bar", async () => {
+  it("carries the project, by name with its directory behind it, and not in the corner of the bar", async () => {
     core();
     render(<App />);
     await screen.findByTestId("status-line");
 
-    expect(within(screen.getByTestId("status-line")).getByText(PLANE)).toBeInTheDocument();
+    // Its name on the line and its whole directory one hover or Tab away (qw357).
+    const project = within(screen.getByTestId("status-line")).getByTestId("status-project");
+    expect(project).toHaveTextContent(PLANE.split("/").at(-1) as string);
+    expect(project).toHaveAttribute("data-directory", PLANE);
     // The bar is the editor's chat strip, its show-more and its `+`, and nothing else.
-    expect(document.querySelector("header.bar .plane")).toBeNull();
+    expect(document.querySelector("header.bar .status-project")).toBeNull();
   });
 
   it("draws the chat strip at the top of the editor, and the workspaces above every region", async () => {
@@ -1920,15 +1950,15 @@ describe("the status line", () => {
   });
 
   it("cannot be put away, because it is not a region", async () => {
-    // Every region in the arrangement gets a toggle drawn from it. The status line has none —
-    // it is the frame, and a status line an operator can lose is one they will lose.
+    // Every side has a way to put it away. The status line has none — it is the frame, and a
+    // status line an operator can lose is one they will lose.
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
 
-    for (const name of ["Navigation", "Attention"]) {
-      await userEvent.click(screen.getByRole("button", { name, pressed: true }));
-    }
+    sideKey("left");
+    sideKey("right");
+    await waitFor(() => expect(away("Navigation") && away("Attention")).toBe(true));
 
     expect(screen.queryByRole("button", { name: "Status" })).toBeNull();
     expect(screen.getByTestId("status-line")).toBeInTheDocument();

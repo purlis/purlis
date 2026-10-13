@@ -10,6 +10,17 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { findStripNamed, openTheInbox, sayingSomething, stripNamed } from "./test-strips";
 
+/** The project the status line names, found by its directory: the line draws the project's
+ *  name, and its directory is the item's tooltip (qw357). */
+const projectAt = (directory: string) =>
+  vi.waitFor(() => {
+    const item = document.querySelector<HTMLElement>(
+      `[data-testid="status-project"][data-directory="${directory}"]`,
+    );
+    if (item === null) throw new Error(`the status line names no project at ${directory}`);
+    return item;
+  });
+
 /** The slow-start line, where it is on screen: the Inbox also says what it lists (#1695). */
 const slowStart = () =>
   sayingSomething().filter((one) => one.getAttribute("data-cause") === "slow-start");
@@ -200,7 +211,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("/home/dev/plane")).toBeInTheDocument();
+    expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
   });
 
   it("says why there is no project here, in the resolver's own words", async () => {
@@ -323,7 +334,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("/home/dev/plane")).toBeInTheDocument();
+    expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
     expect(sayingSomething()).toEqual([]);
   });
 
@@ -411,7 +422,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("/home/dev/plane")).toBeInTheDocument();
+    expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
     expect(await screen.findByTestId("empty-window")).toBeInTheDocument();
   });
 

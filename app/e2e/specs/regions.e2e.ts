@@ -4,6 +4,7 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { textOfEach } from "../reading.js";
 import { showView } from "../opening.js";
+import { bringSideBack, putSideAway } from "../sides.js";
 
 /**
  * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
@@ -360,7 +361,7 @@ describe("putting a region away", () => {
     await untilTheStripIsRead();
     await $('[data-testid="explorer"]').waitForExist({ timeout: 20_000 });
 
-    await (await $('button[aria-pressed="true"][aria-label="Navigation"]')).click();
+    const view = await putSideAway("Navigation");
     await browser.waitUntil(async () => !(await $(A_VIEW_SHOWN).isExisting()), {
       timeout: 20_000,
       timeoutMsg: "the left side's views did not go away when it was put away",
@@ -368,7 +369,7 @@ describe("putting a region away", () => {
     // The centre cannot be put away: the terminal panes are the product.
     await expect(await $('[data-strip="Tabs"]')).toBeExisting();
 
-    await (await $('button[aria-pressed="false"][aria-label="Navigation"]')).click();
+    await bringSideBack("Navigation", view);
     await $(A_VIEW_SHOWN).waitForExist({ timeout: 20_000 });
   });
 
@@ -380,7 +381,7 @@ describe("putting a region away", () => {
     await untilTheStripIsRead();
     await $('[data-testid="explorer"]').waitForExist({ timeout: 20_000 });
 
-    await (await $('button[aria-pressed="true"][aria-label="Navigation"]')).click();
+    const view = await putSideAway("Navigation");
     await browser.waitUntil(async () => !(await $(A_VIEW_SHOWN).isExisting()), {
       timeout: 20_000,
       timeoutMsg: "the left side's views did not go away when it was put away",
@@ -390,7 +391,7 @@ describe("putting a region away", () => {
     await expect(slot).toBeExisting();
     expect((await slot.getSize("width")) as number).toBe(0);
 
-    await (await $('button[aria-pressed="false"][aria-label="Navigation"]')).click();
+    await bringSideBack("Navigation", view);
     await $(A_VIEW_SHOWN).waitForExist({ timeout: 20_000 });
   });
 });
@@ -1024,12 +1025,12 @@ describe("the layout as data", () => {
     });
     const dragged = (await slot.getSize("width")) as number;
 
-    await (await $('button[aria-pressed="true"][aria-label="Navigation"]')).click();
+    const view = await putSideAway("Navigation");
     await browser.waitUntil(async () => !(await $(A_VIEW_SHOWN).isExisting()), {
       timeout: 20_000,
       timeoutMsg: "the left side's views did not go away when it was put away",
     });
-    await (await $('button[aria-pressed="false"][aria-label="Navigation"]')).click();
+    await bringSideBack("Navigation", view);
     await $(A_VIEW_SHOWN).waitForExist({ timeout: 20_000 });
 
     await browser.waitUntil(

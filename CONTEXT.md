@@ -750,7 +750,7 @@ _Avoid_: prompt (that is what the operator types), approval (that is one kind of
 **Inbox**:
 The one place for everything that waits on the person: its **asks** first, then the project's
 **Notices**, then its **updates** (spec #1688, #1695). The title bar's ✋ shows its count of asks,
-and the status line's Notices button its count of Notices.
+and the status line's Notices item its count of Notices.
 _Avoid_: queue, alerts, notifications
 
 **Update**:

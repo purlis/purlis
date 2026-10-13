@@ -545,7 +545,7 @@ export function PinItem({
       <Dialog.Trigger asChild>
         <button
           type="button"
-          className="status-pin"
+          className="ui-button ui-button-ghost ui-button-sm status-pin"
           // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
           // down (`docs/ui-primitives.md`, charter-app#189).
           tabIndex={0}

@@ -436,9 +436,9 @@ describe("the window's tab order", () => {
       // `RegionFrame.tabOrderOf`).
       "tab Inbox",
       "tab Memory",
-      // The status line: the region toggles at its left, then Alerts and the doctor.
-      "button Navigation",
-      "button Attention",
+      // The status line: the project by its name, whose tooltip is its directory (qw357), then
+      // Notices and the doctor. The region toggles went; a side's bar is its way away and back.
+      "span plane",
       "button Notices: none",
       "button Doctor",
     ]);

@@ -5,6 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { bringSideBack, putSideAway, sideIsAway } from "../sides.js";
 
 /**
  * **A terminal fills the centre region, top to bottom** — with one pane, with a split, and
@@ -149,13 +150,7 @@ async function tabNames(): Promise<string[]> {
 
 /** Brings the Navigation region back if a failed assertion left it put away. */
 async function navigationBack(): Promise<void> {
-  const away = await $('button[aria-pressed="false"][aria-label="Navigation"]');
-  if (await away.isExisting()) {
-    await away.click();
-    await $('button[aria-pressed="true"][aria-label="Navigation"]').waitForExist({
-      timeout: 20_000,
-    });
-  }
+  if (await sideIsAway("Navigation")) await bringSideBack("Navigation", "Chats");
 }
 
 describe("the terminal in the centre region", () => {
@@ -292,7 +287,7 @@ describe("the terminal in the centre region", () => {
     const before = await untilTheyFill(1);
     const slot = await $('[data-panel][id="region-left"]');
 
-    await (await $('button[aria-pressed="true"][aria-label="Navigation"]')).click();
+    const view = await putSideAway("Navigation");
     await browser.waitUntil(async () => ((await slot.getSize("width")) as number) === 0, {
       timeout: 20_000,
       timeoutMsg: "the left side did not go away when it was put away",
@@ -306,7 +301,7 @@ describe("the terminal in the centre region", () => {
       { timeout: 20_000, timeoutMsg: "the terminal did not widen with the centre" },
     );
 
-    await (await $('button[aria-pressed="false"][aria-label="Navigation"]')).click();
+    await bringSideBack("Navigation", view);
     await browser.waitUntil(
       async () => (await untilTheyFill(1)).panes[0].screenWidth < grown.panes[0].screenWidth,
       { timeout: 20_000, timeoutMsg: "the terminal did not narrow back with the centre" },

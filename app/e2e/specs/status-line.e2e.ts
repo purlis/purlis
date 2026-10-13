@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { textOfEach } from "../reading.js";
+import { bringSideBack, putSideAway } from "../sides.js";
 
 /**
  * **charter's status line**, against the real app (`app/src/StatusLine.tsx`).
@@ -61,9 +62,10 @@ async function focus(workspace: string): Promise<void> {
 
 /** The plane the app says it is acting on — the copy this run was given, never the repo's. */
 async function planeRoot(): Promise<string> {
-  const said = await $("span.plane code");
+  // The status line says the project by its name; its directory is on the item (qw357).
+  const said = await $('[data-testid="status-project"]');
   await said.waitForDisplayed({ timeout: 30_000 });
-  return (await said.getText()).trim();
+  return ((await said.getAttribute("data-directory")) ?? "").trim();
 }
 
 /** Waits for the Notices button's name, and says what it was when it never gets there. */
@@ -154,8 +156,9 @@ describe("the status line", () => {
 
     const line = await $('[data-testid="status-line"]');
     const height = (await line.getSize("height")) as number;
-    // One line of 0.8rem text and two small paddings. The bound is deliberately loose — this
-    // is a guard against it becoming a panel, not a pin on the font metrics.
+    // A status item's height (the chrome's) and the room for its focus ring. The bound is
+    // deliberately loose — this is a guard against it becoming a panel, not a pin on the
+    // font metrics.
     expect(height).toBeGreaterThan(8);
     expect(height).toBeLessThanOrEqual(32);
 
@@ -179,16 +182,92 @@ describe("the status line", () => {
     expect(inside).toBe(false);
   });
 
-  it("carries the project's directory, which is no longer on the bar", async () => {
+  it("says the project by its name, with its directory one hover away, and not on the bar", async () => {
+    // The operator, 2026-10-13 (qw357): *"project directory is very large and can be just
+    // compacted and showed only project name, and on hovering just show directory"*.
     await untilTheStripIsRead();
 
-    const said = await $('[data-testid="status-line"] .plane code');
-    await said.waitForDisplayed({ timeout: 30_000 });
-    // The run's own copy of the fixture plane, spelled as an absolute path.
-    expect((await said.getText()).trim()).toMatch(/^[/\\]/);
+    const project = await $('[data-testid="status-line"] [data-testid="status-project"]');
+    await project.waitForDisplayed({ timeout: 30_000 });
+    // The run's own copy of the fixture plane, spelled as an absolute path, and only its last
+    // segment drawn.
+    const directory = (await project.getAttribute("data-directory")) ?? "";
+    expect(directory).toMatch(/^[/\\]/);
+    const name = (await project.getText()).trim();
+    expect(name).not.toMatch(/[/\\]/);
+    expect(directory.replace(/[/\\]+$/, "").endsWith(name)).toBe(true);
 
-    const onTheBar = await $("header.bar .plane");
+    // By the keyboard's way in, which opens the same tooltip the pointer does: focused by the
+    // page, since a hover's timing is the driver's. `StatusLine.test.tsx` holds the hover.
+    const focusIt = (on: boolean) =>
+      browser.execute((focus: boolean) => {
+        const item = document.querySelector<HTMLElement>('[data-testid="status-project"]');
+        if (focus) item?.focus();
+        else item?.blur();
+      }, on);
+    await focusIt(true);
+    const tip = await $(".ui-tooltip");
+    await tip.waitForDisplayed({ timeout: 20_000 });
+    expect(await tip.getText()).toContain(directory);
+    // Off it again, so no tooltip stands over the specs after this one.
+    await focusIt(false);
+    await tip.waitForExist({ timeout: 20_000, reverse: true });
+
+    const onTheBar = await $("header.bar .status-project");
     expect(await onTheBar.isExisting()).toBe(false);
+  });
+
+  it("keeps context on the left and health on the right, as flat items of one height", async () => {
+    // qw357: Notices and the doctor are status items, not boxed buttons. Ranges and sides, never
+    // exact pixels.
+    await untilTheStripIsRead();
+    await $('[data-testid="status-doctor"]').waitForExist({ timeout: 30_000 });
+    // The pointer off the line: an item under it is drawn on the hover's ground.
+    await $('[data-strip="Workspaces"]').moveTo();
+
+    const found = await browser.execute(() => {
+      const box = (selector: string) => {
+        const one = document.querySelector<HTMLElement>(selector);
+        if (one === null) return null;
+        const { left, right, top, bottom, height } = one.getBoundingClientRect();
+        const drawn = getComputedStyle(one);
+        return {
+          left,
+          right,
+          top,
+          bottom,
+          height,
+          edge: drawn.borderTopColor,
+          ground: drawn.backgroundColor,
+        };
+      };
+      return {
+        line: box('[data-testid="status-line"]'),
+        project: box('[data-testid="status-project"]'),
+        where: box(".status-where"),
+        notices: box('[data-testid="status-alerts"]'),
+        doctor: box('[data-testid="status-doctor"]'),
+      };
+    });
+    const { line, project, where, notices, doctor } = found;
+    if (!line || !project || !where || !notices || !doctor)
+      throw new Error(`the status line is missing an item: ${JSON.stringify(found)}`);
+
+    // Context first, from the left edge; health last, to the right edge.
+    expect(project.left).toBeLessThan(where.left);
+    expect(where.right).toBeLessThanOrEqual(notices.left);
+    expect(notices.right).toBeLessThanOrEqual(doctor.left + 1);
+    expect(line.right - doctor.right).toBeLessThanOrEqual(24);
+    expect(project.left - line.left).toBeLessThanOrEqual(24);
+    // One height for the two items, inside the line, with room around them.
+    expect(Math.abs(notices.height - doctor.height)).toBeLessThanOrEqual(1);
+    for (const item of [notices, doctor]) {
+      expect(item.top).toBeGreaterThanOrEqual(line.top);
+      expect(item.bottom).toBeLessThanOrEqual(line.bottom);
+      // Flat: no edge and no ground of its own until the pointer or the keyboard is on it.
+      expect(item.edge).toMatch(/rgba\(.*, 0\)|transparent/);
+      expect(item.ground).toMatch(/rgba\(.*, 0\)|transparent/);
+    }
   });
 
   it("says which workspace the window is on, and follows the strip", async () => {
@@ -296,41 +375,26 @@ describe("the status line", () => {
   });
 
   /**
-   * **The region toggles are on this line, and they are icons** (charter-app#193).
-   *
-   * The operator asked twice — *"show hide buttons can be movet to bottom status bar — again
-   * like ZED"*, and then *"you dont moved this 3 hide/show bottons to bottom status bar — and
-   * let make them without labels, just small icons without texts, texts only with tooltips"*.
-   * `FourRegions.test.tsx` owns which regions get one and in what order, where jsdom can read
-   * the arrangement; what only a scenario can say is where they ended up in the shipped window
-   * and that the accessible name survived the build with no text under it.
+   * **The region toggles are not on this line any more** (qw357). The operator, 2026-10-13:
+   * *"bottom toggle icons are redundant now … they can be removed fully"*. Each side's activity
+   * bar is its way away and back (`regions.e2e.ts` holds the press), with its key and the
+   * palette's row; what only a scenario can say is that the shipped line carries no toggle.
    */
-  it("carries every region's way back, as icons named for the region", async () => {
+  it("carries no region toggle: the sides are put away from their own bars", async () => {
     await untilTheStripIsRead();
     await $('[data-testid="explorer"]').waitForExist({ timeout: 20_000 });
 
-    const found = await browser.execute(() => {
-      const line = document.querySelector('[data-testid="status-line"]');
-      const toggles = [...(line?.querySelectorAll("button[aria-pressed]") ?? [])];
-      return {
-        named: toggles.map((one) => one.getAttribute("aria-label")),
-        // No words in any of them, a mark in every one, and a tooltip that says what pressing
-        // does rather than repeating the name.
-        worded: toggles.map((one) => (one.textContent ?? "").trim()).filter(Boolean),
-        marked: toggles.filter((one) => one.querySelector("svg")).length,
-        told: toggles.map((one) => one.getAttribute("title")),
-        // And gone from the bar they used to be on.
-        onTheBar: document.querySelectorAll("header.bar button[aria-pressed]").length,
-      };
-    });
+    const found = await browser.execute(() => ({
+      onTheLine: document.querySelectorAll('[data-testid="status-line"] [aria-pressed]').length,
+      onTheBar: document.querySelectorAll("header.bar button[aria-pressed]").length,
+      bars: [...document.querySelectorAll('.activity-bar [role="tablist"]')].map((one) =>
+        one.getAttribute("aria-label"),
+      ),
+    }));
 
-    // Two since #1676: the State region along the bottom is the Changes view, in the Panel's
-    // left half since #1739, which its Lower icons and ⌘J toggle rather than the status line.
-    expect(found.named).toEqual(["Navigation", "Attention"]);
-    expect(found.worded).toEqual([]);
-    expect(found.marked).toBe(2);
-    expect(found.told).toEqual(["Put the Navigation region away", "Put the Attention region away"]);
+    expect(found.onTheLine).toBe(0);
     expect(found.onTheBar).toBe(0);
+    expect(found.bars).toEqual(expect.arrayContaining(["Navigation", "Attention"]));
   });
 
   it("stays at the bottom when every region is put away", async () => {
@@ -339,9 +403,8 @@ describe("the status line", () => {
     await untilTheStripIsRead();
     await $('[data-testid="explorer"]').waitForExist({ timeout: 20_000 });
 
-    const names = ["Navigation", "Attention"];
-    for (const name of names)
-      await (await $(`button[aria-pressed="true"][aria-label="${name}"]`)).click();
+    const navigation = await putSideAway("Navigation");
+    const attention = await putSideAway("Attention");
     // Hidden, never unmounted (#1673, #1678): the right side's views are still there.
     await browser.waitUntil(
       async () => !(await $('.region-views[data-region="aside"]').isDisplayed()),
@@ -356,8 +419,8 @@ describe("the status line", () => {
       Math.abs((await bottomOf('[data-testid="status-line"]')) - (await viewport())),
     ).toBeLessThanOrEqual(1);
 
-    for (const name of names)
-      await (await $(`button[aria-pressed="false"][aria-label="${name}"]`)).click();
+    await bringSideBack("Navigation", navigation);
+    await bringSideBack("Attention", attention);
     await $('.region-views[data-region="aside"]').waitForDisplayed({ timeout: 20_000 });
   });
 });
