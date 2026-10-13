@@ -54,6 +54,10 @@ impl Project {
                 ".",
             ],
         );
+        // An identity in the repository's own settings, never the machine's: a replay makes
+        // commits, and a CI runner has no identity of its own.
+        git(&root, &["config", "user.name", "Fixture"]);
+        git(&root, &["config", "user.email", "fixture@example.invalid"]);
         std::fs::write(root.join(".gitignore"), "*.log\n").unwrap();
         std::fs::write(root.join("a.md"), "one\n").unwrap();
         std::fs::write(root.join("sub/b.md"), "one\n").unwrap();

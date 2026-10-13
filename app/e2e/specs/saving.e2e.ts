@@ -171,8 +171,10 @@ describe("saving the project from the title bar", function () {
     const seen = await browser.execute((bar: string) => {
       const where = document.querySelector<HTMLElement>(`${bar} button[aria-label^="Saving:"]`);
       const words = where?.querySelector<HTMLElement>(".save-indicator-words");
-      const count = where?.querySelector<HTMLElement>(".save-indicator-incoming");
-      const box = where?.getBoundingClientRect();
+      // The count is the Update button beside the stage's button (qw348), inside the indicator.
+      const whole = where?.closest<HTMLElement>(".save-indicator");
+      const count = whole?.querySelector<HTMLElement>(".save-indicator-incoming");
+      const box = whole?.getBoundingClientRect();
       const drawn = count?.getBoundingClientRect();
       return {
         text: count?.textContent ?? null,
@@ -186,7 +188,7 @@ describe("saving the project from the title bar", function () {
           drawn.right <= box.right,
       };
     }, BAR);
-    // The words are what the cap cuts; what came in is drawn whole, inside the button.
+    // The words are what the cap cuts; what came in is drawn whole, inside the indicator.
     expect(seen.wordsCut).toBe(true);
     expect(seen.text).toBe("↓1");
     expect(seen.countWidth).toBeGreaterThan(0);
