@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791902427776,
+  "lastUpdate": 1791908152698,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9576,6 +9576,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4601515,
             "unit": "ms",
             "extra": "median of 5 runs: 100.645, 101.057, 101.460, 101.495, 101.897 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "8781c1677587529fd03facb18e14ae7735a6a41d",
+          "message": "review(qw354): an Allow keeps what was shown as it was shown, a declaration is bounded, and a chat that has the check is not told to restart\n\nFound in review of the lane, before it merged.\n\n- What a project expects is drawn once and may be answered much later. The\n  window now sends each item as it drew it, with the name an Allow would keep,\n  and nothing for one drawn as \"cannot be allowed here now\". An item is kept\n  only while it still stands that way at the press; one that changed is\n  neither kept nor recorded as answered, the Allow says so, and the list is\n  read again.\n- A project declares at most 32 sockets and services together, so the question\n  is always one a person can read whole.\n- A chat that started with the certificate check and is refused it all the same\n  is told the check is on already and that something else refused the tool,\n  with Start without the sandbox, never Restart. Whether a chat has the check is\n  the app's own record of its start.\n\nADR 0093, plane-format.md and the two change fragments say each.\n\nRefs #1886\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T20:14:45+04:00",
+          "tree_id": "c7d9426bba2bc128d316e8d146701bd568c2651c",
+          "url": "https://github.com/purlis/purlis/commit/8781c1677587529fd03facb18e14ae7735a6a41d"
+        },
+        "date": 1791908151883,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.279574,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.271, 0.275, 0.280, 0.290, 0.291 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5808685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.524, 16.546, 16.581, 16.601, 16.639 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.569141,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.747, 101.087, 101.569, 101.620, 101.625 ms"
           }
         ]
       }
