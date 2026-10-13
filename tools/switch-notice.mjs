@@ -71,8 +71,10 @@ export function annotation(record, label) {
 
 /**
  * The `::notice` line for the back-and-forth between two projects (`record.switches`, each
- * `{to, ms, shownMs, built}`), titled with `label`; none where it was not recorded. `built` is
- * whether the switch had the project's pane to open, or found it already there.
+ * `{to, ms, shownMs, drawnMs, built}`), titled with `label`; none where it was not recorded.
+ * `drawnMs` is how long it was until the window had drawn the switch, the rest being the
+ * engine's styling, layout and paint;
+ * `built` is whether the switch had the project's pane to open, or found it already there.
  */
 export function backAndForth(record, label) {
   if (
@@ -87,9 +89,13 @@ export function backAndForth(record, label) {
     const those = record.switches.filter((one) => one.to === to);
     if (those.length === 0) return `${name}: none recorded`;
     const built = those.filter((one) => one.built).length;
+    // A record from before the window's own part was timed apart says nothing of it.
+    const drawn = those.every((one) => typeof one.drawnMs === "number")
+      ? `of that, until the window had drawn it: ${each(those.map((one) => one.drawnMs))} ms; `
+      : "";
     return (
       `${name}, press to its pane painted: ${each(those.map((one) => one.ms))} ms ` +
-      `(to the project in front: ${each(those.map((one) => one.shownMs))} ms; ` +
+      `(to the project in front: ${each(those.map((one) => one.shownMs))} ms; ${drawn}` +
       `${built} of ${those.length} opened a pane)`
     );
   };

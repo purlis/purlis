@@ -176,19 +176,20 @@ describe(`switching among ${OPEN} open projects`, function () {
     // directions are a project of many chats and a project of one. The first visit to each is
     // left out: it is the one that may still have the project to draw.
     const [many, one] = [first, planes[1]];
-    const took: { to: "many" | "one"; ms: number; shownMs: number; built: boolean }[] = [];
+    type Took = { ms: number; shownMs: number; drawnMs?: number; built: boolean };
+    const took: (Took & { to: "many" | "one" })[] = [];
     for (let round = 0; round <= BACK_AND_FORTH; round++) {
       for (const [to, plane] of [
         ["many", many],
         ["one", one],
       ] as const) {
-        const job = await jobInTheWindow<{ ms: number; shownMs: number; built: boolean }>({
+        const job = await jobInTheWindow<Took>({
           kind: "project switch",
           plane,
           sentinel: PAINTED,
         });
         expect(await inFront()).toBe(plane);
-        if (round > 0) took.push({ to, ms: job.ms, shownMs: job.shownMs, built: job.built });
+        if (round > 0) took.push({ to, ...job });
       }
     }
     const launchChats = (await ask<number[]>("running_sessions", { plane: first })).length;
