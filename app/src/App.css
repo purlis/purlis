@@ -236,10 +236,37 @@ body {
    gone (charter-app #193) — and its shade, one step up from the project strip's, is what says
    which row this is. */
 .workspaces {
+  position: relative;
   display: flex;
   align-items: stretch;
   min-height: 2rem;
   background: var(--layer-workspace);
+}
+
+/* **One line under the workspaces' row, parting it from what it holds** (qw337, the operator
+   on 2026-10-13, with a screenshot of the row running straight into the panels). It is the
+   title bar's own line (`border.subtle`), so the row is framed by the same rule above and
+   below, and it runs the whole width of the row: under the tabs, the `+`, the show-more and
+   the stretch above the activity rail.
+
+   He turned down *coloured* rules under each strip in #193, and this is not one of those: one
+   neutral hairline, under the one row that had nothing between it and the regions below.
+
+   **The tab you are on still joins what it shows.** The line is drawn over the row's last
+   pixel rather than as the row's border, and the selected tab's cell is raised over it, so
+   under that tab its own lighter shade runs through to the content. A border on the row would
+   be outside the strip, which clips what it holds, and no tab could reach across it. */
+.workspaces::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  pointer-events: none;
+}
+
+.workspaces-strip .workspace:has([aria-selected="true"]) {
+  z-index: 1;
 }
 
 /* **A project this purlis opens read-only says why, once, on its tab** (#826, FR-24): one line
@@ -311,7 +338,8 @@ body {
 .projects .project[data-dragging],
 .workspaces-strip .workspace[data-dragging],
 .tabs .tab[data-dragging] {
-  z-index: 1;
+  /* Over the selected workspace's cell too, which is raised over its row's line. */
+  z-index: 2;
   cursor: grabbing;
 }
 
@@ -356,13 +384,20 @@ body {
      rather than on the strip because the button IS the cell on the workspace strip and is the
      cell less its `×` on the other two, which is where a centred name belongs in both. */
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0.1rem 0.6rem;
+  /* What its pin is placed against, in its top corner (`.pinned`). */
+  position: relative;
+  gap: var(--space-2);
+  padding: var(--space-0) var(--space-4);
   border: 0;
   border-radius: 0;
   background: none;
   color: var(--text-muted);
   font: inherit;
+  /* **A tab's title is one step under the window's text** (qw337, the operator on
+     2026-10-13: every tab title slightly smaller), on all three strips: `--font-size-md`, the
+     core scale's dense-list size. The rows keep their heights, which are floors and not a
+     share of the text, so a strip is as tall as it was. */
+  font-size: var(--font-size-md);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -398,17 +433,16 @@ body {
   color: var(--text-primary);
 }
 
-/* **The plane root's tab is an icon, not a share of the strip** (SI-1). It is always first and
-   exactly `--root` wide — the width `PlaneView` takes off the strip's room before the named
-   workspaces share what is left, so the arithmetic and this rule cannot disagree. */
+/* **The plane root's tab is an icon, not a share of the strip** (SI-1). It is always first, and
+   as wide as what it holds: its icon, and its count pill when it has chats, inside the padding
+   every workspace tab has (qw337; it was a fixed `--root` with no padding, and a count pushed
+   against both edges). Never narrower than `--root`. `PlaneView` measures it (`fits.useWidth`)
+   and takes that off the strip's room before the named workspaces share what is left, so the
+   arithmetic follows this rule. */
 .workspaces-strip .workspace:has(> .plane-root) {
-  flex: 0 0 var(--root);
+  flex: none;
   min-width: var(--root);
-  max-width: var(--root);
-}
-
-.workspaces-strip [role="tab"].plane-root {
-  padding-inline: 0;
+  max-width: none;
 }
 
 /* Inside the cell, because a ring outside it is clipped by the strip that scrolls. */
@@ -496,15 +530,45 @@ body {
   outline-offset: -2px;
 }
 
-/* How many chats are open in a workspace that is not the one on screen. With the chat strip
-   showing one workspace's chats, this is the answer to "where are the other forty". */
-.workspace-count {
-  padding: 0 0.3rem;
-  border-radius: 999px;
+/* **A tab's counts, in one pill** (`CountPill.tsx`, qw337): how many chats are open in a
+   workspace, which with the chat strip showing one workspace's chats is the answer to "where
+   are the other forty"; and, as a second segment of the same pill, how many of them are asking
+   for you (below). A workspace's tab, the plane root's and a project's draw it, and the rows of
+   their show-more menus.
+
+   It does not shrink: the title gives way first, and then the pill goes whole
+   (`wholeWays.fitPill`, D-1867-1), set aside by `data-away`. */
+.count-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: var(--radius-full);
   background: var(--control-count);
   color: var(--text-secondary);
-  font-size: 0.85em;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+}
+
+.count-pill > span {
+  padding: var(--space-0) var(--space-2);
+}
+
+.count-pill[data-away] {
+  display: none;
+}
+
+/* **A LIVE workspace's dot** (`LiveMark`, qw337): right after the name, in the accent colour,
+   with a ring of the same colour so it is not taken for the workspace's own colour mark before
+   the name. The margin is the ring's room. */
+.live-dot {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  margin-inline: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--accent-base);
+  box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--accent-base) 35%, transparent);
 }
 
 /* **A workspace's colour** (charter-app#281): a small dot in its own accent before its name,
@@ -533,17 +597,21 @@ body {
    the only mark on a strip drawn in a colour charter chose — a workspace's own colour is the
    operator's (above) — and it is drawn in the weight of a
    number rather than the weight of a label. A show-more button draws the same mark for what it
-   hides (ADR 0054), because a hidden workspace's count is still a chat waiting on you. */
-.workspace-needs,
-.project-needs,
+   hides (ADR 0054), because a hidden workspace's count is still a chat waiting on you.
+
+   On a tab it is the second segment of the tab's one pill (`.count-pill`, above). */
+.count-pill-needs,
 .show-more-needs {
-  padding: 0 0.32rem;
-  border-radius: 999px;
   background: var(--needs-you-base);
   color: var(--needs-you-text);
-  font-size: 0.85em;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.show-more-needs {
+  padding: var(--space-0) var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
 }
 
 /* **No strip scrolls. What does not fit is not drawn** — the operator, looking at the
@@ -735,6 +803,8 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   font: inherit;
+  /* The size of the title it stands in for (qw337). */
+  font-size: var(--font-size-md);
 }
 
 .tabs .tab-rename:focus-visible {
@@ -751,18 +821,39 @@ body {
   border-inline-start: 2px solid var(--danger-base);
 }
 
-/* The mark on something the operator pinned (ADR 0039). A dot and not a `📌`: an
+/* The mark on something the operator pinned (ADR 0039). A drawn pin and not a `📌`: an
    emoji is drawn by the operating system at a size and a colour this window does not
    choose, and next to a state dot of charter's own it reads as a second, louder thing. What
    pinning DOES is draw the thing first on its strip; the mark is only how you tell that a
-   thing is first on purpose. */
+   thing is first on purpose.
+
+   **Small, neutral, and in the tab's top corner** (qw337, the operator on 2026-10-13: a tab
+   that was live, pinned, counted and asking for you drew four marks in a row). A pin is how
+   the strip is arranged and says nothing about the work, so it is the muted text colour and
+   not the accent, and it is out of the row: on a tab it sits in the top corner at the end,
+   leaving the row to the name, the live dot and the pill. On all three strips, so a pin is one
+   look. In a row of a show-more menu, which has no corner, it stays in the line. */
 .pinned {
+  display: inline-flex;
   flex: none;
-  margin-left: 0.3rem;
-  font-size: 0.7em;
   line-height: 1;
-  opacity: 0.8;
-  color: var(--accent-base);
+  color: var(--text-muted);
+}
+
+.pinned .lucide {
+  width: calc(var(--space-4) + var(--space-1));
+  height: calc(var(--space-4) + var(--space-1));
+}
+
+[role="tab"] > .pinned {
+  position: absolute;
+  top: var(--space-1);
+  inset-inline-end: var(--space-1);
+}
+
+/* A pinned tab keeps its row clear of the corner its pin is in. */
+[role="tab"]:has(> .pinned) {
+  padding-inline-end: var(--space-5);
 }
 
 /* A chat running on instructions the plane changed after it started (charter#369). Quiet on
@@ -1749,6 +1840,11 @@ button.show-more:focus-visible {
   padding-inline-end: 0.3rem;
 }
 
+/* A pinned one keeps its row clear of its pin's corner here too (`.pinned`). */
+.tabs .tab:has(> .tab-tasks) > [role="tab"]:has(> .pinned) {
+  padding-inline-end: var(--space-5);
+}
+
 .tabs .tab-tasks button {
   display: flex;
   flex: none;
@@ -2387,6 +2483,29 @@ button.show-more:focus-visible {
 .panel-halves {
   height: 100%;
   min-height: 0;
+}
+
+/* **One line between the halves, and it is their handle** (qw337, the operator on 2026-10-13,
+   with a screenshot of Repos running into Memory): the same hairline as the one under the
+   workspaces' row (`border.subtle`), the Panel's whole height, headers included. Drawn only
+   while both halves are: the handle of a half put away is `edge-gone`.
+
+   A `width` and not the `flex` every handle is given above: the library writes its own
+   `flex-basis: auto` on a handle's element, which outranks a stylesheet, so this handle was
+   drawn no pixels wide. A side's slot has a line because the slot has a border; a half has
+   none, so its handle is the line, and there is never a second one. */
+.panel-halves > [data-separator] {
+  align-self: stretch;
+  width: 1px;
+}
+
+/* And each half keeps what it holds the same step clear of that line. */
+.panel-halves:has(> [data-separator]:not(.edge-gone)) .panel-half[data-side="left"] {
+  padding-inline-end: var(--space-2);
+}
+
+.panel-halves:has(> [data-separator]:not(.edge-gone)) .panel-half[data-side="right"] {
+  padding-inline-start: var(--space-2);
 }
 
 .panel-half {

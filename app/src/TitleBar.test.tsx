@@ -567,7 +567,10 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
 
     move(TWO, "waiting", 1);
 
-    expect(await within(bar()).findByLabelText("1 chats need you in two")).toBeInTheDocument();
+    // On the project's own tab: the tab's name ends with what its pill says.
+    expect(
+      await within(bar()).findByRole("tab", { name: /^two.*1 chat needs you$/ }),
+    ).toBeInTheDocument();
     expect(within(bar()).getByRole("tablist", { name: "Projects" }).closest("[data-strip]")).toBe(
       strip(),
     );

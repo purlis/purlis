@@ -85,6 +85,45 @@ export function fitCountsOn(counts: HTMLElement): () => void {
   return refitOn(counts, cell, cell, fitCounts);
 }
 
+/**
+ * **Whether a tab draws its count pill** (qw337, by D-1867-1's rule): whole, until its tab's
+ * title would be cut to less than reads as a title, and then not at all. The title gives way
+ * first by the stylesheet (it shrinks, and the pill does not); the pill goes only where the
+ * title is already down to {@link TITLE_KEPT} of its own text, or where the pill would run past
+ * the end of a tab that has no title to give way. A tab is a name to aim at first; its counts
+ * are a glance, the title bar's hand still says what needs you, and the pill comes back with the
+ * room.
+ *
+ * Nothing is asked of a pill outside a tab (a row of a show-more menu), or of a tab that is
+ * not laid out.
+ */
+export function fitPill(pill: HTMLElement): void {
+  delete pill.dataset.away;
+  const tab = pill.closest<HTMLElement>('[role="tab"]');
+  if (tab === null || tab.getBoundingClientRect().width === 0) return;
+  const name = tab.querySelector<HTMLElement>(".workspace-name, .project-name");
+  if (cutShort(name) || runsPast([pill], tab)) pill.dataset.away = "";
+}
+
+/** How much of a title a pill may cost it, in the title's own text size: three or four letters
+ *  and the ellipsis. A title shorter than that is kept whole. */
+const TITLE_KEPT = 2.5;
+
+/** Whether a tab's title is cut to less than {@link TITLE_KEPT} of its text, or to nothing. */
+function cutShort(name: HTMLElement | null): boolean {
+  if (name === null || !name.textContent) return false;
+  const drawn = name.getBoundingClientRect().width;
+  const text = Number.parseFloat(getComputedStyle(name).fontSize);
+  const kept = Number.isFinite(text) ? Math.min(name.scrollWidth, TITLE_KEPT * text) : 0;
+  return drawn < Math.max(1, kept - 0.5);
+}
+
+/** Fits `pill` now, and again whenever its tab changes size or what it holds. */
+export function fitPillOn(pill: HTMLElement): () => void {
+  const tab = pill.closest<HTMLElement>('[role="tab"]');
+  return refitOn(pill, tab, tab, fitPill);
+}
+
 /** Draws every one of `items`, then sets them aside from the last while `short()` says so,
  *  keeping the first `keep` whatever it says. */
 function setAsideUntilWhole(items: readonly HTMLElement[], short: () => boolean, keep = 0): void {

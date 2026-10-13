@@ -396,6 +396,15 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
+/** What the workspace strip's tab for `workspace` says of its counts (`CountPill`): its one
+ *  accessible name, or nothing where it draws no pill. */
+function countsOn(workspace: string): string | null {
+  const tab = [
+    ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
+  ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
+  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
+}
+
 describe("the Chats section", () => {
   it("lists every running chat of the project as a tree of which chat started which", async () => {
     core([
@@ -870,8 +879,8 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
 
     // Chat 3 works in beta and is a task of drop commons, whose tab is on alpha's strip: that
     // tab wears it, so alpha's workspace tab counts it and beta's, which holds no tab, does not.
-    expect(await screen.findByLabelText("1 chats need you in alpha")).toBeTruthy();
-    expect(screen.queryByLabelText(/need you in beta/)).toBeNull();
+    await waitFor(() => expect(countsOn("alpha")).toMatch(/, 1 needs you$/));
+    expect(countsOn("beta") ?? "").not.toMatch(/you/);
     expect(
       screen.queryByRole("button", { name: /the strip is not showing, where 1 chat needs you$/ }),
     ).toBeNull();

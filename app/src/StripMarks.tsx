@@ -315,8 +315,13 @@ export type Hidden = {
  *
  * **Lucide's pin, and not the `📌` this comment used to refuse.** The objection was to an
  * emoji — drawn by the operating system at its own size and in its own colours, louder than
- * the state dot beside it. A Lucide icon is none of those: a stroke in `currentColor` at
- * `1em`, so it is the accent colour the old dot was, at the size of the text it sits in.
+ * the state dot beside it. A Lucide icon is none of those: a stroke in `currentColor`, at the
+ * size and in the colour the stylesheet gives it.
+ *
+ * **Small, neutral, and in its tab's top corner** (qw337, `App.css`, `.pinned`): a pin is how
+ * the strip is arranged and says nothing about the work, so it is the muted text colour and
+ * sits out of the row the name, the live dot and the count pill share. Callers draw it last
+ * in the tab.
  *
  * It is inside the tab's own button, so it can never be a second thing to click by accident
  * and there is no interactive element inside an interactive element for a screen reader to

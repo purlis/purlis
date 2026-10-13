@@ -715,6 +715,30 @@ minimum height would beat that rule and push a strip taller. An unclassed contro
 comes out `--size-control` tall. A control with a class is its rule's; the primitive classes
 (DS-2) give each kind one.
 
+### A tab's marks, and the lines between rows
+
+What a tab on the three strips draws, and in what (the operator's asks of 2026-10-13):
+
+- **The title** is `--font-size-md`, one step under the window's text, on every strip. A strip's
+  height is a floor (`--size-chrome` on the chat strip), not a share of the text.
+- **Counts are one pill** (`CountPill.tsx`, `.count-pill`): the open chats in the neutral count
+  style and, where any needs you, a second segment in the needs-you colours, at `--font-size-xs`
+  with `--space-2` at the sides. One accessible name says both ("3 chats, 1 needs you"). A
+  workspace's tab, the project root's and a project's draw it; a project's has the needs-you
+  segment alone. On a tab too narrow for its title and its pill, the pill goes first
+  (`wholeWays.fitPill`).
+- **Live is a dot** (`.live-dot`): `--space-3` across, in the accent, with a ring of the same
+  colour, right after the name. Named "Live". A row with room (the Explorer, the Saving tab)
+  keeps the glyph.
+- **A pin is a corner mark** (`.pinned`): `--space-1` in from the tab's top corner at the end,
+  in the muted text colour, and still a named mark and not a control.
+- **The project root's tab** is a house with a tab's padding (`--space-4`), as wide as what it
+  holds; its measured width comes off the strip's room (`fits.useWidth`).
+- **One hairline, `border.subtle`,** frames the workspaces' row below, as the title bar's frames
+  it above, and parts the Panel's two halves. Under the workspaces it is drawn over the row and
+  the selected tab is raised over it, so that tab joins its content. Between the halves it is
+  their resize handle, and each half keeps `--space-2` clear of it.
+
 ### The guards, and the lists that only shrink
 
 Two guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837):

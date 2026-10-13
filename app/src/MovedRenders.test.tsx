@@ -147,6 +147,15 @@ afterEach(() => {
   drawn.panes.length = 0;
 });
 
+/** What the workspace strip's tab for `workspace` says of its counts (`CountPill`): its one
+ *  accessible name, or nothing where it draws no pill. */
+function countsOn(workspace: string): string | null {
+  const tab = [
+    ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
+  ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
+  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
+}
+
 describe("a chat moving", () => {
   async function fiveChats() {
     const move = core([chat(1), chat(2), chat(3), chat(4), chat(5)]);
@@ -193,16 +202,16 @@ describe("a chat moving", () => {
     move(moving(3, "waiting", 10, [3]));
 
     // The workspace's tab counts it, and so does the title bar's ✋.
-    expect(screen.getByLabelText("1 chats need you in ide")).toBeTruthy();
+    expect(countsOn("ide")).toMatch(/, 1 needs you$/);
     expect(screen.getByTestId("needs-you-button").textContent).toBe("1");
 
     move(moving(4, "waiting", 11, [3, 4]));
-    expect(screen.getByLabelText("2 chats need you in ide")).toBeTruthy();
+    expect(countsOn("ide")).toMatch(/, 2 need you$/);
     expect(screen.getByTestId("needs-you-button").textContent).toBe("2");
     expect(drawn.panes).toEqual([]);
 
     move(moving(3, "running", 12, [4]));
-    expect(screen.getByLabelText("1 chats need you in ide")).toBeTruthy();
+    expect(countsOn("ide")).toMatch(/, 1 needs you$/);
     expect(screen.getByTestId("needs-you-button").textContent).toBe("1");
     expect(drawn.panes).toEqual([]);
   });

@@ -258,5 +258,101 @@ describe("the `+` right after the last tab", function () {
       }
       beforeTheOverflow(await measured("Workspaces", NEW_WORKSPACE));
     });
+
+    /**
+     * **How the row is drawn** (qw337, the operator's four asks of 2026-10-13), asked after the
+     * part above so the strip holds workspaces made from the `+`, which are pinned: one line
+     * under the whole row; the plane root's tab with a tab's padding on both sides of what it
+     * holds; a pin small and in its tab's top corner at the end; and a title a step under the
+     * window's text, whole inside its tab.
+     */
+    it("draws a line under the row, pads the root's tab, and puts a pin in its tab's top corner", async () => {
+      await windowIs(was.width, was.height);
+      await $('[data-strip="Workspaces"] [role="tab"] > .pinned').waitForExist({ timeout: 30_000 });
+      const at = await browser.execute(() => {
+        const box = (el: Element | null | undefined) => {
+          if (!el) return null;
+          const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
+          return { left, right, top, bottom, width, height };
+        };
+        const strip = document.querySelector('[data-strip="Workspaces"]');
+        const row = strip?.closest(".workspaces") ?? null;
+        const line = row ? getComputedStyle(row, "::after") : null;
+        const root = strip?.querySelector('[role="tab"].plane-root') ?? null;
+        const held = root ? [...root.children] : [];
+        const pin = strip?.querySelector('[role="tab"] > .pinned') ?? null;
+        const pinned = pin?.parentElement ?? null;
+        const name = pinned?.querySelector(".workspace-name") ?? null;
+        const selected = strip?.querySelector('.workspace:has([aria-selected="true"])') ?? null;
+        return {
+          window: window.innerWidth,
+          row: box(row),
+          line: line && {
+            width: line.borderBottomWidth,
+            style: line.borderBottomStyle,
+            colour: line.borderBottomColor,
+            start: line.left,
+            end: line.right,
+          },
+          root: box(root),
+          rootFirst: box(held.at(0)),
+          rootLast: box(held.at(-1)),
+          rootName: root?.getAttribute("aria-label") ?? "",
+          rootTip: root?.getAttribute("title") ?? "",
+          rootIcon: root?.querySelector("svg")?.getAttribute("class") ?? "",
+          pin: box(pin),
+          pinGlyph: box(pin?.querySelector("svg")),
+          pinned: box(pinned),
+          pinSaid: pin?.getAttribute("aria-label") ?? "",
+          name: box(name),
+          title: pinned ? Number.parseFloat(getComputedStyle(pinned).fontSize) : Number.NaN,
+          text: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+          raised: selected ? getComputedStyle(selected).zIndex : "",
+        };
+      });
+
+      // One hairline under the row, the row's whole width, which is the window's.
+      expect(at.row).not.toBeNull();
+      expect(at.line?.width).toBe("1px");
+      expect(at.line?.style).toBe("solid");
+      expect(at.line?.colour).not.toBe("rgba(0, 0, 0, 0)");
+      expect((at.row as Box).left).toBeLessThanOrEqual(1);
+      expect((at.row as Box).right).toBeGreaterThanOrEqual(at.window - 1);
+      expect(at.line?.start).toBe("0px");
+      expect(at.line?.end).toBe("0px");
+      // And the tab in front is raised over it, so it still joins what it shows.
+      expect(at.raised).toBe("1");
+
+      // The root's tab: a house, named and titled, with room on both sides of what it holds.
+      expect(at.rootName).not.toBe("");
+      expect(at.rootTip).not.toBe("");
+      expect(at.rootIcon).toContain("lucide-house");
+      const root = at.root as Box;
+      const before = (at.rootFirst as Box).left - root.left;
+      const after = root.right - (at.rootLast as Box).right;
+      for (const pad of [before, after]) {
+        expect(pad).toBeGreaterThanOrEqual(5);
+        expect(pad).toBeLessThanOrEqual(24);
+      }
+
+      // The pin: small, named, in its tab's top corner at the end, clear of the title.
+      expect(at.pinSaid).toBe("pinned workspace");
+      const pin = at.pin as Box;
+      const tab = at.pinned as Box;
+      expect((at.pinGlyph as Box).width).toBeGreaterThanOrEqual(6);
+      expect((at.pinGlyph as Box).width).toBeLessThanOrEqual(13);
+      expect(pin.right).toBeLessThanOrEqual(tab.right + 1);
+      expect(tab.right - pin.right).toBeLessThanOrEqual(8);
+      expect(pin.top).toBeGreaterThanOrEqual(tab.top - 1);
+      expect(pin.top - tab.top).toBeLessThanOrEqual(8);
+      expect((pin.top + pin.bottom) / 2).toBeLessThan((tab.top + tab.bottom) / 2);
+      expect((at.name as Box).right).toBeLessThanOrEqual(pin.left + 1);
+
+      // The title: a step under the window's text, and whole inside its tab.
+      expect(at.title).toBeLessThan(at.text);
+      expect(at.title).toBeGreaterThanOrEqual(at.text - 2);
+      expect((at.name as Box).top).toBeGreaterThanOrEqual(tab.top - 1);
+      expect((at.name as Box).bottom).toBeLessThanOrEqual(tab.bottom + 1);
+    });
   });
 });

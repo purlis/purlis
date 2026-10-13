@@ -328,7 +328,7 @@ describe("a window holding more than one project", () => {
     };
     move({ ...asking, session: 1, needs_you: true, queue: [1, 2], sequence: 1 });
     move({ ...asking, session: 2, needs_you: true, queue: [1, 2], sequence: 2 });
-    const count = () => projectTab("one").querySelector(".project-needs")?.textContent;
+    const count = () => projectTab("one").querySelector(".count-pill-needs")?.textContent;
     await waitFor(() => expect(count()).toBe("2"));
 
     // The palette's row: the hand's list that had the ✕ retired into the Inbox (#1695).
@@ -540,9 +540,9 @@ describe("a window holding more than one project", () => {
     });
 
     await waitFor(() =>
-      expect(projectTab("one").querySelector(".project-needs")?.textContent).toBe("1"),
+      expect(projectTab("one").querySelector(".count-pill-needs")?.textContent).toBe("1"),
     );
-    expect(projectTab("two").querySelector(".project-needs")).toBeNull();
+    expect(projectTab("two").querySelector(".count-pill-needs")).toBeNull();
   });
 
   it("asks about the workspace of the project in front, and not of the one it launched in", async () => {

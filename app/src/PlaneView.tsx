@@ -17,9 +17,10 @@ import {
 } from "react";
 import { listen } from "./here";
 import { QueueRead } from "./QueueRead";
+import { CountPill } from "./CountPill";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
-import { FolderPlus, FolderRoot, MessageSquarePlus } from "lucide-react";
+import { FolderPlus, House, MessageSquarePlus } from "lucide-react";
 import {
   commands,
   type AtRisk,
@@ -382,7 +383,7 @@ import {
   type FailedBelow,
   type State,
 } from "./chatState";
-import { fitting, LEAST, LEAST_CHIP, LEAST_ROOT, leastAt, useRoom } from "./fits";
+import { fitting, LEAST, LEAST_CHIP, LEAST_ROOT, leastAt, useRoom, useWidth } from "./fits";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
 import { useTextSizes } from "./textSize";
 import { focusStands } from "./Cockpit";
@@ -2299,10 +2300,14 @@ export const PlaneView = memo(function PlaneView({
   const windowText = useTextSizes().window;
   const workspaceLeast = leastAt(LEAST.workspace, windowText);
   const chatLeast = leastAt(LEAST.chat, windowText);
-  // The plane root's tab is an icon, as wide as this and never wider (`.plane-root`): it is
-  // taken off the room before the workspaces share what is left, so the arithmetic and the
-  // stylesheet agree about it as they do about `--least`.
+  // The plane root's tab is an icon and its count pill, never narrower than this
+  // (`.plane-root`), and as wide as it is measured (qw337): that is taken off the room before
+  // the workspaces share what is left, so a root that wears a pill costs the strip the pill.
   const rootWidth = leastAt(LEAST_ROOT, windowText);
+  const { ref: workspaceRoot, width: rootMeasured } = useWidth(
+    tabsIn(tabs, OUTSIDE, filedIn).length,
+  );
+  const rootTaken = Math.max(rootWidth, rootMeasured);
   // A chip is exactly this wide (`.tab.chip`), and the chat strip fits by it: a chip holding a
   // tab's floor would hide a tab the strip has room for.
   const chipWidth = leastAt(LEAST_CHIP, windowText);
@@ -2310,14 +2315,14 @@ export const PlaneView = memo(function PlaneView({
     const { shown } = fitting(
       onWorkspaceStrip.filter((name) => name !== OUTSIDE),
       focused,
-      workspaceRoom <= 0 ? workspaceRoom : Math.max(1, workspaceRoom - rootWidth),
+      workspaceRoom <= 0 ? workspaceRoom : Math.max(1, workspaceRoom - rootTaken),
       workspaceLeast,
     );
     // **The root is always drawn, and always first** (SI-1): it is never hidden behind
     // show-more, whatever else does not fit.
     const drawn = [OUTSIDE, ...shown];
     return { shown: drawn, hidden: strips.filter((name) => !drawn.includes(name)) };
-  }, [focused, onWorkspaceStrip, rootWidth, strips, workspaceRoom, workspaceLeast]);
+  }, [focused, onWorkspaceStrip, rootTaken, strips, workspaceRoom, workspaceLeast]);
 
   /**
    * **Each workspace's colour** (charter-app#281), as the core read it out of its
@@ -2337,7 +2342,7 @@ export const PlaneView = memo(function PlaneView({
     tintVariables(drawnTheme, colourOf(workspace), TINTED_TABS) as CSSProperties;
 
   /**
-   * What a workspace is drawn as: its name, its pin, and the two counts.
+   * What a workspace is drawn as: its name, its live dot, its counts in one pill, and its pin.
    *
    * **One definition, used by the strip and by the menu of what the strip is not drawing.**
    * They are the same workspace and a second copy of the markup is a second answer — the
@@ -2449,41 +2454,27 @@ export const PlaneView = memo(function PlaneView({
           />
         )}
         {/* The plane root is drawn as an icon alone (SI-1): its tab's `aria-label` and tooltip
-            say what it is. Everything else is drawn by name. */}
+            say what it is. Everything else is drawn by name. **A house** (qw337): the place
+            every chat starts from when it is in no workspace. It was a folder with a root
+            mark, which at a tab's size read as one more folder. */}
         {root ? (
-          <FolderRoot className="node-icon" aria-hidden="true" />
+          <House className="node-icon" aria-hidden="true" />
         ) : (
           <span className="workspace-name">{called}</span>
         )}
-        {/* LIVE, said: published with the plane (charter-app#301). LOCAL is the default and
-            draws nothing. */}
-        {liveOf(workspace) && <LiveMark />}
-        <Pin held={pinnedWorkspaces.includes(workspace)} what="workspace" />
-        {/* How many chats are open over there. With the strip below showing one workspace's
-            chats, this is the answer to "where are the other forty". */}
-        {here > 0 && (
-          <span className="workspace-count" aria-label={`${here} chats`}>
-            {here}
-          </span>
-        )}
-        {/* And how many of them are asking for you. Scoping the chats to a workspace would
-            otherwise hide a chat that needs you behind a strip nobody is looking at — the
-            same hole the project tabs close one scope up. */}
+        {/* LIVE, said: published with the plane (charter-app#301), as a dot right after the
+            name (qw337). LOCAL is the default and draws nothing. */}
+        {liveOf(workspace) && <LiveMark dot />}
+        {/* How many chats are open over there, and how many of them are asking for you, in
+            one pill (`CountPill`, qw337). With the strip below showing one workspace's chats,
+            the first is the answer to "where are the other forty"; scoping the chats to a
+            workspace would otherwise hide a chat that needs you behind a strip nobody is
+            looking at, the same hole the project tabs close one scope up. */}
         <QueueRead>
-          {(queue) => {
-            const waiting = waitingIn(queue, workspace);
-            return (
-              waiting > 0 && (
-                <span
-                  className="workspace-needs"
-                  aria-label={`${waiting} chats need you in ${called}`}
-                >
-                  {waiting}
-                </span>
-              )
-            );
-          }}
+          {(queue) => <CountPill chats={here} needs={waitingIn(queue, workspace)} />}
         </QueueRead>
+        {/* Last, because it is drawn out of the row, in the tab's top corner (`.pinned`). */}
+        <Pin held={pinnedWorkspaces.includes(workspace)} what="workspace" />
       </>
     );
   };
@@ -7645,6 +7636,7 @@ export const PlaneView = memo(function PlaneView({
             workspaceControls={workspaceControls}
             workspaceLeast={workspaceLeast}
             rootWidth={rootWidth}
+            workspaceRoot={workspaceRoot}
             dragSensors={dragSensors}
             workspaceDragWords={workspaceDragWords}
             dragWorkspace={dragWorkspace}

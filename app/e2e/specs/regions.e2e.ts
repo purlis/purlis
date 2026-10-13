@@ -737,6 +737,49 @@ describe("the Panel", () => {
     expect(plus.bottom).toBeLessThanOrEqual(line.bottom + 1);
   });
 
+  it("draws one hairline between its halves, each half's content the same step clear of it (qw337)", async () => {
+    const line = await boxOf(BETWEEN);
+    const panel = await boxOf(PANEL);
+    const left = await boxOf(HALF("left"));
+    const right = await boxOf(HALF("right"));
+    if (line === null || panel === null || left === null || right === null)
+      throw new Error("no handle, Panel or halves to measure");
+    // A hairline, a device pixel of rounding either way, and it is drawn in a colour.
+    expect(line.right - line.left).toBeGreaterThanOrEqual(0.5);
+    expect(line.right - line.left).toBeLessThanOrEqual(1.5);
+    const drawnIn = await browser.execute(
+      (where: string) => getComputedStyle(document.querySelector(where) as Element).backgroundColor,
+      BETWEEN,
+    );
+    expect(drawnIn).not.toBe("rgba(0, 0, 0, 0)");
+    expect(drawnIn).not.toBe("transparent");
+    // Between the halves, and the Panel's whole height: the halves' headers included.
+    expect(line.left).toBeGreaterThanOrEqual(left.right - 1);
+    expect(line.right).toBeLessThanOrEqual(right.left + 1);
+    expect(line.top).toBeLessThanOrEqual(left.top + 1);
+    expect(line.bottom).toBeGreaterThanOrEqual(left.bottom - 1);
+    expect(line.height).toBeGreaterThanOrEqual(panel.height - 3);
+
+    // What each half holds starts the same step clear of the line: its heading's line and its
+    // views' box, on both sides.
+    const insets: number[] = [];
+    for (const [side, part] of [
+      ["left", ".half-head"],
+      ["left", ".region-views"],
+      ["right", ".half-head"],
+      ["right", ".region-views"],
+    ] as const) {
+      const held = await boxOf(`${HALF(side)} > ${part}`);
+      if (held === null) throw new Error(`no ${part} in the ${side} half`);
+      insets.push(side === "left" ? line.left - held.right : held.left - line.right);
+    }
+    for (const inset of insets) {
+      expect(inset).toBeGreaterThanOrEqual(2);
+      expect(inset).toBeLessThanOrEqual(8);
+      expect(Math.abs(inset - insets[0])).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("shares its width half each, the handle keeping either a fifth, a double-click half each", async () => {
     expect(Math.abs((await halfShare()) - 0.5)).toBeLessThan(0.03);
 

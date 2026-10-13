@@ -537,6 +537,15 @@ afterEach(() => {
   clearMocks();
 });
 
+/** What the workspace strip's tab for `workspace` says of its counts (`CountPill`): its one
+ *  accessible name, or nothing where it draws no pill. */
+function countsOn(workspace: string): string | null {
+  const tab = [
+    ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
+  ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
+  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
+}
+
 describe("pressing a task", () => {
   it("shows it in its session's tab and adds no tab", async () => {
     const { tree, asked } = await drawn(withTasks());
@@ -1286,8 +1295,8 @@ describe("a task that needs you and is not on screen", () => {
     // probe works in beta, and is a task of steward 1 in alpha: that tab, on alpha's strip.
     expect(handSays("steward 1")).toBe("probe needs you");
     // And alpha's tab on the workspace strip counts it, where beta's has no tab that wears it.
-    expect(screen.getByLabelText("1 chats need you in alpha")).toBeTruthy();
-    expect(screen.queryByLabelText(/need you in beta/)).toBeNull();
+    expect(countsOn("alpha")).toMatch(/, 1 needs you$/);
+    expect(countsOn("beta") ?? "").not.toMatch(/you/);
   });
 });
 

@@ -76,8 +76,8 @@ describe("LIVE and LOCAL, in the window", () => {
     const strip = await findStripNamed("Workspaces");
     const alpha = await within(strip).findByRole("tab", { name: /alpha/ });
     const beta = within(strip).getByRole("tab", { name: /beta/ });
-    expect(within(alpha).getByRole("img", { name: "live" })).toBeTruthy();
-    expect(within(beta).queryByRole("img", { name: "live" })).toBeNull();
+    expect(within(alpha).getByRole("img", { name: "Live" })).toBeTruthy();
+    expect(within(beta).queryByRole("img", { name: "Live" })).toBeNull();
   });
 
   it("asks before making a workspace live, from the workspace's own menu", async () => {

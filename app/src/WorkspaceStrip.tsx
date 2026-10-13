@@ -42,6 +42,7 @@ export function WorkspaceStrip({
   workspaceControls,
   workspaceLeast,
   rootWidth,
+  workspaceRoot,
   dragSensors,
   workspaceDragWords,
   dragWorkspace,
@@ -82,7 +83,8 @@ export function WorkspaceStrip({
               {workspacesShown.shown.map((workspace, place) => {
                 const offer = by(`workspace.focus:${workspace}`);
                 // **The plane root** (SI-1): first, fixed, an icon with the operator's
-                // tooltip, and a menu of its own — it is not a workspace.
+                // tooltip, and a menu of its own — it is not a workspace. Its tab has a
+                // tab's own padding and is as wide as its icon and its count pill (qw337).
                 const root = workspace === OUTSIDE;
                 return (
                   <SortableTab key={workspace} id={workspace} fixed={workspace === OUTSIDE}>
@@ -116,6 +118,9 @@ export function WorkspaceStrip({
                             <button
                               role="tab"
                               id={workspaceTabId(place)}
+                              // The root's own width is measured, and comes off the room the
+                              // named workspaces share (`fits.useWidth`, qw337).
+                              ref={root ? workspaceRoot : undefined}
                               className={root ? "plane-root" : undefined}
                               aria-label={root ? OUTSIDE_TITLE : undefined}
                               aria-selected={workspace === focused}
@@ -222,6 +227,7 @@ type WorkspaceStripProps = {
   workspaceControls: Ref;
   workspaceLeast: number;
   rootWidth: number;
+  workspaceRoot: Ref;
   dragSensors: ReturnType<typeof useStripSensors>;
   workspaceDragWords: ReturnType<typeof stripAccessibility>;
   dragWorkspace: (moved: string, onto: string) => void;

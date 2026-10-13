@@ -104,6 +104,7 @@ import { PlaneView } from "./PlaneView";
 import { withSessionRows } from "./sessionOffers";
 import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
 import { Closer, Doer, Gear, Pin, ShowMore } from "./StripMarks";
+import { CountPill } from "./CountPill";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
@@ -1648,22 +1649,17 @@ function App() {
   const projectMarks = (project: Project) => (
     <>
       <span className="project-name">{project.name}</span>
-      <Pin held={pinnedProjects.includes(project.plane)} what="project" />
       {/* Whether it has work not yet saved, or a save that is blocked (charter-app#302) —
           every project's, not only the one in front, because a project behind is where work
           is forgotten. */}
       <UnsavedMark saving={reports[project.plane]?.saving} name={project.name} />
       {/* What is waiting for you over there. It is the reason a project behind the one on
           screen goes on listening rather than being torn down. */}
-      {askingIn(project) > 0 && (
-        <span
-          className="project-needs"
-          data-needs={askingIn(project)}
-          aria-label={`${askingIn(project)} chats need you in ${project.name}`}
-        >
-          {askingIn(project)}
-        </span>
-      )}
+      {/* The workspace tabs' own pill (`CountPill`, qw337), with the one count a project's
+          tab has: a project counts no chats of its own on its tab. */}
+      <CountPill needs={askingIn(project)} />
+      {/* Last, because it is drawn out of the row, in the tab's top corner (`.pinned`). */}
+      <Pin held={pinnedProjects.includes(project.plane)} what="project" />
     </>
   );
 

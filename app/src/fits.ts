@@ -83,9 +83,12 @@ export const LEAST = {
 export type Least = (typeof LEAST)[keyof typeof LEAST];
 
 /**
- * The plane root's tab (SI-1): an icon, not a share of the strip. Its width, in pixels at the
- * default text size, which `PlaneView` takes off the workspace strip's room before the named
- * workspaces share the rest and hands to the stylesheet as `--root`, so the two agree.
+ * The plane root's tab (SI-1): an icon, not a share of the strip. The least it is drawn, in
+ * pixels at the default text size: its icon inside a tab's own padding. `PlaneView` hands it to
+ * the stylesheet as `--root`, and takes the tab's measured width ({@link useWidth}) off the
+ * workspace strip's room before the named workspaces share the rest, or this where it is not
+ * measured yet. Measured, because the tab also wears its count pill (qw337), and a pill is as
+ * wide as its digits.
  */
 export const LEAST_ROOT = 36;
 
@@ -236,6 +239,30 @@ export function useRoom(holds: number): { strip: Ref; controls: Ref; width: numb
   useLayoutEffect(measure, [holds, measure]);
 
   return { strip: stripRef, controls: controlsRef, width };
+}
+
+/**
+ * Watches how wide one thing a strip holds is drawn: the plane root's tab, which is as wide as
+ * its icon and its count pill and not a share of the strip (qw337). `PlaneView` takes it off the
+ * workspace strip's room before the named workspaces share the rest.
+ *
+ * Zero until it is first measured, and what it last measured while it is not drawn, for
+ * {@link useRoom}'s reasons. `holds` is when to measure again, as there: what the thing holds,
+ * for a window nobody is drawing.
+ */
+export function useWidth(holds: unknown): { ref: Ref; width: number } {
+  const [width, setWidth] = useState(0);
+  const slot = useRef<Watched>({ element: null });
+  const measure = useCallback(() => {
+    if (!slot.current.element) return;
+    setWidth(slot.current.element.offsetWidth);
+  }, []);
+  const ref = useCallback(
+    (element: HTMLElement | null) => watch(slot, element, measure),
+    [measure],
+  );
+  useLayoutEffect(measure, [holds, measure]);
+  return { ref, width };
 }
 
 /** An element being watched, and the observer watching it. */

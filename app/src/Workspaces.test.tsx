@@ -378,7 +378,7 @@ describe("the workspace strip", () => {
       .getAllByRole("tab")
       .find((tab) => tab.querySelector(".workspace-name")?.textContent === "beta");
 
-    expect(beta?.querySelector(".workspace-count")?.textContent).toBe("2");
+    expect(beta?.querySelector(".count-pill-chats")?.textContent).toBe("2");
   });
 
   it("says on a workspace tab that a chat over there is asking for you", async () => {
@@ -393,11 +393,12 @@ describe("the workspace strip", () => {
     const beta = tabs.find((tab) => tab.querySelector(".workspace-name")?.textContent === "beta");
     const alpha = tabs.find((tab) => tab.querySelector(".workspace-name")?.textContent === "alpha");
 
-    await vi.waitFor(() => expect(beta?.querySelector(".workspace-needs")?.textContent).toBe("1"));
-    expect(within(beta as HTMLElement).getByLabelText("1 chats need you in beta")).toBeTruthy();
+    await vi.waitFor(() => expect(beta?.querySelector(".count-pill-needs")?.textContent).toBe("1"));
+    // One pill, with one name for both of its counts.
+    expect(within(beta as HTMLElement).getByLabelText("1 chat, 1 needs you")).toBeTruthy();
     // And not on a workspace where nothing is waiting: a mark on everything is a mark on
     // nothing.
-    expect(alpha?.querySelector(".workspace-needs")).toBeNull();
+    expect(alpha?.querySelector(".count-pill-needs")).toBeNull();
   });
 
   it("goes to a chat in another workspace from the Inbox the hand opens, and its workspace with it (charter-app#249, #1695)", async () => {
@@ -457,7 +458,7 @@ describe("the workspace strip", () => {
       within(stripNamed("Workspaces"))
         .getAllByRole("tab")
         .find((tab) => tab.querySelector(".workspace-name")?.textContent === "beta")
-        ?.querySelector(".workspace-needs")?.textContent;
+        ?.querySelector(".count-pill-needs")?.textContent;
     await waitFor(() => expect(needs()).toBe("1"));
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));

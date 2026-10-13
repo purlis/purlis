@@ -185,6 +185,10 @@ const PAIRS: [Token, Token, number, Token?][] = [
   ["text.muted", "layer.workspace", 4.5],
   ["text.muted", "layer.chat", 4.5],
   ["text.primary", "layer.selected", 4.5],
+  // A tab's pin is a mark in the muted text colour, and a live workspace's dot one in the
+  // accent, on the tab in front as on any other (qw337).
+  ["text.muted", "layer.selected", 3],
+  ["accent.base", "layer.selected", 3],
   // A workspace's colour (charter-app#281): its tab is drawn in its own shade with a mark in its
   // own accent, and the one in front is primary text on its tinted `layer.selected`.
   ["accent.base", "layer.workspace", 3],

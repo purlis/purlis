@@ -3,7 +3,7 @@
 
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { useRoom } from "./fits";
+import { useRoom, useWidth } from "./fits";
 
 /**
  * `useRoom` across a strip that goes and comes back, which is what a project's strips do each
@@ -110,5 +110,60 @@ describe("the room a strip has, when its own `+` is inside it", () => {
     const seen: number[] = [];
     render(<WithPlus plusShown seen={seen} />);
     expect(seen.at(-1)).toBe(0);
+  });
+});
+
+/**
+ * **The plane root's tab is as wide as what it holds** (qw337): its icon alone, or its icon and
+ * its count pill, so the room the named workspaces share is the strip less its measured width
+ * and never a constant. `offsetWidth` is stubbed by name, as above.
+ */
+describe("the width of one thing a strip holds", () => {
+  let offset: PropertyDescriptor | undefined;
+  let wide = 31;
+  beforeEach(() => {
+    wide = 31;
+    offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute("aria-label") === "Root" ? wide : 0;
+      },
+    });
+  });
+  afterEach(() => {
+    if (offset) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offset);
+    else Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+  });
+
+  function Root({ holds, shown, seen }: { holds: number; shown: boolean; seen: number[] }) {
+    const { ref, width } = useWidth(holds);
+    seen.push(width);
+    return shown ? <span aria-label="Root" ref={ref} /> : null;
+  }
+
+  it("is measured as it is drawn", () => {
+    const seen: number[] = [];
+    render(<Root holds={0} shown seen={seen} />);
+    expect(seen.at(-1)).toBe(31);
+  });
+
+  it("is measured again when it holds something else", () => {
+    const seen: number[] = [];
+    const { rerender } = render(<Root holds={0} shown seen={seen} />);
+    wide = 72;
+    act(() => rerender(<Root holds={3} shown seen={seen} />));
+    expect(seen.at(-1)).toBe(72);
+  });
+
+  it("keeps what it last measured while it is not drawn, and is nothing before it ever was", () => {
+    const never: number[] = [];
+    render(<Root holds={0} shown={false} seen={never} />);
+    expect(never.at(-1)).toBe(0);
+
+    const seen: number[] = [];
+    const { rerender } = render(<Root holds={0} shown seen={seen} />);
+    act(() => rerender(<Root holds={0} shown={false} seen={seen} />));
+    expect(seen.at(-1)).toBe(31);
   });
 });
