@@ -6102,6 +6102,11 @@ export type PlaneSaving = {
 	/**  The newest [`JOURNAL_SHOWN`] saves, newest first. */
 	journal: SaveEntry[],
 	/**
+	 *  Each file the save is blocked in by what looks like a credential: its path, line and
+	 *  kind, and what was matched with the value hidden; `null` when that is not why.
+	 */
+	secrets?: SecretAt[] | null,
+	/**
 	 *  What the window asks about the project's remote before automatic saves push it with the
 	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
@@ -7122,6 +7127,21 @@ export type SearchedPart = {
 	text: string,
 	/**  Whether this stretch is what matched. */
 	hit: boolean,
+};
+
+/**  One changed file the next save would refuse for what looks like a credential. */
+export type SecretAt = {
+	/**  From the top of the project. */
+	path: string,
+	/**  The line the value starts on; `null` for one read only through the file's escapes. */
+	line: number | null,
+	/**  The kind of value, in the scan's words. */
+	kind: string,
+	/**
+	 *  What the scan matched, with the value hidden (`token = ********`); `null` when there is
+	 *  nothing to show. Never the value.
+	 */
+	shown: string | null,
 };
 
 /**

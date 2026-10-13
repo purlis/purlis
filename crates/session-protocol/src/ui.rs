@@ -174,6 +174,9 @@ pub struct Server {
 /// `open_in_your_editor` and `open_their_agents_md` start the person's editor on a branch's
 /// file, and a terminal editor in a shell tab of its own (#1042): a shell started as the person,
 /// so the window's alone.
+///
+/// `open_blocked_file` starts the person's editor on a file the project's save is blocked in,
+/// from the Saving view: a program of theirs run on their press, which no link asks for.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
     // Ends.
@@ -363,6 +366,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person.
     "open_in_your_editor",
     "open_their_agents_md",
+    // Open the file on a blocked save's finding, in the Saving view: starts the person's
+    // editor on the file the save is blocked in.
+    "open_blocked_file",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
