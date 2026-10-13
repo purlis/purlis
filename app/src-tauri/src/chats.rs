@@ -6867,7 +6867,7 @@ pub(crate) mod tests {
 
         assert_eq!(chats.harness(session), Some(Harness::ClaudeCode));
         assert_eq!(host.openings()[0].harness, Some(Harness::ClaudeCode));
-        assert_eq!(host.openings()[0].declared_env, ["CLAUDE_*", "MODEL_HINT"]);
+        assert_eq!(host.openings()[0].declared_env, ["CLAUDE_*"]);
         assert_eq!(chats.newline(session).as_deref(), Some("\x1b[13;2u"));
         assert_eq!(chats.open_now()[0].declared, Some(replacement));
     }
