@@ -134,19 +134,24 @@ fn the_sign_in_is_the_clis_own_answer() {
 }
 
 #[test]
-fn a_repo_whose_origin_could_not_be_read_counts_as_one_that_may_be_on_the_forge() {
+fn a_workspace_that_could_not_be_read_leaves_both_rows_not_checked_and_starts_no_cli() {
     let asked = SignIn::new(true);
-    let row = auth_row(&github(), Use::Unknown, true, Asking::Ask(&asked));
-    assert_eq!(row.status, Status::Ok);
-    assert_eq!(asked.asked.load(Ordering::SeqCst), 1);
-    let cli = cli_row(&github(), Use::Unknown, None);
-    assert_eq!(cli.status, Status::Warn);
-    assert!(
-        cli.detail
-            .contains("a workspace repo whose origin could not be read may be on github.com"),
-        "{}",
-        cli.detail
+    let why = "not checked (a workspace whose repos could not be read may have one on \
+               github.com; the `workspace clones` row names it)";
+    let auth = auth_row(&github(), Use::Unknown, true, Asking::Ask(&asked));
+    let cli = cli_row(
+        &github(),
+        Use::Unknown,
+        Some(std::path::Path::new("/usr/bin/gh")),
     );
+    for row in [&auth, &cli] {
+        assert_eq!(
+            (row.status, row.detail.as_str()),
+            (Status::Warn, why),
+            "{row:?}"
+        );
+    }
+    assert_eq!(asked.asked.load(Ordering::SeqCst), 0);
 }
 
 #[test]

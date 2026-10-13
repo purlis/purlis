@@ -13,10 +13,11 @@
 //! not.
 //!
 //! **Asked only for a forge the project's repos are on.** A forge no workspace repo has its
-//! origin on has nothing here that uses its CLI yet, so its rows say that and look for nothing:
-//! `purlis discover` and `purlis clone` find the CLI when they run, and say so when it is not
-//! there. That also keeps the rows' answer about the project and not about whichever `gh` the
-//! machine happens to have.
+//! origin on has nothing here that uses its CLI yet, so its rows say that and look for nothing.
+//! Where a workspace could not be read, whether one is cannot be told, and the rows say they did
+//! not check rather than guess. `purlis discover` and `purlis clone` find the CLI when they
+//! run, and say so when it is not there. That also keeps the rows' answer about the project and
+//! not about whichever `gh` the machine happens to have.
 //!
 //! **The sign-in is asked only by a doctor someone typed**: `auth status` starts the CLI and
 //! can cross the network, and the preflight a chat's start runs does neither.
@@ -116,7 +117,10 @@ fn on_host(forge: &Forge, on: Use) -> String {
     let host = super::one_line(&forge.host, super::DISPLAY_LIMIT);
     match on {
         Use::Repos(n) => format!("{n} workspace repo(s) have their origin on {host}"),
-        Use::Unknown => format!("a workspace repo whose origin could not be read may be on {host}"),
+        Use::Unknown => format!(
+            "a workspace whose repos could not be read may have one on {host}; the `workspace \
+             clones` row names it"
+        ),
         Use::None => format!("no workspace repo here has its origin on {host}"),
     }
 }
@@ -124,6 +128,9 @@ fn on_host(forge: &Forge, on: Use) -> String {
 /// The `<cli>` row: whether the CLI is found, where the project has a use for it.
 pub(super) fn cli_row(forge: &Forge, on: Use, found: Option<&std::path::Path>) -> Row {
     let cli = forge.kind.cli();
+    if on == Use::Unknown {
+        return Row::not_checked(cli, on_host(forge, on));
+    }
     if on == Use::None {
         return Row::ok(
             cli,
@@ -171,6 +178,9 @@ pub(super) fn auth_row(forge: &Forge, on: Use, found: bool, how: Asking<'_>) -> 
     let host = super::one_line(&forge.host, super::DISPLAY_LIMIT);
     if on == Use::None {
         return Row::ok(&name, format!("not asked: {}", on_host(forge, on)));
+    }
+    if on == Use::Unknown {
+        return Row::not_checked(&name, on_host(forge, on));
     }
     if !found {
         return Row::not_checked(
