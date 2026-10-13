@@ -181,6 +181,38 @@ grants. What changed is that the Allow is easy to make and its state is said:
   purlis never ends a turn by itself. While a chat owed a restart is mid-turn its pane says the
   restart waits for the turn to end, with Restart now, which ends the turn.
 
+## A block is learned from the sandbox first (2026-10-13)
+
+The operator's words, the day D-sock-5's detection was patched three times: the dead ends are
+"not acceptable — should be fixed idiomatically." Each patch taught the reader one more shape
+of what a refused program prints. The cause is the same in all of them: what a program prints
+and how its line ends are the program's to choose, and the sandbox knows what it refused
+whatever the program does next.
+
+- **The sandbox's own record is read first** (D-sock-12). A denial as the sandbox reported it
+  says the process, the operation and the exact target: macOS's kernel line (`Sandbox:
+  <process>(<pid>) deny(1) <operation> <target>`), which Claude Code reads for its own commands
+  and appends to the result, and a proxy's line for a host. It is one record
+  (`sandboxblock::denial`), sorted by the one sorter, and it names the socket, the service, the
+  file or the host whatever the program printed or ended with: down a pipe, behind a build
+  runner, or from a tool that blamed its own token. Where the same block is also read from the
+  program's words, it is one block, and it keeps the name.
+- **It only ever adds a name.** The target is judged again as a grant before anything is
+  offered, and nothing is granted without the person's Allow. A harness hands its report over
+  in the text of a result, so the rules for what a command printed stand: a report in standard
+  output, or with the command's own output after it, is the command's.
+- **What a program printed is read only where no record can exist**: a chat purlis wraps
+  (Codex, opencode), whose sockets, services and writes no one reports yet; a Claude Code
+  command that ended before the kernel's entry reached its harness, or that runs in the
+  background; and a lookup past the proxy, which no line names.
+- **Whose records** (the operator's ruling the same day). purlis may read the sandbox's denial
+  records for its own child processes only: what Claude Code hands it, and macOS log entries
+  about its own children. Nothing wider, no administrator's rights, no new entitlement.
+- **Not done, and proposed**: purlis reading the kernel's entries for the chats it wraps, by a
+  tag only its own profile's denials carry, as its proxy reports hosts. `log stream`, the one
+  unprivileged way to read them, runs only on an administrator's account, which is for the
+  operator to rule on before it is built.
+
 ## What is not done
 
 - **Brokered Docker**, purlis running `docker` for the chat after checking the command, is a

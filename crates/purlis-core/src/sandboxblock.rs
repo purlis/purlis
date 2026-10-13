@@ -12,9 +12,11 @@
 //! that opted out, or by macOS's privacy controls or system integrity protection, is not the
 //! sandbox's, and is never shown as one. Then ([`detect`]):
 //!
-//! - **Claude Code's `<sandbox_violations>` block**, the primary signal: one Seatbelt line per
-//!   refusal, `cargo(123) deny(1) file-write-create /path`. Only the last block, and only when it
-//!   ends the text, which is where Claude Code appends it. A connection Claude Code's proxy
+//! - **Claude Code's `<sandbox_violations>` block**, the primary signal, and the sandbox's own
+//!   record ([`denial`]): one Seatbelt line per refusal, `cargo(123) deny(1) file-write-create
+//!   /path`, naming the process, the operation and the exact target whatever the program
+//!   printed or ended with. Only the last block, and only when it ends the text but for the
+//!   harness's own note after it, which is where Claude Code appends it. A connection Claude Code's proxy
 //!   refused is said there in the proxy's own shape, with no process: `deny network-outbound
 //!   host:443 (reason)` (#1631). It names the host to allow, and each host refused is its own
 //!   block.
@@ -147,13 +149,15 @@ impl Operation {
         Self::ALL.into_iter().find(|op| op.word() == word)
     }
 
-    /// The operation a Seatbelt word names: `file-write-create`, `network-outbound`, ….
+    /// The operation a Seatbelt word names: `file-write-create`, `network-outbound`, …. Of
+    /// the network's words only a connection out is one: a refused listen on a port
+    /// (`network-bind`, `network-inbound`) is of this machine's own port, and no host's.
     fn of_seatbelt(word: &str) -> Self {
         if word.starts_with("file-write") {
             Self::Write
         } else if word.starts_with("file-read") {
             Self::Read
-        } else if word.starts_with("network") {
+        } else if word.starts_with("network-outbound") {
             Self::Connect
         } else if word.starts_with("mach-lookup") {
             Self::Lookup
@@ -801,16 +805,20 @@ fn background_output_read(payload: &serde_json::Value) -> Option<&str> {
         .flatten()
 }
 
-/// `found`, each block once ([`is_the_same`]) and at most [`AT_MOST_PER_RESULT`].
+/// `found`, each block once ([`is_the_same`]) and at most [`AT_MOST_PER_RESULT`]. **A block
+/// read twice keeps its name**: where one reading names a target and the other none (the
+/// sandbox's own record beside the program's words for the same refusal), the one block names
+/// it, whichever was read first. Of two names, the first stands.
 fn at_most(found: Vec<(Block, Option<String>)>) -> Vec<(Block, Option<String>)> {
     let mut blocks: Vec<(Block, Option<String>)> = Vec::new();
     for (block, target) in found {
-        if !blocks
-            .iter()
-            .any(|seen| is_the_same(seen, &(block, target.clone())))
-            && blocks.len() < AT_MOST_PER_RESULT
-        {
-            blocks.push((block, target));
+        let read = (block, target);
+        if let Some(seen) = blocks.iter_mut().find(|seen| is_the_same(seen, &read)) {
+            if seen.1.is_none() {
+                seen.1 = read.1;
+            }
+        } else if blocks.len() < AT_MOST_PER_RESULT {
+            blocks.push(read);
         }
     }
     blocks
@@ -1047,93 +1055,14 @@ fn on_stderr(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
     out
 }
 
-/// The lines of the `<sandbox_violations>` block Claude Code appended: the last one, and only
-/// when nothing but space follows it.
+/// The denials Claude Code reported for the command, in the block it appended to `text`
+/// ([`denial::reported`]), each sorted: the sandbox's own record, read before anything the
+/// program said.
 fn violations(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
-    const OPEN: &str = "<sandbox_violations>";
-    const CLOSE: &str = "</sandbox_violations>";
-    let Some(at) = text.rfind(OPEN) else {
-        return Vec::new();
-    };
-    let inside = &text[at + OPEN.len()..];
-    let Some(end) = inside.find(CLOSE) else {
-        return Vec::new();
-    };
-    if !inside[end + CLOSE.len()..].trim().is_empty() {
-        return Vec::new();
-    }
-    inside[..end]
-        .lines()
-        .filter_map(|line| violation(line, place))
+    denial::reported(text)
+        .iter()
+        .map(|denial| denial.block(place))
         .collect()
-}
-
-/// One Seatbelt line, `cargo(123) deny(1) file-write-create /opt/x`, sorted, and purlis's own
-/// only when the process it names is purlis.
-fn violation(line: &str, place: &Place<'_>) -> Option<(Block, Option<String>)> {
-    if let Some(refused) = proxy_violation(line, place) {
-        return Some(refused);
-    }
-    let at = line.find("deny(")?;
-    let ours = process_of(&line[..at]).is_some_and(crate::cliname::is_recognised);
-    let after = &line[at..];
-    let after = &after[after.find(')')? + 1..];
-    let mut words = after.trim().splitn(2, char::is_whitespace);
-    let word = words.next().filter(|word| !word.is_empty())?;
-    let target = words.next().unwrap_or("").trim().trim_matches('"');
-    let operation = Operation::of_seatbelt(word);
-    let kind = match operation {
-        Operation::Lookup if target.contains("trustd") => Kind::CertificateCheck,
-        Operation::Lookup => Kind::SystemService,
-        Operation::Connect if target.starts_with('/') => Kind::LocalSocket,
-        Operation::Connect => Kind::Host,
-        _ if target.is_empty() => Kind::System,
-        _ => kind_of(Path::new(target), place),
-    };
-    let block = Block {
-        operation,
-        kind,
-        ours,
-    };
-    // purlis's own operation is a purlis bug, never something to grant.
-    let target = (!ours).then(|| target_of(&block, target, place)).flatten();
-    Some((block, target))
-}
-
-/// **Claude Code's proxy's line** for a connection it refused (#1631):
-/// `deny network-outbound api.example.com:443 (host is not on the allow list)`. Not Seatbelt's
-/// shape: no process and no `deny(`, and its reason after the host, which is never read. No
-/// process is named, so it is never purlis's own: a connection purlis makes goes through its
-/// own route, not the chat's proxy.
-fn proxy_violation(line: &str, place: &Place<'_>) -> Option<(Block, Option<String>)> {
-    let rest = line.trim().strip_prefix("deny ")?;
-    let (word, after) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-    if !word.starts_with("network") {
-        return None;
-    }
-    let named = after.split_whitespace().next().unwrap_or("");
-    let kind = if named.starts_with('/') {
-        Kind::LocalSocket
-    } else {
-        Kind::Host
-    };
-    let block = Block {
-        operation: Operation::Connect,
-        kind,
-        ours: false,
-    };
-    let target = (!named.starts_with('('))
-        .then(|| target_of(&block, named, place))
-        .flatten();
-    Some((block, target))
-}
-
-/// The process a Seatbelt line names before its `deny(`: `cargo` of `Sandbox: cargo(123) `.
-/// None when the words there are not `name(pid)`.
-fn process_of(before: &str) -> Option<&str> {
-    let word = before.split_whitespace().next_back()?;
-    let (name, pid) = word.strip_suffix(')')?.rsplit_once('(')?;
-    (!name.is_empty() && !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit())).then_some(name)
 }
 
 /// The text between the last two quotes (`'`, `` ` `` or `"`) in `field`: a destination comes
@@ -1901,6 +1830,9 @@ pub fn named_host(target: &str) -> Option<String> {
         .map(|host| host.to_string())
         .filter(|host| !host.starts_with('*'))
 }
+
+#[path = "sandboxblock_denial.rs"]
+pub mod denial;
 
 #[cfg(test)]
 #[path = "sandboxblock_tests.rs"]
