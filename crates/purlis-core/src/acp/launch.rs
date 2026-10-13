@@ -100,6 +100,7 @@ impl Launch {
                 strip: host.strip,
                 set: &ready.env,
                 git_hooks: host.git_hooks,
+                declared: &[],
             },
         );
         env.extend(

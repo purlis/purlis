@@ -155,6 +155,7 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
             strip: &[],
             set: &[],
             git_hooks: None,
+            declared: &[],
         },
     );
     for (name, value) in &env {

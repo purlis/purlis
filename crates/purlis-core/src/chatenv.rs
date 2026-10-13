@@ -375,10 +375,15 @@ pub struct Starting<'a> {
     pub set: &'a [(String, String)],
     /// charter's git hooks (SQ-16, ADR 0074), armed once everything else is settled.
     pub git_hooks: Option<&'a crate::githooks::GitHooks>,
+    /// The `env` namespace of the harness a project declares for this chat
+    /// ([`crate::harness_declaration::Declaration::env`]), empty for every other chat. Each
+    /// variable it reaches is judged one at a time ([`namespace`], #1013).
+    pub declared: &'a [String],
 }
 
-/// A chat's whole environment, from `app`, the app's own: what [`inherited`] keeps of it, then
-/// the chat's own variables, then charter's git hooks armed after them, so a
+/// A chat's whole environment, from `app`, the app's own: what [`inherited`] keeps of it, and
+/// what a declared harness's namespace reaches of it ([`namespace`]), then the chat's own
+/// variables, then charter's git hooks armed after them, so a
 /// `GIT_CONFIG_COUNT` the chat already has keeps its pairs. The program starts from this and
 /// nothing else, at every level: in a terminal, or as a level-3 agent (ADR 0080 §1).
 ///
@@ -398,7 +403,15 @@ pub fn compose(
         crate::secrets::identity::kept_from_chats(name)
             || chat.strip.iter().any(|s| OsStr::new(s) == name)
     };
-    let mut env = inherited(app, chat.harness, chat.operator, &strip);
+    let app: Vec<(OsString, OsString)> = app.into_iter().collect();
+    let mut env = inherited(app.iter().cloned(), chat.harness, chat.operator, &strip);
+    // A declared harness's own namespace, each variable judged on its own (#1013), and none
+    // twice: what the keep-list already passed stays where it is.
+    let reached: Vec<(OsString, OsString)> = namespace(app, chat.declared)
+        .into_iter()
+        .filter(|(name, _)| !strip(name) && !env.iter().any(|(kept, _)| kept == name))
+        .collect();
+    env.extend(reached);
     env.extend(
         chat.set
             .iter()
@@ -1223,6 +1236,7 @@ mod tests {
                 strip: &["PROD_1P_TOKEN".to_owned()],
                 set: &set,
                 git_hooks: Some(&hooks),
+                declared: &[],
             },
         );
 
@@ -1275,6 +1289,7 @@ mod tests {
                 strip: &[],
                 set: &set,
                 git_hooks: None,
+                declared: &[],
             },
         );
 
@@ -1295,5 +1310,64 @@ mod tests {
                 pair("CHARTER_ROOT", "/plane"),
             ]
         );
+    }
+
+    /// #1013, #967: a chat on a harness a project declares is started with the variables its
+    /// `env` namespace reaches, each judged one at a time at the start: a prefix that covers a
+    /// variable named like a credential, a vault's identity variable or one no chat is given
+    /// passes none of them.
+    #[test]
+    fn a_declared_namespace_reaches_its_own_variables_and_never_a_credential_it_covers() {
+        let inherited = env(&[
+            "PATH",
+            "SHELLY_HOME",
+            "SHELLY_MODE",
+            "SHELLY_API_KEY",
+            "SHELLY_AUTH_FILE",
+            "SHELLY_SESSION_TOKEN",
+            "SHELLY_VAULT_ID",
+            "OTHER_HOME",
+        ]);
+
+        let composed = compose(
+            inherited,
+            &Starting {
+                harness: None,
+                operator: &[],
+                strip: &["SHELLY_VAULT_ID".to_owned()],
+                set: &[],
+                git_hooks: None,
+                declared: &["SHELLY_*".to_owned()],
+            },
+        );
+
+        let mut names: Vec<String> = composed
+            .into_iter()
+            .map(|(name, _)| name.into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["PATH", "SHELLY_HOME", "SHELLY_MODE"]);
+    }
+
+    /// A chat on no declared harness is given nothing of a namespace: `declared` empty is the
+    /// chat as it was.
+    #[test]
+    fn a_chat_on_no_declared_harness_reaches_no_namespace() {
+        let composed = compose(
+            env(&["PATH", "SHELLY_HOME"]),
+            &Starting {
+                harness: None,
+                operator: &[],
+                strip: &[],
+                set: &[],
+                git_hooks: None,
+                declared: &[],
+            },
+        );
+        let names: Vec<String> = composed
+            .into_iter()
+            .map(|(name, _)| name.into_string().unwrap())
+            .collect();
+        assert_eq!(names, ["PATH"]);
     }
 }

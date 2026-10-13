@@ -186,6 +186,7 @@ impl SessionHost for Sessions {
                 strip: &opening.env_strip,
                 set: &opening.env,
                 git_hooks: opening.git_hooks.as_ref(),
+                declared: &[],
             },
         );
         // **The chat is what charter's per-session state is keyed on, and this is what says
