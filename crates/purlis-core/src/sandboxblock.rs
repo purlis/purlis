@@ -467,6 +467,10 @@ pub fn detect(payload: &serde_json::Value, place: &Place<'_>) -> Vec<Block> {
 /// in one string: the line dropped the client's status (`docker run … 2>&1 | tail`), so no
 /// failure stands beside its words. It names a socket and nothing else.
 ///
+/// **A refused certificate check is named wherever the line runs a program**
+/// ([`runs_a_program`]): its one service is purlis's own word, never the output's, so only a
+/// result that merely read the words (a line of readers, a file tool's read) leaves it unnamed.
+///
 /// It goes to the app alone, on the block's line, for the Notice's Allow. It is never kept with
 /// the block ([`record`] keeps a [`Block`]), counted, or put in a Report.
 pub fn detect_with_targets(
@@ -535,7 +539,26 @@ pub fn detect_with_targets(
         found.extend(violations(mixed, place));
         found.extend(on_stdout(mixed, place, Said::Failed));
     }
+    // The certificate check is one service, purlis's own word for it: a line that runs a
+    // program names it however the line ended ([`runs_a_program`]). Read only where a check
+    // was left unnamed, so no other result's line is read for it.
+    let unnamed =
+        |(block, target): &(Block, Option<String>)| target.is_none() && is_the_check(block);
+    if found.iter().any(unnamed) && runs_a_program(payload) {
+        for (block, target) in &mut found {
+            if target.is_none() && is_the_check(block) {
+                *target = target_of(block, crate::sandbox::services::TRUSTD, place);
+            }
+        }
+    }
     at_most(found)
+}
+
+/// Whether `block` is a refused certificate check that a grant may name: the one kind with a
+/// single service behind it ([`crate::sandbox::services::TRUSTD`]), and not purlis's own
+/// lookup, which is a purlis bug and never a grant.
+fn is_the_check(block: &Block) -> bool {
+    (block.operation, block.kind) == (Operation::Lookup, Kind::CertificateCheck) && !block.ours
 }
 
 /// Whose words a text read as standard output is: what decides whether a socket or the
@@ -616,6 +639,106 @@ fn runs_a_container_client(payload: &serde_json::Value) -> bool {
         })
     });
     runs && !too_deep
+}
+
+/// The programs that only read or print: none of them makes a connection of its own, so none
+/// is ever refused the certificate check. By the name a line runs one under.
+const READERS: [&str; 56] = [
+    "cat", "tac", "head", "tail", "less", "more", "bat", "nl", "wc", "grep", "egrep", "fgrep",
+    "zgrep", "rg", "ag", "ack", "sed", "awk", "gawk", "cut", "tr", "sort", "uniq", "column",
+    "fold", "rev", "tee", "strings", "xxd", "hexdump", "od", "jq", "yq", "diff", "cmp", "find",
+    "ls", "stat", "file", "echo", "printf", "true", "false", "test", "[", "cd", "pwd", "sleep",
+    // The shell's own, which run nothing.
+    "read", "export", "set", "unset", "local", "declare", "exit", ":",
+];
+
+/// The words that open a loop's or a choice's header, whose next word names no program
+/// (`for f in *.log`).
+const HEADERS: [&str; 3] = ["for", "select", "case"];
+
+/// The subcommands of `git` that only read the clone they stand in.
+const GIT_READERS: [&str; 14] = [
+    "show",
+    "log",
+    "diff",
+    "grep",
+    "blame",
+    "cat-file",
+    "status",
+    "ls-files",
+    "ls-tree",
+    "rev-parse",
+    "rev-list",
+    "reflog",
+    "describe",
+    "shortlog",
+];
+
+/// How many strings handed to a shell, one inside another, are read for what they run
+/// (`sh -c "sh -c '…'"`); a line that nests deeper is read as one that only reads.
+const MOST_SHELLS_DEEP: usize = 2;
+
+/// **Whether the command line of `payload` runs a program that could have been refused the
+/// certificate check** (ADR 0093, D-sock-5): any program but one that only reads or prints
+/// ([`READERS`], and `git`'s reading subcommands), once the shell's plumbing is off the front of
+/// each part of the line, as [`runs_a_container_client`] reads it. A string a shell is handed
+/// is read the same way, so `sh -c 'cat gh.log'` runs none.
+///
+/// **Why any program, and not a list of clients.** The check's service is one, and its name is
+/// purlis's own constant: naming it puts nothing a chat printed in the Notice, where a socket's
+/// path comes from the output. And every Go program checks certificates this way (`gh`, `glab`,
+/// `terraform`, a project's own tools behind `make`), so no list could be kept whole. What is
+/// ruled out is what a failure ruled out, a result that merely read the words: a log, a file of
+/// tests, a page of search results, none of which can make its reader a program that connects.
+///
+/// Read whole or not at all: a result with no line beside it (a file tool's, a background
+/// command's output read back), a line too big for the guards, and one that does not tokenize
+/// run none here.
+fn runs_a_program(payload: &serde_json::Value) -> bool {
+    let Some(line) = payload["tool_input"]["command"].as_str() else {
+        return false;
+    };
+    if line.len() > crate::guardcaps::MAX_COMMAND_BYTES {
+        return false;
+    }
+    let (runs, too_deep) = crate::shellseg::too_deep_within(|| runs_past_readers(line, 0));
+    runs && !too_deep
+}
+
+/// [`runs_a_program`] of one line, itself `shells` strings deep in the line a chat ran.
+fn runs_past_readers(line: &str, shells: usize) -> bool {
+    crate::shellseg::joined_argv(line).is_some_and(|segments| {
+        segments.iter().any(|segment| {
+            if segment
+                .argv
+                .first()
+                .is_some_and(|word| HEADERS.contains(&word.as_str()))
+            {
+                return false;
+            }
+            let call = crate::shellwrap::split_env_chdir(&segment.argv);
+            if call.too_deep || call.prog.is_empty() {
+                return false;
+            }
+            let base = crate::shellwrap::base_lower(&call.prog);
+            if READERS.contains(&base.as_str()) {
+                return false;
+            }
+            if base == "git" {
+                let (_, rest) = crate::shellwrap::git_globals(&call.argv);
+                return !rest
+                    .first()
+                    .is_some_and(|word| GIT_READERS.contains(&word.as_str()));
+            }
+            // A shell handed a string runs what the string does; one handed none runs a file.
+            let scripts = crate::shellwrap::shell_scripts_of(&call.prog, &call.argv);
+            scripts.is_empty()
+                || (shells < MOST_SHELLS_DEEP
+                    && scripts
+                        .iter()
+                        .any(|script| runs_past_readers(script, shells + 1)))
+        })
+    })
 }
 
 /// The harness's file tool, which the block words also hear (#1683).
