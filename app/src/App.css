@@ -3485,7 +3485,7 @@ h2.sidebar-title .node-icon {
 
 /* **A folded row's tasks, as one small number** (#1675): a quiet badge after the name, as
    wide as its digits, which never gives way. Its card says how they stand. A count is meta
-   (`ui-text-meta`, #1920), at the regular weight every meta has. */
+   at the strong weight (`ui-text-meta ui-text-strong`, #1920), as every count is. */
 .chats-section .task-count {
   flex: none;
   padding: 0 var(--space-2);
