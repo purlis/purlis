@@ -26,14 +26,24 @@ export const allowable = (one: ExpectedItem) => one.refused === null;
 /**
  * **One line for each thing a project expects**: what it is, named whole and drawn inertly (a
  * repository wrote it), what allowing it means in purlis's own words, and, where it cannot be
- * allowed on this machine now, why.
+ * allowed on this machine now, why. A socket is named as an Allow would keep it (`named`, links
+ * resolved), with the path the project wrote beside it where that is another: a harmless name
+ * that leads to another socket is shown for what it is.
  */
 export function ExpectedLines({ items }: { items: readonly ExpectedItem[] }) {
   return (
     <>
       {items.map((one) => (
         <p key={`${one.what}:${one.target}`}>
-          {kind(one)} <code className="block-allow-target">{inertly(one.target)}</code>. {one.says}
+          {kind(one)} <code className="block-allow-target">{inertly(one.named)}</code>
+          {one.named !== one.target && (
+            <>
+              {" "}
+              (the project names it{" "}
+              <code className="block-allow-target">{inertly(one.target)}</code>)
+            </>
+          )}
+          . {one.says}
           {one.refused !== null && <> It cannot be allowed here now: {one.refused}</>}
         </p>
       ))}

@@ -95,8 +95,9 @@ and Apple's app sandbox do.
   and is never read as a line; a result that holds both streams in one text keeps to the same
   rule. Any other program may be the one that was
   refused: no list of the programs that check certificates could be kept whole. This rule
-  holds for the certificate check alone, the one kind with a single service to grant; a socket
-  and any other service keep to the rule above.
+  holds for the certificate check alone, the one kind with a single service; a socket
+  and any other service keep to the rule above. (Since R1, below, naming it offers no Allow:
+  the Notice says what stands for certificate checks in the project and the way on.)
 - **Honest words, per known kind** (D-sock-6). The Notice and the ask say what allowing it means:
   - Docker and Podman sockets: lets this chat control containers, which can reach your whole
     machine: about the same as no sandbox;
@@ -131,8 +132,10 @@ the block reached the app naming nothing, and its Notice said there was nothing 
   environment names (`DOCKER_HOST`, `CONTAINER_HOST`, `SSH_AUTH_SOCK`, `PGHOST`,
   `MYSQL_UNIX_PORT`, `XDG_RUNTIME_DIR`), each kept only where it is a socket a grant may name
   now. No file is read and no program is asked. A socket may also be typed by its path. A
-  service is chosen only from the ones purlis can allow, today the certificate check: a
-  service has no path to check, so none is typed.
+  service is chosen only from the ones purlis can allow: a service has no path to check, so
+  none is typed. **Since R1 (below, the same day) that list is empty**: the certificate check
+  was the one on it, and it is a setting now, never a grant. A refused certificate check that
+  names nothing gets the Notice a named one gets, which says what stands and the way on.
 - **Nothing a chat wrote is in it.** The list is the app's own, in the app's order; the block
   carries no target, so the box starts empty. The list, the choice and taking up a read-back
   block are the window's alone (`WINDOW_ONLY`).
@@ -332,7 +335,9 @@ an error that often hid the cause. Now the declaration is read where the project
 - **The words are purlis's; the names are data.** A repository wrote each name, so the Notice
   and Settings draw it apart from the sentence, with every character that draws as nothing
   written out, and each is judged as any grant's target is before anything is kept. A socket
-  path that cannot be said plainly (a character that draws as nothing, or longer than a path
+  is named as the Allow would keep it, links resolved, with the path the project wrote beside
+  it where that is another, so a harmless name that leads to another socket is shown for what
+  it is. A socket path that cannot be said plainly (a character that draws as nothing, or longer than a path
   is) declares nothing.
 - **A chat's pane says it from the start**: a chat that starts while something declared is
   neither allowed nor declined says so in one line, and where to allow it. The line counts

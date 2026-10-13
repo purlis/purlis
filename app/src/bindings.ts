@@ -3635,8 +3635,9 @@ export type ChatBlocked = {
 	/**
 	 *  **What the person may choose, where the block named nothing a grant could name**
 	 *  (#1884, ADR 0093 as amended 2026-10-13): a local socket, from the ones purlis finds on
-	 *  this machine or by a path they type, or a system service, from the ones purlis can
-	 *  allow. Offered beside Start without the sandbox, in the window only
+	 *  this machine or by a path they type. (A system service would be chosen from the ones
+	 *  purlis can allow; it lists none since the certificate check became a setting, R1.)
+	 *  Offered beside Start without the sandbox, in the window only
 	 *  (`choose_sandbox_block_target`), and what they choose is judged as a named one is. None
 	 *  where there is nothing to choose, or policy forbids every such grant.
 	 */
@@ -4601,6 +4602,13 @@ export type ExpectedItem = {
 	 *  answer is sent back by. Written by a repository, so the window draws it inertly.
 	 */
 	target: string,
+	/**
+	 *  **What an Allow would keep, and what the window names first**: the socket as the kernel
+	 *  names it, links resolved, where it can be allowed. A path a repository wrote may be a
+	 *  link to another socket, and the person is shown the one they would allow. As `target`
+	 *  for a service, and for a socket that cannot be allowed here.
+	 */
+	named: string,
 	/**  What allowing it means, in purlis's own words. */
 	says: string,
 	/**  Why it cannot be allowed on this machine now, where it cannot. */
