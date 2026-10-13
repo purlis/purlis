@@ -83,6 +83,7 @@ import {
   type ViewId,
   type ViewPlace,
 } from "./sideViews";
+import { RESTORING_HAS_NO_CLOSE } from "./restoringChats";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
 import { profilePage } from "./settings/profileAddress";
@@ -753,6 +754,9 @@ export type Now = {
   curations?: Curations;
   /** The chats being smart-closed (ADR 0064): each one's tab offers to cancel it. */
   wrappingUp?: readonly number[];
+  /** The chats a launch has still to start (`restoring.rs`): none has a close until it has
+   *  started, since there is no program yet to end. */
+  restoring?: readonly number[];
   /** The work item each chat works on, by session, as `chat_work_item` answered (ADR 0088). */
   workItems?: Readonly<Record<number, string>>;
   /** Whether a chat can have a work link: it is filed in a workspace. A chat at the project
@@ -2584,7 +2588,7 @@ export function catalogue(now: Now): Offer[] {
   // A pane's close ends its chat exactly as a tab's does, so it says the same thing.
   // A pane showing a view closes and ends nothing, so it says so and is not asked about.
   const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
-  offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy));
+  offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy, now.restoring));
 
   // **`End`, not `Close`** (charter-app#130). Closing a tab calls `close_session`, which ends
   // the program and takes the chat off the board — correct, and what the `×` has always done.
@@ -2619,6 +2623,12 @@ export function catalogue(now: Now): Offer[] {
       offers.push(
         can(`tab.close:${tab}`, `Close ${name}`, { verb: "closeTab", tab, ends: false }, name),
       );
+      continue;
+    }
+    // **A chat still restoring has no close yet** (`restoring.rs`): it has no program to end,
+    // and a tab taken away now would leave the chat to start with nowhere to be drawn.
+    if (panesOf(now.tabs, tab).some((one) => (now.restoring ?? []).includes(one.session))) {
+      offers.push(cannot(`tab.close:${tab}`, `End chat ${name}`, RESTORING_HAS_NO_CLOSE, name));
       continue;
     }
     const title =
@@ -4118,6 +4128,8 @@ export function paneCloseOf(
   nameOf: (session: number) => string,
   /** Who asked whom (`tabChats.askedByOf`): a task's own pane is sent back, never closed. */
   askedBy: AskedBy = () => undefined,
+  /** The chats a launch has still to start (`restoring.rs`): none has a close yet. */
+  restoring: readonly number[] = [],
 ): Offer {
   const front = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
   const content =
@@ -4145,6 +4157,8 @@ export function paneCloseOf(
       ),
       note: BACK_NOTE,
     };
+  if (restoring.includes(content.session))
+    return cannot("pane.close", "End this pane's chat", RESTORING_HAS_NO_CLOSE);
   if (front.shows?.[pane] !== undefined) {
     const own = nameOf(content.session);
     return cannot(
