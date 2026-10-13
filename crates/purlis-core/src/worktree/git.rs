@@ -81,6 +81,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 mod connecting;
+mod destination;
 mod listing;
 mod network;
 pub mod presence;
@@ -1807,10 +1808,9 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
     let run = counted(dir, args, || {
         Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
     })?;
-    // Listed once git has run (#959): a call refused before it started reached nobody.
-    if let Some((operation, remote)) = network_target(args) {
-        crate::netlog::git_call(operation, remote, run.ok(), started.elapsed());
-    } else if let Some((operation, remote)) = remote_by_name(dir, args) {
+    // Listed once git has run (#959): a call refused before it started reached nobody. Each
+    // place git sent it, read as git reads it (#1853, #1828).
+    for (operation, remote) in destinations(dir, args) {
         crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
     }
     Ok(run)
@@ -1819,48 +1819,97 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
 /// The verbs that reach a remote the repository names, by its name or as its default.
 const BY_NAME: [&str; 4] = ["fetch", "pull", "push", "ls-remote"];
 
-/// **The verb of a network call to a remote given by name, and the URL git reaches it at**
-/// (#1022): `fetch --prune` and `pull --ff-only` name no URL, so the repository's own answer
-/// for the remote is read, with `ls-remote --get-url`, which reaches no network and applies
-/// the repository's URL rewrites as the call did. **A push to a remote by name** goes where
-/// `remote get-url --push` says (#1828): a remote's `pushurl` and a `pushInsteadOf` rewrite
-/// decide that, and `ls-remote --get-url` applies neither. A push that names no remote, or a
-/// name that is no remote's, is read the fetch's way. None where git names no URL for it.
-fn remote_by_name(dir: &Path, args: &[&str]) -> Option<(&'static str, String)> {
-    let at = verb_at(args)?;
-    let verb = BY_NAME.iter().copied().find(|verb| *verb == args[at])?;
-    let name = args[at + 1..]
+/// **The verb of a network call and each URL git sends it to**, for the network log.
+///
+/// - **A URL given on the command line** (#1828) is rewritten as git rewrites it
+///   ([`destination::rewritten`]): a push reads `pushInsteadOf` first.
+/// - **A remote given by name** (#1022): `fetch --prune` and `pull --ff-only` name no URL, so
+///   the repository's own answer for the remote is read, with `ls-remote --get-url`, which
+///   reaches no network and applies the rewrites as the call did. A push goes where
+///   `remote get-url --push --all` says: a remote's push URLs and a `pushInsteadOf` rewrite
+///   decide that, and a push goes to each.
+/// - **A push that names no remote** goes to the remote git chooses for it
+///   ([`destination::push_remote`]), not the fetch's default (#1853).
+///
+/// A name that is no remote's is read the fetch's way. Empty where git names no URL for it.
+fn destinations(dir: &Path, args: &[&str]) -> Vec<(&'static str, String)> {
+    let Some(at) = verb_at(args) else {
+        return Vec::new();
+    };
+    let Some(verb) = BY_NAME
         .iter()
         .copied()
-        .find(|word| !word.starts_with('-'));
-    let url_of = |asking: &[&str]| {
+        .chain(["clone"])
+        .find(|verb| *verb == args[at])
+    else {
+        return Vec::new();
+    };
+    let push = verb == "push";
+    let ask = |asking: &[&str]| {
         let mut asked: Vec<&str> = args[..at].to_vec();
         asked.extend_from_slice(asking);
-        let answer = run(dir, &asked, READ).ok().filter(Run::ok)?;
-        let url = answer.out.lines().next().unwrap_or_default().trim();
-        (!url.is_empty()).then(|| url.to_owned())
+        run(dir, &asked, READ)
+            .ok()
+            .filter(Run::ok)
+            .map(|ran| ran.out)
     };
-    if verb == "push"
-        && let Some(name) = name
-        && let Some(url) = url_of(&["remote", "get-url", "--push", name])
-    {
-        return Some((verb, url));
-    }
-    let url = match name {
-        Some(name) => url_of(&["ls-remote", "--get-url", name]),
-        None => url_of(&["ls-remote", "--get-url"]),
-    }?;
-    Some((verb, url))
-}
-
-/// The verb of a network call and the URL it was given: the first word after the verb that
-/// names a scheme. A remote given by name or as a folder is `None` here or in the log.
-fn network_target<'a>(args: &[&'a str]) -> Option<(&'a str, &'a str)> {
-    let at = verb_at(args)?;
-    let remote = args[at + 1..]
+    let config = |pattern: &str| {
+        ask(&["config", "-z", "--get-regexp", pattern])
+            .map(|listed| destination::entries(&listed))
+            .unwrap_or_default()
+    };
+    if let Some(url) = args[at + 1..]
         .iter()
-        .find(|word| !word.starts_with('-') && word.contains("://"))?;
-    Some((args[at], remote))
+        .find(|word| !word.starts_with('-') && word.contains("://"))
+    {
+        // `clone` reads no repository's rewrites but your own, which this listing gives too.
+        let rules = config(r"^url\..*\.(push)?insteadof$");
+        return vec![(verb, destination::rewritten(url, &rules, push))];
+    }
+    if verb == "clone" {
+        return Vec::new();
+    }
+    let named = args[at + 1..]
+        .iter()
+        .copied()
+        .find(|word| !word.starts_with('-'))
+        .map(str::to_owned);
+    let name = match (named, push) {
+        (Some(name), _) => Some(name),
+        (None, false) => None,
+        (None, true) => {
+            let branch = ask(&["symbolic-ref", "-q", "--short", "HEAD"])
+                .map(|out| out.trim().to_owned())
+                .filter(|branch| !branch.is_empty());
+            let rules = config(r"^(branch\..*\.(pushremote|remote)|remote\.pushdefault)$");
+            Some(destination::push_remote(branch.as_deref(), &rules))
+        }
+    };
+    let lines = |out: String| -> Vec<String> {
+        out.lines()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    if push
+        && let Some(name) = &name
+        && let Some(urls) = ask(&["remote", "get-url", "--push", "--all", name]).map(lines)
+        && !urls.is_empty()
+    {
+        return urls.into_iter().map(|url| (verb, url)).collect();
+    }
+    let fetched = match &name {
+        Some(name) => ask(&["ls-remote", "--get-url", name]),
+        None => ask(&["ls-remote", "--get-url"]),
+    };
+    fetched
+        .map(lines)
+        .unwrap_or_default()
+        .into_iter()
+        .take(1)
+        .map(|url| (verb, url))
+        .collect()
 }
 
 /// What the person's own clone from the window ([`spawn_persons_clone`]) is held to: what

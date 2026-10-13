@@ -169,12 +169,77 @@ mod by_name {
         let hosts: Vec<_> = entries()
             .into_iter()
             .filter(|e| e.feature == Feature::Git && e.host.starts_with("netlog-"))
-            .filter(|e| e.host != "netlog-byname.invalid")
+            .filter(|e| e.host != "netlog-byname.invalid" && !e.host.starts_with("netlog-nameless"))
             .map(|e| (e.host, e.method))
             .collect();
         assert_eq!(
             hosts,
             [("netlog-push.invalid".to_owned(), "PUSH".to_owned())],
+            "{}",
+            log_text()
+        );
+    }
+
+    /// A push that names no remote goes to the branch's push remote, which the fetch's default
+    /// never reads (#1853): the line names that remote's host.
+    #[test]
+    fn a_push_naming_no_remote_is_listed_with_the_host_of_the_remote_git_pushes_to() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(dir.path())
+                    .args(args),
+            )
+            .expect("git runs");
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://netlog-nameless-fetch.invalid/hidden-owner/hidden-repo.git",
+        ]);
+        git(&[
+            "remote",
+            "add",
+            "mirror",
+            "https://netlog-nameless-push.invalid/hidden-owner/hidden-repo.git",
+        ]);
+        git(&["config", "branch.main.remote", "origin"]);
+        git(&["config", "branch.main.pushRemote", "mirror"]);
+        git(&[
+            "-c",
+            "user.name=Netlog",
+            "-c",
+            "user.email=netlog@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ]);
+        // No host answers `.invalid`: what is checked is the line the call leaves.
+        let run = purlis_core::worktree::git::run_network(dir.path(), None, &["push"])
+            .expect("git starts");
+        assert!(!run.ok(), "{run:?}");
+
+        let hosts: Vec<_> = entries()
+            .into_iter()
+            .filter(|e| e.feature == Feature::Git && e.host.starts_with("netlog-nameless"))
+            .map(|e| (e.host, e.method))
+            .collect();
+        assert_eq!(
+            hosts,
+            [("netlog-nameless-push.invalid".to_owned(), "PUSH".to_owned())],
             "{}",
             log_text()
         );
