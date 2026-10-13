@@ -134,7 +134,8 @@ pub const MESSAGE: &str = "the commit message";
 /// and the staged diff is [`checked`]'s; anything else below the line is read.
 pub fn message_checked(repo: &Path, message: &str) -> Scan {
     let mut found = in_message(MESSAGE, message);
-    if let Some(cut) = scissors_line(message)
+    if !found.found.is_empty()
+        && let Some(cut) = scissors_line(message, || comment_mark(repo))
         && found.found.iter().any(|finding| finding.line > cut)
     {
         let held = held_by_the_change(repo);
@@ -143,22 +144,54 @@ pub fn message_checked(repo: &Path, message: &str) -> Scan {
     through_the_allowlist(repo, found)
 }
 
-/// The number of `message`'s first scissors line, as [`in_message`] numbers lines: one comment
-/// character, a space, and git's cut line.
-fn scissors_line(message: &str) -> Option<usize> {
+/// The number of `message`'s first scissors line, as [`in_message`] numbers lines: git's
+/// comment mark, a space, and git's cut line. The mark is one character that is neither a
+/// letter, a digit nor a space, as `core.commentChar=auto` picks one, or the mark `configured`
+/// names, of however many characters (`core.commentString`). `configured` is asked only when a
+/// line with another mark in front of the cut is met.
+fn scissors_line(message: &str, configured: impl FnOnce() -> Option<String>) -> Option<usize> {
     const CUT: &str = " ------------------------ >8 ------------------------";
+    let mark_set = std::cell::OnceCell::new();
+    let mut configured = Some(configured);
     message
         .lines()
         .position(|line| {
             line.strip_suffix(CUT).is_some_and(|mark| {
                 let mut chars = mark.chars();
-                chars
+                let one = chars
                     .next()
                     .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
-                    && chars.next().is_none()
+                    && chars.next().is_none();
+                one || (!mark.is_empty()
+                    && mark_set
+                        .get_or_init(|| configured.take().and_then(|ask| ask()))
+                        .as_deref()
+                        == Some(mark))
             })
         })
         .map(|at| at + 1)
+}
+
+/// The comment mark git is set to in `repo` (`core.commentChar` or `core.commentString`,
+/// whichever it reads last), or `None` when it is unset, `auto`, or git cannot say: then only
+/// a one-character mark cuts, and what is below any other is read.
+fn comment_mark(repo: &Path) -> Option<String> {
+    let run = git::run_in_hook(
+        repo,
+        &[
+            "config",
+            "--get-regexp",
+            "-z",
+            r"^core\.comment(char|string)$",
+        ],
+        git::READ,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0))?;
+    let out = String::from_utf8(run.out).ok()?;
+    let last = out.split('\0').rfind(|entry| !entry.is_empty())?;
+    let (_, value) = last.split_once('\n')?;
+    (!value.is_empty() && value != "auto").then(|| value.to_owned())
 }
 
 /// The fingerprints of every credential in the files the commit being made in `repo` changes,
@@ -2968,6 +3001,80 @@ mod tests {
         let scan = message_checked(&repo, &above);
         assert_eq!(refused(&scan), [(MESSAGE, "forge-token")]);
         assert_eq!(scan.refused[0].line, 1);
+    }
+
+    /// git's comment mark may be several characters (`core.commentString`, or `core.commentChar`
+    /// set to more than one), and its scissors line is that mark, a space and the cut: a
+    /// `commit -v` removing a credential under one is not refused for it. A mark git is not set
+    /// to cuts nothing, a credential HEAD does not hold is read below the cut as ever, and the
+    /// one a commit stages is the staged diff's to refuse.
+    #[test]
+    fn a_scissors_line_under_a_comment_mark_of_several_characters_cuts() {
+        for key_name in ["core.commentString", "core.commentChar"] {
+            let (_dir, repo) = repo();
+            std::fs::write(repo.join("f"), format!("T={}\n", key())).unwrap();
+            commit_all(&repo, "one");
+            let set = testgit::run(&repo, &["config", key_name, "//"]);
+            assert!(set.ok(), "{}", set.err);
+            std::fs::write(repo.join("f"), "one\n").unwrap();
+            testgit::run(&repo, &["add", "f"]);
+            let verbose = |mark: &str, removed: &str| {
+                format!(
+                    "Remove it\n{mark} ------------------------ >8 ------------------------\n\
+                     {mark} Do not modify or remove the line above.\n{mark} Everything below \
+                     it will be ignored.\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n\
+                     -T={removed}\n+one\n"
+                )
+            };
+            assert_eq!(
+                refused(&message_checked(&repo, &verbose("//", &key()))),
+                [],
+                "{key_name}"
+            );
+            for mark in ["%%", "///"] {
+                let scan = message_checked(&repo, &verbose(mark, &key()));
+                assert_eq!(
+                    refused(&scan),
+                    [(MESSAGE, "forge-token")],
+                    "{key_name} {mark}"
+                );
+            }
+            let other = ["ghp", "_9876543210fedcbaFEDCBA"].concat();
+            assert_eq!(
+                refused(&message_checked(&repo, &verbose("//", &other))),
+                [(MESSAGE, "forge-token")],
+                "{key_name}"
+            );
+            std::fs::write(repo.join("f"), format!("T={other}\n")).unwrap();
+            testgit::run(&repo, &["add", "f"]);
+            let staged = checked(&repo).unwrap();
+            assert_eq!(refused(&staged), [("f", "forge-token")], "{key_name}");
+        }
+    }
+
+    /// `commit -v -v` puts the unstaged diff below the cut too. A credential only the working
+    /// tree holds is in no commit and not in the index, and a message that carries it below a
+    /// line the hook cannot tell git cuts is refused: a false refusal that fails closed, kept,
+    /// since letting it through would let a message carry a credential nothing else does.
+    #[test]
+    fn a_credential_only_the_working_tree_holds_is_refused_below_the_cut() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "one\n").unwrap();
+        commit_all(&repo, "one");
+        std::fs::write(repo.join("f"), "two\n").unwrap();
+        testgit::run(&repo, &["add", "f"]);
+        std::fs::write(repo.join("f"), format!("two\nT={}\n", key())).unwrap();
+        let message = format!(
+            "Two\n# ------------------------ >8 ------------------------\n\
+             diff --git c/f i/f\n--- c/f\n+++ i/f\n@@ -1 +1 @@\n-one\n+two\n\
+             --------------------------------------------------\nChanges not staged for commit:\n\
+             diff --git i/f w/f\n--- i/f\n+++ w/f\n@@ -1 +1,2 @@\n two\n+T={}\n",
+            key()
+        );
+        assert_eq!(
+            refused(&message_checked(&repo, &message)),
+            [(MESSAGE, "forge-token")]
+        );
     }
 
     #[test]

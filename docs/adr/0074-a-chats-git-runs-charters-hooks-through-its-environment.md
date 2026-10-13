@@ -208,7 +208,10 @@ is in `docs/plane-format.md`, *Provenance trailers*.
   as git may store it: below git's scissors line too, which only `commit -v` and
   `--cleanup=scissors` cut and the hook cannot tell from `--cleanup=verbatim`. Below that line a
   credential the repository already holds in a file the commit changes is let through, since
-  that is the diff `commit -v` shows there. `purlis` says so by exiting
+  that is the diff `commit -v` shows there. The scissors line is git's comment mark, a space and
+  the cut: a one-character mark, or the mark `core.commentString` (or `core.commentChar`) sets,
+  of any length. A credential only the working tree holds, which the unstaged diff of
+  `commit -v -v` shows, is refused: nothing tells the hook git cuts there. `purlis` says so by exiting
   `githooks::MESSAGE_REFUSED`, the only status the shim refuses on, and tells the app as the
   commit scan does. Otherwise it is not a check: a message purlis could not stamp, a chat the
   record does not hold, or a `purlis` that has gone commits the message as it was written.

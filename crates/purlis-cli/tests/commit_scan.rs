@@ -244,6 +244,29 @@ fn a_credential_below_the_scissors_line_is_refused_where_git_would_keep_it() {
     ]);
     assert!(ran.status.success(), "{ran:?}");
     assert_ne!(chat.head(), held);
+
+    // git's comment mark may be several characters, and its cut line is then that mark's: the
+    // same `commit -v` under one is not refused for the credential its diff shows.
+    std::fs::write(chat.repo.join("README.md"), format!("{}\n", key())).unwrap();
+    chat.operator_git(&["add", "README.md"]);
+    let ran = chat.operator_git(&["commit", "-q", "-m", "held again"]);
+    assert!(ran.status.success(), "{ran:?}");
+    let held = chat.head();
+    std::fs::write(chat.repo.join("README.md"), "four\n").unwrap();
+    chat.git(&["add", "README.md"]);
+    let ran = chat.git(&[
+        "-c",
+        "core.commentString=//",
+        "-c",
+        "core.editor=true",
+        "commit",
+        "-v",
+        "-e",
+        "-m",
+        "Remove it again",
+    ]);
+    assert!(ran.status.success(), "{ran:?}");
+    assert_ne!(chat.head(), held);
 }
 
 #[test]
