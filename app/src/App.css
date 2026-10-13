@@ -5891,7 +5891,11 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A chat row's card** (#1675): its name and state, then its facts, a word and a value a
-   line. The overlay surface (`.ui-popover`), at a width a fact's line fits in. */
+   line. The overlay surface (`.ui-popover`), at a width a fact's line fits in.
+
+   **Its words wear text roles** (#1920): the card is secondary lines (`ui-text-secondary` on
+   it: who, where, what it runs on), under its name, the one strong body line, and each
+   fact's word is meta. A word and its value are two sizes, so they share a baseline. */
 .chat-card {
   max-width: 20rem;
   overflow-wrap: anywhere;
@@ -5909,10 +5913,6 @@ h2.sidebar-title .node-icon {
   margin: 0;
 }
 
-.chat-card .chat-card-name {
-  font-weight: 600;
-}
-
 .chat-card .chat-doing {
   white-space: normal;
 }
@@ -5921,15 +5921,12 @@ h2.sidebar-title .node-icon {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.1rem 0.6rem;
+  align-items: baseline;
   margin: 0.35rem 0 0;
 }
 
 .chat-card-facts > div {
   display: contents;
-}
-
-.chat-card-facts dt {
-  color: var(--text-muted);
 }
 
 .chat-card-facts dd {

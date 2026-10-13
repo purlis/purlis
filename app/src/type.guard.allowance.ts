@@ -106,7 +106,6 @@ export const TYPE_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".extension-rows .built-in | font-size: 0.8rem",
     ".title-bar | font-size: 0.8rem",
     ".title-bar .projects | font-size: 1rem",
-    ".chat-card .chat-card-name | font-weight: 600",
     ".empty-state-headline | font-weight: 600",
     ".empty-state-panel .empty-state-headline | font-weight: normal",
     ".pane.view | font-size: 0.85rem",
