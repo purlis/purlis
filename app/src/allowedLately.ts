@@ -49,6 +49,7 @@ const FOR: Readonly<Record<GrantLevel, string>> = {
   once: "once, for that chat",
   chat: "for that chat",
   you: "for you on this machine",
+  machine: "for every project on this machine",
   project: "for everyone in this project",
 };
 

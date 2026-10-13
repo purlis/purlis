@@ -440,8 +440,8 @@ fn a_local_block(what: GrantWhat, kind: &str, target: &str) -> HeldBlock {
 }
 
 /// A container engine's socket, and a service purlis cannot tell, are asked about with the
-/// narrowest answer first, never for everyone in the project, and policy's scopes have the
-/// last word.
+/// narrowest answer first, then every project on this machine (R2, 2026-10-13), never for
+/// everyone in the project, and policy's scopes have the last word.
 #[test]
 fn a_socket_or_a_service_is_asked_with_once_first_and_never_for_the_project() {
     let ids =
@@ -452,7 +452,15 @@ fn a_socket_or_a_service_is_asked_with_once_first_and_never_for_the_project() {
     ] {
         let shown = sandbox_block(5, &other, &Locks::none()).expect("an ask");
         assert_eq!(shown.source, AskSource::SandboxLocal);
-        assert_eq!(ids(&shown), ["once", "chat", "you", KEEP], "{other:?}");
+        assert_eq!(
+            ids(&shown),
+            ["once", "machine", "chat", "you", KEEP],
+            "{other:?}"
+        );
+        assert_eq!(
+            shown.options[1].label,
+            "Allow on this machine, for every project"
+        );
     }
     let locks = Locks::parse(
         r#"{"sandbox": {"allow-scopes": ["chat"]}}"#,

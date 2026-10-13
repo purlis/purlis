@@ -41,7 +41,8 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
     offer === "host"
       ? ["you", "chat", "project"]
       : local
-        ? ["once", "chat", "you"]
+        ? // The registry's order (`asking::sandbox_local`): the narrowest, then every project.
+          ["once", "machine", "chat", "you"]
         : ["chat", "you"];
   return [
     {

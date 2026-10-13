@@ -5219,6 +5219,11 @@ export type GrantLevel =
 "chat" | 
 /**  Every chat of this project on this machine. */
 "you" | 
+/**
+ *  Every chat of every project on this machine (R2, 2026-10-13): a socket or a service
+ *  only.
+ */
+"machine" | 
 /**  Everyone in the project: committed. A host only. */
 "project";
 

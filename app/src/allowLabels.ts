@@ -17,6 +17,7 @@ export const ALLOW_SAID: Readonly<Record<GrantLevel, string>> = {
   once: "Allow once",
   chat: "Allow for this chat",
   you: "Allow for me on this machine",
+  machine: "Allow on this machine, for every project",
   project: "Allow for everyone in this project",
 };
 

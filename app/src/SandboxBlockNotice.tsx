@@ -58,6 +58,11 @@ import { Field, SettingRow } from "./settings/components";
  * project. **Keep blocked** refuses what the proxy holds and tells the chat
  * (`keep_sandbox_block`).
  *
+ * **A local socket or a system service offers two answers side by side** (the operator's ruling
+ * R2 of 2026-10-13): the narrowest, Allow once, and **Allow on this machine, for every project**,
+ * so one press is the last for something every project of the person's uses. Only this chat, and
+ * this project alone, stay under **Other scopes…**.
+ *
  * **A host allowed already offers no Allow** (#1666's fold-in): it says so, and that this chat
  * takes it once it restarts, with **Restart this chat**.
  *
@@ -308,7 +313,7 @@ export function SandboxBlockNotice({
   );
 }
 
-const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "project"];
+const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "machine", "project"];
 
 const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
 
@@ -442,7 +447,10 @@ function AllowNotice({
       option.allows && isLevel(option.id) && block.levels.includes(option.id),
   );
   const main = open[0];
-  const others = open.slice(1);
+  /** Every project on this machine (R2): drawn beside the main button, never under the menu,
+   *  where a socket's or a service's ask offers it and it is not the main button itself. */
+  const everywhere = open.slice(1).find((option) => option.id === "machine");
+  const others = open.slice(1).filter((option) => option !== everywhere);
   const keepSaid = offered.find((option) => option.id === "keep")?.label;
   /** Whether the chat's proxy holds the connection now, as the registry says (#1709). */
   const held = asks.some((ask) => typeof ask.held_until === "number");
@@ -853,6 +861,14 @@ function AllowNotice({
             label: main.label,
             onPress: () => allow(main.id, main.label),
             off: main.id === "project" ? readOnly : undefined,
+          },
+        ]
+      : []),
+    ...(everywhere !== undefined
+      ? [
+          {
+            label: everywhere.label,
+            onPress: () => allow(everywhere.id, everywhere.label),
           },
         ]
       : []),

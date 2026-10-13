@@ -541,6 +541,141 @@ fn a_grant_of_the_certificate_check_an_older_build_kept_changes_nothing() {
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
+/// R2 (2026-10-13): a socket or a service allowed "on this machine, for every project" is kept
+/// in this machine's one file, never in a project or under a clone's key, and reaches a chat's
+/// start in every project, one made after the Allow too. Each is judged again for the project
+/// a chat starts in, and Remove takes it from all of them.
+#[test]
+fn a_socket_or_a_service_allowed_for_every_project_reaches_each_projects_next_start() {
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let (_first_dir, first) = project();
+    let docker = PathBuf::from("/purlis-test-nowhere/docker.sock");
+    let made = |what: &str, target: &str| local::Made {
+        what: what.to_owned(),
+        target: target.to_owned(),
+        level: "machine".to_owned(),
+        at: 7,
+        chat: Some("steward 1".to_owned()),
+    };
+    local::grant_socket_everywhere(&docker, Some(made("socket", "/purlis-test-nowhere/docker.sock")))
+        .expect("kept");
+    local::grant_service_everywhere("com.example.helper", None).expect("kept");
+    // One file for every project, in the config home, and nothing under either project.
+    let kept = local::everywhere_path();
+    assert!(kept.starts_with(home.path()), "{}", kept.display());
+    assert_eq!(
+        kept.file_name().and_then(|name| name.to_str()),
+        Some(local::EVERY_PROJECT)
+    );
+    assert_ne!(kept, local::path(&first));
+    assert!(!local::path(&first).exists(), "no clone's own file is written");
+    assert!(local::granted_sockets(&first).is_empty());
+    // A project made after the Allow has it too.
+    let (_second_dir, second) = project();
+    for root in [&first, &second] {
+        let compiled = compiled_at(root, &Grants::default());
+        assert_eq!(compiled.widened.sockets, vec![docker.clone()], "{root:?}");
+        assert_eq!(
+            compiled.widened.services,
+            vec!["com.example.helper".to_owned()]
+        );
+    }
+    assert_eq!(local::made_everywhere().len(), 1);
+    // Allowed twice is kept once.
+    local::grant_socket_everywhere(&docker, None).expect("kept");
+    assert_eq!(local::sockets_everywhere(), vec![docker.clone()]);
+    // Policy's lock takes them away at a start, as it takes a project's.
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let locked = compiled_at(&first, &Grants::default());
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert!(locked.widened.sockets.is_empty());
+    assert!(locked.widened.services.is_empty());
+    // Removed, it is gone from every project's next start, with its record.
+    local::revoke_socket_everywhere(&docker).expect("revoked");
+    local::revoke_service_everywhere("com.example.helper").expect("revoked");
+    for root in [&first, &second] {
+        let after = compiled_at(root, &Grants::default());
+        assert!(after.widened.sockets.is_empty());
+        assert!(after.widened.services.is_empty());
+    }
+    assert!(local::made_everywhere().is_empty());
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// R2: a socket allowed for every project is still judged for the project a chat starts in.
+/// One inside that project's own tree (a folder its chats write) reaches no chat there.
+#[test]
+fn a_socket_allowed_for_every_project_is_judged_again_for_each_project() {
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let (_dir, root) = project();
+    let (_other_dir, other) = project();
+    let inside = root.join("run").join("svc.sock");
+    local::grant_socket_everywhere(&inside, None).expect("kept");
+    assert!(
+        compiled_at(&root, &Grants::default())
+            .widened
+            .sockets
+            .is_empty(),
+        "a chat of that project could put any socket there"
+    );
+    // It is in a temp folder, which every chat writes, so no other project takes it either.
+    assert!(
+        compiled_at(&other, &Grants::default())
+            .widened
+            .sockets
+            .is_empty()
+    );
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// R2: "every project on this machine" is a socket's or a service's alone, no word of a policy
+/// names it, and a policy that fixes the scopes leaves it out.
+#[test]
+fn every_project_is_offered_for_a_socket_or_a_service_only_and_policy_scopes_leave_it_out() {
+    use crate::sandbox::grant::Level;
+    use crate::sandbox::policy::Locks;
+    assert_eq!(Level::of_word("machine"), Some(Level::Machine));
+    assert_eq!(Level::Machine.said(), "on this machine, for every project");
+    let socket = What::Socket(PathBuf::from("/var/run/docker.sock"));
+    let service = What::Service("com.example.helper".to_owned());
+    let none = Locks::none();
+    assert_eq!(none.refuses_grant(&socket, Level::Machine), None);
+    assert_eq!(none.refuses_grant(&service, Level::Machine), None);
+    let host = What::Host(crate::sandbox::grant::host("api.example.com").expect("a host"));
+    assert!(none.refuses_grant(&host, Level::Machine).is_some());
+    assert!(
+        none.refuses_grant(&What::Write(PathBuf::from("/opt/cache")), Level::Machine)
+            .is_some()
+    );
+    // A policy that fixes the scopes: "you" does not stand in for every project.
+    let scoped = Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert_eq!(scoped.refuses_grant(&socket, Level::You), None);
+    let why = scoped
+        .refuses_grant(&socket, Level::Machine)
+        .expect("left out");
+    assert!(why.contains("Policy removed Allow"), "{why}");
+    // And "machine" is not a word a policy may write: the file is refused, every lock set.
+    let worded = Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["machine"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert!(worded.forbids_socket_grants(), "a refused file locks everything");
+    // The lock on sockets and services holds at this level as at any.
+    let locked = Locks::parse(
+        r#"{"sandbox": {"socket-grants": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert!(locked.refuses_grant(&socket, Level::Machine).is_some());
+}
+
 /// MF-2 fold-in of #1808's review: an administrator's `socket-grants` lock drops every socket
 /// and service at a start, this chat's and yours, and the certificate check with them.
 #[test]

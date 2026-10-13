@@ -172,6 +172,7 @@ export function TaskBlocksNotice({
   const scope: Readonly<Record<GrantLevel, string>> = {
     once: labelOf("once"),
     you: labelOf("you"),
+    machine: labelOf("machine"),
     chat: `Allow only for these ${count} tasks`,
     project: labelOf("project"),
   };

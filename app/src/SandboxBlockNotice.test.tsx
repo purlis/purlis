@@ -284,6 +284,52 @@ describe("a local socket's Notice (ADR 0093)", () => {
       ]),
     );
   });
+
+  // R2 (2026-10-13): one press can cover this machine for every project.
+  it("offers every project on this machine beside Allow once, and this project under Other scopes", async () => {
+    const { sent } = drawn({ ...DOCKER, levels: ["once", "machine", "chat", "you"] });
+
+    // Side by side, with nothing to open first.
+    expect(screen.getByRole("button", { name: "Allow once" })).toBeTruthy();
+    const everywhere = screen.getByRole("button", {
+      name: "Allow on this machine, for every project",
+    });
+    expect(screen.queryByRole("button", { name: "Allow for me on this machine" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+    expect(screen.getByRole("button", { name: "Allow for me on this machine" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toBeTruthy();
+    // Once in the Notice, never a second time under the menu.
+    expect(
+      screen.getAllByRole("button", { name: "Allow on this machine, for every project" }),
+    ).toHaveLength(1);
+
+    await userEvent.click(everywhere);
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: {
+            operation: "connect",
+            kind: "local-socket",
+            what: "socket",
+            target: "/Users/op/.docker/run/docker.sock",
+          },
+          level: "machine",
+        },
+      ]),
+    );
+  });
+
+  it("offers no every-project answer where policy leaves that scope out", () => {
+    drawn({ ...DOCKER, levels: ["chat", "you"] });
+
+    expect(
+      screen.queryByRole("button", { name: "Allow on this machine, for every project" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toBeTruthy();
+  });
 });
 
 describe("the certificate check's Notice (R1, 2026-10-13)", () => {
