@@ -15,9 +15,9 @@ use super::backend::{
 use super::checks::{self, Checks};
 use super::pr::{
     AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
-    Gated, MergeAs, MergedAt, Opened, Pr, Ready, Request, State, check_gate, commit_named, first,
-    held_to_the_forges_clock, is_ours, none_will_run, not_purlis_own, not_queued_when, pr_of,
-    unknown_state,
+    Gated, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate, commit_named,
+    first, held_to_the_forges_clock, is_ours, none_will_run, not_queued_when, not_this_saves,
+    pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -659,9 +659,10 @@ impl Requests for GitHub {
         caller: &Caller,
         path: &str,
         pr: &Pr,
-        head_sha: &str,
+        at: &Pinned,
         gate: Gate,
     ) -> Result<Ready, ForgeError> {
+        let head_sha = at.sha;
         let (owner, name) = owner_name(path);
         let number = pr.number.to_string();
         let doing = format!("reading whether #{number} of {path} can merge");
@@ -704,9 +705,11 @@ impl Requests for GitHub {
         }
         // Whose request this is, asked of GitHub at every look and for the person's merge too:
         // which request to merge is kept in a file on this machine, and GitHub is the truth.
-        if let Some(not_ours) = not_purlis_own(
+        if let Some(not_ours) = not_this_saves(
             &format!("#{number}"),
+            at,
             found["headRefName"].as_str(),
+            found["baseRefName"].as_str(),
             found["body"].as_str(),
             found["isCrossRepository"] == Value::Bool(false),
         ) {

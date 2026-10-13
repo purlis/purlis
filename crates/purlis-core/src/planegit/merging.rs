@@ -17,9 +17,9 @@
 //! | `cannot-merge` | a conflict, a review the branch requires, or another rule of the forge's own |
 //! | `merged` | purlis merged it, and the project has not moved onto what merged yet |
 //!
-//! Everything here that is read back from a file is held to the shape purlis writes: the file
-//! is machine-local state anything running as the person can rewrite, and a check's name and
-//! link came from whoever wrote the check.
+//! Everything here that is read back from a file is held to the shape purlis writes: the forge
+//! is the truth and what is kept on disk is a hint, and a check's name and link came from
+//! whoever wrote the check.
 
 use serde_json::{Value, json};
 

@@ -947,6 +947,80 @@ mod pr_saves {
         assert_eq!(planegit::request_to_look_at(&plane.root), None);
     }
 
+    /// The request a look merges is this save's own, into its own target, by the forge's
+    /// answer (review round 2, R1 and R2). The forge says #12 is from another branch purlis
+    /// names, then that it goes into another base: neither is merged, by a look or by the
+    /// person's merge, and the standing says why.
+    #[test]
+    fn a_request_the_forge_says_is_not_this_saves_own_into_its_target_is_never_merged() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (plane, head) = pr_merge_plane("pr-merge-own.test");
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+        assert_eq!(code, 0, "{said}");
+        the_settle_wait_is_over(&plane);
+        let put = merged_by_purlis(&plane, &head);
+        let host = plane.scene.host.clone();
+        let answers = |head_ref: &str, base_ref: &str| {
+            plane.scene.answers(
+                "gh",
+                &[
+                    "api",
+                    "graphql",
+                    "--hostname",
+                    &host,
+                    "-f",
+                    &format!("query={MERGE_READY}"),
+                    "-f",
+                    "owner=acme",
+                    "-f",
+                    "name=plane",
+                    "-F",
+                    "number=12",
+                ],
+                0,
+                &format!(
+                    r#"{{"data": {{"repository": {{"rebaseMergeAllowed": true,
+                    "mergeCommitAllowed": true, "squashMergeAllowed": true,
+                    "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
+                    "mergeStateStatus": "CLEAN", "reviewDecision": null,
+                    "isMergeQueueEnabled": false, "baseRefName": "{base_ref}",
+                    "headRefName": "{head_ref}", "isCrossRepository": false,
+                    "updatedAt": "2026-01-01T00:00:00Z", "body": "",
+                    "commits": {{"nodes": []}}}}}}}}}}"#
+                ),
+                "",
+            );
+        };
+
+        // Another request purlis opened, into the plane's own target.
+        plane.state(12, true);
+        answers("charter/change/api-2", "release");
+        look(&plane);
+        assert!(!was_asked(&put), "another purlis request was merged");
+        let merge = plane.standing().merge.expect("where the request stands");
+        assert_eq!(merge.state, planegit::MergeState::CannotMerge, "{merge:?}");
+        assert!(merge.why.contains("not this save's request"), "{merge:?}");
+
+        // This clone's save branch, into another base: the person's merge is refused too.
+        answers(SAVE, "main");
+        let merged = planegit::merge_as_it_stands(
+            &plane.root,
+            &purlis_core::forge::Caller::window(),
+            &mut |_| {},
+        );
+        assert!(
+            matches!(&merged, Err(why) if why.contains("goes into main")),
+            "{merged:?}"
+        );
+        assert!(
+            !was_asked(&put),
+            "merged into a base that is not the plane's target"
+        );
+    }
+
     /// [`merge`] by rebase, named apart from a local `merge` a test holds.
     fn merge_on_the_forge(plane: &Plane) -> String {
         merge(plane, "rebase")

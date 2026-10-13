@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use super::checks::Checks;
 use super::cli::Cli;
-use super::pr::{AutoMerge, Gate, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
+use super::pr::{AutoMerge, Gate, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State};
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
 
@@ -536,11 +536,12 @@ pub trait Requests {
         head_sha: &str,
     ) -> Result<AutoMerge, ForgeError>;
 
-    /// Merge `pr` now, only at `head_sha` and by the repo's own method, when the forge says it
-    /// may merge and `gate` lets it through: how every `pr-merge` save's request is merged
+    /// Merge `pr` now, only when the forge says it is the request `at` names (the commit the
+    /// save pushed, from the save's own branch, into its configured target), by the repo's own
+    /// method, when the forge says it may merge and `gate` lets it through: how every `pr-merge` save's request is merged
     /// ([`Fallback::MergeWhenReady`], ADR 0051, amended 2026-10-13).
     ///
-    /// Under [`Gate::Checks`] purlis reads every check at `head_sha` itself. A failed one,
+    /// Under [`Gate::Checks`] purlis reads every check at that commit itself. A failed one,
     /// required or not, is [`Ready::Red`] with its name. A running one is [`Ready::Waiting`],
     /// and so is a head with no check at all until it is `settled` **and** nothing the
     /// repository shows says a check will run on it. A conflict or a review the branch
@@ -553,7 +554,7 @@ pub trait Requests {
         caller: &Caller,
         path: &str,
         pr: &Pr,
-        head_sha: &str,
+        at: &Pinned,
         gate: Gate,
     ) -> Result<Ready, ForgeError>;
 

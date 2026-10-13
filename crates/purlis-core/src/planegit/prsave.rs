@@ -52,7 +52,7 @@
 
 use super::*;
 use crate::forge::Caller;
-use crate::forge::pr::{self, Gate, Pr, Ready, Repo, State};
+use crate::forge::pr::{self, Gate, Pinned, Pr, Ready, Repo, State};
 use crate::planesave::{Mode, Plane};
 
 /// Whether a push record is one a request mode wrote: its present tense is asked of the target
@@ -605,12 +605,12 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
 fn merge_it_ourselves(
     repo: &Repo,
     pr: &Pr,
-    head: &str,
+    at: &Pinned,
     caller: &Caller,
     gate: Gate,
 ) -> Result<Ready, crate::forge::ForgeError> {
     repo.backend()
-        .merge_when_ready(caller, &repo.path, pr, head, gate)
+        .merge_when_ready(caller, &repo.path, pr, at, gate)
 }
 
 /// The origin URL and credential helper [`settle`] fetches the target branch with after purlis
@@ -891,7 +891,14 @@ pub(super) fn settle(
         let gate = Gate::Checks {
             settled: settled(known.pushed_at),
         };
-        let looked = merge_it_ourselves(&repo, &opened, &head, caller, gate);
+        // The one request this save may merge: at the commit it pushed, from this clone's own
+        // save branch, into the plane's target. The forge's answer must match all three.
+        let at = Pinned {
+            sha: &head,
+            branch: &save,
+            base: target,
+        };
+        let looked = merge_it_ourselves(&repo, &opened, &at, caller, gate);
         let merging = Merging::of(&looked);
         let queued = matches!(looked, Ok(Ready::Queued(_)));
         // Kept where the window reads it, whatever comes next: the request's own state.
@@ -1213,14 +1220,19 @@ pub(super) fn merge_as_it_stands(
                 .into(),
         );
     }
-    let (repo, _, _) = config(root, plane)?;
+    let (repo, save, _) = config(root, plane)?;
     let kind = repo.forge.kind;
     let request = format!("{} {}", kind.request_noun(), kind.request_ref(known.number));
     let opened = Pr {
         number: known.number,
         url: known.url.clone(),
     };
-    let looked = merge_it_ourselves(&repo, &opened, &known.head, caller, Gate::Person);
+    let at = Pinned {
+        sha: &known.head,
+        branch: &save,
+        base: target,
+    };
+    let looked = merge_it_ourselves(&repo, &opened, &at, caller, Gate::Person);
     match &looked {
         Ok(Ready::Merged) | Ok(Ready::Queued(_)) => {}
         Ok(Ready::Waiting(why)) | Ok(Ready::Refused(why)) => {

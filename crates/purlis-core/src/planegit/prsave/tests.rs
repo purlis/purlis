@@ -369,8 +369,8 @@ fn a_head_is_settled_a_minute_after_its_push_and_never_at_it() {
     assert!(!settled_at(Some(pushed), pushed));
     assert!(!settled_at(Some(pushed), pushed + wait - 1));
     assert!(settled_at(Some(pushed), pushed + wait));
-    // No stamp is no reason to believe it has been there long enough: the file that would
-    // hold it is one anything running as the person can rewrite.
+    // No stamp is no reason to believe it has been there long enough: the forge is the truth,
+    // and what is kept on disk is a hint.
     assert!(!settled_at(None, pushed));
     // A clock set back, by a little or by a day, never reads as "long ago" (review N4): the
     // stamp is in the future, so the head is not settled, and the look stamps it again.

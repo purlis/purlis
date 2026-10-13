@@ -29,7 +29,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"source_branch\": \"purlis/save\", \"source_project_id\": 1, \"target_project_id\": 1, \"description\": \"\", \"updated_at\": \"2026-01-01T00:00:00.000Z\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"source_branch\": \"purlis/save/test\", \"source_project_id\": 1, \"target_project_id\": 1, \"description\": \"\", \"updated_at\": \"2026-01-01T00:00:00.000Z\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
         "err": ""
       }
     },
@@ -77,7 +77,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"source_branch\": \"purlis/save\", \"source_project_id\": 1, \"target_project_id\": 1, \"description\": \"\", \"updated_at\": \"2026-01-01T00:00:00.000Z\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"source_branch\": \"purlis/save/test\", \"source_project_id\": 1, \"target_project_id\": 1, \"description\": \"\", \"updated_at\": \"2026-01-01T00:00:00.000Z\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
         "err": ""
       }
     },

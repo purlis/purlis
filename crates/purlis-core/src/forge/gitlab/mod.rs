@@ -15,9 +15,9 @@ use super::backend::{
 };
 use super::checks::{self, Checks};
 use super::pr::{
-    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, MergeAs, MergedAt, Opened, Pr,
-    Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
-    none_will_run, not_purlis_own, not_queued_when, own_mr, pr_of, unknown_state,
+    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, MergeAs, MergedAt, Opened, Pinned,
+    Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
+    none_will_run, not_queued_when, not_this_saves, own_mr, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
 use super::{
@@ -686,9 +686,10 @@ impl Requests for GitLab {
         caller: &Caller,
         path: &str,
         pr: &Pr,
-        head_sha: &str,
+        at: &Pinned,
         gate: Gate,
     ) -> Result<Ready, ForgeError> {
+        let head_sha = at.sha;
         let project = format!("projects/{}", quote(path));
         let settings = self.0.ask(
             caller,
@@ -729,9 +730,11 @@ impl Requests for GitLab {
         // Whose merge request this is, asked of GitLab at every look and for the person's merge
         // too: which one to merge is kept in a file on this machine, and GitLab is the truth.
         let source = record["source_project_id"].as_u64();
-        if let Some(not_ours) = not_purlis_own(
+        if let Some(not_ours) = not_this_saves(
             &format!("!{number}"),
+            at,
             record["source_branch"].as_str(),
+            record["target_branch"].as_str(),
             record["description"].as_str(),
             source.is_some() && source == record["target_project_id"].as_u64(),
         ) {

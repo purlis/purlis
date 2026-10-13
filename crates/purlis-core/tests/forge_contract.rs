@@ -33,7 +33,7 @@ use std::sync::Arc;
 use purlis_core::forge::backend::{About, Issues, NewWorkItem, PushProtection, Visibility};
 use purlis_core::forge::checks::{Checks, Ci, FailedCheck};
 use purlis_core::forge::pr::{
-    AutoMerge, Gate, MergeAs, MergedAt, Opened, Pr, Ready, Request, State,
+    AutoMerge, Gate, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State,
 };
 use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::{
@@ -471,7 +471,11 @@ mod cases {
                 &over.caller,
                 &scene.path("api"),
                 &open(scene),
-                &scene.head,
+                &Pinned {
+                    sha: &scene.head,
+                    branch: "purlis/save/test",
+                    base: "main",
+                },
                 Gate::Checks { settled: true }
             ),
             Ok(Ready::Merged)
@@ -2271,6 +2275,12 @@ mod merge_when_ready_scenes {
         number: 12,
         url: String::new(),
     };
+    /// The request each scene's save may merge: at [`SHA`], from its save branch, into `main`.
+    const AT: Pinned = Pinned {
+        sha: SHA,
+        branch: "purlis/save/test",
+        base: "main",
+    };
     /// The head has been on the forge long enough for its checks to have started.
     const SETTLED: Gate = Gate::Checks { settled: true };
     /// The head was pushed a moment ago.
@@ -2316,12 +2326,12 @@ mod merge_when_ready_scenes {
         for kind in BOTH {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "late_failure", how);
-                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA, FRESH);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, &AT, FRESH);
                 assert!(
                     matches!(&first, Ok(Ready::Waiting(why)) if why.contains("not had time to start")),
                     "{kind}: {first:?}"
                 );
-                let later = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let later = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
                 let Ok(Ready::Red(failed)) = &later else {
                     panic!("{kind}: {later:?}");
                 };
@@ -2339,10 +2349,10 @@ mod merge_when_ready_scenes {
         for kind in BOTH {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "no_checks", how);
-                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA, FRESH);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, &AT, FRESH);
                 assert!(matches!(first, Ok(Ready::Waiting(_))), "{kind}: {first:?}");
                 assert_eq!(
-                    backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
+                    backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED),
                     Ok(Ready::Merged),
                     "{kind}"
                 );
@@ -2364,7 +2374,7 @@ mod merge_when_ready_scenes {
         for (kind, name, sign) in scenes {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, name, how);
-                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
                 assert!(
                     matches!(&got, Ok(Ready::Waiting(why)) if why.contains(sign)),
                     "{kind} {name}: {got:?}"
@@ -2382,7 +2392,7 @@ mod merge_when_ready_scenes {
         for how in HOWS {
             let (backend, me, check) = scene("gitlab", "skipped", how);
             assert_eq!(
-                backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
+                backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED),
                 Ok(Ready::Merged)
             );
             check();
@@ -2395,11 +2405,11 @@ mod merge_when_ready_scenes {
         for kind in BOTH {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "pending", how);
-                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
                 assert!(matches!(first, Ok(Ready::Waiting(_))), "{kind}: {first:?}");
                 // The next look, once the checks passed.
                 assert_eq!(
-                    backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
+                    backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED),
                     Ok(Ready::Merged),
                     "{kind}"
                 );
@@ -2428,7 +2438,7 @@ mod merge_when_ready_scenes {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "failing", how);
                 // Red whether or not the head is settled: a failure is a failure at once.
-                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, FRESH);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, FRESH);
                 let Ok(Ready::Red(failed)) = &got else {
                     panic!("{kind}: {got:?}");
                 };
@@ -2447,7 +2457,7 @@ mod merge_when_ready_scenes {
         purlis_core::unsteered!();
         for how in HOWS {
             let (backend, me, check) = scene("github", "cancelled", how);
-            let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+            let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
             let Ok(Ready::Red(failed)) = &got else {
                 panic!("{got:?}");
             };
@@ -2455,7 +2465,7 @@ mod merge_when_ready_scenes {
             check();
 
             let (backend, me, check) = scene("gitlab", "cancelled", how);
-            let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+            let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
             let Ok(Ready::Red(failed)) = &got else {
                 panic!("{got:?}");
             };
@@ -2471,7 +2481,7 @@ mod merge_when_ready_scenes {
         for how in HOWS {
             let (backend, me, check) = scene("github", "passed_quietly", how);
             assert_eq!(
-                backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
+                backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED),
                 Ok(Ready::Merged)
             );
             check();
@@ -2488,13 +2498,13 @@ mod merge_when_ready_scenes {
         for (kind, name) in [("github", "coverage"), ("gitlab", "pipeline #77 (failed)")] {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "unrequired", how);
-                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
                 let Ok(Ready::Red(failed)) = &got else {
                     panic!("{kind}: {got:?}");
                 };
                 assert_eq!(names(failed), [name], "{kind}");
                 assert_eq!(
-                    backend.merge_when_ready(&me, "acme/api", &PR, SHA, Gate::Person),
+                    backend.merge_when_ready(&me, "acme/api", &PR, &AT, Gate::Person),
                     Ok(Ready::Merged),
                     "{kind}"
                 );
@@ -2512,7 +2522,7 @@ mod merge_when_ready_scenes {
         for (kind, word) in [("github", "merge queue"), ("gitlab", "merge train")] {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "queue", how);
-                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
                 assert!(
                     matches!(&got, Ok(Ready::Queued(said)) if said.contains(word)),
                     "{kind}: {got:?}"
@@ -2543,7 +2553,7 @@ mod merge_when_ready_scenes {
         ]});
         let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
         let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
         spent(&recorded);
     }
@@ -2624,7 +2634,7 @@ mod merge_when_ready_scenes {
                 gh_statuses(json!([{"context": "dco", "state": "success"}])),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, FRESH);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, FRESH);
         assert!(
             matches!(&got, Ok(Ready::Waiting(why)) if why.contains("may not have started")),
             "{got:?}"
@@ -2649,7 +2659,7 @@ mod merge_when_ready_scenes {
                 gh_statuses(json!([])),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         let Ok(Ready::Red(failed)) = &got else {
             panic!("{got:?}");
         };
@@ -2669,7 +2679,7 @@ mod merge_when_ready_scenes {
                 gh_runs("", 5000, (0..100).map(passing).collect()),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
             matches!(&got, Ok(Ready::Waiting(why)) if why.contains("too many checks to read")),
             "{got:?}"
@@ -2690,7 +2700,7 @@ mod merge_when_ready_scenes {
                 gh_statuses(json!([])),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
             matches!(&got, Ok(Ready::Waiting(why)) if why.contains("requires has not reported")),
             "{got:?}"
@@ -2716,7 +2726,7 @@ mod merge_when_ready_scenes {
                 get("projects/acme%2Fapi/pipelines?per_page=20", json!([])),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
             matches!(&got, Ok(Ready::Waiting(why)) if why.contains("requires a pipeline to pass")),
             "{got:?}"
@@ -2747,9 +2757,9 @@ mod merge_when_ready_scenes {
         for ready in theirs {
             for gate in [SETTLED, Gate::Person] {
                 let (backend, recorded) = over(Kind::GitHub, vec![ready.clone()]);
-                let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, gate);
+                let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, gate);
                 assert!(
-                    matches!(&got, Ok(Ready::Refused(why)) if why.contains("not a request purlis opened")),
+                    matches!(&got, Ok(Ready::Refused(why)) if why.contains("not this save's request")),
                     "{got:?}"
                 );
                 spent(&recorded);
@@ -2773,7 +2783,12 @@ mod merge_when_ready_scenes {
                 gh_statuses(json!([])),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, FRESH);
+        let from_a_feature_branch = Pinned {
+            branch: "feature/x",
+            ..AT
+        };
+        let got =
+            backend.merge_when_ready(&caller(), "acme/api", &PR, &from_a_feature_branch, FRESH);
         assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
         spent(&recorded);
 
@@ -2790,12 +2805,89 @@ mod merge_when_ready_scenes {
                 get("projects/acme%2Fapi/merge_requests/12", fork),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
-            matches!(&got, Ok(Ready::Refused(why)) if why.contains("not a request purlis opened")),
+            matches!(&got, Ok(Ready::Refused(why)) if why.contains("not this save's request")),
             "{got:?}"
         );
         spent(&recorded);
+    }
+
+    /// Review round 2, R1 and R2: the request merged is **this save's own, into its own
+    /// target**. The forge's base must be the configured target, and its head branch must be
+    /// the branch this save pushes — not merely a branch purlis names or a body with its
+    /// marker: another machine's save request, or a `purlis change` member's, is not this
+    /// save's. Refused before any check is read, and for the person's merge too.
+    #[test]
+    fn only_this_saves_own_request_into_its_own_target_is_merged() {
+        purlis_core::unsteered!();
+        let marker = purlis_core::forge::pr::MARKER;
+        let not_this_saves = [
+            // R1: purlis's own branch, into another base.
+            (
+                gh_ready_with("baseRefName", json!("release")),
+                "goes into release",
+            ),
+            // R2: other requests purlis opened in the same repository.
+            (
+                gh_ready_with("headRefName", json!("purlis/change/api-2")),
+                "from purlis/change/api-2",
+            ),
+            (
+                gh_ready_with("headRefName", json!("purlis/save/another-machine")),
+                "from purlis/save/another-machine",
+            ),
+        ];
+        for (ready, said) in not_this_saves {
+            for gate in [SETTLED, Gate::Person] {
+                let (backend, recorded) = over(Kind::GitHub, vec![ready.clone()]);
+                let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, gate);
+                assert!(
+                    matches!(&got, Ok(Ready::Refused(why)) if why.contains(said)),
+                    "{said}: {got:?}"
+                );
+                spent(&recorded);
+            }
+        }
+        // A marker in the body does not make another branch's request this save's.
+        let mut marked = gh_ready_with("headRefName", json!("feature/elsewhere"));
+        let mut answer: Value =
+            serde_json::from_str(marked["reply"]["out"].as_str().unwrap()).unwrap();
+        answer["data"]["repository"]["pullRequest"]["body"] = json!(marker);
+        marked["reply"]["out"] = json!(answer.to_string());
+        let (backend, recorded) = over(Kind::GitHub, vec![marked]);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
+        assert!(matches!(got, Ok(Ready::Refused(_))), "{got:?}");
+        spent(&recorded);
+
+        // GitLab, the same two rules.
+        let mut other_base = gl_mr("mergeable");
+        other_base["target_branch"] = json!("release");
+        let mut other_head = gl_mr("mergeable");
+        other_head["source_branch"] = json!("purlis/change/api-2");
+        for (mr, said) in [
+            (other_base, "goes into release"),
+            (other_head, "from purlis/change/api-2"),
+        ] {
+            for gate in [SETTLED, Gate::Person] {
+                let (backend, recorded) = over(
+                    Kind::GitLab,
+                    vec![
+                        get(
+                            "projects/acme%2Fapi",
+                            json!({"squash_option": "default_off"}),
+                        ),
+                        get("projects/acme%2Fapi/merge_requests/12", mr.clone()),
+                    ],
+                );
+                let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, gate);
+                assert!(
+                    matches!(&got, Ok(Ready::Refused(why)) if why.contains(said)),
+                    "{said}: {got:?}"
+                );
+                spent(&recorded);
+            }
+        }
     }
 
     /// Review N4: the machine saying "settled" is not enough. The forge says the request was
@@ -2815,7 +2907,7 @@ mod merge_when_ready_scenes {
                     gh_statuses(json!([])),
                 ],
             );
-            let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+            let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
             assert!(
                 matches!(&got, Ok(Ready::Waiting(why)) if why.contains("not had time to start")),
                 "{touched}: {got:?}"
@@ -2838,7 +2930,7 @@ mod merge_when_ready_scenes {
                 ),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
         spent(&recorded);
     }
@@ -2868,7 +2960,7 @@ mod merge_when_ready_scenes {
                 ),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         let Ok(Ready::Red(failed)) = &got else {
             panic!("{got:?}");
         };
@@ -2917,7 +3009,7 @@ mod merge_when_ready_scenes {
                 ),
             ],
         );
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
             matches!(&got, Ok(Ready::Waiting(why)) if why.contains("cancelled")),
             "{got:?}"

@@ -148,6 +148,21 @@ pub enum Ready {
     Refused(String),
 }
 
+/// The one request `merge_when_ready` may merge, as the save that opened it defines it: the
+/// commit it pushed, the branch it pushed that commit to, and the branch the request goes
+/// into. The forge's own answer must match all three ([`not_this_saves`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pinned<'a> {
+    /// The commit the save pushed.
+    pub sha: &'a str,
+    /// The save's own branch on the forge: the plane's save branch for this clone, or the
+    /// branch a repo's save pushed.
+    pub branch: &'a str,
+    /// The configured target: `[plane] branch`, or a repo's `[repos.<name>] branch` or its
+    /// default branch.
+    pub base: &'a str,
+}
+
 /// What stands between a save's request and `merge_when_ready` merging it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gate {
@@ -404,8 +419,8 @@ pub(super) fn check_gate(checks: &Checks, gate: Gate) -> Gated {
 /// less. `touched` is the forge's timestamp (RFC 3339); one that is missing, unreadable or
 /// in the future does not settle anything.
 ///
-/// What this machine keeps about the push is a file anything running as the person can
-/// rewrite, so it is a hint: it can make a look wait, and it cannot make one merge sooner.
+/// The forge is the truth; what is kept on disk about the push is a hint. Both must say the
+/// head has been there for the wait.
 pub(super) fn held_to_the_forges_clock(gate: Gate, touched: Option<&str>) -> Gate {
     let Gate::Checks { settled: true } = gate else {
         return gate;
@@ -420,22 +435,57 @@ pub(super) fn held_to_the_forges_clock(gate: Gate, touched: Option<&str>) -> Gat
     Gate::Checks { settled }
 }
 
-/// Why a request the forge answered is not one purlis merges, or `None` when it is purlis's
-/// own: from a branch purlis names or with purlis's marker in its body ([`is_ours`]), and from
-/// this repository rather than a fork. Asked of the forge at every look, whatever this machine
-/// kept about which request to merge.
-pub(super) fn not_purlis_own(
+/// Why a request the forge answered is not the one this save may merge, or `None` when it
+/// is. Asked of the forge at every look and for the person's merge; all of these must hold,
+/// by the forge's own answer:
+///
+/// - it is from this repository, not a fork;
+/// - its head branch is the branch this save pushes ([`Pinned::branch`]): the plane's save
+///   branch for this clone, or the branch a repo's save pushed. A branch purlis names is not
+///   enough; another machine's save and a `purlis change` member's request are not this
+///   save's;
+/// - it goes into the configured target ([`Pinned::base`]);
+/// - it is one purlis opened ([`is_ours`]): a person's own request from the same branch,
+///   which a save leaves as it is, is theirs to merge.
+///
+/// The forge is the truth; what is kept on disk about the request is a hint.
+pub(super) fn not_this_saves(
     request: &str,
+    at: &Pinned,
     head: Option<&str>,
+    base: Option<&str>,
     body: Option<&str>,
     from_this_repo: bool,
 ) -> Option<Ready> {
-    (!(from_this_repo && head.is_some_and(|head| is_ours(head, body)))).then(|| {
-        Ready::Refused(format!(
-            "{request} is not a request purlis opened from this repository, so purlis will \
-             not merge it"
-        ))
-    })
+    let refused = |why: String| {
+        Some(Ready::Refused(format!(
+            "{request} {why}, so it is not this save's request, and purlis will not merge it"
+        )))
+    };
+    let shown = |name: Option<&str>| {
+        crate::shown::one_line(name.unwrap_or("no branch"), crate::shown::DISPLAY_LIMIT)
+    };
+    if !from_this_repo {
+        return refused("is from another repository".into());
+    }
+    if head != Some(at.branch) {
+        return refused(format!(
+            "is from {}, and this save pushes {}",
+            shown(head),
+            at.branch
+        ));
+    }
+    if base != Some(at.base) {
+        return refused(format!(
+            "goes into {}, and this save's target is {}",
+            shown(base),
+            at.base
+        ));
+    }
+    if !is_ours(at.branch, body) {
+        return refused("is not a request purlis opened".into());
+    }
+    None
 }
 
 /// [`Gated::NoneRan`], settled by what the repository shows: `Ok(None)` when nothing says a
