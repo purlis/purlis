@@ -242,7 +242,7 @@ describe("the Chats list the e2e measures", () => {
       "rolled-up",
       "Stopping…",
       "finished-task",
-      'class="task-count"',
+      'class="task-count ui-text-meta"',
     ])
       expect(html, drawn).toContain(drawn);
     // And nothing of a second line: what it said is each row's card, drawn only while it is up.
