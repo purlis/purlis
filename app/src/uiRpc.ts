@@ -3649,6 +3649,20 @@ export type EntryWritten =
  */
 { kind: "saved"; file: SettingsFile; added: string | null; removed: EntryValue[] | null } | { kind: "refused"; fields: EntryFieldRefusal[]; referrers: EntryReferrer[]; reasons: string[] };
 
+/**  One local socket or system service a project expects ([`sandbox::services::Awaited`]). */
+export type ExpectedItem = {
+	what: GrantWhat,
+	/**
+	 *  The socket's path or the service's name, as the committed file writes it: what an
+	 *  answer is sent back by. Written by a repository, so the window draws it inertly.
+	 */
+	target: string,
+	/**  What allowing it means, in purlis's own words. */
+	says: string,
+	/**  Why it cannot be allowed on this machine now, where it cannot. */
+	refused: string | null,
+};
+
 /**
  *  The question charter asks before an extension contributes anything.
  * 
@@ -6143,6 +6157,26 @@ export type ProjectAnswer = {
 	asks_forge: string | null,
 };
 
+/**
+ *  **What a project declares it expects and this machine has not allowed** (ADR 0093, ruling
+ *  2: a committed file declares and never grants). The window asks about it once where the
+ *  declaration is read, on opening the project, and Settings offers the same Allow after a
+ *  "Not now" ([`sandbox::services::Awaiting`]).
+ */
+export type ProjectExpects = {
+	items: ExpectedItem[],
+	/**
+	 *  Where an administrator's policy forbids allowing any of it: the sentence that says so
+	 *  and who set it. Then nothing is offered.
+	 */
+	locked: string | null,
+	/**
+	 *  Whether the person is still to be asked: something is declared that they have neither
+	 *  allowed nor said "Not now" to on this machine.
+	 */
+	asked: boolean,
+};
+
 /**  One extension in one project, as the Settings tab draws it. */
 export type ProjectExtension = {
 	id: string,
@@ -6933,6 +6967,11 @@ export type SandboxState = {
 	 *  here run sandboxed: what Settings' one switch says. `null` where the sandbox is off.
 	 */
 	certificate_check?: CertificateCheck | null,
+	/**
+	 *  What the project's committed file declares it expects that this machine has not
+	 *  allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
+	 */
+	expects?: ProjectExpects | null,
 };
 
 /**  One save attempt, as the journal holds it. */

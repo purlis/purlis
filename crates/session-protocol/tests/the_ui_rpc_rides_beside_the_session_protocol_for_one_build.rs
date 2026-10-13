@@ -225,6 +225,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         // One chat's Keep blocked, which refuses a connection its proxy holds (#1666).
         "keep_sandbox_block",
         "allow_persona_hosts",
+        // The answer to what a project declares it expects (ADR 0093): Allow, and Not now.
+        "allow_project_expects",
+        "decline_project_expects",
         "allow_blocked_host",
         "forget_sandbox_block",
     ] {
@@ -345,6 +348,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             // The browser sign-in by the device flow (#729).
             + 3
             // The browser sign-in to gitlab.com, and its cancel (#730).
+            + 2
+            // The answer to what a project declares it expects (ADR 0093): Allow, and Not now.
             + 2
     );
 }

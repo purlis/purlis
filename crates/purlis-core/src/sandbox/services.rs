@@ -676,6 +676,132 @@ pub fn said_of(what: &What, declared: &Declared) -> String {
     }
 }
 
+/// One local socket or system service the project declares it expects and nobody has allowed
+/// on this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Awaited {
+    /// The socket, as the kernel names it where it can be allowed and as the file writes it
+    /// otherwise; or the service by its whole name.
+    pub what: What,
+    /// As the committed file writes it: what an answer is recorded by.
+    pub written: String,
+    /// What allowing it means, in the words its Notice would say ([`said_of`]).
+    pub said: String,
+    /// Why it cannot be allowed on this machine now, where it cannot: the socket is not
+    /// there, or is somewhere no grant names.
+    pub refused: Option<String>,
+}
+
+/// **What the project declares it expects and this machine has not allowed** (ADR 0093, ruling
+/// 2: a committed file declares and never grants; each person allows on their own machine).
+/// Asked about up front, once, where the declaration is read, so nobody learns of it from a
+/// tool that failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Awaiting {
+    pub items: Vec<Awaited>,
+    /// Why none of it can be allowed here, where an administrator's policy forbids it: said
+    /// with who set it, and nothing is offered.
+    pub locked: Option<String>,
+    /// Whether the person here is still to be asked: an item is declared that they have
+    /// neither allowed nor answered "Not now" to. Settings offers the Allow either way.
+    pub asked: bool,
+}
+
+impl Awaiting {
+    /// The declaration as the question shows it, for the answer to record.
+    pub fn shown(&self) -> Vec<String> {
+        self.items.iter().map(|item| item.written.clone()).collect()
+    }
+}
+
+/// [`Awaiting`] for the project at `root` on `machine`, or none: where its chats are not
+/// sandboxed, where it declares nothing, and where everything it declares is allowed here
+/// already, for this project or for every project.
+pub fn awaiting(root: &Path, machine: &super::Machine) -> Option<Awaiting> {
+    let locks = super::policy::Locks::of(root);
+    super::Plane::read(root).in_force(&locks)?;
+    let declared = declared(root);
+    let ground = SocketGround::of(root, machine, &[]);
+    let mut sockets = super::local::granted_sockets(root);
+    sockets.extend(super::local::sockets_everywhere());
+    let mut services = super::local::granted_services(root);
+    services.extend(super::local::services_everywhere());
+    let none = Declared::default();
+    let mut items = Vec::new();
+    for written in &declared.sockets {
+        let spelled = written.display().to_string();
+        let (what, refused) = match socket(&spelled, &ground) {
+            Ok(resolved) => (What::Socket(resolved), None),
+            Err(why) => (What::Socket(written.clone()), Some(why.to_string())),
+        };
+        let What::Socket(path) = &what else { continue };
+        if sockets
+            .iter()
+            .any(|one| one == path || one == written || super::real(one) == *path)
+        {
+            continue;
+        }
+        items.push(Awaited {
+            said: said_of(&what, &none),
+            what,
+            written: spelled,
+            refused,
+        });
+    }
+    for name in &declared.services {
+        if services.contains(name) {
+            continue;
+        }
+        let what = What::Service(name.clone());
+        items.push(Awaited {
+            said: said_of(&what, &none),
+            what,
+            written: name.clone(),
+            refused: None,
+        });
+    }
+    if items.is_empty() {
+        return None;
+    }
+    let seen = super::local::expects_seen(root);
+    Some(Awaiting {
+        asked: items.iter().any(|item| !seen.contains(&item.written)),
+        locked: locks.socket_grants_refused(),
+        items,
+    })
+}
+
+/// **What a chat's pane says from its start** where the project expects something this
+/// machine has not allowed and the chat does not hold (`has`, what its sandbox was compiled
+/// with): one line, so the first sign is never a tool that failed. None once the person
+/// answered "Not now", where policy locks it (the project's Notice says that once), and for a
+/// chat that has everything declared.
+pub fn start_note(root: &Path, machine: &super::Machine, has: &super::Widened) -> Option<String> {
+    let awaiting = awaiting(root, machine)?;
+    if !awaiting.asked || awaiting.locked.is_some() {
+        return None;
+    }
+    let missing: Vec<String> = awaiting
+        .items
+        .iter()
+        .filter(|item| match &item.what {
+            What::Socket(path) => !has.sockets.contains(path),
+            What::Service(name) => !has.services.contains(name),
+            What::Host(_) | What::Write(_) => false,
+        })
+        .map(|item| item.written.clone())
+        .collect();
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "This project expects {}, which is not allowed on this machine yet, so this chat cannot \
+         reach it. Allow it on the project's notice or in Settings › Sandbox; this chat takes \
+         it when it restarts.",
+        missing.join(", ")
+    ))
+}
+
 #[cfg(test)]
 #[path = "services_tests.rs"]
 mod tests;

@@ -541,6 +541,116 @@ fn a_grant_of_the_certificate_check_an_older_build_kept_changes_nothing() {
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
+// ---- what the project expects is asked about up front (ADR 0093, ruling 2) -----------------
+
+fn expecting(root: &Path, expects: &str) {
+    std::fs::write(
+        crate::names::manifest(root),
+        format!("[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\nexpects = [{expects}]\n"),
+    )
+    .expect("written");
+}
+
+/// Each state of the up-front question: declared and not allowed (asked, each item with what
+/// allowing it means); allowed (nothing awaits); answered "Not now" (not asked again, still
+/// awaited for Settings); the declaration changed (asked again); and locked by policy (said
+/// with who set it).
+#[test]
+fn what_a_project_expects_is_asked_once_until_it_is_allowed_declined_or_changes() {
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let (_dir, root) = project();
+    let machine = machine_at(&root);
+    // Nothing declared: nothing to ask. Nor the certificate check, which is no grant (R1).
+    assert_eq!(awaiting(&root, &machine), None);
+    expecting(&root, "\"com.apple.trustd.agent\"");
+    assert_eq!(awaiting(&root, &machine), None);
+
+    // Declared and not allowed: asked, each with its own words.
+    expecting(&root, "\"com.example.helper\", \"/purlis-test-nowhere/docker.sock\"");
+    let asked = awaiting(&root, &machine).expect("awaited");
+    assert!(asked.asked);
+    assert_eq!(asked.locked, None);
+    assert_eq!(
+        asked.shown(),
+        ["/purlis-test-nowhere/docker.sock", "com.example.helper"]
+    );
+    let socket = &asked.items[0];
+    assert!(socket.said.contains("about the same as no sandbox"), "{socket:?}");
+    // A socket that is not there now cannot be allowed, and the item says so.
+    assert!(socket.refused.is_some(), "{socket:?}");
+    let service = &asked.items[1];
+    assert_eq!(service.what, What::Service("com.example.helper".to_owned()));
+    assert!(service.said.contains(RISK_UNKNOWN), "{service:?}");
+    assert_eq!(service.refused, None);
+    // A declaration grants nothing: the start compiles neither.
+    let compiled = compiled_at(&root, &Grants::default());
+    assert!(compiled.widened.services.is_empty() && compiled.widened.sockets.is_empty());
+    // And a chat's pane says it from the start.
+    let note = start_note(&root, &machine, &compiled.widened).expect("said");
+    assert!(note.contains("com.example.helper"), "{note}");
+    assert!(note.contains("not allowed on this machine yet"), "{note}");
+
+    // Answered "Not now": remembered on this machine, not asked again, still awaited.
+    local::acknowledge_expects(&root, &asked.shown()).expect("kept");
+    let declined = awaiting(&root, &machine).expect("still awaited, for Settings");
+    assert!(!declined.asked);
+    assert_eq!(declined.items, asked.items);
+    assert_eq!(start_note(&root, &machine, &compiled.widened), None);
+    // The answer is this machine's, never the project's.
+    assert!(!local::legacy_path(&root).exists());
+
+    // The declaration changes, a new item: asked again, whole.
+    expecting(
+        &root,
+        "\"com.example.helper\", \"/purlis-test-nowhere/docker.sock\", \"com.example.other\"",
+    );
+    let again = awaiting(&root, &machine).expect("awaited");
+    assert!(again.asked);
+    assert_eq!(again.items.len(), 3);
+
+    // Allowed for this project on this machine: it awaits no more, and the rest still does.
+    local::grant_service(&root, "com.example.helper").expect("kept");
+    let rest = awaiting(&root, &machine).expect("awaited");
+    assert_eq!(
+        rest.shown(),
+        ["/purlis-test-nowhere/docker.sock", "com.example.other"]
+    );
+    // Allowed for every project on this machine counts too (R2).
+    local::grant_service_everywhere("com.example.other", None).expect("kept");
+    local::grant_socket_everywhere(Path::new("/purlis-test-nowhere/docker.sock"), None)
+        .expect("kept");
+    assert_eq!(awaiting(&root, &machine), None);
+    // A chat that holds a thing itself is not told it lacks it.
+    local::revoke_service_everywhere("com.example.other").expect("revoked");
+    let held = crate::sandbox::Widened {
+        services: vec!["com.example.other".to_owned()],
+        ..crate::sandbox::Widened::default()
+    };
+    assert_eq!(start_note(&root, &machine, &held), None);
+
+    // Locked by policy: said with who set it; the items are still named.
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let locked = awaiting(&root, &machine).expect("awaited");
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    let why = locked.locked.clone().expect("locked");
+    assert!(why.contains("Policy forbids"), "{why}");
+    assert!(why.contains("IT"), "{why}");
+    assert_eq!(locked.shown(), ["com.example.other"]);
+
+    // A project whose chats are not sandboxed asks nothing.
+    std::fs::write(
+        crate::names::manifest(&root),
+        "[sandbox]\nexpects = [\"com.example.other\"]\n",
+    )
+    .expect("written");
+    assert_eq!(awaiting(&root, &machine), None);
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
 /// R2 (2026-10-13): a socket or a service allowed "on this machine, for every project" is kept
 /// in this machine's one file, never in a project or under a clone's key, and reaches a chat's
 /// start in every project, one made after the Allow too. Each is judged again for the project

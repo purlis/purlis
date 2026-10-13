@@ -586,6 +586,11 @@ struct Settled {
     /// Whether a chat may ask the system's certificate check.
     trust: bool,
     writable: Vec<std::path::PathBuf>,
+    /// The local sockets a chat may connect to, and the system services it may look up by
+    /// name (ADR 0093): this chat's and the person's, for this project or for every project
+    /// on this machine. One allowed since a chat started reaches it only when it restarts.
+    sockets: Vec<std::path::PathBuf>,
+    services: Vec<String>,
 }
 
 impl Settled {
@@ -610,6 +615,13 @@ impl Settled {
             ),
             trust: confines.widened.trust,
             writable: sorted(confines.writable.clone()),
+            sockets: sorted(confines.widened.sockets.clone()),
+            services: {
+                let mut services = confines.widened.services.clone();
+                services.sort();
+                services.dedup();
+                services
+            },
         }
     }
 
@@ -645,6 +657,8 @@ impl Settled {
                     &mut std::iter::once(settled.trust.to_string()),
                 );
                 list("writable", &mut paths(&settled.writable).into_iter());
+                list("sockets", &mut paths(&settled.sockets).into_iter());
+                list("services", &mut settled.services.iter().cloned());
             }
         }
         let digest = sha2::Sha256::digest(text.as_bytes());
@@ -2047,6 +2061,15 @@ impl Chats {
             .map(|(said, version)| (said.to_owned(), version));
         let older_version = older.as_ref().map(|(_, version)| *version);
         late.extend(older.map(|(said, _)| said));
+        // What the project expects and this machine has not allowed (ADR 0093): said in the
+        // chat's pane from its start, never first by a tool that failed.
+        late.extend(sandbox.and_then(|applied| {
+            purlis_core::sandbox::services::start_note(
+                &self.project,
+                &purlis_core::sandbox::Machine::this(),
+                &applied.confines().widened,
+            )
+        }));
         if let Some(change) = &trust {
             let written = match (
                 lock(&self.trusting).as_ref(),
