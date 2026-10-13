@@ -209,6 +209,30 @@ call site.
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
 | `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
 
+### A git that is stopped is stopped with what it started
+
+git works through children: a filter for each file it checks out, a credential helper, the
+remote helper, a signer, and under `pull` or `submodule update` another git that writes the
+working tree. So a git the runner starts leads a process group of its own, and a deadline or
+a stop ends the group (`worktree::git::group`):
+
+- **Asked first.** The group is sent `SIGTERM`, which is the signal git removes its locks on,
+  and is woken in case the kernel had stopped it. It has two seconds, and they are the
+  group's: a git under a `pull` may remove its lock a moment after the `pull` itself has gone.
+- **Killed only if it will not go.** What is left of the group after that is killed, and git
+  is waited for last, so the group's id is never signalled once it could be a stranger's.
+- **No prompt is lost by it.** A group of its own is not the terminal's foreground group, but
+  the runner's git never reads a terminal: its input is nothing or a pipe, its output is
+  piped, git's own prompt is off, and no askpass program is passed.
+
+The forge's CLI is started and ended the same way. A program that leaves the group on purpose
+is not reached.
+
+**The `purlis` command is the exception.** Whoever started it ends it by its process group: a
+terminal's Ctrl-C, a harness ending a hook, the app ending a chat or a brokered command. So
+the gits it runs stay in that group, where the same stop reaches them, and its own deadline
+ends git alone, as before. A job object would be the equivalent on Windows and is not made.
+
 ### Every call site
 
 The audit of 2026-10-12 (#810) read every `Command::new("git")` in `crates/` and

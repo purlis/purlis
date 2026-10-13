@@ -73,6 +73,13 @@
 //!
 //! **No runner lets git start a git of its own inside a submodule** ([`NO_PROGRAMS`]), those
 //! two included: such a child finds its repository for itself, past every check above.
+//!
+//! # A git that is stopped is stopped with what it started
+//!
+//! git works through children, and a deadline that ended git alone left them running. So git
+//! leads a process group of its own and the group is what a deadline or a stop ends, asked
+//! first and killed only if it will not go ([`stop`]). The `purlis` command is the exception,
+//! and [`group`] says why.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -82,9 +89,13 @@ use std::time::{Duration, Instant};
 
 mod connecting;
 mod destination;
+mod group;
 mod listing;
 mod network;
 pub mod presence;
+
+pub use group::stay_in_the_callers_group;
+pub(crate) use group::{lead, stop};
 
 /// The deadline for a READ — a listing, a status, a config lookup.
 ///
@@ -1513,6 +1524,8 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
     })
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
+    // What a deadline or a stop ends is git and everything git started ([`group`]).
+    lead(&mut cmd);
     Ok(crate::forklock::spawn(&mut cmd)?)
 }
 
@@ -2026,34 +2039,6 @@ pub(crate) fn wait(child: Child, timeout: Duration) -> std::io::Result<Run> {
     })
 }
 
-/// How long a child asked to stop has to do it before it is killed.
-const STOP_GRACE: Duration = Duration::from_secs(2);
-
-/// Stop the child THIS call spawned, by its own pid — never by name: other chats on this
-/// machine run git too.
-///
-/// **Asked first, killed only if it will not go** (charter-app#267). A git killed outright
-/// cannot clean up: it leaves `index.lock` behind, and every git after it in that repository
-/// refuses to start — the `rebase --abort` after a rebase ran out of time failed exactly so,
-/// and left the plane mid-rebase. `SIGTERM` is the signal git's own lockfile cleanup is wired
-/// to, so a git asked to stop removes its locks and exits; `SIGKILL` follows for one that has
-/// not within [`STOP_GRACE`].
-pub(crate) fn stop(child: &mut Child) {
-    let asked = rustix::process::Pid::from_raw(child.id().cast_signed())
-        .map(|pid| rustix::process::kill_process(pid, rustix::process::Signal::TERM).is_ok());
-    if asked == Some(true) {
-        let grace = Instant::now() + STOP_GRACE;
-        while Instant::now() < grace {
-            if matches!(child.try_wait(), Ok(Some(_))) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
 /// [`wait`], keeping the bytes.
 fn wait_raw(child: Child, timeout: Duration) -> std::io::Result<RawRun> {
     wait_raw_until(child, timeout, None)
@@ -2094,11 +2079,12 @@ fn wait_raw_until(
         }
     };
 
-    // A child that exited is waited for in full. One that was KILLED may have left its own
+    // A child that exited is waited for in full. One that was STOPPED may have left its own
     // children holding the pipes — `clone` runs `git-remote-https`, which runs the credential
     // helper — and a read that waits for every writer would then outlive the deadline it
-    // was killed for. So a killed call gets a short grace for what was already written, and
-    // the readers are left behind rather than waited on.
+    // was stopped for. The stop ends its group with it, but not a child that left the group,
+    // nor any under a `purlis` command ([`group`]). So a stopped call gets a short grace for
+    // what was already written, and the readers are left behind rather than waited on.
     let collect = |rx: std::sync::mpsc::Receiver<Vec<u8>>| match code {
         Some(_) => rx.recv().unwrap_or_default(),
         None => rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default(),
@@ -3175,16 +3161,16 @@ mod tests {
     }
 
     #[test]
-    fn a_killed_call_returns_at_its_deadline_even_when_a_grandchild_holds_the_pipes() {
-        // `clone` runs `git-remote-https`, which runs the credential helper: killing git does
-        // not kill them, and a reader that waits for every writer would outlive the deadline.
-        // The stop ends git and not what git started, so the test ends that itself, by the
-        // id the alias wrote: the shell waiting on it then goes too.
+    fn a_call_stopped_at_its_deadline_returns_then_and_what_git_started_is_ended_with_it() {
+        // `clone` runs `git-remote-https`, which runs the credential helper. Ending git alone
+        // left them running, holding the pipes, and a reader that waits for every writer
+        // would have outlived the deadline; here it left a `sleep 30` behind each run.
         let dir = repo();
         let said = dir.path().join("what-the-alias-started");
-        let ends = stand_in::Ends::named_in(&said);
+        // Should the runner leave it running after all, the test does not.
+        let _ends = stand_in::Ends::named_in(&said);
         let hang = format!(
-            "alias.hang=!sleep 30 & echo $! > '{0}.part'; mv '{0}.part' '{0}'; wait",
+            "alias.hang=!sleep 30 & echo $! > '{0}.part'; mv '{0}.part' '{0}'; sleep 30",
             said.display()
         );
         let started = Instant::now();
@@ -3196,17 +3182,47 @@ mod tests {
             "it returned near its deadline, not when the grandchild let go: {:?}",
             started.elapsed()
         );
-        let grandchild = stand_in::pid_named_in(&said, Duration::from_secs(5));
-        drop(ends);
+        // A git too slow to have started its alias within the deadline started nothing.
         #[cfg(unix)]
-        if let Some(grandchild) = grandchild {
+        if let Some(background) = stand_in::pid_named_in(&said, Duration::from_secs(5)) {
             assert!(
-                stand_in::is_gone(grandchild, Duration::from_secs(10)),
+                stand_in::is_gone(background, Duration::from_secs(10)),
+                "what git started outlived the call that was stopped"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_child_that_left_the_group_holding_the_pipes_does_not_hold_the_call() {
+        // What the group's end does not reach: a program that made a group of its own. It
+        // keeps both pipes open, and the call still answers near its deadline. The test ends
+        // it, by the id it wrote.
+        let dir = repo();
+        let said = dir.path().join("what-left-the-group");
+        let ends = stand_in::Ends::named_in(&said);
+        let hang = format!(
+            "alias.hang=!perl -e 'setpgrp(0,0); sleep 20' & echo $! > '{0}.part'; \
+             mv '{0}.part' '{0}'; sleep 30",
+            said.display()
+        );
+        let started = Instant::now();
+        let answer = run(dir.path(), &["-c", &hang, "hang"], Duration::from_secs(1)).unwrap();
+
+        assert_eq!(answer.code, None, "the deadline passed");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "it returned near its deadline, not when the one that left let go: {:?}",
+            started.elapsed()
+        );
+        let left = stand_in::pid_named_in(&said, Duration::from_secs(5));
+        drop(ends);
+        if let Some(left) = left {
+            assert!(
+                stand_in::is_gone(left, Duration::from_secs(10)),
                 "the test left its own fixture running"
             );
         }
-        #[cfg(not(unix))]
-        let _ = grandchild;
     }
 
     /// Two linked worktrees of a repository kept outside any workspace, laid out as git lays

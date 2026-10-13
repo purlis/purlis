@@ -1050,9 +1050,9 @@ fn with_a_smudge<T>(smudge: &str, then: impl FnOnce() -> T) -> T {
     git::isolated(&filter, then)
 }
 
-/// A smudge that does not finish in any test's time, and the file it writes the id of the
-/// `sleep` it waits on to. The stop ends git and not what git started, so the test ends that
-/// `sleep` itself ([`stand_in::Ends::named_in`]), and the filter goes with it.
+/// A smudge that does not finish in any test's time, and where it says what it is: the id of
+/// the `sleep` it waits on, and beside it (`.group`) the process group it runs in, which is
+/// the one git leads. The group is written first, so it is there once the id is.
 fn a_smudge_that_never_finishes(fixture: &Fixture) -> (String, PathBuf) {
     let said = fixture
         .root
@@ -1060,29 +1060,50 @@ fn a_smudge_that_never_finishes(fixture: &Fixture) -> (String, PathBuf) {
         .unwrap()
         .join("what-the-filter-started");
     let smudge = format!(
-        "sleep 20 & echo $! > '{0}.part'; mv '{0}.part' '{0}'; wait; cat",
+        "sleep 20 & ps -o pgid= -p $$ > '{0}.group'; echo $! > '{0}.part'; \
+         mv '{0}.part' '{0}'; wait; cat",
         said.display()
     );
     (smudge, said)
 }
 
-/// Ends what [`a_smudge_that_never_finishes`] started and holds that it is gone, waiting for
-/// the id and for the process: a filter that had not written its id yet, on a loaded machine,
-/// is otherwise read as one that started nothing. A git stopped before it reached the filter
-/// did start nothing, and there is then nothing to hold.
-fn the_filter_is_ended(ends: stand_in::Ends, said: &Path) {
-    let started = stand_in::pid_named_in(said, std::time::Duration::from_secs(5));
-    drop(ends);
-    #[cfg(unix)]
-    if let Some(started) = started {
-        assert!(
-            stand_in::is_gone(started, std::time::Duration::from_secs(10)),
-            "the test left its own filter running"
-        );
+/// Holds that a git stopped under [`a_smudge_that_never_finishes`] went with what it started:
+/// the filter's `sleep` is gone, and so is every process of the group git led. Each is waited
+/// for, since what was killed is there until it is reaped.
+///
+/// A git too slow to have reached the filter within its deadline started none, and there is
+/// then nothing to hold.
+#[cfg(unix)]
+fn nothing_git_started_is_left(said: &Path) {
+    use rustix::process::{Pid, getpgrp, test_kill_process_group};
+    let soon = std::time::Duration::from_secs(10);
+    let Some(sleep) = stand_in::pid_named_in(said, std::time::Duration::from_secs(5)) else {
+        return;
+    };
+    assert!(
+        stand_in::is_gone(sleep, soon),
+        "the filter's own child outlived the git that was stopped"
+    );
+    let group = std::fs::read_to_string(said.with_extension("group"))
+        .ok()
+        .and_then(|text| text.trim().parse::<i32>().ok())
+        .filter(|raw| *raw > 1)
+        .and_then(Pid::from_raw);
+    // Where `ps` would not say, the filter's child above is what is held.
+    let Some(group) = group else { return };
+    assert_ne!(group, getpgrp(), "git ran in this test's own group");
+    let until = std::time::Instant::now() + soon;
+    while test_kill_process_group(group).is_ok() && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    #[cfg(not(unix))]
-    let _ = started;
+    assert!(
+        test_kill_process_group(group).is_err(),
+        "a process of the stopped git's group is still running"
+    );
 }
+
+#[cfg(not(unix))]
+fn nothing_git_started_is_left(_said: &Path) {}
 
 #[test]
 fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time() {
@@ -1096,19 +1117,26 @@ fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time(
     );
 
     let (smudge, said) = a_smudge_that_never_finishes(&fixture);
-    let ends = stand_in::Ends::named_in(&said);
+    // Should the stop leave the filter running after all, the test does not.
+    let _ends = stand_in::Ends::named_in(&said);
 
     let started = std::time::Instant::now();
     let rebased = with_a_smudge(&smudge, || {
         rebase_onto_fetched(&fixture.root, false, std::time::Duration::from_secs(1))
     });
-    the_filter_is_ended(ends, &said);
 
     assert_eq!(rebased, Rebased::OutOfTime);
     assert!(
         started.elapsed() < std::time::Duration::from_secs(15),
         "it waited for the filter: {:?}",
         started.elapsed()
+    );
+    // Stopped is stopped: nothing of that git goes on writing the tree, and the next git in
+    // this repository is not refused for a lock the stopped one left.
+    nothing_git_started_is_left(&said);
+    assert!(
+        !fixture.root.join(".git/index.lock").exists(),
+        "the stopped rebase left its lock on the index"
     );
 }
 
@@ -1122,13 +1150,13 @@ fn a_push_whose_rebase_runs_out_of_time_is_undone_reported_and_recorded_as_not_l
     let mine = ask(&fixture.root, &["rev-parse", "HEAD"]);
 
     let (smudge, filter_said) = a_smudge_that_never_finishes(&fixture);
-    let ends = stand_in::Ends::named_in(&filter_said);
+    let _ends = stand_in::Ends::named_in(&filter_said);
 
     let started = std::time::Instant::now();
     let (pushed, said) = with_a_smudge(&smudge, || {
         push_within(&fixture, false, std::time::Duration::from_secs(1))
     });
-    the_filter_is_ended(ends, &filter_said);
+    nothing_git_started_is_left(&filter_said);
 
     assert!(
         started.elapsed() < std::time::Duration::from_secs(15),
@@ -2578,8 +2606,6 @@ fn quitting_commits_at_once_and_gives_a_push_that_never_answers_only_its_bound()
             "the test left its own hook running"
         );
     }
-    #[cfg(not(unix))]
-    let _ = hook;
 }
 
 #[test]

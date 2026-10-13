@@ -289,6 +289,8 @@ fn call_with(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The forge's CLI runs git and its own helpers: at the deadline they are ended with it.
+    git::lead(&mut cmd);
     let child = crate::forklock::spawn(&mut cmd)
         .map_err(|e| NoAnswer::Missing(format!("purlis could not run {cli}: {e}")))?;
     let run = git::wait(child, timeout)
