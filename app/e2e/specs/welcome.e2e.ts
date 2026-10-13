@@ -229,10 +229,11 @@ describe("the welcome's doors and recents", function () {
       timeout: 20_000,
       timeoutMsg: `Sign in never drew its page; the page says ${await pageHeading()}`,
     });
-    // The browser sign-in on github.com and the token, side by side (#729). Neither is
-    // pressed: a scenario run never reaches github.com.
-    await untilSays(WELCOME, "Sign in to github.com through your browser");
+    // The browser sign-ins on github.com and gitlab.com and the token, side by side (#729,
+    // #730). None is pressed: a scenario run never reaches a real forge.
+    await untilSays(WELCOME, "Sign in to github.com or gitlab.com through your browser");
     await untilSays(WELCOME, "Sign in with GitHub");
+    await untilSays(WELCOME, "Sign in with GitLab");
     await untilSays(WELCOME, "Sign in with a token");
     // The machine was read: each forge tool has its row, whatever this runner has installed.
     await untilSays(WELCOME, "gh:");

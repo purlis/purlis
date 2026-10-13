@@ -1139,6 +1139,21 @@ export const commands = {
 	 */
 	forgeDeviceSignInCancel: (flow: number) => __TAURI_INVOKE<void>("forge_device_sign_in_cancel", { flow }),
 	/**
+	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
+	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
+	 *  code is exchanged for a token kept in the account's own keyring item. The account as Settings
+	 *  lists it, or a sentence saying why not. Neither ever holds the code or the token.
+	 * 
+	 *  Only a host purlis has a PKCE registration on signs in this way (gitlab.com); any other host
+	 *  is told to use a token.
+	 */
+	forgePkceSignIn: (kind: string, host: string, attempt: string) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_pkce_sign_in", { kind, host, attempt })),
+	/**
+	 *  Stop the browser sign-in `attempt`: its listener closes at once and nothing is signed in.
+	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
+	 */
+	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
+	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
 	 */

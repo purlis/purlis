@@ -112,7 +112,7 @@ impl ForgeToken {
     }
 }
 
-fn kind_of(word: &str) -> Result<Kind, String> {
+pub(crate) fn kind_of(word: &str) -> Result<Kind, String> {
     Kind::parse(word).ok_or_else(|| "Choose GitHub or GitLab.".to_string())
 }
 
@@ -137,12 +137,12 @@ pub(crate) fn window_git<T>(then: impl FnOnce() -> T) -> T {
     purlis_core::forge::gitcredential::as_the_window(&scope, &exe, &root, then)
 }
 
-fn config_root() -> Result<std::path::PathBuf, String> {
+pub(crate) fn config_root() -> Result<std::path::PathBuf, String> {
     purlis_core::machine::config_root()
         .ok_or_else(|| "purlis found no home directory to keep forge accounts in".to_string())
 }
 
-fn host_scope() -> Result<HostScope, String> {
+pub(crate) fn host_scope() -> Result<HostScope, String> {
     HostScope::claim().ok_or_else(|| "Forge sign-in is the window's, never a chat's.".to_string())
 }
 
@@ -191,7 +191,7 @@ pub fn tell_the_window_when_a_sign_in_ends(app: &tauri::AppHandle) {
 }
 
 /// Run `work` on a blocking thread: each act may wait on the keychain or the forge.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(work)
@@ -259,7 +259,7 @@ pub async fn forge_sign_in_with_token(
 
 /// Where a pasted token is checked: the forge, over HTTPS; in a scenario run, its recorded forge
 /// (#1818).
-fn token_check(
+pub(crate) fn token_check(
     forge: &purlis_core::forge::Forge,
     tokens: Arc<dyn purlis_core::forge::http::TokenSource>,
 ) -> Result<Arc<dyn purlis_core::forge::transport::Transport>, purlis_core::forge::ForgeError> {

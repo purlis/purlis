@@ -50,6 +50,7 @@ import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
+import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { LinkWorkItem } from "../LinkWorkItem";
 import { LiveDialog } from "../LiveDialog";
@@ -412,6 +413,9 @@ function dialogCore() {
       case "forge_device_sign_in_wait":
         // Still waiting for the person: the dialog is drawn with its code up.
         return new Promise(() => undefined);
+      case "forge_pkce_sign_in":
+        // Still waiting for the browser to come back: the dialog is drawn saying so.
+        return new Promise(() => undefined);
       case "vault_open":
         return VAULT;
       case "plane_saving":
@@ -720,6 +724,14 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<ForgeDeviceSignIn onSignedIn={nothing} onCancel={nothing} />);
       await screen.findByText("WDJB-MJHT");
+    },
+  },
+  {
+    name: "the GitLab browser sign-in, waiting for the browser",
+    file: "ForgeGitLabSignIn.tsx",
+    open: async () => {
+      render(<ForgeGitLabSignIn onSignedIn={nothing} onCancel={nothing} />);
+      await screen.findByText(/Waiting for your browser/);
     },
   },
   {

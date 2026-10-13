@@ -288,6 +288,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"forge_device_sign_in_start"));
     assert!(ui::WINDOW_ONLY.contains(&"forge_device_sign_in_wait"));
     assert!(ui::WINDOW_ONLY.contains(&"forge_device_sign_in_cancel"));
+    assert!(ui::WINDOW_ONLY.contains(&"forge_pkce_sign_in"));
+    assert!(ui::WINDOW_ONLY.contains(&"forge_pkce_sign_in_cancel"));
     // And whether a project lives only on this machine, beside its Publish (#1820).
     assert!(ui::WINDOW_ONLY.contains(&"project_lives_here"));
     // And the person's answers to the Saving view's question about a clone's remote (#1848,
@@ -336,6 +338,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 1
             // The browser sign-in by the device flow (#729).
             + 3
+            // The browser sign-in to gitlab.com, and its cancel (#730).
+            + 2
     );
 }
 

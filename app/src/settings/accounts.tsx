@@ -11,7 +11,8 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
  * **You › Accounts** (#1814, ADR 0077 §6): this machine's forge accounts, each with Sign out;
- * **Sign in with GitHub**, the browser sign-in on github.com ({@link ForgeBrowserSignIn}, #729);
+ * **Sign in with GitHub** and **Sign in with GitLab**, the browser sign-ins on github.com and
+ * gitlab.com ({@link ForgeBrowserSignIn}, #729, #730);
  * and **Sign in with a token…** ({@link ForgeTokenSignIn}). Both open the same dialogs the
  * welcome's "Sign in" does.
  *
@@ -145,7 +146,7 @@ function note(account: ForgeAccountRow): string {
 const forgeAccounts: LiveSetting = {
   id: "you.accounts.forges",
   label: "Forge accounts",
-  help: "Sign in to github.com through your browser, or with a token on github.com, gitlab.com, a GitHub Enterprise server or a self-managed GitLab. Sign out deletes the sign-in from your keychain.",
+  help: "Sign in to github.com or gitlab.com through your browser, or with a token on either, on a GitHub Enterprise server or on a self-managed GitLab. Sign out deletes the sign-in from your keychain.",
   useControl: function useForgeAccounts() {
     const now = useSyncExternalStore(subscribe, () => held);
     return {

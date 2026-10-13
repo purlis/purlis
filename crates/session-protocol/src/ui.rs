@@ -206,6 +206,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_device_sign_in_start",
     "forge_device_sign_in_wait",
     "forge_device_sign_in_cancel",
+    // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
+    // a loopback listener on this machine, and ends with a token in the keychain. No link
+    // starts one or stops one.
+    "forge_pkce_sign_in",
+    "forge_pkce_sign_in_cancel",
     // Whether a folder on this machine is in a project (#1822): the welcome's question before
     // it offers to make one. A probe of the person's folders, which no link needs.
     "folder_is_a_project",

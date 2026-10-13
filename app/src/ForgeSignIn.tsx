@@ -79,7 +79,7 @@ export function ForgeSignIn({
   return (
     <DoorPage title="Sign in to GitHub or GitLab" className="forge-sign-in" onBack={onBack}>
       <p className="welcome-lede">
-        Sign in to github.com through your browser, or with a token on github.com, gitlab.com or a
+        Sign in to github.com or gitlab.com through your browser, or with a token on either or on a
         forge your team hosts. purlis keeps the sign-in in your system keychain, uses it for the
         forge work you do in this window, and never lets it reach a chat.
       </p>
