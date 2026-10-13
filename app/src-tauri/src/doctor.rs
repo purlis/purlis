@@ -1033,8 +1033,10 @@ mod tests {
                 .unwrap_or_else(|| panic!("no {name} row"))
         };
 
-        assert!(!named("vaults").checked, "vaults are not ported");
-        assert_eq!(named("vaults").status, DoctorStatus::Warn);
+        // The tmux frame's rows are the ones this build leaves out by design (#994).
+        assert!(!named("frame").checked, "the frame is not checked");
+        assert_eq!(named("frame").status, DoctorStatus::Warn);
+        assert!(named("vaults").checked, "vaults are checked since #994");
         assert!(named("charter.toml").checked);
         assert!(named("schema").checked);
     }
