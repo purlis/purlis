@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791915360763,
+  "lastUpdate": 1791916961813,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1184,6 +1184,42 @@ window.BENCHMARK_DATA = {
             "value": 210.6,
             "unit": "MB",
             "extra": "median of 6 samples: 218.3, 217.9, 210, 210.3, 210.9, 127.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "f5d87330890c050647f8b4ca56edbda66bc5297e",
+          "message": "ci: a cold start that cannot be taken says why, and passes while the gate only reports\n\nThe step \"Cold start on i3 under X11\" ended with exit 1 twice on 2026-10-13, on\npull requests that could not move cold start, within a second of the bare case\nbefore it and with no annotation. Report-only (`EVIDENCE_ONLY=1`) softened only a\nmissed limit or ratio: i3 not coming up, the X server not coming up, a window\nthat never appeared and a build leaving before its first frame all failed the\nstep, and said so only in the log.\n\n- `tools/coldstart-linux.sh`: no X server, or no i3 after three bounded starts,\n  is \"no measurement\": one annotation naming the cause, the case and what the\n  program said, a line in the step summary, a passing step under\n  `EVIDENCE_ONLY=1` and a failing one without. i3 leaving at once is started\n  again, and a later start that works is said as a warning with the earlier\n  starts' output. An unknown case and a build that is not where the job put it\n  fail either way, with an annotation.\n- `tools/bench.mjs`, `tools/coldstart-gate.mjs`: a launch with no first frame\n  (a window that never appeared, main's build leaving first) is the same \"no\n  measurement\". This change's own build leaving before its first frame fails\n  even under `--evidence`: that is an app that does not start. Any other error\n  in the measurement leaves an annotation before it fails. The app of a launch\n  that is given up is ended, not left behind.\n- Tests: the script with stand-ins for xvfb-run, i3 and the bench; the bench\n  against stand-in apps (Linux); the first-frame decision on its own.\n\nRefs #1876\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T21:58:20+04:00",
+          "tree_id": "e20444e2a01e7e492c8fcf2c34c6a3433b6ab494",
+          "url": "https://github.com/purlis/purlis/commit/f5d87330890c050647f8b4ca56edbda66bc5297e"
+        },
+        "date": 1791916960398,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 578,
+            "unit": "MB",
+            "extra": "median of 3 samples: 510, 578, 662 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 286.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 284.2, 284.3, 285.9, 287.8, 288.5, 352.2 MB"
           }
         ]
       }
