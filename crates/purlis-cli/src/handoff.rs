@@ -197,7 +197,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
     if !args.create && !exists {
         voice::err(&format!(
             "{HANDOFF_SAYS} no workspace '{ws}' on this plane — nothing was opened. Create \
-             it in the same call: charter handoff {ws} --create --vision \"<what it is for>\""
+             it in the same call: purlis handoff --create --vision \"<what it is for>\" {ws}"
         ));
         return ExitCode::FAILURE;
     }
@@ -708,9 +708,13 @@ fn report_back() -> ExitCode {
 }
 
 /// What `purlis handoff report` answers since #1471.
-const REPORT_RETIRED: &str = "purlis handoff report: a report is sent with `purlis dispatch \
-     report --outcome done \"<what you did and found>\"` (or --outcome blocked or failed), and a \
-     handoff owes none — nothing was sent.";
+///
+/// It says nothing of whether this chat owes a report (#1471): a chat an older purlis handed
+/// work owing one does owe it, as a task, and "a handoff owes none" read to it as a
+/// contradiction. The command it names is right for every chat that has a report to send.
+const REPORT_RETIRED: &str = "purlis handoff report: this command sends no report — nothing \
+     was sent. A report is sent with `purlis dispatch report --outcome done \"<what you did and \
+     found>\"` (or --outcome blocked or failed).";
 
 /// What the app said, as one line and **whole**: escaped as anything a chat may have had a
 /// hand in is, and never cut. The app's refusals end with what to do, and the budget a name

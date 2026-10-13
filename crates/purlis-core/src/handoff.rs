@@ -123,11 +123,13 @@ pub enum NoBrief {
 }
 
 impl NoBrief {
-    /// The sentence, with `{ws}` filled — `charter/handoff.py`'s four constants verbatim.
+    /// The sentence, with `{ws}` filled — `charter/handoff.py`'s four constants, with the
+    /// command spelled **flag first, as `purlis`** (#1471): the line a chat the app started
+    /// runs without its harness asking, which a line that starts with the workspace is not.
     pub fn say(&self, ws: &str) -> String {
         let heredoc = format!(
-            "Pass the brief as a quoted heredoc in the same call:\n  charter handoff {ws} \
-             <<'BRIEF'\n  <the brief>\n  BRIEF"
+            "Pass the brief as a quoted heredoc in the same call:\n  purlis handoff --name \
+             \"<task>\" {ws} <<'BRIEF'\n  <the brief>\n  BRIEF"
         );
         match self {
             Self::Closed => format!(
@@ -910,7 +912,7 @@ mod tests {
         assert!(
             NoBrief::Closed
                 .say("beta")
-                .contains("charter handoff beta <<'BRIEF'")
+                .contains("purlis handoff --name \"<task>\" beta <<'BRIEF'")
         );
     }
 
@@ -931,6 +933,20 @@ mod tests {
                     .contains("Pass the brief as a quoted heredoc"),
                 "{other:?}"
             );
+        }
+    }
+
+    #[test]
+    fn the_heredoc_a_refusal_names_puts_a_flag_first_and_says_purlis() {
+        // #1471: a line that starts with the workspace is asked about by the harness; the one
+        // a refusal teaches is the spelling a chat the app started runs without asking.
+        for refusal in [NoBrief::Closed, NoBrief::Terminal, NoBrief::Empty] {
+            let said = refusal.say("beta");
+            assert!(
+                said.contains("\n  purlis handoff --name \"<task>\" beta <<'BRIEF'\n"),
+                "{refusal:?}: {said}"
+            );
+            assert!(!said.contains("charter handoff"), "{refusal:?}: {said}");
         }
     }
 

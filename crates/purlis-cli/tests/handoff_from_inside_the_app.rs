@@ -759,7 +759,9 @@ fn a_reporting_handoff_into_a_workspace_that_is_not_there_is_not_pointed_at_crea
     // Without `--report` the answer is the one it always was.
     let plain = charter(&root(&tmp), None, &["handoff", "gamma"]);
     assert!(
-        text(&plain.stderr).contains("Create it in the same call: charter handoff gamma --create"),
+        text(&plain.stderr).contains(
+            "Create it in the same call: purlis handoff --create --vision \"<what it is for>\" gamma"
+        ),
         "{}",
         text(&plain.stderr)
     );
@@ -832,9 +834,9 @@ fn a_report_back_is_refused_naming_dispatch_report_and_asks_the_app_nothing() {
         assert_eq!(text(&out.stdout), "", "{summary:?}");
         assert_eq!(
             text(&out.stderr),
-            "✗ purlis handoff report: a report is sent with `purlis dispatch report --outcome \
-             done \"<what you did and found>\"` (or --outcome blocked or failed), and a handoff \
-             owes none — nothing was sent.\n",
+            "✗ purlis handoff report: this command sends no report — nothing was sent. A \
+             report is sent with `purlis dispatch report --outcome done \"<what you did and \
+             found>\"` (or --outcome blocked or failed).\n",
             "{summary:?}"
         );
     }
