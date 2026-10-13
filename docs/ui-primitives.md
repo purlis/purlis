@@ -427,6 +427,11 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   and a leaf therefore start their names at the same place, and no row draws an empty twist to
   line them up. Use one chevron pointing at the name: it turns down when `aria-expanded="true"`,
   and is mirrored in right-to-left text.
+- **The twist is a box, in the middle of the row.** It is one step wide and one row high
+  (`--ui-tree-step` by `--ui-row-height`), held between the row's block edges by its auto
+  margins, with the chevron, one step square, in its middle. Write it as the `<span>` above with
+  the icon inside it, and never give the class to the icon itself. Nothing else places it: no
+  baseline, no offset. A row taller than one row keeps its chevron on its middle line.
 
 **The Chats list is drawn with these classes** (DS-11, #1843). Each chat is a `<button
 class="chat ui-row ui-tree-row" role="treeitem">` in a flat `.ui-tree`. Its name is the label and
@@ -1098,15 +1103,16 @@ model and a select-on-`mousedown` this window's strips do not have:
   same keys, and nothing folds, since a fold would be a press in a view that is only read. Its
   rows are `treeitem`s that take the keyboard and run nothing; the repo's context menu opens
   from a focused row on Shift+F10, as on any menued row.
-- **Explorer is three sections, and each tree is its own Tab stop** (#1677): _Workspaces_,
-  _Repos and branches_ and _Files_, in that order, each under a heading that is a disclosure
-  button (`aria-expanded`, `aria-controls`) and folds it — a button and not a `<details>`, since
-  a `<summary>` cannot hold the `h2` the section's title is. Tab goes heading, tree, heading, tree.
+- **Explorer is two sections, and each tree is its own Tab stop** (#1677): _Repos and
+  branches_ and _Files_, in that order, each under a heading that is a disclosure button
+  (`aria-expanded`, `aria-controls`) and folds it — a button and not a `<details>`, since a
+  `<summary>` cannot hold the `h2` the section's title is. Tab goes heading, tree, heading, tree.
   A folded section is `hidden` and stays mounted, so its stop is taken out of the order and its
-  folds come back with it. The Workspaces rows mark the focused workspace with `aria-current`,
-  as the picked spot is marked, and never `aria-selected`: the strip stays the axis (ADR 0036),
-  and a row's press is the strip tab's own catalogue row. A view's key gives the keyboard to the
-  first tree drawn in the view, past the headings.
+  folds come back with it. **It lists no workspaces**: the strip is the one place a workspace is
+  selected (ADR 0036), with its live mark and its menu on its tab, and _Files_ is of the
+  workspace selected there, named in its heading. On the plane root's tab the heading says
+  _Plane root_ and the section says why it lists no files. A view's key gives the keyboard to
+  the first tree drawn in the view, past the headings.
 - **Every other control says `tabIndex={0}`**, and a tab's `×` says `-1`: fifty closers would be
   fifty stops again. **Delete on a focused project or chat tab presses the row its `×` presses**
   (purlis#239, `closeOnDelete` in `app/src/tabKeys.ts`), and so does Backspace on a Mac,

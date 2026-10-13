@@ -7,9 +7,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { Explorer, type Spot } from "./Explorer";
+import { Explorer, NO_FILES_AT_THE_ROOT, type Spot } from "./Explorer";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
-import { catalogue, catalogued, OUTSIDE, type Catalogued, type Offer } from "./actions";
+import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
 import type { OpenChat, Panels as PanelsModel, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
@@ -84,7 +84,6 @@ function draw(on: {
   spot?: Spot;
   onPick?: (spot: Spot | undefined) => void;
   workspace?: string;
-  workspaces?: readonly string[];
   /** The catalogue a piece row's menu is drawn out of. Empty here for every test but the one
    *  about the menu: `Menued` draws nothing for an item the catalogue has no rows for, so the
    *  tree these tests are about is the tree they were always about. */
@@ -97,7 +96,6 @@ function draw(on: {
     // the one `PlaneView` provides; here it is one that holds `states` and never moves.
     <ChatsHere.Provider value={fixedChats(on.states ?? nothingKnown)}>
       <Explorer
-        workspaces={on.workspaces}
         workspace={"workspace" in on ? on.workspace : "alpha"}
         state={on.state ?? state()}
         chats={on.chats ?? []}
@@ -128,19 +126,87 @@ describe("the explorer", () => {
     expect(screen.getByTestId("clone-tool")).toHaveTextContent("No branches cut here");
   });
 
-  it("lists the workspaces as a way to the strip, never a second strip of them (#1677)", () => {
-    // ADR 0036: the strip is the axis. The old sidebar drew every workspace with its vision
-    // text as a tablist; the Workspaces section is a tree of names whose press is the strip's.
-    draw({ workspaces: [OUTSIDE, "alpha", "beta"] });
+  it("lists no workspaces: the strip is where one is selected (qw358)", () => {
+    // The operator's words: "workspaces selector is very redundant thing, as workspaces we have
+    // in top bar separate tabs". ADR 0036 made the strip the axis; #1677 drew its list a second
+    // time here, and that section is gone.
+    draw({});
 
-    const listed = screen.getByRole("tree", { name: "Workspaces of this project" });
+    const explorer = screen.getByTestId("explorer");
+    expect(screen.queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Workspaces" })).toBeNull();
+    expect(explorer.querySelector('[data-section="workspaces"]')).toBeNull();
+    expect(explorer.querySelector('[data-row^="workspace:"]')).toBeNull();
     expect(
-      within(listed)
-        .getAllByRole("treeitem")
-        .map((one) => one.textContent),
-    ).toEqual(["Plane root", "alpha", "beta"]);
+      [...explorer.querySelectorAll("[data-section]")].map((one) =>
+        one.getAttribute("data-section"),
+      ),
+    ).toEqual(["repos", "files"]);
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-    expect(screen.getByTestId("explorer")).not.toHaveTextContent("vision");
+  });
+
+  it("is the Files section alone in the window's Explorer view, named for the workspace", () => {
+    render(
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        <Explorer
+          part="explorer"
+          workspace="alpha"
+          state={state()}
+          chats={[]}
+          spot={undefined}
+          onPick={() => {}}
+          offers={new Map()}
+          onPress={() => {}}
+          onReadAgain={() => {}}
+        />
+      </ChatsHere.Provider>,
+    );
+
+    const explorer = screen.getByTestId("explorer");
+    expect(
+      [...explorer.querySelectorAll("[data-section]")].map((one) =>
+        one.getAttribute("data-section"),
+      ),
+    ).toEqual(["files"]);
+    // The heading keeps naming whose files they are.
+    expect(screen.getByRole("button", { name: "Files alpha" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("tree", { name: "Files of alpha" })).toBeInTheDocument();
+  });
+
+  it("follows the strip: the files are of whichever workspace it selects", () => {
+    const of = (workspace: string | undefined, repos: string[]) => (
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        <Explorer
+          part="explorer"
+          workspace={workspace}
+          state={state({ panels: { ...PANELS, workspace: workspace ?? "", repos }, pieces: {} })}
+          chats={[]}
+          spot={undefined}
+          onPick={() => {}}
+          offers={new Map()}
+          onPress={() => {}}
+          onReadAgain={() => {}}
+        />
+      </ChatsHere.Provider>
+    );
+    const { rerender } = render(of("alpha", ["svc", "tool"]));
+    const names = () =>
+      within(screen.getByTestId("files"))
+        .getAllByRole("treeitem")
+        .map((one) => one.textContent?.trim());
+    expect(screen.getByRole("tree", { name: "Files of alpha" })).toBeInTheDocument();
+    expect(names()).toEqual(["svc", "tool"]);
+
+    // The strip moved to beta: the same view, beta's files, and nothing of alpha's.
+    rerender(of("beta", ["web"]));
+
+    expect(screen.getByRole("button", { name: "Files beta" })).toBeInTheDocument();
+    expect(screen.getByRole("tree", { name: "Files of beta" })).toBeInTheDocument();
+    expect(screen.queryByRole("tree", { name: "Files of alpha" })).toBeNull();
+    expect(names()).toEqual(["web"]);
   });
 
   it("draws no chat, wherever it works: the Chats view lists them (#1673)", () => {
@@ -335,10 +401,38 @@ describe("the explorer", () => {
   // Nothing to explore
   // ---------------------------------------------------------------------------------------
 
-  it("says so when the strip is on the chats that are in no workspace", () => {
+  it("names the plane root in the Files heading when the strip is on it, and says why it lists none", () => {
     draw({ workspace: undefined });
 
-    expect(screen.getByTestId("explorer")).toHaveTextContent("nothing to explore");
+    const explorer = screen.getByTestId("explorer");
+    // Still a files browser with its heading, never a list of workspaces to pick from.
+    expect(screen.getByRole("button", { name: "Files Plane root" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(explorer).toHaveTextContent(NO_FILES_AT_THE_ROOT);
+    expect(screen.queryByRole("tree")).toBeNull();
+    expect(explorer.querySelector('[data-section="workspaces"]')).toBeNull();
+  });
+
+  it("says the Repos view has no repos to list on the plane root", () => {
+    render(
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        <Explorer
+          part="repos"
+          workspace={undefined}
+          state={state()}
+          chats={[]}
+          spot={undefined}
+          onPick={() => {}}
+          offers={new Map()}
+          onPress={() => {}}
+          onReadAgain={() => {}}
+        />
+      </ChatsHere.Provider>,
+    );
+
+    expect(screen.getByTestId("repos-view")).toHaveTextContent("there are no repos to list");
   });
 
   it("says a workspace holds no repos rather than drawing an empty region", () => {
@@ -623,6 +717,13 @@ describe("the explorer on the shared styles", () => {
     // The clone's twist hangs in its step, turned by the row's own `aria-expanded`.
     const twist = screen.getByTestId("clone-svc").querySelector("summary > .ui-tree-twist");
     expect(twist?.closest("summary")).toHaveAttribute("aria-expanded", "true");
+    // The twist is a box holding the chevron (`docs/ui-primitives.md`), never the icon itself:
+    // an icon given the class kept its own height and sat at the row's top (qw358).
+    if (twist === null) throw new Error("the clone's row has no twist");
+    expect(twist.tagName).toBe("SPAN");
+    expect(twist.querySelector(":scope > svg")).not.toBeNull();
+    expect(drawnWith(twist, "block-size")).toBe("var(--ui-row-height)");
+    expect(drawnWith(twist, "margin-block")).toBe("auto");
   });
 
   it("stands what a clone holds where its branches' names start", () => {

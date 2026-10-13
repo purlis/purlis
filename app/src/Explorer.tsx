@@ -21,7 +21,6 @@ import {
   FileSymlink,
   FileX,
   FolderGit2,
-  FolderRoot,
   Folders,
   GitBranch,
   ListFilter,
@@ -51,7 +50,7 @@ import type { Place } from "./pieceViews";
 import { Menued } from "./Menus";
 import { NotClonedHere, type Cloning } from "./NotCloned";
 import { WorktreeMark } from "./Worktree";
-import { OUTSIDE, OUTSIDE_TITLE } from "./actions";
+import { OUTSIDE_TITLE } from "./actions";
 import type { BranchPath, Catalogued, FileOn, FileRef, Offer } from "./actions";
 import { setSectionOpen, useClosedSections, type SectionId } from "./explorerSections";
 import { keepTreeFolds, keptTreeFolds } from "./explorerFolds";
@@ -180,22 +179,23 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
  * branches and files. A branch still answers "is anything already running here" in the chats'
  * own words, in the Chats view, and by the live marks below.
  *
- * **It is in three sections, each folding on its heading** (#1677, spec #1671 B-12), an
- * editor's explorer: *Workspaces*, the project's workspaces in the strip's order with the focused
- * one current, where a press focuses one exactly as its tab on the strip does (the same
- * catalogue row, `workspace.focus:<name>`, and the same menu); *Repos and branches*, the
- * focused workspace's own tree; and *Files*, of where the next chat starts — the picked branch
- * or repo, or each repo's own folder while the workspace itself is picked. Each section's tree
- * is its own Tab stop. A folded section is hidden and stays mounted, so its folds and the place
- * the keyboard was in it come back with it; which ones are folded is kept in the layout file
- * (`explorerSections.ts`). Only the workspaces are a list the strip also draws, and they are
- * not a tablist: the strip stays the axis (ADR 0036), and this is a way to it.
+ * **It is in two sections, each folding on its heading** (#1677, spec #1671 B-12), an
+ * editor's explorer: *Repos and branches*, the focused workspace's own tree; and *Files*, of
+ * where the next chat starts — the picked branch or repo, or each repo's own folder while the
+ * workspace itself is picked. Each section's tree is its own Tab stop. A folded section is
+ * hidden and stays mounted, so its folds and the place the keyboard was in it come back with it;
+ * which ones are folded is kept in the layout file (`explorerSections.ts`).
  *
- * **In the window it is two views** (#1737, spec #1736 P-2): the Explorer view, *Workspaces* and
- * *Files*, in the left sidebar, and the Repos view, *Repos and branches* alone, in the left half
- * of the Panel ({@link ExplorerPart}). Both are this component, drawn twice with the window's one
- * pick, so picking a repo or branch in Repos is what Files lists, exactly as when they were one.
- * Each keeps the rows of its own trees: Repos the clones folded, Explorer the folders opened.
+ * **It lists no workspaces** (qw358). It had a *Workspaces* section, the strip's list a second
+ * time, and the operator called it what it was: redundant. The strip is where a workspace is
+ * selected (ADR 0036), with its live mark and its menu on its tab; this is the files of the one
+ * selected there, and it follows the strip. The *Files* heading names whose files they are.
+ *
+ * **In the window it is two views** (#1737, spec #1736 P-2): the Explorer view, *Files*, in the
+ * left sidebar, and the Repos view, *Repos and branches* alone, in the left half of the Panel
+ * ({@link ExplorerPart}). Both are this component, drawn twice with the window's one pick, so
+ * picking a repo or branch in Repos is what Files lists, exactly as when they were one. Each
+ * keeps the rows of its own trees: Repos the clones folded, Explorer the folders opened.
  *
  * **What a chat is touching right now is marked live** (FM-6, #1109; V86 F6): a file a chat's
  * tool reads or edits, and every folder above it up to the branch's *Files* row, carry a dot
@@ -205,7 +205,6 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
  */
 export function Explorer({
   plane,
-  workspaces = [],
   workspace,
   live = false,
   state,
@@ -224,12 +223,11 @@ export function Explorer({
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
-  /** Every workspace the strip can bring forward, in its order, the plane root first: what the
-   *  *Workspaces* section lists. */
-  workspaces?: readonly string[];
-  /** The focused workspace, or nothing when the strip is on the chats that are in none. */
+  /** The workspace selected on the strip, whose files and repos these are, or nothing when the
+   *  strip is on the plane root. */
   workspace: string | undefined;
-  /** Whether that workspace is LIVE (charter-app#301): its row carries the mark. */
+  /** Whether that workspace is LIVE (charter-app#301): its own row in *Repos and branches*
+   *  carries the mark. */
   live?: boolean;
   state: WorkspaceState;
   /** The chats working in this workspace, for what each is touching right now. They are not
@@ -376,7 +374,6 @@ export function Explorer({
    *  one lookup answers for every row. A folded section draws none of its rows. */
   const shownIn = (rows: Row[], section: SectionId) =>
     folds(section) ? rows.map((row) => ({ ...row, drawn: false })) : rows;
-  const workspaceRows = shownIn(workspacesTreeOf(workspaces), "workspaces");
   const placeRows = cockpit === undefined ? shownIn(treeOf(workspace, state, folded), "repos") : [];
   const fileRows =
     workspace === undefined
@@ -384,7 +381,7 @@ export function Explorer({
       : cockpit !== undefined
         ? cockpitTreeOf(workspace, cockpit, files)
         : shownIn(filesTreeOf(workspace, tops, filesTop !== undefined, files), "files");
-  const tree = [...workspaceRows, ...placeRows, ...fileRows];
+  const tree = [...placeRows, ...fileRows];
   const drawnOf = (rows: Row[]) => rows.filter((row) => row.drawn);
   const picked =
     cockpit !== undefined
@@ -394,11 +391,6 @@ export function Explorer({
         : spot.piece === undefined
           ? cloneRow(spot.repo)
           : pieceRow(spot.repo, spot.piece);
-  const focusedRow = workspaceRow(workspace ?? OUTSIDE);
-  const workspacesStop = useTabStop(
-    focusedRow,
-    drawnOf(workspaceRows).map((row) => row.id),
-  );
   const placeStop = useTabStop(
     picked,
     drawnOf(placeRows).map((row) => row.id),
@@ -514,22 +506,6 @@ export function Explorer({
         ?.focus();
   };
 
-  /** The *Workspaces* section, the same element in each of the explorer's three shapes. */
-  const workspacesSection = has("workspaces") && (
-    <WorkspacesSection
-      workspaces={workspaces}
-      focused={workspace ?? OUTSIDE}
-      live={live}
-      closed={closed.has("workspaces")}
-      project={plane}
-      stop={workspacesStop}
-      onKeyDown={onTreeKey(workspaceRows)}
-      treeitem={treeitem}
-      offers={offers}
-      onPress={onPress}
-    />
-  );
-
   /** The `nav` each shape is drawn in, named for the view it is. */
   const named = PART_NAMES[part];
 
@@ -539,14 +515,22 @@ export function Explorer({
       // workspace arrives: everything holding the old one — a scenario, a screen reader's place —
       // would otherwise lose it.
       <nav ref={navRef} className="explorer" aria-label={named.label} data-testid={named.testid}>
-        {workspacesSection}
-        {/* The strip for chats outside every workspace is not a workspace on the plane, so
-            there is no directory to explore and nothing honest to draw. */}
-        <p className="empty">
-          {has("files")
-            ? "No workspace focused, so there is nothing to explore."
-            : "No workspace focused, so there are no repos to list."}
-        </p>
+        {/* The plane root is not a workspace: it has no repos, and purlis reads the files of a
+            workspace's repos and branches and of nothing else. The heading still says where the
+            strip is, so the view never reads as one that failed to load. */}
+        {has("files") ? (
+          <Section
+            id="files"
+            title="Files"
+            of={OUTSIDE_TITLE}
+            closed={closed.has("files")}
+            project={plane}
+          >
+            <p className="empty">{NO_FILES_AT_THE_ROOT}</p>
+          </Section>
+        ) : (
+          <p className="empty">No workspace selected, so there are no repos to list.</p>
+        )}
       </nav>
     );
   }
@@ -676,9 +660,6 @@ export function Explorer({
           leave();
         }}
       >
-        {/* Workspaces stays above the cockpit: a focused branch is still in a workspace, and
-            the way to another is still here (#1677). */}
-        {workspacesSection}
         <Breadcrumb
           workspace={workspace}
           repo={ref.repo}
@@ -744,8 +725,6 @@ export function Explorer({
 
   return (
     <nav ref={navRef} className="explorer" aria-label={named.label} data-testid={named.testid}>
-      {workspacesSection}
-
       {has("repos") && (
         <ReposSection
           bare={part === "repos"}
@@ -820,14 +799,14 @@ export function Explorer({
 
 /**
  * **Which of Explorer a drawing of it is** (#1737): the `whole` of it, as it was until the Panel
- * (a component drawn on its own); the window's `explorer` view, *Workspaces* and *Files*, in the
- * left sidebar; or its `repos` view, *Repos and branches*, in the left half of the Panel.
+ * (a component drawn on its own); the window's `explorer` view, *Files*, in the left sidebar; or
+ * its `repos` view, *Repos and branches*, in the left half of the Panel.
  */
 export type ExplorerPart = "whole" | "explorer" | "repos";
 
 const PART_SECTIONS: Record<ExplorerPart, readonly SectionId[]> = {
-  whole: ["workspaces", "repos", "files"],
-  explorer: ["workspaces", "files"],
+  whole: ["repos", "files"],
+  explorer: ["files"],
   repos: ["repos"],
 };
 
@@ -841,87 +820,9 @@ const PART_NAMES: Record<ExplorerPart, { label: string; testid: string }> = {
  *  section keeps it across the explorer's shapes. */
 type TabStop = ReturnType<typeof useTabStop>;
 
-/** **The *Workspaces* section** (#1677): every workspace the strip can bring forward, the
- *  focused one current, each pressed through the strip's own catalogue row and with the strip's
- *  menu. */
-function WorkspacesSection({
-  workspaces,
-  focused,
-  live,
-  closed,
-  project,
-  stop,
-  onKeyDown,
-  treeitem,
-  offers,
-  onPress,
-}: {
-  workspaces: readonly string[];
-  /** The focused workspace, or {@link OUTSIDE} for the chats that are in none. */
-  focused: string;
-  /** Whether the focused workspace is LIVE: its row carries the mark. */
-  live: boolean;
-  closed: boolean;
-  project: string | undefined;
-  stop: TabStop;
-  /** Left, Right and type-ahead on the section's tree. */
-  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
-  treeitem: (id: string) => TreeItem;
-  offers: Catalogued;
-  onPress: (offer: Offer) => void;
-}) {
-  return (
-    <Section id="workspaces" title="Workspaces" closed={closed} project={project}>
-      <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-        <div
-          className="ui-tree"
-          role="tree"
-          aria-label="Workspaces of this project"
-          onKeyDown={onKeyDown}
-        >
-          {workspaces.map((name) => {
-            const root = name === OUTSIDE;
-            const id = workspaceRow(name);
-            const current = name === focused;
-            const offer = offers.get(`workspace.focus:${name}`);
-            return (
-              <Menued
-                key={name}
-                on={root ? { on: "root" } : { on: "workspace", workspace: name }}
-                offers={offers}
-                onPress={onPress}
-              >
-                <RovingFocusGroup.Item asChild tabStopId={id} active={current}>
-                  <button
-                    type="button"
-                    className="ui-row ui-tree-row spot"
-                    {...treeitem(id)}
-                    // The current item, as the picked spot below is: the strip is where a
-                    // workspace is selected (ADR 0036).
-                    aria-current={current ? "true" : undefined}
-                    // What a press does, on the rows where it does something.
-                    title={offer?.available ? offer.title : undefined}
-                    onClick={() => {
-                      if (offer?.available) onPress(offer);
-                    }}
-                  >
-                    {root ? (
-                      <FolderRoot className="node-icon" />
-                    ) : (
-                      <Folders className="node-icon" />
-                    )}
-                    <span className="spot-name">{root ? OUTSIDE_TITLE : name}</span>
-                    {current && live && <LiveMark />}
-                  </button>
-                </RovingFocusGroup.Item>
-              </Menued>
-            );
-          })}
-        </div>
-      </RovingFocusGroup.Root>
-    </Section>
-  );
-}
+/** What *Files* says on the plane root's tab, where there is no workspace whose files to list. */
+export const NO_FILES_AT_THE_ROOT =
+  "The plane root is not a workspace, so there are no files to list here. Select a workspace on the strip to browse its files.";
 
 /**
  * **The *Repos and branches* section** (#1677): the workspace itself, each clone with its
@@ -1051,7 +952,9 @@ function ReposSection({
                       marker said in the platform's own glyph at the platform's own size. It
                       turns with `[open]`, and the turn is the one motion here that is a direct
                       answer to a click — `prefers-reduced-motion` stops it all the same. */}
-                        <ChevronRight className="ui-tree-twist twisty" />
+                        <span className="ui-tree-twist twisty" aria-hidden="true">
+                          <ChevronRight />
+                        </span>
                         <FolderGit2 className="node-icon" />
                         <span className="repo">{repo}</span>
                         <PieceCount pieces={pieces[repo]} refused={piecesRefused[repo]} />
@@ -1648,7 +1551,9 @@ function FilesRow({
           if (!always) at.fold(key, !open);
         }}
       >
-        <ChevronRight className="ui-tree-twist twisty" />
+        <span className="ui-tree-twist twisty" aria-hidden="true">
+          <ChevronRight />
+        </span>
         {/* The branch's own folder is the *Files* row, or a repo's own folder by its name in
             the *Files* section; a folder under either is drawn by name. */}
         {branch.folder === "" ? (
@@ -1892,8 +1797,6 @@ export function childOf(
 
 /** The workspace's own row, as a stop in the explorer's roving focus. */
 const ROOT = "root";
-/** A workspace's row in the *Workspaces* section. */
-const workspaceRow = (workspace: string) => `workspace:${workspace}`;
 const cloneRow = (repo: string) => `clone:${repo}`;
 const pieceRow = (repo: string, piece: string) => `piece:${repo}/${piece}`;
 /** A folded clone, by workspace as well as name: two workspaces can each clone `svc`. */
@@ -2080,20 +1983,6 @@ function folderNode(
     kids,
     shows: open,
   };
-}
-
-/** The *Workspaces* section's rows: one level, in the strip's order. */
-function workspacesTreeOf(workspaces: readonly string[]): Row[] {
-  return workspaces.map((name, i) => ({
-    id: workspaceRow(name),
-    name: name === OUTSIDE ? OUTSIDE_TITLE : name,
-    level: 1,
-    parent: undefined,
-    posinset: i + 1,
-    setsize: workspaces.length,
-    drawn: true,
-    parents: false,
-  }));
 }
 
 /**

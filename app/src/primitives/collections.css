@@ -321,13 +321,22 @@
 
 /* **The twist only where a row has children**: a row with children says so with
    `aria-expanded`, on itself or on the treeitem that holds it, and only there is the twist drawn.
-   It hangs in the step before the name and takes no room in the row. */
+   It hangs in the step before the name and takes no room in the row.
+
+   **A box of its own size, in the middle of the row's line** (qw358): one step wide and one row
+   high, held between the row's two block edges by its auto margins, with its chevron in its
+   middle. Its height is said, never left to the insets: an element that brings its own size (an
+   icon given this class with no box around it) keeps that size between two insets and sits at
+   the first, which drew every folder's chevron above its name. */
 .ui-tree-twist {
   display: none;
   position: absolute;
   inset-block: 0;
   inset-inline-start: calc(var(--ui-tree-drawn) * var(--ui-tree-step));
+  box-sizing: border-box;
   inline-size: var(--ui-tree-step);
+  block-size: var(--ui-row-height);
+  margin-block: auto;
   align-items: center;
   justify-content: center;
   margin: 0;
@@ -341,6 +350,13 @@
 .ui-tree-row[aria-expanded] > .ui-tree-twist,
 [aria-expanded] > .ui-tree-row > .ui-tree-twist {
   display: inline-flex;
+}
+
+/* The chevron is one step square, whatever the size of the text beside it. */
+.ui-tree-twist > svg {
+  flex: none;
+  inline-size: var(--ui-tree-step);
+  block-size: var(--ui-tree-step);
 }
 
 /* One chevron, pointing at the name while closed and down while open. */

@@ -18,6 +18,7 @@ import type {
 import { forgetProjectThemes } from "./projectTheme";
 import type { WorkspaceState } from "./workspaceState";
 import type { Offer } from "./actions";
+import { drawnWith } from "./cascade.testkit";
 import { forgetLastRead, readAt } from "./editor/lastRead";
 
 /**
@@ -155,6 +156,39 @@ describe("a branch's files in the explorer", () => {
       { workspace: "alpha", repo: "svc", piece: "one" },
       "src/lib.rs",
     );
+  });
+
+  it("draws a folder's chevron in a box centred on its row, closed or open, at every depth (qw358)", async () => {
+    // The operator's screenshot: each folder's `>` stood above its name. The box is the shared
+    // twist's (`.ui-tree-twist`), one row high and held in the middle by its margins.
+    core({
+      "one:": [entry("src", { kind: "folder" }), entry("docs", { kind: "folder" })],
+      "one:src": [entry("deep", { kind: "folder" })],
+    });
+    draw();
+    await userEvent.click(await named("^src"));
+    await named("^deep");
+
+    const folders = ["file:svc/one:src", "file:svc/one:docs", "file:svc/one:src/deep"].map(row);
+    expect(folders.map((one) => one.getAttribute("aria-expanded"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(folders.map((one) => one.getAttribute("aria-level"))).toEqual(["1", "1", "2"]);
+    for (const folder of folders) {
+      const twist = folder.querySelector<HTMLElement>(":scope > .ui-tree-twist");
+      if (twist === null) throw new Error(`no twist on ${folder.dataset.row}`);
+      expect(folder).toHaveClass("ui-row", "ui-tree-row");
+      expect(drawnWith(folder, "align-items")).toBe("center");
+      expect(twist.tagName).toBe("SPAN");
+      expect(twist.querySelector(":scope > svg")).not.toBeNull();
+      expect(drawnWith(twist, "display")).toBe("inline-flex");
+      expect(drawnWith(twist, "block-size")).toBe("var(--ui-row-height)");
+      expect(drawnWith(twist, "inset-block")).toBe("0");
+      expect(drawnWith(twist, "margin-block")).toBe("auto");
+      expect(drawnWith(twist, "align-items")).toBe("center");
+    }
   });
 
   it("opens a file of the repo's own folder as the repo's, with no branch folder named", async () => {

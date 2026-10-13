@@ -8,13 +8,17 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { showTheExplorer, stripNamed } from "./test-strips";
 import App from "./App";
+import { NO_FILES_AT_THE_ROOT } from "./Explorer";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 
 /**
- * **Explorer in sections** (#1677, spec #1671 B-12): *Workspaces*, with the focused one marked;
- * the focused workspace's repos and branches; and *Files*, of where the next chat starts. Each
- * section folds, and the fold is kept in the layout file for the next launch.
+ * **Explorer in sections** (#1677, spec #1671 B-12): the focused workspace's repos and branches;
+ * and *Files*, of where the next chat starts. Each section folds, and the fold is kept in the
+ * layout file for the next launch.
+ *
+ * **It lists no workspaces** (qw358): the strip is where one is selected, and Files is of the
+ * one selected there, or says why it lists none on the plane root.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -38,6 +42,8 @@ function core() {
     asked.push({ cmd, args: a });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return [];
+    // Both pinned, so the strip draws a tab for each: it is where a workspace is selected.
+    if (cmd === "plane_pins") return { project: false, workspaces: ["alpha", "beta"], missing: [] };
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -112,71 +118,77 @@ afterEach(() => {
 });
 
 const explorer = () => within(screen.getByRole("navigation", { name: "Explorer" }));
-const workspacesTree = () => explorer().getByRole("tree", { name: "Workspaces of this project" });
+/** The strip's tab for a workspace, by its name. */
+const stripTab = (name: RegExp) => within(stripNamed("Workspaces")).getByRole("tab", { name });
 /** The Repos view, in the left half of the Panel (#1737): Explorer's *Repos and branches*. */
 const reposView = () => within(screen.getByRole("navigation", { name: "Repos" }));
 
 describe("Explorer in sections (#1677)", () => {
-  it("draws Workspaces and Files, each open, and the repos and branches in the Repos view (#1737)", async () => {
+  it("draws Files alone, open and named for the strip's workspace, and the repos in the Repos view (#1737)", async () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByRole("tree", { name: "Workspaces of this project" });
+    await explorer().findByRole("tree", { name: "Files of alpha" });
 
     expect(
       explorer()
         .getAllByRole("button", { expanded: true })
         .filter((one) => one.closest("h2") !== null)
         .map((one) => one.textContent),
-    ).toEqual(["Workspaces", expect.stringMatching(/^Files/)]);
+    ).toEqual(["Files alpha"]);
     expect(reposView().getByRole("tree", { name: "Repos and branches" })).toBeVisible();
-    expect(explorer().getByRole("tree", { name: /^Files of/ })).toBeVisible();
   });
 
-  it("marks the focused workspace with aria-current, and only it", async () => {
+  it("has no Workspaces section: the strip is the one place a workspace is selected (qw358)", async () => {
     core();
     render(<App />);
     await showTheExplorer();
-    const tree = await explorer().findByRole("tree", { name: "Workspaces of this project" });
+    await explorer().findByRole("tree", { name: "Files of alpha" });
 
-    await within(tree).findByRole("treeitem", { name: /^beta/ });
-    expect(within(tree).getByRole("treeitem", { name: /^alpha/ })).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
-    expect(within(tree).getByRole("treeitem", { name: /^beta/ })).not.toHaveAttribute(
-      "aria-current",
-    );
+    expect(explorer().queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
+    expect(explorer().queryByRole("button", { name: "Workspaces" })).toBeNull();
+    expect(explorer().queryByRole("treeitem", { name: /^beta/ })).toBeNull();
+    // What its rows carried is the strip's tab's: the selection, and the tab is there to press.
+    expect(stripTab(/alpha/)).toHaveAttribute("aria-selected", "true");
+    expect(stripTab(/beta/)).toHaveAttribute("aria-selected", "false");
   });
 
-  it("focuses a workspace from the section exactly as its tab on the strip does", async () => {
+  it("follows the strip: Files is of the workspace selected there", async () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    const beta = await within(
-      await explorer().findByRole("tree", {
-        name: "Workspaces of this project",
-      }),
-    ).findByRole("treeitem", { name: /^beta/ });
+    const alphas = await explorer().findByRole("tree", { name: "Files of alpha" });
+    expect(await within(alphas).findByRole("treeitem", { name: /^svc/ })).toBeVisible();
 
-    await userEvent.click(beta);
+    await userEvent.click(stripTab(/beta/));
 
-    // The strip moved, which is the axis (ADR 0036), and the explorer is beta's now.
-    await waitFor(() =>
-      expect(within(stripNamed("Workspaces")).getByRole("tab", { name: /beta/ })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
-    expect(within(workspacesTree()).getByRole("treeitem", { name: /^beta/ })).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
+    const betas = await explorer().findByRole("tree", { name: "Files of beta" });
+    expect(await within(betas).findByRole("treeitem", { name: /^web/ })).toBeVisible();
+    expect(within(betas).queryByRole("treeitem", { name: /^svc/ })).toBeNull();
+    expect(explorer().getByRole("button", { name: "Files beta" })).toBeVisible();
+    expect(explorer().queryByRole("tree", { name: "Files of alpha" })).toBeNull();
     await reposView().findByTestId("clone-web");
-    // The extensions heard it, as they do from the strip (charter-app#343).
+    // The extensions heard it, as ever from the strip (charter-app#343).
     expect(
       asked.some((one) => one.cmd === "workspace_focused" && one.args.workspace === "beta"),
     ).toBe(true);
+  });
+
+  it("names the plane root in Files when the strip is on it, and lists no workspace's files", async () => {
+    core();
+    render(<App />);
+    await showTheExplorer();
+    await explorer().findByRole("tree", { name: "Files of alpha" });
+
+    await userEvent.click(stripTab(/^Plane root/));
+
+    await explorer().findByRole("button", { name: "Files Plane root" });
+    expect(explorer().queryByRole("tree")).toBeNull();
+    expect(explorer().getByText(NO_FILES_AT_THE_ROOT)).toBeVisible();
+
+    // And back on a workspace, its files again.
+    await userEvent.click(stripTab(/alpha/));
+    await explorer().findByRole("tree", { name: "Files of alpha" });
   });
 
   it("draws the picked branch's files in Files, and each repo's own folder before one is picked", async () => {
@@ -211,8 +223,9 @@ describe("Explorer in sections (#1677)", () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    const tree = await explorer().findByRole("tree", { name: "Workspaces of this project" });
-    const heading = explorer().getByRole("button", { name: "Workspaces" });
+    const tree = await explorer().findByRole("tree", { name: "Files of alpha" });
+    await within(tree).findByRole("treeitem", { name: /^svc/ });
+    const heading = explorer().getByRole("button", { name: /^Files/ });
 
     await userEvent.click(heading);
 
@@ -221,7 +234,7 @@ describe("Explorer in sections (#1677)", () => {
     expect(tree.isConnected).toBe(true);
     expect(tree).not.toBeVisible();
     expect(tree.querySelector('[tabindex="0"]')).toBeNull();
-    await waitFor(() => expect(written(asked)?.explorer).toEqual({ closed: ["workspaces"] }));
+    await waitFor(() => expect(written(asked)?.explorer).toEqual({ closed: ["files"] }));
 
     await userEvent.click(heading);
 
@@ -250,11 +263,37 @@ describe("Explorer in sections (#1677)", () => {
       "aria-expanded",
       "false",
     );
-    expect(explorer().getByRole("button", { name: "Workspaces" })).toHaveAttribute(
+    expect(explorer().getByTestId("files")).not.toBeVisible();
+  });
+
+  it("launches whole on a file from before qw358 that folded Workspaces, and says nothing of it", async () => {
+    (globalThis as Record<string, unknown>)[GLOBAL] = {
+      layout: {
+        path: "layout.json",
+        found: true,
+        document: {
+          version: 2,
+          regions: [],
+          explorer: { closed: ["workspaces"] },
+          projects: { [PLANE]: { explorer: { closed: ["workspaces"] } } },
+        },
+        trouble: null,
+      },
+      theme: { path: "theme.json", found: false, document: null, trouble: null },
+    };
+    core();
+    render(<App />);
+    await showTheExplorer();
+
+    const tree = await explorer().findByRole("tree", { name: "Files of alpha" });
+    expect(tree).toBeVisible();
+    expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    expect(explorer().getByTestId("files")).not.toBeVisible();
+    expect(explorer().queryByRole("button", { name: "Workspaces" })).toBeNull();
+    // Not a mistake in the file: nothing about Explorer's sections is said.
+    expect(screen.queryByText(/which Explorer has no section called/)).toBeNull();
   });
   it("draws the Repos view whole, though a file from before #1737 folded Repos and branches", async () => {
     (globalThis as Record<string, unknown>)[GLOBAL] = {
@@ -277,7 +316,7 @@ describe("Explorer in sections (#1677)", () => {
     expect(tree.querySelector('[role="treeitem"][tabindex="0"]')).not.toBeNull();
   });
 
-  it("gives the keyboard to the focused workspace's row when its key shows Explorer", async () => {
+  it("gives the keyboard to the files' first row when its key shows Explorer", async () => {
     core();
     render(<App />);
     await screen.findByRole("tab", { name: "Explorer" });
@@ -288,7 +327,9 @@ describe("Explorer in sections (#1677)", () => {
 
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        within(workspacesTree()).getByRole("treeitem", { name: /^alpha/ }),
+        within(explorer().getByRole("tree", { name: "Files of alpha" })).getByRole("treeitem", {
+          name: /^svc/,
+        }),
       ),
     );
   });
@@ -319,7 +360,7 @@ describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
         document: {
           version: 2,
           regions: [],
-          explorer: { closed: ["workspaces"] },
+          explorer: { closed: ["repos"] },
           projects: { [PLANE]: { explorer: { closed: ["files"], folded: ["alpha/svc"] } } },
         },
         trouble: null,
@@ -338,10 +379,6 @@ describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
     expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
       "aria-expanded",
       "false",
-    );
-    expect(explorer().getByRole("button", { name: "Workspaces" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
     );
     // Showing Explorer writes the arrangement; the project's folds go with it as they were.
     await waitFor(() => expect(written(asked)).toBeDefined());

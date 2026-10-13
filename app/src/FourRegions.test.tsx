@@ -1063,7 +1063,7 @@ describe("the Panel", () => {
     expect(await within(view).findByTestId("clone-svc")).toBeInTheDocument();
   });
 
-  it("leaves Explorer with Workspaces and Files, and Repos and branches is the Repos view's", async () => {
+  it("leaves Explorer with Files alone, and Repos and branches is the Repos view's", async () => {
     core();
     render(<App />);
     const explorer = await showTheExplorer();
@@ -1073,7 +1073,7 @@ describe("the Panel", () => {
       within(explorer)
         .getAllByRole("heading")
         .map((one) => one.textContent),
-    ).toEqual(["Workspaces", expect.stringMatching(/^Files/)]);
+    ).toEqual([expect.stringMatching(/^Files/)]);
     expect(within(explorer).queryByRole("tree", { name: "Repos and branches" })).toBeNull();
     expect(within(reposView()).getByRole("tree", { name: "Repos and branches" })).toBeVisible();
   });
