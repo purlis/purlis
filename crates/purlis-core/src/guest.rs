@@ -681,26 +681,92 @@ pub fn tracked(tree: &Path, rel: &str) -> bool {
     )
 }
 
-/// What a checkout holds of the layer, path by path — **READ ONLY** (#998): what [`wire`] would
-/// find at each path it wants, without writing, publishing or asking git anything. For
-/// `purlis doctor`'s `workspace layer` row, which runs from a hook and must never heal what it
-/// is reporting on.
+/// The path a checkout's exclude block is reported at, whichever file git reads it from: the
+/// common directory's for a linked worktree ([`exclude_file`]).
+pub const EXCLUDE_ROW: &str = ".git/info/exclude";
+
+/// What [`status`] read in one checkout.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Standing {
+    /// `(path, word)`: each path the layer wants, then what a wire would take out, then the
+    /// record's and the exclude block's own rows where they have something to say.
+    pub rows: Vec<(String, &'static str)>,
+    /// Why the block keeps a line purlis cannot prove is still needed ([`unaccounted`]).
+    pub unaccounted: Vec<String>,
+    /// Which line the block leaves out, whose file stopped it, and what clears it
+    /// ([`unhidden`]).
+    pub unhidden: Vec<String>,
+}
+
+/// What a checkout holds of the layer — **READ ONLY** (#998): what [`wire`] would find and do
+/// there, without writing or publishing anything. For `purlis doctor`'s `workspace layer` row,
+/// which runs from a hook and must never heal what it is reporting on. charter's `guest_layer`.
 ///
-/// Each path is judged by the planner [`wire`] acts on, so the two cannot disagree about a
-/// file. The words are charter's: `ok` (current, or the harness only added its approvals),
+/// Each wanted path is judged by the planner [`wire`] acts on, so the two cannot disagree about
+/// a file. The words are charter's: `ok` (current, or the harness only added its approvals),
 /// `missing`, `stale` (purlis's own older copy), `harness-behind` (a file the harness keeps,
-/// which purlis never merges into), `unreadable`, `foreign` and `unconfirmed`.
+/// which purlis never merges into), `unreadable`, `foreign` and `unconfirmed`. Then:
 ///
-/// What it does NOT say, and a wire still may: the exclude block's own state (`withheld`,
-/// `unaccounted`, `unrecorded`), a mirrored copy that would be withdrawn, and a layer record
-/// the repository commits. Each needs git or the block, which a hook's read does not pay for.
-pub fn status(plane: &Path, tree: &Path) -> Vec<(String, &'static str)> {
+/// - `unwanted`: a mirrored agent or skill the next wire withdraws (`retired_mirrors`).
+/// - `withheld`, in place of `missing`: a machine-local file a wire will not write, because the
+///   line hiding it would hide a file of yours in another checkout reading the same exclude.
+/// - `tracked`, at the record's name: the repository commits a layer record, so a wire writes
+///   nothing here. The paths are then judged with no record at all, since a committed one's
+///   digests are that repository's content and not purlis's word.
+/// - `unrecorded`, at the record's name: something here needs a write, and the last publish of
+///   the record was refused ([`unrecorded_reason`]), so a wire writes nothing it cannot record.
+/// - one row at [`EXCLUDE_ROW`] for the block: `ok`, `missing`, `stale`, `unreadable`,
+///   `unaccounted` (current, and keeping a line it cannot prove unneeded) or `unhidden`
+///   (current, and leaving out a line this checkout needs). Left out where purlis owns nothing
+///   here and the block has nothing to say: there is then nothing to hide.
+///
+/// # What it asks git
+///
+/// **Nothing, where every row reads `ok`**, so a healthy checkout costs the hook that runs
+/// `doctor` no process at all. Whether the repository commits a layer record is asked only
+/// once something is not current, which is also the only time the answer changes what the
+/// reader should do. So a committed record beside files that are all current and hidden is
+/// not named here; `purlis workspace reinit` names it, as the wire it runs is refused.
+///
+/// Otherwise: one `ls-files` for that record, one per mirror about to be withdrawn, and one
+/// `status` per line not yet in the block per other tree reading it. The worktree listing is
+/// the caller's [`crate::worktree::listing::answers`] block's, one per repository, and none
+/// where the repository has no linked worktree.
+pub fn status(plane: &Path, tree: &Path) -> Standing {
+    let _answers = crate::worktree::listing::answers();
     let want = want(plane);
-    let record = layer::read_record(tree);
     let offered = read_offered(plane);
-    want.iter()
+    let tracked = |rel: &str| tracked(tree, rel);
+    let read = standing(plane, tree, &want, &offered, None, &tracked);
+    if read.rows.iter().all(|(_, word)| *word == "ok") {
+        return read;
+    }
+    match commits_a_marker(tree) {
+        None => read,
+        committed => standing(plane, tree, &want, &offered, committed, &tracked),
+    }
+}
+
+/// [`status`] over what the project wants (`want`) and noted offering (`offered`), told what
+/// git would say: `committed` is the layer record the repository commits
+/// ([`commits_a_marker`]), and `tracked` whether git tracks a path here.
+fn standing(
+    plane: &Path,
+    tree: &Path,
+    want: &BTreeMap<String, String>,
+    offered: &BTreeMap<String, Vec<String>>,
+    committed: Option<&'static str>,
+    tracked: &dyn Fn(&str) -> bool,
+) -> Standing {
+    let record = if committed.is_some() {
+        layer::Record::new()
+    } else {
+        layer::read_record(tree)
+    };
+    let mut rows: Vec<(String, &'static str)> = want
+        .iter()
         .map(|(rel, text)| {
-            let word = match planned(tree, rel, text, &record, &offered) {
+            let word = match planned(tree, rel, text, &record, offered) {
                 Plan::Current | Plan::HarnessEdited => "ok",
                 Plan::Create => "missing",
                 Plan::Refresh => "stale",
@@ -711,7 +777,97 @@ pub fn status(plane: &Path, tree: &Path) -> Vec<(String, &'static str)> {
             };
             (rel.clone(), word)
         })
-        .collect()
+        .collect();
+    rows.extend(
+        retired_mirrors(plane, tree, want, &record, offered, tracked)
+            .into_iter()
+            .map(|rel| (rel, "unwanted")),
+    );
+    if let Some(name) = committed {
+        rows.push((name.to_owned(), "tracked"));
+    }
+    if rows
+        .iter()
+        .any(|(_, word)| matches!(*word, "missing" | "stale" | "unwanted"))
+        && !unrecorded_reason(plane, tree).is_empty()
+    {
+        rows.push((MARKER.to_owned(), "unrecorded"));
+    }
+    let owned = charter_owned(tree, &record);
+    // The machine-local files a wire would write here next: asked only whether their lines
+    // would be left out, and never compared, because no line is listed for a file not written.
+    let local: Vec<String> = rows
+        .iter()
+        .filter(|(rel, word)| *word == "missing" && COWRITTEN.contains(&rel.as_str()))
+        .map(|(rel, _)| rel.clone())
+        .collect();
+    let (block, lines) = exclude_state(plane, tree, &owned, &local);
+    for (rel, word) in &mut rows {
+        // Never `missing`, which reads as "`reinit` writes it": it will not, while your file
+        // is there.
+        if *word == "missing" && lines.shown.contains_key(rel.as_str()) {
+            *word = "withheld";
+        }
+    }
+    // Also where purlis owns nothing now and the block still has something to say: a record
+    // deleted by hand leaves a line nothing accounts for.
+    if !owned.is_empty() || matches!(block, "unaccounted" | "unhidden") {
+        rows.push((EXCLUDE_ROW.to_owned(), block));
+    }
+    Standing {
+        rows,
+        unaccounted: lines.unaccounted,
+        unhidden: lines.shown.into_values().collect(),
+    }
+}
+
+/// The word for purlis's block in the exclude `tree` reads, once `tree` needs `rels`, and what
+/// [`shared_rels`] decided — READ ONLY, charter's `_exclude_state`.
+///
+/// Compared against the block a wire would write ([`shared_rels`]), never against `rels`
+/// alone: a block that rightly holds a sibling worktree's line would read `stale` for ever.
+/// `unaccounted` wins over `unhidden` where a current block is both: a line kept without proof
+/// is the one `reinit` can never clear.
+///
+/// `local` is the machine-local files a wire would write and has not. They are asked only
+/// whether their lines would be left out, so a piece not wired yet does not read `stale` for a
+/// line it does not need.
+fn exclude_state(
+    plane: &Path,
+    tree: &Path,
+    rels: &[String],
+    local: &[String],
+) -> (&'static str, Lines) {
+    let Some(path) = exclude_file(tree) else {
+        return ("unreadable", Lines::default());
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(_) => return ("unreadable", Lines::default()),
+    };
+    let mut lines = shared_rels(plane, tree, rels, &text, &path, Leaving::No);
+    if !local.is_empty() {
+        let with_local: Vec<String> = rels.iter().chain(local).cloned().collect();
+        lines.shown = shared_rels(plane, tree, &with_local, &text, &path, Leaving::No).shown;
+    }
+    if replace_block(&text, &rendered(&lines.rels)) != text {
+        let had = text
+            .lines()
+            .any(|line| names::EXCLUDE_BEGIN.recognises(line));
+        return (if had { "stale" } else { "missing" }, lines);
+    }
+    if !lines.unaccounted.is_empty() {
+        return ("unaccounted", lines);
+    }
+    (
+        if lines.shown.is_empty() {
+            "ok"
+        } else {
+            "unhidden"
+        },
+        lines,
+    )
 }
 
 /// Write the plane's layer into the guest checkout `tree`, and hide it there.
@@ -3845,5 +4001,216 @@ mod tests {
 
         assert!(rows.is_empty());
         assert!(!record.names(AGENT));
+    }
+
+    // -----------------------------------------------------------------------------------
+    // a checkout's layer, read without writing it (#998)
+    // -----------------------------------------------------------------------------------
+
+    /// A wanted path under no folder a harness reads. The reading is the same for every path
+    /// but a mirror's withdrawal, which the tests on [`AGENT`] hold.
+    const PLAIN: &str = "layer/ops.md";
+
+    type Offers = BTreeMap<String, Vec<String>>;
+
+    /// A checkout in which purlis wrote [`PLAIN`], recorded it and hid it, as a wire does:
+    /// `(.., what the project wants, what it noted offering)`.
+    fn layered() -> (
+        tempfile::TempDir,
+        PathBuf,
+        PathBuf,
+        BTreeMap<String, String>,
+        Offers,
+    ) {
+        let (dir, plane, tree, record) = mirrored_once(PLAIN, "# ops\n");
+        layer::publish_io(&tree, &record).unwrap();
+        let owned = charter_owned(&tree, &record);
+        let (wrote, left) = register_excludes(&plane, &tree, &owned, Leaving::No);
+        assert_eq!((wrote, left.len()), (Wrote::Created, 0));
+        let want = BTreeMap::from([(PLAIN.to_owned(), "# ops\n".to_owned())]);
+        let offered = offered_as(&record);
+        (dir, plane, tree, want, offered)
+    }
+
+    fn words(read: &Standing) -> Vec<(&str, &str)> {
+        read.rows
+            .iter()
+            .map(|(rel, word)| (rel.as_str(), *word))
+            .collect()
+    }
+
+    /// Every file under `dir` with its text, to hold that a read changed none of them.
+    fn snapshot(dir: &Path) -> BTreeMap<PathBuf, String> {
+        walk(dir)
+            .into_iter()
+            .map(|path| {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                (path, text)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_layered_checkout_reads_current_with_a_row_for_its_exclude_block() {
+        let (_dir, plane, tree, want, offered) = layered();
+        let before = snapshot(&tree);
+
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+
+        assert_eq!(words(&read), [(PLAIN, "ok"), (EXCLUDE_ROW, "ok")]);
+        assert!(read.unaccounted.is_empty() && read.unhidden.is_empty());
+        assert_eq!(snapshot(&tree), before, "a read writes nothing");
+    }
+
+    #[test]
+    fn a_checkout_purlis_owns_nothing_in_has_no_exclude_row() {
+        let (_dir, plane, tree) = plane_with("svc");
+        let want = BTreeMap::from([(PLAIN.to_owned(), "# ops\n".to_owned())]);
+        let before = snapshot(&tree);
+
+        let read = standing(&plane, &tree, &want, &Offers::new(), None, &untracked);
+
+        // Not `missing` for the block: there is nothing to hide yet, and the row would ask
+        // for a block naming no files.
+        assert_eq!(words(&read), [(PLAIN, "missing")]);
+        assert_eq!(snapshot(&tree), before);
+    }
+
+    #[test]
+    fn a_block_taken_out_by_hand_reads_missing_and_one_short_of_a_line_reads_stale() {
+        let (_dir, plane, tree, want, offered) = layered();
+        let exclude = exclude_file(&tree).unwrap();
+        let whole = std::fs::read_to_string(&exclude).unwrap();
+
+        std::fs::write(&exclude, "# mine\n").unwrap();
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+        assert_eq!(words(&read), [(PLAIN, "ok"), (EXCLUDE_ROW, "missing")]);
+
+        let short: String = whole
+            .lines()
+            .filter(|line| *line != format!("/{PLAIN}"))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        assert_ne!(short, whole);
+        std::fs::write(&exclude, &short).unwrap();
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+        assert_eq!(words(&read), [(PLAIN, "ok"), (EXCLUDE_ROW, "stale")]);
+        assert_eq!(
+            std::fs::read_to_string(&exclude).unwrap(),
+            short,
+            "and the read repairs neither"
+        );
+    }
+
+    #[test]
+    fn a_record_the_repository_commits_reads_tracked_and_vouches_for_nothing() {
+        let (_dir, plane, tree, mut want, offered) = layered();
+        // The project moved on: by the record this copy is purlis's own older one.
+        want.insert(PLAIN.to_owned(), "# ops, again\n".to_owned());
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+        assert_eq!(words(&read), [(PLAIN, "stale"), (EXCLUDE_ROW, "ok")]);
+
+        let read = standing(&plane, &tree, &want, &offered, Some(MARKER), &untracked);
+
+        // A committed record's digests are not purlis's word, so the copy is nobody's purlis
+        // can name, and there is no block row for files it does not own.
+        assert_eq!(words(&read), [(PLAIN, "foreign"), (MARKER, "tracked")]);
+    }
+
+    #[test]
+    fn a_refused_publish_is_named_only_where_something_still_needs_a_write() {
+        let (_dir, plane, tree, mut want, offered) = layered();
+        let refused = std::io::Error::from_raw_os_error(13);
+        note_unrecorded(&plane, &tree, Some(&refused));
+        assert!(unrecorded_reason(&plane, &tree).starts_with("EACCES: "));
+
+        // Nothing here waits on a write, so the old note says nothing.
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+        assert_eq!(words(&read), [(PLAIN, "ok"), (EXCLUDE_ROW, "ok")]);
+
+        want.insert("layer/dev.md".to_owned(), "# dev\n".to_owned());
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+        assert_eq!(
+            words(&read),
+            [
+                ("layer/dev.md", "missing"),
+                (PLAIN, "ok"),
+                (MARKER, "unrecorded"),
+                (EXCLUDE_ROW, "ok"),
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_line_kept_without_proof_reads_unaccounted_though_purlis_owns_nothing_there() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, plane, tree) = plane_with("svc");
+        let exclude = exclude_file(&tree).unwrap();
+        std::fs::write(&exclude, rendered(&[SETTINGS.to_owned()])).unwrap();
+        let claude = tree.join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let sealed = std::fs::read_dir(&claude).is_err();
+
+        let none = BTreeMap::new();
+        let read = standing(&plane, &tree, &none, &Offers::new(), None, &untracked);
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if !sealed {
+            return; // run as root: a mode does not seal a folder
+        }
+
+        assert_eq!(words(&read), [(EXCLUDE_ROW, "unaccounted")]);
+        assert_eq!(read.unaccounted.len(), 1, "{read:?}");
+        assert!(
+            read.unaccounted[0].contains("restoring read access clears this"),
+            "{read:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_exclude_file_that_cannot_be_read_is_said_and_not_taken_for_an_empty_one() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, plane, tree, want, offered) = layered();
+        let exclude = exclude_file(&tree).unwrap();
+        std::fs::set_permissions(&exclude, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let sealed = std::fs::read_to_string(&exclude).is_err();
+
+        let read = standing(&plane, &tree, &want, &offered, None, &untracked);
+        std::fs::set_permissions(&exclude, std::fs::Permissions::from_mode(0o644)).unwrap();
+        if !sealed {
+            return; // run as root
+        }
+
+        assert_eq!(words(&read), [(PLAIN, "ok"), (EXCLUDE_ROW, "unreadable")]);
+    }
+
+    #[test]
+    fn a_wire_and_the_read_after_it_agree_and_a_dropped_mirror_reads_unwanted() {
+        // The whole path, on the folders a harness reads: what a wire wrote is what the read
+        // calls current, and asks git nothing to say so.
+        let (_dir, plane, tree) = plane_with("svc");
+        write_into(&plane, AGENT, "# ops\n").unwrap();
+        let wired = wire(&plane, &tree);
+        assert!(wired.complete(), "{wired:?}");
+        let before = snapshot(&tree);
+        assert_eq!(
+            words(&status(&plane, &tree)),
+            [(AGENT, "ok"), (EXCLUDE_ROW, "ok")]
+        );
+
+        std::fs::remove_file(plane.join(AGENT)).unwrap();
+        let none = BTreeMap::new();
+        let offered = read_offered(&plane);
+
+        let read = standing(&plane, &tree, &none, &offered, None, &untracked);
+        assert_eq!(words(&read), [(AGENT, "unwanted"), (EXCLUDE_ROW, "ok")]);
+        assert_eq!(snapshot(&tree), before, "reporting is not withdrawing");
+        // A copy git tracks is that repository's content, and no wire takes it out.
+        let read = standing(&plane, &tree, &none, &offered, None, &|_| true);
+        assert_eq!(words(&read), [(EXCLUDE_ROW, "ok")]);
     }
 }

@@ -1024,6 +1024,90 @@ fn only_the_machine_local_file_is_reported_as_left_out_over_a_file_next_door() {
 }
 
 #[test]
+fn a_checkout_s_layer_is_read_with_its_exclude_block_and_nothing_is_written() {
+    purlis_core::unsteered!();
+    // #998: the read `purlis doctor` makes says what a wire would, the block's own states
+    // among them, and writes nothing while it does.
+    let f = support::plane_with_clone("thing");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None).unwrap();
+    f.give_the_plane_a_layer();
+    let word = |tree: &Path, rel: &str| {
+        guest::status(&f.plane, tree)
+            .rows
+            .into_iter()
+            .find(|(r, _)| r == rel)
+            .map(|(_, word)| word)
+    };
+
+    // Not wired yet: its files are missing, and there is no block to speak of.
+    assert_eq!(word(&piece.path, ".claude/settings.json"), Some("missing"));
+    assert_eq!(word(&piece.path, guest::EXCLUDE_ROW), None);
+    assert!(
+        !piece.path.join(".claude").exists(),
+        "a read writes nothing"
+    );
+
+    // A file of the operator's next door, at the machine-local path: the line that would
+    // hide purlis's would hide theirs, so a wire withholds it, and the read says so first.
+    std::fs::create_dir_all(f.clone.join(".claude")).unwrap();
+    std::fs::write(
+        f.clone.join(".claude/settings.local.json"),
+        "{\"mine\": 1}\n",
+    )
+    .unwrap();
+    let before = exclude_of(&piece.path);
+    let read = guest::status(&f.plane, &piece.path);
+    assert_eq!(
+        word(&piece.path, ".claude/settings.local.json"),
+        Some("withheld"),
+        "{read:?}"
+    );
+    assert_eq!(word(&piece.path, guest::EXCLUDE_ROW), Some("unhidden"));
+    assert_eq!(read.unhidden, guest::unhidden(&f.plane, &piece.path));
+    assert_eq!(
+        exclude_of(&piece.path),
+        before,
+        "and the block is not touched"
+    );
+
+    // Wired, the shared file is current and the block still leaves that one line out.
+    guest::wire(&f.plane, &piece.path);
+    assert_eq!(word(&piece.path, ".claude/settings.json"), Some("ok"));
+    assert_eq!(
+        word(&piece.path, ".claude/settings.local.json"),
+        Some("withheld")
+    );
+    assert_eq!(word(&piece.path, guest::EXCLUDE_ROW), Some("unhidden"));
+
+    // Their file moved aside and the piece wired again: everything is current.
+    std::fs::remove_file(f.clone.join(".claude/settings.local.json")).unwrap();
+    guest::wire(&f.plane, &piece.path);
+    let read = guest::status(&f.plane, &piece.path);
+    assert!(read.rows.iter().all(|(_, word)| *word == "ok"), "{read:?}");
+    assert_eq!(word(&piece.path, guest::EXCLUDE_ROW), Some("ok"));
+}
+
+#[test]
+fn a_layer_record_the_repository_commits_is_read_as_tracked() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    f.give_the_plane_a_layer();
+    std::fs::write(f.clone.join(guest::MARKER), "{}\n").unwrap();
+    support::git(&f.clone, &["add", "-f", guest::MARKER]);
+
+    let read = guest::status(&f.plane, &f.clone);
+
+    assert!(
+        read.rows.contains(&(guest::MARKER.to_owned(), "tracked")),
+        "{read:?}"
+    );
+    assert!(
+        !guest::wire(&f.plane, &f.clone).complete(),
+        "and a wire writes nothing there, as the row says"
+    );
+}
+
+#[test]
 fn a_file_of_yours_in_a_wired_sibling_is_still_yours_and_keeps_its_line_out() {
     purlis_core::unsteered!();
     // The sibling holds charter's record, and charter's record does not name this path: the

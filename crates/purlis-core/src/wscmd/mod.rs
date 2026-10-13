@@ -29,17 +29,18 @@
 //!
 //! # What is NOT here, and what it would take
 //!
-//! Both are planned in #998.
+//! - **A withdrawal of the generated settings inside a CHECKOUT.** [`crate::wslayer::wire`]
+//!   removes a `.claude/settings.json` the plane stopped declaring from the workspace
+//!   directory. [`crate::guest::wire`] gives back only what it MIRRORED into a checkout: an
+//!   agent or a skill the plane no longer has (#1583). The settings it generated there stay,
+//!   hidden and with their line kept, until the workspace is removed; charter removed them
+//!   there too. Whether purlis should is an open decision (#1583, #998), and nothing reads
+//!   that file as left behind until it is made.
 //!
-//! - **The exclude block's half of a checkout's layer, read without writing.** Doctor's
-//!   `workspace layer` row reads every checkout and piece through [`crate::guest::status`], path
-//!   by path and with no git asked; charter's `guest_layer` also derived `withheld`,
-//!   `unaccounted` and `unrecorded` from the exclude block, which needs git per path and is not
-//!   here yet (#998).
-//! - **A withdrawal inside a CHECKOUT.** [`crate::wslayer::wire`] removes a file the plane
-//!   stopped declaring from the workspace directory; [`crate::guest::wire`] does not do the
-//!   same inside a checkout, so such a file stays (hidden, and its line kept) until an
-//!   unwire. charter removes it there too.
+//! What a checkout holds is read without writing it by [`crate::guest::status`], the exclude
+//! block's own states among them (`withheld`, `unaccounted`, `unrecorded`, #998). Doctor's
+//! `workspace layer` row reads every checkout and piece through it.
+//!
 //! # Where this is stricter than Python, on purpose
 //!
 //! - **Every name is checked before it is joined onto a path**, the pointer files included.

@@ -103,8 +103,8 @@ rename is read, and moved to the new name the next time the layer is written, so
 vouched for becomes yours). A file that still matches is refreshed when the
 plane's settings move; one that does not is yours — left completely untouched and never
 repaired. `purlis workspace reinit` (or `--all`) is the repair for a file that still is
-purlis's. `purlis doctor` has a `workspace layer` row, and in this version it says the
-layer is not checked there yet (#994).
+purlis's. `purlis doctor`'s `workspace layer` row reads it without writing anything: each
+workspace folder, and each clone and worktree in it with the block that hides its files.
 
 **A clone gets the layer too, and pays a cost this directory does not.**
 `workspaces/<name>/<repo>/` is a repo of its own, so the walk-up that carries agents and

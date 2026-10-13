@@ -17,6 +17,11 @@
 //! from the SessionStart hook, and a check that healed what it found would report every
 //! workspace current by having just made it so.
 //!
+//! A checkout's rows are its files and then what only a checkout has: the block in its
+//! `.git/info/exclude` that hides them, a record purlis could not publish, and a record that
+//! repository commits. Each state is led by what clears it, and `reinit` leads only where it
+//! is what does.
+//!
 //! WARN, never FAIL: a workspace without its layer is a chat poorer than it should be, not a
 //! broken machine, and `purlis workspace reinit --all` is one command.
 
@@ -35,6 +40,8 @@ struct Finding {
     ws: String,
     rel: String,
     status: &'static str,
+    /// The checkout the path is in, as its label; empty for the workspace folder's own.
+    tree: String,
 }
 
 /// What the row read: every finding, how many generated paths it compared, and the fix for
@@ -45,6 +52,22 @@ struct Read {
     total: usize,
     workspaces: usize,
     unlisted: Vec<String>,
+    /// What clears each checkout's refused record, once per checkout.
+    unrecorded: Vec<String>,
+    /// Why an exclude block keeps a line it cannot prove unneeded. Once each: checkouts that
+    /// share one exclude share its reasons.
+    unaccounted: Vec<String>,
+    /// Which line an exclude block leaves out, and whose file stopped it. Once each.
+    unhidden: Vec<String>,
+}
+
+/// `more`, added to `all` without saying one thing twice.
+fn once_each(all: &mut Vec<String>, more: Vec<String>) {
+    for one in more {
+        if !all.contains(&one) {
+            all.push(one);
+        }
+    }
 }
 
 fn word(found: Found) -> &'static str {
@@ -111,17 +134,28 @@ fn read(root: &Path, workspaces: &[String]) -> Read {
     };
     for ws in workspaces {
         let dir = root.join("workspaces").join(ws);
-        let mut rows: Vec<(String, &'static str)> = wslayer::status(root, &dir, &want)
+        let mut rows: Vec<(String, &'static str, String)> = wslayer::status(root, &dir, &want)
             .into_iter()
-            .map(|(rel, found)| (rel, word(found)))
+            .map(|(rel, found)| (rel, word(found), String::new()))
             .collect();
         let (trees, unlisted) = wslayer::guest_trees(&dir);
         for tree in &trees {
             let label = wslayer::checkout_label(&dir, tree);
+            let standing = crate::guest::status(root, tree);
+            if standing.rows.iter().any(|(_, word)| *word == "unrecorded") {
+                out.unrecorded.push(format!(
+                    "{}: {}",
+                    super::one_line(&format!("{ws}/{label}"), DISPLAY_LIMIT),
+                    crate::guest::unrecorded_fix(root, tree, "that checkout")
+                ));
+            }
+            once_each(&mut out.unaccounted, standing.unaccounted);
+            once_each(&mut out.unhidden, standing.unhidden);
             rows.extend(
-                crate::guest::status(root, tree)
+                standing
+                    .rows
                     .into_iter()
-                    .map(|(rel, status)| (format!("{label}/{rel}"), status)),
+                    .map(|(rel, status)| (format!("{label}/{rel}"), status, label.clone())),
             );
         }
         for tree in &unlisted {
@@ -130,6 +164,7 @@ fn read(root: &Path, workspaces: &[String]) -> Read {
                 ws: ws.clone(),
                 rel: label.clone(),
                 status: "unlisted",
+                tree: label.clone(),
             });
             out.unlisted.push(format!(
                 "{}: {}",
@@ -138,16 +173,16 @@ fn read(root: &Path, workspaces: &[String]) -> Read {
             ));
         }
         out.total += rows.len();
-        out.findings
-            .extend(
-                rows.into_iter()
-                    .filter(|(_, status)| *status != "ok")
-                    .map(|(rel, status)| Finding {
-                        ws: ws.clone(),
-                        rel,
-                        status,
-                    }),
-            );
+        out.findings.extend(
+            rows.into_iter()
+                .filter(|(_, status, _)| *status != "ok")
+                .map(|(rel, status, tree)| Finding {
+                    ws: ws.clone(),
+                    rel,
+                    status,
+                    tree,
+                }),
+        );
     }
     out
 }
@@ -201,8 +236,29 @@ fn said(read: &Read, looked_for: usize) -> Row {
 /// all: a hint that leads with a command that changes nothing is the tick that stops a reader.
 fn hint(read: &Read) -> String {
     let has = |status: &str| read.findings.iter().any(|f| f.status == status);
-    let reinit = ["missing", "stale", "unwanted"].iter().any(|s| has(s));
+    // A checkout whose record cannot be published, or whose repository commits one, is one a
+    // wire writes nothing in: `reinit` clears no missing, stale or unwanted file there.
+    let stuck = |f: &Finding| {
+        !f.tree.is_empty()
+            && read.findings.iter().any(|other| {
+                other.ws == f.ws
+                    && other.tree == f.tree
+                    && matches!(other.status, "unrecorded" | "tracked")
+            })
+    };
+    let reinit = read
+        .findings
+        .iter()
+        .any(|f| matches!(f.status, "missing" | "stale" | "unwanted") && !stuck(f));
     let mut others: Vec<String> = Vec::new();
+    if has("unrecorded") {
+        others.push(format!(
+            "An 'unrecorded' record is one purlis could not publish in that checkout, so it \
+             writes nothing there it could not record first and keeps every exclude line it \
+             had. What clears it: {}.",
+            read.unrecorded.join("; ")
+        ));
+    }
     if has("unlisted") {
         others.push(format!(
             "An 'unlisted' clone is one whose worktrees git could not list, so none of them was \
@@ -214,6 +270,31 @@ fn hint(read: &Read) -> String {
         others.push(
             "An 'unreadable' path is one purlis cannot read: it is left exactly as it is, and \
              restoring read access to it clears this."
+                .to_owned(),
+        );
+    }
+    if has("unaccounted") {
+        others.push(format!(
+            "An 'unaccounted' exclude block is still hiding a path purlis cannot prove it no \
+             longer needs, and keeps hiding it until it can: {}.",
+            read.unaccounted.join("; ")
+        ));
+    }
+    // Whenever a checkout has a reason, not only beside an 'unhidden' row: a block that is
+    // both reads 'unaccounted', and its file of yours must still be named.
+    if !read.unhidden.is_empty() {
+        others.push(format!(
+            "An exclude line left out because it would also hide a file of yours ('unhidden') \
+             leaves a shared file purlis wrote showing in that checkout's `git status`, and a \
+             machine-local one ('withheld') unwritten: {}.",
+            read.unhidden.join("; ")
+        ));
+    }
+    if has("tracked") {
+        others.push(
+            "A 'tracked' record is a layer record that checkout's repository commits. purlis's \
+             own is per-checkout and never committed, so it writes nothing in that checkout \
+             while git tracks one. Stop committing it in that repository."
                 .to_owned(),
         );
     }
@@ -260,6 +341,17 @@ mod tests {
             ws: ws.to_owned(),
             rel: rel.to_owned(),
             status,
+            tree: String::new(),
+        }
+    }
+
+    /// A finding in the checkout `svc` of workspace `ws`.
+    fn in_svc(ws: &str, rel: &str, status: &'static str) -> Finding {
+        Finding {
+            ws: ws.to_owned(),
+            rel: format!("svc/{rel}"),
+            status,
+            tree: "svc".to_owned(),
         }
     }
 
@@ -305,7 +397,7 @@ mod tests {
             ],
             total: 3,
             workspaces: 2,
-            unlisted: Vec::new(),
+            ..Read::default()
         };
         let r = said(&read, 2);
         assert_eq!(r.status, Status::Warn);
@@ -325,7 +417,7 @@ mod tests {
             ],
             total: 2,
             workspaces: 1,
-            unlisted: Vec::new(),
+            ..Read::default()
         };
         let r = said(&read, 1);
         assert!(r.hint.starts_with("A 'foreign' file"), "{r:?}");
@@ -338,24 +430,123 @@ mod tests {
             findings: vec![finding("a", ".claude/settings.json", "unreadable")],
             total: 1,
             workspaces: 1,
-            unlisted: Vec::new(),
+            ..Read::default()
         };
         assert!(!said(&only, 1).hint.contains("reinit"));
+    }
+
+    #[test]
+    fn a_stale_exclude_block_is_one_reinit_clears() {
+        let read = Read {
+            findings: vec![in_svc("a", ".git/info/exclude", "stale")],
+            total: 2,
+            workspaces: 1,
+            ..Read::default()
+        };
+        let r = said(&read, 1);
+        assert_eq!(r.detail, "a/svc/.git/info/exclude (stale)");
+        assert_eq!(r.hint, "purlis workspace reinit --all");
+    }
+
+    #[test]
+    fn reinit_does_not_lead_over_a_checkout_it_writes_nothing_in() {
+        // A record that cannot be published, or one the repository commits: a wire writes
+        // nothing there, so `reinit` clears no missing file in that checkout.
+        for (rel, stops) in [
+            (".purlis-generated", "unrecorded"),
+            (".purlis-generated", "tracked"),
+        ] {
+            let mut read = Read {
+                findings: vec![
+                    in_svc("a", ".claude/settings.json", "missing"),
+                    in_svc("a", rel, stops),
+                ],
+                total: 2,
+                workspaces: 1,
+                unrecorded: vec!["a/svc: restore write access to that checkout (EACCES: x)".into()],
+                ..Read::default()
+            };
+            let r = said(&read, 1);
+            assert!(!r.hint.contains("reinit"), "{stops}: {r:?}");
+            assert!(r.hint.contains(&format!("'{stops}' record")), "{r:?}");
+
+            // A missing file in another checkout is still reinit's to write.
+            read.findings.push(Finding {
+                tree: "tool".to_owned(),
+                ..finding("a", "tool/.claude/settings.json", "missing")
+            });
+            let r = said(&read, 1);
+            assert!(
+                r.hint
+                    .ends_with("purlis workspace reinit --all clears the rest."),
+                "{stops}: {r:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_record_is_led_by_what_clears_it_in_that_checkout() {
+        let read = Read {
+            findings: vec![in_svc("a", ".purlis-generated", "unrecorded")],
+            total: 2,
+            workspaces: 1,
+            unrecorded: vec![
+                "a/svc: free space on the disk that holds that checkout (ENOSPC: full)".into(),
+            ],
+            ..Read::default()
+        };
+        let r = said(&read, 1);
+        assert!(
+            r.hint.ends_with(
+                "What clears it: a/svc: free space on the disk that holds that checkout \
+                 (ENOSPC: full)."
+            ),
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn a_line_kept_or_left_out_is_said_with_its_reason_once() {
+        let read = Read {
+            findings: vec![
+                in_svc("a", ".git/info/exclude", "unaccounted"),
+                in_svc("a", ".claude/settings.local.json", "withheld"),
+            ],
+            total: 3,
+            workspaces: 1,
+            unaccounted: vec!["/x/.claude/settings.json cannot be checked".into()],
+            unhidden: vec!["purlis's file is not written there".into()],
+            ..Read::default()
+        };
+        let r = said(&read, 1);
+        assert!(!r.hint.contains("reinit"), "{r:?}");
+        assert!(
+            r.hint.contains(
+                "keeps hiding it until it can: /x/.claude/settings.json cannot be checked."
+            ),
+            "{r:?}"
+        );
+        // Said though the block's own row reads 'unaccounted': one row carries one word.
+        assert!(
+            r.hint
+                .contains("('withheld') unwritten: purlis's file is not written there."),
+            "{r:?}"
+        );
+
+        let mut all = vec!["one".to_owned()];
+        once_each(&mut all, vec!["one".to_owned(), "two".to_owned()]);
+        assert_eq!(all, ["one", "two"]);
     }
 
     #[test]
     fn more_than_four_findings_are_cut_with_an_ellipsis() {
         let read = Read {
             findings: (0..6)
-                .map(|i| Finding {
-                    ws: format!("w{i}"),
-                    rel: ".claude/settings.json".to_owned(),
-                    status: "missing",
-                })
+                .map(|i| finding(&format!("w{i}"), ".claude/settings.json", "missing"))
                 .collect(),
             total: 6,
             workspaces: 6,
-            unlisted: Vec::new(),
+            ..Read::default()
         };
         assert!(said(&read, 6).detail.ends_with(", …"));
     }
@@ -381,10 +572,41 @@ mod tests {
         let tree = dir.path();
         std::fs::create_dir_all(tree.join(".git")).unwrap();
         let before: Vec<_> = std::fs::read_dir(tree).unwrap().flatten().collect();
-        let rows = crate::guest::status(tree, tree);
+        let rows = crate::guest::status(tree, tree).rows;
         assert!(rows.iter().all(|(_, s)| *s == "missing"), "{rows:?}");
         let after: Vec<_> = std::fs::read_dir(tree).unwrap().flatten().collect();
         assert_eq!(before.len(), after.len());
+    }
+
+    #[test]
+    fn a_checkout_s_exclude_block_is_a_row_of_its_own() {
+        // A checkout with a `.git` folder and no git behind it: enough for a wire that asks
+        // git nothing, which is every wire of a checkout with no record and no worktrees.
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let tree = root.join("workspaces/alpha/svc");
+        std::fs::create_dir_all(tree.join(".git/info")).unwrap();
+        std::fs::create_dir_all(root.join(".claude/agents")).unwrap();
+        std::fs::write(root.join(".claude/agents/ops.md"), "# ops\n").unwrap();
+        let wired = crate::guest::wire(&root, &tree);
+        assert!(wired.complete(), "{wired:?}");
+        let mut d = Doctor::at(&root, &root, false, true);
+        d.has_plane = true;
+
+        let r = workspace_layer(&d);
+        assert_eq!(r.status, Status::Ok, "{r:?}");
+        assert_eq!(
+            r.detail,
+            "2 generated file(s) across 1 workspace(s), all current"
+        );
+
+        // The block taken out by hand: every file is current, and purlis's files now show in
+        // that repository's own `git status`.
+        std::fs::write(tree.join(".git/info/exclude"), "").unwrap();
+        let r = workspace_layer(&d);
+        assert_eq!(r.status, Status::Warn, "{r:?}");
+        assert_eq!(r.detail, "alpha/svc/.git/info/exclude (missing)");
+        assert_eq!(r.hint, "purlis workspace reinit --all");
     }
 
     #[cfg(unix)]

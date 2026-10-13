@@ -299,7 +299,8 @@ fn writable_directory(plane: &Path, dir: &Path) -> bool {
 /// workspace whose checkouts have no linked worktrees is **20.4 µs**; with three linked
 /// worktrees it is **10.5 ms**, one spawn; and a whole [`wire`] of that workspace — the
 /// directory, the clone and three pieces, each with its block and its `git status` questions —
-/// is **55.3 ms**. The read leaves out the block's questions, which is what keeps it hook-path
+/// is **55.3 ms**. The read asks git a question of the block only where a checkout has
+/// something that is not current ([`crate::guest::status`]), which is what keeps it hook-path
 /// work.
 pub fn status(
     plane: &Path,
