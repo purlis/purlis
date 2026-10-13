@@ -244,6 +244,9 @@ function core({
         case "allow_persona_hosts":
           allowed.push(given);
           return sandbox;
+        case "allow_project_expects":
+          allowed.push({ ...given, expects: true });
+          return { ...sandbox, expects: null };
         case "save_project_settings": {
           const which = given.which as SettingsWhich;
           const change = given.change as { kind: "edits"; edits: SettingsEdit[] };
@@ -436,7 +439,7 @@ describe("Settings › Project › Sandbox", () => {
     // One control for it: no per-machine row, and nothing to allow.
     expect(within(page).queryByText("Certificate checks on this machine")).toBeNull();
     expect(within(page).queryByRole("button", { name: "Allow on this machine" })).toBeNull();
-    expect(page).not.toHaveTextContent("certificate service");
+    expect(page).not.toHaveTextContent("the system's certificate service.");
   });
 
   it("says who locked certificate checks off, with nothing to turn on", async () => {
@@ -458,8 +461,89 @@ describe("Settings › Project › Sandbox", () => {
       ),
     );
     expect(within(page).queryByRole("switch", { name: "Certificate checks" })).toBeNull();
-    expect(page).not.toHaveTextContent("certificate service");
+    expect(page).not.toHaveTextContent("the system's certificate service.");
     expect(sent).toEqual([]);
+  });
+
+  // ADR 0093, ruling 2: the committed file declares and never grants, so the page says what
+  // this machine has not allowed and allows it with the window's own call, after a Not now too.
+  it("lists what the project expects with each item's own words, and allows it on this machine", async () => {
+    const { allowed, sent } = core({
+      sandbox: state({
+        expects: {
+          asked: false,
+          locked: null,
+          items: [
+            {
+              what: "socket",
+              target: "/Users/op/.docker/run/docker.sock",
+              says: "Allowing it lets this chat control containers, which can reach your whole machine: about the same as no sandbox.",
+              refused: null,
+            },
+            {
+              what: "service",
+              target: "com.example.helper",
+              says: "It is a service on this machine; purlis can't tell what it does.",
+              refused: null,
+            },
+          ],
+        },
+      }),
+    });
+    const page = await atSandbox();
+    const here = await within(page).findByRole("group", { name: "This project expects" });
+    expect(here).toHaveTextContent("/Users/op/.docker/run/docker.sock");
+    expect(here).toHaveTextContent("about the same as no sandbox");
+    expect(here).toHaveTextContent("com.example.helper");
+
+    await userEvent.click(within(here).getByRole("button", { name: "Allow on this machine" }));
+
+    await waitFor(() =>
+      expect(allowed).toEqual([
+        {
+          plane: PLANE,
+          shown: ["/Users/op/.docker/run/docker.sock", "com.example.helper"],
+          expects: true,
+        },
+      ]),
+    );
+    await waitFor(() => expect(here).toHaveTextContent("Allowed on this machine"));
+    expect(within(here).queryByRole("button", { name: "Allow on this machine" })).toBeNull();
+    // This machine's file, never the committed one.
+    expect(sent).toEqual([]);
+  });
+
+  it("says who locked what the project expects, and why one cannot be allowed here, with no Allow", async () => {
+    core({
+      sandbox: state({
+        expects: {
+          asked: true,
+          locked:
+            "Policy forbids allowing a chat a local socket or a system service. Locked by policy, set by IT in /etc/purlis/policy.json.",
+          items: [
+            {
+              what: "socket",
+              target: "/var/run/docker.sock",
+              says: "Allowing it lets this chat control containers, which can reach your whole machine: about the same as no sandbox.",
+              refused:
+                "That is not a local socket on this machine now, so there is nothing to allow.",
+            },
+          ],
+        },
+      }),
+    });
+    const here = await within(await atSandbox()).findByRole("group", {
+      name: "This project expects",
+    });
+    expect(here).toHaveTextContent("set by IT");
+    expect(here).toHaveTextContent("It cannot be allowed here now");
+    expect(within(here).queryByRole("button")).toBeNull();
+  });
+
+  it("draws no row where the project expects nothing more than this machine allows", async () => {
+    core();
+    const page = await atSandbox();
+    expect(within(page).queryByText("This project expects")).toBeNull();
   });
 
   it("names a persona's own hosts", async () => {
@@ -572,13 +656,13 @@ describe("Settings › Project › Sandbox", () => {
     const page = await atSandbox();
 
     await waitFor(() => expect(page).toHaveTextContent("A chat here can change files"));
-    expect(page).not.toHaveTextContent("certificate service");
+    expect(page).not.toHaveTextContent("the system's certificate service.");
     cleanup();
 
     // On a Mac, a default project's chats reach it, and the sentence at the top says so.
     core({ sandbox: state({ certificate_check: { on: true, locked: null, widens: true } }) });
     const mac = await atSandbox();
-    await waitFor(() => expect(mac).toHaveTextContent("the system's certificate service"));
+    await waitFor(() => expect(mac).toHaveTextContent("the system's certificate service."));
   });
 
   it("is found by searching for what it explains", async () => {

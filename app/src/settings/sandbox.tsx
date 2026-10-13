@@ -16,11 +16,11 @@ import {
   allowLabel,
   allowPersonaHosts,
   FROM_NEXT_START,
-  inTheWindow,
   mayAllowPersonaHosts,
   whatItLets,
   whatWaits,
 } from "../personaHostsAllow";
+import { ALLOW_EXPECTS, allowable, ExpectedLines, mayAnswerExpects } from "../ProjectExpectsNotice";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
@@ -474,6 +474,92 @@ export function personaHostsRows(plane: PlaneId, sandbox: SandboxState | undefin
         control: (ids) => <PersonaHostsAllow plane={plane} one={one} ids={ids} />,
       }),
     }));
+}
+
+/** The row of what the project expects and this machine has not allowed (ADR 0093). */
+export const EXPECTS_HERE = "project.sandbox.expects-here";
+
+/** **Allow on this machine**, or what stands: the window-only call the project's Notice makes
+ *  too, kept in this machine's own file. Offered after a "Not now" as before it. */
+function ExpectsHere({
+  plane,
+  expects,
+  ids,
+}: {
+  plane: PlaneId;
+  expects: NonNullable<SandboxState["expects"]>;
+  ids: RowIds;
+}) {
+  const [left, setLeft] = useState(expects);
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const offered = left.locked === null && left.items.some(allowable) && mayAnswerExpects() && !busy;
+  const allow = () => {
+    setBusy(true);
+    setSaid(undefined);
+    void commands
+      .allowProjectExpects(
+        plane,
+        left.items.map((one) => one.target),
+      )
+      .then((answer) => {
+        if (answer.status !== "ok") {
+          setSaid(answer.error);
+          return;
+        }
+        const now = answer.data.expects ?? null;
+        setLeft(now ?? { ...left, items: [] });
+        setSaid(
+          "Allowed on this machine: every chat of this project has it from its next start, and a chat already running takes it when it restarts. Remove it under Network, in the Allowed list.",
+        );
+        // The chats open now keep the sandbox they started with: their Notice asks again.
+        sandboxCommandReturned();
+      })
+      .catch((err: unknown) => setSaid(`purlis could not allow it: ${String(err)}`))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div
+      id={ids.id}
+      role="group"
+      className="ui-setting-status"
+      aria-labelledby={ids.labelledBy}
+      aria-describedby={ids.describedBy}
+    >
+      <ExpectedLines items={left.items} />
+      {left.locked !== null && <p>{left.locked}</p>}
+      {said !== undefined && <p>{said}</p>}
+      {offered && (
+        <button type="button" className="ui-button" onClick={allow}>
+          {ALLOW_EXPECTS}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * **What the project expects and this machine has not allowed, as a row** (ADR 0093, ruling 2):
+ * the committed `[sandbox] expects` declares, and never grants, so the row says what a chat here
+ * lacks and allows it, whether or not the person answered the project's Notice with Not now.
+ * None where nothing waits.
+ */
+export function expectsRows(plane: PlaneId, sandbox: SandboxState | undefined): LiveSetting[] {
+  const expects = sandbox?.expects;
+  if (expects === undefined || expects === null || expects.items.length === 0) return [];
+  return [
+    {
+      id: EXPECTS_HERE,
+      label: "This project expects",
+      // The Allow is this machine's, never the committed file's (#1759).
+      writes: "this machine" as const,
+      help: "What this project's settings say its chats need, and this machine has not allowed. The settings only say so: nothing on the list reaches a chat until you allow it here, and anyone who can change the settings can change the list.",
+      useControl: () => ({
+        grouped: true,
+        control: (ids) => <ExpectsHere plane={plane} expects={expects} ids={ids} />,
+      }),
+    },
+  ];
 }
 
 /** One item of a read-only list: what, and why in one sentence. */

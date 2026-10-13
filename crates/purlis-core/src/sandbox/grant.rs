@@ -155,8 +155,8 @@ impl Level {
             Self::Machine,
             Self::Project,
         ]
-            .into_iter()
-            .find(|level| level.word() == word)
+        .into_iter()
+        .find(|level| level.word() == word)
     }
 
     /// The level of a host at this level, as the project's hosts' locks ask it

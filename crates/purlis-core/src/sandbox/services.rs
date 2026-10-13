@@ -623,9 +623,23 @@ impl Declared {
     }
 }
 
+/// The longest socket path a declaration names: far past any path a socket can be bound at.
+const MOST_DECLARED_PATH: usize = 1024;
+
+/// Whether `path`, a socket's as a repository wrote it, can be said plainly: no longer than a
+/// path is, and with no character that draws as nothing (a control, a zero-width or
+/// direction-changing one: [`crate::shown::invisible`]). It is drawn to a person and named in
+/// a question, so one that cannot be is no declaration.
+fn said_plainly(path: &str) -> bool {
+    path.len() <= MOST_DECLARED_PATH
+        && path
+            .chars()
+            .all(|ch| ch == ' ' || !crate::shown::invisible(ch))
+}
+
 /// What the committed `[sandbox] expects` in `top`, a whole `charter.toml`, declares. Anything
 /// that is neither a whole socket path nor a service name is left out: a declaration says
-/// nothing it cannot say plainly.
+/// nothing it cannot say plainly ([`said_plainly`], [`service`]).
 pub fn declared_in(top: Option<&toml::Table>) -> Declared {
     let mut out = Declared::default();
     let Some(listed) = top
@@ -639,7 +653,7 @@ pub fn declared_in(top: Option<&toml::Table>) -> Declared {
     for one in listed.iter().filter_map(toml::Value::as_str) {
         if one.starts_with('/') {
             let path = PathBuf::from(one);
-            if !out.sockets.contains(&path) {
+            if said_plainly(one) && !out.sockets.contains(&path) {
                 out.sockets.push(path);
             }
         } else if let Ok(name) = service(one)
@@ -699,8 +713,9 @@ pub struct Awaited {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Awaiting {
     pub items: Vec<Awaited>,
-    /// Why none of it can be allowed here, where an administrator's policy forbids it: said
-    /// with who set it, and nothing is offered.
+    /// Why none of it can be allowed here, where an administrator's policy forbids it (every
+    /// socket and service grant, or allowing one for yourself on this machine): said with who
+    /// set it, and nothing is offered.
     pub locked: Option<String>,
     /// Whether the person here is still to be asked: an item is declared that they have
     /// neither allowed nor answered "Not now" to. Settings offers the Allow either way.
@@ -766,7 +781,10 @@ pub fn awaiting(root: &Path, machine: &super::Machine) -> Option<Awaiting> {
     let seen = super::local::expects_seen(root);
     Some(Awaiting {
         asked: items.iter().any(|item| !seen.contains(&item.written)),
-        locked: locks.socket_grants_refused(),
+        // The level the Allow keeps at, so what is offered is what would be kept.
+        locked: items
+            .first()
+            .and_then(|item| locks.refuses_grant(&item.what, super::grant::Level::You)),
         items,
     })
 }
@@ -776,12 +794,16 @@ pub fn awaiting(root: &Path, machine: &super::Machine) -> Option<Awaiting> {
 /// with): one line, so the first sign is never a tool that failed. None once the person
 /// answered "Not now", where policy locks it (the project's Notice says that once), and for a
 /// chat that has everything declared.
+///
+/// **The sentence is purlis's own, whole**: it counts what is missing and never names it. A
+/// repository wrote those names, and one set inside a sentence of purlis's could be read as
+/// purlis speaking. The project's Notice and Settings name each, drawn as data.
 pub fn start_note(root: &Path, machine: &super::Machine, has: &super::Widened) -> Option<String> {
     let awaiting = awaiting(root, machine)?;
     if !awaiting.asked || awaiting.locked.is_some() {
         return None;
     }
-    let missing: Vec<String> = awaiting
+    let missing = awaiting
         .items
         .iter()
         .filter(|item| match &item.what {
@@ -789,16 +811,16 @@ pub fn start_note(root: &Path, machine: &super::Machine, has: &super::Widened) -
             What::Service(name) => !has.services.contains(name),
             What::Host(_) | What::Write(_) => false,
         })
-        .map(|item| item.written.clone())
-        .collect();
-    if missing.is_empty() {
-        return None;
-    }
+        .count();
+    let (what, it) = match missing {
+        0 => return None,
+        1 => ("a local socket or system service".to_owned(), "it"),
+        many => (format!("{many} local sockets or system services"), "them"),
+    };
     Some(format!(
-        "This project expects {}, which is not allowed on this machine yet, so this chat cannot \
-         reach it. Allow it on the project's notice or in Settings › Sandbox; this chat takes \
-         it when it restarts.",
-        missing.join(", ")
+        "This project expects {what} this machine has not allowed, so this chat cannot reach \
+         {it}. See and allow {it} on the project's notice or in Settings › Sandbox; this chat \
+         takes {it} when it restarts."
     ))
 }
 

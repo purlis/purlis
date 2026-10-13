@@ -457,11 +457,9 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
         besides: sandbox::besides(root, &plane, &sandbox::Machine::this()).into(),
         policy: SandboxPolicy::of(&locks),
         manifest,
-        certificate_check: plane
-            .in_force(&locks)
-            .map(|policy| {
-                CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
-            }),
+        certificate_check: plane.in_force(&locks).map(|policy| {
+            CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
+        }),
         expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
     }
 }
@@ -697,7 +695,8 @@ pub fn allow_project_expects(
 /// [`allow_project_expects`] in the project at `root`: only what is declared **and** was
 /// shown **and** still waits is kept, for every chat of the project on this machine
 /// ([`kept_for`], for no chat). Refused whole where policy forbids it. The answer is then
-/// recorded, so the question is not asked again for what could not be allowed.
+/// recorded for what was shown, so the question is not asked again for what could not be
+/// allowed, and is asked for an item declared since the question was drawn.
 fn allow_expects(
     root: &std::path::Path,
     chats: &crate::chats::Chats,
@@ -730,7 +729,12 @@ fn allow_expects(
             "Nothing shown can be allowed on this machine now, so nothing was allowed.".to_owned(),
         );
     }
-    sandbox::local::acknowledge_expects(root, &awaiting.shown()).map_err(|err| err.to_string())
+    let answered: Vec<String> = awaiting
+        .shown()
+        .into_iter()
+        .filter(|one| shown.contains(one))
+        .collect();
+    sandbox::local::acknowledge_expects(root, &answered).map_err(|err| err.to_string())
 }
 
 /// **Not now**, on the Notice of what a project expects (ADR 0093): remembered on this
@@ -2617,7 +2621,10 @@ mod tests {
 
         // Not now: remembered, still awaited, and nothing is allowed or audited.
         let shown: Vec<String> = said.items.iter().map(|item| item.target.clone()).collect();
-        let declined = decline_expects(root, &shown).expect("kept").expects.expect("awaited");
+        let declined = decline_expects(root, &shown)
+            .expect("kept")
+            .expects
+            .expect("awaited");
         assert!(!declined.asked);
         assert_eq!(declined.items, said.items);
         assert!(seen.lock().unwrap().is_empty());
@@ -2649,7 +2656,10 @@ mod tests {
             "com.example.never-declared".to_owned(),
         ];
         allow_expects(root, &chats, &shown, &audit, 100).expect("allowed");
-        assert_eq!(sandbox::local::granted_services(root), ["com.example.helper"]);
+        assert_eq!(
+            sandbox::local::granted_services(root),
+            ["com.example.helper"]
+        );
         assert!(sandbox::local::granted_sockets(root).is_empty());
         assert_eq!(
             *seen.lock().unwrap(),
@@ -2661,11 +2671,16 @@ mod tests {
                 "you"
             )]
         );
-        // What is left still awaits, answered: the socket that is not there, and the item
-        // that was not shown.
+        // What is left still awaits: the socket that is not there, answered, and the item
+        // that was not shown, which is still to be asked about. An answer covers what the
+        // person saw and nothing declared since.
         let left = state_of(root).expects.expect("awaited");
-        assert!(!left.asked);
         assert_eq!(left.items.len(), 2);
+        assert!(left.asked, "an item nobody was shown is not answered");
+        assert_eq!(
+            sandbox::local::expects_seen(root),
+            ["/purlis-test-nowhere/docker.sock", "com.example.helper"]
+        );
         // Nothing shown that can be allowed: said, and nothing kept.
         assert!(
             allow_expects(
@@ -2685,16 +2700,13 @@ mod tests {
             std::path::Path::new("/etc/purlis/policy.json"),
         ));
         let locked = state_of(root).expects.expect("awaited");
-        let refused = allow_expects(
-            root,
-            &chats,
-            &["com.example.other".to_owned()],
-            &audit,
-            102,
-        );
+        let refused = allow_expects(root, &chats, &["com.example.other".to_owned()], &audit, 102);
         sandbox::policy::set_for_this_test(sandbox::policy::Locks::none());
         let why = locked.locked.expect("locked");
-        assert!(why.contains("Policy forbids") && why.contains("IT"), "{why}");
+        assert!(
+            why.contains("Policy forbids") && why.contains("IT"),
+            "{why}"
+        );
         assert_eq!(refused.expect_err("refused"), why);
         assert_eq!(seen.lock().unwrap().len(), 1);
     }
@@ -2794,13 +2806,14 @@ mod tests {
         assert!(kept_for(root, &chats, None, (&host, level), &audit, 102).is_err());
 
         // Listed in each project, at that level, with when it was allowed.
-        let listed_in = |root: &std::path::Path| -> Vec<(GrantWhat, String, GrantLevel, Option<u32>)> {
-            grants_of(root, &chats)
-                .into_iter()
-                .filter(|one| one.level == GrantLevel::Machine)
-                .map(|one| (one.what, one.target, one.level, one.at))
-                .collect()
-        };
+        let listed_in =
+            |root: &std::path::Path| -> Vec<(GrantWhat, String, GrantLevel, Option<u32>)> {
+                grants_of(root, &chats)
+                    .into_iter()
+                    .filter(|one| one.level == GrantLevel::Machine)
+                    .map(|one| (one.what, one.target, one.level, one.at))
+                    .collect()
+            };
         for root in [project.path(), other.path()] {
             assert_eq!(
                 listed_in(root),

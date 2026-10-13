@@ -66,6 +66,7 @@ import {
   personaHostsCollection,
   personaHostsHelp,
   personaHostsNotes,
+  expectsRows,
   sandboxControls,
   sandboxNotes,
   personaHostsRows,
@@ -594,6 +595,8 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       ),
       ...(sharedOk ? { collection: hostsCollection(read.shared, "hosts") } : {}),
       after: [
+        // What the project expects and this machine has not allowed (ADR 0093).
+        ...(read.plane !== undefined ? expectsRows(read.plane, read.sandbox) : []),
         ...(read.plane !== undefined ? personaHostsRows(read.plane, read.sandbox) : []),
         ...(sharedOk ? sandboxReasons(read.shared, read.local, read.sandbox) : []),
       ],

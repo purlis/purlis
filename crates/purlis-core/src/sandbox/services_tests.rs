@@ -281,6 +281,24 @@ fn a_committed_declaration_is_read_as_what_the_project_expects() {
 /// The operator's ruling R1 (2026-10-13, amending rulings 2 and 3 of ADR 0093 for this one
 /// service): a sandboxed chat has the certificate check with nothing allowed by anyone, and the
 /// committed `certificate-checks` only ever narrows. `true` says what an absent key says.
+/// What a repository declares is drawn to a person and named in a question, so a path that
+/// cannot be said plainly declares nothing: one that carries a character that draws as
+/// nothing or moves the cursor, or one longer than any socket's path.
+#[test]
+fn a_declared_socket_that_cannot_be_said_plainly_declares_nothing() {
+    let long = format!("/{}", "a".repeat(2000));
+    let top: toml::Table = format!(
+        "[sandbox]\nexpects = [\"/var/run/docker.sock\", \"/run/a\\nb.sock\", \
+         \"/run/a\\u001b[2Jb.sock\", \"/run/a\\u202eb.sock\", \"{long}\"]\n"
+    )
+    .parse()
+    .expect("toml");
+    assert_eq!(
+        declared_in(Some(&top)).sockets,
+        [PathBuf::from("/var/run/docker.sock")]
+    );
+}
+
 #[test]
 fn a_chat_has_the_certificate_check_by_default_and_the_committed_key_only_turns_it_off() {
     let (_dir, root) = project();
@@ -288,9 +306,9 @@ fn a_chat_has_the_certificate_check_by_default_and_the_committed_key_only_turns_
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
     let sandbox = |root: &Path| {
         let compiled = compiled_at(root, &Grants::default());
-        let claude = claude::settings(&compiled).expect("compiles").sandbox
-            ["enableWeakerNetworkIsolation"]
-            .clone();
+        let claude =
+            claude::settings(&compiled).expect("compiles").sandbox["enableWeakerNetworkIsolation"]
+                .clone();
         let mut own = seatbelt::Own::default();
         seatbelt::widen(&mut own, &compiled.widened).expect("widened");
         (
@@ -546,7 +564,9 @@ fn a_grant_of_the_certificate_check_an_older_build_kept_changes_nothing() {
 fn expecting(root: &Path, expects: &str) {
     std::fs::write(
         crate::names::manifest(root),
-        format!("[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\nexpects = [{expects}]\n"),
+        format!(
+            "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\nexpects = [{expects}]\n"
+        ),
     )
     .expect("written");
 }
@@ -567,7 +587,10 @@ fn what_a_project_expects_is_asked_once_until_it_is_allowed_declined_or_changes(
     assert_eq!(awaiting(&root, &machine), None);
 
     // Declared and not allowed: asked, each with its own words.
-    expecting(&root, "\"com.example.helper\", \"/purlis-test-nowhere/docker.sock\"");
+    expecting(
+        &root,
+        "\"com.example.helper\", \"/purlis-test-nowhere/docker.sock\"",
+    );
     let asked = awaiting(&root, &machine).expect("awaited");
     assert!(asked.asked);
     assert_eq!(asked.locked, None);
@@ -576,7 +599,10 @@ fn what_a_project_expects_is_asked_once_until_it_is_allowed_declined_or_changes(
         ["/purlis-test-nowhere/docker.sock", "com.example.helper"]
     );
     let socket = &asked.items[0];
-    assert!(socket.said.contains("about the same as no sandbox"), "{socket:?}");
+    assert!(
+        socket.said.contains("about the same as no sandbox"),
+        "{socket:?}"
+    );
     // A socket that is not there now cannot be allowed, and the item says so.
     assert!(socket.refused.is_some(), "{socket:?}");
     let service = &asked.items[1];
@@ -587,9 +613,18 @@ fn what_a_project_expects_is_asked_once_until_it_is_allowed_declined_or_changes(
     let compiled = compiled_at(&root, &Grants::default());
     assert!(compiled.widened.services.is_empty() && compiled.widened.sockets.is_empty());
     // And a chat's pane says it from the start.
+    // In purlis's own words alone: what a repository wrote is named on the project's Notice,
+    // drawn as data, and never inside this sentence.
     let note = start_note(&root, &machine, &compiled.widened).expect("said");
-    assert!(note.contains("com.example.helper"), "{note}");
-    assert!(note.contains("not allowed on this machine yet"), "{note}");
+    assert!(
+        note.contains("2 local sockets or system services"),
+        "{note}"
+    );
+    assert!(note.contains("has not allowed"), "{note}");
+    assert!(
+        !note.contains("com.example.helper") && !note.contains("docker.sock"),
+        "{note}"
+    );
 
     // Answered "Not now": remembered on this machine, not asked again, still awaited.
     local::acknowledge_expects(&root, &asked.shown()).expect("kept");
@@ -640,6 +675,19 @@ fn what_a_project_expects_is_asked_once_until_it_is_allowed_declined_or_changes(
     assert!(why.contains("Policy forbids"), "{why}");
     assert!(why.contains("IT"), "{why}");
     assert_eq!(locked.shown(), ["com.example.other"]);
+    // A policy that leaves "for me on this machine" out locks it as well: the Allow would be
+    // refused, so it is not offered.
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let scoped = awaiting(&root, &machine).expect("awaited");
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    let why = scoped.locked.expect("locked");
+    assert!(
+        why.contains("Policy removed") && why.contains("IT"),
+        "{why}"
+    );
 
     // A project whose chats are not sandboxed asks nothing.
     std::fs::write(
@@ -668,8 +716,11 @@ fn a_socket_or_a_service_allowed_for_every_project_reaches_each_projects_next_st
         at: 7,
         chat: Some("steward 1".to_owned()),
     };
-    local::grant_socket_everywhere(&docker, Some(made("socket", "/purlis-test-nowhere/docker.sock")))
-        .expect("kept");
+    local::grant_socket_everywhere(
+        &docker,
+        Some(made("socket", "/purlis-test-nowhere/docker.sock")),
+    )
+    .expect("kept");
     local::grant_service_everywhere("com.example.helper", None).expect("kept");
     // One file for every project, in the config home, and nothing under either project.
     let kept = local::everywhere_path();
@@ -679,7 +730,10 @@ fn a_socket_or_a_service_allowed_for_every_project_reaches_each_projects_next_st
         Some(local::EVERY_PROJECT)
     );
     assert_ne!(kept, local::path(&first));
-    assert!(!local::path(&first).exists(), "no clone's own file is written");
+    assert!(
+        !local::path(&first).exists(),
+        "no clone's own file is written"
+    );
     assert!(local::granted_sockets(&first).is_empty());
     // A project made after the Allow has it too.
     let (_second_dir, second) = project();
@@ -777,7 +831,10 @@ fn every_project_is_offered_for_a_socket_or_a_service_only_and_policy_scopes_lea
         r#"{"sandbox": {"allow-scopes": ["machine"]}}"#,
         Path::new("/etc/purlis/policy.json"),
     );
-    assert!(worded.forbids_socket_grants(), "a refused file locks everything");
+    assert!(
+        worded.forbids_socket_grants(),
+        "a refused file locks everything"
+    );
     // The lock on sockets and services holds at this level as at any.
     let locked = Locks::parse(
         r#"{"sandbox": {"socket-grants": false}}"#,

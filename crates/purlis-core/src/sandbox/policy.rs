@@ -665,11 +665,11 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
                         // a policy that fixes the scopes leaves that one out.
                         .filter(|level| *level != grant::Level::Machine)
                         .ok_or_else(|| {
-                        format!(
-                            "its allow-scopes name \"{}\", which is not chat, you or project",
-                            clip(word)
-                        )
-                    })
+                            format!(
+                                "its allow-scopes name \"{}\", which is not chat, you or project",
+                                clip(word)
+                            )
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()
         })
