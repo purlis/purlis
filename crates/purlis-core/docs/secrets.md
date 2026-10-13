@@ -506,7 +506,9 @@ registry is read. A 1Password vault, item or account that starts with `-` is ref
   The record that pins it is a file, so every read holds the program to more than the record
   says (#1542): it is named `op`, it is nowhere a chat may write, and on macOS it carries
   1Password's own signature, which `codesign` verifies against the file. A token is not stored
-  beside an `op` that fails these.
+  beside an `op` that fails these, nor where no `op` is found at all: it would be pinned to
+  none, and every read refused until it was given again. purlis says so and names every
+  directory it searched (#1517).
 - **On macOS the two purlis programs are asked for separately.** The token item is written by
   the app, so the first `purlis secret` in a chat that reads it makes the Keychain ask whether
   `purlis` may, and "Always Allow" adds it (ADR 0047). On Linux any process in your session can

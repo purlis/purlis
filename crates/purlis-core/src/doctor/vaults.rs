@@ -619,9 +619,22 @@ mod tests {
         );
     }
 
+    /// A folder with a stand-in `op`, for a test that stores a token: one is stored only where
+    /// an `op` is found to pin (#1517).
+    fn an_op() -> tempfile::TempDir {
+        crate::secrets::program::stand_ins_live_in_temp_folders();
+        let bin = tempfile::tempdir().unwrap();
+        stand_in::program(bin.path(), "op", "#!/bin/sh\n");
+        bin
+    }
+
     #[test]
     fn each_vault_read_through_a_token_is_said_with_where_its_token_is_and_no_token() {
-        let plane = Plane::new(&[("PATH", "/usr/bin:/bin"), ("OP_SHELL_TOKEN", EXPORTED)]);
+        let bin = an_op();
+        let plane = Plane::new(&[
+            ("PATH", &bin.path().to_string_lossy()),
+            ("OP_SHELL_TOKEN", EXPORTED),
+        ]);
         plane.plain("files", json!({"K": "never-printed-1526"}));
         read_through(&plane, "kept", "OP_KEPT_TOKEN");
         read_through(&plane, "lost", "OP_LOST_TOKEN");
@@ -686,7 +699,8 @@ mod tests {
     fn a_token_kept_in_the_keyring_alone_is_said_as_the_vaults_and_not_as_a_variable() {
         // #1527: a vault that declares `"token": "keyring"` is read through no variable, so the
         // row names no `$…`, and where this machine has none the hint has no export to offer.
-        let plane = Plane::new(&[("PATH", "/usr/bin:/bin")]);
+        let bin = an_op();
+        let plane = Plane::new(&[("PATH", &bin.path().to_string_lossy())]);
         for name in ["made", "pulled"] {
             plane.register(
                 name,

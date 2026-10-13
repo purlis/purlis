@@ -282,10 +282,22 @@ fn team_plane() -> (tempfile::TempDir, registry::Vault) {
     (tmp, v)
 }
 
+/// A context on `root` with `vars` and a stand-in `op` on its `PATH`, and the folder that holds
+/// it: a token is stored only where an `op` is found to pin (#1517).
+fn storing(root: &std::path::Path, vars: &[(&str, &str)]) -> (Ctx, tempfile::TempDir) {
+    crate::secrets::program::stand_ins_live_in_temp_folders();
+    let bin = tempfile::tempdir().unwrap();
+    stand_in::program(bin.path(), "op", "#!/bin/sh\n");
+    let path = bin.path().to_string_lossy().into_owned();
+    let mut vars = vars.to_vec();
+    vars.push(("PATH", &path));
+    (Ctx::new(root, Env::of(&vars)), bin)
+}
+
 #[test]
 fn a_moved_identity_is_read_from_the_keyring_when_the_environment_no_longer_has_it() {
     let (tmp, v) = team_plane();
-    let carrying = Ctx::new(tmp.path(), Env::of(&[("OP_TEAM_TOKEN", MOVED_TOKEN)]));
+    let (carrying, _bin) = storing(tmp.path(), &[("OP_TEAM_TOKEN", MOVED_TOKEN)]);
 
     assert_eq!(
         identity::move_to_keyring(&carrying, &v).unwrap(),
@@ -310,7 +322,7 @@ fn a_moved_identity_is_read_from_the_keyring_when_the_environment_no_longer_has_
 #[test]
 fn once_moved_the_keyring_is_read_before_the_environment() {
     let (tmp, v) = team_plane();
-    let carrying = Ctx::new(tmp.path(), Env::of(&[("OP_TEAM_TOKEN", MOVED_TOKEN)]));
+    let (carrying, _bin) = storing(tmp.path(), &[("OP_TEAM_TOKEN", MOVED_TOKEN)]);
     identity::move_to_keyring(&carrying, &v).unwrap();
 
     let stale = Ctx::new(tmp.path(), Env::of(&[("OP_TEAM_TOKEN", "a-stale-export")]));
@@ -336,7 +348,7 @@ fn a_vault_whose_identity_was_never_moved_does_not_ask_the_keyring() {
 #[test]
 fn a_moved_identity_that_the_keyring_lost_falls_back_to_the_environment_then_says_both() {
     let (tmp, v) = team_plane();
-    let carrying = Ctx::new(tmp.path(), Env::of(&[("OP_TEAM_TOKEN", MOVED_TOKEN)]));
+    let (carrying, _bin) = storing(tmp.path(), &[("OP_TEAM_TOKEN", MOVED_TOKEN)]);
     identity::move_to_keyring(&carrying, &v).unwrap();
     std::fs::remove_file(tmp.path().join(".charter/keyring-stub.json")).unwrap();
 
@@ -370,7 +382,7 @@ fn a_committed_registry_cannot_mark_an_identity_as_held_in_the_keyring() {
     // `git pull` saying "read this from the keyring" would make charter hand a keyring item to
     // whatever `op` it runs.
     let (tmp, v) = team_plane();
-    let ctx = Ctx::new(tmp.path(), Env::of(&[("OP_TEAM_TOKEN", "from-the-env-55")]));
+    let (ctx, _bin) = storing(tmp.path(), &[("OP_TEAM_TOKEN", "from-the-env-55")]);
     identity::move_to_keyring(&ctx, &v).unwrap();
     // Move the mark from the local half into the committed one.
     let mut local = registry::load_local(&ctx).unwrap();
@@ -434,12 +446,12 @@ fn a_committed_env_binding_cannot_redirect_a_locally_marked_vault_to_another_tok
     )
     .unwrap();
     let prod = registry::vault(&Ctx::new(tmp.path(), Env::of(&[])), "prod").unwrap();
-    let carrying = Ctx::new(
+    let (carrying, _bin) = storing(
         tmp.path(),
-        Env::of(&[
+        &[
             ("OP_TEAM_TOKEN", "ops_fixture-team-1"),
             ("OP_PROD_TOKEN", "ops_fixture-prod-2"),
-        ]),
+        ],
     );
     identity::move_to_keyring(&carrying, &team).unwrap();
     identity::move_to_keyring(&carrying, &prod).unwrap();
@@ -1178,22 +1190,27 @@ fn where_1password_s_signature_is_required_no_token_is_stored_beside_an_op_witho
     assert!(!kept.contains(PASTED_TOKEN), "a token stored all the same");
 }
 
+/// #1517: a token stored where no `op` is found would be pinned to none, and every read
+/// refused until it was given again. It is not stored, and the person is told why, with every
+/// directory searched: no empty pin is recorded silently.
 #[test]
-fn a_token_pasted_where_no_op_is_on_path_is_kept_and_every_read_is_refused_until_it_is_put_again() {
+fn a_token_pasted_where_no_op_is_found_is_not_stored_and_says_so() {
     let (tmp, _bin, _op, v) = pinned_plane("");
     let ctx = Ctx::new(tmp.path(), Env::of(&[]));
-    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
-    let rec = identity_record(&ctx);
-    assert_eq!(
-        (&rec["op_cmd"], &rec["op_team"]),
-        (&serde_json::json!(""), &serde_json::json!(""))
-    );
-    let err = identity::pinned_op(&ctx, &v).unwrap_err();
+
+    let err = identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap_err();
+
     assert!(
-        err.message.contains("no `op` was pinned"),
+        err.message.starts_with(
+            "The token was not stored. purlis could not find the 1Password CLI ('op')."
+        ),
         "{}",
         err.message
     );
+    assert!(!err.message.contains(PASTED_TOKEN), "{}", err.message);
+    assert_eq!(identity_record(&ctx), serde_json::Value::Null);
+    let kept = std::fs::read_to_string(ctx.state.join(keyring::STUB_FILE)).unwrap_or_default();
+    assert!(!kept.contains(PASTED_TOKEN), "a token stored all the same");
 }
 
 /// D-1516-9, #1517: the pin is what every later read runs with the token out of the keyring, so

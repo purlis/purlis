@@ -905,14 +905,13 @@ fn new_id() -> Result<String, VaultError> {
 }
 
 /// `op` as the one lookup finds it now ([`Ctx::program`]), absolute, with its Team id — the
-/// trusted resolution recorded at move/put time. `("", "")` when the lookup finds none here:
-/// the record is still written (the token is stored), and [`pinned_op`] then refuses every
-/// read until the token is put again where a real `op` is found, rather than resolving it from
-/// the caller's PATH.
+/// trusted resolution recorded at move/put time.
 ///
-/// **An error when the only one found is where a chat may write** (#1517): a token is never
-/// stored beside such a program, so the caller writes nothing and the person is told where it
-/// was found.
+/// **An error when none is run here** (#1517): none was found, or the only one found is where a
+/// chat may write. A token is never stored where it would be pinned to no program, since
+/// [`pinned_op`] would then refuse every read until it was given again; so the caller writes
+/// nothing, and the person is told why, with every directory searched, and no empty pin is
+/// recorded silently.
 pub(super) fn resolve_op_now(ctx: &Ctx) -> Result<(String, String), VaultError> {
     match ctx.program("op") {
         // Where it was found, not the file behind an installer's link: the link keeps its
@@ -931,7 +930,6 @@ pub(super) fn resolve_op_now(ctx: &Ctx) -> Result<(String, String), VaultError> 
             let team = op_team_id(&found.found).unwrap_or_default();
             Ok((found.found.display().to_string(), team))
         }
-        Err(super::program::NotRun::NotFound(_)) => Ok((String::new(), String::new())),
         Err(why) => Err(VaultError::new(format!(
             "The token was not stored. {}",
             ctx.not_run("the 1Password CLI ('op')", "Install it and sign in.", &why)
