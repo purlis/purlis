@@ -13,6 +13,7 @@ use purlis_session_protocol::link;
 use purlis_session_protocol::link::Acceptor;
 use purlis_session_protocol::session::{
     self, Answer, Attached, Client, Command, Event, Events, Host, Peer, Pushed, Refusal, Since,
+    Told,
 };
 use purlis_session_protocol::view::{Attacher, Chunk, Feed, Limits, ViewId, Viewer};
 use tokio::io::duplex;
@@ -130,14 +131,14 @@ async fn a_subscriber_gets_what_the_host_pushes_after_its_cursor_in_order() {
         .await
         .unwrap();
 
-    assert_eq!(events.recv().await.unwrap(), missed);
+    assert_eq!(events.recv().await.unwrap(), Told::Pushed(missed));
     assert_eq!(
         events.recv().await.unwrap(),
-        Pushed::Event(event(5, "run.started"))
+        Told::Pushed(Pushed::Event(event(5, "run.started")))
     );
     assert_eq!(
         events.recv().await.unwrap(),
-        Pushed::Event(event(6, "hook.stop"))
+        Told::Pushed(Pushed::Event(event(6, "hook.stop")))
     );
 }
 
