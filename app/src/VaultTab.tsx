@@ -16,6 +16,8 @@ import {
   type VaultIdentity,
   type VaultSecret,
 } from "./bindings";
+import { SAID } from "./menuWords";
+import { MenuWords } from "./primitives/MenuRow";
 import { useTabStop } from "./roving";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { counted } from "./Vaults";
@@ -1024,17 +1026,24 @@ function SecretMenu({
           sideOffset={4}
           collisionPadding={8}
         >
+          {/* The menus' rules (`docs/ui-primitives.md`, "Menus"): a short verb that does not
+              say the secret's name again, an ellipsis on a row that asks first, and the row that
+              cannot be undone last, under a line, in the danger colour. */}
           <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "edit", secret })}>
-            Edit value
+            <MenuWords said={SAID.editValue} />
           </Menu.Item>
           <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "rename", secret })}>
-            Rename
+            <MenuWords said={SAID.rename} />
           </Menu.Item>
           <Menu.Item className="ui-menu-item" onSelect={onCopy}>
-            Copy
+            <MenuWords said={SAID.copy} />
           </Menu.Item>
-          <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "delete", secret })}>
-            Delete
+          <Menu.Separator className="ui-menu-line" />
+          <Menu.Item
+            className="ui-menu-item ui-menu-item-danger ends-it"
+            onSelect={() => onAsk({ doing: "delete", secret })}
+          >
+            <MenuWords said={SAID.deleteAsks} danger />
           </Menu.Item>
         </Menu.Content>
       </Menu.Portal>

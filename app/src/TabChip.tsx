@@ -741,6 +741,9 @@ function Chip({
                 <Menu.Item
                   className="ui-menu-item tasks-menu-row tasks-menu-activity"
                   textValue="Activity"
+                  title={ACTIVITY_SAYS}
+                  aria-label="Activity"
+                  aria-describedby={`${id}-activity`}
                   onPointerMove={quiet ? keepsNoKeyboard : undefined}
                   onPointerLeave={quiet ? keepsNoKeyboard : undefined}
                   onSelect={() => {
@@ -749,7 +752,11 @@ function Chip({
                   }}
                 >
                   <span className="name">Activity</span>
-                  <span className="where">what its chats said to each other</span>
+                  {/* What it opens is its tooltip and its description, not a line beside its
+                      word (the menus' rule 2, `docs/ui-primitives.md`). */}
+                  <span id={`${id}-activity`} hidden>
+                    {ACTIVITY_SAYS}
+                  </span>
                 </Menu.Item>
               )}
               {finished.length > 0 && (
@@ -821,6 +828,9 @@ function openFocus(handler: (event: Event) => void): object {
 function keepsNoKeyboard(event: ReactPointerEvent) {
   event.preventDefault();
 }
+
+/** What the menu's Activity row opens: its tooltip and its description. */
+const ACTIVITY_SAYS = "What its chats said to each other, in a tab of its own.";
 
 /** How long the pointer rests on "End a task" before its rows open: Radix's own wait. */
 const ENDS_OPEN_AFTER = 100;

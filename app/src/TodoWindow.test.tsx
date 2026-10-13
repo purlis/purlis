@@ -295,11 +295,7 @@ describe("a todo row", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.getAttribute("aria-label")),
-    ).toEqual([
-      "Open todo: Review the rollout plan",
-      "Mark done: Review the rollout plan",
-      "Forget todo Review the rollout plan",
-    ]);
+    ).toEqual(["Open", "Mark done", "Forget"]);
   });
 });
 
@@ -316,7 +312,7 @@ describe("a workspace renamed under an open todo (#1248)", () => {
       .find((one) => one.querySelector(".workspace-name")?.textContent === "alpha");
     if (!alpha) throw new Error("no alpha on the strip");
     fireEvent.contextMenu(alpha);
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Rename workspace alpha/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace alpha" });
     const box = within(dialog).getByLabelText("New name");
     await userEvent.clear(box);
@@ -393,7 +389,7 @@ describe("the tab's actions", () => {
     await screen.findByTestId("todo-body");
     await userEvent.click(within(strip()).getByRole("tab", { name: /steward 1/ }));
     fireEvent.contextMenu(await todoRowFor("Drop the old importer"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Forget todo/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Forget" }));
     await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
   });
 });

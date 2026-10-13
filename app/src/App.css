@@ -764,13 +764,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The menu itself: the one menu style (`.ui-menu`, `primitives/controls.css`), sized here. */
-.more-menu {
-  /* Past about twenty hidden tabs the menu would run off the window; it scrolls instead (the
-     one menu style caps it at the room the window has), and the palette remains the surface
-     for finding one by name. */
-  min-width: 12rem;
-}
+/* The menu itself is the one menu style (`.ui-menu`, `primitives/controls.css`), its width
+   too. Past about twenty hidden tabs it would run off the window; it scrolls instead (the one
+   menu style caps it at the room the window has), and the palette remains the surface for
+   finding one by name. */
 
 /* **The `×` is inline with the title, on one line** (charter-app#130). It was drawn below it,
    which made the strip two rows tall and made the close read as a control of its own rather
@@ -1925,8 +1922,9 @@ button.show-more:focus-visible {
    one line: its name gives way to an ellipsis, and its state word is never cut
    (`.shown-state` does not shrink). */
 .tasks-menu {
-  min-width: 16rem;
-  max-width: min(30rem, 90vw);
+  /* Wider than the one menu style's own: a row is a chat's name, its state and how long. */
+  --ui-menu-min: calc(var(--space-8) * 7);
+  --ui-menu-max: min(30rem, 90vw);
   /* Never sideways (#1545): a line gives way with its own ellipsis and the footer wraps, so
      nothing is meant to be past the menu's edge; WebKit counted a few pixels at a row's end
      as overflow and drew a sideways scroll for them. */
@@ -5541,12 +5539,8 @@ h2.sidebar-title .node-icon {
 
    Drawn in the one menu style (`.ui-menu`, `primitives/controls.css`), the show-more menu's and a tab's
    chip's too, because they are one kind of thing and an operator who has learned one has
-   learned the other. What it does NOT share is the width: a context menu's rows are sentences
-   ("End chat 3 steward"), not tab names. */
-.item-menu {
-  min-width: 14rem;
-  max-width: 24rem;
-}
+   learned the other. Its width is that style's as well: a row is a short verb, and a name too
+   long for it gives way to an ellipsis. Nothing is written here. */
 
 /* ---------------------------------------------------------------------------------------
    The dialogs that make and delete things
@@ -8038,7 +8032,7 @@ h2.sidebar-title .node-icon {
 
 /* "Move to…"'s menu: as wide as the longest file name it offers. */
 .ui-setting-move {
-  min-inline-size: calc(var(--space-8) * 7);
+  --ui-menu-min: calc(var(--space-8) * 7);
 }
 
 .ui-setting-control {

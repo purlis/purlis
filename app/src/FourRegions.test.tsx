@@ -417,7 +417,7 @@ describe("the four regions", () => {
     const heading = within(clone).getByRole("treeitem", { name: /^svc/ });
 
     fireEvent.contextMenu(heading);
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Start new chats in svc" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Start new chats here" }));
     await waitFor(() => expect(heading).toHaveAttribute("aria-current", "true"));
     await openAChat();
 
@@ -430,7 +430,7 @@ describe("the four regions", () => {
     const row = await screen.findByTestId("repo-svc");
 
     fireEvent.contextMenu(row);
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab in svc" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start" }));
 
     expect(startedIn(asked)).toEqual([`${ALPHA}/svc`]);
@@ -443,11 +443,11 @@ describe("the four regions", () => {
       asked.filter((one) => one.cmd === "start_chat").map((one) => one.args.boxes);
 
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab in svc" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(boxes()).toHaveLength(1));
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab in svc" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /new branch in svc/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(boxes()).toHaveLength(2));
@@ -470,7 +470,7 @@ describe("the four regions", () => {
     });
 
     fireEvent.contextMenu(heading);
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New branch in svc…" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New branch…" }));
     await userEvent.type(
       within(await screen.findByRole("dialog", { name: "New branch" })).getByRole("textbox", {
         name: /^Name/,
@@ -519,7 +519,7 @@ describe("the four regions", () => {
     const { asked } = core();
     render(<App />);
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab in svc" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(startedIn(asked)).toHaveLength(1));
 

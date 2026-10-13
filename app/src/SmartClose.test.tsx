@@ -285,9 +285,7 @@ describe("a chat wrapping up", () => {
     await waitFor(() => expect(chipOf("steward 1")).toBeDefined());
 
     fireEvent.contextMenu(theChip("steward 1"));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: /Cancel smart close of steward 1/ }),
-    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Cancel smart close" }));
 
     await vi.waitFor(() =>
       expect(asked(log, "cancel_smart_close")).toEqual([{ plane: PLANE, session: 1 }]),

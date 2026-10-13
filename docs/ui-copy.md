@@ -49,9 +49,15 @@ empty state and error copy follow it.
 - **An ellipsis means "asks something first".** *New project…*, *Browse…*, *Add an extension…*
   open a dialog or a picker before anything happens. A button that acts at once has none.
   Always the one character `…`, never three dots.
-- **The same act has the same words everywhere:** the palette row, the menu item, the button
-  and the empty state's way out. The window's catalogue (`actions.ts`) is where each act's
-  label is written once. An ask's answers (*Allow for me on this machine*, *Keep blocked*) are
+- **The same act has the same words everywhere:** the palette row, the button and the empty
+  state's way out. The window's catalogue (`actions.ts`) is where each act's label is written
+  once.
+- **A context menu's row drops the name of the thing the menu was opened on**, and keeps the
+  verb: the palette's *Rename chat console-developer 16…* is the tab's menu's *Rename…*, and
+  *End chat console-developer 16* is *End*. The thing is in front of the person and the menu
+  says it once, as its own name. A row keeps a name when it is another thing's (*Merge into
+  svc*). These shorter words are written once too, in `menuWords.ts`, and
+  `docs/ui-primitives.md` ("Menus") has the rest of a menu's rules. An ask's answers (*Allow for me on this machine*, *Keep blocked*) are
   written once in the asks registry (`asking.rs`), and every Notice and the Inbox draw the
   label its ask carries (#1700).
 

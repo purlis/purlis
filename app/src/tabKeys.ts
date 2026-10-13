@@ -117,6 +117,14 @@ function backOnTheStripWhenGone(tab: HTMLElement, strip: HTMLElement) {
 /** The watch each strip has running, if any. */
 const watching = new WeakMap<HTMLElement, MutationObserver>();
 
+/** The key that renames a chat from its tab (`renameOnF2`), as a menu's row says it. */
+export const RENAME_KEY_SAID = "F2";
+
+/** The key that closes a tab from the tab itself (`deletes`), as a menu's row says it. */
+export function deleteKeySaid(mac: boolean): string {
+  return mac ? "⌫" : "Delete";
+}
+
 /**
  * Whether the keyboard in front of the operator is a Mac's.
  *

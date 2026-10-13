@@ -6,6 +6,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync }
 import { join } from "node:path";
 import process from "node:process";
 import { browser, expect, $, $$ } from "@wdio/globals";
+import { menuNames, pressMenuPath, ROW } from "../menus.js";
 import { built, READY, singleQuoted } from "../harness.js";
 import { harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
 import { textOfEach } from "../reading.js";
@@ -213,10 +214,11 @@ describe("the explorer", () => {
 
     const menu = await $('[role="menu"]');
     await menu.waitForDisplayed({ timeout: 20_000 });
-    await expect(menu).toHaveText("Merge branch fix-login into svc", { containing: true });
-    await expect(menu).toHaveText("Remove folder fix-login in svc", {
-      containing: true,
-    });
+    // The rows by their names: the menu is about the branch, so a row names only the repo
+    // it merges into, which is another thing.
+    const rows = (await menuNames())[0];
+    expect(rows).toContain("Merge into svc");
+    expect(rows).toContain(ROW.removeFolder);
     // Closed again, because one app process serves the whole run and a menu left up is over
     // every row the specs after this one reach for.
     await browser.keys(["Escape"]);
@@ -571,7 +573,7 @@ describe("the explorer", () => {
       expect(await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot')).toBe(true);
       const menu = await $('[role="menu"]');
       await menu.waitForDisplayed({ timeout: 20_000 });
-      await $('[role="menuitem"][aria-label="Focus on branch fix-login"]').click();
+      await pressMenuPath(ROW.focus);
 
       // By role and name: the header region, the breadcrumb, and the cockpit's own tree.
       // The cockpit's own header: the Search view's scope list names the branch too (#1676).
@@ -1607,7 +1609,7 @@ async function marked(piece: string, path: string, mark: string): Promise<void> 
 }
 
 /**
- * Opens the fixture branch's file tab from its row's menu — *Browse the files of fix-login* —
+ * Opens the fixture branch's file tab from its row's menu — *Browse files* —
  * and waits for it to come forward.
  */
 async function browseTheFiles(): Promise<void> {
@@ -1615,13 +1617,7 @@ async function browseTheFiles(): Promise<void> {
   expect(await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot')).toBe(true);
   const menu = await $('[role="menu"]');
   await menu.waitForDisplayed({ timeout: 20_000 });
-  let item: WebdriverIO.Element | undefined;
-  for (const one of await $$('[role="menu"] [role="menuitem"]').getElements()) {
-    if ((await one.getText()).includes("Browse the files of fix-login")) item = one;
-  }
-  if (item === undefined)
-    throw new Error(`the branch's menu offers no file tab: ${await menu.getText()}`);
-  await item.click();
+  await pressMenuPath(ROW.browseFiles);
   await browser.waitUntil(async () => (await tabInFront()) === "Files · fix-login", {
     timeout: 20_000,
     timeoutMsg: `the file tab never came forward; in front is ${await tabInFront()}`,

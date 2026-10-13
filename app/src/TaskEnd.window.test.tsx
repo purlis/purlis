@@ -259,6 +259,10 @@ const onScreen = () =>
 const ends = (asked: Asked[]) =>
   asked.filter((one) => one.cmd === "end_task").map((one) => one.args);
 
+/** A task's two ways to end, as its own row's menu names them: the menu is about the task. */
+const STOP_IT = "Stop and get its report";
+const CLOSE_IT = "Close now";
+/** And as the tab's chip names them, in a list of every open task's ways: each names its task. */
 const STOP = "Stop and get its report: task talk";
 const CLOSE = "Close now: task talk";
 const STOP_SWEEP = "Stop and get its report: task sweep";
@@ -303,8 +307,8 @@ describe("a task's row menu", () => {
 
     const items = await menuOf(tree, "talk");
 
-    expect(items).toContain(STOP);
-    expect(items).toContain(CLOSE);
+    expect(items).toContain(STOP_IT);
+    expect(items).toContain(CLOSE_IT);
     // One vocabulary: a task is not stopped as a chat is, and is never smart-closed.
     for (const item of items)
       expect(item).not.toMatch(/^Stop chat|Smart close|^End chat|Close tab/);
@@ -315,7 +319,8 @@ describe("a task's row menu", () => {
 
     const items = await menuOf(tree, "steward 1");
 
-    expect(items).toContain("Stop chat steward 1");
+    // Behind one row, which opens the ways to stop a chat.
+    expect(items).toContain("Stop");
     expect(items.filter((item) => item?.startsWith("Stop and get its report"))).toEqual([]);
     expect(items.filter((item) => item?.startsWith("Close now"))).toEqual([]);
   });
@@ -325,13 +330,11 @@ describe("a task's row menu", () => {
 
     await menuOf(tree, "sweep");
 
-    const stop = screen.getByRole("menuitem", { name: STOP_SWEEP });
+    const stop = screen.getByRole("menuitem", { name: STOP_IT });
     expect(stop).toHaveAttribute("aria-disabled", "true");
     expect(stop.getAttribute("title")).toContain("purlis does not type into");
     expect(stop.getAttribute("title")).toContain("Close now ends it.");
-    expect(screen.getByRole("menuitem", { name: CLOSE_SWEEP })).not.toHaveAttribute(
-      "aria-disabled",
-    );
+    expect(screen.getByRole("menuitem", { name: CLOSE_IT })).not.toHaveAttribute("aria-disabled");
   });
 });
 
@@ -340,7 +343,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
     const { tree, asked } = await drawn();
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
 
     const step = await second("Stop sweep and get its report?");
     // On its row, in the list, and no dialog: nothing else in the window is taken away.
@@ -366,7 +369,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
     const { tree, asked } = await drawn();
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
     await userEvent.click(
       within(await second("Stop sweep and get its report?")).getByRole("button", {
         name: "Stop it",
@@ -379,7 +382,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
     await waitFor(() => expect(screen.queryByRole("group", { name: /^Stop sweep/ })).toBeNull());
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
     const step = await second("Close sweep now, with no report?");
     await waitFor(() => expect(within(step).getByRole("button", { name: "Keep" })).toHaveFocus());
     await userEvent.click(within(step).getByRole("button", { name: "Close it" }));
@@ -392,7 +395,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
   it("is Keep on Escape, and ends nothing", async () => {
     const { tree, asked } = await drawn();
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
     await second("Close sweep now, with no report?");
 
     await userEvent.keyboard("{Escape}");
@@ -407,7 +410,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
     });
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
     const step = await second("sweep has reported. Close it?");
     await userEvent.click(within(step).getByRole("button", { name: "Close it" }));
 
@@ -420,7 +423,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
     const { tree, refuses } = await drawn();
     refuses.why = "That chat is not open any more.";
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
 
     await userEvent.click(
       within(await second("Close sweep now, with no report?")).getByRole("button", {
@@ -441,7 +444,7 @@ describe("the one question, for a task in the middle of a turn", () => {
     const { tree, asked } = await drawn({ 5: { working: true } });
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
 
     const question = await screen.findByRole("alertdialog", { name: "Stop task 'sweep'?" });
     expect(question.textContent).toContain("It is working.");
@@ -466,7 +469,7 @@ describe("the one question, for a task in the middle of a turn", () => {
     ] as const) {
       const { tree, asked } = await drawn({ 5: { working: true } });
       await menuOf(tree, "sweep");
-      await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+      await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
       const question = await screen.findByRole("alertdialog", { name: "Stop task 'sweep'?" });
 
       await userEvent.click(within(question).getByRole("button", { name: answer }));
@@ -483,7 +486,7 @@ describe("the one question, for a task in the middle of a turn", () => {
   it("is never the standard close dialog: no Smart close, no End chat, and no session is closed", async () => {
     const { tree, asked } = await drawn({ 5: { working: true } });
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
 
     const question = await screen.findByRole("alertdialog");
 
@@ -507,7 +510,7 @@ describe("the one question, for a task in the middle of a turn", () => {
     const { tree, refuses } = await drawn({ 5: { working: true } });
     refuses.why = "That chat is not open any more.";
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
     const question = await screen.findByRole("alertdialog");
 
     await userEvent.click(within(question).getByRole("button", { name: "Close now" }));
@@ -589,7 +592,7 @@ describe("where purlis may not type into the task", () => {
     const { tree, asked } = await drawn({ 5: { working: true, no_report: why } });
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
 
     const question = await screen.findByRole("alertdialog", { name: "Stop task 'sweep'?" });
     expect(question.textContent).toContain(why);
@@ -613,7 +616,7 @@ describe("where purlis may not type into the task", () => {
     const { tree, asked } = await drawn({ 5: { no_report: why } });
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
 
     const step = await second(`${why} Close it now, with no report?`);
     expect(
@@ -633,7 +636,7 @@ describe("where purlis may not type into the task", () => {
     const { tree } = await drawn({ 5: { working: true, stopping: true } });
 
     await menuOf(tree, "sweep");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_SWEEP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
 
     const question = await screen.findByRole("alertdialog", { name: "Stop task 'sweep'?" });
     expect(question.textContent).toContain("It is being stopped already");
@@ -650,7 +653,7 @@ describe("a task with tasks of its own still working", () => {
     const { tree, asked } = await drawn({ 4: { below: ["deep"] } });
 
     await menuOf(tree, "talk");
-    await userEvent.click(screen.getByRole("menuitem", { name: STOP }));
+    await userEvent.click(screen.getByRole("menuitem", { name: STOP_IT }));
 
     const question = await screen.findByRole("alertdialog", { name: "Stop task 'talk'?" });
     expect(question.textContent).toContain("1 task it asked for is still working: deep.");
@@ -678,7 +681,7 @@ describe("a task with tasks of its own still working", () => {
   it("keeps them where the person says so, and says what that means", async () => {
     const { tree, asked } = await drawn({ 4: { working: true, below: ["deep", "deeper"] } });
     await menuOf(tree, "talk");
-    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE }));
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
     const question = await screen.findByRole("alertdialog", { name: "Stop task 'talk'?" });
     expect(question.textContent).toContain("2 tasks it asked for are still working: deep, deeper.");
 

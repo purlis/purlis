@@ -314,7 +314,7 @@ describe("a tab's menu, from the keyboard", () => {
       fireEvent.keyDown(tab, key);
 
       const menu = await screen.findByRole("menu");
-      expect(within(menu).getByRole("menuitem", { name: "Workspace settings…" })).toBeVisible();
+      expect(within(menu).getByRole("menuitem", { name: "Settings…" })).toBeVisible();
     });
 
     it(`opens the project tab's menu on ${said}`, async () => {
@@ -327,7 +327,7 @@ describe("a tab's menu, from the keyboard", () => {
       fireEvent.keyDown(tab, key);
 
       const menu = await screen.findByRole("menu");
-      expect(within(menu).getByRole("menuitem", { name: "Project settings…" })).toBeVisible();
+      expect(within(menu).getByRole("menuitem", { name: "Settings…" })).toBeVisible();
     });
   }
 });

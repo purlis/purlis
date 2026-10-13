@@ -277,7 +277,7 @@ describe("renaming a chat's tab", () => {
     await oneChat();
 
     fireEvent.contextMenu(theTab());
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename chat steward 1…" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
 
     await waitFor(() => expect(renameBox()).toHaveFocus());
     expect(renameBox()).toHaveValue("steward 1");

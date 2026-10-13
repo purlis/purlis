@@ -213,7 +213,7 @@ describe("Settings, from the window", () => {
     const fromTheMenu = async () => {
       fireEvent.contextMenu(await screen.findByRole("tab", { name: /plane/ }));
       await screen.findByRole("menu");
-      await userEvent.click(screen.getByRole("menuitem", { name: "Project settings…" }));
+      await userEvent.click(screen.getByRole("menuitem", { name: "Settings…" }));
     };
 
     await fromTheMenu();

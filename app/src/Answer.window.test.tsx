@@ -156,7 +156,7 @@ const ANSWER = "Answer read the logs's question";
 async function opened() {
   const tree = await section();
   fireEvent.contextMenu(row(tree, "read the logs"));
-  await userEvent.click(await screen.findByRole("menuitem", { name: ANSWER }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "Answer its question" }));
   return { tree, dialog: await screen.findByRole("dialog", { name: ANSWER }) };
 }
 
@@ -196,7 +196,7 @@ describe("Answer, from a task's row menu in the Chats list (#1551)", () => {
 
     fireEvent.contextMenu(row(tree, "read the logs"));
 
-    await screen.findByRole("menuitem", { name: "Brief of read the logs" });
+    await screen.findByRole("menuitem", { name: "Brief" });
     expect(screen.queryByRole("menuitem", { name: /^Answer / })).toBeNull();
   });
 
@@ -251,7 +251,7 @@ describe("Answer, from a task's row menu in the Chats list (#1551)", () => {
     const tree = await section();
     row(tree, "read the logs").focus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    (await screen.findByRole("menuitem", { name: ANSWER })).focus();
+    (await screen.findByRole("menuitem", { name: "Answer its question" })).focus();
     await userEvent.keyboard("{Enter}");
     const dialog = await screen.findByRole("dialog", { name: ANSWER });
     await waitFor(() =>

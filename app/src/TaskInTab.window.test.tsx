@@ -981,9 +981,7 @@ describe("a pane never shows a task without its breadcrumb", () => {
     // steward 1 is restarted from its tab's menu: it is chat 21 now. The tabs know at once;
     // the core's list still says talk is a task of chat 1.
     fireEvent.contextMenu(tab("steward 1"));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: /^Restart chat .*steward 1/ }),
-    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
     await waitFor(() => expect(open[0].session).toBe(21));
     await userEvent.click(tab("steward 1"));
 
@@ -1697,15 +1695,14 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
 
     // Every chat it went to, the newest first: the one the row names and the "1 more".
     const menu = await screen.findByRole("menu");
+    // Each names the chat it goes to, which is another chat than the row's: the one name a
+    // row of this menu says.
     expect(
       within(menu)
         .getAllByRole("menuitem")
-        .map((item) => item.textContent)
-        .filter((said) => said?.includes("handed off to")),
-    ).toEqual([
-      "Go to release notes (handed off to by steward 1)",
-      "Go to drop commons (handed off to by steward 1)",
-    ]);
+        .map((item) => item.getAttribute("aria-label"))
+        .filter((said) => said?.startsWith("Go to ")),
+    ).toEqual(["Go to release notes", "Go to drop commons"]);
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 
     await waitFor(() => expect(onScreen()).toEqual([3]));

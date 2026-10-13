@@ -158,7 +158,7 @@ describe("a project tab's menu", () => {
     await screen.findByRole("tab", { name: /alpha/ });
     expect(projectTab("one")).toHaveAttribute("aria-selected", "true");
 
-    await fromItsMenu(projectTab("two"), "Project settings…");
+    await fromItsMenu(projectTab("two"), "Settings…");
 
     await waitFor(() => expect(projectTab("two")).toHaveAttribute("aria-selected", "true"));
     await waitFor(() => expect(level()).toBe("Project"));
@@ -171,7 +171,7 @@ describe("a project tab's menu", () => {
     await screen.findByRole("tab", { name: /alpha/ });
     await userEvent.click(within(workspaces()).getByRole("tab", { name: /alpha/ }));
 
-    await fromItsMenu(projectTab("one"), "Project settings…");
+    await fromItsMenu(projectTab("one"), "Settings…");
 
     await waitFor(() => expect(level()).toBe("Project"));
   });
@@ -181,7 +181,7 @@ describe("a project tab's menu", () => {
     render(<App />);
     await screen.findByRole("tab", { name: /alpha/ });
 
-    await fromItsMenu(projectTab("one"), "Project settings…");
+    await fromItsMenu(projectTab("one"), "Settings…");
     await waitFor(() => expect(level()).toBe("Project"));
     const project = inFront();
     // Another tab in front, so a row that did nothing would leave it there.
@@ -213,7 +213,7 @@ describe("a workspace tab's menu", () => {
     await userEvent.click(tab(/alpha/));
     expect(tab(/alpha/)).toHaveAttribute("aria-selected", "true");
 
-    await fromItsMenu(tab(/beta/), "Workspace settings…");
+    await fromItsMenu(tab(/beta/), "Settings…");
 
     await waitFor(() => expect(level()).toBe("Workspace"));
     expect(inFront()).toHaveTextContent("Settings · beta");
@@ -228,7 +228,7 @@ describe("a workspace tab's menu", () => {
     const alpha = within(workspaces()).getByRole("tab", { name: /alpha/ });
     await userEvent.click(alpha);
 
-    await fromItsMenu(alpha, "Workspace settings…");
+    await fromItsMenu(alpha, "Settings…");
     await waitFor(() => expect(level()).toBe("Workspace"));
     const workspace = inFront();
     // Another tab in front, so a row that did nothing would leave it there.

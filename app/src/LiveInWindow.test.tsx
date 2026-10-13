@@ -86,7 +86,7 @@ describe("LIVE and LOCAL, in the window", () => {
     const strip = await findStripNamed("Workspaces");
     fireEvent.contextMenu(await within(strip).findByRole("tab", { name: /beta/ }));
     const menu = await screen.findByRole("menu");
-    await userEvent.click(within(menu).getByRole("menuitem", { name: /Make beta live/ }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Make live…" }));
 
     expect(await screen.findByRole("alertdialog", { name: "Make beta live?" })).toBeTruthy();
     expect(asked.some((a) => a.cmd === "workspace_live")).toBe(false);
@@ -100,7 +100,7 @@ describe("a switch whose save did not happen", () => {
     const strip = await findStripNamed("Workspaces");
     fireEvent.contextMenu(await within(strip).findByRole("tab", { name: /beta/ }));
     await userEvent.click(
-      within(await screen.findByRole("menu")).getByRole("menuitem", { name: /Make beta live/ }),
+      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Make live…" }),
     );
     await userEvent.click(await screen.findByRole("button", { name: "Make live" }));
 

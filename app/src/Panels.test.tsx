@@ -636,12 +636,14 @@ describe("a persona row's menu", () => {
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual([
-      "Show what devops is",
-      "Edit devops's persona.md",
-      "Set devops's profile…",
+      // Short verbs: the menu is about devops and says so once, as its own name.
+      "Open",
+      "Edit persona.md",
+      "Set profile…",
       "New persona…",
-      "Delete persona devops…",
+      "Delete…",
     ]);
+    expect(menu).toHaveAccessibleName("Persona devops");
   });
 
   it("hands back the row that opens the persona's tab", async () => {
@@ -650,7 +652,7 @@ describe("a persona row's menu", () => {
 
     rightClick("panel-personas", "devops");
     await screen.findByRole("menu");
-    await userEvent.click(screen.getByRole("menuitem", { name: "Show what devops is" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Open" }));
 
     expect(pressed.map((offer) => offer.id)).toEqual(["persona.show:devops"]);
     expect(pressed[0].does).toEqual({
@@ -781,15 +783,9 @@ describe("a todo row's menu", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual([
-      "Open todo: Review the rollout plan",
-      "Mark done: Review the rollout plan",
-      "Forget todo Review the rollout plan",
-    ]);
+    ).toEqual(["Open", "Mark done", "Forget"]);
 
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: "Mark done: Review the rollout plan" }),
-    );
+    await userEvent.click(screen.getByRole("menuitem", { name: "Mark done" }));
     expect(pressed.map((offer) => offer.does)).toEqual([
       { verb: "closeTodo", workspace: "alpha", slug: "20260302-091400-review" },
     ]);
@@ -855,9 +851,9 @@ describe("a vault row's menu", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Open vault ops", "New vault…", "Delete vault ops…"]);
+    ).toEqual(["Open", "New vault…", "Delete…"]);
 
-    await userEvent.click(screen.getByRole("menuitem", { name: "Delete vault ops…" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete…" }));
     expect(pressed.map((offer) => offer.does)).toEqual([{ verb: "removeVault", vault: "ops" }]);
   });
 });
@@ -962,15 +958,9 @@ describe("the workspace's Memory section", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual([
-      "Open memory: The API returns 418 on Mondays",
-      "Edit memory: The API returns 418 on Mondays",
-      "Delete memory: The API returns 418 on Mondays",
-    ]);
+    ).toEqual(["Open", "Edit", "Delete"]);
 
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: "Delete memory: The API returns 418 on Mondays" }),
-    );
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(pressed.map((offer) => offer.does.verb)).toEqual(["archiveMemory"]);
   });
 

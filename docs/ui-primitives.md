@@ -473,7 +473,7 @@ still the settings set's own until Settings moves onto the primitives.
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
-| Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sets its menu's width with a class of its own                                 | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
+| Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` on what cannot be undone; `.ui-menu-line`, `.ui-menu-label`; in a row `.ui-menu-words` (`.ui-menu-title`, `.ui-menu-note`), `.ui-menu-keys`, `.ui-menu-mark`, `.ui-menu-tip` | a surface that needs another width hands `--ui-menu-min` or `--ui-menu-max`             | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item`, `CheckboxItem`, `RadioItem` and `SubTrigger`, `Separator`, `Label`; a row's parts are `primitives/MenuRow.tsx` ([Menus](#menus)) |
 
 **A refused value** (`aria-invalid="true"`) draws the field's edge in the danger colour
 (#1857), beside the words that say why; a view never redraws it.
@@ -501,14 +501,15 @@ What every class holds to:
 - **One height.** A button, a field, a select and a segmented control are `--size-control`
   tall (28px at the default text size); a small button and a small segmented control are
   `--size-chrome` (21px), for strips and pane headers. A menu's row is at least a control tall.
-- **A menu's row is as tall as what it says, and the menu scrolls.** A row with a note under its
-  words (`.ui-menu-note`) is two lines or more, and its height is never fixed. No row, line or
-  label gives way when the menu is short of room (`flex-shrink: 0`): the menu is capped at the
-  room the window has where it opened, which Radix measures
+- **A menu's row is one line, a control tall, and the menu scrolls.** Its words give way to an
+  ellipsis and never wrap. A row with the one line that may stand under its words
+  (`.ui-menu-note`, [Menus](#menus)) is as tall as the two say, and its height is never fixed.
+  No row, line or label gives way when the menu is short of room (`flex-shrink: 0`): the menu is
+  capped at the room the window has where it opened, which Radix measures
   (`--radix-context-menu-content-available-height`, `--radix-dropdown-menu-content-available-height`),
-  and scrolls inside. A row is written at `--font-size-md` and its note at `--font-size-xs`, in
-  `text.muted`. A note drawn in a row is not repeated in the row's tooltip: a tooltip says why a
-  row cannot run, or a note the row does not draw.
+  and scrolls inside. A menu is between six and ten of the largest space step wide
+  (`--space-8`: 192px to 320px at the default text size), so two short verbs do not make a
+  sliver and a long name does not widen it across the window.
   A checkbox's and a radio's mark, and a switch's track, are shares of the control height, so
   they scale with it.
 - **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
@@ -527,15 +528,17 @@ What every class holds to:
 - **The classes are in the `components` layer, above `App.css`** (`styles.css`). A view rule
   that reaches a classed control cannot redraw it, and the window's zero-specificity focus floor
   cannot pull its ring inside. A view still places a control (margin, width, flex, order), which
-  no class sets. The one size a view may hand a class is a menu row's indent, `--ui-menu-indent`
-  (a tab's task chip indents a task under the chat that asked for it).
+  no class sets. The sizes a view may hand a class are a menu's: a row's indent,
+  `--ui-menu-indent` (a tab's task chip indents a task under the chat that asked for it), and
+  the menu's least and most width, `--ui-menu-min` and `--ui-menu-max` (the task chip's menu is
+  wider, and a select's list is as wide as its longest option).
 
 `app/src/primitives/controls.test.tsx` holds each control: its height and ring through the window's
 cascade (`cascade.testkit.ts`, which reads `primitives/controls.css` as the layer above `App.css`), its
 keyboard behaviour on the real Radix primitive, and its announced name. It also holds that every
 Radix menu in the window wears `.ui-menu` and every row `.ui-menu-item`, and that `App.css` draws no
-menu shell of its own: the three copied shells (`.more-menu`, `.tasks-menu`, `.item-menu`) are
-now only their surfaces' sizes.
+menu shell of its own: of the three copied shells (`.more-menu`, `.tasks-menu`, `.item-menu`)
+only `.tasks-menu` still has a rule, which hands the one style its width and writes none.
 
 **Moving a surface onto a class** is its own ticket, one surface at a time: put the class on the
 control, delete the view's rule that drew it, and keep the view's placement. Until then a control
@@ -544,6 +547,66 @@ with no class has the baseline (`base.css`), and a classed one keeps its view's 
 fails, unless its line is in `controls.guard.allowance.ts`, the list of the controls the window
 had before the classes. Moving a control onto its class deletes its line there; nothing adds one
 (`docs/design-system.md`, "The guards, and the lists that only shrink").
+
+## Menus
+
+**Every menu in the window is drawn by the same seven rules**, a context menu and a dropdown
+alike. They are what VS Code's, JetBrains' and the platform's own menus do, and the next menu
+follows them without deciding anything. For a context menu they are applied in one place,
+`app/src/menuModel.ts`, which says how each row `actions.menuRows` lists is drawn; a row's
+words are written once, in `app/src/menuWords.ts`; and what is inside a row is
+`app/src/primitives/MenuRow.tsx`, for a dropdown too.
+
+1. **A row is a short verb, and does not say the name of the thing the menu is about.** A menu
+   is opened ON a thing, which is in front of the person: *Rename…*, *Pinned*, *End*, never
+   *Rename chat console-developer 16…*. The thing is said once, as the menu's own accessible
+   name (`aria-label` on the content: "Tab console-developer 16"). **A row keeps a name only
+   when it is another thing's**: *Go to steward 4*, *Open beside steward 4*, *Merge into svc*.
+   The catalogue's title still names the thing, for the palette, where a row stands among every
+   other row of the window (`docs/ui-copy.md`, "Buttons and menu items").
+2. **A row's note is its tooltip and its description, not a line under it.** The tooltip is the
+   window's (Radix Tooltip, `.ui-tooltip`), shown beside the menu once the keyboard or the
+   pointer has rested on the row for `TIP_AFTER_MS`; the description is the row's
+   `aria-describedby`. **Two kinds of line stay under a row's words, one line each**: what a
+   row that cannot be undone costs (*Ends the program it runs. There is no undo.*), and why a
+   row cannot run. Each changes a decision the person is about to make.
+3. **Rows of one kind are one row that opens a submenu.** *Open ▸* holds the views that open in
+   a tab of their own (Activity, Network); *Ask ▸* a row per persona, named by the persona
+   alone; *Stop ▸* the ways to stop a chat; *Curate ▸* and *Move to ▸* the rows the catalogue
+   decides the length of. What every row of a submenu does is said once, as the tooltip of the
+   row that opens it. A menu's top level is **at most ten rows in at most four groups**: the
+   thing itself, what it opens or starts, how it runs, and last what ends or deletes it.
+4. **The danger colour is for what cannot be undone**: a program ended (End, the ways to stop,
+   Close a project) or a thing deleted (a workspace, a persona, a vault, a forgotten todo). A
+   row that loses nothing wears none, wherever it stands: Restart keeps the conversation,
+   Remove folder keeps the branch, a memory's Delete is an archive with an Undo.
+5. **An ellipsis means "asks something first", and nothing else** (`docs/ui-copy.md`). A row
+   has one exactly when the catalogue's title has. **A row that could only say what a press
+   would do is left out**: there is no greyed *Switch to* on the tab in front; on any other tab
+   it is the first row.
+6. **A shortcut is said at the row's end**, in the meta role, where the same act has a key on
+   the thing itself: *Rename… F2*, *End ⌫*, *New shell ⌘⇧T*. **A toggle is one row with a
+   tick**, not two rows that take turns: *Pinned*, a `CheckboxItem`.
+7. **Type and geometry are the tokens'.** A row's words are the body role, the line under them
+   and a tooltip the secondary, a shortcut the meta, a group's name the label
+   ([Text roles](#text-roles)); a row is `--size-control` tall; a menu's width is the one menu
+   style's ([the control classes](#the-control-classes)).
+
+**A context menu's rows are still the catalogue's, and only drawn here.** `menuModel.ts` takes
+every row `actions.menuRows` lists and decides none of them in or out, so an action cannot be
+lost by folding it into a submenu: `menuModel.test.ts` holds that the rows drawn are the rows
+listed, over every kind of menu at once, and that none says its thing's name, with the rows
+that name another thing listed. A row the model has no words for is drawn by its catalogue
+title, where the catalogue put it.
+
+**The keyboard is Radix's**: the arrows move, Right opens a submenu, Left and Escape close it,
+and typing finds a row by its words (`textValue`), never by its note. A tooltip is taken down on
+the window's capture phase when Escape is pressed, so one Escape closes the menu: a Radix
+tooltip is the top layer while it is up and would otherwise take the first one.
+
+**Not a filter field in a long submenu.** A text field inside a Radix menu fights its type-ahead
+and its roving focus, and typing already finds a row. A submenu with more rows than the window
+has room for scrolls.
 
 ## The overlay surface
 
@@ -722,15 +785,17 @@ details:
   `frame/tabmenu.py` and its palette grew two answers to "what can I do to this".
 - **Not modal, and a click outside closes it**, exactly as the show-more menu above. It is a
   menu, not a question.
-- **A row's accessible name is the catalogue's title alone** (`aria-label`), and its note — what
-  the row costs — is its `aria-describedby`. Left to the content, every row would announce as a
-  paragraph: _"End chat 3 steward Ends the program it runs. There is no undo."_
+- **A row's accessible name is its words alone** (`aria-label`), and its note — what the row
+  costs — is its `aria-describedby`. Left to the content, every row would announce as a
+  paragraph: _"End Ends the program it runs. There is no undo."_ The thing the menu is about is
+  the menu's own name, said once ([Menus](#menus)).
 - **A group the catalogue decides the length of is a submenu**, Radix's own `ContextMenu.Sub`:
   "Curate ▸" on a workspace, a persona and the plane root's tab (ADR 0061). `actions.curateRows` picks that subject's
   rows out of the catalogue by id — purlis's own, then one named `ContextMenu.Label` group per
-  declaring persona, then each action the core left out as a disabled row whose tooltip is the
-  core's sentence — and it runs inside the menu's content, which Radix mounts only while the
-  menu is open, so a strip's fifty tabs do not pay the scan per render.
+  declaring persona, then each action the core left out as a disabled row with the core's
+  sentence under it — and it runs inside the menu's content, which Radix mounts only while the
+  menu is open, so a strip's fifty tabs do not pay the scan per render. "Ask ▸" on a chat's tab
+  is the same shape: `actions.askRows`, a row per persona.
   "Move to ▸" on a memory's row is the same shape (#1190): `actions.moveRows` picks that
   memory's `memory.move:<key>:<store>` rows, one per store but its own, each named as the
   memory tab's Move names the store, with the tab's audience sentence as the note of a row into

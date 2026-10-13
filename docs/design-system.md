@@ -974,6 +974,44 @@ Not moved with it, and still on their own rules: the filter's chips and the scop
 (controls), the *Go* button beside the title, and the second step of ending a task
 (`.task-end-confirm`), which the pane's breadcrumb shares.
 
+## Menus
+
+**A menu is short verbs in a few groups, and the same in every place** (the operator's report
+of 2026-10-13: every row of a chat tab's menu repeated the tab's name, almost every row had a
+sentence or two under it, a row per persona ran the menu off the window, and five rows at its
+end were red). [`ui-primitives.md`](ui-primitives.md#menus) has the seven rules and where each
+is applied; what they draw with is this:
+
+| part                     | class                             | role, size and colour                                              |
+| ------------------------ | --------------------------------- | ------------------------------------------------------------------ |
+| a row                    | `ui-menu-item`                    | `--size-control` tall at least; `--space-3` inside, `--space-1` between rows |
+| its words                | `ui-menu-title ui-text-body`      | body: 13px, `text.primary`; one line, cut with an ellipsis         |
+| the one line under them  | `ui-menu-note ui-text-secondary`  | secondary: 12px, `text.secondary`; one line                        |
+| its tooltip              | `ui-tooltip ui-menu-tip ui-text-secondary` | secondary, on the overlay surface, at most nine of `--space-8` wide |
+| its shortcut             | `ui-menu-keys ui-text-meta`       | meta: 11px, `text.muted`, at the row's end                         |
+| a tick or a submenu's arrow | `ui-menu-mark`                 | `text.muted`, at the row's end                                     |
+| a group's name           | `ui-menu-label ui-text-label`     | label: 11px strong capitals, `text.secondary`                      |
+| the line between groups  | `ui-menu-line`                    | 1px of `border.subtle`                                             |
+| what cannot be undone    | `ui-menu-item-danger`             | `danger.base` words on `danger.surface` under the pointer          |
+| the menu                 | `ui-menu`                         | the overlay surface; `calc(var(--space-8) * 6)` to `* 10` wide (192px to 320px) |
+
+The rules in one line each:
+
+1. A row is a short verb and does not repeat the name of the thing it was opened on.
+2. A note is a tooltip and a description. A line stays under a row only for what cannot be
+   undone and for why a row cannot run, one line each.
+3. Rows of one kind are one row with a submenu; at most ten rows in four groups at the top.
+4. The danger colour is only for what cannot be undone.
+5. An ellipsis only where the row asks something first; no greyed row that only says what a
+   press would do.
+6. A shortcut at the row's end; a toggle is one row with a tick.
+7. Type and geometry from the tokens above, and no literal.
+
+**No token names a menu's width.** The least and the most are written from the spacing scale
+(`calc(var(--space-8) * 6)` and `* 10`), as a settings row's widths are, and a surface that
+needs another hands the menu `--ui-menu-min` or `--ui-menu-max`. A row's tooltip is over its
+menu at `z-index: 20`, a menu being at 10; neither layer has a token.
+
 ## Tailwind, shadcn and Lucide
 
 **Tailwind v4**, wired in `app/src/styles.css`. Three decisions there, each with a test in

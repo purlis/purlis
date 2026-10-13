@@ -229,7 +229,7 @@ describe("a vault's tab", () => {
       vault_secret_set: contents([secret("API_TOKEN", { size: "32–63 bytes" })]),
     });
     draw();
-    await fromTheMenuOf("API_TOKEN", "Edit value");
+    await fromTheMenuOf("API_TOKEN", "Edit value…");
     const dialog = await screen.findByRole("dialog", { name: "Edit the value of API_TOKEN" });
     const box = within(dialog).getByLabelText("New value");
     expect(box).toHaveAttribute("type", "password");
@@ -256,7 +256,7 @@ describe("a vault's tab", () => {
       vault_secret_rename: contents([secret("NEW")]),
     });
     draw();
-    await fromTheMenuOf("OLD", "Rename");
+    await fromTheMenuOf("OLD", "Rename…");
     const dialog = await screen.findByRole("dialog", { name: "Rename OLD" });
     const box = within(dialog).getByLabelText("New name");
     expect(box).toHaveValue("OLD");
@@ -277,7 +277,7 @@ describe("a vault's tab", () => {
   it("says Renaming… while the core renames, as every act that writes does (#1719)", async () => {
     core(contents([secret("OLD")]), { vault_secret_rename: new Promise(() => {}) });
     draw();
-    await fromTheMenuOf("OLD", "Rename");
+    await fromTheMenuOf("OLD", "Rename…");
     const dialog = await screen.findByRole("dialog", { name: "Rename OLD" });
     const box = within(dialog).getByLabelText("New name");
     await userEvent.clear(box);
@@ -290,7 +290,7 @@ describe("a vault's tab", () => {
   it("says Deleting… while the core deletes (#1719)", async () => {
     core(contents([secret("GONE")]), { vault_secret_delete: new Promise(() => {}) });
     draw();
-    await fromTheMenuOf("GONE", "Delete");
+    await fromTheMenuOf("GONE", "Delete…");
     const asking = await screen.findByRole("alertdialog", { name: "Delete GONE from ops?" });
     await userEvent.click(within(asking).getByRole("button", { name: "Delete" }));
 
@@ -303,13 +303,13 @@ describe("a vault's tab", () => {
     });
     draw();
 
-    await fromTheMenuOf("GONE", "Delete");
+    await fromTheMenuOf("GONE", "Delete…");
     const asking = await screen.findByRole("alertdialog", { name: "Delete GONE from ops?" });
     expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus();
     await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
     expect(asked.some((one) => one.cmd === "vault_secret_delete")).toBe(false);
 
-    await fromTheMenuOf("GONE", "Delete");
+    await fromTheMenuOf("GONE", "Delete…");
     const again = await screen.findByRole("alertdialog");
     await userEvent.click(within(again).getByRole("button", { name: "Delete" }));
 
@@ -339,7 +339,7 @@ describe("a vault's tab", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Edit value", "Rename", "Copy", "Delete"]);
+    ).toEqual(["Edit value…", "Rename…", "Copy", "Delete…"]);
   });
 });
 
@@ -487,7 +487,7 @@ describe("revealing a value", () => {
     await screen.findByText(REVEALED);
 
     await user.click(screen.getByRole("button", { name: "OLD" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Rename…" }));
     const box = within(await screen.findByRole("dialog")).getByLabelText("New name");
     await user.clear(box);
     await user.type(box, "NEW");
