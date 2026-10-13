@@ -8,7 +8,14 @@
 //! its window side: each change as the merge view the comparison tab draws it in takes it, a
 //! before, an after and the hunk between them, or the sentence that says why it is not shown,
 //! with nothing that lets it run.
+//!
+//! **A line that ends in CRLF is drawn with its carriage return marked** ([`CRLF_MARKED`]). The
+//! merge view breaks a line at CRLF as at a line feed and draws nothing for the carriage
+//! return, so each is handed to it as the mark the core names
+//! (`purlis_core::harness::asked::edit::drawn`), and the change says what the mark is. What is
+//! allowed is the tool's own input, which this never changes.
 
+use purlis_core::harness::asked::edit::{drawn, ends_a_line_in_crlf};
 use purlis_core::harness::model::{Action, Ask, Unshown, Writes, Written};
 
 use crate::piecefiles::GitHunk;
@@ -43,6 +50,8 @@ pub const WRITES_THE_FILE: &str = "Writes the whole file, whatever it holds now"
 pub const REPLACES: &str = "Replaces this text";
 /// What a change that replaces a text wherever it appears says.
 pub const REPLACES_EVERY: &str = "Replaces this text everywhere it appears";
+/// What a change with a line that ends in CRLF says besides, of the mark drawn for each.
+pub const CRLF_MARKED: &str = "\u{240D} marks a line that ends in CRLF";
 /// What follows the reason an edit is not shown.
 pub const IN_ITS_PANE: &str = "Its pane shows it whole: allow it there.";
 
@@ -73,7 +82,7 @@ pub fn why_said(why: Unshown) -> String {
         Unshown::Binary => "This change is not text.".to_owned(),
         Unshown::DrawnOtherwise => {
             "This change holds characters the Inbox cannot show as they are, such as a \
-             carriage return."
+             carriage return that ends no line."
                 .to_owned()
         }
         Unshown::Credential => {
@@ -97,10 +106,15 @@ fn shown(change: &Written) -> ChangeShown {
             after.as_str(),
         ),
     };
+    let says = if ends_a_line_in_crlf(before) || ends_a_line_in_crlf(after) {
+        format!("{says} ({CRLF_MARKED})")
+    } else {
+        says.to_owned()
+    };
     ChangeShown {
-        says: says.to_owned(),
-        before: before.to_owned(),
-        after: after.to_owned(),
+        says,
+        before: drawn(before),
+        after: drawn(after),
         hunks: vec![whole(before, after)],
     }
 }

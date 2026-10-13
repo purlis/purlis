@@ -158,8 +158,28 @@ fn an_edit_that_cannot_be_shown_whole_says_why_and_is_only_denied() {
             Unshown::Binary,
         ),
         (
+            // A carriage return that ends no line: an editor breaks the line there or draws
+            // over it.
             "Write",
-            serde_json::json!({"file_path": "/w/a", "content": "a\r\nb"}),
+            serde_json::json!({"file_path": "/w/a", "content": "a\rb"}),
+            Unshown::DrawnOtherwise,
+        ),
+        (
+            "Write",
+            serde_json::json!({"file_path": "/w/a", "content": "a\r\nb\r"}),
+            Unshown::DrawnOtherwise,
+        ),
+        (
+            "Edit",
+            serde_json::json!({"file_path": "/w/a", "old_string": "a", "new_string": "a\r\r\nb"}),
+            Unshown::DrawnOtherwise,
+        ),
+        (
+            // The mark the window draws a CRLF's carriage return as, written in the text
+            // itself beside a line that ends in CRLF: the two would read the same.
+            "Edit",
+            serde_json::json!({"file_path": "/w/a", "old_string": "a\u{240D}\nb",
+                "new_string": "a\r\nb"}),
             Unshown::DrawnOtherwise,
         ),
         (
@@ -218,6 +238,78 @@ fn an_edit_that_cannot_be_shown_whole_says_why_and_is_only_denied() {
         assert_eq!(ids(&ask), ["deny"], "{tool} {input}");
         assert_eq!(decision(Source::ClaudeCode, &payload, "allow"), None);
     }
+}
+
+#[test]
+fn a_change_whose_lines_end_in_crlf_is_shown_whole_and_may_be_allowed() {
+    // #1146: a CRLF file's edit carries its line endings, which the window draws visibly
+    // (`asked::edit::drawn`), so the change is shown whole and its Allow is offered.
+    for (tool, input) in [
+        (
+            "Write",
+            serde_json::json!({"file_path": "/w/a.bat", "content": "echo one\r\necho two\r\n"}),
+        ),
+        (
+            // From CRLF to LF, and a file that mixes the two.
+            "Edit",
+            serde_json::json!({"file_path": "/w/a.bat", "old_string": "one\r\ntwo\nthree",
+                "new_string": "one\ntwo\nthree"}),
+        ),
+    ] {
+        let payload = asked(tool, input.clone());
+        let ask = ask(Source::ClaudeCode, &payload);
+
+        assert!(
+            matches!(ask.writes, Some(Writes::Whole { .. })),
+            "{tool} {input}: {:?}",
+            ask.writes
+        );
+        assert_eq!(ids(&ask), ["allow", "deny"], "{tool} {input}");
+        // What runs is the tool's own input, carriage returns and all.
+        let line = decision(Source::ClaudeCode, &payload, "allow").expect("a decision");
+        let printed: Value = serde_json::from_str(&line).expect("json");
+        assert_eq!(
+            printed["hookSpecificOutput"]["decision"],
+            serde_json::json!({"behavior": "allow"})
+        );
+    }
+    // What the change holds is kept as it came: only the window's drawing marks it.
+    let ask = ask(
+        Source::ClaudeCode,
+        &asked(
+            "Write",
+            serde_json::json!({"file_path": "/w/a", "content": "a\r\nb"}),
+        ),
+    );
+    assert_eq!(
+        ask.writes,
+        Some(Writes::Whole {
+            changes: vec![Written::File {
+                content: "a\r\nb".to_owned()
+            }]
+        })
+    );
+}
+
+#[test]
+fn a_crlf_s_carriage_return_is_drawn_as_a_mark_before_its_line_break() {
+    use crate::harness::asked::edit::{CARRIAGE_RETURN_DRAWN, drawn, ends_a_line_in_crlf};
+
+    assert_eq!(CARRIAGE_RETURN_DRAWN, '\u{240D}');
+    assert_eq!(drawn("a\r\nb\nc\r\n"), "a\u{240D}\nb\nc\u{240D}\n");
+    assert_eq!(drawn("a\nb"), "a\nb");
+    assert!(ends_a_line_in_crlf("a\r\nb"));
+    assert!(!ends_a_line_in_crlf("a\nb"));
+}
+
+#[test]
+fn the_mark_written_in_a_text_with_no_crlf_is_drawn_as_itself() {
+    let payload = asked(
+        "Write",
+        serde_json::json!({"file_path": "/w/notes.md", "content": "CR is drawn \u{240D}\n"}),
+    );
+
+    assert_eq!(ids(&ask(Source::ClaudeCode, &payload)), ["allow", "deny"]);
 }
 
 #[test]

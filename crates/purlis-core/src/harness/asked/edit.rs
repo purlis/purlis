@@ -10,11 +10,19 @@
 //!
 //! **Shown whole, or not at all.** A change is shown only where every part of it can be drawn
 //! as it is: no NUL ([`Unshown::Binary`]), no character a window draws as nothing or elsewhere
-//! beyond a tab and a newline, a carriage return included, and no stack of marks drawn over
-//! the lines around it ([`Unshown::DrawnOtherwise`]), no
+//! beyond a tab, a newline and the carriage return of a line that ends in CRLF, and no stack of
+//! marks drawn over the lines around it ([`Unshown::DrawnOtherwise`]), no
 //! credential shape and no vault value this process knows ([`Unshown::Credential`]), at most [`MOST_LINES`] lines in all
 //! ([`Unshown::TooBig`]), and an input holding only the fields this reads, each of its type
 //! ([`Unshown::Unread`]). Anything else is said, with no Allow, and answered in the pane.
+//!
+//! **A line that ends in CRLF is drawn with its carriage return marked** ([`drawn`]). An editor
+//! breaks a line at CRLF as it does at a line feed and draws nothing for the carriage return,
+//! so a change from one line ending to the other would look like no change. The window draws
+//! each such carriage return as [`CARRIAGE_RETURN_DRAWN`] before the line break, and says so
+//! beside the change. A carriage return that ends no line is still not drawn as it is: a view
+//! breaks the line there or draws over it. Nor is a change with a line that ends in CRLF and,
+//! anywhere in it, the mark written as a character of its own, since the two would read alike.
 //!
 //! **Nothing is read from disk.** The file as it is now is not shown: the tool writes its input
 //! whatever the file holds when it runs, and a path the chat names is never opened to draw it.
@@ -129,7 +137,16 @@ fn unshown(changes: &[Written]) -> Option<Unshown> {
     }
     if texts
         .iter()
-        .any(|text| text.chars().any(drawn_otherwise_in_a_file) || stacks_marks(text))
+        .any(|text| holds_what_a_file_s_view_draws_otherwise(text) || stacks_marks(text))
+    {
+        return Some(Unshown::DrawnOtherwise);
+    }
+    // The mark a CRLF's carriage return is drawn as, written in the change itself beside a
+    // line that ends in CRLF: the window could not tell the two apart.
+    if texts.iter().any(|text| ends_a_line_in_crlf(text))
+        && texts
+            .iter()
+            .any(|text| text.contains(CARRIAGE_RETURN_DRAWN))
     {
         return Some(Unshown::DrawnOtherwise);
     }
@@ -138,6 +155,39 @@ fn unshown(changes: &[Written]) -> Option<Unshown> {
     }
     let lines: usize = texts.iter().map(|text| text.lines().count()).sum();
     (lines > MOST_LINES).then_some(Unshown::TooBig)
+}
+
+/// What the window draws the carriage return of a line that ends in CRLF as: U+240D, the
+/// symbol for a carriage return, before the line break.
+pub const CARRIAGE_RETURN_DRAWN: char = '\u{240D}';
+
+/// Whether a line of `text` ends in CRLF.
+pub fn ends_a_line_in_crlf(text: &str) -> bool {
+    text.contains("\r\n")
+}
+
+/// **`text` as the window draws it**: the carriage return of each line that ends in CRLF as
+/// [`CARRIAGE_RETURN_DRAWN`], and everything else as it is. Only for a text shown whole
+/// ([`Writes::Whole`]), which holds no other carriage return and, where it holds a CRLF, none
+/// of the mark itself. What the tool writes is its own input, never this.
+pub fn drawn(text: &str) -> String {
+    text.replace("\r\n", &format!("{CARRIAGE_RETURN_DRAWN}\n"))
+}
+
+/// Whether `text` holds a character a file's view draws as nothing or elsewhere
+/// ([`drawn_otherwise_in_a_file`]), but the carriage return of a line that ends in CRLF, which
+/// the window draws as a mark ([`drawn`]).
+fn holds_what_a_file_s_view_draws_otherwise(text: &str) -> bool {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' && chars.peek() == Some(&'\n') {
+            continue;
+        }
+        if drawn_otherwise_in_a_file(c) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether a file's text draws `c` as nothing or elsewhere: what [`drawn_otherwise`] says, but

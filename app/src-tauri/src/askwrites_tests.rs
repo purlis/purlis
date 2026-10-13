@@ -73,6 +73,72 @@ fn an_edit_is_drawn_as_the_text_it_replaces_beside_what_it_puts_there() {
 }
 
 #[test]
+fn a_line_that_ends_in_crlf_is_drawn_with_its_carriage_return_marked_and_says_so() {
+    // #1146: an editor draws CRLF and LF alike, so a change of line endings would look like no
+    // change. Each CRLF's carriage return is drawn as a mark, and the change says what it is.
+    let shown = of(&asked(
+        "Edit",
+        serde_json::json!({"file_path": "/w/a.bat", "old_string": "one\r\ntwo\r\n",
+            "new_string": "one\ntwo\n"}),
+    ));
+
+    assert_eq!(
+        shown,
+        Some(WritesShown::Whole {
+            path: "/w/a.bat".to_owned(),
+            changes: vec![ChangeShown {
+                says: format!("{REPLACES} ({CRLF_MARKED})"),
+                before: "one\u{240D}\ntwo\u{240D}\n".to_owned(),
+                after: "one\ntwo\n".to_owned(),
+                hunks: vec![GitHunk {
+                    old_start: 1,
+                    old_lines: 2,
+                    new_start: 1,
+                    new_lines: 2
+                }],
+            }],
+        })
+    );
+    assert!(CRLF_MARKED.contains(purlis_core::harness::asked::edit::CARRIAGE_RETURN_DRAWN));
+}
+
+#[test]
+fn only_a_change_with_a_crlf_says_how_one_is_drawn() {
+    let shown = of(&asked(
+        "MultiEdit",
+        serde_json::json!({"file_path": "/w/a.rs", "edits": [
+            {"old_string": "a", "new_string": "b"},
+            {"old_string": "c", "new_string": "c\r\n", "replace_all": true},
+        ]}),
+    ));
+    let Some(WritesShown::Whole { changes, .. }) = shown else {
+        panic!("shown whole: {shown:?}");
+    };
+
+    assert_eq!(changes[0].says, REPLACES);
+    assert_eq!(changes[1].says, format!("{REPLACES_EVERY} ({CRLF_MARKED})"));
+    assert_eq!(changes[1].after, "c\u{240D}\n");
+}
+
+#[test]
+fn a_carriage_return_that_ends_no_line_is_said_to_be_why_a_change_is_not_shown() {
+    let shown = of(&asked(
+        "Write",
+        serde_json::json!({"file_path": "/w/a", "content": "a\rb"}),
+    ));
+
+    assert_eq!(
+        shown,
+        Some(WritesShown::NotShown {
+            why: format!(
+                "This change holds characters the Inbox cannot show as they are, such as a \
+                 carriage return that ends no line. {IN_ITS_PANE}"
+            )
+        })
+    );
+}
+
+#[test]
 fn an_edit_not_shown_says_why_and_where_it_is_answered() {
     let shown = of(&asked(
         "Write",

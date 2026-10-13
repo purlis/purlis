@@ -92,6 +92,11 @@ fn the_hook_through_a_shell() -> Command {
 
 /// `charter hook permissionrequest` as Claude Code runs it in chat 7, `payload` on stdin.
 fn hook(host: &Host, chat: &str) -> Child {
+    hook_asking(host, chat, &payload())
+}
+
+/// [`hook`], handed `payload`.
+fn hook_asking(host: &Host, chat: &str, payload: &serde_json::Value) -> Child {
     let mut child = the_hook_through_a_shell()
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
@@ -107,7 +112,7 @@ fn hook(host: &Host, chat: &str) -> Child {
         .stderr(Stdio::piped())
         .spawn()
         .expect("charter runs");
-    stand_in::feed(&mut child, payload().to_string().as_bytes());
+    stand_in::feed(&mut child, payload.to_string().as_bytes());
     child
 }
 
@@ -141,6 +146,68 @@ fn approving_in_the_window_prints_claude_code_s_allow_on_the_hook() {
     host.hooks
         .answer("7", &raised.id, "allow", the_window(), Instant::now())
         .expect("the first answer applies");
+    let out = child.wait_with_output().expect("the hook ends");
+
+    assert!(out.status.success());
+    let said: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("one line of JSON on stdout");
+    assert_eq!(
+        said,
+        serde_json::json!({"hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": "allow"},
+        }})
+    );
+}
+
+#[test]
+fn an_edit_asked_on_the_real_hook_is_held_with_its_whole_change_and_allowed_as_it_was_asked() {
+    // #1146: what Claude Code hands its hook for an Edit, a CRLF file's here, through the
+    // hook binary and the socket. The host holds it with the change the tool would write,
+    // whole, carriage returns and all, and offers this once and deny; the window's Allow
+    // prints the harness's allow with no input of purlis's own, so the tool writes what it
+    // asked to.
+    use purlis_core::harness::model::{Action, Writes, Written};
+
+    let payload = serde_json::json!({
+        "session_id": "abc",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "/work/run.bat", "old_string": "echo one\r\n",
+            "new_string": "echo two\r\n"},
+        "permission_suggestions": [
+            {"type": "addRules", "rules": [{"toolName": "Edit"}],
+             "behavior": "allow", "destination": "session"}
+        ]
+    });
+    let host = host();
+    let child = hook_asking(&host, "7", &payload);
+    let raised = waiting(&host.hooks);
+
+    assert_eq!(raised.chat, "7");
+    assert_eq!(
+        raised.ask.action,
+        Action::Edit {
+            path: "/work/run.bat".to_owned()
+        }
+    );
+    assert_eq!(
+        raised.ask.writes,
+        Some(Writes::Whole {
+            changes: vec![Written::Replace {
+                before: "echo one\r\n".to_owned(),
+                after: "echo two\r\n".to_owned(),
+                every: false,
+            }]
+        })
+    );
+    // An edit is allowed this once, never by a rule for the session.
+    let offered: Vec<&str> = raised.ask.options.iter().map(|o| o.id.as_str()).collect();
+    assert_eq!(offered, ["allow", "deny"]);
+
+    host.hooks
+        .answer("7", &raised.id, "allow", the_window(), Instant::now())
+        .expect("the window's answer applies");
     let out = child.wait_with_output().expect("the hook ends");
 
     assert!(out.status.success());
