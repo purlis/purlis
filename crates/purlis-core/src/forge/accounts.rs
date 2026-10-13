@@ -766,6 +766,18 @@ pub(super) fn kept(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option
     };
     let mut text = secret.into_inner();
     if !granted_by_a_flow(account.method) {
+        // A browser sign-in's pair under an account listed as a token's (the keyring was
+        // written and the list was not) is never sent anywhere as a token.
+        let a_pair =
+            text.trim_start().starts_with('{') && serde_json::from_str::<Pair>(&text).is_ok();
+        if a_pair {
+            text.zeroize();
+            return Err(format!(
+                "purlis's sign-in to {} as {} cannot be read from the keychain. Sign in again in \
+                 Settings › You › Accounts.",
+                account.host, account.login
+            ));
+        }
         let held = SecretString::from(text.as_str());
         text.zeroize();
         crate::applog::keep_out(&held);
