@@ -2274,11 +2274,11 @@ impl Planes {
         // **Registered here, started behind the window** (`crate::restoring`): the open that
         // asked answers at once, with every chat's tab to draw, and the programs start on a
         // thread of their own. Where no thread can be had, or a test asked for it, in turn.
-        let begun = held.begin_reopen(record, choice);
         if !self.restores_behind {
-            held.finish_reopen(begun, STARTING);
+            held.reopen(STARTING, record, choice);
             return;
         }
+        let begun = held.begin_reopen(record, choice);
         let behind = Arc::clone(&held);
         let begun = Mutex::new(Some(begun));
         let begun = Arc::new(begun);
@@ -10111,3 +10111,7 @@ mod tests {
         planes.close(&held.id).expect("it closes");
     }
 }
+
+#[cfg(test)]
+#[path = "planes_restoring_tests.rs"]
+mod restoring_tests;

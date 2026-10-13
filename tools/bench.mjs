@@ -21,6 +21,10 @@
 //                                        # build and this one launched in turn; fails when this one
 //                                        # is past 1.15 times main's in two passes (the limit is
 //                                        # reported, not gated)
+//   node tools/bench.mjs --skip-build --only restore --app target/debug/charter-app --evidence
+//                                        # a launch that puts 1, 10 and 40 chats back: when the
+//                                        # window could be used, and when the chats had started
+//                                        # (row L8); reported, and fails nothing
 //   node tools/bench.mjs --skip-build --only host --baseline <main's charter-session-bench>
 //                                        # CI's latency gate (SC-16): the session layer with no
 //                                        # window, main's build and the change's interleaved;
@@ -51,6 +55,7 @@ import { parseArgs } from "node:util";
 import { removeProfile } from "./cleanup.mjs";
 import { coldStartAgainstMain, coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
 import { latencyGate } from "./latency-gate.mjs";
+import { RESTORE_SIZES, restoreIsWhole, restoreMarks, restoreTable, restoreVerdict } from "./restore-case.mjs";
 import { windowVerdicts } from "./window-verdicts.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -103,6 +108,8 @@ const { values: options } = parseArgs({
     baseline: { type: "string" },
     // Interleaved rounds per pass, each one run of each build.
     rounds: { type: "string", default: "5" },
+    // Launches per size of the `restore` case.
+    "restore-launches": { type: "string", default: "3" },
   },
 });
 const only = new Set(options.only.split(","));
@@ -220,8 +227,8 @@ const COLD_START_DATA_HOME = join(tmpdir(), "charter-bench-cold-start-data");
  * A plane for cold start to launch in, holding a record of `chats` chats to put back.
  *
  * With none it is a plain directory with a `charter.toml`, which is the empty-plane case.
- * With some, the app starts that many programs in `setup`, before the window — the one
- * thing reopening adds to a launch, and the reason this arm exists.
+ * With some, the launch has that many programs to start: behind the window, once it is told
+ * to reopen them (`restore`, below). Until then it asks, and starts none.
  */
 function planeForColdStart(chats) {
   const cwd = join(tmpdir(), `charter-bench-cold-start-${chats}`);
@@ -383,6 +390,74 @@ async function coldStart(chats = 0) {
     freshProfileEachLaunch: options["fresh-profile"],
     ...(againstMain && { againstMain }),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Restore: a launch that puts N chats back, by when its window could be used and when its
+// chats had started (row L8; `app/src-tauri/src/restoring.rs`). The chats start behind the
+// window, so the first number must not grow with N; the last does, and is the cost of the
+// chats themselves. Evidence only.
+
+/** How long a launch may take to say every mark before it is ended with what it said. */
+const RESTORE_GIVES_UP_AFTER = 120_000;
+
+/**
+ * One launch of a plane holding `chats` chats, already told to reopen them: the app asks
+ * "Reopen your sessions?" at a launch with anything to put back, and a restart to update
+ * carries the answer in a marker the next launch takes (`reopen::take_restart`). Written here
+ * the same way, so the launch starts the chats with nobody to press the button.
+ */
+async function restoreOnce(chats) {
+  const cwd = planeForColdStart(chats);
+  const profile = freshProfile();
+  const store = join(profile.CHARTER_CONFIG_HOME, "purlis");
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeFileSync(join(store, "restarted-to-update"), "reopen-all\n");
+  const app = spawn(COLD_START_APP, [], {
+    cwd,
+    env: {
+      ...process.env,
+      CHARTER_BENCH_LOG: "1",
+      CHARTER_ROOT: cwd,
+      CHARTER_PLANE_FENCE: tmpdir(),
+      CHARTER_DATA_HOME: COLD_START_DATA_HOME,
+      ...profile,
+    },
+  });
+  const activating = setInterval(() => activate(app.pid), 50);
+  let said = "";
+  const marks = await new Promise((resolve) => {
+    const giveUp = setTimeout(() => resolve(restoreMarks(said)), RESTORE_GIVES_UP_AFTER);
+    const done = () => {
+      clearTimeout(giveUp);
+      resolve(restoreMarks(said));
+    };
+    app.stdout.on("data", (chunk) => {
+      said += chunk;
+      if (restoreIsWhole(restoreMarks(said))) done();
+    });
+    app.stderr.on("data", (chunk) => process.stderr.write(chunk));
+    app.on("exit", done);
+  }).finally(() => clearInterval(activating));
+  // Only the process this started.
+  app.removeAllListeners("exit");
+  if (app.exitCode === null && app.signalCode === null) {
+    const ended = new Promise((done) => app.once("exit", done));
+    app.kill("SIGTERM");
+    await ended;
+  }
+  await sleep(500);
+  await removeProfile(profile.HOME);
+  return marks;
+}
+
+async function restore() {
+  const launches = {};
+  for (const chats of RESTORE_SIZES) {
+    launches[chats] = [];
+    for (let n = 0; n < Number(options["restore-launches"]); n++) launches[chats].push(await restoreOnce(chats));
+  }
+  return { launches, ...restoreVerdict(launches) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -711,10 +786,10 @@ function hostTable({ passes, verdicts }) {
 
 if (only.has("host")) results.host = hostArm();
 if (only.has("coldstart")) results.coldStart = await coldStart();
-// The same launch with a record to put back: the app starts one program per chat in
-// `setup`, before the window, so reopening lands inside what a person experiences as the
-// launch. The spec's scale is fifty live sessions.
+// The same launch with a record to put back, to its first frame: the window asks whether to
+// reopen, and nothing starts before the answer. `restore` is the launch that is told to.
 if (only.has("coldstart50")) results.coldStartReopening50 = await coldStart(50);
+if (only.has("restore")) results.restore = await restore();
 
 if (only.has("hook")) {
   results.hookCall = hookCall();
@@ -737,6 +812,18 @@ if (only.has("window")) {
 writeFileSync(join(OUT, "results.json"), `${JSON.stringify(results, null, 2)}\n`);
 console.log(`\n${JSON.stringify(results, null, 2)}\n\nWritten to ${join(OUT, "results.json")}`);
 if (!existsSync(COLD_START_APP) && only.has("coldstart")) console.log("(cold start needs a build first)");
+if (results.restore) {
+  const table = restoreTable(results.restore);
+  console.log(`\na launch that puts chats back (row L8, evidence only):\n${table}`);
+  if (process.env.GITHUB_STEP_SUMMARY)
+    writeFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `### A launch that puts chats back\n\n${table}\n\n` +
+        "Each cell is the median of the size's launches, in ms since the app's own start. The chats start " +
+        "behind the window (`restoring.rs`), so the window is usable as soon with forty as with one.\n",
+      { flag: "a" },
+    );
+}
 // The window rows held to a budget, each met or MISSED, apart from a spec that crashed before
 // it judged anything (ADR 0086: a release absolute miss is a bug to file, not a failed run).
 const verdicts = windowVerdicts(results.window);

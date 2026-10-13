@@ -3391,7 +3391,7 @@ impl Chats {
     }
 
     /// [`Self::put_back_telling`], telling no chat anything: what the tests put a record back
-    /// with. A launch puts one back through `restored::put_back`.
+    /// with. A launch puts one back through `restored::begin` and `restored::finish`.
     #[cfg(test)]
     pub fn put_back(&self, record: &Record, size: Size) -> Vec<Open> {
         self.put_back_telling(record, size, &|_| None)
@@ -3404,6 +3404,10 @@ impl Chats {
     /// A chat whose program cannot be started is left out and the rest still open — a
     /// relaunch that failed whole because one harness had been uninstalled would be worse
     /// than one that came back short.
+    ///
+    /// Whole, on the thread that asks: [`Self::begin_put_back`], then
+    /// [`Self::finish_put_back`]. A launch does the two apart, the second behind the window.
+    #[cfg(test)]
     pub fn put_back_telling(
         &self,
         record: &Record,

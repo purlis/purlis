@@ -5192,6 +5192,9 @@ export const PlaneView = memo(function PlaneView({
         setReopened((was) => [...was.filter((one) => one.session !== chat.session), chat]);
         if (isShell(chat)) setShells((was) => new Set(was).add(chat.session));
       }
+      // Filed where they were, and said again: the sidebar is read once more, now that the
+      // core lists them among the open chats (the Chats section, the workspace's count).
+      if (started.length > 0) setStartedIn((was) => ({ ...was }));
       // Started under another number than its tab was drawn under: a chat just started.
       for (const chat of arrived) {
         noteStarted(chat);
