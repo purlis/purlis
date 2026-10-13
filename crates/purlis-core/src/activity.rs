@@ -33,8 +33,9 @@
 //!
 //! A chat's words, as it sent them: **text, and never markup**. Nothing here reads it, and the
 //! window draws it as characters. The one thing read out of a chat's words is which files a
-//! report says it changed ([`paths_named`]), to mark a file two tasks touched (V100-68): a
-//! mark for the person, which decides nothing.
+//! report says it changed ([`paths_named`]), and only for a record that lists none of its own
+//! (#1457), to mark a file two tasks touched (V100-68): a mark for the person, which decides
+//! nothing.
 
 use std::path::Path;
 
@@ -451,20 +452,25 @@ pub fn timeline_within(
     }
 }
 
-/// **The files a report says its task changed**: the ones it lists (`changed.files`), then the
-/// ones its own words name (`changed.said`), each once, a leading `./` dropped.
+/// **The files a report's task changed**: the ones its record lists (`changed.files`, which the
+/// app reads from the task's folder once it reported, #1457), each once, a leading `./`
+/// dropped. **Only for a record that lists none** are the report's own words read
+/// (`changed.said`): an older record, or a task purlis could not say the files of.
 ///
-/// A report's words are prose, so this takes only what reads as a file: a word whose last part
-/// has an extension that begins with a letter (`src/app.rs`, `values.yaml`), with the marks
-/// around it dropped. A branch (`fix/rollout`), a commit, a version (`v1.2`) and an address
-/// are not files. **It is a reading of a chat's claim, for a mark the person sees**, and
-/// nothing is decided by it: a file named another way is not found, and a word that only
-/// looks like a file is.
+/// A report's words are prose, so that reading takes only what reads as a file: a word whose
+/// last part has an extension that begins with a letter (`src/app.rs`, `values.yaml`), with
+/// the marks around it dropped. A branch (`fix/rollout`), a commit, a version (`v1.2`) and an
+/// address are not files. **It is a reading of a chat's claim, for a mark the person sees**,
+/// and nothing is decided by it: a file named another way is not found, and a word that only
+/// looks like a file is. Which is why a record that lists its files is not read this way.
 pub fn paths_named(changed: &Changed) -> Vec<String> {
     let said = changed.said.as_deref().unwrap_or_default();
     let mut named: Vec<String> = Vec::new();
     let listed = changed.files.iter().map(String::as_str);
-    let read = said.split_whitespace().filter_map(a_file);
+    let read = said
+        .split_whitespace()
+        .filter_map(a_file)
+        .filter(|_| changed.files.is_empty());
     for path in listed.chain(read) {
         let path = path.strip_prefix("./").unwrap_or(path);
         if !path.is_empty()

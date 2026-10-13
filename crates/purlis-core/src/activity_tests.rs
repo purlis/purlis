@@ -513,19 +513,32 @@ fn a_report_s_line_names_the_files_it_says_it_changed() {
 }
 
 #[test]
-fn the_files_a_report_lists_are_named_with_the_ones_it_says_each_once() {
+fn a_report_that_lists_its_files_is_not_read_for_more_in_its_words() {
+    // #1457: the list is purlis's own reading of what the task changed. A word of the report
+    // that only looks like a file (`Cargo.toml`, mentioned and not changed) marks nothing.
     let changed = Changed {
         said: Some(
             "deploy/values.yaml (replicas), Cargo.toml; see e.g. v1.2 of the plan".to_owned(),
         ),
-        files: vec!["deploy/values.yaml".to_owned(), "README.md".to_owned()],
+        files: vec![
+            "deploy/values.yaml".to_owned(),
+            "./README.md".to_owned(),
+            "deploy/values.yaml".to_owned(),
+        ],
         commits: vec!["3a823aab".to_owned()],
         branch: Some("fix/rollout".to_owned()),
     };
 
+    assert_eq!(paths_named(&changed), ["deploy/values.yaml", "README.md"]);
+    // A record that lists none (an older one, or a task purlis could not say the files of)
+    // is still read from its words.
+    let said_only = Changed {
+        files: Vec::new(),
+        ..changed
+    };
     assert_eq!(
-        paths_named(&changed),
-        ["deploy/values.yaml", "README.md", "Cargo.toml"]
+        paths_named(&said_only),
+        ["deploy/values.yaml", "Cargo.toml"]
     );
     assert_eq!(paths_named(&Changed::default()), Vec::<String>::new());
 }

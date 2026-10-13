@@ -366,6 +366,43 @@ pub(crate) fn reported_again(
     record.kept_open
 }
 
+/// **The files task chat `session` changed are written on its record** (#1457), beside its
+/// report: `report.changed.files`, each a path inside the folder it worked in. They are what
+/// its Changes tab lists at this moment ([`crate::taskchanges::changes_of`]): for a task on a
+/// branch of its own, what that branch holds against the one it was cut from; for one in a
+/// folder other chats work in, the files its own edit tools wrote that git still finds changed
+/// there. purlis's reading of the folder, never the chat's word, so the Activity tab's "also
+/// changed by" mark no longer needs to read file names out of a report's prose.
+///
+/// **Never under the lock a report is taken under**: it runs git, so it is asked once that
+/// lock is let go ([`crate::handoff::after_a_report`]), and writes through the store's own
+/// lock. Nothing is written where purlis cannot say which files were the task's, or found
+/// none: the record then lists no file, as before.
+pub(crate) fn files_changed(held: &Held, session: u32) {
+    let Some(record) =
+        chat_ref(held, session).and_then(|me| dispatchrecord::latest_for(held.root(), &me))
+    else {
+        return;
+    };
+    if record.mode != dispatchrecord::Mode::Task || record.report.is_none() {
+        return;
+    }
+    let Ok(changes) = crate::taskchanges::changes_of(held, &record.id) else {
+        return;
+    };
+    let files: Vec<String> = changes
+        .places
+        .iter()
+        .flat_map(|place| place.files.iter().map(|file| file.path.clone()))
+        .collect();
+    match dispatchrecord::changed_files(held.root(), &record.id, &files) {
+        // An open Activity tab draws the report's line again, with its files.
+        Ok(true) => crate::activity::ended(held, &record.id),
+        Ok(false) => {}
+        Err(why) => tracing::warn!("purlis: a dispatch's record was not given its files ({why})"),
+    }
+}
+
 fn close_with_report(
     held: &Held,
     session: u32,

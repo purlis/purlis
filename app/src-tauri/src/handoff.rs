@@ -350,6 +350,9 @@ pub(crate) fn after_a_report(held: &Held, chat: u32, tell: Option<u32>) {
         // more.
         crate::dispatched::settle_above(held, from.chat);
     }
+    // The files it changed are read now, with the lock let go and its folder as it left it
+    // (#1457): after the report is kept, so a slow read holds up nobody's report.
+    crate::dispatches::files_changed(held, chat);
     // **Delivered, and only then is the task's program to be ended** (#1485): the report is
     // kept for the chat that asked and its record says sent, both under the lock just let go.
     // The end takes that lock again as a close does, so the exit it causes finds nothing

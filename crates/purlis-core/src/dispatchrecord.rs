@@ -1009,6 +1009,24 @@ pub fn ended_in(root: &Path, id: &str, conversation: &str) -> io::Result<bool> {
     })
 }
 
+/// **The files the task of dispatch `id` changed**, written beside its report (#1457):
+/// `report.changed.files`, as the app read them from the folder it worked in once it reported.
+/// At most [`MOST_LISTED`], each held to a path's cap, as the store writes every list. `false`
+/// for a record that is not there, has no report, or already lists the same files.
+///
+/// purlis's own reading of the folder, never the chat's word: what a report *says* changed
+/// stays in `changed.said`.
+pub fn changed_files(root: &Path, id: &str, files: &[String]) -> io::Result<bool> {
+    let files = listed(files, &|text: &str| cut(text, MOST_PATH_BYTES));
+    change(root, id, |record| match record.report.as_mut() {
+        Some(report) if report.changed.files != files => {
+            report.changed.files = files;
+            true
+        }
+        _ => false,
+    })
+}
+
 /// **The task of dispatch `id` did not start** (#1497): its record ends here, failed, with
 /// purlis's own sentence saying `why` ([`crate::didnotstart::said`]), and is marked so. `false`
 /// for a record that is not there or has already ended: a dispatch ends once.

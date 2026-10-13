@@ -5413,8 +5413,13 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   changed, in the persona chat's own words (`purlis dispatch report --changed`), absent where
   the report said nothing of it; `branch` is the branch the app cut for a dispatch that works
   in its own worktree (#1453): the app's own `place.worktree.branch`, written beside `said`
-  and never read from the report, and absent for a dispatch given no worktree; `files` and
-  `commits` are kept for the same dispatch and not written yet; `cancelled` is a task its asking chat cancelled (#1441),
+  and never read from the report, and absent for a dispatch given no worktree; `files` is
+  the files a task changed, each a path inside the folder it worked in, read by the app from
+  that folder once the task reported and never from the report (#1457): what its branch holds
+  against the one it was cut from, or, in a folder other chats work in, the files its own
+  edit tools wrote that git still finds changed. At most 100, absent where purlis cannot say
+  which files were the task's or found none, and for a handoff; `commits` is kept for the
+  same dispatch and not written yet; `cancelled` is a task its asking chat cancelled (#1441),
   recorded so whatever its chat said of its outcome, and `stopped` is a chat the person
   stopped or closed before it reported (#1443, #1448), with the text `stopped by the
   operator`; neither is recorded as `failed`. A purlis from before the two words does not
@@ -5676,13 +5681,14 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   (`messages` above its length: sent before the key where `talk` is absent, else past the
   500 or the 256 KiB), and the report (`ended`, `report.text`, `report.outcome`). A task's own
   lines keep the order the record holds them in, whatever their times say. A report's line
-  also lists the files it says it changed: `report.changed.files`, then every word of
-  `report.changed.said` that reads as a file (its last part has an extension), so that a file
-  another task's report also names is marked. Two tasks mark each other only where they
+  also lists the files its task changed: `report.changed.files` where the record lists any
+  (#1457), and only where it lists none, every word of `report.changed.said` that reads as a
+  file (its last part has an extension), so that a file another task's report also names is
+  marked. Two tasks mark each other only where they
   worked in the same place (`place.workspace` and `place.folder`), so a task on a branch of
   its own marks nothing, and only where they ran at the same time, from `started` to `ended`
-  (#1520), so a long-lived chat's common files are not marked on every task it ever ran. That is a reading of a chat's claim for a mark the person sees, and
-  decides nothing (`purlis_core::activity::paths_named`). Nothing else is stored for the tab.
+  (#1520), so a long-lived chat's common files are not marked on every task it ever ran. Either way it is for a mark the person sees, and
+  decides nothing (`purlis_core::activity::paths_named`): the words are a chat's claim. Nothing else is stored for the tab.
   **What the tab does not list:** a record that does not pass the check is counted on the
   timeline of the chat that asked for it and shown on none; a file that does not parse as a
   record of this version at all is skipped and counted nowhere, as in the Dispatches tab.

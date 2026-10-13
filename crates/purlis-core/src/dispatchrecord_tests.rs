@@ -277,6 +277,55 @@ fn what_a_chat_said_it_cost_after_its_report_is_kept_once_it_has_gone() {
 }
 
 #[test]
+fn the_files_a_task_changed_are_written_beside_its_report_and_only_there() {
+    // #1457: the app reads them from the task's folder once it reported.
+    let (_d, root) = project();
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    let files = ["src/app.rs".to_owned(), "docs/guide.md".to_owned()];
+    // A record still running has no report to list them beside.
+    assert!(!changed_files(&root, &opened.id, &files).unwrap());
+    let ending = Ending {
+        report: Some(Report {
+            outcome: Outcome::Done,
+            text: "Done.".to_owned(),
+            changed: Changed {
+                said: Some("the fix".to_owned()),
+                ..Changed::default()
+            },
+        }),
+        usage: None,
+    };
+    assert!(close(&root, &opened.id, ending, at("2026-10-07T12:01:00Z")).unwrap());
+
+    assert!(changed_files(&root, &opened.id, &files).unwrap());
+    // The same list again writes nothing.
+    assert!(!changed_files(&root, &opened.id, &files).unwrap());
+    assert!(!changed_files(&root, "01K6NOSUCHRECORD0000000000", &files).unwrap());
+
+    let record = read(&root, &opened.id).unwrap();
+    let changed = record.report.clone().unwrap().changed;
+    assert_eq!(changed.files, files);
+    assert_eq!(
+        changed.said.as_deref(),
+        Some("the fix"),
+        "its words are kept"
+    );
+    assert!(sound(&record));
+
+    // Held to the most a record lists, as the store writes every list.
+    let many: Vec<String> = (0..MOST_LISTED + 5)
+        .map(|n| format!("src/f{n}.rs"))
+        .collect();
+    assert!(changed_files(&root, &opened.id, &many).unwrap());
+    let record = read(&root, &opened.id).unwrap();
+    assert_eq!(
+        record.report.clone().unwrap().changed.files.len(),
+        MOST_LISTED
+    );
+    assert!(sound(&record));
+}
+
+#[test]
 fn a_dispatch_ends_once_and_its_first_ending_is_kept() {
     let (_d, root) = project();
     let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
