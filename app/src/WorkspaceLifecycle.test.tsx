@@ -470,6 +470,10 @@ describe("deleting a workspace", () => {
       // With no workspace focused, the project root's panels, whose Personas the Personas view
       // draws then (#1686): a read of the plane.
       "plane_root_panels",
+      // And the project's own files, which Explorer lists there (issue 1916): a read of one
+      // folder, and the watch that says when it moves.
+      "plane_tree",
+      "files_watch",
     ];
     const during = asked.slice(before).map((one) => one.cmd);
     expect(during.filter((cmd) => !READS.includes(cmd))).toEqual(["workspace_remove"]);

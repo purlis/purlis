@@ -33,7 +33,10 @@ use crate::worktree::{self, git};
 use crate::youreditor::{self, Editor, Launch, NotLaunched};
 
 mod find;
+// What the plane root's files leave out (issue 1916).
+mod kept;
 pub use find::{Finder, Found, Hit, Named, Place, branches, find};
+use kept::Kept;
 // What a branch changed (FM-4): its own file, so the calls other tickets add here stay apart.
 mod status;
 pub use status::{AheadBehind, Change, MARKED, Mark, RefusedChange, RefusedFor, Rolled, Status};
@@ -98,34 +101,61 @@ pub const WATCHED: usize = 256;
 
 /// Which branch's files: a piece of a repo, or — with no piece — the repo's own folder, its
 /// clone (#948). Named, never given as a directory.
+///
+/// **Or the plane root** (issue 1916, ruling G3): the project's own folder, read as a branch's
+/// folder is, less what [`kept`] leaves out. It is named by [`Branch::plane_root`] and by
+/// nothing else: no workspace, repo or piece name spells it, so a command that takes those
+/// three names can never be pointed at the project's own files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Branch<'a> {
     pub ws: &'a str,
     pub repo: &'a str,
     pub piece: Option<&'a str>,
+    /// Whether this is the plane root. Private, so only [`Branch::plane_root`] says so.
+    root: bool,
 }
 
 impl<'a> Branch<'a> {
     /// A piece of `repo`: a folder of its own under the workspace's worktree root.
-    pub fn piece(ws: &'a str, repo: &'a str, piece: &'a str) -> Self {
+    pub const fn piece(ws: &'a str, repo: &'a str, piece: &'a str) -> Self {
         Self {
             ws,
             repo,
             piece: Some(piece),
+            root: false,
         }
     }
 
     /// The repo's own folder in the workspace, whichever branch it has checked out.
-    pub fn repo(ws: &'a str, repo: &'a str) -> Self {
+    pub const fn repo(ws: &'a str, repo: &'a str) -> Self {
         Self {
             ws,
             repo,
             piece: None,
+            root: false,
         }
+    }
+
+    /// The plane root: the project's own folder, of no workspace.
+    pub const fn plane_root() -> Self {
+        Self {
+            ws: "",
+            repo: "",
+            piece: None,
+            root: true,
+        }
+    }
+
+    /// Whether this is [`Branch::plane_root`].
+    pub const fn is_plane_root(&self) -> bool {
+        self.root
     }
 
     /// What the branch is called in a sentence: its folder's name.
     fn called(&self) -> &'a str {
+        if self.root {
+            return "the project";
+        }
         self.piece.unwrap_or(self.repo)
     }
 }
@@ -175,6 +205,9 @@ pub struct Entry {
     /// Why it does not open, as the sentence the window shows; `None` for a file or link that
     /// opens and for a folder that expands. An ignored entry carries its reason too.
     pub refused: Option<String>,
+    /// At the plane root, the workspace whose clone this folder is (ruling F2): one row that
+    /// leads to that workspace, never a folder that opens here. `None` everywhere else.
+    pub workspace: Option<String>,
 }
 
 /// Why a branch or one of its files did not open, as the sentence the window shows.
@@ -217,6 +250,19 @@ pub enum Refused {
     /// A read of the branch, in the bounded reader, that failed: its sentence.
     #[error("{0}")]
     Read(String),
+    /// At the plane root: something purlis keeps to itself ([`kept`]), said the same whether
+    /// or not it is there.
+    #[error(
+        "'{0}' is one of the files purlis keeps to itself (vaults, keys and its own records), \
+         so it is not listed or opened here"
+    )]
+    KeptPrivate(String),
+    /// At the plane root: a workspace's clone, or something in it ([`kept`]).
+    #[error("'{path}' is in a repo of workspace '{ws}', whose files are on that workspace's tab")]
+    OfAWorkspace { path: String, ws: String },
+    /// Something purlis does for a branch and not for the plane root: `.0` is what.
+    #[error("purlis does not {0} for the project's own files")]
+    NotAtTheRoot(&'static str),
 }
 
 /// The branch's files: every file git tracks, and every one it does not track and does not
@@ -225,7 +271,12 @@ pub enum Refused {
 /// What `git ls-files` answers, which is what a review of the branch can show: an ignored
 /// build output is not offered.
 pub fn list(plane: &Path, branch: Branch<'_>) -> Result<Vec<String>, Refused> {
-    files_in(&folder_of(plane, branch)?, branch)
+    let folder = folder_of(plane, branch)?;
+    if !branch.is_plane_root() {
+        return files_in(&folder, branch);
+    }
+    let base = resolved(&folder, branch)?;
+    Via::Here.offered(&Kept::of(&base, branch), &base, branch)
 }
 
 /// One folder level of a branch: its first [`SHOWN`] entries, and how many more it holds.
@@ -257,9 +308,15 @@ pub fn tree(plane: &Path, branch: Branch<'_>, folder: &str) -> Result<Folder, Re
     tree_in(Via::Here, &base_of(plane, branch)?, branch, folder)
 }
 
+/// What a workspace's clone says at the plane root, where it is one row (ruling F2).
+fn of_workspace(ws: &str) -> String {
+    format!("a repo of workspace '{ws}', whose files are on that workspace's tab")
+}
+
 /// [`tree`] in a branch whose folder is already resolved to `base`.
 fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Result<Folder, Refused> {
-    let relative = folder_in(base, folder)?;
+    let kept = Kept::of(base, branch);
+    let relative = folder_in(&kept, base, folder)?;
     let base = base.to_path_buf();
     let dir = base.join(&relative);
     let unreadable = |e: std::io::Error| Refused::Unreadable {
@@ -280,6 +337,8 @@ fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Resul
             unreadable(e)
         }
     })?;
+    // At the plane root, what purlis keeps to itself is not listed at all, nor counted.
+    listed.retain(|one| !kept.private_entry(&relative, &one.name));
     listed.sort_by(|a, b| {
         (a.kind != Kind::Folder)
             .cmp(&(b.kind != Kind::Folder))
@@ -306,9 +365,24 @@ fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Resul
                 kind: one.kind,
                 ignored: false,
                 refused: Some("purlis opens only a file whose name is UTF-8".to_string()),
+                workspace: None,
             });
             continue;
         };
+        // At the plane root a workspace's clone is one row, drawn whatever the project's own
+        // git says of it, and git is asked nothing about it (ruling F2).
+        if one.kind == Kind::Folder
+            && let Some(ws) = kept.clone_of(&relative.join(&name))
+        {
+            entries.push(Entry {
+                name,
+                kind: one.kind,
+                ignored: false,
+                refused: Some(of_workspace(ws)),
+                workspace: Some(ws.to_string()),
+            });
+            continue;
+        }
         // git's own folder is hidden with what git ignores: in every branch, and never a file
         // of it.
         let gits = name == ".git";
@@ -324,7 +398,7 @@ fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Resul
         if refused.is_none() {
             asked.push((relative.join(&name), at));
             if one.kind == Kind::Link {
-                match link_target(&base, &dir.join(&name)) {
+                match link_target(&kept, &base, &dir.join(&name)) {
                     Ok(target) => targets.push((target, at)),
                     Err(why) => refused = Some(why),
                 }
@@ -335,6 +409,7 @@ fn tree_in(via: Via<'_>, base: &Path, branch: Branch<'_>, folder: &str) -> Resul
             kind: one.kind,
             ignored: gits,
             refused,
+            workspace: None,
         });
     }
 
@@ -680,12 +755,13 @@ fn listing(base: &Path, relative: &Path) -> std::io::Result<Vec<Listed>> {
 /// One folder of the branch, resolved, as [`tree`] reads it: what a watch on it is put on, so
 /// the tree hears an agent add or remove a file in it. Refused exactly as [`tree`] refuses it.
 pub fn folder(plane: &Path, branch: Branch<'_>, folder: &str) -> Result<PathBuf, Refused> {
-    folder_of_in(&base_of(plane, branch)?, folder)
+    let base = base_of(plane, branch)?;
+    folder_of_in(&Kept::of(&base, branch), &base, folder)
 }
 
 /// [`folder`] in a branch whose folder is already resolved to `base`.
-fn folder_of_in(base: &Path, folder: &str) -> Result<PathBuf, Refused> {
-    folder_in(base, folder).map(|relative| base.join(relative))
+fn folder_of_in(kept: &Kept, base: &Path, folder: &str) -> Result<PathBuf, Refused> {
+    folder_in(kept, base, folder).map(|relative| base.join(relative))
 }
 
 /// [`folder`] for several folders of ONE branch, finding the branch once: one git call for the
@@ -717,6 +793,7 @@ fn folders_in(
                 .collect();
         }
     };
+    let kept = Kept::of(&base, branch);
     named
         .iter()
         .enumerate()
@@ -727,7 +804,7 @@ fn folders_in(
                     why: format!("purlis watches at most {WATCHED} folders at once"),
                 });
             }
-            folder_in(&base, folder).map(|relative| base.join(relative))
+            folder_in(&kept, &base, folder).map(|relative| base.join(relative))
         })
         .collect()
 }
@@ -747,8 +824,9 @@ fn resolved(folder: &Path, branch: Branch<'_>) -> Result<PathBuf, Refused> {
 
 /// `folder`'s path relative to the resolved `base` (`""` is the branch's own), once every check
 /// has passed: a plain relative path, inside the branch, not git's, a folder, and reached
-/// through no link.
-fn folder_in(base: &Path, folder: &str) -> Result<PathBuf, Refused> {
+/// through no link. At the plane root, nothing purlis keeps to itself and nothing of a
+/// workspace's clone either ([`kept`]).
+fn folder_in(kept: &Kept, base: &Path, folder: &str) -> Result<PathBuf, Refused> {
     let relative = if folder.is_empty() {
         PathBuf::new()
     } else {
@@ -759,6 +837,7 @@ fn folder_in(base: &Path, folder: &str) -> Result<PathBuf, Refused> {
     if gits(&relative) {
         return Err(Refused::NotInPiece(folder.to_string()));
     }
+    kept.refuse(&relative, folder)?;
     let dir = base.join(&relative);
     // The folder as the disk spells it must be the folder as it was named: a link anywhere on
     // the way resolves elsewhere, and is refused rather than followed.
@@ -828,19 +907,22 @@ enum Via<'a> {
 }
 
 impl Via<'_> {
-    /// The offered list of `branch`, whose folder is resolved to `base`: [`list`]'s answer.
-    fn offered(self, base: &Path, branch: Branch<'_>) -> Result<Vec<String>, Refused> {
-        match self {
-            Via::Here => files_in(base, branch),
+    /// The offered list of `branch`, whose folder is resolved to `base`: [`list`]'s answer,
+    /// less what `kept` leaves out at the plane root.
+    fn offered(self, kept: &Kept, base: &Path, branch: Branch<'_>) -> Result<Vec<String>, Refused> {
+        let mut offered = match self {
+            Via::Here => files_in(base, branch)?,
             Via::Reader { reader, plane } => {
                 let never = std::sync::atomic::AtomicBool::new(false);
                 match offered_by(reader, plane, branch, None, &never)? {
-                    Told::Answered(offered) => Ok(offered.files),
-                    Told::Unindexed => files_in(base, branch),
-                    Told::Stopped => Err(answered_else()),
+                    Told::Answered(offered) => offered.files,
+                    Told::Unindexed => files_in(base, branch)?,
+                    Told::Stopped => return Err(answered_else()),
                 }
             }
-        }
+        };
+        kept.offered(&mut offered);
+        Ok(offered)
     }
 }
 
@@ -1006,13 +1088,19 @@ fn ignored_of(base: &Path, asked: &[&Path], branch: Branch<'_>) -> Result<Vec<bo
 /// Where a link inside the branch leads, as a path relative to the branch's folder — or why it
 /// does not open: it leaves the branch, leads into git's own folder or another repository, or
 /// leads to something that is not a file.
-fn link_target(base: &Path, link: &Path) -> Result<PathBuf, String> {
+fn link_target(kept: &Kept, base: &Path, link: &Path) -> Result<PathBuf, String> {
     let away = || "a link out of the branch's folder, so purlis does not follow it".to_string();
     let Ok(resolved) = std::fs::canonicalize(link) else {
         return Err("a link to nothing".to_string());
     };
     if resolved == base || !resolved.starts_with(base) || names_git(&resolved, base) {
         return Err(away());
+    }
+    // At the plane root, a link into what purlis keeps to itself, or into a workspace's
+    // clone, is not followed either: said as one sentence for both, so it does not say what
+    // is there.
+    if kept.refuse_resolved(&resolved, "").is_err() {
+        return Err("a link purlis does not follow from the project's own files".to_string());
     }
     if !resolved.is_file() {
         return Err("a link to something that is not a file".to_string());
@@ -1171,7 +1259,8 @@ pub fn open(plane: &Path, branch: Branch<'_>, path: &str) -> Result<Opened, Refu
 
 /// [`open`] in a branch whose folder is already resolved to `base`.
 fn open_in(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<Opened, Refused> {
-    let resolved = locate(via, base, branch, path)?;
+    let kept = Kept::of(base, branch);
+    let resolved = locate(via, &kept, base, branch, path)?;
     // The resolved path has no link on it, so the open refuses one planted since.
     let mut file = crate::contain::open_no_link(base, &resolved).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -1190,6 +1279,11 @@ fn open_in(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<
     let meta = file.metadata().map_err(unreadable)?;
     if !meta.is_file() {
         return Err(Refused::NotAFile(path.to_string()));
+    }
+    // Asked of the file that was opened, so it is the one read: at the plane root, a second
+    // name of a file purlis keeps to itself opens no more than its first.
+    if kept.holds_a_name_of(&file) {
+        return Err(Refused::KeptPrivate(path.to_string()));
     }
     let bytes = meta.len();
     if bytes > LARGEST {
@@ -1277,16 +1371,18 @@ pub struct Placed {
 /// is empty, absolute, walks up, or is or is inside a `.git`. An ignored file or folder is
 /// placed like any other: the tree draws it when asked, and nothing here reads its bytes.
 pub fn place(plane: &Path, branch: Branch<'_>, path: &str) -> Result<Placed, Refused> {
-    place_in(&base_of(plane, branch)?, path)
+    let base = base_of(plane, branch)?;
+    place_in(&Kept::of(&base, branch), &base, path)
 }
 
 /// [`place`] in a branch whose folder is already resolved to `base`.
-fn place_in(base: &Path, path: &str) -> Result<Placed, Refused> {
+fn place_in(kept: &Kept, base: &Path, path: &str) -> Result<Placed, Refused> {
     let relative = slashed(inside(path)?);
     // Git's own folder is refused by its name before the disk is asked (see `folder_in`).
     if relative.is_empty() || gits(Path::new(&relative)) {
         return Err(Refused::NotInPiece(path.to_string()));
     }
+    kept.refuse(Path::new(&relative), path)?;
     let absolute = base.join(&relative);
     match std::fs::canonicalize(&absolute) {
         Ok(resolved) if resolved == absolute => {}
@@ -1367,7 +1463,8 @@ fn place_named_folder(named: &Path, branch: Branch<'_>) -> Result<Placed, Refuse
 /// refuses, for an empty, absolute or walking-up path, and for git's own folder.
 pub fn named(plane: &Path, branch: Branch<'_>, path: &str) -> Result<String, Refused> {
     spelled_inside(path)?;
-    named_in(&base_of(plane, branch)?, path)
+    let base = base_of(plane, branch)?;
+    named_in(&Kept::of(&base, branch), &base, path)
 }
 
 /// `path` as git's file list spells it, refused as [`named`] refuses a path by its spelling
@@ -1383,13 +1480,14 @@ pub(crate) fn spelled_inside(path: &str) -> Result<String, Refused> {
 
 /// [`named`] in a branch whose folder is already resolved to `base`: by the app's process
 /// through [`base_of`], or by the reader's child through the status read's own opening (#1189).
-pub(crate) fn named_in(base: &Path, path: &str) -> Result<String, Refused> {
+fn named_in(kept: &Kept, base: &Path, path: &str) -> Result<String, Refused> {
     let spelled = spelled_inside(path)?;
+    kept.refuse(Path::new(&spelled), path)?;
     let (parent, leaf) = match spelled.rsplit_once('/') {
         Some((parent, leaf)) => (parent, leaf),
         None => ("", spelled.as_str()),
     };
-    let folder = folder_in(base, parent).map_err(|refused| match refused {
+    let folder = folder_in(kept, base, parent).map_err(|refused| match refused {
         Refused::NotInPiece(_) => Refused::NotInPiece(path.to_string()),
         Refused::NotThere(_) | Refused::NotAFolder(_) => Refused::NotThere(path.to_string()),
         other => other,
@@ -1443,10 +1541,19 @@ fn in_your_editor_in(
     editor: Editor,
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Launch, Refused> {
-    let resolved = locate(via, base, branch, path)?;
+    let kept = Kept::of(base, branch);
+    let resolved = locate(via, &kept, base, branch, path)?;
     // A submodule is offered by its path and is a folder; a FIFO is no file to edit.
     if !resolved.is_file() {
         return Err(Refused::NotAFile(path.to_string()));
+    }
+    // At the plane root, a second name of a file purlis keeps to itself is not handed on.
+    if kept.on()
+        && crate::contain::open_no_link(base, &resolved)
+            .map(|file| kept.holds_a_name_of(&file))
+            .unwrap_or(true)
+    {
+        return Err(Refused::KeptPrivate(path.to_string()));
     }
     Ok(youreditor::launch(editor, &resolved, line, var)?)
 }
@@ -1454,13 +1561,22 @@ fn in_your_editor_in(
 /// The resolved file `path` names in the branch whose folder is resolved to `base`, once every
 /// check has passed: a plain relative path, offered by the list, inside the branch, not git's,
 /// and through a link only to another offered file.
-fn locate(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<PathBuf, Refused> {
+fn locate(
+    via: Via<'_>,
+    kept: &Kept,
+    base: &Path,
+    branch: Branch<'_>,
+    path: &str,
+) -> Result<PathBuf, Refused> {
     let relative = inside(path)?;
+    // At the plane root, what purlis keeps to itself and a workspace's clone are refused by
+    // how the path is spelled and by what its folders are, before anything else is asked.
+    kept.refuse(relative, path)?;
     // **Only what the list offers opens** (ADR 0084 §2, ADR 0052): a file git tracks, or one
     // it does not track and does not ignore. An ignored `.env`, or a secret materialised into
     // the branch, is not something a review shows, and `piece_file` hands the window no
     // value the vault keeps out of it. One more read of the branch per open.
-    let offered = via.offered(base, branch)?;
+    let offered = via.offered(kept, base, branch)?;
     let offers = |relative: &Path| offered.binary_search(&slashed(relative)).is_ok();
     if !offers(relative) {
         return Err(Refused::NotOffered(path.to_string()));
@@ -1480,6 +1596,8 @@ fn locate(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<P
     if resolved == base || !resolved.starts_with(base) || names_git(&resolved, base) {
         return Err(Refused::NotInPiece(path.to_string()));
     }
+    // Where a link led is judged as the path itself was.
+    kept.refuse_resolved(&resolved, path)?;
     // A link opens only a file the list offers too: one to an ignored file is refused.
     if !resolved.strip_prefix(base).is_ok_and(offers) {
         return Err(Refused::NotOffered(path.to_string()));
@@ -1524,7 +1642,8 @@ impl Root {
 
     /// [`folder`], on this branch.
     pub fn folder(&self, folder: &str) -> Result<PathBuf, Refused> {
-        folder_of_in(&self.base()?, folder)
+        let base = self.base()?;
+        folder_of_in(&Kept::of(&base, self.branch()), &base, folder)
     }
 
     /// [`folders`], on this branch: the folders a window's explorer has expanded, resolved for
@@ -1535,12 +1654,14 @@ impl Root {
 
     /// [`place`], on this branch.
     pub fn place(&self, path: &str) -> Result<Placed, Refused> {
-        place_in(&self.base()?, path)
+        let base = self.base()?;
+        place_in(&Kept::of(&base, self.branch()), &base, path)
     }
 
     /// [`named`], on this branch.
     pub fn named(&self, path: &str) -> Result<String, Refused> {
-        named_in(&self.base()?, path)
+        let base = self.base()?;
+        named_in(&Kept::of(&base, self.branch()), &base, path)
     }
 
     /// [`in_your_editor`], on this branch, its offered list read by `reader`.
@@ -1568,8 +1689,11 @@ impl Root {
     /// reader found.
     pub fn place_branch_folder(&self) -> Result<Placed, Refused> {
         let branch = self.branch();
-        let Branch { ws, repo, piece } = branch;
+        let Branch {
+            ws, repo, piece, ..
+        } = branch;
         let named = match piece {
+            _ if branch.is_plane_root() => self.plane().to_path_buf(),
             Some(piece) => worktree::path_for(self.plane(), ws, repo, piece)?,
             None => self.plane().join("workspaces").join(ws).join(repo),
         };
@@ -1596,8 +1720,25 @@ pub fn named_by(
 
 /// The branch's folder: a piece found the way the Explorer finds it, among the pieces git has;
 /// the repo's own folder only where git says that folder is a repository's top.
+///
+/// **The plane root's is the project's own folder** (issue 1916), and only where that folder
+/// is a repository's top: the same rule, read the other way. A project inside someone else's
+/// repository is not listed by that repository's rules.
 fn folder_of(plane: &Path, branch: Branch<'_>) -> Result<PathBuf, Refused> {
-    let Branch { ws, repo, piece } = branch;
+    let Branch {
+        ws, repo, piece, ..
+    } = branch;
+    if branch.is_plane_root() {
+        worktree::relocation_refusal(plane)?;
+        let top = git::run(plane, &["rev-parse", "--show-toplevel"], git::READ)
+            .map_err(worktree::Refusal::from)?;
+        let at_top =
+            top.ok() && std::fs::canonicalize(top.line()).ok() == std::fs::canonicalize(plane).ok();
+        if !at_top {
+            return Err(not_a_repository_of_its_own());
+        }
+        return Ok(plane.to_path_buf());
+    }
     let Some(piece) = piece else {
         // `clone_dir` checks the names before joining them, keeps the folder inside the
         // workspace, and asks git whether it is a repository at all.
@@ -1624,6 +1765,17 @@ fn folder_of(plane: &Path, branch: Branch<'_>) -> Result<PathBuf, Refused> {
             repo: repo.to_string(),
             piece: piece.to_string(),
         })
+}
+
+/// What the plane root is refused with where the project's folder is not a git repository's
+/// top: there is no list of what opens to read it by.
+fn not_a_repository_of_its_own() -> Refused {
+    Refused::Unreadable {
+        what: "the project's own files".to_string(),
+        why: "the project's folder is not a git repository of its own, so purlis has no list \
+              of its files to go by"
+            .to_string(),
+    }
 }
 
 /// A path relative to the branch, with nothing in it that could leave: no root, no `..`, not
@@ -1670,6 +1822,9 @@ fn slashed(relative: &Path) -> String {
         .join("/")
 }
 
+#[cfg(all(test, unix))]
+mod plane_root_tests;
+
 #[cfg(test)]
 mod tests {
     use super::natural;
@@ -1694,7 +1849,7 @@ mod tests {
     /// [`super::Ask::Offered`] with `offered` and [`super::Ask::Ignored`] with `ignored` (each the
     /// child's JSON), told apart by the question on its standard input.
     #[cfg(unix)]
-    fn reader_answering_each(
+    pub(super) fn reader_answering_each(
         root: &str,
         offered: &str,
         ignored: &str,
@@ -1720,13 +1875,13 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn offered(files: &[&str]) -> String {
+    pub(super) fn offered(files: &[&str]) -> String {
         serde_json::json!({ "Ok": { "Offered": { "files": files, "total": files.len() } } })
             .to_string()
     }
 
     #[cfg(unix)]
-    fn ignored(ignored: &[bool], gitlinks: &[&str]) -> String {
+    pub(super) fn ignored(ignored: &[bool], gitlinks: &[&str]) -> String {
         serde_json::json!({ "Ok": { "Ignored": { "ignored": ignored, "gitlinks": gitlinks } } })
             .to_string()
     }
@@ -1952,16 +2107,12 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn found_at(folder: &std::path::Path) -> String {
+    pub(super) fn found_at(folder: &std::path::Path) -> String {
         serde_json::json!({ "Ok": { "Root": { "base": folder, "refs": [] } } }).to_string()
     }
 
     #[cfg(unix)]
-    const REPO: super::Branch<'static> = super::Branch {
-        ws: "alpha",
-        repo: "thing",
-        piece: None,
-    };
+    const REPO: super::Branch<'static> = super::Branch::repo("alpha", "thing");
 
     /// #1189: a branch the reader refuses is refused in the reader's own sentence.
     #[cfg(unix)]

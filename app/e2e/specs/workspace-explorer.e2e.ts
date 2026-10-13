@@ -827,10 +827,15 @@ describe("the explorer", () => {
     await untilFilesOf("beta");
     await expect($('[data-testid="explorer"] [data-testid="files-svc"]')).not.toBeExisting();
 
-    // The plane root is not a workspace: the heading says where the strip is, and no tree.
+    // The plane root is not a workspace: the heading says where the strip is, and the tree is
+    // the project's own files (issue 1916), or the sentence that says why they are not listed.
+    // Never a workspace's repo.
     await $('[data-strip="Workspaces"] [role="tab"].plane-root').click();
     await untilFilesOf("Plane root");
-    await expect($('[data-testid="explorer"] [role="tree"]')).not.toBeExisting();
+    await $(
+      '[data-testid="explorer"] [role="tree"][aria-label="Files of Plane root"]',
+    ).waitForExist({ timeout: 20_000 });
+    await expect($('[data-testid="explorer"] [data-testid="files-svc"]')).not.toBeExisting();
 
     await focus("alpha");
     await untilFilesOf("alpha");

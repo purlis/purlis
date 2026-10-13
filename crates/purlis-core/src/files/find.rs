@@ -326,6 +326,11 @@ fn listing(
     cap: usize,
 ) -> Result<Listing, String> {
     let read = || -> Result<Listing, Refused> {
+        // The plane root is no branch of a scope (issue 1916): what it leaves out is decided
+        // where its tree and its files are read, and no palette lists it.
+        if branch.is_plane_root() {
+            return Err(Refused::NotAtTheRoot("find files by name"));
+        }
         // With a reader, its child finds the folder and lists it, cut at the cap there, so this
         // process starts no git (#1189); with none, both are done here.
         // A branch whose index the child could not read is listed here (#1130).

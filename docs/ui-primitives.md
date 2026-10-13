@@ -1165,6 +1165,11 @@ model and a select-on-`mousedown` this window's strips do not have:
   same keys, and nothing folds, since a fold would be a press in a view that is only read. Its
   rows are `treeitem`s that take the keyboard and run nothing; the repo's context menu opens
   from a focused row on Shift+F10, as on any menued row.
+- **On the plane root's tab, Files is the whole project's** (issue 1916): the same `.ui-tree`
+  and rows as a branch's files, read through the window's own `plane_tree`. A workspace's repo
+  is one `.ui-tree-row` with the workspace's mark (`Folders`), its folder's name and
+  _workspace <name>_ in `ui-text-secondary`, and pressing it selects that workspace's tab; it has no
+  twist, because it never opens there. These rows have no menu and are not dragged.
 - **Explorer is two sections, and each tree is its own Tab stop** (#1677): _Repos and
   branches_ and _Files_, in that order, each under a heading that is a disclosure button
   (`aria-expanded`, `aria-controls`) and folds it — a button and not a `<details>`, since a
@@ -1173,8 +1178,8 @@ model and a select-on-`mousedown` this window's strips do not have:
   folds come back with it. **It lists no workspaces**: the strip is the one place a workspace is
   selected (ADR 0036), with its live mark and its menu on its tab, and _Files_ is of the
   workspace selected there, named in its heading. On the plane root's tab the heading says
-  _Plane root_ and the section says why it lists no files. A view's key gives the keyboard to
-  the first tree drawn in the view, past the headings.
+  _Plane root_ and the tree is the whole project's files (the point above). A view's key gives
+  the keyboard to the first tree drawn in the view, past the headings.
 - **Every other control says `tabIndex={0}`**, and a tab's `×` says `-1`: fifty closers would be
   fifty stops again. **Delete on a focused project or chat tab presses the row its `×` presses**
   (purlis#239, `closeOnDelete` in `app/src/tabKeys.ts`), and so does Backspace on a Mac,

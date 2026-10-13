@@ -88,6 +88,7 @@ const MOST_PATHS: usize = 256;
 
 /// One folder of a branch, as the window names it: the plane, the workspace, the repo, the piece
 /// (none for the repo's own folder) and the folder's path inside the branch (`""` for its top).
+/// With no workspace and no repo (both `""`) it is a folder of the plane root (issue 1916).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct BranchFolder {
     pub plane: PlaneId,
@@ -784,7 +785,8 @@ pub(crate) fn say_unwatched(window: &tauri::Window, to: &str, list: FilesUnwatch
 /// child, so this process starts no git for them (#1189).
 fn branch_found(root: &std::path::Path, of: &[BranchFolder]) -> Found {
     let first = &of[0];
-    let branch = crate::piecefiles::branch(&first.workspace, &first.repo, &first.piece);
+    // A branch, or the plane root where the window named no workspace and no repo.
+    let branch = crate::piecefiles::watched_place(&first.workspace, &first.repo, &first.piece);
     let named: Vec<&str> = of.iter().map(|folder| folder.folder.as_str()).collect();
     folders_found(
         || purlis_core::files::root(&crate::reader(), root, branch),

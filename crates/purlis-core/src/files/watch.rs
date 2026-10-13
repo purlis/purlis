@@ -155,6 +155,8 @@ pub struct Root {
     ws: String,
     repo: String,
     piece: Option<String>,
+    /// Whether it is the plane root (issue 1916), which no name spells.
+    at_plane_root: bool,
 }
 
 /// What the reader's child answers [`root`] with: the branch's folder, and the files in its
@@ -178,6 +180,7 @@ pub fn root(reader: &Reader, plane: &Path, branch: Branch<'_>) -> Result<Root, R
         ws: branch.ws.to_string(),
         repo: branch.repo.to_string(),
         piece: branch.piece.map(str::to_string),
+        at_plane_root: branch.is_plane_root(),
     })
 }
 
@@ -210,10 +213,10 @@ impl Root {
 
     /// The branch it was found by, named as the window names it.
     pub(super) fn branch(&self) -> Branch<'_> {
-        Branch {
-            ws: &self.ws,
-            repo: &self.repo,
-            piece: self.piece.as_deref(),
+        match self.piece.as_deref() {
+            _ if self.at_plane_root => Branch::plane_root(),
+            Some(piece) => Branch::piece(&self.ws, &self.repo, piece),
+            None => Branch::repo(&self.ws, &self.repo),
         }
     }
 
@@ -249,6 +252,7 @@ impl Root {
         // hears: what was learnt for the clone's worktrees is forgotten now, not when it
         // expires (#874). They are in the workspace's worktrees folder, beside the clone.
         if self.piece.is_none()
+            && !self.at_plane_root
             && moved.iter().any(|path| {
                 path.strip_prefix(&self.base)
                     .is_ok_and(moves_a_worktrees_index)

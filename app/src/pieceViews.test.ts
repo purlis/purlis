@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  PLANE_ROOT,
+  isPlaneRoot,
   pieceDiffOf,
   pieceDiffTitle,
   pieceDiffView,
@@ -29,6 +31,27 @@ describe("a piece's files and one of its files are views named by data", () => {
     expect(pieceOf(pieceFileView(own, "src/a.rs"))).toEqual({ place: own, path: "src/a.rs" });
     expect(pieceOf(pieceFilesView(own))).toEqual({ place: own });
     expect(pieceFileTitle(own, "src/a.rs")).toBe("a.rs · svc");
+  });
+
+  it("names a file of the plane root by its path alone, in a view of its own kind (#1916)", () => {
+    const view = pieceFileView(PLANE_ROOT, "docs/adr/0038.md");
+
+    // No workspace and no repo is in its key: the plane root is neither's.
+    expect(view).toEqual({ from: null, view: "plane-file", key: "docs/adr/0038.md" });
+    expect(pieceOf(view)).toEqual({ place: PLANE_ROOT, path: "docs/adr/0038.md" });
+    expect(pieceFileTitle(PLANE_ROOT, "docs/adr/0038.md")).toBe("0038.md · Plane root");
+    expect(pieceOf({ from: null, view: "plane-file", key: "" })).toBeUndefined();
+    expect(pieceOf({ from: "ext", view: "plane-file", key: "a.md" })).toBeUndefined();
+  });
+
+  it("takes no workspace's place for the plane root, and no key of names for it (#1916)", () => {
+    expect(isPlaneRoot(PLANE_ROOT)).toBe(true);
+    expect(isPlaneRoot({ workspace: "alpha", repo: "", piece: null })).toBe(false);
+    expect(isPlaneRoot({ workspace: "", repo: "svc", piece: null })).toBe(false);
+    expect(isPlaneRoot({ workspace: "", repo: "", piece: "one" })).toBe(false);
+    // A branch's key with its names left empty is still nobody's view.
+    expect(pieceOf({ from: null, view: "piece-file", key: "//README.md" })).toBeUndefined();
+    expect(pieceOf({ from: null, view: "piece-files", key: "//" })).toBeUndefined();
   });
 
   it("is no piece's view for any other view", () => {

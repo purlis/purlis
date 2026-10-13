@@ -12,15 +12,35 @@
  * `workspace/repo/` — which no piece's name can be. This module draws nothing and imports no
  * editor code: `Views.tsx` reads it to decide which tab to draw before the editor's chunk is
  * loaded.
+ *
+ * **A file of the plane root is a view of its own kind** (issue 1916), keyed by its path alone:
+ * the plane root is no workspace's and no repo's, so no key of the three names spells it, and
+ * nothing that renames a workspace touches it.
  */
 import type { ViewRef } from "./tabs";
 
 /** Whose files: a piece of a repo, or — with no piece — the repo's own folder. A `Cut` is one. */
 export type Place = { workspace: string; repo: string; piece: string | null };
 
+/**
+ * **The plane root, as a place whose files the window reads** (issue 1916): the project's own
+ * folder, of no workspace and no repo. The window's name for it only: the core is asked for its
+ * files by commands of their own (`plane_tree`, `plane_file`), and no command that takes a
+ * workspace and a repo reads it.
+ */
+export const PLANE_ROOT: Place = { workspace: "", repo: "", piece: null };
+
+/** Whether `place` is {@link PLANE_ROOT}. No workspace and no repo has an empty name. */
+export function isPlaneRoot(place: Place): boolean {
+  return place.workspace === "" && place.repo === "" && place.piece === null;
+}
+
+/** What the plane root is called on screen (CONTEXT.md). */
+const PLANE_ROOT_NAME = "Plane root";
+
 /** What the place is called on screen: its branch folder's name, or the repo's. */
 export function placeName(place: Place): string {
-  return place.piece ?? place.repo;
+  return isPlaneRoot(place) ? PLANE_ROOT_NAME : (place.piece ?? place.repo);
 }
 
 /** The place's part of a key. */
@@ -31,6 +51,8 @@ function keyOf(place: Place): string {
 const FILES = "piece-files";
 const FILE = "piece-file";
 const DIFF = "piece-diff";
+/** One file of the plane root, keyed by its path. */
+export const PLANE_FILE = "plane-file";
 
 /** The view listing a piece's files, with the light editor beside the list. */
 export function pieceFilesView(place: Place): ViewRef {
@@ -39,6 +61,7 @@ export function pieceFilesView(place: Place): ViewRef {
 
 /** One file of a piece, in a tab of its own. */
 export function pieceFileView(place: Place, path: string): ViewRef {
+  if (isPlaneRoot(place)) return { from: null, view: PLANE_FILE, key: path };
   return { from: null, view: FILE, key: `${keyOf(place)}/${path}` };
 }
 
@@ -72,6 +95,8 @@ export function pieceFileTitle(place: Place, path: string): string {
 
 /** The piece, and the file, a view is about; `undefined` for every other view. */
 export function pieceOf(view: ViewRef): { place: Place; path?: string } | undefined {
+  if (view.from === null && view.view === PLANE_FILE)
+    return view.key === "" ? undefined : { place: PLANE_ROOT, path: view.key };
   if (view.from !== null || (view.view !== FILES && view.view !== FILE)) return undefined;
   const [workspace, repo, piece, ...rest] = view.key.split("/");
   if (!workspace || !repo || piece === undefined) return undefined;

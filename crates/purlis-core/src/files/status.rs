@@ -197,8 +197,13 @@ pub(super) fn status_here(plane: &Path, branch: Branch<'_>) -> Result<Status, Re
 /// was read, so no filter, diff driver, memory or size setting the branch's config names is
 /// seen by anything after.
 pub(super) fn open(plane: &Path, branch: Branch<'_>) -> Result<Opened, Refused> {
-    let Branch { ws, repo, piece } = branch;
+    let Branch {
+        ws, repo, piece, ..
+    } = branch;
     worktree::relocation_refusal(plane)?;
+    if branch.is_plane_root() {
+        return open_the_plane_root(plane, branch);
+    }
     if !crate::contain::workspace_name_ok(ws) {
         return Err(worktree::Refusal::BadWorkspace(ws.to_string()).into());
     }
@@ -257,6 +262,33 @@ pub(super) fn open(plane: &Path, branch: Branch<'_>) -> Result<Opened, Refused> 
         repo: opened,
         recorded,
         upstream,
+    })
+}
+
+/// [`open`] for the plane root (issue 1916): the project's own folder, where it is the work
+/// tree of a repository of its own and never that repository's git directory. Nothing of it
+/// is compared with a base: no base is recorded, and no upstream is read.
+fn open_the_plane_root(plane: &Path, branch: Branch<'_>) -> Result<Opened, Refused> {
+    let missing = super::not_a_repository_of_its_own;
+    let base = std::fs::canonicalize(plane).map_err(|_| missing())?;
+    let mut opened = gix::open_opts(&base, options()).map_err(|_| missing())?;
+    let workdir = opened
+        .workdir()
+        .and_then(|dir| std::fs::canonicalize(dir).ok());
+    let git_dir = std::fs::canonicalize(opened.git_dir()).ok();
+    if workdir.as_deref() != Some(base.as_path()) || git_dir.as_deref() == Some(base.as_path()) {
+        return Err(missing());
+    }
+    let recorded = recorded_values(&opened);
+    allowed_only(&mut opened).map_err(|why| Refused::Unreadable {
+        what: branch.called().to_string(),
+        why,
+    })?;
+    Ok(Opened {
+        base,
+        repo: opened,
+        recorded,
+        upstream: None,
     })
 }
 
@@ -944,12 +976,7 @@ mod tests {
                 "{args:?}"
             );
         }
-        let branch = Branch {
-            ws: "alpha",
-            repo: "widget",
-            piece: None,
-        };
-        open(plane.path(), branch)
+        open(plane.path(), Branch::repo("alpha", "widget"))
     }
 
     /// #1550: gitoxide is given no `safe.bareRepository`, and needs none: a bare repository

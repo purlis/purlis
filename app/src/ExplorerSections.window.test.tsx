@@ -8,7 +8,6 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { showTheExplorer, stripNamed } from "./test-strips";
 import App from "./App";
-import { NO_FILES_AT_THE_ROOT } from "./Explorer";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 
@@ -18,7 +17,11 @@ import { GLOBAL } from "./windowprefs";
  * layout file for the next launch.
  *
  * **It lists no workspaces** (qw358): the strip is where one is selected, and Files is of the
- * one selected there, or says why it lists none on the plane root.
+ * one selected there.
+ *
+ * **On the plane root's tab, Files is the whole project's** (issue 1916): read through the
+ * window's own `plane_tree` and `plane_file`, never a branch's commands, with a workspace's
+ * repo as one row that selects that workspace's tab.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -97,6 +100,42 @@ function core() {
           }
         : { entries: [], more: 0 };
     if (cmd === "branch_status") return { changes: [], folders: [], more: 0, base: "main" };
+    // The plane root's files (issue 1916), as the core answers them: nothing purlis keeps to
+    // itself is among them, and a workspace's repo names its workspace.
+    if (cmd === "plane_tree") {
+      const entry = (name: string, kind: string, more: Record<string, unknown> = {}) => ({
+        name,
+        kind,
+        ignored: false,
+        refused: null,
+        workspace: null,
+        ...more,
+      });
+      if (a.folder === "")
+        return {
+          entries: [
+            entry("docs", "folder"),
+            entry("workspaces", "folder"),
+            entry("target", "folder", { ignored: true }),
+            entry("README.md", "file"),
+          ],
+          more: 0,
+        };
+      if (a.folder === "workspaces") return { entries: [entry("beta", "folder")], more: 0 };
+      if (a.folder === "workspaces/beta")
+        return {
+          entries: [
+            entry("web", "folder", {
+              refused: "a repo of workspace 'beta', whose files are on that workspace's tab",
+              workspace: "beta",
+            }),
+            entry("workspace.md", "file"),
+          ],
+          more: 0,
+        };
+      return { entries: [], more: 0 };
+    }
+    if (cmd === "plane_file") return { kind: "text", text: "read me\n" };
     if (cmd === "reopened_focus") return null;
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
@@ -174,21 +213,91 @@ describe("Explorer in sections (#1677)", () => {
     ).toBe(true);
   });
 
-  it("names the plane root in Files when the strip is on it, and lists no workspace's files", async () => {
-    core();
+  it("lists the whole project's files in Files when the strip is on the plane root (#1916)", async () => {
+    const asked = core();
     render(<App />);
     await showTheExplorer();
     await explorer().findByRole("tree", { name: "Files of alpha" });
+    const before = asked.length;
 
     await userEvent.click(stripTab(/^Plane root/));
 
     await explorer().findByRole("button", { name: "Files Plane root" });
-    expect(explorer().queryByRole("tree")).toBeNull();
-    expect(explorer().getByText(NO_FILES_AT_THE_ROOT)).toBeVisible();
+    const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
+    // The project's own top folder, folders first; what git ignores is hidden until asked for.
+    await tree.findByRole("treeitem", { name: "README.md" });
+    expect(tree.getAllByRole("treeitem").map((row) => row.textContent?.trim())).toEqual([
+      "docs",
+      "workspaces",
+      "README.md",
+    ]);
+    expect(explorer().queryByText(/is not a workspace/)).toBeNull();
+    // Read through the window's own command, and through no branch's: no workspace or repo
+    // is named for the plane root, and nothing of it is compared.
+    const since = asked.slice(before);
+    expect(since.some((one) => one.cmd === "plane_tree" && one.args.folder === "")).toBe(true);
+    expect(
+      since.filter(
+        (one) =>
+          ["branch_tree", "branch_status", "piece_file"].includes(one.cmd) &&
+          one.args.workspace === "",
+      ),
+    ).toEqual([]);
+
+    await userEvent.click(explorer().getByRole("button", { name: "Show ignored files" }));
+    await tree.findByRole("treeitem", { name: "target" });
 
     // And back on a workspace, its files again.
     await userEvent.click(stripTab(/alpha/));
     await explorer().findByRole("tree", { name: "Files of alpha" });
+  });
+
+  it("opens a file of the plane root through the window's own read (#1916)", async () => {
+    const asked = core();
+    render(<App />);
+    await showTheExplorer();
+    await userEvent.click(stripTab(/^Plane root/));
+    const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
+
+    await userEvent.click(await tree.findByRole("treeitem", { name: "README.md" }));
+
+    await waitFor(() =>
+      expect(asked.some((one) => one.cmd === "plane_file" && one.args.path === "README.md")).toBe(
+        true,
+      ),
+    );
+    expect(asked.some((one) => one.cmd === "piece_file")).toBe(false);
+    // Its tab is named for the plane root, and offers nothing that names a branch.
+    const tab = await screen.findByRole("region", { name: "README.md · Plane root" });
+    expect(within(tab).queryByRole("button", { name: "Copy path" })).toBeNull();
+    expect(within(tab).queryByRole("button", { name: /your editor/i })).toBeNull();
+    // A row of the plane root is read, never dragged onto a chat.
+    expect(tree.getByRole("treeitem", { name: "README.md" })).not.toHaveAttribute("draggable");
+  });
+
+  it("draws a workspace's repo as one row that selects that workspace's tab (#1916)", async () => {
+    core();
+    render(<App />);
+    await showTheExplorer();
+    await userEvent.click(stripTab(/^Plane root/));
+    const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
+    await userEvent.click(await tree.findByRole("treeitem", { name: "workspaces" }));
+    await userEvent.click(await tree.findByRole("treeitem", { name: "beta" }));
+
+    const repo = await tree.findByRole("treeitem", { name: /^web/ });
+    // One row, never a folder that opens here: it says whose it is.
+    expect(repo).not.toHaveAttribute("aria-expanded");
+    expect(repo).not.toHaveAttribute("aria-disabled");
+    expect(repo).toHaveTextContent("workspace beta");
+    expect(repo).toHaveAttribute(
+      "title",
+      "A repo of workspace beta: its files are on that workspace's tab",
+    );
+
+    await userEvent.click(repo);
+
+    await waitFor(() => expect(stripTab(/beta/)).toHaveAttribute("aria-selected", "true"));
+    await explorer().findByRole("tree", { name: "Files of beta" });
   });
 
   it("draws the picked branch's files in Files, and each repo's own folder before one is picked", async () => {

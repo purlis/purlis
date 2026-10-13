@@ -277,6 +277,8 @@ macro_rules! app_commands {
                 piecefiles::copy_branch_path,
                 piecefiles::reveal_branch_path,
                 piecefiles::branch_tree,
+                piecefiles::plane_tree,
+                piecefiles::plane_file,
                 piecefiles::branch_status,
                 piecefiles::branch_ahead_behind,
                 piecefiles::what_changed,

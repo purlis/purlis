@@ -177,6 +177,11 @@ pub struct Server {
 ///
 /// `open_blocked_file` starts the person's editor on a file the project's save is blocked in,
 /// from the Saving view: a program of theirs run on their press, which no link asks for.
+///
+/// `plane_tree` and `plane_file` list and open the plane root's files (issue 1916): the
+/// project's own files, of no workspace's repo, which the person browses in their window. A
+/// link is served a branch's files and never these, so no chat gains a second way to read the
+/// project through one.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
     // Ends.
@@ -377,6 +382,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Open the file on a blocked save's finding, in the Saving view: starts the person's
     // editor on the file the save is blocked in.
     "open_blocked_file",
+    // The plane root's files (issue 1916): the project's own, listed and opened in the
+    // person's window alone.
+    "plane_tree",
+    "plane_file",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -449,6 +458,25 @@ pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[WindowOnlyField {
     field: "writes",
     in_its_place: an_edit_drawn_in_the_window_only,
 }];
+
+/// **Whether a call names the plane root** (issue 1916): `files_watch` with a folder of no
+/// workspace and no repo, which is how the window names a folder of the project's own. A link
+/// is served a branch's folders and never the plane root's, so such a call is refused before
+/// its handler is asked ([`THE_PLANE_ROOT_IS_THE_WINDOWS`]). A folder that leaves either name
+/// out is counted as naming none.
+pub fn names_the_plane_root(method: &str, args: &Value) -> bool {
+    let unnamed = |name: &Value| name.as_str().is_none_or(str::is_empty);
+    method == "files_watch"
+        && args["folders"].as_array().is_some_and(|folders| {
+            folders
+                .iter()
+                .any(|one| unnamed(&one["workspace"]) && unnamed(&one["repo"]))
+        })
+}
+
+/// What a link is told when its call names the plane root.
+pub const THE_PLANE_ROOT_IS_THE_WINDOWS: &str =
+    "The project's own files are listed and watched in purlis's window only.";
 
 /// What a link is served for an edit's change: not shown, and why.
 pub fn an_edit_drawn_in_the_window_only() -> Value {
@@ -552,6 +580,14 @@ impl Serving {
             Frame::Call(Call { id, method, args }) => {
                 let reply = move |outcome| Frame::Reply(Reply { re: id, outcome });
                 match (&self.server, self.open) {
+                    (Some(server), true)
+                        if server.methods.contains(&method)
+                            && names_the_plane_root(&method, &args) =>
+                    {
+                        Answered::Now(Some(reply(Outcome::Err(Value::String(
+                            THE_PLANE_ROOT_IS_THE_WINDOWS.into(),
+                        )))))
+                    }
                     (Some(server), true) if server.methods.contains(&method) => {
                         let handler = Arc::clone(&server.handler);
                         Answered::Later(Box::pin(async move {
@@ -769,6 +805,42 @@ mod tests {
             })
         );
         assert_eq!(as_a_link_is_served("rename_chat", reply.clone()), reply);
+    }
+
+    /// Issue 1916: the folder watch is served on a link for a branch's folders, and refused
+    /// there for a folder of the plane root, which is named by no workspace and no repo.
+    #[test]
+    fn a_folder_watch_that_names_the_plane_root_is_not_a_links_to_ask() {
+        let folder = |workspace: &str, repo: &str| {
+            serde_json::json!({
+                "plane": "/p", "workspace": workspace, "repo": repo, "piece": null, "folder": "docs"
+            })
+        };
+        let watch = |folders: Vec<Value>| serde_json::json!({ "folders": folders });
+        assert!(!window_only("files_watch"));
+        assert!(!names_the_plane_root("files_watch", &watch(vec![])));
+        assert!(!names_the_plane_root(
+            "files_watch",
+            &watch(vec![folder("alpha", "svc")])
+        ));
+        assert!(names_the_plane_root(
+            "files_watch",
+            &watch(vec![folder("", "")])
+        ));
+        // One such folder among a branch's refuses the whole call.
+        assert!(names_the_plane_root(
+            "files_watch",
+            &watch(vec![folder("alpha", "svc"), folder("", "")])
+        ));
+        // A folder that leaves the names out names none.
+        assert!(names_the_plane_root(
+            "files_watch",
+            &watch(vec![serde_json::json!({ "plane": "/p", "folder": "" })])
+        ));
+        assert!(!names_the_plane_root(
+            "branch_tree",
+            &watch(vec![folder("", "")])
+        ));
     }
 
     #[test]
