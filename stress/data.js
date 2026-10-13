@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791922698691,
+  "lastUpdate": 1791922715044,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2442,6 +2442,42 @@ window.BENCHMARK_DATA = {
             "value": 445.6,
             "unit": "MB",
             "extra": "median of 6 samples: 411.1, 426.4, 441.1, 450.1, 450.6, 515.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "3928cea1adf3893e37fdcdb53c2301bc787fdd21",
+          "message": "review(qw368): hardening — plan names the branch, and a dev build's commit is checked against main's history\n\n- plan's `if:` names `head_branch == 'main'` beside the conclusion, the event\n  and the repository, so the four conditions are the whole rule in one place.\n  The concurrency group repeats all four.\n- A second gate, independent of the `if:`, before anything from the checkout\n  runs: the commit must be in main's history by the forge's comparison, or\n  the run fails.\n- tools/release-workflow.test.mjs: each condition is needed by itself, and\n  the gate is the first thing plan's script does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T23:00:34+04:00",
+          "tree_id": "d33f5140056e1cbdd396c3dd07650984b2e5afbc",
+          "url": "https://github.com/purlis/purlis/commit/3928cea1adf3893e37fdcdb53c2301bc787fdd21"
+        },
+        "date": 1791922713642,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1530.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1350.4, 1530.5, 1573.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 442.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 402.7, 420.2, 438.6, 446.4, 447.2, 542.3 MB"
           }
         ]
       }
