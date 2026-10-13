@@ -27,6 +27,33 @@ release workflow runs every night, builds `main` as a stable build is built, wit
 and publishes nothing. If it fails it opens an issue titled *the stable profile does not build
 on main*, and the first clean night closes it. Fix that before tagging.
 
+### When a merge reaches the dev channel
+
+A merge to `main` starts `ci`. When that `ci` ends green, the release workflow builds that
+commit and replaces the dev release's assets. A dev build takes **about half an hour** from
+start to published: the Linux and macOS builds run side by side for some twenty minutes, and
+the manifest, the provenance and the publish take the rest. So a merge is on the dev channel
+about fifty minutes after it lands, when nothing is ahead of it.
+
+**Dev builds queue. A merge never costs the build in progress.** One dev build runs at a time
+and is never cancelled once it has started, so you can merge while one is running. The next
+green commit's build waits for it to finish. If a third commit goes green while one is waiting,
+the newest takes the waiting place and GitHub marks the one that was waiting *cancelled*; it
+had started nothing, and the build that replaced it contains its commit. Merging faster than a
+build takes therefore publishes every second or third commit, never none.
+
+A `ci` that ends red or cancelled, and the nightly `ci`, publish nothing and wait behind
+nothing: their release run skips at once, in a group of its own. Before 2026-10-13 such a run
+took the waiting place from a real build and then skipped, which is how a green commit could
+go unpublished until the next merge.
+
+**The dev channel only moves forward.** `ci` runs do not end in the order of their commits (one
+started again ends late), so before it builds, a run reads the commit `dev.json` names and
+publishes only a later one. An older commit's run says so in a notice and builds nothing.
+
+In the Actions list a release run is titled for the commit it builds, `ci success (push) of
+<sha>`. The commit GitHub prints beside it is `main`'s head when that `ci` ended, a later one.
+
 A machine switches with `purlis update --channel dev` (or `stable`). The app checks a minute
 after launch and every six hours after that. The week's first check reads the channel's weekly
 manifest instead, which is how purlis counts weekly users without an identifier (below). It **installs only when asked**, because
@@ -181,8 +208,8 @@ gh release create dev --repo purlis/purlis --prerelease --target main \
 
 It **must** stay a prerelease. GitHub's `latest` pointer skips prereleases, and that is the only
 thing keeping stable machines off dev builds. The workflow checks this before every dev
-publish. After this, every green `main` replaces this release's assets. The tag itself never
-moves.
+publish. After this, a green `main`'s build replaces this release's assets, one build at a time
+("When a merge reaches the dev channel", above). The tag itself never moves.
 
 ## Cutting a stable release
 

@@ -3,6 +3,12 @@
 
 name: release
 
+# What the runs list shows for a run. For a run `ci` started it names the commit that `ci` ran
+# on, which is the commit this run builds. Without it the list shows only `main`'s head at the
+# moment `ci` ended, a later commit this run never touches: on 2026-10-13 run 661 read as a
+# build of dd46646c, whose `ci` was red, while it built 8781c167, whose `ci` was green.
+run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}', github.event.workflow_run.conclusion, github.event.workflow_run.event, github.event.workflow_run.head_sha) || github.event_name == 'schedule' && 'profile guard' || github.event_name == 'push' && format('stable {0}', github.ref_name) || format('on demand, {0}', github.ref_name) }}
+
 # The build a person installs, and the two update channels the installed app reads.
 #
 # `ci.yml`'s `app` job proves the app COMPILES on both platforms; it builds `--debug
@@ -15,7 +21,9 @@ name: release
 #   a `v*` tag             -> the STABLE channel: a GitHub Release for that tag, `latest.json`
 #                             beside its bundles. Only the operator pushes a `v*` tag.
 #   `ci` green on `main`   -> the DEV channel: the bundles and `dev.json` replace the assets of
-#                             the one prerelease named `dev`.
+#                             the one prerelease named `dev`. One at a time, never cancelled
+#                             once started, and never an older commit over a newer one
+#                             (`concurrency` and `plan`).
 #   `workflow_dispatch`    -> a build of any branch, uploaded as run artifacts and published
 #                             NOWHERE. The operator asking for something to try. It runs
 #                             outside the `release` environment, so it holds no signing key
@@ -88,11 +96,32 @@ on:
     branches: [main]
 
 concurrency:
-  # No `cancel-in-progress`: a cancelled publish can leave the dev release holding half of one
-  # build's assets. Two dev builds queue instead, and the later one's assets win.
-  # A run started by the nightly ci publishes nothing; it must not displace a pending dev publish.
-  # The profile guard has a group of its own for the same reason.
-  group: release-${{ github.event_name == 'schedule' && 'profile-guard' || github.event.workflow_run.event == 'schedule' && 'nightly' || github.event.workflow_run.head_branch || github.ref }}
+  # **One dev publish at a time, and none is ever cancelled once it has started**: a cancelled
+  # publish can leave the dev release holding half of one build's assets. A dev build takes
+  # about half an hour and `main` takes a merge more often than that, so a build is usually
+  # running when the next commit's `ci` goes green. That next run WAITS: `cancel-in-progress`
+  # is false, so a merge never costs the build in progress.
+  #
+  # **Among the runs that wait, the latest wins.** A group holds one running run and one
+  # pending run. A run that arrives while another is pending takes its place, and GitHub
+  # cancels the one that was waiting, which had not started a job. That is wanted here: only
+  # runs that will publish wait in this group, the dev channel serves one build, and a build
+  # nobody would be offered is not worth half an hour of two runners.
+  #
+  # **So a run that publishes nothing never enters this group.** The group is taken when the
+  # run is created, before any job's `if:` is read, and `workflow_run` fires for every `ci`
+  # that ends on `main`: red ones, cancelled ones, the nightly one. Each of those is a run that
+  # only skips (`plan`'s `if:`), and while it shared the group it took the pending place from a
+  # build that would have published and then skipped. On 2026-10-13 that lost the dev builds of
+  # 51bf31b6 and 672fa978 (runs 651 and 655, cancelled while pending by runs 652 and 656, which
+  # a failed and a cancelled `ci` had started). Such a run now gets a group of its own, named
+  # for its run id, where it displaces nothing. The three tests here are `plan`'s `if:`,
+  # negated; `tools/release-workflow.test.mjs` holds the two together.
+  #
+  # The profile guard has a group of its own for the same reason. A tag and a build started by
+  # hand are grouped by their ref.
+  group: release-${{ github.event_name == 'schedule' && 'profile-guard' || github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && format('nothing-{0}', github.run_id) || github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -110,7 +139,10 @@ jobs:
     # started by ANY event whose branch is called `main` — including a pull request from a
     # fork whose branch happens to be named `main`. Only a green `ci` on a PUSH to THIS
     # repository's `main` may produce a signed dev build; anything else would sign a
-    # stranger's code with the operator's key.
+    # stranger's code with the operator's key. `workflow_run.head_sha`, the commit that green
+    # `ci` ran on, is the only commit such a run ever checks out and builds (`SHA` below).
+    # The workflow's `concurrency.group` repeats these three tests, negated, so a run this
+    # `if:` skips waits behind no build and displaces none.
     if: >-
       github.event_name != 'workflow_run' || (
         github.event.workflow_run.conclusion == 'success' &&
@@ -169,6 +201,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           ASKED_PROFILE: ${{ inputs.profile }}
+          # For `tools/dev-build-order.mjs`, which reads the dev release and compares two
+          # commits. The workflow's `contents: read`, and nothing more.
+          GH_TOKEN: ${{ github.token }}
           HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
           # Passed as three booleans and counted in the shell below, rather than and-ed here,
           # so a HALF-configured certificate is a case of its own instead of reading the same
@@ -246,6 +281,24 @@ jobs:
           if [ "$EVENT" = workflow_run ] && ! cmp -s running/.github/workflows/release.yml .github/workflows/release.yml; then
             echo "::notice::$SHA carries a different release.yml from the one this run executes (main at $GITHUB_WORKFLOW_SHA), so it is not built: the release that main's newer commit's own ci starts builds that commit instead."
             skip=true; publish=false
+          fi
+          # **The dev channel only moves forward.** Runs start in the order their `ci` runs
+          # ENDED, which is not the order of the commits: a `ci` started again ends after its
+          # successors'. Run 654 published 4c7854ee that way on 2026-10-13, over e827217c,
+          # nine commits newer, and under the higher number, so every machine on the channel
+          # took it. So a build publishes only when its commit comes after the one `dev.json`
+          # names and its version is newer; otherwise it builds nothing and says why. This run
+          # holds the group, so nothing else is publishing while it asks. The tool exits 1
+          # when it could not find out, and `set -e` stops the run there.
+          if [ "$EVENT" = workflow_run ] && [ "$skip" != "true" ]; then
+            order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")
+            case "$order" in
+              publish:*) echo "$order" ;;
+              skip:*)
+                echo "::notice::not built, and nothing is published: ${order#skip: }"
+                skip=true; publish=false ;;
+              *) echo "::error::tools/dev-build-order.mjs answered neither publish nor skip: $order"; exit 1 ;;
+            esac
           fi
           # Which macOS signing this run does, decided ONCE and carried to the build and to the
           # check that verifies it. Developer ID needs all three secrets; with none of them the
