@@ -670,7 +670,7 @@ rings stay in px. The px below are at the default 14px text.
 | `--space-8`           | 32px       |                                                                          |
 | `--font-size-xs`      | 11px       | the type scale, six steps: badges, counts                                |
 | `--font-size-sm`      | 12px       | secondary lines, help text                                               |
-| `--font-size-md`      | 13px       | dense lists and tables                                                   |
+| `--font-size-md`      | 13px       | dense lists and tables, a menu's rows                                    |
 | `--font-size-base`    | 14px       | the window's text (`1rem`)                                               |
 | `--font-size-lg`      | 16px       | section headings                                                         |
 | `--font-size-xl`      | 20px       | a view's title                                                           |

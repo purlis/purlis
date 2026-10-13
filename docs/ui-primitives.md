@@ -468,7 +468,7 @@ still the settings set's own until Settings moves onto the primitives.
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
-| Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
+| Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sets its menu's width with a class of its own                                 | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
 
 **A refused value** (`aria-invalid="true"`) draws the field's edge in the danger colour
 (#1857), beside the words that say why; a view never redraws it.
@@ -496,6 +496,14 @@ What every class holds to:
 - **One height.** A button, a field, a select and a segmented control are `--size-control`
   tall (28px at the default text size); a small button and a small segmented control are
   `--size-chrome` (21px), for strips and pane headers. A menu's row is at least a control tall.
+- **A menu's row is as tall as what it says, and the menu scrolls.** A row with a note under its
+  words (`.ui-menu-note`) is two lines or more, and its height is never fixed. No row, line or
+  label gives way when the menu is short of room (`flex-shrink: 0`): the menu is capped at the
+  room the window has where it opened, which Radix measures
+  (`--radix-context-menu-content-available-height`, `--radix-dropdown-menu-content-available-height`),
+  and scrolls inside. A row is written at `--font-size-md` and its note at `--font-size-xs`, in
+  `text.muted`. A note drawn in a row is not repeated in the row's tooltip: a tooltip says why a
+  row cannot run, or a note the row does not draw.
   A checkbox's and a radio's mark, and a switch's track, are shares of the control height, so
   they scale with it.
 - **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
@@ -552,7 +560,7 @@ and its rows).
 - **The look is the class's, the place is the view's.** A view places and sizes its overlay with a
   class of its own: `.warning` centres a dialog and caps its size (`.warning.update`,
   `.warning.doctor` and the palette change the cap or the place), `.row-card` caps a popover,
-  `.more-menu` sizes a menu. None of them draws a ground, a border, a corner, a shadow or a
+  `.more-menu` sets a menu's width. None of them draws a ground, a border, a corner, a shadow or a
   padding. The one size a view may hand the surface is `--ui-dialog-padding-end`: Ask {persona}
   keeps its answers at its bottom edge while it scrolls, so it takes its own bottom padding away.
 - **Inside, the shared controls.** Every button in a dialog or a popover is a `.ui-button`: the

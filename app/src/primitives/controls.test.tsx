@@ -98,6 +98,8 @@ describe("the primitives stylesheet", () => {
     const fromRadix = new Set([
       "--radix-select-trigger-width",
       "--radix-select-content-available-height",
+      "--radix-context-menu-content-available-height",
+      "--radix-dropdown-menu-content-available-height",
     ]);
     const read = [...CSS.matchAll(/var\((--[\w-]+)/g)].map((hit) => hit[1]);
     expect(read.length).toBeGreaterThan(0);
@@ -531,6 +533,87 @@ describe("the menu", () => {
     // A surface sizes its menu; the look is the one style's, whatever the surface's class says.
     expect(drawnWith(menu, "min-width")).toBe("12rem");
     expect(drawnWith(menu, "background")).toBe("var(--surface-overlay)");
+  });
+
+  /** A menu whose rows say what they do under their words, as a tab's context menu does. */
+  function Noted() {
+    return (
+      <Menu.Root modal={false}>
+        <Menu.Trigger className="ui-button ui-button-ghost" tabIndex={0}>
+          More
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Content className="ui-menu item-menu" aria-label="More">
+            <Menu.Label className="ui-menu-label">This chat</Menu.Label>
+            <Menu.Item className="ui-menu-item" aria-label="Pin chat">
+              <span className="menu-title">Pin chat</span>
+              <span className="ui-menu-note">
+                Draws it first on its strip. Yours, on this machine only.
+              </span>
+            </Menu.Item>
+            <Menu.Separator className="ui-menu-line" />
+            <Menu.Item className="ui-menu-item ui-menu-item-danger" aria-label="End chat">
+              <span className="menu-title">End chat</span>
+              <span className="ui-menu-note">Ends the program it runs. There is no undo.</span>
+            </Menu.Item>
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu.Root>
+    );
+  }
+
+  async function openNoted(): Promise<HTMLElement> {
+    const user = userEvent.setup();
+    render(<Noted />);
+    await user.tab();
+    await user.keyboard("{Enter}");
+    return screen.findByRole("menu");
+  }
+
+  it("sizes a row with a note to what it says: no fixed height, and never squeezed by the menu", async () => {
+    // The menu is a column with a cap on its height. A row whose least height is written down
+    // has no automatic one, so a column that is too tall squeezed every row to a control's
+    // height and drew each over the next row's note. A row keeps its size and the menu scrolls.
+    const menu = await openNoted();
+    for (const row of within(menu).getAllByRole("menuitem")) {
+      expect(drawnWith(row, "block-size")).toBeUndefined();
+      expect(drawnWith(row, "height")).toBeUndefined();
+      expect(drawnWith(row, "max-block-size")).toBeUndefined();
+      expect(drawnWith(row, "min-block-size")).toBe("var(--size-control)");
+      expect(drawnWith(row, "flex-shrink")).toBe("0");
+      // Its note is on a line of its own, under its words.
+      expect(drawnWith(row, "flex-wrap")).toBe("wrap");
+    }
+    // Neither is the line between groups nor a group's name squeezed away: nothing in a menu is.
+    expect(drawnWith(within(menu).getByRole("separator"), "flex-shrink")).toBe("0");
+    expect(drawnWith(within(menu).getByText("This chat"), "flex-shrink")).toBe("0");
+  });
+
+  it("writes a row at the menu's step of the type scale, and its note a step quieter", async () => {
+    const menu = await openNoted();
+    const row = within(menu).getByRole("menuitem", { name: "Pin chat" });
+    expect(drawnWith(row, "font-size")).toBe("var(--font-size-md)");
+    // The title is the row's own size: nothing redraws it as a heading.
+    expect(drawnWith(within(row).getByText("Pin chat"), "font-size")).toBeUndefined();
+    const note = within(row).getByText(/^Draws it first/);
+    expect(drawnWith(note, "font-size")).toBe("var(--font-size-xs)");
+    expect(drawnWith(note, "color")).toBe("var(--text-muted)");
+    expect(drawnWith(note, "flex-basis")).toBe("100%");
+  });
+
+  it("is never taller than the room the window has for it, and scrolls inside", async () => {
+    const menu = await openNoted();
+    const room = drawnWith(menu, "max-block-size") ?? "";
+    expect(room).toContain("--radix-context-menu-content-available-height");
+    expect(room).toContain("--radix-dropdown-menu-content-available-height");
+    expect(drawnWith(menu, "overflow-y")).toBe("auto");
+    // The room is the one cap: a surface's own class no longer writes a share of the window
+    // that the menu's place may not have.
+    for (const shell of [".more-menu", ".tasks-menu", ".item-menu"]) {
+      const body = new RegExp(`(?:^|\\n)\\${shell} \\{([^}]*)\\}`).exec(sheet("App.css"))?.[1];
+      expect(body, shell).toBeDefined();
+      expect(body, shell).not.toMatch(/max-(height|block-size)/);
+    }
   });
 });
 

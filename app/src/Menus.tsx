@@ -304,7 +304,9 @@ function Row({
       // from purlis" (D-1719-3), which a migrating control keeps beside its look (DS-2).
       className={dangerous ? "ui-menu-item ui-menu-item-danger ends-it" : "ui-menu-item"}
       disabled={!offer.available}
-      title={offer.reason || noteOf(offer, state === "unknown") || undefined}
+      // A tooltip says what the row does not: why it cannot run, or the note of a row drawn
+      // without one. A note under the row's words is read there, and is not said twice.
+      title={offer.reason || (note ? undefined : noteOf(offer, state === "unknown")) || undefined}
       // **The row's NAME is the catalogue's title and nothing else**, and the note is its
       // description. Left to the content, an accessible name would be the title with the
       // consequence run onto the end of it — "End chat 3 steward Ends the program it runs." —
