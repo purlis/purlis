@@ -903,8 +903,8 @@ mod pr_saves {
     /// first minute, and one look after it merges the request with no save.
     #[test]
     fn the_apps_paced_looks_ask_nothing_for_a_minute_and_then_merge_a_request_with_no_save() {
-        use std::time::{Duration, Instant};
         purlis_core::unsteered!();
+        use std::time::{Duration, Instant};
         if !in_child() {
             return;
         }
