@@ -228,3 +228,67 @@ fn a_guard_that_cannot_ask_when_a_live_process_started_kills_nothing() {
         "a guard that could not read the start time killed the process anyway"
     );
 }
+
+#[test]
+fn a_pid_a_fixture_writes_late_is_waited_for_and_one_never_written_is_none() {
+    // The race a single read loses on a loaded machine: the fixture has not written yet, or
+    // has written a part of it.
+    let dir = tempfile::tempdir().expect("a directory");
+    let marker = dir.path().join("started");
+    let late = marker.clone();
+    let writing = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        std::fs::write(&late, "").expect("the marker, empty");
+        std::thread::sleep(Duration::from_millis(150));
+        std::fs::write(&late, "4242 77\n").expect("the marker");
+    });
+
+    let named = stand_in::pid_named_in(&marker, Duration::from_secs(30));
+
+    writing.join().expect("the writer");
+    assert_eq!(named, Some(4242), "the first word, once it is a number");
+    let began = Instant::now();
+    assert_eq!(
+        stand_in::pid_named_in(&dir.path().join("never"), Duration::from_millis(200)),
+        None
+    );
+    assert!(
+        began.elapsed() >= Duration::from_millis(200),
+        "it did not wait"
+    );
+}
+
+#[test]
+fn a_process_is_gone_only_once_nothing_holds_its_pid() {
+    use std::os::unix::process::CommandExt as _;
+    let mut child = Command::new("/bin/sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .expect("sleep runs");
+    let _ends = stand_in::Ends::group(child.id());
+    let pid = child.id();
+
+    assert!(
+        !stand_in::is_gone(pid, Duration::from_millis(200)),
+        "a running process read as gone"
+    );
+    child.kill().expect("killed");
+    // Killed and not yet waited for: still there, as a fixture's own child is until init
+    // reaps it.
+    assert!(
+        !stand_in::is_gone(pid, Duration::from_millis(200)),
+        "an unreaped process read as gone"
+    );
+    let reaping = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = child.wait();
+    });
+    assert!(stand_in::is_gone(pid, Duration::from_secs(30)));
+    reaping.join().expect("the reaper");
+    assert!(!stand_in::is_gone(0, Duration::ZERO), "0 is no process");
+    assert!(
+        !stand_in::is_gone(1, Duration::ZERO),
+        "nor is init one to ask about"
+    );
+}

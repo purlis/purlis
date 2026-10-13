@@ -1050,6 +1050,40 @@ fn with_a_smudge<T>(smudge: &str, then: impl FnOnce() -> T) -> T {
     git::isolated(&filter, then)
 }
 
+/// A smudge that does not finish in any test's time, and the file it writes the id of the
+/// `sleep` it waits on to. The stop ends git and not what git started, so the test ends that
+/// `sleep` itself ([`stand_in::Ends::named_in`]), and the filter goes with it.
+fn a_smudge_that_never_finishes(fixture: &Fixture) -> (String, PathBuf) {
+    let said = fixture
+        .root
+        .parent()
+        .unwrap()
+        .join("what-the-filter-started");
+    let smudge = format!(
+        "sleep 20 & echo $! > '{0}.part'; mv '{0}.part' '{0}'; wait; cat",
+        said.display()
+    );
+    (smudge, said)
+}
+
+/// Ends what [`a_smudge_that_never_finishes`] started and holds that it is gone, waiting for
+/// the id and for the process: a filter that had not written its id yet, on a loaded machine,
+/// is otherwise read as one that started nothing. A git stopped before it reached the filter
+/// did start nothing, and there is then nothing to hold.
+fn the_filter_is_ended(ends: stand_in::Ends, said: &Path) {
+    let started = stand_in::pid_named_in(said, std::time::Duration::from_secs(5));
+    drop(ends);
+    #[cfg(unix)]
+    if let Some(started) = started {
+        assert!(
+            stand_in::is_gone(started, std::time::Duration::from_secs(10)),
+            "the test left its own filter running"
+        );
+    }
+    #[cfg(not(unix))]
+    let _ = started;
+}
+
 #[test]
 fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time() {
     // charter-app#242: the rebase used to have no deadline at all. The deadline is the
@@ -1061,10 +1095,14 @@ fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time(
         &["fetch", "-q", &bare.display().to_string(), "main"],
     );
 
+    let (smudge, said) = a_smudge_that_never_finishes(&fixture);
+    let ends = stand_in::Ends::named_in(&said);
+
     let started = std::time::Instant::now();
-    let rebased = with_a_smudge("sleep 20; cat", || {
+    let rebased = with_a_smudge(&smudge, || {
         rebase_onto_fetched(&fixture.root, false, std::time::Duration::from_secs(1))
     });
+    the_filter_is_ended(ends, &said);
 
     assert_eq!(rebased, Rebased::OutOfTime);
     assert!(
@@ -1083,10 +1121,14 @@ fn a_push_whose_rebase_runs_out_of_time_is_undone_reported_and_recorded_as_not_l
     let bare = a_remote_no_rebase_can_finish_onto(&fixture);
     let mine = ask(&fixture.root, &["rev-parse", "HEAD"]);
 
+    let (smudge, filter_said) = a_smudge_that_never_finishes(&fixture);
+    let ends = stand_in::Ends::named_in(&filter_said);
+
     let started = std::time::Instant::now();
-    let (pushed, said) = with_a_smudge("sleep 20; cat", || {
+    let (pushed, said) = with_a_smudge(&smudge, || {
         push_within(&fixture, false, std::time::Duration::from_secs(1))
     });
+    the_filter_is_ended(ends, &filter_said);
 
     assert!(
         started.elapsed() < std::time::Duration::from_secs(15),
@@ -2501,8 +2543,20 @@ fn quitting_commits_at_once_and_gives_a_push_that_never_answers_only_its_bound()
     let fixture = Fixture::plane();
     let bare = fixture.with_a_remote();
     std::fs::create_dir_all(bare.join("hooks")).unwrap();
-    // A remote that takes the push and never answers.
-    stand_in::program(&bare, "hooks/pre-receive", "#!/bin/sh\nsleep 30\n");
+    // A remote that takes the push and never answers. Quitting leaves that push running, as
+    // it says, so the test ends the hook itself, by the id the hook wrote: the push then
+    // fails and goes. Once only: the push that is tried again after it is refused at once.
+    let hook_said = bare.join("the-hook-that-never-answers");
+    let ends = stand_in::Ends::named_in(&hook_said);
+    stand_in::program(
+        &bare,
+        "hooks/pre-receive",
+        &format!(
+            "#!/bin/sh\n[ -e '{0}' ] && exit 1\necho $$ > '{0}.part'\nmv '{0}.part' '{0}'\n\
+             exec sleep 30\n",
+            hook_said.display()
+        ),
+    );
     fixture.with_settings("[plane]\nmode = \"push\"\n");
     std::fs::write(fixture.root.join("work.md"), "work").unwrap();
     let before = fixture.commits();
@@ -2515,6 +2569,17 @@ fn quitting_commits_at_once_and_gives_a_push_that_never_answers_only_its_bound()
     assert_eq!(got, crate::autosave::AtQuit::CommittedPushStillRunning);
     assert_eq!(fixture.commits(), before + 1, "the work was committed");
     assert_eq!(journal(&fixture.root)[0]["trigger"], "quit");
+    let hook = stand_in::pid_named_in(&hook_said, Duration::from_secs(5));
+    drop(ends);
+    #[cfg(unix)]
+    if let Some(hook) = hook {
+        assert!(
+            stand_in::is_gone(hook, Duration::from_secs(10)),
+            "the test left its own hook running"
+        );
+    }
+    #[cfg(not(unix))]
+    let _ = hook;
 }
 
 #[test]

@@ -403,6 +403,52 @@ fn started(_ps: &Path, _pid: u32) -> Option<u64> {
     None
 }
 
+/// The first pid written in `marker`, waiting up to `within` for a fixture to write it; `None`
+/// if it never did.
+///
+/// A fixture says which process it started by writing that process's id to a file, and a test
+/// that reads the file once loses to a loaded machine: the fixture has not got that far yet,
+/// or has written half of it. So the file is asked for until it holds a number. A fixture that
+/// is ended before it writes anything never will, and started nothing to outlive its test:
+/// that is the `None`, and the caller has nothing to hold about it.
+///
+/// Only the first word is read, so a fixture may write more after it on the same line.
+pub fn pid_named_in(marker: &Path, within: std::time::Duration) -> Option<u32> {
+    let until = std::time::Instant::now() + within;
+    loop {
+        let named = std::fs::read_to_string(marker)
+            .ok()
+            .and_then(|text| text.split_whitespace().next()?.parse::<u32>().ok());
+        if named.is_some() || std::time::Instant::now() >= until {
+            return named;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// Whether no process holds `pid`, waiting up to `within` for that: a process that was killed
+/// is there until whoever adopted it has reaped it, so one look straight after the kill
+/// answers that it is still running.
+///
+/// For a pid the test's own fixture named, asked soon after: a pid the system has handed to
+/// another process by then reads as still there, which fails the test rather than passing it.
+#[cfg(unix)]
+pub fn is_gone(pid: u32, within: std::time::Duration) -> bool {
+    let Some(raw) = i32::try_from(pid)
+        .ok()
+        .filter(|&raw| raw > 1)
+        .and_then(rustix::process::Pid::from_raw)
+    else {
+        return false;
+    };
+    let there = || rustix::process::test_kill_process(raw) != Err(rustix::io::Errno::SRCH);
+    let until = std::time::Instant::now() + within;
+    while there() && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    !there()
+}
+
 /// `[[dd-]hh:]mm:ss` in seconds.
 fn elapsed_secs(etime: &str) -> Option<u64> {
     if etime.is_empty() {

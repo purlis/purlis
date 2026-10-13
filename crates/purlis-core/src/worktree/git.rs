@@ -3178,14 +3178,17 @@ mod tests {
     fn a_killed_call_returns_at_its_deadline_even_when_a_grandchild_holds_the_pipes() {
         // `clone` runs `git-remote-https`, which runs the credential helper: killing git does
         // not kill them, and a reader that waits for every writer would outlive the deadline.
+        // The stop ends git and not what git started, so the test ends that itself, by the
+        // id the alias wrote: the shell waiting on it then goes too.
         let dir = repo();
+        let said = dir.path().join("what-the-alias-started");
+        let ends = stand_in::Ends::named_in(&said);
+        let hang = format!(
+            "alias.hang=!sleep 30 & echo $! > '{0}.part'; mv '{0}.part' '{0}'; wait",
+            said.display()
+        );
         let started = Instant::now();
-        let answer = run(
-            dir.path(),
-            &["-c", "alias.hang=!sleep 30 & sleep 30", "hang"],
-            Duration::from_millis(300),
-        )
-        .unwrap();
+        let answer = run(dir.path(), &["-c", &hang, "hang"], Duration::from_secs(1)).unwrap();
 
         assert_eq!(answer.code, None, "the deadline passed");
         assert!(
@@ -3193,6 +3196,17 @@ mod tests {
             "it returned near its deadline, not when the grandchild let go: {:?}",
             started.elapsed()
         );
+        let grandchild = stand_in::pid_named_in(&said, Duration::from_secs(5));
+        drop(ends);
+        #[cfg(unix)]
+        if let Some(grandchild) = grandchild {
+            assert!(
+                stand_in::is_gone(grandchild, Duration::from_secs(10)),
+                "the test left its own fixture running"
+            );
+        }
+        #[cfg(not(unix))]
+        let _ = grandchild;
     }
 
     /// Two linked worktrees of a repository kept outside any workspace, laid out as git lays

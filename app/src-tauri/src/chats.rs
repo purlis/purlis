@@ -5151,7 +5151,7 @@ pub(crate) mod tests {
                     program: "/bin/sh".to_owned(),
                     args: vec![
                         "-c".to_owned(),
-                        format!("touch {}; sleep 30", mark.display()),
+                        format!("touch {}; exec sleep 30", mark.display()),
                     ],
                     cwd: None,
                     name: "ide.7".to_owned(),
@@ -5314,7 +5314,7 @@ pub(crate) mod tests {
         stand_in::program(
             dir,
             "claude",
-            "#!/bin/sh\nprintf 'argv:'\nfor word in \"$@\"; do printf ' %s' \"$word\"; done\nprintf '\\n'\nsleep 600\n",
+            "#!/bin/sh\nprintf 'argv:'\nfor word in \"$@\"; do printf ' %s' \"$word\"; done\nprintf '\\n'\nexec sleep 600\n",
         )
         .display()
         .to_string()
@@ -5888,7 +5888,7 @@ pub(crate) mod tests {
     fn a_recorded_harness_chat_on_no_profile_is_not_put_back_unconfined() {
         let plane = a_sandboxed_plane();
         // A program that would run, so only the sandbox decision can keep it from starting.
-        let opencode = stand_in::program(plane.path(), "opencode", "#!/bin/sh\nsleep 600\n");
+        let opencode = stand_in::program(plane.path(), "opencode", "#!/bin/sh\nexec sleep 600\n");
         let chats = chats_of(plane.path());
 
         let open = chats.put_back(
@@ -5908,7 +5908,8 @@ pub(crate) mod tests {
         // Ruling V87g: the system temp folders are writable to a chat, and so is the plane.
         let plane = a_sandboxed_plane();
         let elsewhere = tempfile::tempdir().expect("a temp folder");
-        let opencode = stand_in::program(elsewhere.path(), "opencode", "#!/bin/sh\nsleep 600\n");
+        let opencode =
+            stand_in::program(elsewhere.path(), "opencode", "#!/bin/sh\nexec sleep 600\n");
         let chats = chats_of(plane.path());
 
         let refused = chats
