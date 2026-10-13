@@ -81,7 +81,17 @@ and Apple's app sandbox do.
   none, nor does a string a shell is handed (`sh -c '…'`). The line is read for that one
   answer and nothing of it is kept. A `mach-lookup` violation names the service; Go's
   `x509: OSStatus -26276` names the certificate check. The Notice shows the path whole and
-  judges it again as a grant before anything is kept.
+  judges it again as a grant before anything is kept. **The certificate check is named
+  whenever the line runs a program** (2026-10-13, to be confirmed): `gh pr list … 2>&1 | head`
+  ends with `head`'s status, and its Notice said it was the certificate check and offered no
+  Allow. The check is one service and its name is purlis's own constant, so nothing a chat
+  printed is ever put in the Notice by naming it. What stays ruled out is a result that only
+  read the words: a line whose every program only reads or prints (`cat`, `grep`, `sed`, `git
+  show` and the like, also inside a string a shell is handed), a file tool's read, and a result
+  with no command beside it name no service. Any other program may be the one that was
+  refused: no list of the programs that check certificates could be kept whole. This rule
+  holds for the certificate check alone, the one kind with a single service to grant; a socket
+  and any other service keep to the rule above.
 - **Honest words, per known kind** (D-sock-6). The Notice and the ask say what allowing it means:
   - Docker and Podman sockets: lets this chat control containers, which can reach your whole
     machine: about the same as no sandbox;

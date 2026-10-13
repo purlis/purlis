@@ -992,6 +992,11 @@ fn offered(
         // the sandbox, the chat is refused none of these.
         // A system service by name (D-sock-1), the certificate check's among them: Allow,
         // naming it whole, with what allowing it means.
+        // The certificate check with no service beside it (qw353): the result only read the
+        // check's words back, so no Allow comes from it, and the Notice says where one is.
+        (Operation::Lookup, Kind::CertificateCheck) if target.is_none() => {
+            without_the_sandbox(CHECK_READ_BACK)
+        }
         (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) => {
             match target.map(services::service) {
                 Some(Ok(name)) => {
@@ -1046,6 +1051,12 @@ fn for_its_harness(
     }
     (offer, target, route)
 }
+
+/// What a Notice says of a refused certificate check its result named no service for (qw353):
+/// the words were read back (a log, a file, a background command's output) and no program of
+/// the result was seen to be refused. Fixed words, which say where the check is allowed: the
+/// service is one, so the Notice never says the sandbox did not say which.
+const CHECK_READ_BACK: &str = "These words were read back from a file or from an earlier      command's output, so no Allow is offered from here. A command that is refused the      certificate check itself gets its Allow on its own Notice, and Settings, under Sandbox,      says whether certificate checks are allowed on this machine and allows them.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).
@@ -3632,6 +3643,16 @@ mod tests {
                 "{kind:?}"
             );
         }
+        // The certificate check is one service (qw353): its Notice never says the sandbox did
+        // not say which, and says where it is allowed.
+        let check = Block {
+            operation: Operation::Lookup,
+            kind: Kind::CertificateCheck,
+            ours: false,
+        };
+        let why = offered(&root, &check, None).2.expect("a why");
+        assert!(!why.contains("did not say which"), "{why}");
+        assert!(why.contains("Settings, under Sandbox"), "{why}");
     }
 
     /// ADR 0093: a refused system service is offered by its name, with what allowing it means;

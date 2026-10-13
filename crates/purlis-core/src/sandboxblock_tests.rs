@@ -552,12 +552,12 @@ fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error(
             "{error}"
         );
     }
-    // A command that succeeded names no service to allow (#1808's review, MF-5): a block, and
-    // its Notice offers no Allow.
+    // A command that only read the words names no service to allow (#1808's review, MF-5): a
+    // block, and its Notice offers no Allow.
     assert_eq!(
         detect_with_targets(
             &came_back(
-                "glab api x 2>&1",
+                "cat glab.log",
                 "tls: failed to verify certificate: x509: OSStatus -26276\n",
                 ""
             ),
@@ -1889,10 +1889,10 @@ fn a_line_that_runs_no_container_client_names_no_socket_whatever_it_printed() {
     }
 }
 
-/// A container client's line still names nothing but a socket from what it printed: the
-/// certificate check and a system service keep to a failed command and the sandbox's own line.
+/// A container client's line names a socket from what it printed, and the certificate check by
+/// its own rule, as any line that runs a program does (qw353): `docker pull` checks one too.
 #[test]
-fn a_container_clients_line_names_a_socket_and_nothing_else_from_its_output() {
+fn a_container_clients_line_names_its_socket_and_the_certificate_check() {
     let command = "docker pull example.com/x 2>&1 | tail";
     let found = detect_with_targets(
         &came_back(
@@ -1907,7 +1907,7 @@ fn a_container_clients_line_names_a_socket_and_nothing_else_from_its_output() {
         found,
         vec![(
             block(Operation::Lookup, Kind::CertificateCheck, false),
-            None
+            Some(crate::sandbox::services::TRUSTD.to_owned())
         )]
     );
 }
@@ -2014,7 +2014,8 @@ fn a_codex_shell_result_is_read_for_the_networks_refusals() {
 
 /// A block is named only from a failed command: a violation line in one string, which a Codex
 /// command or an opencode command that did not fail hands over, may be one the command printed,
-/// so it names no host, socket or service to allow.
+/// so it names no host, socket or service to allow. (A line that runs a program names the
+/// certificate check, by its own rule: qw353.)
 #[test]
 fn a_violation_line_in_a_result_that_did_not_fail_names_nothing_to_allow() {
     let printed = appended(
@@ -2025,9 +2026,8 @@ fn a_violation_line_in_a_result_that_did_not_fail_names_nothing_to_allow() {
             "curl(10) deny(1) network-outbound 93.184.216.34:443",
         ],
     );
-    let opencode =
-        json!({"tool_name": "Bash", "tool_input": {"command": "x"}, "tool_response": printed});
-    for payload in [codex_came_back("x", &printed), opencode] {
+    let opencode = json!({"tool_name": "Bash", "tool_input": {"command": "cat x.log"}, "tool_response": printed});
+    for payload in [codex_came_back("cat x.log", &printed), opencode] {
         let found = detect_with_targets(&payload, &place());
         assert!(!found.is_empty(), "the blocks are still raised");
         assert!(
@@ -2174,4 +2174,269 @@ fn a_refusal_read_back_from_a_background_commands_output_is_a_block_that_names_n
             None
         )]
     );
+}
+
+// ---- the certificate check, whose one service is purlis's own word (qw353) ----------------------
+
+/// What `gh` and `glab` say of a certificate check the sandbox refused them.
+const REFUSED_CHECK: &str = "Post \"https://api.github.com/graphql\": tls: failed to verify \
+     certificate: x509: OSStatus -26276";
+
+fn named_check() -> Vec<(Block, Option<String>)> {
+    vec![(
+        block(Operation::Lookup, Kind::CertificateCheck, false),
+        Some(crate::sandbox::services::TRUSTD.to_owned()),
+    )]
+}
+
+fn unnamed_check() -> Vec<(Block, Option<String>)> {
+    vec![(
+        block(Operation::Lookup, Kind::CertificateCheck, false),
+        None,
+    )]
+}
+
+/// The operator's case, replayed (qw353): a chat ran `git status -sb | head -3 && gh pr list …
+/// 2>&1 | head -40`, the sandbox refused `gh` the certificate check, and the pipe's `head`
+/// ended with status 0. The Notice said it was the certificate check and that there was no
+/// service to allow: Start without the sandbox, and no Allow. The certificate check is one
+/// service, and its name is purlis's own, so a line that runs a program names it however the
+/// line ended.
+#[test]
+fn a_certificate_check_whose_status_its_line_dropped_still_names_its_service() {
+    let list = "gh pr list --state all --search \"head:purlis/save\" --limit 5 --json \
+                number,title,state,headRefName,url";
+    // Both streams down a pipe: standard output, after what the line's other programs printed.
+    for command in [
+        format!("git status -sb | head -3 && {list} 2>&1 | head -40"),
+        format!("{list} 2>&1 | head -40"),
+        format!("cd repo && GH_PAGER= timeout 60 {list} 2>&1 | tee pr.log | tail -5"),
+        format!("/opt/homebrew/bin/{list} 2>&1 | cat"),
+        "glab mr list 2>&1 | head".to_owned(),
+        "make release 2>&1 | tail -20".to_owned(),
+        "for n in 1 2; do gh pr view \"$n\"; done 2>&1 | head".to_owned(),
+        "if ! gh auth token >/dev/null; then echo no; fi; gh api user | jq .login".to_owned(),
+        format!("bash -lc '{list} 2>&1 | head -40'"),
+    ] {
+        assert_eq!(
+            detect_with_targets(
+                &came_back(
+                    &command,
+                    &format!("## main...origin/main\n{REFUSED_CHECK}\n"),
+                    ""
+                ),
+                &place()
+            ),
+            named_check(),
+            "{command}"
+        );
+    }
+    // A status the line dropped another way: the words stay on standard error.
+    for command in [
+        format!("{list}; echo \"exit=$?\""),
+        format!("{list} || true"),
+        format!("{list} || echo failed"),
+    ] {
+        assert_eq!(
+            detect_with_targets(&came_back(&command, "exit=1\n", REFUSED_CHECK), &place()),
+            named_check(),
+            "{command}"
+        );
+    }
+    // Codex and opencode hand over one string, failed or not.
+    for command in [
+        format!("{list} 2>&1 | head -40"),
+        list.to_owned(),
+        format!("{list} || true"),
+    ] {
+        assert_eq!(
+            detect_with_targets(
+                &codex_came_back(&command, &format!("{REFUSED_CHECK}\n")),
+                &place()
+            ),
+            named_check(),
+            "{command}"
+        );
+    }
+}
+
+/// MF-5 holds for the certificate check: a result that only read the words raises a block that
+/// names no service, so no Allow. A line made of readers alone, a string of readers a shell is
+/// handed, a file tool's read, and a result with no command beside it.
+#[test]
+fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
+    let read = format!("./gh.log:{REFUSED_CHECK}\n");
+    for command in [
+        "cat gh.log",
+        "grep -r OSStatus .",
+        "grep -rn OSStatus . | head -40",
+        "cd logs && cat gh.log | tail -40",
+        "git show HEAD:docs/gh.md",
+        "git -C repo log -p | head -200",
+        "rg OSStatus; echo done",
+        "sh -c 'cat gh.log'",
+        "bash -lc \"grep -r OSStatus . | head\"",
+        "echo \"$(cat gh.log)\"",
+        "LC_ALL=C sed -n 1,40p gh.log",
+        "for f in *.log; do cat \"$f\"; done",
+        "if grep -q OSStatus gh.log; then cat gh.log; fi",
+        "while read -r line; do echo \"$line\"; done < gh.log",
+        "{ cat gh.log; } | head",
+        "(cd logs && cat gh.log)",
+        "case \"$1\" in a) cat gh.log ;; esac",
+        "X=1",
+        "",
+    ] {
+        for payload in [
+            came_back(command, &read, ""),
+            came_back(command, "", &read),
+            codex_came_back(command, &read),
+        ] {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                unnamed_check(),
+                "{command}"
+            );
+        }
+    }
+    // A result with no command beside it, or one that is no text: `BashOutput`'s, a list.
+    for (tool, input) in [
+        ("BashOutput", json!({"bash_id": "b1"})),
+        ("Bash", json!({})),
+        ("Bash", json!({"command": ["gh", "pr", "list"]})),
+        ("Bash", json!(null)),
+    ] {
+        let payload = json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": tool,
+            "tool_input": input,
+            "tool_response": {"stdout": read, "stderr": "", "interrupted": false},
+        });
+        assert_eq!(
+            detect_with_targets(&payload, &place()),
+            unnamed_check(),
+            "{tool}"
+        );
+    }
+    // A file tool's read of a background command's output, and of any other file.
+    let background = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/private/tmp/claude-502/x/tasks/b1.output"},
+        "tool_response": {"file": {"content": read}},
+    });
+    assert_eq!(detect_with_targets(&background, &place()), unnamed_check());
+    let file = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/Users/dev/plane/gh.log", "command": "gh pr list"},
+        "tool_response": {"file": {"content": read}},
+    });
+    assert_eq!(detect_with_targets(&file, &place()), Vec::new());
+    // A line too big to read, and one that does not tokenize, are read as lines that only read.
+    let big = format!(
+        "gh pr list # {}",
+        "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES)
+    );
+    for command in [big.as_str(), "gh pr list 'unclosed"] {
+        assert_eq!(
+            detect_with_targets(&came_back(command, &read, ""), &place()),
+            unnamed_check()
+        );
+    }
+}
+
+/// The service a line that runs a program names is the certificate check's and no other: a
+/// socket, a host and another service keep to their own rules, and purlis's own lookup is a
+/// purlis bug, never a grant.
+#[test]
+fn a_line_that_runs_a_program_names_the_certificate_check_and_nothing_else() {
+    let printed = appended(
+        "ok",
+        &[
+            "nc(11) deny(1) network-outbound /Users/dev/.docker/run/docker.sock",
+            "gh(8) deny(1) mach-lookup com.apple.trustd.agent",
+            "helper(9) deny(1) mach-lookup com.example.helper",
+            "curl(10) deny(1) network-outbound 93.184.216.34:443",
+        ],
+    );
+    let found = detect_with_targets(&codex_came_back("gh pr list", &printed), &place());
+    assert_eq!(found.len(), 4, "{found:?}");
+    for (block, target) in &found {
+        assert_eq!(
+            target.as_deref(),
+            (block.kind == Kind::CertificateCheck).then_some(crate::sandbox::services::TRUSTD),
+            "{block:?}"
+        );
+    }
+    let ours = appended(
+        "ok",
+        &["purlis(8) deny(1) mach-lookup com.apple.trustd.agent"],
+    );
+    assert_eq!(
+        detect_with_targets(&codex_came_back("purlis save", &ours), &place()),
+        vec![(block(Operation::Lookup, Kind::CertificateCheck, true), None)]
+    );
+}
+
+/// `gh auth status` under a refused certificate check (qw353): it exits 1 and says only that
+/// the token is invalid, with none of the check's words. Where the harness appended the
+/// sandbox's own line, that names the check, pipe or no pipe. Where it did not, nothing in the
+/// result says the sandbox refused anything, and no block is raised: a known dead end, since
+/// the same words are what a token that is really invalid gets.
+#[test]
+fn gh_auth_status_names_the_certificate_check_only_by_the_sandboxs_own_line() {
+    let said = "github.com\n  X Failed to log in to github.com account dev (keyring)\n  - \
+                Active account: true\n  - The token in keyring is invalid.\n  - To \
+                re-authenticate, run: gh auth login -h github.com";
+    let line = "gh(8) deny(1) mach-lookup com.apple.trustd.agent";
+    for payload in [
+        failed(
+            "gh auth status",
+            &appended(&format!("Exit code 1\n{said}"), &[line]),
+        ),
+        came_back("gh auth status 2>&1 | head", said, &appended("", &[line])),
+        came_back("gh auth status || true", "", &appended(said, &[line])),
+        codex_came_back("gh auth status", &appended(said, &[line])),
+    ] {
+        assert_eq!(detect_with_targets(&payload, &place()), named_check());
+    }
+    for payload in [
+        failed("gh auth status", &format!("Exit code 1\n{said}")),
+        came_back("gh auth status 2>&1 | head", said, ""),
+        codex_came_back("gh auth status", said),
+    ] {
+        assert_eq!(detect_with_targets(&payload, &place()), Vec::new());
+    }
+}
+
+/// The line is read once, in time linear in its length: many programs, and many readers.
+#[test]
+fn a_long_line_is_read_for_what_it_runs_in_linear_time() {
+    crate::lineartime::reads_in_linear_time(1 << 9, |programs| {
+        let readers: String = (0..programs)
+            .map(|i| format!("cat f{i} | head; "))
+            .collect();
+        assert_eq!(
+            detect_with_targets(
+                &came_back(&readers, &format!("{REFUSED_CHECK}\n"), ""),
+                &place()
+            ),
+            unnamed_check()
+        );
+        let nested: String = (0..programs)
+            .map(|i| format!("sh -c 'cat f{i} | head'; "))
+            .collect();
+        assert_eq!(
+            detect_with_targets(
+                &came_back(
+                    &format!("{nested}gh pr list"),
+                    &format!("{REFUSED_CHECK}\n"),
+                    ""
+                ),
+                &place()
+            ),
+            named_check()
+        );
+    });
 }
