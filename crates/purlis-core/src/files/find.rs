@@ -364,6 +364,8 @@ fn listing(
             what: branch.called().to_string(),
             why: e.to_string(),
         })?;
+        // What purlis keeps to itself is found by name in no place.
+        super::Kept::of(plane, &base, branch).offered(&mut paths);
         Ok(Listing {
             base,
             paths,

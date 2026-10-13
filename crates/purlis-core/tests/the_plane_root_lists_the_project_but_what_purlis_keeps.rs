@@ -193,15 +193,29 @@ fn a_link_or_a_second_name_reaches_nothing_purlis_keeps() {
     let f = project();
     let vault = f.plane.join(state()).join("vaults/forge.json");
     std::os::unix::fs::symlink(&vault, f.plane.join("docs/peek.json")).unwrap();
-    std::fs::hard_link(&vault, f.plane.join("docs/copy.json")).unwrap();
     support::git(&f.plane, &["add", "-A"]);
-    support::git(&f.plane, &["commit", "-q", "-m", "two ways in"]);
+    support::git(&f.plane, &["commit", "-q", "-m", "a link in"]);
 
     let docs = files::tree(&f.plane, ROOT, "docs").unwrap().entries;
     assert_eq!(
         entry(&docs, "peek.json").refused.as_deref(),
         Some("a link purlis does not follow from the project's own files")
     );
+    assert_eq!(
+        files::open(&f.plane, ROOT, "docs/peek.json")
+            .unwrap_err()
+            .to_string(),
+        kept("docs/peek.json")
+    );
+
+    // A second name of the vault's file is kept as the file is: it is not listed, and nor is
+    // a link that leads to that file.
+    std::fs::hard_link(&vault, f.plane.join("docs/copy.json")).unwrap();
+    support::git(&f.plane, &["add", "-A"]);
+    support::git(&f.plane, &["commit", "-q", "-m", "a second name"]);
+
+    let docs = files::tree(&f.plane, ROOT, "docs").unwrap().entries;
+    assert_eq!(names(&docs), ["guide.md"]);
     for path in ["docs/peek.json", "docs/copy.json"] {
         assert_eq!(
             files::open(&f.plane, ROOT, path).unwrap_err().to_string(),

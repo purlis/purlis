@@ -98,25 +98,14 @@ pub(super) fn row_for(ctx: &Ctx) -> Row {
 /// The entries of one half that are not vaults at all: not an object, or under a name purlis
 /// refuses. [`registry::usable_vaults`] drops both silently; this names them.
 fn not_vaults(half: &Map<String, Value>) -> Vec<String> {
-    let Some(entries) = half.get("vaults") else {
-        return Vec::new();
-    };
-    let Some(entries) = entries.as_object() else {
-        return vec!["'vaults' (not an object of vaults)".to_owned()];
-    };
-    entries
-        .iter()
-        .filter_map(|(name, entry)| {
-            if !registry::name_ok(name) {
-                Some(format!(
-                    "'{}' (not a vault name purlis accepts)",
-                    shown(name)
-                ))
-            } else if !entry.is_object() {
-                Some(format!("'{}' (not a vault entry)", shown(name)))
-            } else {
-                None
+    registry::not_vaults(half)
+        .into_iter()
+        .map(|entry| match entry {
+            registry::NotAVault::Entries => "'vaults' (not an object of vaults)".to_owned(),
+            registry::NotAVault::Name(name) => {
+                format!("'{}' (not a vault name purlis accepts)", shown(&name))
             }
+            registry::NotAVault::Entry(name) => format!("'{}' (not a vault entry)", shown(&name)),
         })
         .collect()
 }

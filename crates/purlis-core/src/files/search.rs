@@ -181,6 +181,9 @@ struct Walking {
     /// The branch's folder, held open from the project's root: every file is opened relative to
     /// it, so no folder above the file is looked up by path again.
     held: super::Held,
+    /// What the branch's folder leaves out: asked of each file as it is opened, by what the
+    /// file is.
+    kept: super::Kept,
     offered: std::sync::Arc<Vec<String>>,
     walk: ignore::Walk,
     /// Files the walk handed out that no page has heard yet, in walk order: read ahead by the
@@ -355,11 +358,13 @@ impl Page<'_> {
         let Walking {
             base,
             held,
+            kept,
             offered,
             walk,
             unheard,
         } = walking;
         let held: &super::Held = held;
+        let kept: &super::Kept = kept;
         // Raised once the page has ended: what a reader is still matching is cut, as by a stop.
         let over = AtomicBool::new(false);
         let watch = Watch {
@@ -381,7 +386,7 @@ impl Page<'_> {
                         let next = asked.lock().map(|asked| asked.recv());
                         let Ok(Ok((seq, path))) = next else { return };
                         let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            file_hits(self.matcher, self.at, held, path, watch)
+                            file_hits(self.matcher, self.at, held, kept, path, watch)
                         }));
                         match read {
                             Ok(read) => {
@@ -567,6 +572,7 @@ fn file_hits(
     matcher: &RegexMatcher,
     at: usize,
     held: &super::Held,
+    kept: &super::Kept,
     path: String,
     watch: &Watch<'_>,
 ) -> Read {
@@ -581,6 +587,11 @@ fn file_hits(
         return Read::Nothing;
     };
     if !meta.is_file() || meta.len() > super::LARGEST {
+        return Read::Nothing;
+    }
+    // Asked of the file that was opened: another name of a file purlis keeps to itself is
+    // searched no more than its first.
+    if kept.holds_a_name_of(&file) {
         return Read::Nothing;
     }
     let mut bytes = Vec::with_capacity(meta.len() as usize);
@@ -680,7 +691,7 @@ fn walking(
                 (folder, offered)
             }
         };
-        let offered = std::sync::Arc::new(offered);
+        let mut offered = offered;
         let unreadable = |e: std::io::Error| Refused::Unreadable {
             what: branch.called().to_string(),
             why: e.to_string(),
@@ -691,6 +702,10 @@ fn walking(
         // every file is opened relative to the folder held now.
         let root = std::fs::canonicalize(plane).map_err(unreadable)?;
         let base = std::fs::canonicalize(&folder).map_err(unreadable)?;
+        // What purlis keeps to itself is searched in no place: only an offered file is read.
+        let kept = super::Kept::of(plane, &base, branch);
+        kept.offered(&mut offered);
+        let offered = std::sync::Arc::new(offered);
         let held = super::hold_folder(&root, &base).map_err(unreadable)?;
         let top = base.clone();
         let listed = std::sync::Arc::clone(&offered);
@@ -728,6 +743,7 @@ fn walking(
         Ok(Some(Walking {
             base,
             held,
+            kept,
             offered,
             walk,
             unheard: VecDeque::new(),

@@ -6867,6 +6867,40 @@ pub(crate) mod tests {
         assert!(chats.in_order().is_empty(), "a chat was opened");
     }
 
+    #[test]
+    fn a_new_chat_and_a_chat_put_back_say_why_where_what_to_keep_from_them_cannot_be_told() {
+        // ADR 0067 as amended: every start goes through the one decision, so a chat the app
+        // puts back as it opens the project, and a retry of it, are told what a new chat is.
+        let plane = a_sandboxed_plane();
+        std::fs::write(plane.path().join("vaults.json"), "{ not json").expect("a registry");
+        let chats = pretend_chats_of(plane.path());
+        let says_why = |refused: &str| {
+            refused.contains("vaults.json could not be read, so purlis cannot tell what to keep")
+                && refused.contains("nothing was started")
+                && refused.contains("Doctor says what is wrong")
+        };
+
+        let refused = chats
+            .start(&a_chat_in(plane.path(), "/nowhere/claude"), SIZE)
+            .expect_err("not started");
+        assert!(says_why(&refused), "{refused}");
+        assert!(chats.in_order().is_empty(), "a chat was opened");
+
+        let record = Record {
+            chats: vec![a_resumable_chat_in(plane.path())],
+            ..one_recorded("/nowhere/claude")
+        };
+        chats.put_back_here(&record, SIZE);
+        let waiting = chats.would_not_start();
+        assert_eq!(waiting.len(), 1, "{waiting:?}");
+        assert!(says_why(&waiting[0].why), "{}", waiting[0].why);
+        let again = chats
+            .retry(&waiting[0].id, SIZE)
+            .expect_err("still not started");
+        assert!(says_why(&again), "{again}");
+        assert!(chats.open_now().is_empty(), "a chat was opened");
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_system_with_no_backend_checks_no_folder_for_a_sandbox_it_never_applies() {

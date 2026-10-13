@@ -31,6 +31,94 @@ pub(super) fn sandbox(d: &Doctor) -> Option<Row> {
     ))
 }
 
+/// The `sandbox kept files` row: what purlis says of the list of what it keeps from a chat
+/// ([`crate::sandbox::kept_said`]).
+///
+/// **Whenever the list is not whole**, whether or not the project runs its chats sandboxed:
+/// why, and what does not happen until it is put right — no sandboxed chat starts
+/// ([`crate::sandbox::NotStarted::KeptUntold`]), and the project's own files are not listed in
+/// the window. **And where it is whole and has something to say**: an entry left over on this
+/// machine, a vault of a kind this purlis does not know, a vault not set up here yet, a folder
+/// purlis could not look in. Any other project prints the rows it always printed.
+pub(super) fn kept(d: &Doctor) -> Option<Row> {
+    if !d.has_plane {
+        return None;
+    }
+    // A file that does not read may turn the sandbox on: said as if it does.
+    let in_force = match &d.config {
+        Config::Read(cfg) => crate::sandbox::Said::of(Some(cfg))
+            .in_force(&crate::sandbox::policy::Locks::of(&d.root))
+            .is_some(),
+        Config::Malformed(_) | Config::Refused(_) => true,
+    };
+    kept_for(&d.root, &crate::sandbox::Machine::this(), in_force)
+}
+
+/// [`kept`]'s row for the project at `root` on `machine`, where `in_force` is whether its
+/// chats run sandboxed.
+fn kept_for(
+    root: &std::path::Path,
+    machine: &crate::sandbox::Machine,
+    in_force: bool,
+) -> Option<Row> {
+    let (untold, notes) = crate::sandbox::kept_said(root, machine);
+    kept_row(untold.as_ref(), &notes, in_force)
+}
+
+/// [`kept`]'s row for a list that is not whole because of `untold`, or that is whole and
+/// noted `notes`.
+fn kept_row(
+    untold: Option<&crate::sandbox::Untold>,
+    notes: &[crate::sandbox::KeptNote],
+    in_force: bool,
+) -> Option<Row> {
+    use crate::sandbox::KeptNote;
+    const NAME: &str = "sandbox kept files";
+    let said = |text: String| super::one_line(&text, super::PATH_DISPLAY_LIMIT);
+    let noted: Vec<String> = notes.iter().map(|note| said(note.to_string())).collect();
+    if let Some(untold) = untold {
+        let held = if in_force {
+            "No sandboxed chat starts in this project, and its own files are not listed in the \
+             window, until this is put right."
+        } else {
+            "The project's own files are not listed in the window until this is put right, and \
+             no chat would start sandboxed."
+        };
+        let repair = if untold.registry.is_some() {
+            "Fix the file named above, or remove the vault in its view or with `purlis vault \
+             remove <name>`."
+        } else {
+            "Leave the file named above one name: remove its other names, or move the vault's \
+             secrets to a new file."
+        };
+        return Some(Row::warn(
+            NAME,
+            format!(
+                "purlis cannot tell what to keep from a chat: {}",
+                said(untold.to_string())
+            ),
+            format!("{held} {repair}"),
+        ));
+    }
+    if noted.is_empty() {
+        return None;
+    }
+    let detail = noted.join("; ");
+    if notes
+        .iter()
+        .all(|note| matches!(note, KeptNote::NotSetUp(_)))
+    {
+        return Some(Row::ok(NAME, detail));
+    }
+    Some(Row::warn(
+        NAME,
+        detail,
+        "Chats start. An entry left over is removed in the vault's view or with `purlis vault \
+         remove <name>`. A vault of a kind this purlis does not know asks for a newer purlis. A \
+         folder purlis could not look in is one to make readable.",
+    ))
+}
+
 /// The `sandbox forge hosts` row (#1405): a `[[forge]]` host the sandbox does not let chats
 /// reach while it and the `forge` preset are on ([`crate::sandbox::Refusal::ForgeHost`]), said
 /// as Settings says it. Only where one is dropped: any other project prints the rows it always

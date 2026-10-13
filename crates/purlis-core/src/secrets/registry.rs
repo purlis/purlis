@@ -133,6 +133,41 @@ pub fn usable_vaults(half: &Map<String, Value>) -> Map<String, Value> {
         .unwrap_or_default()
 }
 
+/// An entry of one half that is not a vault: what [`usable_vaults`] leaves out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotAVault {
+    /// The half's `vaults` is there and is not an object of vaults.
+    Entries,
+    /// An entry under a name [`name_ok`] refuses.
+    Name(String),
+    /// An entry that is not an object.
+    Entry(String),
+}
+
+/// **Every entry of `half` that [`usable_vaults`] leaves out**, so a reader that must account
+/// for each entry can say which it could not read as a vault, rather than read on without it.
+/// Empty for a half with no `vaults` at all: nothing registered is not something left out.
+pub fn not_vaults(half: &Map<String, Value>) -> Vec<NotAVault> {
+    let Some(entries) = half.get("vaults") else {
+        return Vec::new();
+    };
+    let Some(entries) = entries.as_object() else {
+        return vec![NotAVault::Entries];
+    };
+    entries
+        .iter()
+        .filter_map(|(name, entry)| {
+            if !name_ok(name) {
+                Some(NotAVault::Name(name.clone()))
+            } else if !entry.is_object() {
+                Some(NotAVault::Entry(name.clone()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// `load_registry`: shared as the base, local layered over it per FIELD.
 pub fn load_registry(ctx: &Ctx) -> Result<Map<String, Value>, VaultError> {
     let shared = load_shared(ctx)?;

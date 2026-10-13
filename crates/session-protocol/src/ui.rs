@@ -556,14 +556,15 @@ pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[WindowOnlyField {
 /// workspace and no repo, which is how the window names a folder of the project's own. A link
 /// is served a branch's folders and never the plane root's, so such a call is refused before
 /// its handler is asked ([`THE_PLANE_ROOT_IS_THE_WINDOWS`]). A folder that leaves either name
-/// out is counted as naming none.
+/// out is counted as naming none, and so is a call that does not say its folders as a list:
+/// only a call whose every folder names a branch goes on to the handler.
 pub fn names_the_plane_root(method: &str, args: &Value) -> bool {
-    let unnamed = |name: &Value| name.as_str().is_none_or(str::is_empty);
+    let named = |name: &Value| name.as_str().is_some_and(|name| !name.is_empty());
     method == "files_watch"
-        && args["folders"].as_array().is_some_and(|folders| {
+        && !args["folders"].as_array().is_some_and(|folders| {
             folders
                 .iter()
-                .any(|one| unnamed(&one["workspace"]) && unnamed(&one["repo"]))
+                .all(|one| named(&one["workspace"]) || named(&one["repo"]))
         })
 }
 
@@ -1158,6 +1159,15 @@ mod tests {
             "branch_tree",
             &watch(vec![folder("", "")])
         ));
+        // A call that does not say its folders as a list names no branch.
+        for args in [
+            serde_json::json!({}),
+            serde_json::json!([[folder("alpha", "svc")]]),
+            serde_json::json!({ "folders": folder("alpha", "svc") }),
+            Value::Null,
+        ] {
+            assert!(names_the_plane_root("files_watch", &args), "{args}");
+        }
     }
 
     #[test]

@@ -556,6 +556,7 @@ impl Doctor {
         rows.extend(vaults::identity_tokens(self));
         rows.push(config::version_lock(self));
         rows.extend(sandbox::sandbox(self));
+        rows.extend(sandbox::kept(self));
         rows.extend(sandbox::forge_hosts(self));
         rows.extend(sandbox::blocks(self));
         rows.extend(sandbox::local_ports(self));

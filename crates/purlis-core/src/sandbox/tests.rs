@@ -1418,6 +1418,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
         paths: vec![one(Class::Vaults, "/p/.charter/vaults", Access::ReadWrite)],
         services: vec![],
         unread: None,
+        untold: None,
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -1444,6 +1445,7 @@ fn a_path_denied_to_write_stays_readable() {
         paths: vec![one(Class::Integrity, "/p/.charter/app", Access::Write)],
         services: vec![],
         unread: None,
+        untold: None,
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -1520,6 +1522,7 @@ fn on_macos_the_store_holds_the_credential_store_so_a_claude_code_chat_compiles(
         paths: vec![],
         services: vec![Service::CredentialStore],
         unread: None,
+        untold: None,
     };
     claude::settings(&compiled(denied, Os::MacOs)).expect("compiles on macOS");
 }
@@ -1532,6 +1535,7 @@ fn on_linux_claude_code_cannot_hold_the_credential_store_so_the_chat_does_not_st
         paths: vec![],
         services: vec![Service::CredentialStore],
         unread: None,
+        untold: None,
     };
     let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
     assert_eq!(refused.class(), Some(Class::Vaults));
@@ -5508,20 +5512,29 @@ fn the_windows_list_is_refused_where_a_vaults_storage_cannot_be_told() {
     let registry = |text: &str| {
         let plane = tempfile::tempdir().expect("a plane");
         std::fs::write(plane.path().join("vaults.json"), text).expect("a registry");
-        let kept = kept_from_reading(plane.path(), &machine);
+        let kept = kept_from_reading(plane.path(), &machine).map_err(|untold| untold.why);
         (plane, kept)
     };
 
-    let (_plane, kept) = registry("{ not json");
+    let (plane, kept) = registry("{ not json");
+    let file = plane.path().join("vaults.json");
     assert_eq!(
         kept,
-        Err("the vault registry could not be read".to_string())
+        Err(format!(
+            "the vault registry {} could not be read",
+            file.display()
+        ))
     );
 
-    let (_plane, kept) = registry(r#"{"vaults": {"dev": {"provider": "plain-file"}}}"#);
+    let (plane, kept) =
+        registry(r#"{"vaults": {"dev": {"provider": "plain-file", "config": {"file": 7}}}}"#);
+    let file = plane.path().join("vaults.json");
     assert_eq!(
         kept,
-        Err("the vault 'dev' does not say where its file is".to_string())
+        Err(format!(
+            "the vault 'dev' in the vault registry {} does not say where its file is",
+            file.display()
+        ))
     );
 
     // A registry that reads, with a vault that says where its file is, is told whole.
