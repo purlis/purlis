@@ -5208,7 +5208,7 @@ h2.sidebar-title .node-icon {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* Where I am: charter's own mark, and the workspace's name in the weight the footer gives it
