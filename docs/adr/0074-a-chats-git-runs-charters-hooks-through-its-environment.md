@@ -202,9 +202,13 @@ is in `docs/plane-format.md`, *Provenance trailers*.
   (ADR 0060). purlis appends the lines itself and changes nothing else in the message. It does
   not run `git interpret-trailers`, which would reformat the agent's own lines and read trailer
   configuration that can run a program. A line already there is not added twice.
-- **It never refuses a commit.** It is not a check: a message purlis could not stamp, a chat
-  the record does not hold, or a `purlis` that has gone commits the message as it was written.
-  This is the opposite of the two checking hooks, which refuse when `purlis` has gone.
+- **It refuses one thing** (amended 2026-10-13, #1133, decided under delegation and flagged
+  to the operator): a message that holds what looks like a credential, read as the push reads
+  a message (credentials only, never the people a message names). `purlis` says so by exiting
+  `githooks::MESSAGE_REFUSED`, the only status the shim refuses on, and tells the app as the
+  commit scan does. Otherwise it is not a check: a message purlis could not stamp, a chat the
+  record does not hold, or a `purlis` that has gone commits the message as it was written.
+  A brokered commit (ADR 0067) reads its message the same way.
 - **Only an armed chat's commits get trailers.** The operator's terminal is not armed, and a shell
   tab is not a chat on a harness (the app's `Opening::git_hooks`). An agent can skip the hook
   with `--no-verify`, as it can skip the scan, and the Bash guard refuses that spelling.
@@ -241,7 +245,7 @@ is in `docs/plane-format.md`, *Provenance trailers*.
 
 | Where | What |
 |---|---|
-| `charter_core::githooks::COMMIT_MSG` | the shim that runs `purlis` and never refuses |
+| `charter_core::githooks::COMMIT_MSG` | the shim that runs `purlis` and refuses only on `MESSAGE_REFUSED` |
 | `charter_core::provenance` | the trailers, the chat and change they name, and `stamp` |
 | `charter_core::process::descends_from` | whether the commit runs below the chat's harness |
 | `purlis git-hook commit-msg` | the stamping |
@@ -285,10 +289,13 @@ made in their own terminal, which is not armed, or one `cherry-pick`, `rebase` o
     personal data, which the save's own scan lets through);
   - "what the remote already has" is read from this clone's remote-tracking refs, which anything
     in the clone can write: a ref written there excludes its commits from the scan;
-  - a commit's own message is read only at push, not at commit, and for credentials only (a
-    message names people). Since SQ-7 a merge's own resolution is read at push (`git`'s
-    remerge diff; a merge of three or more against its first parent), each commit's and
-    annotated tag's message is read at push, and a text file git only shows as "Binary files
+  - a commit's own message is read for credentials only (a message names people): at commit
+    by `commit-msg` since #1133, and at push. Since SQ-7 a merge's own resolution is read at
+    push (`git`'s remerge diff; a merge of three or more against its first parent), each
+    commit's and annotated tag's message is read at push, with each object's header lines
+    (#1133: a merged tag's text, a header git does not know), in UTF-8 whatever the
+    repository's config asks git to write messages in (an annotated tag is made by no hook,
+    so its message is first read at push), and a text file git only shows as "Binary files
     differ" (a `binary` or `-diff` attribute, a diff driver that says `binary`, a lowered
     `core.bigFileThreshold`) is read as text here and at commit. A file whose own bytes git
     calls binary is still not read;

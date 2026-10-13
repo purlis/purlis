@@ -10,9 +10,10 @@
 //! [`purlis_core::diffscan::pushed`]), and refuses the same way, and refuses a push that would
 //! publish a change to the scan's allowlist. A chat's `pre-commit` also refuses a staged
 //! project file whose `[sandbox]`, `[chat_env]` or `[dispatch]` differ from the file in the
-//! working tree (#1464). For `commit-msg`, the message is stamped with the
-//! chat's provenance trailers ([`purlis_core::provenance::stamp`]) and the hook always
-//! succeeds. Every other hook has no check and answers success. The repository's own hook of the
+//! working tree (#1464). For `commit-msg`, a message that holds what looks like a credential is
+//! refused the same way (#1133, [`purlis_core::diffscan::message_checked`]); otherwise it is
+//! stamped with the chat's provenance trailers ([`purlis_core::provenance::stamp`]) and the hook
+//! succeeds, stamped or not. Every other hook has no check and answers success. The repository's own hook of the
 //! same name is the shim's to run, after this ([`purlis_core::githooks`]).
 
 use std::io::Read;
@@ -20,18 +21,14 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use purlis_core::diffscan::Stopped;
-use purlis_core::githooks::{CHECKED, COMMIT_MSG, PRE_COMMIT, PRE_PUSH};
+use purlis_core::githooks::{CHECKED, COMMIT_MSG, MESSAGE_REFUSED, PRE_COMMIT, PRE_PUSH};
 use purlis_core::{diffscan, hookwire};
 
 /// Runs charter's check for hook `name` in the repository git ran it in: this process's
 /// working directory, which git sets to the top of the work tree.
 pub fn run(name: &str, args: &[String]) -> ExitCode {
     if name == COMMIT_MSG {
-        if let (Ok(top), Some(message)) = (std::env::current_dir(), args.first()) {
-            let message = top.join(message);
-            purlis_core::provenance::stamp(&message, &top, &purlis_core::envvar::var);
-        }
-        return ExitCode::SUCCESS;
+        return message(args);
     }
     if name == PRE_PUSH {
         return push(args);
@@ -75,6 +72,36 @@ pub fn run(name: &str, args: &[String]) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     refuse(Stopped::Commit, &repo, &scan)
+}
+
+/// `commit-msg`: git's argument names the file holding the message it is about to commit. A
+/// message that holds what looks like a credential is refused (#1133), with
+/// [`MESSAGE_REFUSED`], the one status the shim refuses on; one this cannot read is refused the
+/// same way, as a commit nothing scanned is. Otherwise the message is stamped with the chat's
+/// provenance trailers, and a message that could not be stamped is committed as written.
+fn message(args: &[String]) -> ExitCode {
+    let cannot = |why: &str| {
+        eprintln!("purlis: this commit's message could not be scanned for secrets ({why})");
+        ExitCode::from(MESSAGE_REFUSED)
+    };
+    let Ok(top) = std::env::current_dir() else {
+        return cannot("no working directory");
+    };
+    let Some(file) = args.first() else {
+        return cannot("git named no message file");
+    };
+    let file = top.join(file);
+    let said = match std::fs::read(&file) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(e) => return cannot(&e.to_string()),
+    };
+    let scan = diffscan::message_checked(&top, &said);
+    if !scan.refused.is_empty() {
+        refuse(Stopped::Commit, &top, &scan);
+        return ExitCode::from(MESSAGE_REFUSED);
+    }
+    purlis_core::provenance::stamp(&file, &top, &purlis_core::envvar::var);
+    ExitCode::SUCCESS
 }
 
 /// `pre-push`: git's arguments are the remote's name and its URL, and standard input has one

@@ -441,6 +441,11 @@ impl Tree {
 
     /// [`Self::asked_from`], with the needs-you line of a refusal.
     fn telling(&self, cwd: &Path, stage: Stage) -> Result<Vec<Say>, Refused> {
+        self.saying(cwd, stage, "piece: one change\n\nWhy it was made.")
+    }
+
+    /// [`Self::telling`], asked with `message`.
+    fn saying(&self, cwd: &Path, stage: Stage, message: &str) -> Result<Vec<Say>, Refused> {
         let here = Here {
             cwd: cwd.to_path_buf(),
             top: self.here.top.clone(),
@@ -450,7 +455,7 @@ impl Tree {
         };
         let ask = CommitAsk {
             chat: 4,
-            message: "piece: one change\n\nWhy it was made.".to_owned(),
+            message: message.to_owned(),
             stage,
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
@@ -701,6 +706,34 @@ fn what_looks_like_a_secret_is_refused_by_the_scan_and_unstaged() {
         .telling(&t.here.top, staging(&["missing"]))
         .expect_err("refused");
     assert_eq!(other.scan, None, "{}", other.why);
+}
+
+/// #1133: the message a chat asks the app to commit with is read as a chat's own `commit-msg`
+/// reads it, and a credential there is refused with the same needs-you line.
+#[test]
+fn a_credential_in_the_message_is_refused_by_the_scan_and_nothing_stays_staged() {
+    let t = tree();
+    std::fs::write(t.here.top.join("README.md"), "two\n").unwrap();
+    let before = t.git(&["rev-parse", "HEAD"]);
+    let key = ["ghp", "_0123456789abcdefABCDEF"].concat();
+
+    let refused = t
+        .saying(
+            &t.here.top,
+            staging(&["README.md"]),
+            &format!("piece: two\n\npush with {key}"),
+        )
+        .expect_err("refused");
+
+    let queue = refused.scan.expect("a needs-you line");
+    assert!(queue.contains("the commit message:3"), "{queue}");
+    assert!(
+        !queue.contains(&key) && !refused.why.contains(&key),
+        "{}",
+        refused.why
+    );
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert!(t.nothing_staged());
 }
 
 #[test]

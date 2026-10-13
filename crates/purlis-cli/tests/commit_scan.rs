@@ -165,6 +165,37 @@ fn a_planted_key_and_email_are_refused_before_commit_on_a_repo_outside_the_plane
     assert!(!heard.commit_refused.contains(&key()), "{heard:?}");
 }
 
+/// #1133: a credential in the message of a chat's own commit is refused at commit, masked, and
+/// the app hears it; a message naming people is committed and stamped as before.
+#[test]
+fn a_credential_in_a_commits_own_message_is_refused_before_commit() {
+    let chat = Chat::new();
+    let before = chat.head();
+    std::fs::write(chat.repo.join("README.md"), "two\n").unwrap();
+    chat.git(&["add", "README.md"]);
+
+    let ran = chat.git(&["commit", "-m", &format!("Two\n\npush with {}", key())]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.head(), before, "nothing was committed");
+    let said = String::from_utf8_lossy(&ran.stderr);
+    assert!(said.contains("the commit message:3"), "{said}");
+    assert!(!said.contains(&key()), "{said}");
+    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(
+        heard.commit_refused.contains("the commit message:3"),
+        "{heard:?}"
+    );
+
+    let trailer = format!(
+        "Two\n\nCo-Authored-By: Ada <{}>",
+        ["ada", "@lovelace.dev"].concat()
+    );
+    let ran = chat.git(&["commit", "-m", &trailer]);
+    assert!(ran.status.success(), "{ran:?}");
+    assert_ne!(chat.head(), before);
+}
+
 #[test]
 fn a_commit_all_is_scanned_as_what_it_commits() {
     let chat = Chat::new();

@@ -68,9 +68,15 @@ pub const PRE_MERGE_COMMIT: &str = "pre-merge-commit";
 pub const PRE_PUSH: &str = "pre-push";
 
 /// The hook that hands charter the message git is about to commit, so an agent's own commit
-/// carries its provenance trailers (GL-8, V67, ADR 0074 amended). It never refuses a commit: a
-/// message charter could not stamp, or a `charter` that has gone, commits as it was written.
+/// carries its provenance trailers (GL-8, V67, ADR 0074 amended). A message charter could not
+/// stamp, or a `charter` that has gone, commits as it was written. It refuses one thing: a
+/// message that holds what looks like a credential (#1133), which `charter` says by exiting
+/// [`MESSAGE_REFUSED`].
 pub const COMMIT_MSG: &str = "commit-msg";
+
+/// The exit status `charter git-hook commit-msg` refuses a message with, and the only one its
+/// shim refuses on: any other failure of the stamping commits the message as it was written.
+pub const MESSAGE_REFUSED: u8 = 3;
 
 /// The hooks that get a shim, so the repository's own still runs. Every hook `githooks(5)`
 /// names but three, which run on every index or ref change and cost a shell and a `git` each
@@ -221,8 +227,9 @@ fn quoted(text: &str) -> String {
 /// its exit status is the hook's.
 ///
 /// When the `charter` that wrote it has gone, a checked hook refuses — a commit nothing scanned
-/// is not one charter lets through. [`COMMIT_MSG`] runs `charter` with git's arguments and never
-/// refuses: a message it could not stamp is committed as it was written.
+/// is not one charter lets through. [`COMMIT_MSG`] runs `charter` with git's arguments and
+/// refuses only where it answers [`MESSAGE_REFUSED`]: a message it could not stamp is committed
+/// as it was written.
 ///
 /// [`PRE_PUSH`] reads git's standard input once, hands it to `charter` with git's arguments, and
 /// then to the repository's own `pre-push`, which is run rather than `exec`ed so it can be fed.
@@ -253,7 +260,10 @@ fi
         )
     } else if name == COMMIT_MSG {
         format!(
-            r#"[ -x "$charter" ] && "$charter" {COMMAND} {name} "$@"
+            r#"if [ -x "$charter" ]; then
+  "$charter" {COMMAND} {name} "$@"
+  [ $? -eq {MESSAGE_REFUSED} ] && exit 1
+fi
 "#
         )
     } else {
@@ -637,6 +647,28 @@ mod tests {
         let ran = armed.commit();
 
         assert!(ran.status.success(), "{ran:?}");
+    }
+
+    #[test]
+    fn a_message_charter_refuses_is_not_committed_and_the_repositorys_own_does_not_run() {
+        let armed = Armed::new(&format!(
+            "[ \"$2\" = commit-msg ] && exit {MESSAGE_REFUSED}; exit 0"
+        ));
+        script(
+            &armed.repo.join(".git/hooks/commit-msg"),
+            &format!("touch '{}'", armed.mark("commit-msg").display()),
+        );
+
+        let ran = armed.commit();
+
+        assert!(!ran.status.success(), "{ran:?}");
+        assert!(!armed.mark("commit-msg").exists());
+        assert!(
+            !armed
+                .git(&["rev-parse", "--verify", "-q", "HEAD"])
+                .status
+                .success()
+        );
     }
 
     #[test]

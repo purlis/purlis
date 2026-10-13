@@ -471,7 +471,7 @@ fn made(
             }
             case_twin(top, &staged).map_or(Ok(()), Err)?;
             filtered(top, &staged).map_or(Ok(()), Err)?;
-            scanned(top, &mut queue)?;
+            scanned(top, &ask.message, &mut queue)?;
             Ok(staged)
         });
     let staged = match staged {
@@ -1059,14 +1059,17 @@ pub fn filter_named(out: &[u8]) -> Option<(String, String)> {
     })
 }
 
-/// purlis's scan of what the staged change would publish (ADR 0074): the check a chat's own
-/// `pre-commit` makes, made here.
+/// purlis's scan of what the staged change would publish (ADR 0074), and of the `message` it
+/// would be committed with (#1133): the checks a chat's own `pre-commit` and `commit-msg` make,
+/// made here.
 ///
 /// Where it refuses, `queue` is given the line of the needs-you item the app raises, as a
 /// chat's own `pre-commit` gives it (#1476).
-fn scanned(top: &Path, queue: &mut Option<String>) -> Result<(), String> {
-    let scan = crate::diffscan::checked(top)
+fn scanned(top: &Path, message: &str, queue: &mut Option<String>) -> Result<(), String> {
+    let mut scan = crate::diffscan::checked(top)
         .map_err(|why| format!("the commit could not be scanned for secrets ({why})"))?;
+    let said = crate::diffscan::message_checked(top, message);
+    scan.refused.extend(said.refused);
     if scan.changes_the_allowlist {
         return Err(
             "the commit changes the scan's allowlist, which only a commit made outside a chat \

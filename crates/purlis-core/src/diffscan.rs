@@ -118,6 +118,41 @@ pub fn checked(repo: &Path) -> Result<Scan, String> {
     Ok(scan)
 }
 
+/// Where a finding in the message of the commit being made is said to be.
+pub const MESSAGE: &str = "the commit message";
+
+/// What `message`, the message a commit in `repo` is about to be made with, holds that looks
+/// like a credential, filtered through the allowlist as [`checked`] filters (#1133). A chat's
+/// own `commit-msg` and a brokered commit ask it; the staged diff is [`checked`]'s.
+///
+/// **Credentials only**, as at push ([`in_message`]). What git cuts from a message it is about
+/// to commit, everything from its scissors line on (the diff `commit -v` shows below it), is
+/// not read; every other line is, comments included, so nothing git keeps goes unread.
+pub fn message_checked(repo: &Path, message: &str) -> Scan {
+    through_the_allowlist(repo, in_message(MESSAGE, above_the_scissors(message)))
+}
+
+/// `message` above git's scissors line: one comment character, a space, and git's cut line.
+fn above_the_scissors(message: &str) -> &str {
+    const CUT: &str = " ------------------------ >8 ------------------------";
+    let mut at = 0;
+    for line in message.split_inclusive('\n') {
+        let text = line.trim_end_matches(['\n', '\r']);
+        let mark = text.strip_suffix(CUT);
+        if mark.is_some_and(|mark| {
+            let mut chars = mark.chars();
+            chars
+                .next()
+                .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
+                && chars.next().is_none()
+        }) {
+            return &message[..at];
+        }
+        at += line.len();
+    }
+    message
+}
+
 /// Whether `name`, as git names a file from the top of the work tree, is the project's file or
 /// its local settings beside it, under any name purlis reads them by, compared case-folded as
 /// [`crate::brokered::guard`] compares them.
@@ -2781,6 +2816,41 @@ mod tests {
                 format!("commit {short} (its message)").as_str(),
                 "forge-token"
             )]
+        );
+    }
+
+    /// #1133: the message a chat's own commit is about to be made with is read at commit, for
+    /// credentials only, as a push reads it; what git cuts below its scissors line (the diff
+    /// `commit -v` shows) is not the message, and the staged diff is the commit scan's.
+    #[test]
+    fn a_credential_in_the_message_being_committed_is_refused_and_a_trailer_is_not() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "one\n").unwrap();
+        commit_all(&repo, "one");
+
+        let plain = format!("Two\n\nCo-Authored-By: Ada <{}>\n", address());
+        assert_eq!(refused(&message_checked(&repo, &plain)), []);
+
+        let told = format!("Two\n\nuse {} to push\n", key());
+        let scan = message_checked(&repo, &told);
+        assert_eq!(refused(&scan), [(MESSAGE, "forge-token")]);
+        assert_eq!(scan.refused[0].line, 3);
+        assert!(!refusal(Stopped::Commit, &scan.refused).contains(&key()));
+
+        let verbose = format!(
+            "Two\n# ------------------------ >8 ------------------------\n+T={}\n",
+            key()
+        );
+        assert_eq!(refused(&message_checked(&repo, &verbose)), []);
+        // A line that only looks like the scissors, with text of the message's own in front,
+        // cuts nothing.
+        let written = format!(
+            "Two\nsee ------------------------ >8 ------------------------\n{}\n",
+            key()
+        );
+        assert_eq!(
+            refused(&message_checked(&repo, &written)),
+            [(MESSAGE, "forge-token")]
         );
     }
 
