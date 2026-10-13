@@ -20,7 +20,9 @@ import {
   repoSavable,
   repoSaveGoesTo,
   repoStageText,
+  requestIsRed,
   requestOf,
+  requestWords,
   saveAll,
   takeUpdateAsk,
   tellSaved,
@@ -36,6 +38,7 @@ import { AnswerBar } from "./AnswerBar";
 import { RemoteQuestionNotice } from "./RemoteQuestion";
 import { SaveBlockedBySecret } from "./SaveBlockedBySecret";
 import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
+import { RequestMerge } from "./SavingMerge";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -357,6 +360,30 @@ export function SavingView({
                 {saving.pr}
               </a>
             </p>
+          )}
+          {saving.pr !== null && saving.merge != null && (
+            <RequestMerge
+              name="this project"
+              request={saving.request}
+              pr={saving.pr}
+              merge={saving.merge}
+            />
+          )}
+          {/* A repo's row says where its request stands; what is wrong with one is said in
+              full here, as the project's is. */}
+          {(repos ?? []).map(
+            (repo) =>
+              repo.pr !== null &&
+              repo.merge != null &&
+              (repo.merge.state === "red" || repo.merge.state === "cannot-merge") && (
+                <RequestMerge
+                  key={repo.name}
+                  name={repo.name}
+                  request={repo.request}
+                  pr={repo.pr}
+                  merge={repo.merge}
+                />
+              ),
           )}
           {saving.changed.length > 0 && (
             <ul className="saving-files" aria-label="What the next save takes">
@@ -738,10 +765,13 @@ export function SaveIndicator({
    *  changes the committed tree and the core refuses it. Said as the button's tooltip. */
   off?: string;
 }) {
-  const { stage, said, words, incoming } = furthestBack(saving, repos ?? []);
-  const Mark = stage === "blocked" ? CircleAlert : stage === "saved" ? CircleCheck : CircleDot;
+  const { stage, said, words, incoming, red } = furthestBack(saving, repos ?? []);
+  // A red request is not a block, and it is still something wrong the bar must not draw as
+  // "waiting": the mark is the alert, in the failed colour (ADR 0051, amended 2026-10-13).
+  const Mark =
+    stage === "blocked" || red ? CircleAlert : stage === "saved" ? CircleCheck : CircleDot;
   return (
-    <span className="save-indicator" data-stage={stage}>
+    <span className="save-indicator" data-stage={stage} data-checks={red ? "failed" : undefined}>
       <button
         type="button"
         className="save-indicator-where ui-button ui-button-ghost ui-button-sm"
@@ -804,11 +834,14 @@ export function SaveIndicator({
  * `words` is the stage alone and `incoming` how many commits came in and were not pulled, so
  * the bar can draw the count as its own `↓N` beside words it caps (charter#403, ADR 0054).
  * `said` is both together, for the button's name and title.
+ *
+ * `red` is whether the stage shown is a pushed save whose request is red: a check failed on
+ * it, and purlis did not merge it (ADR 0051, amended 2026-10-13).
  */
 export function furthestBack(
   saving: PlaneSaving,
   repos: readonly RepoSaving[],
-): { stage: string; said: string; words: string; incoming: number } {
+): { stage: string; said: string; words: string; incoming: number; red: boolean } {
   const incoming = saving.behind ?? 0;
   const counted = repos.filter((repo) => repo.stage !== "off");
   const stage = counted.reduce(
@@ -817,9 +850,17 @@ export function furthestBack(
   );
   if (behindness(saving.stage) <= behindness(stage)) {
     const words = stageWords(saving);
-    return { stage, said: withIncoming(words, incoming), words, incoming };
+    const red = saving.stage === "pr-open" && requestIsRed(saving);
+    return { stage, said: withIncoming(words, incoming), words, incoming, red };
   }
   const waiting = counted.filter((repo) => repo.stage === stage);
+  const reds = stage === "pr-open" ? waiting.filter(requestIsRed) : [];
+  if (reds.length > 0) {
+    const noun = requestOf(reds);
+    const words =
+      reds.length === 1 ? `1 repo's ${noun} is red` : `${reds.length} repos' ${noun}s are red`;
+    return { stage, said: withIncoming(words, incoming), words, incoming, red: true };
+  }
   const n = waiting.length;
   const phrases: Record<string, [string, string]> = {
     blocked: ["blocked", "blocked"],
@@ -829,7 +870,7 @@ export function furthestBack(
   };
   const [one, many] = phrases[stage] ?? [stage, stage];
   const words = n === 1 ? `1 repo ${one}` : `${n} repos ${many}`;
-  return { stage, said: withIncoming(words, incoming), words, incoming };
+  return { stage, said: withIncoming(words, incoming), words, incoming, red: false };
 }
 
 /** Whether pressing Save could do anything: files to commit, a blocked save to try again, or
@@ -864,7 +905,7 @@ function stageWords(saving: PlaneSaving): string {
         ? "Committed, not pushed"
         : `${saving.ahead} committed, not pushed`;
     case "pr-open":
-      return `Pushed — waiting on its ${saving.request}`;
+      return requestWords(saving);
     default:
       return "Saved";
   }
@@ -876,7 +917,9 @@ function modeText(saving: PlaneSaving): string {
     ? "a save commits and goes no further"
     : saving.mode === "pr" || saving.mode === "pr-merge"
       ? `a save pushes to this machine's save branch and keeps a ${saving.request} open into ${saving.branch}${
-          saving.mode === "pr-merge" ? ", set to merge when its checks pass" : ""
+          saving.mode === "pr-merge"
+            ? ", which purlis merges once every check on it has passed"
+            : ""
         }`
       : `a save pushes to ${saving.branch}`;
   return `${mode} — ${reach}`;

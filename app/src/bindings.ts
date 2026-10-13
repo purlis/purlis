@@ -1619,6 +1619,21 @@ export const commands = {
 	 */
 	updateProject: (plane: PlaneId) => typedError<ProjectUpdate, string>(__TAURI_INVOKE("update_project", { plane })),
 	/**
+	 *  **Merge a save's pull request as it stands**, its failed and missing checks included: the
+	 *  project's own request, or the one of `repo` in `workspace` when both are named (the
+	 *  operator's ruling P1, 2026-10-13; ADR 0051).
+	 * 
+	 *  The person's own, explicit press in the window, and the only thing that merges past a
+	 *  check: a save and purlis's own look never do. Only the checks are passed over. A conflict,
+	 *  a review the branch requires and every rule the forge itself enforces still refuse it, and
+	 *  it merges only at the commit purlis pushed. Answers what happened, as a sentence.
+	 * 
+	 *  The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
+	 * 
+	 *  On a blocking thread: it asks the forge, and may fetch and move the project's tree.
+	 */
+	mergeSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string, string>(__TAURI_INVOKE("merge_save_request", { plane, workspace, repo })),
+	/**
 	 *  Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
 	 *  never the network.
 	 * 
@@ -4876,6 +4891,17 @@ export type FactColumn = {
 	cells: FactCell[],
 };
 
+/**
+ *  One check that failed on a save's pull request: its name as the forge shows it, and its
+ *  page there when it has one. Both are made safe to show by the core
+ *  (`purlis_core::forge::checks::FailedCheck`): the name is whoever wrote the check's.
+ */
+export type FailedCheck = {
+	name: string,
+	/**  An `https://` address, or `null`. */
+	url: string | null,
+};
+
 /**  One path a branch changed. */
 export type FileChange = {
 	/**  Its path relative to the branch's folder. */
@@ -7149,6 +7175,11 @@ export type PlaneSaving = {
 	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
+	/**
+	 *  Where the open pull request of a `pr-merge` project stands with merging; `null` when
+	 *  none is open or the mode does not merge it.
+	 */
+	merge?: SaveMerge | null,
 };
 
 /**
@@ -7776,6 +7807,11 @@ export type RepoSaving = {
 	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
+	/**
+	 *  Where the repo's open pull request stands with merging, in `pr-merge`; `null`
+	 *  otherwise.
+	 */
+	merge?: SaveMerge | null,
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */
@@ -8105,6 +8141,27 @@ export type SaveEntry = {
 	pr: string | null,
 	outcome: string,
 	detail: string,
+};
+
+/**
+ *  Where a `pr-merge` save's pull request stands with merging, as the last look at the forge
+ *  found it (ADR 0051, amended 2026-10-13). Never a block: a red request stays open, and a
+ *  later save pushes onto it.
+ */
+export type SaveMerge = {
+	/**
+	 *  `waiting`: its checks are running, have not had time to start, or are expected and
+	 *  have not started, and purlis looks again by itself. `red`: a check failed, required or
+	 *  not, and it stays open and unmerged. `queued`: its checks passed and it is in its
+	 *  branch's merge queue or train. `cannot-merge`: a conflict, a required review or another
+	 *  rule of the forge's. `merged`: purlis merged it, and the project has not moved onto
+	 *  what merged yet.
+	 */
+	state: string,
+	/**  Why, as a sentence fragment for the person. */
+	why: string,
+	/**  The checks that failed when it is `red`, at most twenty; empty otherwise. */
+	checks: FailedCheck[],
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */

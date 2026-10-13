@@ -320,5 +320,85 @@ pub fn repo_at_quit(
     }
 }
 
+/// How long after the settle wait the first look at a new request is made: the wait itself is
+/// measured on the forge's side of the push, and a look a second early would wait again.
+pub const LOOK_MARGIN: Duration = Duration::from_secs(5);
+/// The longest gap between two looks at one open request.
+pub const LOOK_AT_MOST: Duration = Duration::from_secs(300);
+/// How long purlis keeps looking at one open request by itself. Past it, only a save, a fetch
+/// or the window coming back into focus asks again: a check that has not ended in two hours is
+/// nobody's to wait on in a loop.
+pub const LOOK_FOR: Duration = Duration::from_secs(2 * 60 * 60);
+/// The least time between two looks, however often the window comes into focus.
+pub const LOOK_AT_LEAST: Duration = Duration::from_secs(60);
+
+/// **When the app looks again at a `pr-merge` save's open pull request** (ADR 0051, amended
+/// 2026-10-13): what merges a green request without the person saving again, paced so that
+/// it is never a busy poll.
+///
+/// For one head commit: the first look once its checks have had time to start
+/// ([`crate::forge::pr::SETTLE`] and [`LOOK_MARGIN`] after the push), then after one minute,
+/// two, four, and every five ([`LOOK_AT_MOST`]) until [`LOOK_FOR`] has passed since the
+/// first. That is about thirty looks, each a handful of forge reads. The window coming back
+/// into focus asks for one more at any time, at most every [`LOOK_AT_LEAST`]. A new head — the
+/// next save pushed onto the request — starts over.
+///
+/// It only says when; the caller looks ([`crate::planegit::look`], [`crate::reposave::look`]).
+#[derive(Debug, Default)]
+pub struct Looks {
+    head: String,
+    /// When this head was first seen.
+    since: Option<Instant>,
+    /// When the next look is due.
+    next: Option<Instant>,
+    last: Option<Instant>,
+    made: u32,
+}
+
+impl Looks {
+    /// Whether a look at the request whose head is `head` is due at `now`. `pushed_ago` is
+    /// how long ago that head was pushed, where that is known; `asked` is the window coming
+    /// back into focus. A `true` counts as the look: the caller makes it now.
+    pub fn due(
+        &mut self,
+        now: Instant,
+        head: &str,
+        pushed_ago: Option<Duration>,
+        asked: bool,
+    ) -> bool {
+        if self.head != head {
+            let wait = (crate::forge::pr::SETTLE + LOOK_MARGIN)
+                .saturating_sub(pushed_ago.unwrap_or_default());
+            *self = Looks {
+                head: head.to_owned(),
+                since: Some(now),
+                next: Some(now + wait),
+                last: None,
+                made: 0,
+            };
+        }
+        let rested = self
+            .last
+            .is_none_or(|last| now.duration_since(last) >= LOOK_AT_LEAST);
+        let within = self
+            .since
+            .is_some_and(|since| now.duration_since(since) <= LOOK_FOR);
+        let scheduled = within && self.next.is_some_and(|next| now >= next);
+        // Focus never looks before the checks could have started: that look would only wait.
+        let on_focus =
+            asked && rested && self.next.is_some_and(|next| now >= next || self.made > 0);
+        if !(scheduled || on_focus) {
+            return false;
+        }
+        let gap = LOOK_AT_LEAST
+            .saturating_mul(1u32 << self.made.min(8))
+            .min(LOOK_AT_MOST);
+        self.made = self.made.saturating_add(1);
+        self.last = Some(now);
+        self.next = Some(now + gap);
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests;

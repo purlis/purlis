@@ -20,18 +20,21 @@
 //!    absent, and one that exists is pushed over only when its tip is already in HEAD's
 //!    history. **Only the save branch is ever forced**: the target branch is never pushed to.
 //! 3. **The PR is opened or updated** into the target branch, named explicitly
-//!    ([`crate::forge::pr::open_or_update`]), and in `pr-merge` set to merge at the commit
-//!    just pushed ([`crate::forge::pr::request_auto_merge`]). Where the forge cannot auto-merge
-//!    it — the repo or its plan has no auto-merge, or there is nothing for it to wait for —
-//!    purlis merges it itself once it is ready ([`merge_it_ourselves`]): now, when the forge
-//!    says it may merge and every check at that commit passed or none ran; otherwise [`settle`]
-//!    asks again on every save and every fetch until it is, and it never merges past a
-//!    failing check or a review the branch requires.
+//!    ([`crate::forge::pr::open_or_update`]). In `pr-merge` purlis then merges it itself, at
+//!    the commit just pushed, once it is ready ([`merge_it_ourselves`]) — and never at the
+//!    save: a commit pushed a moment ago has no check yet, and "no check yet" is not "no
+//!    check" (ADR 0051, amended 2026-10-13). The save records that it waits; [`settle`] asks
+//!    on every save and every fetch, and the app looks again by itself ([`super::look`]),
+//!    until every check at that commit has passed, or the commit has been there long enough
+//!    and nothing says a check will run. A failed check of any kind, required or not, leaves
+//!    it open and unmerged, as does a review the branch requires. The forge's own auto-merge
+//!    is never asked for: it merges past a failing check that is not required.
 //! 4. **The outcome is recorded** in `plane-push.json` as `pr-open`, with the PR's link and
 //!    number, so [`super::standing`] can say *pushed, PR open* without asking the network.
-//!    The PR itself — number, link, and the commit it was last pushed at — is kept apart, in
-//!    `save-branch.json` ([`Kept`]), which no failure overwrites: a merged PR is settled even
-//!    when the saves after it failed, and never proposed a second time.
+//!    The PR itself — number, link, the commit it was last pushed at and when, and where it
+//!    stands with merging ([`Merging`]) — is kept apart, in `save-branch.json` ([`Kept`]),
+//!    which no failure overwrites: a merged PR is settled even when the saves after it failed,
+//!    and never proposed a second time.
 //!
 //! # After the PR merges
 //!
@@ -49,8 +52,7 @@
 
 use super::*;
 use crate::forge::Caller;
-use crate::forge::backend::Reason;
-use crate::forge::pr::{self, AutoMerge, Pr, Ready, Repo, State};
+use crate::forge::pr::{self, Gate, Pr, Ready, Repo, State};
 use crate::planesave::{Mode, Plane};
 
 /// Whether a push record is one a request mode wrote: its present tense is asked of the target
@@ -211,9 +213,36 @@ pub(super) struct KeptPr {
     pub head: String,
     /// The branch it goes into.
     pub target: String,
-    /// purlis merges it itself once it is ready, because the forge could not auto-merge it
-    /// ([`merge_it_ourselves`]). `merges_itself` in the file, there only when true.
+    /// purlis merges it itself once it is ready ([`merge_it_ourselves`]): every `pr-merge`
+    /// save's request, until it is in a merge queue or train. `merges_itself` in the file,
+    /// there only when true.
     pub merges_itself: bool,
+    /// When [`Self::head`] was pushed, in seconds since the epoch: what the wait for its
+    /// checks to start is measured from ([`settled`]). `None` in a file from before this was
+    /// kept, whose request has been open long enough.
+    pub pushed_at: Option<u64>,
+    /// Where it stands with merging, as the last look found it.
+    pub merge: Option<Merging>,
+}
+
+/// Whether a commit pushed at `pushed_at` has been on the forge long enough for its checks to
+/// have started ([`pr::SETTLE`]), at `now`. A stamp from a clock that has since gone back by
+/// more than the wait says nothing, and is read as long ago rather than as never.
+pub fn settled_at(pushed_at: Option<u64>, now: u64) -> bool {
+    let wait = pr::SETTLE.as_secs();
+    pushed_at.is_none_or(|at| now >= at.saturating_add(wait) || now.saturating_add(wait) < at)
+}
+
+/// [`settled_at`], now.
+fn settled(pushed_at: Option<u64>) -> bool {
+    settled_at(pushed_at, now_secs())
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
 }
 
 /// Where [`Kept`] lives.
@@ -242,6 +271,8 @@ impl Kept {
                 target: text(pr, "target").filter(|b| crate::planesave::branch_ok(b))?,
                 merges_itself: pr.get("merges_itself").and_then(serde_json::Value::as_bool)
                     == Some(true),
+                pushed_at: pr.get("pushed_at").and_then(serde_json::Value::as_u64),
+                merge: pr.get("merge").and_then(Merging::from_json),
             })
         });
         Kept {
@@ -267,6 +298,12 @@ impl Kept {
                 });
                 if pr.merges_itself {
                     kept["merges_itself"] = serde_json::Value::Bool(true);
+                }
+                if let Some(at) = pr.pushed_at {
+                    kept["pushed_at"] = serde_json::json!(at);
+                }
+                if let Some(merge) = &pr.merge {
+                    kept["merge"] = merge.to_json();
                 }
                 kept
             }),
@@ -299,6 +336,35 @@ pub(super) fn known_pr_url(root: &Path) -> Option<String> {
 /// Whether a PR this clone opened is known and not yet settled.
 pub(super) fn knows_a_pr(root: &Path) -> bool {
     Kept::read(root).pr.is_some()
+}
+
+/// Where the PR this clone last opened stands with merging, while it is known.
+pub(super) fn known_merging(root: &Path) -> Option<Merging> {
+    Kept::read(root).pr.and_then(|pr| pr.merge)
+}
+
+/// The request this clone keeps open, when one is: when its head was pushed, and its head.
+pub(super) fn open_request(root: &Path) -> Option<(Option<u64>, String)> {
+    Kept::read(root).pr.map(|pr| (pr.pushed_at, pr.head))
+}
+
+/// Keep `merging` as where the request stands, when it is not what is kept already. Answers
+/// whether it changed.
+fn remember(root: &Path, merging: &Merging, queued: bool) -> bool {
+    let mut kept = Kept::read(root);
+    let Some(pr) = kept.pr.as_mut() else {
+        return false;
+    };
+    let changed = pr.merge.as_ref() != Some(merging) || (queued && pr.merges_itself);
+    if changed {
+        pr.merge = Some(merging.clone());
+        if queued {
+            // In the forge's queue now: nothing more is asked of it about merging this one.
+            pr.merges_itself = false;
+        }
+        kept.write(root);
+    }
+    changed
 }
 
 /// Push the plane's HEAD to the save branch and open or update its pull request — the PR
@@ -470,12 +536,19 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
             );
         }
     };
+    let request = format!("{noun} {}", kind.request_ref(opened.number));
+    // purlis merges a `pr-merge` save's request itself, and not now: this commit reached the
+    // forge a moment ago, and no check on it has had time to start. The next look asks.
+    let waits = (ours && mode == Mode::PrMerge)
+        .then(|| Merging::new(MergeState::Waiting, pr::NOT_STARTED_YET));
     kept.pr = Some(KeptPr {
         number: opened.number,
         url: opened.url.clone(),
         head: head.clone(),
         target: target.clone(),
-        merges_itself: false,
+        merges_itself: waits.is_some(),
+        pushed_at: Some(now_secs()),
+        merge: waits.clone(),
     });
     kept.write(root);
     say(Say::Done(format!(
@@ -491,97 +564,9 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
             "the open {noun} from the save branch is not purlis's, so it was left as it was"
         );
         say(Say::Info(format!("  {detail}.")));
-    } else if mode == Mode::PrMerge {
-        let because = match repo
-            .backend()
-            .request_auto_merge(caller, &repo.path, &opened, &head)
-        {
-            Ok(AutoMerge::Queued) => {
-                say(Say::Info(
-                    "  It merges by itself once its checks pass.".into(),
-                ));
-                None
-            }
-            Ok(AutoMerge::JoinedTrain) => {
-                say(Say::Info(format!(
-                    "  It joined {target}'s merge train, and merges in its turn once its \
-                     checks pass."
-                )));
-                None
-            }
-            Ok(AutoMerge::NotQueued(why)) => Some(format!(
-                "{} had nothing to wait for before merging it ({why})",
-                kind.display()
-            )),
-            Ok(AutoMerge::Unavailable(no)) => Some(cannot_auto_merge(kind, &no.reason)),
-            Err(why) => {
-                say(Say::Warn(format!(
-                    "  Auto-merge could not be requested: {why}. The {noun} stays open."
-                )));
-                detail = why.to_string();
-                None
-            }
-        };
-        if let Some(because) = because {
-            if let Some(pr) = kept.pr.as_mut() {
-                pr.merges_itself = true;
-            }
-            kept.write(root);
-            match merge_it_ourselves(&repo, &opened, &head, caller) {
-                Ok(Ready::Merged) => {
-                    say(Say::Done(format!(
-                        "  {because}, so purlis merged your save itself: {}",
-                        opened.url
-                    )));
-                    // Moved onto what merged now, rather than at the next look.
-                    return match settle(
-                        root,
-                        plane,
-                        &target,
-                        sign,
-                        Some((&https, &helper)),
-                        caller,
-                        say,
-                    ) {
-                        Settled::Moved => PushResult::of(Outcome::Pushed, &target),
-                        Settled::Blocked(res) => res,
-                        _ => record_push(
-                            root,
-                            PushResult {
-                                landed: Some(save),
-                                url: Some(opened.url),
-                                number: Some(opened.number),
-                                detail: format!(
-                                    "purlis merged it; {target} moves onto it with the next look"
-                                ),
-                                ..PushResult::of(Outcome::PrOpen, &target)
-                            },
-                            &head,
-                        ),
-                    };
-                }
-                Ok(Ready::Waiting(why)) => {
-                    detail =
-                        format!("{because}, so purlis merges it itself once it is ready: {why}");
-                    say(Say::Info(format!("  {detail}.")));
-                }
-                Ok(Ready::Refused(why)) => {
-                    detail = format!(
-                        "{because}, and purlis cannot merge it as it stands: {why}. It stays \
-                         open: {}",
-                        opened.url
-                    );
-                    say(Say::Warn(format!("  {detail}")));
-                }
-                Err(why) => {
-                    detail = format!(
-                        "{because}, and purlis could not merge it: {why}. It stays open: {}",
-                        opened.url
-                    );
-                    say(Say::Warn(format!("  {detail}")));
-                }
-            }
-        }
+    } else if let Some(waits) = waits {
+        detail = waits.said(&request, &opened.url);
+        say(Say::Info(format!("  {detail}.")));
     }
     record_push(
         root,
@@ -596,26 +581,19 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
     )
 }
 
-/// Why the forge did not auto-merge the save's request, as the clause before what purlis did
-/// instead.
-fn cannot_auto_merge(kind: forge::Kind, reason: &Reason) -> String {
-    match reason {
-        Reason::NotAllowed(words) => format!("{} can't auto-merge here — {words}", kind.display()),
-        other => format!("{} can't auto-merge here ({other:?})", kind.display()),
-    }
-}
-
-/// Merge the save's request ourselves, at `head`, once the forge's own gates allow it: the
-/// fallback for a forge that cannot auto-merge it ([`crate::forge::Fallback::MergeWhenReady`],
-/// ADR 0051). Never past a failing or pending check, or a review the branch requires.
+/// Merge the save's request ourselves, at `head`, once the forge's own rules and `gate` allow
+/// it ([`crate::forge::Fallback::MergeWhenReady`], ADR 0051). Under [`Gate::Checks`], never
+/// past a failing or pending check, a check that has not had time to start, or a review the
+/// branch requires.
 fn merge_it_ourselves(
     repo: &Repo,
     pr: &Pr,
     head: &str,
     caller: &Caller,
+    gate: Gate,
 ) -> Result<Ready, crate::forge::ForgeError> {
     repo.backend()
-        .merge_when_ready(caller, &repo.path, pr, head)
+        .merge_when_ready(caller, &repo.path, pr, head, gate)
 }
 
 /// The origin URL and credential helper [`settle`] fetches the target branch with after purlis
@@ -881,35 +859,45 @@ pub(super) fn settle(
         ))
     };
     let mut asked = repo.backend().state(caller, &repo.path, &opened);
-    // A request purlis merges itself, because the forge could not auto-merge it, is merged here
-    // once it is ready: every save and every fetch asks again until then.
+    // A `pr-merge` save's request is merged here, by purlis, once it is ready: every save,
+    // every fetch and every look of the app's asks again until then.
     let mut merged_here = false;
     if matches!(asked, Ok(State::Open)) && known.merges_itself {
-        match merge_it_ourselves(&repo, &opened, &head, caller) {
-            Ok(Ready::Merged) => {
-                merged_here = true;
-                say(Say::Done(format!(
-                    "{} can't auto-merge {request}, so purlis merged it once it was ready.",
-                    kind.display()
-                )));
-                asked = repo.backend().state(caller, &repo.path, &opened);
-            }
-            Ok(Ready::Refused(why)) => {
-                // Said where the window reads it: the request stays open, with why and where.
+        let gate = Gate::Checks {
+            settled: settled(known.pushed_at),
+        };
+        let looked = merge_it_ourselves(&repo, &opened, &head, caller, gate);
+        let merging = Merging::of(&looked);
+        let queued = matches!(looked, Ok(Ready::Queued(_)));
+        // Kept where the window reads it, whatever comes next: the request's own state.
+        if remember(root, &merging, queued) {
+            // Said in the push record too, while that record is still this request's own: one
+            // a later push that failed wrote is about a commit this request does not carry.
+            let its_own = push_record(root).is_some_and(|rec| {
+                rec.get("outcome").and_then(serde_json::Value::as_str) == Some("pr-open")
+            });
+            if its_own {
                 note_open(
                     root,
                     target,
                     &save,
                     &known,
-                    &format!(
-                        "purlis cannot merge {request} as it stands: {why}. It stays open: {}",
-                        known.url
-                    ),
+                    &merging.said(&request, &known.url),
                 );
-                return Settled::Open;
             }
-            Ok(Ready::Waiting(_)) | Err(_) => return Settled::Open,
+            if matches!(merging.state, MergeState::Red | MergeState::CannotMerge) {
+                say(Say::Warn(merging.said(&request, &known.url)));
+            }
         }
+        kept = Kept::read(root);
+        if !matches!(looked, Ok(Ready::Merged)) {
+            return Settled::Open;
+        }
+        merged_here = true;
+        say(Say::Done(format!(
+            "purlis merged {request} once it was ready."
+        )));
+        asked = repo.backend().state(caller, &repo.path, &opened);
     }
     // What purlis merged just now is not in the fetch its caller made before asking. That fetch
     // is held to the recorded remote, as the caller's was (#1864).
@@ -1157,6 +1145,100 @@ fn differing(root: &Path, head: &str, theirs: &str) -> Vec<String> {
     let mut args: Vec<&str> = vec![head, theirs, "--"];
     args.extend(touched.iter().map(String::as_str));
     names(&args).unwrap_or_else(|| vec!["(git could not compare them)".to_string()])
+}
+
+/// What the person's own "merge it as it stands" came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergedAsItStands {
+    /// Merged, and the project moved onto what merged.
+    Moved,
+    /// Merged or queued on the forge; the project moves onto it with the next look. Carries
+    /// what happened, in words.
+    Later(String),
+}
+
+/// **Merge the save's request as it stands**, failed and missing checks included: the person's
+/// own, explicit action in the window (the operator's ruling P1, 2026-10-13), and nothing a
+/// save, a look or a chat ever does. Only the checks are passed over ([`Gate::Person`]): a
+/// conflict, a review the branch requires and every rule the forge enforces still refuse it,
+/// and it merges only at the commit purlis pushed.
+pub(super) fn merge_as_it_stands(
+    root: &Path,
+    plane: &Plane,
+    target: &str,
+    sign: bool,
+    caller: &Caller,
+    say: Sink,
+) -> Result<MergedAsItStands, String> {
+    if plane.mode.value != Some(Mode::PrMerge) {
+        return Err(
+            "this project's saves do not merge their pull request ([plane] mode is not \
+             pr-merge), so there is nothing for purlis to merge"
+                .into(),
+        );
+    }
+    let kept = Kept::read(root);
+    let Some(known) = kept.pr.filter(|pr| pr.target == target) else {
+        return Err("no pull request of this project's saves is open".into());
+    };
+    if !is_ancestor(root, &known.head, "HEAD") {
+        return Err(
+            "this project is no longer on the commit its open pull request carries, so purlis \
+             will not merge it. Save again first"
+                .into(),
+        );
+    }
+    let (repo, _, _) = config(root, plane)?;
+    let kind = repo.forge.kind;
+    let request = format!("{} {}", kind.request_noun(), kind.request_ref(known.number));
+    let opened = Pr {
+        number: known.number,
+        url: known.url.clone(),
+    };
+    let looked = merge_it_ourselves(&repo, &opened, &known.head, caller, Gate::Person);
+    match &looked {
+        Ok(Ready::Merged) | Ok(Ready::Queued(_)) => {}
+        Ok(Ready::Waiting(why)) | Ok(Ready::Refused(why)) => {
+            return Err(format!("{request} was not merged: {why}"));
+        }
+        Ok(Ready::Red(_)) => return Err(format!("{request} was not merged")),
+        Err(why) => return Err(format!("{request} was not merged: {why}")),
+    }
+    let merging = Merging::of(&looked);
+    remember(root, &merging, matches!(looked, Ok(Ready::Queued(_))));
+    if let Ok(Ready::Queued(why)) = &looked {
+        say(Say::Done(why.clone()));
+        return Ok(MergedAsItStands::Later(why.clone()));
+    }
+    say(Say::Done(format!(
+        "Merged {request} as it stands, as you asked: {}",
+        known.url
+    )));
+    let fetch = fetch_after_merge(root, &repo.forge).map_err(str::to_string)?;
+    let fetch = fetch
+        .as_ref()
+        .map(|(https, helper)| (https.as_str(), helper.as_str()));
+    match settle(root, plane, target, sign, fetch, caller, say) {
+        Settled::Moved => Ok(MergedAsItStands::Moved),
+        Settled::Blocked(res) => Err(res.detail),
+        Settled::Waiting(why) | Settled::Unknown(why) => Ok(MergedAsItStands::Later(why)),
+        Settled::Nothing | Settled::Open => Ok(MergedAsItStands::Later(format!(
+            "{request} merged, and {target} moves onto it with the next look"
+        ))),
+    }
+}
+
+/// The origin URL and credential helper a look that may find the request merged fetches the
+/// target branch with ([`fetch_after_merge`]), for the plane's own forge. `Ok(None)` where
+/// there is nothing to fetch from.
+pub(super) fn fetch_for_a_look(
+    root: &Path,
+    plane: &Plane,
+) -> Result<Option<(String, String)>, String> {
+    let Ok((repo, _, _)) = config(root, plane) else {
+        return Ok(None);
+    };
+    fetch_after_merge(root, &repo.forge).map_err(str::to_string)
 }
 
 #[cfg(test)]

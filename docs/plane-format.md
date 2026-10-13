@@ -738,7 +738,7 @@ Paths derived from the root (all in `derive`, `charter/config.py:661`) that land
 | `[workspace].default` | str | default `"default"` | Workspace used when nothing else selected. Validated by `workspace_name_ok` (`^[A-Za-z0-9][A-Za-z0-9._-]*$` + `contain.segment_ok`); invalid → fallback. | stable | `charter/instance.py:243`, `charter/instance.py:181` |
 | `[persona].default` | str | optional; blank = absent = `None` | The plane's front door persona. Written by `purlis persona default`. | stable | `charter/instance.py:259` |
 | `[plane].worktrees` | str | optional; `None` = `workspaces/<ws>/.worktrees/` | Relocated worktree root. Relative resolves against ROOT; a committed value must satisfy `contain.plane_adjacent` or it is ignored (doctor warns). `$CHARTER_WORKTREES` overrides and is unrestricted. | stable | `charter/instance.py:488`, `charter/config.py:82` |
-| `[plane].mode` | str | optional; closed set `off`,`commit`,`push`,`pr`,`pr-merge`; absent = `[memory].share`'s alias when that is `commit` or `push`, else **ask once** (the Saving view asks before anything is pushed); a new plane is written with `push` | **charter-app only.** How far a save of the plane goes, as a ladder: `off` never commits; `commit` commits locally; `push` also pushes to `branch`; `pr` pushes to `save_branch` and opens or updates one PR/MR into `branch`; `pr-merge` also sets that PR to auto-merge, and where the forge cannot (no auto-merge on the repo or its plan, or nothing to wait for) merges it itself once the forge says it may merge and its checks passed — never past a failing check or a required review. `pr`/`pr-merge` on an origin that is not a GitHub or GitLab forge charter knows is a config error (doctor, the settings tab): saves stop at a local commit, shown as a notice, and the plane is not blocked. Unknown value → refused by the settings tab, read as absent. | stable | ADR 0051; `crates/purlis-core/src/planesave.rs`, `crates/purlis-core/src/planegit/prsave.rs` |
+| `[plane].mode` | str | optional; closed set `off`,`commit`,`push`,`pr`,`pr-merge`; absent = `[memory].share`'s alias when that is `commit` or `push`, else **ask once** (the Saving view asks before anything is pushed); a new plane is written with `push` | **charter-app only.** How far a save of the plane goes, as a ladder: `off` never commits; `commit` commits locally; `push` also pushes to `branch`; `pr` pushes to `save_branch` and opens or updates one PR/MR into `branch`; `pr-merge` also merges that PR itself (the forge's own auto-merge is never asked for): once the forge says it may merge and purlis has read every check at the pushed commit as passed — never past a failing check, required or not, never before its checks could have started, and with no check at all only once the commit has been there a minute and nothing the repository shows says one will run (ADR 0051, amended 2026-10-13). A red request stays open and is not a block. `pr`/`pr-merge` on an origin that is not a GitHub or GitLab forge charter knows is a config error (doctor, the settings tab): saves stop at a local commit, shown as a notice, and the plane is not blocked. Unknown value → refused by the settings tab, read as absent. | stable | ADR 0051; `crates/purlis-core/src/planesave.rs`, `crates/purlis-core/src/planegit/prsave.rs` |
 | `[plane].branch` | str | optional; default the branch the plane has checked out | **purlis only.** The *target* branch the plane is saved into. A save whose plane has another branch checked out commits and does not push: pushing would rebase that branch onto this one (ADR 0051). | stable | ADR 0051; `crates/purlis-core/src/planesave.rs`, `crates/purlis-core/src/planegit.rs` |
 | `[plane].save_branch` | str | optional; default `purlis/save/<host>-<clone>` (`charter/save/<host>-<clone>` before the rename, which a clone whose PR is still open from it keeps using until a save sees that PR merged or closed, V93j): `<host>` is the machine's short hostname, by the rule the dispatch log used before FD-25 (`dispatch::host`); a branch name is something the operator reads, so it stays a name (ADR 0066), `<clone>` the first six hex digits of the SHA-256 of the plane's absolute path, so two clones, or two machines with one name, never share one | **charter-app only.** The one rolling branch per clone that `pr`/`pr-merge` push to; one PR from it is kept open and updated by every save. Replaces the per-push `purlis/<sha>` branch (`charter/<sha>` before the rename, still advanced while its request waits) for the request modes. Only this branch is ever force-pushed, with `--force-with-lease` against the commit this clone last pushed there (`save-branch.json`); with none kept it is leased as absent, and an existing branch is pushed over only when its tip is already in HEAD's history — otherwise the plane is blocked. Must not be the target branch (a config error, and the plane is blocked). A value shared in `charter.toml` is one branch for every clone, and the lease then blocks all but the first. | stable | ADR 0051; `crates/purlis-core/src/planegit/prsave.rs` (charter-app#298) |
 | `[plane].sign` | bool | optional; default `false` | **purlis only.** Sign save commits. (ADR 0051 also has a push refused for an unsigned commit tell the operator to set this; that hint is not built.) | stable | ADR 0051; `crates/purlis-core/src/planesave.rs`, `crates/purlis-core/src/planegit.rs` |
@@ -6434,7 +6434,16 @@ about. The next save or fetch settles a `pr-open` record by asking the forge whe
   - `branch`: the save branch the rest is about; anything kept about another is ignored
   - `pushed`: the commit this clone last pushed to it — what the next push is leased against
   - `pr`: `null`, or the PR last opened or updated and not yet settled: `number`, `url`,
-    `head` (the commit it was last pushed at) and `target` (the branch it goes into)
+    `head` (the commit it was last pushed at) and `target` (the branch it goes into); and,
+    each only when it applies, `merges_itself` (`true` while purlis is to merge it: a
+    `pr-merge` save's request, until it is in a merge queue or train), `pushed_at` (epoch
+    seconds, when `head` was pushed: what the wait for its checks to start is measured from)
+    and `merge`, where it stands with merging as the last look at the forge found it:
+    `state` (one of `waiting`, `red`, `queued`, `cannot-merge`, `merged`), `why` (a sentence
+    fragment, at most 600 bytes) and `checks` (the checks that failed, at most 20, each a
+    `name` and a `url` or null). Read back, every one of these is held to that shape again
+  - `held`: `true` only while a request this clone forgot without seeing it end may still be
+    open on a save branch from before the rename (V93j)
 
 ### `save-journal.jsonl`
 - **Format:** JSON Lines, one object per save attempt, appended. Capped at the newest 500
@@ -6450,7 +6459,9 @@ about. The next save or fetch settles a `pr-open` record by asking the forge whe
 - **Fields:**
   - `at`: epoch seconds
   - `target`: `plane`, or `repo:<workspace>/<name>`
-  - `trigger`: one of `manual`, `quiet`, `session-end`, `quit`, `launch`, `cli`, `live`, `rename`
+  - `trigger`: one of `manual`, `quiet`, `session-end`, `quit`, `launch`, `cli`, `live`,
+    `rename`; and, on a repo's line that no save wrote, `look` (purlis looked again at the
+    repo's open request and found it changed) or `merge` (the person merged it as it stands)
   - `mode`
   - `files`: a count
   - `commit`: a sha or null. For a repo, HEAD once the save was done with it — the commit it
@@ -6459,6 +6470,10 @@ about. The next save or fetch settles a `pr-open` record by asking the forge whe
     `charter/<workspace>/<short-sha>` in a request mode on the default branch); absent or null
     otherwise
   - `pr`: a url or null
+  - `number`: for a repo, the number of the request `pr` names when it is purlis's own; null
+    otherwise
+  - `merge`: for a repo saved in `pr-merge`, where its request stands with merging, in the
+    shape `save-branch.json` keeps the plane's; null otherwise
   - `ms`: the duration
   - `outcome`: one of `saved`, `committed`, `pushed`, `pr-open`, `blocked`, `offline`,
     `skipped`, `failed`

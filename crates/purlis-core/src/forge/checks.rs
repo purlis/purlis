@@ -53,12 +53,15 @@ impl Ci {
 }
 
 /// The checks at one commit: how many were counted (`None` when charter could not ask), the
-/// value, and why it is `UNKNOWN` when it is.
+/// value, why it is `UNKNOWN` when it is, and which ones failed when it is `FAILED`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Checks {
     pub total: Option<u64>,
     pub ci: Ci,
     pub why: Option<String>,
+    /// The checks that failed, at most [`FAILED_NAMED`] of them: what a red save's pull
+    /// request is named by (ADR 0051, amended 2026-10-13).
+    pub failed: Vec<FailedCheck>,
 }
 
 impl Checks {
@@ -67,6 +70,44 @@ impl Checks {
             total: None,
             ci: Ci::Unknown,
             why: Some(why.into()),
+            failed: Vec::new(),
+        }
+    }
+}
+
+/// How many failed checks are named. A commit can carry hundreds; a person reads a handful.
+pub const FAILED_NAMED: usize = 20;
+/// The longest name kept of a failed check, in characters.
+const NAME_LIMIT: usize = 120;
+/// The longest link kept of a failed check, in bytes.
+const URL_LIMIT: usize = 400;
+
+/// One check that failed: its name as the forge shows it, and its page.
+///
+/// **Both are whatever wrote the check**: a workflow's job name, a status context, a target
+/// link. So the name is one line with every invisible character escaped, and cut
+/// ([`crate::shown::one_line`]: a name may be in any script and carry an emoji, and may not
+/// carry a control or a direction override), and the link is kept only when it is an
+/// `https://` address of a sane length; anything else is no link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailedCheck {
+    pub name: String,
+    pub url: Option<String>,
+}
+
+impl FailedCheck {
+    /// A failed check, from what the forge (or a file purlis wrote earlier) names it by.
+    pub fn of(name: Option<&str>, url: Option<&str>) -> FailedCheck {
+        let name = name.map(str::trim).filter(|n| !n.is_empty());
+        FailedCheck {
+            name: crate::shown::one_line(name.unwrap_or("a check"), NAME_LIMIT),
+            url: url
+                .filter(|u| {
+                    u.starts_with("https://")
+                        && u.len() <= URL_LIMIT
+                        && !u.chars().any(|c| c.is_control() || c.is_whitespace())
+                })
+                .map(str::to_string),
         }
     }
 }
@@ -146,7 +187,21 @@ fn reduce(each: impl IntoIterator<Item = One>) -> Checks {
         total: Some(total),
         ci: if total == 0 { Ci::NotRun } else { worst },
         why: None,
+        failed: Vec::new(),
     }
+}
+
+/// The entries of `list` that `judge` counts as failed, each named by `name` and linked by
+/// `url`, its keys in the forge's record.
+fn failed_among<'a>(
+    list: &'a [Value],
+    judge: fn(&Value) -> One,
+    name: &'a str,
+    url: &'a str,
+) -> impl Iterator<Item = FailedCheck> + 'a {
+    list.iter()
+        .filter(move |entry| judge(entry) == One::Counted(Ci::Failed))
+        .map(move |entry| FailedCheck::of(entry[name].as_str(), entry[url].as_str()))
 }
 
 /// Whether `sha` is a commit id charter will put in an API path: hex, 7 to 64.
@@ -188,11 +243,21 @@ fn whole<'a>(answer: &'a Value, key: &str, what: &str) -> Result<&'a Vec<Value>,
 pub(super) fn github(runs: &Value, statuses: &Value) -> Result<Checks, String> {
     let runs = whole(runs, "check_runs", "check runs")?;
     let statuses = whole(statuses, "statuses", "commit statuses")?;
-    Ok(reduce(
+    let mut checks = reduce(
         runs.iter()
             .map(check_run)
             .chain(statuses.iter().map(commit_status)),
-    ))
+    );
+    checks.failed = failed_among(runs, check_run, "name", "html_url")
+        .chain(failed_among(
+            statuses,
+            commit_status,
+            "context",
+            "target_url",
+        ))
+        .take(FAILED_NAMED)
+        .collect();
+    Ok(checks)
 }
 
 /// A GitLab merge request's pipelines, judged at one sha.
@@ -213,7 +278,28 @@ pub(super) fn gitlab(answer: &Value, sha: &str, request: u64) -> Result<Checks, 
     }
     // Newest first, as GitLab lists them: the latest pipeline at this head is its verdict.
     // `total` is then what was judged: that one pipeline, or none.
-    Ok(reduce(here.first().map(|p| pipeline(p))))
+    let mut checks = reduce(here.first().map(|p| pipeline(p)));
+    if checks.ci == Ci::Failed
+        && let Some(p) = here.first()
+    {
+        let name = match (p["id"].as_u64(), p["status"].as_str()) {
+            (Some(id), Some(status)) => format!("pipeline #{id} ({status})"),
+            (Some(id), None) => format!("pipeline #{id}"),
+            _ => "its pipeline".to_string(),
+        };
+        checks.failed = vec![FailedCheck::of(Some(&name), p["web_url"].as_str())];
+    }
+    Ok(checks)
+}
+
+/// Whether the merge request's newest pipeline at `sha` is one GitLab `skipped`: CI was asked
+/// and ran nothing for this commit (`[ci skip]`, or rules that left every job out), which is
+/// GitLab's own word that no check will run on it.
+pub(super) fn gitlab_skipped_at(answer: &Value, sha: &str) -> bool {
+    answer
+        .as_array()
+        .and_then(|all| all.iter().find(|p| p["sha"].as_str() == Some(sha)))
+        .is_some_and(|p| p["status"].as_str() == Some("skipped"))
 }
 
 #[cfg(test)]
@@ -331,6 +417,93 @@ mod tests {
     fn a_skipped_gitlab_pipeline_ran_nothing_so_it_is_not_run() {
         let checks = reduce([pipeline(&json!({"status": "skipped"}))]);
         assert_eq!((checks.total, checks.ci), (Some(0), Ci::NotRun));
+    }
+
+    #[test]
+    fn a_failed_check_is_named_with_its_page_and_a_passing_one_is_not() {
+        let runs = json!({"total_count": 3, "check_runs": [
+            {"name": "build", "status": "completed", "conclusion": "success",
+             "html_url": "https://github.com/acme/api/runs/1"},
+            {"name": "lint", "status": "completed", "conclusion": "failure",
+             "html_url": "https://github.com/acme/api/runs/2"},
+            {"name": "deploy", "status": "completed", "conclusion": "cancelled",
+             "html_url": "https://github.com/acme/api/runs/3"},
+        ]});
+        let statuses = json!({"total_count": 1, "statuses": [
+            {"context": "ci/jenkins", "state": "error", "target_url": "https://ci.example/7"},
+        ]});
+        let checks = github(&runs, &statuses).unwrap();
+        assert_eq!(checks.ci, Ci::Failed);
+        let named: Vec<(&str, Option<&str>)> = checks
+            .failed
+            .iter()
+            .map(|c| (c.name.as_str(), c.url.as_deref()))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("lint", Some("https://github.com/acme/api/runs/2")),
+                ("deploy", Some("https://github.com/acme/api/runs/3")),
+                ("ci/jenkins", Some("https://ci.example/7")),
+            ]
+        );
+    }
+
+    #[test]
+    fn what_names_a_failed_check_is_whoever_wrote_the_check_so_it_is_bounded() {
+        // A name is cut and made readable; a link that is not a plain https address is no link.
+        let long = "x".repeat(500);
+        let check = FailedCheck::of(Some(&long), Some("javascript:alert(1)"));
+        assert_eq!(
+            check.name.chars().count(),
+            NAME_LIMIT + 1,
+            "cut, with its ellipsis"
+        );
+        // A name in any script keeps its letters; a direction override does not get through.
+        let named = FailedCheck::of(Some("тесты ci \u{202e}dne"), None).name;
+        assert!(named.starts_with("тесты ci "), "{named}");
+        assert!(!named.contains('\u{202e}'), "{named}");
+        assert_eq!(check.url, None);
+        assert!(
+            !FailedCheck::of(Some("a\u{1b}[31mb"), None)
+                .name
+                .contains('\u{1b}')
+        );
+        assert_eq!(
+            FailedCheck::of(None, Some("http://plain.example/")).url,
+            None
+        );
+        assert_eq!(FailedCheck::of(Some("  "), None).name, "a check");
+        let spaced = FailedCheck::of(Some("n"), Some("https://a.example/x y"));
+        assert_eq!(spaced.url, None);
+        // More failures than a person reads: the first FAILED_NAMED are named.
+        let many: Vec<Value> = (0..FAILED_NAMED + 5)
+            .map(|n| json!({"name": format!("job {n}"), "status": "completed", "conclusion": "failure"}))
+            .collect();
+        let runs = json!({"total_count": many.len(), "check_runs": many});
+        let checks = github(&runs, &json!({"total_count": 0, "statuses": []})).unwrap();
+        assert_eq!(checks.failed.len(), FAILED_NAMED);
+        assert_eq!(checks.total, Some((FAILED_NAMED + 5) as u64));
+    }
+
+    #[test]
+    fn a_failed_gitlab_pipeline_is_named_by_its_number_and_a_skipped_one_is_told_apart() {
+        let sha = "a".repeat(40);
+        let answer = json!([{"id": 9, "sha": sha, "status": "failed",
+                             "web_url": "https://gitlab.com/acme/api/-/pipelines/9"}]);
+        let checks = gitlab(&answer, &sha, 3).unwrap();
+        assert_eq!(checks.ci, Ci::Failed);
+        assert_eq!(checks.failed[0].name, "pipeline #9 (failed)");
+        assert_eq!(
+            checks.failed[0].url.as_deref(),
+            Some("https://gitlab.com/acme/api/-/pipelines/9")
+        );
+        assert!(!gitlab_skipped_at(&answer, &sha));
+        assert!(gitlab_skipped_at(
+            &json!([{"id": 9, "sha": sha, "status": "skipped"}]),
+            &sha
+        ));
+        assert!(!gitlab_skipped_at(&json!([]), &sha));
     }
 
     #[test]

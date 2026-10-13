@@ -26,6 +26,7 @@ fn standing(stage: Stage, changed: &[&str], pushes: bool) -> Standing {
         tracked: false,
         head: String::new(),
         secrets: Vec::new(),
+        merge: None,
     }
 }
 
@@ -188,6 +189,7 @@ fn repo_standing(stage: Stage, changed: u32) -> crate::reposave::Standing {
         changed,
         ahead: None,
         pr: None,
+        merge: None,
         blocked: None,
         head: Some("0123456".into()),
         pushes: true,
@@ -333,4 +335,82 @@ fn quitting_with_only_commits_to_push_pushes_them_without_a_commit_attempt_first
     // to commit.
     let lines = crate::planegit::journal(&plane);
     assert_eq!(lines.len(), 1, "{lines:?}");
+}
+
+// --------------------------------------------------------------------------------------- //
+// when the app looks again at an open pull request (ADR 0051, amended 2026-10-13)           //
+// --------------------------------------------------------------------------------------- //
+
+/// The seconds, from `start`, at which `looks` says a look is due, asked every two seconds as
+/// the worker asks, for `span` seconds.
+fn looked_at(looks: &mut Looks, start: Instant, head: &str, span: u64) -> Vec<u64> {
+    (0..=span)
+        .step_by(2)
+        .filter(|s| looks.due(start + Duration::from_secs(*s), head, None, false))
+        .collect()
+}
+
+#[test]
+fn a_new_request_is_first_looked_at_once_its_checks_could_have_started() {
+    let start = Instant::now();
+    let mut looks = Looks::default();
+    let wait = (crate::forge::pr::SETTLE + LOOK_MARGIN).as_secs();
+    let seen = looked_at(&mut looks, start, "abc", wait + 10);
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert!(seen[0] >= wait && seen[0] <= wait + 2, "{seen:?}");
+
+    // A head pushed a while ago (the app was closed) is looked at at once.
+    let mut late = Looks::default();
+    assert!(late.due(start, "abc", Some(Duration::from_secs(3600)), false));
+}
+
+#[test]
+fn looks_back_off_to_every_five_minutes_and_stop_after_two_hours() {
+    let start = Instant::now();
+    let mut looks = Looks::default();
+    let seen = looked_at(&mut looks, start, "abc", 4 * 60 * 60);
+    let gaps: Vec<u64> = seen.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    assert_eq!(&gaps[..4], [60, 120, 240, 300], "{seen:?}");
+    assert!(gaps[4..].iter().all(|gap| *gap == 300), "{gaps:?}");
+    assert!(
+        *seen.last().unwrap() <= LOOK_FOR.as_secs(),
+        "it kept looking past its bound: {seen:?}"
+    );
+    // Never a busy poll: about thirty looks in all.
+    assert!(seen.len() <= 32, "{}", seen.len());
+}
+
+#[test]
+fn the_window_coming_back_asks_for_one_more_look_and_never_more_than_one_a_minute() {
+    let start = Instant::now();
+    let at = |s: u64| start + Duration::from_secs(s);
+    let mut looks = Looks::default();
+    // Before the checks could have started, focus does not look: it would only wait.
+    assert!(!looks.due(at(0), "abc", None, true));
+    assert!(!looks.due(at(10), "abc", None, true));
+    let all = looked_at(&mut looks, start, "abc", 3 * 60 * 60);
+    assert!(!all.is_empty());
+    // Long after the two hours, a person coming back is a reason to look again.
+    let later = 5 * 60 * 60;
+    assert!(!looks.due(at(later), "abc", None, false));
+    assert!(looks.due(at(later), "abc", None, true));
+    assert!(
+        !looks.due(at(later + 30), "abc", None, true),
+        "within a minute"
+    );
+    assert!(looks.due(at(later + 61), "abc", None, true));
+}
+
+#[test]
+fn the_next_save_pushed_onto_the_request_starts_the_looks_over() {
+    let start = Instant::now();
+    let mut looks = Looks::default();
+    let first = looked_at(&mut looks, start, "abc", 600);
+    assert!(first.len() >= 3, "{first:?}");
+    // A new head at ten minutes: its own wait, then its own back-off.
+    let again = start + Duration::from_secs(600);
+    let second = looked_at(&mut looks, again, "def", 200);
+    let wait = (crate::forge::pr::SETTLE + LOOK_MARGIN).as_secs();
+    assert!(second[0] >= wait, "{second:?}");
+    assert_eq!(second[1] - second[0], 60, "{second:?}");
 }

@@ -211,7 +211,7 @@ describe("SavingView", () => {
     render(<SavingView plane={PLANE} />);
     expect(
       await screen.findByText(
-        "Mode: pr-merge (charter.toml) — a save pushes to this machine's save branch and keeps a pull request open into release, set to merge when its checks pass",
+        "Mode: pr-merge (charter.toml) — a save pushes to this machine's save branch and keeps a pull request open into release, which purlis merges once every check on it has passed",
       ),
     ).toBeTruthy();
   });
@@ -230,7 +230,7 @@ describe("SavingView", () => {
     expect(await screen.findByText("Pushed — waiting on its merge request")).toBeTruthy();
     expect(
       screen.getByText(
-        "Mode: pr-merge (charter.toml) — a save pushes to this machine's save branch and keeps a merge request open into release, set to merge when its checks pass",
+        "Mode: pr-merge (charter.toml) — a save pushes to this machine's save branch and keeps a merge request open into release, which purlis merges once every check on it has passed",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Merge request:", { exact: false })).toBeTruthy();
@@ -572,7 +572,7 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
     expect(goes).toEqual([
       "Commits on feature/x, pushes feature/x, and opens a pull request into main",
       "Commits on main, pushes that commit as purlis/alpha/… (never to main), and opens a pull request into main",
-      "Commits on fix/y, pushes fix/y, and opens a pull request into develop, and asks it to merge itself once its checks pass",
+      "Commits on fix/y, pushes fix/y, and opens a pull request into develop, and merges it once every check on it has passed",
       "Commits on feature/z and pushes feature/z",
       "Commits on main — nothing is pushed",
       "Nowhere — purlis does not save it",

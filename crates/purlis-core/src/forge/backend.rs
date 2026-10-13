@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use super::checks::Checks;
 use super::cli::Cli;
-use super::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
+use super::pr::{AutoMerge, Gate, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
 
@@ -537,17 +537,24 @@ pub trait Requests {
     ) -> Result<AutoMerge, ForgeError>;
 
     /// Merge `pr` now, only at `head_sha` and by the repo's own method, when the forge says it
-    /// may merge and every check at `head_sha` has passed or none ran: the merge auto-merge
-    /// would have made, for a save whose forge cannot auto-merge it
-    /// ([`Fallback::MergeWhenReady`], ADR 0051). A running check is [`Ready::Waiting`]; a
-    /// failing one, a conflict or a review the branch requires is [`Ready::Refused`], and
-    /// nothing is merged.
+    /// may merge and `gate` lets it through: how every `pr-merge` save's request is merged
+    /// ([`Fallback::MergeWhenReady`], ADR 0051, amended 2026-10-13).
+    ///
+    /// Under [`Gate::Checks`] purlis reads every check at `head_sha` itself. A failed one,
+    /// required or not, is [`Ready::Red`] with its name. A running one is [`Ready::Waiting`],
+    /// and so is a head with no check at all until it is `settled` **and** nothing the
+    /// repository shows says a check will run on it. A conflict or a review the branch
+    /// requires is [`Ready::Refused`]. Nothing is merged in any of these. A branch that lands
+    /// through a merge queue or train is put in it once the checks pass ([`Ready::Queued`]).
+    ///
+    /// Under [`Gate::Person`] the checks are passed over and nothing else is.
     fn merge_when_ready(
         &self,
         caller: &Caller,
         path: &str,
         pr: &Pr,
         head_sha: &str,
+        gate: Gate,
     ) -> Result<Ready, ForgeError>;
 
     /// Whether `pr` lands through its target branch's queue: GitHub's merge queue, GitLab's

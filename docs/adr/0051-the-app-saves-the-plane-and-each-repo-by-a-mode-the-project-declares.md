@@ -159,6 +159,64 @@ Commits an agent makes with plain git are fine: the next save pushes them.
   > is there, a save still only requests it. An agent still never merges: `floorguard` is
   > unchanged, and this merge is the app's own save, for the mode the project declares.
 
+  > **Amended 2026-10-13 (the operator's ruling; a save's pull request that merged before its
+  > checks ran).** The amendment above let a request with no check merge, and read the checks
+  > once, straight after the request was opened. A commit pushed a second ago has no check
+  > yet, so purlis merged, and CI then failed on a request already merged. Where the forge's
+  > own auto-merge was on, purlis handed the request to it, and a forge waits only for the
+  > checks a branch *requires*: a failing check that is not required merged too. Ruled by the
+  > operator, and not to be confirmed again:
+  >
+  > - **purlis reads the request's checks itself and never merges on red, whatever the
+  >   repository's settings are.** A failed check of any kind, required or not, leaves the
+  >   request open and unmerged, named by the checks that failed. It is not a block: later
+  >   saves keep pushing onto the same request (P1).
+  > - **A request is never merged before its checks have had the chance to run.** "None ran"
+  >   is no longer "passed".
+  > - **Merging a red request is the person's own, explicit action in the window** (P1), and
+  >   nothing a save, a look or a chat does.
+  >
+  > What that is built as, each decided in implementation (D-qw371-n) and **to be confirmed**:
+  >
+  > - **One gate, everywhere.** Every `pr-merge` save's request is merged by purlis
+  >   (`MergeWhenReady`), behind its own reading of every check run and commit status at the
+  >   pushed commit (GitLab: the merge request's pipeline there). **A save no longer asks the
+  >   forge to auto-merge at all**: one behaviour on every repository, and nothing a setting
+  >   can loosen. A branch that lands through a merge queue or a merge train is put in it by
+  >   purlis once its checks passed, at the pushed commit, and never earlier.
+  > - **A save merges nothing itself.** It pushes, opens or updates the request, and records
+  >   that it waits. The merge is made by a later look: the next save, a fetch, or the app
+  >   looking again by itself, first a minute and five seconds after the push, then after one
+  >   minute, two, four, and every five, for two hours; after that, when the window comes
+  >   back into focus, at most once a minute. Whether auto-save is on or not, because the
+  >   merge is what the save was asked for. `purlis save` in a terminal, with the app closed,
+  >   leaves the request open until the app or the next save looks.
+  > - **No check at all merges only when purlis has reason to believe none will run**: the
+  >   commit has been on the forge for a minute, and nothing the repository shows says a check
+  >   runs on its requests. On GitHub the signs are an earlier commit of this pull request
+  >   that had a check or a status, and any of the ten most recently updated pull requests
+  >   into the same base that had one at its head. On GitLab, a pipeline among the
+  >   repository's twenty newest that ran for a ref other than the target branch; a pipeline
+  >   GitLab itself skipped at the head (`[ci skip]`) is its own word that none will run.
+  >   With a sign and still no check, the request **waits, and is not given up on**: a
+  >   workflow that a path filter left out for this commit looks the same as one that has not
+  >   started, and the person's own merge is the way past it. A read that failed waits too.
+  > - **What did not pass.** `neutral` and `skipped` pass. `cancelled`, `timed_out`,
+  >   `startup_failure` and `action_required` did not, and are red; a `stale` run is not
+  >   counted. On GitLab `canceled`, `canceling` and `manual` are red.
+  > - **The state is the standing's.** `waiting`, `red` (with at most twenty failed checks,
+  >   each a name and a link), `queued`, `cannot-merge` and `merged`, kept beside the request
+  >   in `save-branch.json` (a repo's on its journal line) and read by the Saving view and the
+  >   title bar without asking the network.
+  > - **The person's merge** (`merge_save_request`, the window's alone) passes over the checks
+  >   and nothing else: a conflict, a review the branch requires and every rule the forge
+  >   enforces still refuse it, and it merges only at the commit purlis pushed. The command
+  >   is built; its button comes with the warning and Fix (P1, P2), in the next change.
+  >
+  > Not covered, and listed for it: a request merged green whose merge commit then fails a
+  > workflow on the target branch itself is a different state (the target is red after a
+  > save), and nothing reads it yet.
+
 **Auto-save lives in the app**, because there is no daemon (ADR 0025). When `autosave` is on:
 
 - **It saves:**

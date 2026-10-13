@@ -240,6 +240,7 @@ macro_rules! app_commands {
                 saving::save_plane,
                 blockedsave::open_blocked_file,
                 saving::update_project,
+                saving::merge_save_request,
                 saving::workspace_saving,
                 saving::save_repo,
                 remotequestion::confirm_remote,

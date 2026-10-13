@@ -31,9 +31,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::forge::backend::{About, Issues, NewWorkItem, PushProtection, Visibility};
-use purlis_core::forge::backend::{Fallback, Reason};
-use purlis_core::forge::checks::{Checks, Ci};
-use purlis_core::forge::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
+use purlis_core::forge::checks::{Checks, Ci, FailedCheck};
+use purlis_core::forge::pr::{
+    AutoMerge, Gate, MergeAs, MergedAt, Opened, Pr, Ready, Request, State,
+};
 use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::{
     Caller, Capability, Forge, ForgeBackend, ForgeRef, Kind, MadeRepo, NewRepo, Owner, OwnerKind,
@@ -458,9 +459,8 @@ mod cases {
         spent(&over);
     }
 
-    /// Where the forge cannot auto-merge it, purlis merges the save's request itself: here the
-    /// request is ready, its one check passed, and it is merged at the head, by the repo's own
-    /// preferred method.
+    /// purlis merges a `pr-merge` save's request itself: here the request is ready, its one
+    /// check passed, and it is merged at the head, by the repo's own preferred method.
     pub fn merge_when_ready(kind: &str, how: How) {
         let Some(over) = over(kind, "merge_when_ready", how) else {
             return;
@@ -471,7 +471,8 @@ mod cases {
                 &over.caller,
                 &scene.path("api"),
                 &open(scene),
-                &scene.head
+                &scene.head,
+                Gate::Checks { settled: true }
             ),
             Ok(Ready::Merged)
         );
@@ -548,7 +549,8 @@ mod cases {
             Checks {
                 total: Some(1),
                 ci: Ci::Passed,
-                why: None
+                why: None,
+                failed: Vec::new(),
             }
         );
         spent(&over);
@@ -1197,15 +1199,28 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 8] = [
+const SCENES: [(&str, &str, &str); 21] = [
     ("gitlab", "request_auto_merge", "train"),
     ("gitlab", "request_auto_merge", "train_pre19"),
-    ("github", "merge_when_ready", "not_allowed"),
     ("github", "merge_when_ready", "pending"),
     ("github", "merge_when_ready", "failing"),
-    ("gitlab", "merge_when_ready", "no_pipeline"),
+    ("github", "merge_when_ready", "no_checks"),
+    ("github", "merge_when_ready", "expected"),
+    ("github", "merge_when_ready", "expected_own"),
+    ("github", "merge_when_ready", "late_failure"),
+    ("github", "merge_when_ready", "cancelled"),
+    ("github", "merge_when_ready", "passed_quietly"),
+    ("github", "merge_when_ready", "unrequired"),
+    ("github", "merge_when_ready", "queue"),
     ("gitlab", "merge_when_ready", "pending"),
     ("gitlab", "merge_when_ready", "failing"),
+    ("gitlab", "merge_when_ready", "no_checks"),
+    ("gitlab", "merge_when_ready", "expected"),
+    ("gitlab", "merge_when_ready", "late_failure"),
+    ("gitlab", "merge_when_ready", "cancelled"),
+    ("gitlab", "merge_when_ready", "skipped"),
+    ("gitlab", "merge_when_ready", "unrequired"),
+    ("gitlab", "merge_when_ready", "queue"),
 ];
 
 /// Every recording names a case of [`CASES`], by its stem with or without `.self_managed`, or
@@ -1866,12 +1881,13 @@ mod network_log {
             // recording that lost one, or a reader that skipped some, fails here rather than
             // checking less. GitLab's self-managed support asks each probe once (#802), and its
             // two merge train scenes ask four each (#805). `merge_when_ready` and its scenes
-            // read the checks and merge: thirteen on GitHub, twenty on GitLab. Making a repo asks
-            // who the account is, its owners, the create, and the delete (GitHub reads the repo
-            // first; #1819). A search is one call (#806).
+            // read the checks and merge: thirty-three on GitHub, forty-nine on GitLab (qw371:
+            // a scene per answer of purlis's own gate). Making a repo asks who the account is,
+            // its owners, the create, and the delete (GitHub reads the repo first; #1819). A
+            // search is one call (#806).
             let expected = match kind {
-                "github" => 38,
-                _ => 62,
+                "github" => 58,
+                _ => 91,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
@@ -2242,10 +2258,12 @@ mod the_live_scene {
     }
 }
 
-/// A save in `pr-merge` mode whose forge cannot auto-merge its request: GitHub offers no
-/// auto-merge for a private repo on the Free plan, and neither forge queues one with nothing to
-/// wait for. purlis merges the request itself once it is ready, and never past a failing check
-/// (ADR 0051, amended 2026-10-12). Each scene runs on the recorded and the native transport.
+/// A save in `pr-merge` mode: purlis merges its request itself, behind its own reading of every
+/// check at the commit the save pushed (ADR 0051, amended 2026-10-13). Never on red, required
+/// or not; never before its checks had the chance to start; and with no check at all, only
+/// when nothing the repository shows says one will run. Each scene runs on the recorded and
+/// the native transport, and none records a call asking the forge to auto-merge: one sent
+/// would find nothing, and fail the case.
 mod merge_when_ready_scenes {
     use super::*;
 
@@ -2253,6 +2271,10 @@ mod merge_when_ready_scenes {
         number: 12,
         url: String::new(),
     };
+    /// The head has been on the forge long enough for its checks to have started.
+    const SETTLED: Gate = Gate::Checks { settled: true };
+    /// The head was pushed a moment ago.
+    const FRESH: Gate = Gate::Checks { settled: false };
 
     /// `kind`'s backend over the scene `<case>.<scene>.json`, the caller to ask as, and the
     /// check that every recorded exchange was asked for.
@@ -2277,40 +2299,90 @@ mod merge_when_ready_scenes {
     }
 
     const HOWS: [How; 2] = [How::Recorded, How::Native];
+    const BOTH: [&str; 2] = ["github", "gitlab"];
 
+    /// The names of what a red answer carries.
+    fn names(failed: &[FailedCheck]) -> Vec<&str> {
+        failed.iter().map(|check| check.name.as_str()).collect()
+    }
+
+    /// The fault this lane fixes: straight after the push no check has registered, and purlis
+    /// merged; the check then failed on a request already merged. Now the first look waits,
+    /// and the next one finds the failure and leaves the request open, named.
     #[test]
-    fn a_github_repo_without_auto_merge_has_its_clean_request_merged_by_purlis() {
+    fn no_check_straight_after_the_push_waits_and_a_check_that_then_fails_is_never_merged() {
         purlis_core::unsteered!();
-        for how in HOWS {
-            let (backend, me, check) = scene("github", "not_allowed", how);
-            let asked = backend.request_auto_merge(&me, "acme/api", &PR, SHA);
-            let Ok(AutoMerge::Unavailable(no)) = asked else {
-                panic!("{asked:?}");
-            };
-            assert_eq!(no.what, Capability::AutoMerge);
-            assert!(
-                matches!(&no.reason, Reason::NotAllowed(words) if words.contains("acme/api")),
-                "{no:?}"
-            );
-            // What purlis does instead: it merges the request itself, once it is ready.
-            assert_eq!(no.fallback, Fallback::MergeWhenReady);
-            assert_eq!(
-                backend.merge_when_ready(&me, "acme/api", &PR, SHA),
-                Ok(Ready::Merged)
-            );
-            check();
+        // No merge call is recorded: one sent would find nothing, and fail the case.
+        for kind in BOTH {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, "late_failure", how);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA, FRESH);
+                assert!(
+                    matches!(&first, Ok(Ready::Waiting(why)) if why.contains("not had time to start")),
+                    "{kind}: {first:?}"
+                );
+                let later = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let Ok(Ready::Red(failed)) = &later else {
+                    panic!("{kind}: {later:?}");
+                };
+                assert_eq!(failed.len(), 1, "{kind}: {failed:?}");
+                check();
+            }
         }
     }
 
+    /// No check, and no sign of CI anywhere: it still waits while the head is new, and is
+    /// merged once the head is settled and nothing the repository shows says a check will run.
     #[test]
-    fn a_gitlab_request_with_no_pipeline_is_merged_by_purlis() {
+    fn a_request_with_no_check_and_no_sign_of_ci_is_merged_once_its_head_is_settled() {
+        purlis_core::unsteered!();
+        for kind in BOTH {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, "no_checks", how);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA, FRESH);
+                assert!(matches!(first, Ok(Ready::Waiting(_))), "{kind}: {first:?}");
+                assert_eq!(
+                    backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
+                    Ok(Ready::Merged),
+                    "{kind}"
+                );
+                check();
+            }
+        }
+    }
+
+    /// No check at a settled head, in a repository whose other requests have them: checks are
+    /// expected, so it waits, and nothing is merged.
+    #[test]
+    fn a_request_with_no_check_waits_where_the_repository_runs_checks_on_requests() {
+        purlis_core::unsteered!();
+        let scenes = [
+            ("github", "expected", "#11, another pull request"),
+            ("github", "expected_own", "an earlier commit of #12"),
+            ("gitlab", "expected", "ran a pipeline for feature/x"),
+        ];
+        for (kind, name, sign) in scenes {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, name, how);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                assert!(
+                    matches!(&got, Ok(Ready::Waiting(why)) if why.contains(sign)),
+                    "{kind} {name}: {got:?}"
+                );
+                check();
+            }
+        }
+    }
+
+    /// GitLab skipped the pipeline at the head (`[ci skip]`): its own word that none will run,
+    /// so nothing more is asked before it merges.
+    #[test]
+    fn a_gitlab_request_whose_pipeline_was_skipped_is_merged_with_no_more_asked() {
         purlis_core::unsteered!();
         for how in HOWS {
-            let (backend, me, check) = scene("gitlab", "no_pipeline", how);
-            let asked = backend.request_auto_merge(&me, "acme/api", &PR, SHA);
-            assert!(matches!(asked, Ok(AutoMerge::NotQueued(_))), "{asked:?}");
+            let (backend, me, check) = scene("gitlab", "skipped", how);
             assert_eq!(
-                backend.merge_when_ready(&me, "acme/api", &PR, SHA),
+                backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
                 Ok(Ready::Merged)
             );
             check();
@@ -2320,14 +2392,14 @@ mod merge_when_ready_scenes {
     #[test]
     fn a_request_whose_checks_are_running_waits_and_is_merged_once_they_pass() {
         purlis_core::unsteered!();
-        for kind in ["github", "gitlab"] {
+        for kind in BOTH {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "pending", how);
-                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
                 assert!(matches!(first, Ok(Ready::Waiting(_))), "{kind}: {first:?}");
                 // The next look, once the checks passed.
                 assert_eq!(
-                    backend.merge_when_ready(&me, "acme/api", &PR, SHA),
+                    backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
                     Ok(Ready::Merged),
                     "{kind}"
                 );
@@ -2337,51 +2409,152 @@ mod merge_when_ready_scenes {
     }
 
     #[test]
-    fn a_request_with_a_failing_check_stays_open_with_the_reason() {
+    fn a_request_with_a_failing_check_stays_open_and_names_the_check_with_its_page() {
         purlis_core::unsteered!();
         // No merge call is recorded: one sent would find nothing, and fail the case.
-        for kind in ["github", "gitlab"] {
+        let named = [
+            (
+                "github",
+                "lint",
+                "https://github.com/acme/api/actions/runs/9/job/5",
+            ),
+            (
+                "gitlab",
+                "pipeline #77 (failed)",
+                "https://gitlab.com/acme/api/-/pipelines/77",
+            ),
+        ];
+        for (kind, name, page) in named {
             for how in HOWS {
                 let (backend, me, check) = scene(kind, "failing", how);
-                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA);
-                let Ok(Ready::Refused(why)) = got else {
+                // Red whether or not the head is settled: a failure is a failure at once.
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, FRESH);
+                let Ok(Ready::Red(failed)) = &got else {
                     panic!("{kind}: {got:?}");
                 };
-                assert!(why.contains("check failed"), "{kind}: {why}");
+                // The passing and the skipped check beside it are not named.
+                assert_eq!(names(failed), [name], "{kind}");
+                assert_eq!(failed[0].url.as_deref(), Some(page), "{kind}");
                 check();
             }
         }
     }
 
-    /// A GitLab repo with a merge train lands only through it: where the train would not take
-    /// the request, purlis does not merge it past the train either (#805, train 81).
+    /// Cancelled, timed out and waiting on a person did not pass (fail closed); a stale run is
+    /// not counted at all.
+    #[test]
+    fn a_cancelled_or_timed_out_check_did_not_pass_and_the_request_is_red() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "cancelled", how);
+            let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+            let Ok(Ready::Red(failed)) = &got else {
+                panic!("{got:?}");
+            };
+            assert_eq!(names(failed), ["build", "e2e", "deploy"]);
+            check();
+
+            let (backend, me, check) = scene("gitlab", "cancelled", how);
+            let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+            let Ok(Ready::Red(failed)) = &got else {
+                panic!("{got:?}");
+            };
+            assert_eq!(names(failed), ["pipeline #77 (canceled)"]);
+            check();
+        }
+    }
+
+    /// Neutral and skipped are checks that ran and had nothing against it: they pass.
+    #[test]
+    fn a_github_request_whose_checks_are_neutral_or_skipped_is_merged() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "passed_quietly", how);
+            assert_eq!(
+                backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED),
+                Ok(Ready::Merged)
+            );
+            check();
+        }
+    }
+
+    /// A failing check the branch does not require: the forge would merge past it (GitHub's
+    /// auto-merge waits for required checks only; GitLab calls the request `mergeable`).
+    /// purlis's own gate says red, whatever the repository's settings are. Only the person's
+    /// own "merge it as it stands" merges it, and that reads no check at all.
+    #[test]
+    fn a_failing_check_that_is_not_required_is_red_and_only_the_person_merges_past_it() {
+        purlis_core::unsteered!();
+        for (kind, name) in [("github", "coverage"), ("gitlab", "pipeline #77 (failed)")] {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, "unrequired", how);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                let Ok(Ready::Red(failed)) = &got else {
+                    panic!("{kind}: {got:?}");
+                };
+                assert_eq!(names(failed), [name], "{kind}");
+                assert_eq!(
+                    backend.merge_when_ready(&me, "acme/api", &PR, SHA, Gate::Person),
+                    Ok(Ready::Merged),
+                    "{kind}"
+                );
+                check();
+            }
+        }
+    }
+
+    /// A branch that lands through a merge queue or a merge train is never merged directly:
+    /// once every check passed, the request is put in the queue at the pushed commit (#805).
+    #[test]
+    fn a_request_whose_branch_lands_through_a_queue_is_put_in_it_once_its_checks_pass() {
+        purlis_core::unsteered!();
+        // No merge call is recorded: one sent would find nothing, and fail the case.
+        for (kind, word) in [("github", "merge queue"), ("gitlab", "merge train")] {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, "queue", how);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA, SETTLED);
+                assert!(
+                    matches!(&got, Ok(Ready::Queued(said)) if said.contains(word)),
+                    "{kind}: {got:?}"
+                );
+                check();
+            }
+        }
+    }
+
+    /// A GitLab train repo whose merge request has no passing pipeline yet is not put on the
+    /// train, and not merged past it either.
     #[test]
     fn a_gitlab_train_repo_is_never_merged_past_its_train() {
         purlis_core::unsteered!();
-        // No merge call is recorded: one sent would find nothing, and fail the case.
+        // Neither a merge call nor a train call is recorded.
+        let get = |path: &str, out: Value| {
+            json!({"call": {"endpoint": {"rest": {"method": null, "path": path}}, "fields": []},
+                   "reply": {"code": 0, "out": out.to_string()}})
+        };
         let text = json!({"source": "GitLab 19.4 REST API docs, projects.md (merge_trains_enabled)",
                           "exchanges": [
-            {"call": {"endpoint": {"rest": {"method": null, "path": "projects/acme%2Fapi"}},
-                      "fields": []},
-             "reply": {"code": 0, "out": json!({"squash_option": "default_off",
-                                                 "merge_trains_enabled": true}).to_string()}},
+            get("projects/acme%2Fapi", json!({"squash_option": "default_off",
+                                              "merge_trains_enabled": true})),
+            get("projects/acme%2Fapi/merge_requests/12",
+                json!({"iid": 12, "state": "opened", "draft": false, "sha": SHA,
+                       "target_branch": "main", "detailed_merge_status": "ci_still_running"})),
+            get("projects/acme%2Fapi/merge_requests/12/pipelines?per_page=100",
+                json!([{"id": 77, "sha": SHA, "status": "running"}])),
         ]});
         let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
         let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
-        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA);
-        let Ok(Ready::Refused(why)) = got else {
-            panic!("{got:?}");
-        };
-        assert!(why.contains("merge train"), "{why}");
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
         spent(&recorded);
     }
 
+    /// `request_auto_merge` stays on the seam, and its own recording still answers it. No save
+    /// calls it any more (`tests/a_pr_mode_save_…`, `tests/a_repo_is_saved_by_its_mode.rs`).
     #[test]
-    fn a_repo_with_auto_merge_has_it_queued_and_purlis_merges_nothing() {
+    fn a_repo_with_auto_merge_has_it_queued_when_the_seam_is_asked() {
         purlis_core::unsteered!();
-        // The contract's own recording: auto-merge is on, the request is queued, and no merge
-        // call is recorded, so one sent would fail the case.
-        for kind in ["github", "gitlab"] {
+        for kind in BOTH {
             let recorded =
                 Arc::new(Recorded::parse(&recording(kind, "request_auto_merge")).unwrap());
             let backend =

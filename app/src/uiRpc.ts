@@ -3676,6 +3676,17 @@ export type FactColumn = {
 	cells: FactCell[],
 };
 
+/**
+ *  One check that failed on a save's pull request: its name as the forge shows it, and its
+ *  page there when it has one. Both are made safe to show by the core
+ *  (`purlis_core::forge::checks::FailedCheck`): the name is whoever wrote the check's.
+ */
+export type FailedCheck = {
+	name: string,
+	/**  An `https://` address, or `null`. */
+	url: string | null,
+};
+
 /**  One path a branch changed. */
 export type FileChange = {
 	/**  Its path relative to the branch's folder. */
@@ -5949,6 +5960,11 @@ export type PlaneSaving = {
 	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
+	/**
+	 *  Where the open pull request of a `pr-merge` project stands with merging; `null` when
+	 *  none is open or the mode does not merge it.
+	 */
+	merge?: SaveMerge | null,
 };
 
 /**
@@ -6576,6 +6592,11 @@ export type RepoSaving = {
 	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
+	/**
+	 *  Where the repo's open pull request stands with merging, in `pr-merge`; `null`
+	 *  otherwise.
+	 */
+	merge?: SaveMerge | null,
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */
@@ -6905,6 +6926,27 @@ export type SaveEntry = {
 	pr: string | null,
 	outcome: string,
 	detail: string,
+};
+
+/**
+ *  Where a `pr-merge` save's pull request stands with merging, as the last look at the forge
+ *  found it (ADR 0051, amended 2026-10-13). Never a block: a red request stays open, and a
+ *  later save pushes onto it.
+ */
+export type SaveMerge = {
+	/**
+	 *  `waiting`: its checks are running, have not had time to start, or are expected and
+	 *  have not started, and purlis looks again by itself. `red`: a check failed, required or
+	 *  not, and it stays open and unmerged. `queued`: its checks passed and it is in its
+	 *  branch's merge queue or train. `cannot-merge`: a conflict, a required review or another
+	 *  rule of the forge's. `merged`: purlis merged it, and the project has not moved onto
+	 *  what merged yet.
+	 */
+	state: string,
+	/**  Why, as a sentence fragment for the person. */
+	why: string,
+	/**  The checks that failed when it is `red`, at most twenty; empty otherwise. */
+	checks: FailedCheck[],
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */

@@ -13,6 +13,12 @@
 //! - on its first look, pushes what the last run left committed and unpushed (the launch);
 //! - every [`FETCH_EVERY`], and when the window asks ([`Poke::Fetch`]), fetches the target
 //!   branch — and fast-forwards a clean tree onto it only while auto-save is on;
+//! - looks again at the open pull request of a `pr-merge` project, and of each `pr-merge`
+//!   repo, so one whose checks passed is merged without the person saving again, and one that
+//!   went red says so (ADR 0051, amended 2026-10-13). Paced by [`autosave::Looks`]: first once
+//!   the pushed commit's checks could have started, then backing off to every five minutes,
+//!   for two hours; never a busy poll, and whether auto-save is on or not, because the merge
+//!   is what the save that opened the request was asked for;
 //! - and after any of these that did something, tells the window what moved: the git standing,
 //!   or everything when it moved the tree ([`what_it_did`]).
 //!
@@ -46,6 +52,9 @@ pub const FETCH_EVERY: Duration = Duration::from_secs(300);
 const FETCH_AT_MOST_EVERY: Duration = Duration::from_secs(60);
 /// How long quitting gives the pushes.
 pub const QUIT_BOUND: Duration = Duration::from_secs(5);
+/// How often the worker reads which `pr-merge` repos have a pull request open: a directory
+/// listing per workspace, so not at every look.
+const REPO_REQUESTS_EVERY: Duration = Duration::from_secs(10);
 
 /// What the worker can be told between looks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +224,7 @@ fn run(
         let now = Instant::now();
         let plane = state.look(root, now, poke);
         let repos = state.look_at_repos(root, now, poke, mid_turn);
+        let repos = state.look_at_repo_requests(root, now, poke) || repos;
         if plane || repos {
             tell(std::mem::take(&mut state.moved_tree));
         }
@@ -243,6 +253,119 @@ struct State {
     /// Each auto-saved repo's quiet period, by its clone's path.
     repos: HashMap<PathBuf, Quiet>,
     repos_launched: bool,
+    /// When the plane's open pull request is looked at again.
+    looks: autosave::Looks,
+    /// The same for each `pr-merge` repo with one open, by its clone's path.
+    repo_looks: HashMap<PathBuf, autosave::Looks>,
+    /// When the `pr-merge` repos were last read for an open pull request.
+    repo_requests_read: Option<Instant>,
+}
+
+/// How long ago `at`, in seconds since the epoch, was.
+fn ago(at: Option<u64>) -> Option<Duration> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    at.map(|at| Duration::from_secs(now.saturating_sub(at)))
+}
+
+impl State {
+    /// Look again at the open pull request of a `pr-merge` plane, when a look is due
+    /// ([`autosave::Looks`]): merged if its checks passed since, and otherwise what the look
+    /// found is kept for the standing. Answers whether the window has something to read.
+    ///
+    /// Asked as a trigger, which never takes the person's sign-in (ADR 0070 §5): nobody
+    /// pressed for this look.
+    fn look_at_request(
+        &mut self,
+        root: &Path,
+        plane: &planesave::Plane,
+        now: Instant,
+        poke: Option<Poke>,
+    ) -> bool {
+        let open = (plane.mode.value == Some(planesave::Mode::PrMerge))
+            .then(|| planegit::request_to_look_at(root))
+            .flatten();
+        let Some((pushed_at, head)) = open else {
+            self.looks = autosave::Looks::default();
+            return false;
+        };
+        let asked = poke == Some(Poke::Fetch);
+        if !self.looks.due(now, &head, ago(pushed_at), asked) {
+            return false;
+        }
+        let caller = purlis_core::forge::Caller::trigger();
+        match planegit::look(root, &caller, &mut |_| {}) {
+            Ok(found) => {
+                self.moved_tree |= found.moved;
+                found.changed
+            }
+            // A save is running, or the remote is not the recorded one: the next look asks.
+            Err(_) => false,
+        }
+    }
+
+    /// The repos' half of [`Self::look_at_request`]: each `pr-merge` repo whose row says its
+    /// pull request is still purlis's to merge. None, unless a table says `pr-merge`, and then
+    /// nothing here costs more than the settings read. Answers whether any row changed.
+    fn look_at_repo_requests(&mut self, root: &Path, now: Instant, poke: Option<Poke>) -> bool {
+        let asked = poke == Some(Poke::Fetch);
+        let read_due = self
+            .repo_requests_read
+            .is_none_or(|at| now.duration_since(at) >= REPO_REQUESTS_EVERY);
+        if !(read_due || asked) {
+            return false;
+        }
+        self.repo_requests_read = Some(now);
+        let settings = planesave::Settings::read(root);
+        let merging: Vec<String> = settings
+            .repo_tables()
+            .into_iter()
+            .filter(|name| settings.repo(name).mode.value == planesave::Mode::PrMerge)
+            .collect();
+        if merging.is_empty() {
+            self.repo_looks.clear();
+            return false;
+        }
+        let Ok(workspaces) = purlis_core::workspaces::Plane::open(root).workspaces() else {
+            return false;
+        };
+        let caller = purlis_core::forge::Caller::trigger();
+        let mut did = false;
+        let mut open: Vec<PathBuf> = Vec::new();
+        for workspace in workspaces {
+            let Ok(found) = purlis_core::repos::clones(root, &workspace) else {
+                continue;
+            };
+            for repo in found.repos.iter().filter(|r| merging.contains(&r.name)) {
+                // The shared standing, as the row reads it (FD-11): no journal read per look.
+                let standing = reposave::shared_standing(root, &workspace, repo);
+                let waits = standing.stage == Stage::PrOpen
+                    && standing.merge.as_ref().is_some_and(|merge| {
+                        !matches!(
+                            merge.state,
+                            planegit::MergeState::Queued | planegit::MergeState::Merged
+                        )
+                    });
+                let (true, Some(head)) = (waits, standing.head.as_deref()) else {
+                    continue;
+                };
+                open.push(repo.path.clone());
+                let looks = self.repo_looks.entry(repo.path.clone()).or_default();
+                // When it was pushed is the journal's to say, and the first look waits out the
+                // whole settle wait from when the row was first seen instead.
+                if !looks.due(now, head, None, asked) {
+                    continue;
+                }
+                if let Ok(found) = reposave::look(root, &workspace, repo, &caller) {
+                    did |= found.changed;
+                }
+            }
+        }
+        self.repo_looks.retain(|path, _| open.contains(path));
+        did
+    }
 }
 
 impl State {
@@ -269,6 +392,9 @@ impl State {
                 self.moved_tree |= incoming.moved;
             }
         }
+        // Whether auto-save is on or not: the merge is what the save that opened the request
+        // was asked for, and a red one is the person's to hear about.
+        did |= self.look_at_request(root, &plane, now, poke);
         // Off: what came in is still fetched and shown, and nothing else costs a git process.
         if !autosave::on(&plane) {
             return did;

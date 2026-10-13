@@ -24,7 +24,7 @@ pub enum Mode {
     Push,
     /// Commit, push to a save branch, and keep one PR open into the target branch.
     Pr,
-    /// As [`Mode::Pr`], and the PR is set to auto-merge.
+    /// As [`Mode::Pr`], and purlis merges the PR itself once every check on it has passed.
     PrMerge,
 }
 

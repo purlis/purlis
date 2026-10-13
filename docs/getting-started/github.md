@@ -143,7 +143,7 @@ before it:
 | `commit` | commits on this machine |
 | `push` | also pushes to the project's branch |
 | `pr` | pushes to a save branch and opens or updates one pull request |
-| `pr-merge` | also turns on auto-merge for that pull request, or, where the repo has no auto-merge (a private repo on GitHub Free), merges it once its checks pass |
+| `pr-merge` | also merges that pull request itself, once every check on the pushed commit has passed. It never merges past a failed check, required or not, and never before its checks could have started; a red pull request stays open, and your next save goes onto it |
 
 Until a mode is set, the **Saving** view asks once, before anything is pushed. The project from
 the first run has no remote, so only `off` and `commit` have anywhere to go until you push it to

@@ -46,7 +46,8 @@ only ever runs that CLI. It is never read here."* Three modules hold the calls:
   operator reaches (the picker, ADR 0055), a repo's top-level tree (stack detection), and a
   branch's open request and CI word (`gl-refresh`).
 - **`forge/pr.rs`:** open or update a PR or MR, read its state, find it by head, and request
-  auto-merge (ADR 0051; `planegit/prsave.rs` and `reposave.rs` call it).
+  auto-merge (ADR 0051; `planegit/prsave.rs` and `reposave.rs` called it until ADR 0051's
+  amendment of 2026-10-13, since when a save merges its request itself, `merge_when_ready`).
 - **`forge/checks.rs`:** the checks at one exact commit, as five closed values (ADR 0060;
   `change/view.rs` calls it).
 

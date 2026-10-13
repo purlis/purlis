@@ -40,6 +40,53 @@ pub struct SaveEntry {
     pub detail: String,
 }
 
+/// One check that failed on a save's pull request: its name as the forge shows it, and its
+/// page there when it has one. Both are made safe to show by the core
+/// (`purlis_core::forge::checks::FailedCheck`): the name is whoever wrote the check's.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedCheck {
+    pub name: String,
+    /// An `https://` address, or `null`.
+    pub url: Option<String>,
+}
+
+/// Where a `pr-merge` save's pull request stands with merging, as the last look at the forge
+/// found it (ADR 0051, amended 2026-10-13). Never a block: a red request stays open, and a
+/// later save pushes onto it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveMerge {
+    /// `waiting`: its checks are running, have not had time to start, or are expected and
+    /// have not started, and purlis looks again by itself. `red`: a check failed, required or
+    /// not, and it stays open and unmerged. `queued`: its checks passed and it is in its
+    /// branch's merge queue or train. `cannot-merge`: a conflict, a required review or another
+    /// rule of the forge's. `merged`: purlis merged it, and the project has not moved onto
+    /// what merged yet.
+    pub state: String,
+    /// Why, as a sentence fragment for the person.
+    pub why: String,
+    /// The checks that failed when it is `red`, at most twenty; empty otherwise.
+    pub checks: Vec<FailedCheck>,
+}
+
+impl SaveMerge {
+    fn of(merge: planegit::Merging) -> SaveMerge {
+        SaveMerge {
+            state: merge.state.word().to_owned(),
+            why: merge.why,
+            checks: merge
+                .checks
+                .into_iter()
+                .map(|check| FailedCheck {
+                    name: check.name,
+                    url: check.url,
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Where the plane's unsaved work sits, how far a save goes, and what the last saves did.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +132,10 @@ pub struct PlaneSaving {
     /// person's sign-in (#1848, #1852); `null` when nothing.
     #[specta(optional)]
     pub remote: Option<crate::remotequestion::RemoteQuestion>,
+    /// Where the open pull request of a `pr-merge` project stands with merging; `null` when
+    /// none is open or the mode does not merge it.
+    #[specta(optional)]
+    pub merge: Option<SaveMerge>,
 }
 
 /// The plane's save standing.
@@ -199,6 +250,7 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .flatten();
     PlaneSaving {
         remote,
+        merge: standing.merge.clone().map(SaveMerge::of),
         secrets: crate::blockedsave::shown(&standing.secrets),
         // Said with the file and line for a secret-shaped value, so the title bar names it.
         blocked: standing.blocked_said(),
@@ -338,6 +390,90 @@ pub fn update(root: &Path) -> ProjectUpdate {
     }
 }
 
+/// **Merge a save's pull request as it stands**, its failed and missing checks included: the
+/// project's own request, or the one of `repo` in `workspace` when both are named (the
+/// operator's ruling P1, 2026-10-13; ADR 0051).
+///
+/// The person's own, explicit press in the window, and the only thing that merges past a
+/// check: a save and purlis's own look never do. Only the checks are passed over. A conflict,
+/// a review the branch requires and every rule the forge itself enforces still refuse it, and
+/// it merges only at the commit purlis pushed. Answers what happened, as a sentence.
+///
+/// The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
+///
+/// On a blocking thread: it asks the forge, and may fetch and move the project's tree.
+#[tauri::command]
+#[specta::specta]
+pub async fn merge_save_request(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: Option<String>,
+    repo: Option<String>,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let (said, moved) = tauri::async_runtime::spawn_blocking(move || {
+        merge_as_it_stands(&root, workspace.as_deref(), repo.as_deref())
+    })
+    .await
+    .map_err(|err| format!("the merge did not finish: {err}"))??;
+    // The project moved onto what merged, under every reader (#933).
+    if moved {
+        held.tree_moved();
+    }
+    Ok(said)
+}
+
+/// [`merge_save_request`], without a runtime: what happened, and whether the project's tree
+/// moved.
+pub fn merge_as_it_stands(
+    root: &Path,
+    workspace: Option<&str>,
+    repo: Option<&str>,
+) -> Result<(String, bool), String> {
+    use purlis_core::forge::Caller;
+    use purlis_core::planegit::MergedAsItStands;
+    let merged = match (workspace, repo) {
+        (None, None) => {
+            let mut lines: Vec<String> = Vec::new();
+            // The window's own git and sign-in (#752): the fetch after the merge is held to
+            // the remote recorded for the project.
+            let merged = crate::forgeaccounts::window_git(|| {
+                planegit::merge_as_it_stands(root, &Caller::window(), &mut |line: Say| {
+                    lines.push(line.to_string());
+                })
+            })?;
+            // What it said is the save journal's and the push record's; the answer is enough.
+            drop(lines);
+            merged
+        }
+        (Some(workspace), Some(name)) => {
+            let found =
+                purlis_core::repos::clones(root, workspace).map_err(|why| why.to_string())?;
+            let repo = found
+                .repos
+                .iter()
+                .find(|repo| repo.name == name)
+                .ok_or_else(|| format!("{workspace} holds no clone called {name}"))?;
+            crate::forgeaccounts::window_git(|| {
+                reposave::merge_as_it_stands(root, workspace, repo, &Caller::window())
+            })?
+        }
+        _ => {
+            return Err(
+                "name both the workspace and the repo, or neither for the project's own".into(),
+            );
+        }
+    };
+    Ok(match merged {
+        MergedAsItStands::Moved => (
+            "Merged as it stands, and the project is on what merged.".to_owned(),
+            true,
+        ),
+        MergedAsItStands::Later(said) => (said, false),
+    })
+}
+
 /// One workspace repo's save standing, for its row in the Saving view (charter-app#299).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -377,6 +513,10 @@ pub struct RepoSaving {
     /// person's sign-in (#1848, #1852); `null` when nothing.
     #[specta(optional)]
     pub remote: Option<crate::remotequestion::RemoteQuestion>,
+    /// Where the repo's open pull request stands with merging, in `pr-merge`; `null`
+    /// otherwise.
+    #[specta(optional)]
+    pub merge: Option<SaveMerge>,
 }
 
 /// Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
@@ -451,6 +591,7 @@ pub fn repos_saving(root: &Path, workspace: &str) -> Result<Vec<RepoSaving>, Str
                 .flatten();
             RepoSaving {
                 remote,
+                merge: standing.merge.clone().map(SaveMerge::of),
                 target,
                 own_branch,
                 stage: if standing.mode == planesave::Mode::Off {
