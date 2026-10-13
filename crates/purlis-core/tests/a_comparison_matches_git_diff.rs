@@ -603,10 +603,24 @@ fn a_ref_that_names_no_commit_is_refused() {
 /// objects until it fetches them. Answers the upstream's path and the request's tip.
 fn a_request_upstream(f: &support::Fixture, scratch: &Path) -> (PathBuf, String) {
     let upstream = scratch.join("upstream.git");
-    support::git(scratch, &["init", "-q", "--bare", "upstream.git"]);
+    // Its branch is named here, never left to the machine's `init.defaultBranch`: a bare
+    // repository whose HEAD names a branch nobody pushed is cloned with no files checked out.
+    support::git(
+        scratch,
+        &[
+            "init",
+            "-q",
+            "--bare",
+            "--initial-branch=main",
+            "upstream.git",
+        ],
+    );
     let address = upstream.display().to_string();
     support::git(&f.clone, &["push", "-q", &address, "main:refs/heads/main"]);
-    support::git(scratch, &["clone", "-q", &address, "contributor"]);
+    support::git(
+        scratch,
+        &["clone", "-q", "--branch", "main", &address, "contributor"],
+    );
     let contributor = scratch.join("contributor");
     support::git(&contributor, &["checkout", "-q", "-b", "feature"]);
     commit_on_the_branch(&contributor);
