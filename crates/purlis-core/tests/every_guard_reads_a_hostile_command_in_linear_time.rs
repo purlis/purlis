@@ -22,8 +22,8 @@ use purlis_core::guardcaps::{MAX_LAYERS, MAX_NESTING};
 use purlis_core::handoffguard::Caller;
 use purlis_core::toolgate::{self, Call, Launched, Plane};
 use purlis_core::{
-    commitguard, consentspelling, credguard, floorguard, guardcaps, handoffguard, leakguard,
-    planeroot, projectgit, proseguard, rootupdate,
+    cloneupdate, commitguard, consentspelling, credguard, floorguard, guardcaps, handoffguard,
+    leakguard, planeroot, projectgit, proseguard, rootupdate,
 };
 
 /// A hostile shape: its name, and the command at a given size in bytes.
@@ -260,6 +260,49 @@ fn shapes(deep: usize) -> Vec<Shape> {
             }),
         ),
         (
+            // The clone update guard reads every git that acts in a folder other than the
+            // root, and passes over what writes nothing from another commit (qw349).
+            "git in a workspace's clone that moves no tree, one after another",
+            Box::new(|b| {
+                fill(
+                    "git -C workspaces/x/repo status; git -C workspaces/x/repo fetch; \
+                     cd workspaces/x/repo && git commit -m x; git -C workspaces/x/repo restore \
+                     --source=HEAD --worktree -- a b; git -C workspaces/x/repo rebase --abort; \
+                     git -C workspaces/x/repo rebase --continue\n",
+                    b,
+                )
+            }),
+        ),
+        (
+            // And asks git about a few moves at most, however many the line holds (qw349).
+            "moves in a workspace's clone, one after another",
+            Box::new(|b| {
+                fill(
+                    "git -C workspaces/x/repo checkout a; git -C workspaces/x/repo merge b; \
+                     cd workspaces/x/repo && git pull; git -C workspaces/x/repo rebase c; \
+                     git -C workspaces/x/repo clone ../other d\n",
+                    b,
+                )
+            }),
+        ),
+        (
+            // A move sent to a long run of folders, each one more place to read (qw349).
+            "moves in a clone behind a long run of loose cds",
+            Box::new(|b| {
+                format!(
+                    "cd workspaces/x/repo; {} git reset --hard origin/main",
+                    fill("cd a; cd ../b; ", b)
+                )
+            }),
+        ),
+        (
+            // Each `cd <name> && …;` leaves one more directory the shell may be in, a level
+            // deeper, and every git is read against each: asked of the disk once for the
+            // line, and spelt up to a cap (qw367).
+            "a cd joined by && before every git, each a level deeper",
+            Box::new(|b| fill("cd a && git status; git -C b log; git checkout x; ", b)),
+        ),
+        (
             // Every level of a string a shell runs is read (#1419, #1426): heredocs fed to a
             // shell, each holding a string handed to another, as deep as a shape nests.
             "strings and heredocs handed on to shells, nested",
@@ -348,6 +391,15 @@ fn families(root: &Path) -> Vec<Family<'_>> {
                 let _ = projectgit::refusal(c, &r, &r, &root.join("workspaces/x"));
             })
         }),
+        ("the clone update guard", {
+            // From the root's chat and from a workspace's, so a clone below either is read.
+            let r = r.clone();
+            Box::new(move |c| {
+                let chat = root.join("workspaces/x");
+                let _ = cloneupdate::refusal(c, &r, &r, Some(root));
+                let _ = cloneupdate::refusal(c, &chat.display().to_string(), &r, Some(&chat));
+            })
+        }),
         (
             // With a name the sandbox denies said to be in the root, so every git on the line
             // is judged rather than passed over; and with none, as the root here has.
@@ -370,6 +422,9 @@ fn every_guard_family_reads_a_hostile_command_in_time_proportional_to_its_length
     // reads every command to its end rather than stopping at a missing folder.
     std::fs::create_dir_all(root.join(".git")).expect("the git directory");
     std::fs::create_dir_all(root.join("workspaces/x")).expect("the chat folder");
+    // And a clone of the workspace's own, so git sent there acts on another repository than
+    // the project's and the clone update guard reads it (qw349).
+    std::fs::create_dir_all(root.join("workspaces/x/repo/.git")).expect("the clone");
     let families = families(root);
     // At the nesting cap: the deepest a command any guard reads may go.
     for (shape, line) in shapes(MAX_NESTING) {
@@ -415,6 +470,7 @@ fn the_whole_verdict_at_the_largest_and_deepest_command_stays_well_inside_the_bu
     let root = dir.path();
     std::fs::create_dir_all(root.join(".git")).expect("the git directory");
     std::fs::create_dir_all(root.join("workspaces/x")).expect("the chat folder");
+    std::fs::create_dir_all(root.join("workspaces/x/repo/.git")).expect("the clone");
     let r = root.display().to_string();
     let state = root.join(".charter");
     let forges = vec![
@@ -480,4 +536,98 @@ fn the_whole_verdict_at_the_largest_and_deepest_command_stays_well_inside_the_bu
         took < bound,
         "the slowest whole verdict, on {which}, took {took:?}"
     );
+}
+
+/// A repository whose every tracked path is one the sandbox denies, `files` of them: what the
+/// clone update guard is answered where it asks about one.
+struct ManyDenied {
+    paths: Vec<String>,
+}
+
+impl ManyDenied {
+    fn of(files: usize) -> Self {
+        Self {
+            paths: (0..files)
+                .map(|i| format!("pkg{}/.vscode/task{i}.json", i % 97))
+                .collect(),
+        }
+    }
+}
+
+impl cloneupdate::Asks for ManyDenied {
+    fn top(&self, _: &str) -> cloneupdate::Top {
+        cloneupdate::Top::At("/ws/repo".to_string())
+    }
+    fn head(&self, _: &str) -> cloneupdate::Head {
+        cloneupdate::Head::At("h".to_string())
+    }
+    fn has_index(&self, _: &str) -> bool {
+        true
+    }
+    fn commit(&self, _: &str, name: &str) -> Option<String> {
+        Some(name.to_string())
+    }
+    fn guessed(&self, _: &str, _: &str) -> Option<String> {
+        None
+    }
+    fn differ(&self, _: &str, _: &str, _: &str) -> Option<Vec<String>> {
+        Some(self.paths.clone())
+    }
+    fn replayed(&self, _: &str, _: &str) -> Option<Vec<String>> {
+        Some(self.paths.clone())
+    }
+    fn tracked(&self, _: &str, _: &str) -> Option<Vec<String>> {
+        Some(self.paths.clone())
+    }
+    fn changed(&self, _: &str, paths: &[String]) -> Option<Vec<String>> {
+        Some(paths.to_vec())
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        true
+    }
+}
+
+/// The other length a hook reads is the repository's: the clone update guard reads every path
+/// a commit tracks and every path two commits differ in, and names those the sandbox denies.
+/// Four times the paths may take a little over four times as long, as four times the command
+/// may (the review of qw367: each denied path was looked for among those already found).
+#[test]
+fn the_clone_update_guard_reads_a_repository_in_time_proportional_to_its_paths() {
+    purlis_core::unsteered!();
+    let place = cloneupdate::Place {
+        root: "/project",
+        chat_dir: None,
+        alone: true,
+    };
+    let words = |line: &str| -> (String, Vec<String>) {
+        let mut words = line.split_whitespace().map(str::to_string);
+        (words.next().expect("a subcommand"), words.collect())
+    };
+    // A named move, one that replays commits (each path twice), a forced one, one whose commit
+    // cannot be named, and the way back.
+    for line in [
+        "merge other",
+        "rebase other",
+        "reset --hard other",
+        "pull",
+        "restore --source=HEAD --worktree -- src",
+    ] {
+        let (sub, post) = words(line);
+        let time = |files: usize| {
+            let repo = ManyDenied::of(files);
+            (0..2)
+                .map(|_| {
+                    let began = Instant::now();
+                    let _ = cloneupdate::judged(&sub, &post, "/ws/repo", &place, &repo);
+                    began.elapsed()
+                })
+                .min()
+                .unwrap_or_default()
+        };
+        let (t_small, t_large) = (time(20_000), time(80_000));
+        assert!(
+            t_large < t_small * 10 + Duration::from_millis(100),
+            "git {line}: 20,000 paths took {t_small:?}, 80,000 took {t_large:?}"
+        );
+    }
 }

@@ -6,7 +6,7 @@
 //! A port of `charter/hooks.py:pretooluse`'s REFUSALS — the arms and the order alone, with
 //! nothing that writes. Each arm already stands on its own: [`crate::leakguard`] (A),
 //! [`crate::credguard`] (A2), [`crate::planeroot`] (A3, A3b), [`crate::rootupdate`] (A3c,
-//! purlis's own), [`crate::floorguard`] (A4),
+//! purlis's own), [`crate::cloneupdate`] (A3d, purlis's own), [`crate::floorguard`] (A4),
 //! [`crate::proseguard`] (A5, A6) and [`crate::handoffguard`] (A7). What is here is the one
 //! thing none of them could carry: **which of two firing arms the chat is told about**.
 //!
@@ -60,8 +60,8 @@ use std::path::Path;
 use crate::forge::Forge;
 use crate::handoffguard::{self, Caller};
 use crate::{
-    commitguard, consentspelling, credguard, floorguard, guardcaps, leakguard, planeroot,
-    projectgit, proseguard, pyjson, rootupdate, rulespelling, shellseg,
+    cloneupdate, commitguard, consentspelling, credguard, floorguard, guardcaps, leakguard,
+    planeroot, projectgit, proseguard, pyjson, rootupdate, rulespelling, shellseg, shellwrap,
 };
 
 /// What to do when a guard is WRONG about your case (charter#370) — `_OVERRIDE_NOTE`.
@@ -325,11 +325,37 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
         // their own words. Asked only of a chat the app says it gave a sandbox, as A9 is; it
         // answers for a chat that may write the root folder, where A9 answers for one that may
         // not. purlis's own, so no recorded answer moves.
-        if plane.launched.sandboxed
-            && let Some((sub, why)) =
-                rootupdate::refusal(cmd, call.cwd, plane.root, plane.chat_dir().as_deref())
-        {
-            return Some(Verdict::new(rootupdate::REASON, Some(sub), why));
+        //
+        // A3d: the same move in a folder other than the root, a workspace's clone or a branch
+        // folder, where the chat's sandbox denies it the later-code files a repository tracks
+        // (qw349). Precise where A3c is not: git is asked which files the move would write,
+        // and only one that writes a denied file is refused. After A3c, which answers for the
+        // root. purlis's own, so no recorded answer moves.
+        //
+        // The two are asked of one reading of the line: the walk is the costly part of each,
+        // and the same walk answers both.
+        if plane.launched.sandboxed && shellwrap::may_name(cmd, "git") {
+            let chat_dir = plane.chat_dir();
+            let root = planeroot::plane_root(plane.root);
+            let line = planeroot::line_git(cmd, call.cwd, &root);
+            if let Some((sub, why)) = rootupdate::refusal_of(
+                &line.root,
+                call.cwd,
+                &root,
+                chat_dir.as_deref(),
+                &rootupdate::denied_in,
+            ) {
+                return Some(Verdict::new(rootupdate::REASON, Some(sub), why));
+            }
+            if let Some((sub, why)) = cloneupdate::refusal_of(
+                &line,
+                call.cwd,
+                &root,
+                chat_dir.as_deref(),
+                &cloneupdate::Asked,
+            ) {
+                return Some(Verdict::new(cloneupdate::REASON, Some(sub), why));
+            }
         }
         // A4: an unattended run may not publish (#299).
         let unattended = floorguard::unattended(call.caller.permission_mode);
@@ -730,6 +756,55 @@ mod tests {
             ask("git pull", &workspace, true, Some(workspace.as_str())),
             Some((projectgit::REASON.to_string(), Some("pull".to_string())))
         );
+    }
+
+    /// A3d speaks only to a chat the app says it gave a sandbox, of git that would rewrite a
+    /// working tree other than the root's from another commit (qw349). Asked here of a folder
+    /// the guard cannot name, which needs no repository and no file the sandbox denies.
+    #[test]
+    fn a_move_in_a_folder_the_guard_cannot_name_is_refused_only_to_a_sandboxed_chat() {
+        let fix = Fixture::new();
+        let root = fix.root();
+        std::fs::create_dir_all(fix.dir.path().join("workspaces/ide")).unwrap();
+        let workspace = fix.dir.path().join("workspaces/ide").display().to_string();
+        let forges = forges();
+        let state = fix.state();
+        let ask = |cmd: &str, sandboxed: bool| {
+            let plane = Plane {
+                root: &root,
+                forges: &forges,
+                session_dir: "",
+                launched: Launched {
+                    sandboxed,
+                    chat_dir: Some(workspace.as_str()),
+                },
+            };
+            let call = Call {
+                command: cmd,
+                cwd: &workspace,
+                state_dir: &state,
+                caller: attended(),
+            };
+            verdict(&call, Some(&plane)).map(|v| (v.reason, v.shape))
+        };
+        let refused = |sub: &str| Some((cloneupdate::REASON.to_string(), Some(sub.to_string())));
+        assert_eq!(ask("git -C \"$REPO\" pull", true), refused("pull"));
+        assert_eq!(
+            ask("git -C \"$REPO\" rebase origin/main", true),
+            refused("rebase")
+        );
+        // git that writes nothing from another commit, and the way back.
+        for kept in [
+            "git -C \"$REPO\" status",
+            "git -C \"$REPO\" fetch",
+            "git -C \"$REPO\" restore --source=HEAD --worktree -- a",
+            "git -C \"$REPO\" rebase --abort",
+        ] {
+            assert_eq!(ask(kept, true), None, "{kept}");
+        }
+        // A chat started without a sandbox finishes what it starts.
+        assert_eq!(ask("git -C \"$REPO\" pull", false), None);
+        assert_eq!(ask("git -C \"$REPO\" rebase origin/main", false), None);
     }
 
     #[test]

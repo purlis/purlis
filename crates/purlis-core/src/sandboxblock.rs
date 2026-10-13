@@ -650,7 +650,7 @@ fn runs_a_container_client(payload: &serde_json::Value) -> bool {
 
 /// The programs that only read or print: none of them makes a connection of its own, so none
 /// is ever refused the certificate check. By the name a line runs one under.
-const READERS: [&str; 62] = [
+pub(crate) const READERS: [&str; 62] = [
     "cat", "tac", "head", "tail", "less", "more", "bat", "nl", "wc", "grep", "egrep", "fgrep",
     "zgrep", "rg", "ag", "ack", "sed", "awk", "gawk", "cut", "tr", "sort", "uniq", "column",
     "fold", "rev", "tee", "strings", "xxd", "hexdump", "od", "jq", "yq", "diff", "cmp", "find",

@@ -1580,7 +1580,7 @@ fn tell_the_host_about_the_tool_call(
 /// listening (#1338): an operation and a kind, and whether it was purlis's own — never the path,
 /// the command or what it printed. Sent once each and never spooled
 /// ([`hookwire::tell_blocked`]); a block the app did not take is said only on stderr. Answers
-/// the blocks the app took, which the chat is then told of ([`hooks::told_of_blocks`]).
+/// the blocks the app took, which the chat is then told of ([`hooks::told_after`]).
 #[cfg(unix)]
 fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::sandboxblock::Block> {
     use std::io::Write as _;
@@ -1728,9 +1728,19 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed());
         let taken = tell_the_host_about_blocks(name, &text);
         // A block word answers nothing of its own, so this is the one line it prints (#1631).
-        let read_back = serde_json::from_str::<serde_json::Value>(&text)
-            .is_ok_and(|data| purlis_core::sandboxblock::read_back(&data));
-        if let Some(line) = hooks::told_of_blocks(name, &taken, read_back) {
+        // And what a git command the sandbox stopped partway left behind (qw349), in the
+        // same line: a hook prints one answer. Never of words only read back (#1884).
+        let data = hooks::is_a_block_word(name)
+            .then(|| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .flatten();
+        let read_back = data
+            .as_ref()
+            .is_some_and(purlis_core::sandboxblock::read_back);
+        let stopped = data
+            .as_ref()
+            .filter(|_| !read_back)
+            .and_then(|payload| hooks::stopped_partway(payload, &purlis_core::envvar::var));
+        if let Some(line) = hooks::told_after(name, &taken, read_back, stopped) {
             hooks::say(&line);
         }
         return answered.print();
