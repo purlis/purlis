@@ -286,6 +286,56 @@ describe("a local socket's Notice (ADR 0093)", () => {
   });
 });
 
+describe("the certificate check's Notice (ADR 0093, qw351)", () => {
+  const TRUST: ChatBlocked = {
+    ...UNNAMED,
+    operation: "lookup",
+    kind: "certificate-check",
+    said: "a lookup of the system's certificate check",
+    offer: "service",
+    target: "com.apple.trustd.agent",
+    route:
+      "This project expects certificate checks. Allowing it lets Go and similar tools check " +
+      "certificates; that service can make its own network requests.",
+    levels: ["once", "chat", "you"],
+  };
+
+  it("leads with this machine's Allow, so one press is the last, and sends it", async () => {
+    const { sent } = drawn(TRUST);
+
+    expect(screen.getByText("com.apple.trustd.agent")).toBeTruthy();
+    expect(screen.getByText(/This project expects certificate checks/)).toBeTruthy();
+    // Allow once is a narrower choice beside it, never the main button.
+    expect(screen.queryByRole("button", { name: "Allow once" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Allow for me on this machine" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: {
+            operation: "lookup",
+            kind: "certificate-check",
+            what: "service",
+            target: "com.apple.trustd.agent",
+          },
+          level: "you",
+        },
+      ]),
+    );
+  });
+
+  it("keeps once and only this chat under Other scopes", async () => {
+    drawn(TRUST);
+
+    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+
+    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Allow once" })).toBeTruthy();
+  });
+});
+
 describe("a block of purlis's own operation", () => {
   it("says it is purlis's own in a sentence of its own, after a block sentence that holds a full stop (#1416)", () => {
     drawn({
