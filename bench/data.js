@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791896675507,
+  "lastUpdate": 1791897662889,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9408,6 +9408,48 @@ window.BENCHMARK_DATA = {
             "value": 105.34337550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.232, 104.130, 105.343, 106.309, 108.107 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "e827217c0bed714461a5e8407129c5880db09737",
+          "message": "review(train 94): signing out of gitlab.com in the browser revokes its token there\n\nADR 0077 §3 says a sign-out on GitLab also revokes the token, which a\npublic client can do, and the GitLab sign-in left that out.\n\n- `forge::revoke::sign_out` signs out on this machine first, then posts one\n  form to gitlab.com's revocation address with the client id and the token,\n  and no secret. The sign-out never waits on GitLab's yes: when GitLab\n  cannot be asked or will not, the person is signed out here all the same,\n  and the row says so and where on gitlab.com to end the token.\n- GitHub is not asked: ending an app's grant there is authenticated with\n  the app's client secret, and the registration has none. The row goes on\n  saying the token lapses within eight hours and where to end it now.\n- A pasted or imported token is never revoked, nor one on a host purlis has\n  no registration on, and a test build asks no forge.\n- A sign-out waits for a refresh in flight, so a renewed pair is never\n  written back for an account that was just signed out.\n\nRefs #730\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T17:06:51+04:00",
+          "tree_id": "0a9dc08594decb314fade75b346c14791a394509",
+          "url": "https://github.com/purlis/purlis/commit/e827217c0bed714461a5e8407129c5880db09737"
+        },
+        "date": 1791897661514,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2981195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.276, 0.296, 0.298, 0.303, 0.313 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.556836999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.511, 16.536, 16.557, 16.607, 16.663 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.52650349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.002, 101.391, 101.527, 101.746, 101.843 ms"
           }
         ]
       }
