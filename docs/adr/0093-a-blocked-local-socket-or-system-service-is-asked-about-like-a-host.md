@@ -69,7 +69,17 @@ and Apple's app sandbox do.
   log name the socket; so does a **failed** command's own error (Go's `dial unix <path>: connect:
   operation not permitted`, Docker's sentence on macOS), the one place a client says the path.
   What a command that succeeded printed (`cat` of a log, a file that quotes the words) raises a
-  block that names no socket, so no Allow. A `mach-lookup` violation names the service; Go's
+  block that names no socket, so no Allow. **A line that runs a container engine's client is
+  read as one that failed** (2026-10-13): a chat runs `docker run … 2>&1 | tail`, the pipe ends
+  with `tail`'s status, and the harness hands the result over with no failure beside it, so
+  the refusal named no socket and its Notice had no Allow. No harness says how each program of
+  a line ended, so the one signal left is the line itself: where one of its own programs is
+  `docker`, `docker-compose`, `podman`, `podman-compose` or `nerdctl`, by name, after the
+  shell's own plumbing (assignments, redirections, `timeout`, `env`), the socket its output
+  says it was refused is named. Such a client prints its own error or what a daemon it already
+  reached sent it, and a line that only reads (`cat`, `grep`, `git show`, `curl`) still names
+  none, nor does a string a shell is handed (`sh -c '…'`). The line is read for that one
+  answer and nothing of it is kept. A `mach-lookup` violation names the service; Go's
   `x509: OSStatus -26276` names the certificate check. The Notice shows the path whole and
   judges it again as a grant before anything is kept.
 - **Honest words, per known kind** (D-sock-6). The Notice and the ask say what allowing it means:

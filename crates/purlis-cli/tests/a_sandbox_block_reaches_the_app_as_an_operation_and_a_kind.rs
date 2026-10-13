@@ -365,6 +365,62 @@ fn a_lookup_refused_inside_a_2_1_run_reaches_the_app_with_its_host() {
     holds_nothing_of_the_call(&heard);
 }
 
+/// qw338, replayed: a task chat ran `docker run … 2>&1 | tail`, the sandbox refused Docker its
+/// socket, and the pipe ended with `tail`'s status, so Claude Code handed the result over as one
+/// that came back. The block reached the app naming no socket, and its Notice had no Allow. A
+/// line that runs a container client now names the socket; the same words from a line that only
+/// reads still name none.
+#[test]
+fn a_docker_run_down_a_pipe_reaches_the_app_naming_its_socket() {
+    let said = "docker: permission denied while trying to connect to the docker API at \
+                unix:///Users/dev/.docker/run/docker.sock: Head \
+                \"http://%2FUsers%2Fdev%2F.docker%2Frun%2Fdocker.sock/_ping\": dial unix \
+                /Users/dev/.docker/run/docker.sock: connect: operation not permitted\n\n\
+                Run 'docker run --help' for more information\n";
+    let came_back = |command: String| {
+        hook(
+            "posttooluse-blocked",
+            &serde_json::json!({
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "tool_response": {"stdout": said, "stderr": "", "interrupted": false},
+                "cwd": "/Users/dev/plane/workspaces/a/repo",
+            }),
+        )
+    };
+    let socket = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalSocket,
+        ours: false,
+    };
+    let named = |heard: &Heard| {
+        heard
+            .blocked
+            .iter()
+            .map(|one| (one.sandbox_blocked, one.target.clone()))
+            .collect::<Vec<_>>()
+    };
+    let ran = came_back(format!(
+        "docker run --rm -v \"$PWD/api\":/src -w /src golang:1.26.6 sh -c 'go build -o \
+         /tmp/{CANARY} ./cmd' 2>&1 | tail -40"
+    ));
+    assert_eq!(
+        named(&ran),
+        vec![(
+            socket,
+            Some("/Users/dev/.docker/run/docker.sock".to_owned())
+        )]
+    );
+    let told = context_of(&ran.said, "PostToolUse");
+    assert!(told.contains("a connection to a local socket"), "{told}");
+    assert!(!told.contains("docker.sock"), "fixed words only: {told}");
+    holds_nothing_of_the_call(&ran);
+    let read = came_back(format!("cat {CANARY}.log | tail -40"));
+    assert_eq!(named(&read), vec![(socket, None)]);
+    holds_nothing_of_the_call(&read);
+}
+
 /// #1663: an opencode chat runs behind purlis's own proxy, which tells the app each host it
 /// refused by name; its hook leaves those to it, so one refusal is one Notice. A lookup it
 /// still tells.

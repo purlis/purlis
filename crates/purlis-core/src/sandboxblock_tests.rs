@@ -1421,9 +1421,10 @@ fn a_refused_docker_socket_is_a_connection_to_a_local_socket_it_names() {
             )],
             "{line}"
         );
-        // …and what a command that succeeded printed is a block naming none.
+        // …and what a command that succeeded printed is a block naming none, where its line
+        // runs no container client.
         assert_eq!(
-            detect_with_targets(&came_back("docker info", "", line), &place()),
+            detect_with_targets(&came_back("cat build.log", "", line), &place()),
             vec![(block(Operation::Connect, Kind::LocalSocket, false), None)],
             "{line}"
         );
@@ -1726,6 +1727,228 @@ fn a_successful_commands_output_names_no_socket_to_allow() {
             "{found:?}"
         );
     }
+}
+
+// ---- a container client whose status the line dropped (qw338) -----------------------------------
+
+const DESKTOP_SOCKET: &str = "/Users/dev/.docker/run/docker.sock";
+
+/// What Docker's and Podman's clients say of a socket the sandbox refused them, each naming the
+/// one socket, [`DESKTOP_SOCKET`]. Docker's sentence with no `EPERM` beside it is the sandbox's
+/// on macOS alone (#1637).
+fn refused_socket_words() -> Vec<String> {
+    let mut said = vec![
+        // docker 24 to 27, `docker run`.
+        format!(
+            "docker: permission denied while trying to connect to the Docker daemon socket at \
+             unix://{DESKTOP_SOCKET}: Head \"http://%2FUsers%2Fdev%2F.docker%2Frun%2Fdocker.sock/\
+             _ping\": dial unix {DESKTOP_SOCKET}: connect: operation not permitted.\n\
+             See 'docker run --help'."
+        ),
+        // docker 28 and later, with the dial beside it.
+        format!(
+            "docker: permission denied while trying to connect to the docker API at \
+             unix://{DESKTOP_SOCKET}: Head \"http://%2FUsers%2Fdev%2F.docker%2Frun%2Fdocker.sock/\
+             _ping\": dial unix {DESKTOP_SOCKET}: connect: operation not permitted\n\n\
+             Run 'docker run --help' for more information"
+        ),
+        // docker compose, and any Go client: the dial alone, after its own words.
+        format!(
+            "unable to get image 'golang:1.26.6': failed to connect to the docker API at \
+             unix://{DESKTOP_SOCKET}; check if the path is correct and if the daemon is running: \
+             dial unix {DESKTOP_SOCKET}: connect: operation not permitted"
+        ),
+        format!("dial unix {DESKTOP_SOCKET}: connect: operation not permitted"),
+    ];
+    if cfg!(target_os = "macos") {
+        said.push(format!(
+            "docker: permission denied while trying to connect to the docker API at \
+             unix://{DESKTOP_SOCKET}\n\nRun 'docker run --help' for more information"
+        ));
+    }
+    said
+}
+
+fn named_socket() -> Vec<(Block, Option<String>)> {
+    vec![(
+        block(Operation::Connect, Kind::LocalSocket, false),
+        Some(DESKTOP_SOCKET.to_owned()),
+    )]
+}
+
+fn unnamed_socket() -> Vec<(Block, Option<String>)> {
+    vec![(block(Operation::Connect, Kind::LocalSocket, false), None)]
+}
+
+/// A `docker run` that failed, as Claude Code hands it over: every shape of the client's words
+/// names the socket.
+#[test]
+fn a_failed_docker_run_names_its_socket_in_each_of_the_clients_words() {
+    let command = "docker run --rm -v \"$PWD/api\":/src -w /src golang:1.26.6 go build ./...";
+    for said in refused_socket_words() {
+        assert_eq!(
+            detect_with_targets(
+                &failed(command, &format!("Exit code 125\n{said}")),
+                &place()
+            ),
+            named_socket(),
+            "{said}"
+        );
+    }
+}
+
+/// The operator's case, replayed (qw338): a chat ran `docker run … 2>&1 | tail`, the sandbox
+/// refused Docker its socket, and the pipe's `tail` ended with status 0. Claude Code handed the
+/// result over as one that came back, with Docker's words on standard output and no failure
+/// beside them, and the Notice named no socket: Start without the sandbox, and no Allow.
+#[test]
+fn a_docker_run_whose_status_its_line_dropped_still_names_its_socket() {
+    let run = "docker run --rm -v \"$PWD/api\":/src -w /src golang:1.26.6 sh -c 'go build -o \
+               /tmp/plt ./cmd/platform-loadtest && /tmp/plt -help'";
+    for said in refused_socket_words() {
+        // Both streams down a pipe: standard output.
+        for command in [
+            format!("{run} 2>&1 | tail -40"),
+            format!("cd api && {run} 2>&1 | tail -40"),
+            format!("DOCKER_BUILDKIT=1 timeout 300 {run} 2>&1 | tee build.log | tail -5"),
+            format!("/usr/local/bin/{run} 2>&1 | tail"),
+        ] {
+            assert_eq!(
+                detect_with_targets(&came_back(&command, &format!("{said}\n"), ""), &place()),
+                named_socket(),
+                "{command}\n{said}"
+            );
+        }
+        // A status the line dropped another way: Docker's words stay on standard error.
+        for command in [format!("{run}; echo \"exit=$?\""), format!("{run} || true")] {
+            assert_eq!(
+                detect_with_targets(&came_back(&command, "exit=125\n", &said), &place()),
+                named_socket(),
+                "{command}\n{said}"
+            );
+        }
+    }
+    // Every container client purlis knows, by its name alone.
+    let said = format!("dial unix {DESKTOP_SOCKET}: connect: operation not permitted\n");
+    for command in [
+        "docker compose up -d 2>&1 | tail -20",
+        "docker-compose up -d 2>&1 | tail -20",
+        "podman ps 2>&1 | head",
+        "nerdctl ps 2>&1 | head",
+    ] {
+        assert_eq!(
+            detect_with_targets(&came_back(command, &said, ""), &place()),
+            named_socket(),
+            "{command}"
+        );
+    }
+}
+
+/// MF-5 holds: what a command that ran no container client printed names no socket, wherever
+/// the word `docker` stands in its line. A file, a page or a log can say any socket, and none
+/// of them can make its reader fail.
+#[test]
+fn a_line_that_runs_no_container_client_names_no_socket_whatever_it_printed() {
+    for said in refused_socket_words() {
+        for command in [
+            "cat docker.log",
+            "cat notes.log | tail -40",
+            "grep -r docker . | tail",
+            "git show HEAD:docs/docker.md",
+            "curl -s https://example.com/docker | head",
+            "echo 'docker run x; docker ps' && cat notes.log",
+            "sh -c 'docker run x' 2>&1 | tail",
+            "make up 2>&1 | tail",
+            "dockerize -version; cat notes.log",
+            "",
+        ] {
+            for payload in [
+                came_back(command, &format!("{said}\n"), ""),
+                came_back(command, "", &said),
+            ] {
+                assert_eq!(
+                    detect_with_targets(&payload, &place()),
+                    unnamed_socket(),
+                    "{command}\n{said}"
+                );
+            }
+        }
+    }
+    // A result with no command beside it, or one that is no text, names none either.
+    let said = format!("dial unix {DESKTOP_SOCKET}: connect: operation not permitted\n");
+    for input in [json!({}), json!({"command": ["docker", "ps"]}), json!(null)] {
+        let payload = json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": input,
+            "tool_response": {"stdout": said, "stderr": "", "interrupted": false},
+        });
+        assert_eq!(detect_with_targets(&payload, &place()), unnamed_socket());
+    }
+}
+
+/// A container client's line still names nothing but a socket from what it printed: the
+/// certificate check and a system service keep to a failed command and the sandbox's own line.
+#[test]
+fn a_container_clients_line_names_a_socket_and_nothing_else_from_its_output() {
+    let command = "docker pull example.com/x 2>&1 | tail";
+    let found = detect_with_targets(
+        &came_back(
+            command,
+            "Get \"https://example.com/v2/\": tls: failed to verify certificate: x509: OSStatus \
+             -26276\n",
+            "",
+        ),
+        &place(),
+    );
+    assert_eq!(
+        found,
+        vec![(
+            block(Operation::Lookup, Kind::CertificateCheck, false),
+            None
+        )]
+    );
+}
+
+/// A daemon that is not running is not the sandbox's refusal, failed or not: Docker says so of
+/// a socket nothing listens on, and of one that is not there.
+#[test]
+fn a_docker_daemon_that_is_not_running_is_no_block() {
+    let said = format!(
+        "Cannot connect to the Docker daemon at unix://{DESKTOP_SOCKET}. Is the docker daemon \
+         running?"
+    );
+    for payload in [
+        failed("docker ps", &format!("Exit code 1\n{said}")),
+        came_back("docker ps 2>&1 | tail", &said, ""),
+        came_back("docker ps || true", "", &said),
+    ] {
+        assert_eq!(detect_with_targets(&payload, &place()), Vec::new());
+    }
+}
+
+/// Codex and opencode hand a command that did not fail over as one string, and its line is read
+/// the same way: a container client's own words name its socket, and a violation line in the
+/// string, which the command may have printed, still names nothing.
+#[test]
+fn a_container_clients_one_string_result_names_its_socket_and_no_violation_line_does() {
+    let said = format!("dial unix {DESKTOP_SOCKET}: connect: operation not permitted\n");
+    assert_eq!(
+        detect_with_targets(&codex_came_back("docker ps 2>&1 | tail", &said), &place()),
+        named_socket()
+    );
+    assert_eq!(
+        detect_with_targets(&codex_came_back("cat notes.log", &said), &place()),
+        unnamed_socket()
+    );
+    let printed = appended(
+        "ok",
+        &["nc(11) deny(1) network-outbound /Users/dev/.ssh/agent.sock"],
+    );
+    assert_eq!(
+        detect_with_targets(&codex_came_back("docker ps", &printed), &place()),
+        unnamed_socket()
+    );
 }
 
 // ---- Codex's own block hook (#1663, #1683) ------------------------------------------------------
