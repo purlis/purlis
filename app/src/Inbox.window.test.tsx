@@ -25,6 +25,8 @@ import type { Needing, Quiet } from "./NeedsYou";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { forgetInbox, replyBytes } from "./inboxRules";
+import { keepInboxScope } from "./inboxScope";
+import { forgetProjectViews } from "./projectViews";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 
 /**
@@ -43,6 +45,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   forgetInbox();
+  forgetProjectViews();
   vi.useRealTimers();
 });
 
@@ -1081,6 +1084,9 @@ describe("what the hand's list named, listed in the Inbox (#1695)", () => {
     onPress: vi.fn(),
     ...over,
   });
+
+  // What waits in other projects is listed under All projects (qw359): the scope these read.
+  beforeEach(() => keepInboxScope(PLANE, "all"));
 
   it("lists a chat waiting in another window as a group of its own, with Go to chat and Ignore", async () => {
     core();

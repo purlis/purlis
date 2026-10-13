@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { Shown } from "./bindings";
 import {
+  agoSaid,
   MOST_ON_A_PANE,
   forgetInbox,
   offItsPane,
@@ -104,5 +105,21 @@ describe("what was answered where the ask is drawn, once it goes (#1700)", () =>
     // Once, and only for what was pressed on.
     rerender({ asks: [] });
     expect(result.current.answered).toHaveLength(1);
+  });
+});
+
+describe("how long ago a row says it has waited (qw359)", () => {
+  const now = Date.UTC(2026, 9, 13, 12);
+  it("says now, then minutes, hours and days, the largest unit alone", () => {
+    expect(agoSaid(now - 20_000, now)).toBe("now");
+    expect(agoSaid(now - 5 * 60_000, now)).toBe("5m");
+    expect(agoSaid(now - 59 * 60_000 - 59_000, now)).toBe("59m");
+    expect(agoSaid(now - 2 * 3_600_000, now)).toBe("2h");
+    expect(agoSaid(now - 3 * 86_400_000 - 5, now)).toBe("3d");
+  });
+  it("says nothing for a time it does not know, and now for one ahead of the clock", () => {
+    expect(agoSaid(Number.MAX_SAFE_INTEGER, now)).toBeUndefined();
+    expect(agoSaid(Number.NaN, now)).toBeUndefined();
+    expect(agoSaid(now + 90_000, now)).toBe("now");
   });
 });

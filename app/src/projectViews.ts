@@ -8,11 +8,11 @@ import { atCreation, onLayoutMovedAside, type Reading } from "./windowprefs";
  * #1696): beside each project's arrangement in `layout.json` v2, under `projects[path]`.
  *
  * A **facet** is one view's part of a project's entry: `explorer` (its folded sections and the
- * rows folded or opened in its trees) and `chats` (the Chats view's scope). This module keeps
- * them as values and knows nothing of what they mean: the view that owns a facet reads it,
- * checks it field by field and bounds it (`explorerSections.ts`, `explorerFolds.ts`,
- * `chatsScope.ts`). What it does know is where each one is: what this launch kept, else what
- * the file held for the project, else nothing.
+ * rows folded or opened in its trees), `chats` (the Chats view's scope) and `inbox` (the
+ * Inbox's scope). This module keeps them as values and knows nothing of what they mean: the view
+ * that owns a facet reads it, checks it field by field and bounds it (`explorerSections.ts`,
+ * `explorerFolds.ts`, `chatsScope.ts`, `inboxScope.ts`). What it does know is where each one is:
+ * what this launch kept, else what the file held for the project, else nothing.
  *
  * `regions.ts`, the one writer of the file, writes every project this launch kept something
  * in ({@link projectsTouched}), with each of its facets, beside its arrangement. The core keeps
@@ -20,9 +20,9 @@ import { atCreation, onLayoutMovedAside, type Reading } from "./windowprefs";
  */
 
 /** The facets, by the field each is written under in a project's entry. */
-export type Facet = "explorer" | "chats";
+export type Facet = "explorer" | "chats" | "inbox";
 
-const FACETS: readonly Facet[] = ["explorer", "chats"];
+const FACETS: readonly Facet[] = ["explorer", "chats", "inbox"];
 
 /** What this launch kept, by project, then by facet. `undefined` is "nothing kept", which a
  *  write leaves out. */

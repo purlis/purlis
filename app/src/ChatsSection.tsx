@@ -16,7 +16,6 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import * as Popover from "@radix-ui/react-popover";
-import * as RadioGroup from "@radix-ui/react-radio-group";
 import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
 import {
   besideId,
@@ -58,7 +57,8 @@ import {
   tabSessions,
   type Scope,
 } from "./chatsScope";
-import { Choice, useArrowPick } from "./settings/components";
+import { Choice } from "./settings/components";
+import { ScopeSwitch } from "./ScopeSwitch";
 import { foldsToAdopt, keepFolds, keptFolds } from "./chatFolds";
 import {
   ASKED_BY_YOU,
@@ -181,42 +181,6 @@ function byKeyboard(target: Element): boolean {
   } catch {
     return true;
   }
-}
-
-/**
- * **The scope switch** (#1679): This tab, Workspace or All, at the top of the view beside its
- * title. A radio group drawn as one row of segments, as Settings' level switcher is (Radix's,
- * with the settings set's arrow repair, `useArrowPick`). A pick is drawn at once and kept, with
- * no button: it writes nothing a second pick does not undo.
- */
-function ScopeSwitch({ scope, onPick }: { scope: Scope; onPick: (to: Scope) => void }) {
-  const { arrowing, listen } = useArrowPick();
-  return (
-    <RadioGroup.Root
-      className="ui-levels ui-levels-small"
-      aria-label="Show the chats of"
-      orientation="horizontal"
-      value={scope}
-      onValueChange={(to) => {
-        const one = SCOPES.find((each) => each.scope === to);
-        if (one !== undefined) onPick(one.scope);
-      }}
-      {...listen}
-    >
-      {SCOPES.map((one) => (
-        <RadioGroup.Item
-          key={one.scope}
-          className="ui-level"
-          value={one.scope}
-          onFocus={() => {
-            if (arrowing.current && one.scope !== scope) onPick(one.scope);
-          }}
-        >
-          {one.says}
-        </RadioGroup.Item>
-      ))}
-    </RadioGroup.Root>
-  );
 }
 
 /**
@@ -910,7 +874,9 @@ export function ChatsSection({
               </p>
             </div>
           )}
-          {here !== undefined && every.length > 0 && <ScopeSwitch scope={picked} onPick={pick} />}
+          {here !== undefined && every.length > 0 && (
+            <ScopeSwitch label="Show the chats of" scopes={SCOPES} scope={picked} onPick={pick} />
+          )}
         </div>
         {every.length > 0 && (
           <div className="chats-filter" role="search" aria-label="Filter the chats">

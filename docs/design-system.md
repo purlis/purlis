@@ -389,6 +389,9 @@ has it; nothing reads the key after that.
     was left (#1687). At most 48 are kept: past that, the folds of chats that are not open go
     first, the ones kept longest ago first. A chat that has no id has its fold kept for the
     window's run only.
+  - **`inbox`**: **`scope`**, whose asks the Inbox lists: `all` (All projects) or `workspace`
+    (This workspace). Leave it out for the project's, the default. A value that is neither is
+    read as the default.
 
   purlis writes a project's entry when anything in it changes; the core keeps the entries a
   window did not send, so two windows keep each other's. It keeps at most 32, and at most

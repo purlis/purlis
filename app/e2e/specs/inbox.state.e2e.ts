@@ -65,6 +65,48 @@ describe("the Inbox", () => {
     await expect(ask).toHaveText(expect.stringContaining(ASKED_COMMAND));
     await expect(await ask.$("button=Go to chat")).toBeDisplayed();
 
+    // **Its scope and its ranks, as drawn** (qw359), in ranges and never exact pixels: the
+    // switch opens on This project and fits the view; what needs you is the largest and
+    // heaviest text of the row, and its kind the smallest; its kind's mark is drawn.
+    const seen = await browser.execute(
+      (inbox: string, row: string) => {
+        const view = document.querySelector<HTMLElement>(inbox);
+        const item = document.querySelector<HTMLElement>(row);
+        const group = view?.querySelector<HTMLElement>('[role="radiogroup"]');
+        const px = (selector: string) => {
+          const part = item?.querySelector<HTMLElement>(selector);
+          return part ? Number.parseFloat(getComputedStyle(part).fontSize) : 0;
+        };
+        const weight = (selector: string) => {
+          const part = item?.querySelector<HTMLElement>(selector);
+          return part ? Number.parseInt(getComputedStyle(part).fontWeight, 10) : 0;
+        };
+        return {
+          picked: group?.querySelector('[aria-checked="true"]')?.getAttribute("aria-label") ?? "",
+          scopes: group?.querySelectorAll('[role="radio"]').length ?? 0,
+          // How far the switch runs past the view's right edge (≤ 0 when inside).
+          past:
+            group && view
+              ? group.getBoundingClientRect().right - view.getBoundingClientRect().right
+              : Number.NaN,
+          primary: px(".inbox-primary"),
+          meta: px(".inbox-meta"),
+          heavy: weight(".inbox-primary"),
+          light: weight(".inbox-meta"),
+          mark: item?.querySelector(".inbox-kind svg")?.getBoundingClientRect().width ?? 0,
+        };
+      },
+      INBOX,
+      ASK,
+    );
+    expect(seen.picked).toMatch(/^This project, \d+ waiting on you$/);
+    // This project and This workspace at least; All projects too, which the window lists.
+    expect(seen.scopes).toBeGreaterThanOrEqual(2);
+    expect(seen.past).toBeLessThanOrEqual(1);
+    expect(seen.primary).toBeGreaterThan(seen.meta);
+    expect(seen.heavy).toBeGreaterThan(seen.light);
+    expect(seen.mark).toBeGreaterThan(0);
+
     // An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695): the person reads the
     // ask before allowing it, or the press allows nothing.
     await browser.pause(2_000);

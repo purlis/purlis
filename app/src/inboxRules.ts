@@ -57,6 +57,22 @@ export function ageOf(plane: string, ask: Shown): Age {
 }
 
 /**
+ * **How long ago `when` was, as a row's meta says it**: `now` under a minute, then whole
+ * minutes, hours and days (`5m`, `2h`, `3d`), the largest unit alone, as an editor's timeline
+ * and a forge's list say an age. Nothing for a time that is not known, and a time ahead of the
+ * clock is `now`: this machine's clock and the one that stamped the ask need not agree.
+ */
+export function agoSaid(when: number, now: number): string | undefined {
+  if (!Number.isFinite(when) || when >= Number.MAX_SAFE_INTEGER) return undefined;
+  const minutes = Math.floor((now - when) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+/**
  * **The asks of one project, grouped by chat, oldest first** (I-6, #1700): each chat's group
  * stands where its oldest ask does, and inside a group the asks stand oldest first. Asks of the
  * same age keep the registry's order, which is its sources' order.

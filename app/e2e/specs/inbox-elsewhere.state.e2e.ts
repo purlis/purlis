@@ -45,7 +45,8 @@ const second = (() => {
 async function othersSaid(): Promise<{ says: string; go: string }[]> {
   return browser.execute(
     (others: string) =>
-      [...document.querySelectorAll<HTMLElement>(`${others} li`)].map((line) => ({
+      // A project's own line, never the asks listed under it (qw359).
+      [...document.querySelectorAll<HTMLElement>(`${others} > ul > li`)].map((line) => ({
         says: line.querySelector(".ask-says")?.textContent?.trim() ?? "",
         go: line.querySelector("button")?.getAttribute("aria-label") ?? "",
       })),
@@ -117,6 +118,19 @@ describe("the Inbox of one project, about another that waits", function () {
     // The second project, in front, and its Inbox.
     await toFront(second);
     await showView("Inbox");
+    // The Inbox opens on This project, which is empty here and says what waits wider (qw359):
+    // its one press lists every project's.
+    const widen = await $(`${INBOX} .inbox-scope-empty button`);
+    await widen.waitForExist({
+      timeout: 30_000,
+      timeoutMsg: "the empty scope never offered to show what waits in the other project",
+    });
+    expect(await widen.getText()).toBe("Show all projects");
+    await browser.execute(
+      (inbox: string) =>
+        document.querySelector<HTMLElement>(`${inbox} .inbox-scope-empty button`)?.click(),
+      INBOX,
+    );
     await browser
       .waitUntil(async () => (await othersSaid()).length > 0, { timeout: 30_000 })
       .catch(async () => {

@@ -147,7 +147,7 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
-import { Inbox, landOnGroup, type UpdateRow, type WindowLines } from "./Inbox";
+import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
   LIVE,
@@ -3504,8 +3504,9 @@ export const PlaneView = memo(function PlaneView({
     inboxHandled.current = inboxAsked;
     showSideView("inbox");
     // After the view has given its first stop the keyboard: the group's first ask takes it.
-    if (inboxGroup !== undefined) requestAnimationFrame(() => landOnGroup(inboxGroup));
-  }, [inboxAsked, inboxGroup, showSideView]);
+    // Through a scope that leaves its chat out, which widens for it (qw359).
+    if (inboxGroup !== undefined) requestAnimationFrame(() => landOnGroupIn(plane, inboxGroup));
+  }, [inboxAsked, inboxGroup, plane, showSideView]);
   /** Whether this project's Inbox is open on screen, told to the core: no notification is sent
    *  about what the person is reading (#1694, I-7). */
   useInboxOpenTold(
@@ -7802,6 +7803,10 @@ export const PlaneView = memo(function PlaneView({
                 onNotices={setNoticesListed}
                 onNoticeAnswer={inboxOnScreen}
                 elsewhere={elsewhere}
+                // The scope's workspace is the strip's (qw359): the plane root is a place too.
+                here={focused}
+                workspaceOf={filedIn}
+                workspaceNamed={workspaceNamed}
                 windowLines={windowLines}
                 asked={chatAsked}
                 personaOf={personaOf}
@@ -8783,6 +8788,9 @@ function whoOf(persona: string | null, harness: string | null | undefined): stri
 /** Where a chat in no workspace works, in the words its handoff note uses (`plane root`). */
 const ROOT_WORD = "plane root";
 
+/** What the strip calls the workspace a chat is filed in, for the Inbox's rows (qw359). */
+const workspaceNamed = (filed: string): string => (filed === OUTSIDE ? OUTSIDE_TITLE : filed);
+
 /** The core's word for the same place, where a finished task worked there
  *  (`FinishedTask.place`). */
 const CORE_ROOT_WORD = "project root";
@@ -8915,6 +8923,8 @@ function giveViewTheKeyboard(view: ViewId): void {
   (view === "search"
     ? document.querySelector<HTMLElement>(`${panel} [role="searchbox"]`)
     : (document.querySelector<HTMLElement>(`${panel} [role="tree"] [tabindex="0"]`) ??
+      // The Inbox's first ask, past the scope switch above its list (qw359).
+      document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??
       document.querySelector<HTMLElement>(`${panel} [tabindex="0"]`))
   )?.focus();
 }

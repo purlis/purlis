@@ -68,7 +68,7 @@ import {
 import { useLatestSaid } from "./latestSaid";
 import { useAlerts } from "./alerts";
 import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
-import type { Elsewhere } from "./InboxElsewhere";
+import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
 import { Onboarding } from "./Onboarding";
@@ -1911,6 +1911,8 @@ function App() {
       plane,
       project: calledOn(plane),
       count: registry.held[plane]?.length ?? 0,
+      // What each says, cut to what is read there (qw359): the Inbox's All projects lists them.
+      asks: (registry.held[plane] ?? []).map(waitingAsk),
     })),
   });
   /** Go to project (#1700 item 5): that project in front, with its Inbox open, as the ✋ does. */
