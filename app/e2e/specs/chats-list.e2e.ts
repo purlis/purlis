@@ -289,10 +289,10 @@ describe("the Chats list in a narrow sidebar", () => {
         }
         if (had) return;
         const count = document.createElement("span");
-        count.className = "task-count";
+        count.className = "task-count ui-text-meta";
         count.textContent = "12";
         const stopping = document.createElement("span");
-        stopping.className = "stopping";
+        stopping.className = "stopping ui-text-meta";
         stopping.textContent = "Stopping…";
         line.prepend(count, stopping);
       });

@@ -1996,7 +1996,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       expect(one.querySelector(".line.two")).toBeNull();
       const parts = [...one.children].filter((part) => !part.matches(".ui-tree-twist"));
       expect(parts.map((part) => part.className)).toEqual([
-        "ui-row-label session",
+        "ui-row-label session ui-text-body",
         "ui-row-lead",
         "ui-row-trail",
       ]);
