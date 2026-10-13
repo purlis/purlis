@@ -317,48 +317,58 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"open_blocked_file"));
     // And Update from remote, which moves the project's working tree under its chats (qw348).
     assert!(ui::WINDOW_ONLY.contains(&"update_project"));
-    assert_eq!(
-        ui::WINDOW_ONLY.len(),
-        35 + 26
-            + 3
-            + 3
-            + 2
-            + 3
-            + 1
-            + 2
-            + 1
-            + 1
-            + 2
-            + 1
-            + 3
-            + 1
-            + 1
-            + 1
-            + 1
-            + 2
-            + 1
-            + 1
-            + 1
-            + 2
-            + 1
-            + 2
-            + 3
-            + 1
-            + 1
-            + 2
-            + 1
-            + 2
-            + 1
-            + 2
-            // The browser sign-in by the device flow (#729).
-            + 3
-            // The browser sign-in to gitlab.com, and its cancel (#730).
-            + 2
-            // The answer to what a project declares it expects (ADR 0093): Allow, and Not now.
-            + 2
-            + 1
-            + 1
+}
+
+#[tokio::test]
+async fn every_command_that_is_the_windows_alone_is_refused_on_a_link_before_it_is_asked() {
+    // #1542: the list says itself. A command is declared the window's alone in one place
+    // (`ui::WINDOW_ONLY`, or `ui::WINDOW_ONLY_CREDENTIALS` for one that takes a credential),
+    // and this holds every one of them, however many there are, to what the tests above hold
+    // the ones they name: a host built with the app's whole command list serves none.
+    let all: Vec<&str> = ui::window_only_commands().collect();
+    let mut named_once = all.clone();
+    named_once.sort_unstable();
+    named_once.dedup();
+    assert_eq!(named_once.len(), all.len(), "a command is listed twice");
+    for command in ui::WINDOW_ONLY.iter().chain(ui::WINDOW_ONLY_CREDENTIALS) {
+        assert!(all.contains(command), "{command}");
+    }
+
+    let commands = Commands::default();
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
     );
+    let ui = ui::Server::new(
+        BUILD,
+        all.iter().copied().chain(["rename_chat"]),
+        commands.clone(),
+    );
+    tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
+    let client = Client::new(client.unwrap()).0;
+    let ui = client.ui(BUILD).await.unwrap();
+
+    for command in &all {
+        assert!(ui::window_only(command), "{command}");
+        let refused = ui.call(command, json!({"plane": 1})).await.unwrap();
+        assert!(refused.is_err(), "{command}: {refused:?}");
+    }
+    assert!(
+        commands.asked.lock().unwrap().is_empty(),
+        "a command of the window's alone reached the host's handler"
+    );
+    // And the one beside them that is not the window's alone is served.
+    let renamed = ui
+        .call("rename_chat", json!({"chat": 5, "name": "login"}))
+        .await
+        .unwrap();
+    assert_eq!(renamed, Ok(json!({"renamed": "login"})));
 }
 
 #[tokio::test]
