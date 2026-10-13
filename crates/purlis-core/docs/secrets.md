@@ -524,8 +524,13 @@ registry is read. A 1Password vault, item or account that starts with `-` is ref
   Clipboard** is on, macOS may sync the copy to your other Apple devices, which purlis cannot
   reach to clear; turn it off for a machine that copies secrets.
 
-`purlis doctor`'s vaults row does not check vaults yet (#994). Its `op for vaults` and `vault for
-vaults` rows say only whether each provider's program is found. Its `vault tokens` row says,
+`purlis doctor`'s `vaults` row says, for each vault, whether its credentials are where it says
+they are, without reading a value or running a provider's program (#994): a keyring vault's
+indexed items are asked for by their attributes, which never makes the keyring ask you, a
+plain-file vault's file is looked for and never opened, and a 1Password or reference vault's
+program is looked up, its items left to `purlis vault verify`. Its `credential paths` row warns
+of a plain-file vault's file that other accounts can read or write, or that is reached through a
+link. Its `op for vaults` and `vault for vaults` rows say where each provider's program is found. Its `vault tokens` row says,
 for each vault read with a token (through a variable, or kept in the keyring alone), whether the token is marked as kept in the
 system keyring, in this environment only, or nowhere. It warns for the last two. It says so
 from this machine's record and reads no keyring item, so "marked as kept" is not a read that

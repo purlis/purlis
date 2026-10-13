@@ -55,6 +55,7 @@ mod rules;
 mod sandbox;
 pub(crate) mod session;
 mod shadowed;
+mod spool;
 mod vault_registry;
 mod vaults;
 mod work;
@@ -537,6 +538,7 @@ impl Doctor {
         rows.push(deferred::row("ended tab", deferred::FRAME));
         rows.push(guard::plane_root_guard(self));
         rows.push(guard::guard_seen(self));
+        rows.extend(spool::hook_spool(self));
         rows.push(plane::nested(self));
         rows.extend(plane::renamed_leftovers(self));
         rows.extend(extensions::renamed_manifests(self));
