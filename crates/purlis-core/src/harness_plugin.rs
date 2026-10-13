@@ -135,7 +135,8 @@ impl<'a> Env<'a> {
 pub trait Adapter: Sync {
     /// The plane's word for it: a profile's `kind`, and the key under [`TABLE`].
     fn harness(&self) -> &'static str;
-    /// What a person calls it.
+    /// What a person calls it: its built-in declaration's `title`
+    /// ([`crate::harness::Harness::title`]), the one place a title is written.
     fn title(&self) -> &'static str;
     /// Where it records what it has installed, under `env`: what the settings tab names, so a
     /// listing is never mistaken for another account's.
@@ -260,7 +261,7 @@ impl Adapter for ClaudeCode {
     }
 
     fn title(&self) -> &'static str {
-        "Claude Code"
+        crate::harness::Harness::ClaudeCode.title()
     }
 
     /// `plugins/installed_plugins.json` under the chat's `CLAUDE_CONFIG_DIR`, else `~/.claude`:
@@ -338,7 +339,7 @@ impl Adapter for Codex {
     }
 
     fn title(&self) -> &'static str {
-        "Codex"
+        crate::harness::Harness::Codex.title()
     }
 
     /// `[plugins."<name>@<marketplace>"]` in `$CODEX_HOME/config.toml`, else `~/.codex`, which
@@ -424,7 +425,7 @@ impl Adapter for Opencode {
     }
 
     fn title(&self) -> &'static str {
-        "opencode"
+        crate::harness::Harness::Opencode.title()
     }
 
     /// Its global configuration directory, `$XDG_CONFIG_HOME/opencode`, else

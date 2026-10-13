@@ -1501,6 +1501,17 @@ fn claude_code_is_called_claude_code() {
     assert_eq!(CLAUDE_CODE.title(), "Claude Code");
 }
 
+/// A title is written once, in the harness's built-in declaration (qw312, qw323): each plugin
+/// adapter is called what the harness of its `kind` is.
+#[test]
+fn every_plugin_adapter_is_called_what_its_harnesss_declaration_calls_it() {
+    for word in ["claude", "codex", "opencode"] {
+        let adapter = adapter(word).expect("an adapter for every harness purlis ships");
+        let harness = crate::harness::Harness::of_kind(adapter.harness()).expect("a harness");
+        assert_eq!(adapter.title(), harness.declared().title, "{word}");
+    }
+}
+
 #[test]
 fn a_plugin_id_is_one_short_line_with_nothing_in_it_that_draws_as_nothing() {
     for good in ["figma@official", "a", &"a".repeat(MOST_ID_BYTES)] {
