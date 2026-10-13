@@ -149,7 +149,10 @@ describe(`switching among ${OPEN} open projects`, function () {
     // ever to the project already there.
     const switches = await measureSwitches(planes, ROUNDS, () => PAINTED, jobInTheWindow);
 
-    logLine("project-switch.jsonl", { budgetMs: BUDGET_MS, ...switches });
+    // How many chats the launch's project holds, which is what its switches cost by:
+    // the first sample of each round is the switch to it.
+    const launchChats = (await ask<number[]>("running_sessions", { plane: first })).length;
+    logLine("project-switch.jsonl", { budgetMs: BUDGET_MS, launchChats, ...switches });
     // In the job's own output too, where a reviewer reads it without downloading anything.
     console.log(`L9 project switch, ${BUDGET_MS} ms budget: ${JSON.stringify(switches)}`);
     // Evidence beside it, never a verdict: L9 is release absolute (ADR 0086), and this setup is

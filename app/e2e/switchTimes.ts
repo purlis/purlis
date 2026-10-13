@@ -39,6 +39,8 @@ export type Switches = {
   openP50: number;
   openWorst: number;
   samples_ms: number[];
+  /** Press to the frame the project is in front, per switch, in the order they were taken. */
+  shown_ms: number[];
 };
 
 /**
@@ -67,6 +69,7 @@ export function summarise(
     openP50: percentile(opened, 50),
     openWorst: opened[opened.length - 1],
     samples_ms: [...painted],
+    shown_ms: [...shown],
   };
 }
 
