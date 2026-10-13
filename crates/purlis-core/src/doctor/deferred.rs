@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The rows this version of charter does not check yet — each still printed, under its own
-//! name, as a warning that says so. What is left is the tmux frame's two rows, which this
-//! purlis leaves out by design.
+//! name, as a warning that says so (OB-8, #994). What is left is the tmux frame's two rows,
+//! which this purlis leaves out by design.
 //!
 //! **Not dropped, and not green.** A doctor that stops printing a row tells its reader the
 //! problem that row reported has gone, and one that prints it green says it looked. Both
@@ -30,7 +30,7 @@
 
 use super::Row;
 
-/// What every deferred row says to do about it.
+/// What every deferred row says to do about it (OB-8, #994).
 pub(crate) const DEFERRED_HINT: &str = "This purlis does not run this check yet, so its \
                                         silence means nothing — it is not saying the check \
                                         passed.";
