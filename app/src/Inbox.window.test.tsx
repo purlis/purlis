@@ -292,6 +292,40 @@ describe("answering in place", () => {
     expect(within(recent).queryAllByRole("button")).toEqual([]);
   });
 
+  it("opens Delete workspace from a workspace's removal, removes nothing, and notes no answer (qw356)", async () => {
+    // A removal is for good, and a chat raised it: no press on a row among Allows removes
+    // anything. Remove… opens the window's own dialog, and the ask waits on.
+    const calls = core();
+    const removal: Shown = {
+      session: 6,
+      ask: "removal:6:alpha",
+      says: "Removing workspace alpha deletes its memory, its todos and its clones",
+      options: [
+        { id: "remove", label: "Remove…", allows: true },
+        { id: "keep", label: "Keep", allows: false },
+      ],
+      source: "workspace-removal",
+      chain: ["steward 6"],
+      answer: { via: "workspace-removal", workspace: "alpha", memories: 2, todos: 0 },
+    };
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener("purlis-remove-workspace-ask", heard);
+    try {
+      const { props, again } = draw([removal]);
+      await userEvent.click(screen.getByRole("button", { name: "Remove…" }));
+      await waitFor(() => expect(opened).toEqual([{ plane: PLANE, workspace: "alpha" }]));
+      expect(calls.filter((one) => one.cmd !== "asks_waiting")).toEqual([]);
+      expect(props.onAnswered).not.toHaveBeenCalled();
+      // The person closed the dialog, and the question was answered elsewhere: nothing says
+      // they answered Remove… here.
+      again([]);
+      expect(screen.queryByRole("region", { name: "Recently answered" })).toBeNull();
+    } finally {
+      window.removeEventListener("purlis-remove-workspace-ask", heard);
+    }
+  });
+
   it("offers every choice a harness gave, a question of several answers included", async () => {
     const calls = core();
     const choosing: Shown = {

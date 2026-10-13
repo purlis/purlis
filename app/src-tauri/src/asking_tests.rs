@@ -903,7 +903,8 @@ fn a_workspace_a_chat_asked_to_remove_is_an_ask_with_remove_and_keep() {
         shown.says,
         "Removing workspace boot-migration-safety deletes its memory, its todos and its clones"
     );
-    // Remove is the one that lets something happen, so it waits to settle as an Allow does.
+    // Remove… is the one that leads to something happening, so it waits to settle as an Allow
+    // does; it opens a dialog, and is spelled so.
     assert_eq!(ids(&shown), ["remove", "keep"]);
     assert_eq!(
         shown
@@ -911,7 +912,7 @@ fn a_workspace_a_chat_asked_to_remove_is_an_ask_with_remove_and_keep() {
             .iter()
             .map(|one| (one.label.as_str(), one.allows))
             .collect::<Vec<_>>(),
-        [("Remove", true), ("Keep", false)]
+        [("Remove…", true), ("Keep", false)]
     );
     assert_eq!(
         shown.answer,
@@ -958,7 +959,6 @@ fn every_command_an_ask_is_answered_by_is_the_window_s_alone() {
         "allow_sandbox_block",
         "keep_sandbox_block",
         "forget_sandbox_block",
-        "remove_asked_workspace",
         "keep_asked_workspace",
         "asks_waiting",
     ] {

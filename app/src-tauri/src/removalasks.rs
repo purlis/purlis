@@ -9,18 +9,20 @@
 //! the asking chat's tab and in the Inbox: which workspace, what removing it deletes, and
 //! **Remove** and **Keep**.
 //!
-//! - **Remove** is the window's own remove ([`crate::workspaces::remove_for_the_person`]) and
-//!   nothing else: the core's guard runs inside it, never forced from here, so a workspace
-//!   that holds work nothing else has, or has a chat running in it, is refused in the core's
-//!   own words as it is from the sidebar.
+//! - **Remove…** opens the window's own Delete workspace dialog and removes nothing: what
+//!   goes is read there, and the person's press in it is the window's own remove
+//!   ([`crate::workspaces::workspace_remove`]), with the core's guard. No command here removes
+//!   a workspace: a removal is for good and it is a chat that raised the question, so it is
+//!   never one press on a Notice or on an Inbox row.
 //! - **Keep** puts the question away and removes nothing.
 //!
 //! **Only the person's press removes anything.** What a chat hands over is a name
 //! (`purlis_core::hookwire::RemovalAsk`), and the name is looked up in the project's own
-//! listing when it is asked and again when Remove is pressed
-//! (`purlis_core::removalask::named`). A second ask of one chat about one workspace is the
-//! same question, never a second one; a question about a workspace that is gone is dropped;
-//! both answers are the window's alone (`purlis_session_protocol::ui::WINDOW_ONLY`).
+//! listing when it is asked (`purlis_core::removalask::named`). A second ask of one chat about
+//! one workspace is the same question, never a second one; a chat with its few questions
+//! waiting is not asked another, and none that waits is put away for it; a question about a
+//! workspace that is gone is dropped; Keep is the window's alone
+//! (`purlis_session_protocol::ui::WINDOW_ONLY`).
 //!
 //! **The chat is told what the person decided on its next turn**, in purlis's fixed words,
 //! on the road the person's other answers take
@@ -39,7 +41,7 @@ use purlis_core::removalask;
 
 use crate::planes::{Held, PlaneId, Planes};
 
-/// The most workspaces one chat has a question waiting about at once: the oldest goes first.
+/// The most workspaces one chat has a question waiting about at once: one more is not asked.
 pub const AT_MOST_PER_CHAT: usize = 3;
 
 /// One question that waits: the chat that asked, the workspace, and when it began to wait, in
@@ -49,6 +51,17 @@ pub struct Waits {
     pub session: u32,
     pub workspace: String,
     pub since: u64,
+}
+
+/// What became of an ask that was noted ([`Asked::note`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Noted {
+    /// A question began to wait.
+    News,
+    /// The chat's question about that workspace waits already.
+    Already,
+    /// The chat has as many questions waiting as one chat may: nothing was asked.
+    TooMany,
 }
 
 /// The workspaces each of a project's chats asked the person to remove, until they answer.
@@ -62,41 +75,33 @@ impl Asked {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Notes that chat `session` asked about `workspace` at `now`, and answers whether that
-    /// is news: one question per chat and workspace, however often the chat asks, waiting
-    /// since the first.
-    pub fn note(&self, session: u32, workspace: &str, now: u64) -> bool {
+    /// Notes that chat `session` asked about `workspace` at `now`: one question per chat and
+    /// workspace, however often the chat asks, waiting since the first, and
+    /// [`AT_MOST_PER_CHAT`] of one chat's at most. **A question that waits is never put away
+    /// for a later one**: what the person is reading stays where it is, and a chat going round
+    /// many names raises nothing new.
+    pub fn note(&self, session: u32, workspace: &str, now: u64) -> Noted {
         let mut held = self.lock();
         if held
             .iter()
             .any(|one| one.session == session && one.workspace == workspace)
         {
-            return false;
+            return Noted::Already;
+        }
+        if held.iter().filter(|one| one.session == session).count() >= AT_MOST_PER_CHAT {
+            return Noted::TooMany;
         }
         held.push(Waits {
             session,
             workspace: workspace.to_owned(),
             since: now,
         });
-        let mine = held.iter().filter(|one| one.session == session).count();
-        if mine > AT_MOST_PER_CHAT
-            && let Some(oldest) = held.iter().position(|one| one.session == session)
-        {
-            held.remove(oldest);
-        }
-        true
+        Noted::News
     }
 
     /// Every question that waits, oldest first.
     pub fn every(&self) -> Vec<Waits> {
         self.lock().clone()
-    }
-
-    /// Whether chat `session` has a question waiting about `workspace`.
-    pub fn holds(&self, session: u32, workspace: &str) -> bool {
-        self.lock()
-            .iter()
-            .any(|one| one.session == session && one.workspace == workspace)
     }
 
     /// Chat `session`'s question about `workspace` was answered: it waits no more. Answers
@@ -140,10 +145,11 @@ impl Asked {
 /// they were not. **Nothing is removed here, whatever is asked.**
 pub fn asked_in(root: &Path, asked: &Asked, session: u32, name: &str, now: u64) -> (String, bool) {
     match removalask::named(root, name) {
-        Ok(workspace) => {
-            let news = asked.note(session, &workspace, now);
-            (removalask::asked_said(&workspace), news)
-        }
+        Ok(workspace) => match asked.note(session, &workspace, now) {
+            Noted::News => (removalask::asked_said(&workspace), true),
+            Noted::Already => (removalask::asked_said(&workspace), false),
+            Noted::TooMany => (removalask::too_many_said(&workspace), false),
+        },
         Err(why) => (why, false),
     }
 }
@@ -218,54 +224,13 @@ pub fn removed(held: &Held, workspace: &str) {
     held.chats().asks_may_have_moved();
 }
 
-/// What is said when Remove or Keep is pressed on a question that waits no more: answered
-/// elsewhere, or its chat closed.
+/// What is said when Keep is pressed on a question that waits no more: answered elsewhere, or
+/// its chat closed.
 fn waits_no_more(workspace: &str) -> String {
     format!(
         "Nothing is asking to remove {} any more, so nothing was removed.",
         purlis_core::shown::short(workspace)
     )
-}
-
-/// **Remove** on a chat's question: the window's own remove of `workspace`, with its guard and
-/// never forced, for a question chat `session` has waiting about that workspace.
-///
-/// `workspace` is what the question the person pressed showed. It is taken only where it is
-/// the workspace that chat's question is about now, and is one the project lists now: a
-/// question that changed under the pointer, or a name that is no workspace's, removes nothing.
-/// A refusal is the core's own, with what it refused over, as the sidebar's remove hands it
-/// back; the question still waits then.
-#[tauri::command]
-#[specta::specta]
-pub async fn remove_asked_workspace(
-    app: tauri::AppHandle,
-    planes: tauri::State<'_, Planes>,
-    heard: tauri::State<'_, crate::heard::Heard>,
-    plane: PlaneId,
-    session: u32,
-    workspace: String,
-) -> Result<Vec<String>, crate::workspaces::Refused> {
-    let unread = |said: String| crate::workspaces::Refused {
-        said,
-        at_risk: Vec::new(),
-    };
-    let held = planes.held(&plane).map_err(unread)?;
-    if !held.removal_asks().holds(session, &workspace) {
-        return Err(unread(waits_no_more(&workspace)));
-    }
-    // Looked up again as it is pressed: the listing is the project's, never the question's.
-    let named = match removalask::named(held.root(), &workspace) {
-        Ok(named) => named,
-        Err(_) => {
-            held.removal_asks().gone(&workspace);
-            held.chats().asks_may_have_moved();
-            return Err(unread(format!(
-                "This project has no workspace {} any more, so nothing was removed.",
-                purlis_core::shown::short(&workspace)
-            )));
-        }
-    };
-    crate::workspaces::remove_for_the_person(&app, &held, &heard, plane, named, false).await
 }
 
 /// **Keep** on a chat's question: puts it away and removes nothing. The chat is told on its

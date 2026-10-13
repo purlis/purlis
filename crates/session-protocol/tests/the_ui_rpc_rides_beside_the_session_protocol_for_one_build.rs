@@ -317,10 +317,11 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"open_blocked_file"));
     // And Update from remote, which moves the project's working tree under its chats (qw348).
     assert!(ui::WINDOW_ONLY.contains(&"update_project"));
-    // And the person's answers to a chat that asked them to remove a workspace (qw356): the
-    // removal and the no, which no link and no chat sends.
-    assert!(ui::WINDOW_ONLY.contains(&"remove_asked_workspace"));
+    // And the person's Keep on a chat's question whether to remove a workspace (qw356), which
+    // no link and no chat sends. The removal has no command of the question's: it is the
+    // window's own Delete workspace.
     assert!(ui::WINDOW_ONLY.contains(&"keep_asked_workspace"));
+    assert!(!ui::window_only_commands().any(|one| one == "remove_asked_workspace"));
 }
 
 #[tokio::test]

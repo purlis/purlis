@@ -3,9 +3,8 @@
 
 import { useContext, useState } from "react";
 import type { PlaneId, Shown } from "./bindings";
-import { answerTaken, asksMoved } from "./asks";
+import { OPENS_DELETE_WORKSPACE, answerTaken, asksMoved } from "./asks";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
-import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 
 /** How many of a thing, in words: `no memories`, `1 memory`, `12 memories`. */
 const counted = (count: number, one: string, many: string) =>
@@ -14,7 +13,7 @@ const counted = (count: number, one: string, many: string) =>
 /**
  * **What a workspace holds that a removal deletes**, as far as the core counted it: its
  * memories and its open todos. Its clones are named and never counted, since what matters of a
- * clone is work nothing else has, and that is the guard's to say when Remove is pressed.
+ * clone is work nothing else has, and that is Delete workspace's to list.
  */
 export function holdsSaid(memories: number, todos: number): string {
   return `It holds ${counted(memories, "memory", "memories")} and ${counted(todos, "open todo", "open todos")}.`;
@@ -26,14 +25,17 @@ export function holdsSaid(memories: number, todos: number): string {
  * chat Safe remove opens. Now the refusal asks here: which workspace, what removing it deletes,
  * and
  *
- * - **Remove**: the window's own remove, with its guard and never forced. A workspace that
- *   holds work nothing else has, or has a chat running in it, is refused in the core's own
- *   words, and the Notice then links to Delete workspace, where that is read and decided.
+ * - **Remove…**: opens the window's own Delete workspace on it and removes nothing itself.
+ *   That dialog says what goes and that there is no undo, lists work nothing else has, and
+ *   its Delete is the press that removes, with the core's guard. The question waits until the
+ *   workspace is removed there, or kept here.
  * - **Keep**: puts the question away and removes nothing.
  *
- * Only a press here, or in the Inbox, removes anything: the chat handed over a name, and the
- * core looked it up in this project's own list. Every word is purlis's; the name is drawn as
- * data. The chat is told what you decided on its next turn.
+ * A removal is for good, and it is a chat that raised this, so no single press on a Notice or
+ * an Inbox row removes anything: the chat handed over a name, the core looked it up in this
+ * project's own list, and the person decides in the dialog they would have opened from the
+ * sidebar. Every word is purlis's; the name is drawn as data. The chat is told what you
+ * decided on its next turn.
  *
  * Drawn from the asks registry (`asks`), so an answer in the Inbox clears it here, and its
  * answers carry the registry's labels.
@@ -70,7 +72,8 @@ export function WorkspaceRemovalNotice({
             setRefused((was) =>
               Object.fromEntries(Object.entries(was).filter(([key]) => key !== ask.ask)),
             );
-            onWay?.(option.label, ask);
+            // Opening Delete workspace answers nothing, so nothing is on its way to the chat.
+            if (option.id !== OPENS_DELETE_WORKSPACE) onWay?.(option.label, ask);
             void answerTaken(plane, ask, option.id)
               .then((answer) => {
                 const why = answer.refused;
@@ -92,21 +95,12 @@ export function WorkspaceRemovalNotice({
             tone={said === undefined ? "news" : "trouble"}
             label="Remove workspace"
             fixes={[first, ...rest]}
-            // A removal the core refused is read, and decided, in the window's own dialog.
-            link={
-              said === undefined
-                ? undefined
-                : {
-                    label: "Open Delete workspace…",
-                    onPress: () => askRemoveWorkspace(plane, path.workspace),
-                  }
-            }
           >
             {offScreen ? "It asks" : "This chat asks"} you to remove workspace{" "}
             <code className="block-allow-target">{path.workspace}</code>. Removing it deletes its
-            memory, its todos and its clones. {holdsSaid(path.memories, path.todos)} Nothing is
-            removed unless you press {first.label}, and {offScreen ? "it" : "this chat"} is told
-            what you decided on its next turn.
+            memory, its todos and its clones. {holdsSaid(path.memories, path.todos)} {first.label}{" "}
+            opens Delete workspace, where you decide: nothing is removed here, and{" "}
+            {offScreen ? "it" : "this chat"} is told what you decided on its next turn.
             {said !== undefined && ` ${said}`}
           </Notice>
         );

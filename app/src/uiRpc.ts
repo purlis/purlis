@@ -2109,9 +2109,10 @@ export type AnswerPath =
  */
 { via: "sandbox-block"; shown: BlockShown } | 
 /**
- *  `remove_asked_workspace` for Remove, which is the window's own remove with its guard
- *  and never forced, and `keep_asked_workspace` for Keep (qw356). `workspace` is one this
- *  project lists; `memories` and `todos` are what it holds now, by the app's own count.
+ *  `keep_asked_workspace` for Keep; Remove… sends nothing, and opens the window's own
+ *  Delete workspace on `workspace`, where the person's press removes (qw356). `workspace`
+ *  is one this project lists; `memories` and `todos` are what it holds now, by the app's
+ *  own count.
  */
 { via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
 /**  Nothing the window can send: the person answers in the chat. */

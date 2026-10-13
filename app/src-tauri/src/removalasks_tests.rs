@@ -81,18 +81,33 @@ fn a_name_that_is_no_workspace_of_this_project_asks_the_person_nothing() {
 }
 
 #[test]
-fn a_chat_holds_a_few_questions_at_most_and_the_oldest_goes_first() {
+fn a_chat_holds_a_few_questions_at_most_and_one_more_is_not_asked() {
+    // Review of qw356: a question that waits is never pushed out by a later ask, so a chat
+    // cannot turn over what the person is looking at, or ask without end.
     let dir = tempfile::tempdir().expect("a project");
     let names: Vec<String> = (0..=AT_MOST_PER_CHAT).map(|n| format!("ws{n}")).collect();
     for name in &names {
         std::fs::create_dir_all(dir.path().join("workspaces").join(name)).expect("a workspace");
     }
     let asked = Asked::default();
-    for (at, name) in names.iter().enumerate() {
-        asked_in(dir.path(), &asked, 3, name, at as u64);
+    for (at, name) in names[..AT_MOST_PER_CHAT].iter().enumerate() {
+        let (_, news) = asked_in(dir.path(), &asked, 3, name, at as u64);
+        assert!(news, "{name}");
     }
+    let (said, news) = asked_in(dir.path(), &asked, 3, &names[AT_MOST_PER_CHAT], 9);
+    assert!(!news);
+    assert_eq!(said, removalask::too_many_said(&names[AT_MOST_PER_CHAT]));
+    assert!(said.contains("the person was not asked"), "{said}");
     let held: Vec<String> = asked.every().into_iter().map(|one| one.workspace).collect();
-    assert_eq!(held, names[1..]);
+    assert_eq!(held, names[..AT_MOST_PER_CHAT], "the first ones still wait");
+    // One it already asks about is still the same question, and another chat has its own few.
+    let (said, news) = asked_in(dir.path(), &asked, 3, &names[0], 10);
+    assert!(!news);
+    assert_eq!(said, removalask::asked_said(&names[0]));
+    assert!(asked_in(dir.path(), &asked, 4, &names[AT_MOST_PER_CHAT], 11).1);
+    // An answer makes room.
+    assert!(asked.answered(3, &names[0]));
+    assert!(asked_in(dir.path(), &asked, 3, &names[AT_MOST_PER_CHAT], 12).1);
 }
 
 #[test]
@@ -104,7 +119,7 @@ fn an_answer_puts_one_question_away_and_a_closed_chat_takes_its_own() {
 
     assert!(asked.answered(3, "beta"));
     assert!(!asked.answered(3, "beta"), "answered once");
-    assert!(asked.holds(3, "alpha") && asked.holds(4, "beta"));
+    assert_eq!(asked.every(), [waits(3, "alpha", 1), waits(4, "beta", 3)]);
 
     asked.forget(3);
     assert_eq!(asked.every(), [waits(4, "beta", 3)]);
@@ -129,12 +144,18 @@ fn a_workspace_that_is_gone_takes_every_question_about_it() {
 }
 
 #[test]
-fn both_answers_are_the_window_s_alone() {
-    // No chat, and no client but the window, reaches either: a chat never answers its own ask.
-    for command in ["remove_asked_workspace", "keep_asked_workspace"] {
-        assert!(
-            purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),
-            "{command} is the window's alone"
-        );
-    }
+fn keep_is_the_window_s_alone_and_no_command_removes_for_a_question() {
+    // No chat, and no client but the window, reaches Keep: a chat never answers its own ask.
+    assert!(
+        purlis_session_protocol::ui::WINDOW_ONLY.contains(&"keep_asked_workspace"),
+        "keep_asked_workspace is the window's alone"
+    );
+    // Review of qw356: Remove… opens the window's own Delete workspace, so a question has no
+    // command that removes. One that came back would be a second road to a removal.
+    let commands = include_str!("ipc_commands.rs");
+    assert!(commands.contains("removalasks::keep_asked_workspace"));
+    assert!(
+        !commands.contains("removalasks::remove"),
+        "a question about a workspace has no removing command"
+    );
 }

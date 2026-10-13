@@ -55,6 +55,17 @@ pub fn no_such_said(name: &str) -> String {
     )
 }
 
+/// What the asking chat's command says when it already has as many questions waiting as one
+/// chat may: this one is not asked, and none that waits is put away for it.
+pub fn too_many_said(name: &str) -> String {
+    format!(
+        "purlis is already asking the person about other workspaces this chat asked to have \
+         removed, so the person was not asked about '{}' and nothing was removed. Wait for \
+         their answers; purlis tells this chat each on its next turn",
+        crate::shown::short(name)
+    )
+}
+
 /// What a workspace holds that a removal deletes, as far as it is cheap to count: read from
 /// the workspace's own stores, never from anything a chat said.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -115,6 +126,16 @@ mod tests {
         assert!(said.contains("Wait for their answer"), "{said}");
         // Never the old way round, which a sandboxed chat's person had to do by hand.
         assert!(!said.contains("terminal"), "{said}");
+    }
+
+    #[test]
+    fn a_chat_with_its_few_questions_waiting_is_told_this_one_was_not_asked() {
+        let said = too_many_said("alpha");
+        assert!(
+            said.contains("the person was not asked about 'alpha'"),
+            "{said}"
+        );
+        assert!(said.contains("nothing was removed"), "{said}");
     }
 
     #[test]

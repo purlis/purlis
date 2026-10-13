@@ -8,7 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./asks";
 import type { Shown } from "./bindings";
-import { WORKSPACE_REMOVED_ON_ASK } from "./removeWorkspaceAsk";
+import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -71,7 +71,7 @@ const REMOVAL: Shown = {
   ask: "removal:6:alpha",
   says: "Removing workspace alpha deletes its memory, its todos and its clones",
   options: [
-    { id: "remove", label: "Remove", allows: true },
+    { id: "remove", label: "Remove…", allows: true },
     { id: "keep", label: "Keep", allows: false },
   ],
   source: "workspace-removal",
@@ -163,45 +163,33 @@ describe("answering through the path an ask names", () => {
     });
   });
 
-  it("removes a workspace a chat asked about by the window's own remove, and keeps it by Keep (qw356)", async () => {
-    const calls = sent({ remove_asked_workspace: ["Removed alpha."], keep_asked_workspace: null });
-    const told: unknown[] = [];
-    const heard = (event: Event) => told.push((event as CustomEvent).detail);
-    window.addEventListener(WORKSPACE_REMOVED_ON_ASK, heard);
+  it("opens Delete workspace for a workspace a chat asked about, sends no removal, and keeps it by Keep (qw356)", async () => {
+    // A removal is for good and a chat raised the question, so Remove… deletes nothing: the
+    // window's own dialog is opened, and the person's press there is what removes.
+    const calls = sent({ keep_asked_workspace: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(REMOVE_WORKSPACE_ASK, heard);
     try {
-      expect(await answerThrough(PLANE, REMOVAL, "keep")).toBeUndefined();
-      // Keep removes nothing, so the window is told of no removal.
-      expect(told).toEqual([]);
-      expect(await answerThrough(PLANE, REMOVAL, "remove")).toBeUndefined();
+      expect(await answerTaken(PLANE, REMOVAL, "remove")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, workspace: "alpha" }]);
+      expect(calls).toEqual([]);
+      // Keep answers it, and opens nothing.
+      expect(await answerTaken(PLANE, REMOVAL, "keep")).toEqual({
+        refused: undefined,
+        live: false,
+      });
+      expect(opened).toHaveLength(1);
     } finally {
-      window.removeEventListener(WORKSPACE_REMOVED_ON_ASK, heard);
+      window.removeEventListener(REMOVE_WORKSPACE_ASK, heard);
     }
-    // The chat and the workspace the question showed, and nothing else: no force travels.
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["keep_asked_workspace", { plane: PLANE, session: 6, workspace: "alpha" }],
-      ["remove_asked_workspace", { plane: PLANE, session: 6, workspace: "alpha" }],
     ]);
-    // What follows the window's own removal follows this one: its window hears the words.
-    expect(told).toEqual([{ plane: PLANE, workspace: "alpha", words: ["Removed alpha."] }]);
-  });
-
-  it("says the core's own sentence when it refuses a removal, and tells the window of none", async () => {
-    const refusal = "alpha holds work nothing else has: svc has 2 commits not pushed.";
-    mockIPC((cmd) => {
-      if (cmd === "remove_asked_workspace")
-        // As the core refuses: its sentence, and what it refused over.
-        throw { said: refusal, at_risk: ["svc"] };
-      return null;
-    });
-    const told: unknown[] = [];
-    const heard = (event: Event) => told.push((event as CustomEvent).detail);
-    window.addEventListener(WORKSPACE_REMOVED_ON_ASK, heard);
-    try {
-      expect(await answerThrough(PLANE, REMOVAL, "remove")).toBe(refusal);
-    } finally {
-      window.removeEventListener(WORKSPACE_REMOVED_ON_ASK, heard);
-    }
-    expect(told).toEqual([]);
   });
 
   it("says the source's own sentence when the source refuses", async () => {
