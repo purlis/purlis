@@ -136,6 +136,11 @@ export const commands = {
 	 * 
 	 *  A plane that is already open is answered with the id it already has, and nothing is bound
 	 *  or started a second time — which is `Planes::open`'s rule and the reason it exists.
+	 * 
+	 *  **On a blocking thread, never the window's own** (`restoring.rs`): attaching a project
+	 *  reads its record, binds its hook socket and starts its watches, and a launch opens every
+	 *  project the window had. The chats its record names are registered here and start behind
+	 *  the window, so this answers as soon as the project is held.
 	 */
 	openPlane: (path: string) => typedError<Opened, string>(__TAURI_INVOKE("open_plane", { path })),
 	/**
@@ -156,6 +161,8 @@ export const commands = {
 	 * 
 	 *  **This is a separate click from the one that opened the dialog, and it has to be.** A
 	 *  command that both asked and opened would be asking nothing.
+	 * 
+	 *  On a blocking thread, for [`open_plane`]'s reason.
 	 */
 	approvePlane: (path: string, contributes: PlaneContribution) => typedError<PlaneId, string>(__TAURI_INVOKE("approve_plane", { path, contributes })),
 	/**
@@ -196,7 +203,9 @@ export const commands = {
 	 *  ask. **Every launch sends one**, because the launch's own project is put back here and
 	 *  nowhere else; a second answer, from a window that reloaded, changes nothing.
 	 * 
-	 *  On a blocking thread because the answer starts every chat the launch's project held.
+	 *  On a blocking thread because the answer reads the record of the launch's project. Its
+	 *  chats are registered by the time this answers, and start behind the window
+	 *  (`restoring.rs`).
 	 */
 	relaunch: (choice: RelaunchChoice) => typedError<null, string>(__TAURI_INVOKE("relaunch", { choice })),
 	/**
@@ -953,6 +962,10 @@ export const commands = {
 	 *  The window asks this instead of opening its own: the core puts the record back, once the
 	 *  window has sent the operator's answer to the launch's question (`opener::relaunch`,
 	 *  charter-app#250), and a window that reloads asks again rather than starting a second copy.
+	 * 
+	 *  **With the ones the launch has still to start** (`restoring.rs`), each in its place and
+	 *  marked `restoring`: the window draws every tab at once and hears `chat-restored` as each
+	 *  starts, when it asks this again.
 	 */
 	openedChats: (plane: PlaneId) => typedError<OpenChat[], string>(__TAURI_INVOKE("opened_chats", { plane })),
 	/**
@@ -6088,6 +6101,12 @@ export type OpenChat = {
 	 *  draw, `↳ from steward 3 · ops` (charter-app#258). Never the parent's number.
 	 */
 	from: HandedFromNote | null,
+	/**
+	 *  Set for a chat a launch has registered and not started yet (`restoring.rs`): its tab is
+	 *  drawn in its place, as restoring, under the number it will start as, and
+	 *  `chat-restored` says when it has. `null` for a chat that is open.
+	 */
+	restoring?: RestoringChat | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -7493,6 +7512,15 @@ export type RestoreWindow = {
 	planes: string[],
 	/**  Which of them was in front, as an index into `planes` after the drops. */
 	active: number | null,
+};
+
+/**  What the window is told of a chat a launch has still to start, beyond its tab. */
+export type RestoringChat = {
+	/**
+	 *  The workspace its folder is in, or `null` for one in none: where its tab is filed
+	 *  until it has started and the sidebar lists it (ADR 0036).
+	 */
+	workspace: string | null,
 };
 
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */

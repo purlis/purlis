@@ -4224,6 +4224,13 @@ h2.sidebar-title .node-icon {
   color: var(--text-muted);
 }
 
+/* **A chat the launch has still to start** (`restoring.rs`): its tab is in its place from the
+   first frame, and its name is muted until its program has started again. No mark of its own:
+   its pane says what is happening, and its tooltip says "Restoring…". */
+.tabs .tab[data-restoring] .tab-name {
+  color: var(--text-muted);
+}
+
 /* **A chat being stopped** (#1459): a square, the stop's shape, beside the tab's name, told
    from the wrap-up's diamond and from every state mark without colour. It breathes while the
    last turn runs, as the diamond does, and the tab's underline is the same amber. */

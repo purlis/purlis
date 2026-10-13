@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import {
   type ChatBlocked,
@@ -23,6 +23,8 @@ import {
   type Offer,
 } from "./actions";
 import { Menued } from "./Menus";
+import { RestoringPane } from "./RestoringPane";
+import { RestoringContext } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
@@ -425,6 +427,7 @@ export function LayoutPanes({
     moved: (view: ViewRef, split: number) => void;
   };
 }) {
+  const restoring = useContext(RestoringContext);
   if (layout.kind === "pane") {
     const content = layout.content;
     if (content.kind === "view") {
@@ -625,12 +628,17 @@ export function LayoutPanes({
         others={hidden}
         doing={doing}
       >
-        <SessionPane
-          plane={plane}
-          session={content.session}
-          focused={layout.pane === focused}
-          onFocus={() => onFocus(layout.pane)}
-        />
+        {/* A chat the launch has still to start has no terminal yet (`restoring.rs`). */}
+        {restoring.has(content.session) ? (
+          <RestoringPane name={name} />
+        ) : (
+          <SessionPane
+            plane={plane}
+            session={content.session}
+            focused={layout.pane === focused}
+            onFocus={() => onFocus(layout.pane)}
+          />
+        )}
       </PaneFrame>
     );
   }

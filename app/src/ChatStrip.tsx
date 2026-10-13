@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type CSSProperties } from "react";
+import { useContext, type CSSProperties } from "react";
 import { QueueRead } from "./QueueRead";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { closestCenter, DndContext } from "@dnd-kit/core";
@@ -32,6 +32,7 @@ import { TabTasks, type Place as TaskPlace } from "./TabChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { StripTablist } from "./StripTablist";
 import { chipSays, WRAPPING_UP, WrappingUp } from "./NeedsYou";
+import { RESTORING, RestoringContext } from "./restoringChats";
 import { useTabStop } from "./roving";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
@@ -129,6 +130,8 @@ export function ChatStrip({
   handedFrom,
   workItems,
 }: ChatStripProps) {
+  // The chats the launch has still to start (`restoring.rs`): each one's tab says so.
+  const restoring = useContext(RestoringContext);
   return (
     <header
       className="bar"
@@ -263,6 +266,10 @@ export function ChatStrip({
                           }
                           // A chat being stopped wears the stop's look (#1459).
                           data-stopping={showsStopping(tabs, id, stopping) || undefined}
+                          // A chat the launch has still to start (`restoring.rs`).
+                          data-restoring={
+                            panesOf(tabs, id).some((one) => restoring.has(one.session)) || undefined
+                          }
                         >
                           {nameBoxFor(id) ? (
                             // The name, open for editing in the tab's place (charter-app#254). Not
@@ -312,10 +319,12 @@ export function ChatStrip({
                                 title={
                                   panesOf(tabs, id).some((one) => wrapping.has(one.session))
                                     ? WRAPPING_UP
-                                    : tabTip(
-                                        handedFrom[chatOf(tabs, id) ?? -1],
-                                        workItems[chatOf(tabs, id) ?? -1],
-                                      )
+                                    : panesOf(tabs, id).some((one) => restoring.has(one.session))
+                                      ? RESTORING
+                                      : tabTip(
+                                          handedFrom[chatOf(tabs, id) ?? -1],
+                                          workItems[chatOf(tabs, id) ?? -1],
+                                        )
                                 }
                                 // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
                                 // tab that has a rename row — a chat's, and never a view's.
