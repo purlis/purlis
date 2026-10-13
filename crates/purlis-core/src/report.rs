@@ -665,7 +665,7 @@ pub fn tracker() -> Forge {
 /// person in the window, with purlis's own sign-in to GitHub. Anyone else is refused before
 /// anything is sent, in words that say where to file instead.
 pub fn as_the_reporter(caller: &Caller) -> Result<Box<dyn forge::ForgeBackend>, ForgeError> {
-    forge::signin::signed_in_backend(&tracker(), caller)
+    forge::signin::signed_in_backend(&tracker(), caller, crate::netlog::Feature::Report)
 }
 
 /// Candidate duplicates on [`UPSTREAM`], for the reporter to judge: a keyword search cannot

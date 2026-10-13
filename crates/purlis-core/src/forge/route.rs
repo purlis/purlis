@@ -136,6 +136,8 @@ pub struct Resolver {
     clock: Arc<dyn Clock>,
     budgets: Option<PathBuf>,
     meters: Mutex<HashMap<Account, Arc<Meter>>>,
+    /// The feature the native transport's calls are listed under in the network log.
+    feature: crate::netlog::Feature,
     #[cfg(any(test, feature = "fenced"))]
     native_through: Option<NativeThrough>,
 }
@@ -155,9 +157,17 @@ impl Resolver {
             clock: Arc::new(SystemClock),
             budgets: None,
             meters: Mutex::new(HashMap::new()),
+            feature: crate::netlog::Feature::Forge,
             #[cfg(any(test, feature = "fenced"))]
             native_through: None,
         }
+    }
+
+    /// List every native call this resolves in the network log as `feature`'s rather than a
+    /// forge client's (#1873): `purlis report`'s calls are to purlis's own tracker.
+    pub fn listed_as(mut self, feature: crate::netlog::Feature) -> Resolver {
+        self.feature = feature;
+        self
     }
 
     /// Send native calls through `through` rather than over HTTPS: a recorded forge answering in
@@ -282,7 +292,8 @@ impl Transports for Resolver {
                     )));
                 }
                 let native = Http::new(self.kind, self.root.clone(), signin.tokens.clone())?
-                    .with_etags(self.etags(account));
+                    .with_etags(self.etags(account))
+                    .listed_as(self.feature);
                 Arc::new(native)
             }
             Route::Cli => self.cli.clone(),

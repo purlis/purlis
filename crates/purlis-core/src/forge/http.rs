@@ -142,6 +142,9 @@ pub struct Http {
     authority: String,
     tokens: Arc<dyn TokenSource>,
     etags: Option<Arc<dyn EtagStore>>,
+    /// The feature the network log lists each call under: a forge client's unless the resolver
+    /// that built this says whose calls these are ([`Http::listed_as`]).
+    feature: crate::netlog::Feature,
 }
 
 impl std::fmt::Debug for Http {
@@ -225,7 +228,15 @@ impl Http {
             authority,
             tokens,
             etags: None,
+            feature: crate::netlog::Feature::Forge,
         })
+    }
+
+    /// The same transport, its calls listed in the network log as `feature`'s (#1873): a
+    /// report's are purlis's own tracker's, not a third party's forge.
+    pub fn listed_as(mut self, feature: crate::netlog::Feature) -> Http {
+        self.feature = feature;
+        self
     }
 
     /// The same transport, its `GET`s made conditional against `store` (ADR 0070 §3).
@@ -287,7 +298,7 @@ impl Http {
         // The network log (OB-15): host, method, path template, status and timing; never a body
         // or a header value.
         crate::netlog::record(crate::netlog::Call {
-            feature: crate::netlog::Feature::Forge,
+            feature: self.feature,
             via: crate::netlog::Via::Https,
             host: &self.authority,
             method: method.as_str(),

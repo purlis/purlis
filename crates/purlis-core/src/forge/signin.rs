@@ -212,7 +212,12 @@ fn signed_in(host: &Host, forge: &Forge) -> Option<ForgeAccount> {
 pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {
     let host = handed()?;
     let cli = host.cli.clone();
-    Some(window_over(&host, forge, cli))
+    Some(window_over(
+        &host,
+        forge,
+        cli,
+        crate::netlog::Feature::Forge,
+    ))
 }
 
 /// `forge`'s backend for a call that may be sent only with the person's purlis sign-in, and
@@ -224,9 +229,13 @@ pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {
 /// route refuses every call, so a call the router would send to the CLI is refused too rather
 /// than sent under another identity (ADR 0070 ruling 7). A `purlis` command and a chat hold no
 /// sign-in (ADR 0070 ruling 5), so they are always refused here.
+///
+/// Each call it sends is listed in the network log as `feature`'s (#1873): a report's calls are
+/// purlis's own tracker's, not a forge client's.
 pub fn signed_in_backend(
     forge: &Forge,
     caller: &Caller,
+    feature: crate::netlog::Feature,
 ) -> Result<Box<dyn super::ForgeBackend>, ForgeError> {
     let host = handed()
         .filter(|host| the_person_in_the_window(caller) && signed_in(host, forge).is_some());
@@ -242,7 +251,7 @@ pub fn signed_in_backend(
         ));
     };
     let refused: Arc<dyn Transport> = Arc::new(NoCliRoute);
-    Ok(forge.backend_for(window_over(&host, forge, Some(refused))))
+    Ok(forge.backend_for(window_over(&host, forge, Some(refused), feature)))
 }
 
 /// The CLI route of [`signed_in_backend`]: every call and login check refused, unsent.
@@ -268,11 +277,18 @@ impl Transport for NoCliRoute {
 }
 
 /// The window's transports for `forge` under `host`'s sign-ins, the CLI route answered by `cli`
-/// when one is given and by the forge's own CLI otherwise.
-fn window_over(host: &Host, forge: &Forge, cli: Option<Arc<dyn Transport>>) -> Arc<dyn Transports> {
+/// when one is given and by the forge's own CLI otherwise, the native calls listed in the
+/// network log as `feature`'s.
+fn window_over(
+    host: &Host,
+    forge: &Forge,
+    cli: Option<Arc<dyn Transport>>,
+    feature: crate::netlog::Feature,
+) -> Arc<dyn Transports> {
     let mut resolver = Resolver::new(forge.kind, &forge.host)
         .etags_in(&host.config_root)
-        .budgets_in(&host.config_root);
+        .budgets_in(&host.config_root)
+        .listed_as(feature);
     if let Some(cli) = cli {
         resolver = resolver.cli_over(cli);
     }

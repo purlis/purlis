@@ -58,8 +58,9 @@ pub enum Feature {
     Forge,
     /// The signed updater and the static signed files beside it (ADR 0042).
     Updater,
-    /// `charter report`, filing on Charter's own tracker as the operator, after showing the
-    /// draft (ADR 0059).
+    /// `purlis report`, searching and filing on purlis's own tracker as the person in the
+    /// window, after showing the draft (ADR 0059). Its native calls carry this feature from
+    /// the backend that sends them (`forge::signin::signed_in_backend`, #1873).
     Report,
     /// A clone, fetch, push or remote listing purlis starts git for (#959): a workspace's
     /// repos and the project's own sync. Its line names the host and the git operation as the

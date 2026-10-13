@@ -255,6 +255,103 @@ fn every_forge_call_is_listed_in_a_child_with_a_store_of_its_own() {
 mod listed {
     use super::*;
 
+    /// `purlis report`'s calls over the native transport are listed as the report's, not a
+    /// forge client's (#1873): the search and the filing, each under `Feature::Report`, through
+    /// the backend `report::as_the_reporter` hands the person in the window.
+    #[test]
+    fn a_reports_native_calls_are_listed_as_the_reports() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        use purlis_core::forge::accounts::{self, Pasted};
+        use purlis_core::forge::recorded::Recorded;
+        use purlis_core::forge::signin;
+        use purlis_core::forge::transport::Transport;
+        use wiremock::matchers::{method, path};
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let server = rt.block_on(MockServer::start());
+        rt.block_on(async {
+            Mock::given(method("GET"))
+                .and(path("/search/issues"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(
+                    r#"{"total_count": 0, "incomplete_results": false, "items": []}"#,
+                ))
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/repos/purlis/purlis/issues"))
+                .respond_with(ResponseTemplate::new(201).set_body_string(
+                    r#"{"id": 5042, "node_id": "I_kwDOPurlis42", "number": 42,
+                        "title": "The picker crashes", "state": "open", "labels": [],
+                        "html_url": "https://github.com/purlis/purlis/issues/42"}"#,
+                ))
+                .mount(&server)
+                .await;
+        });
+        let home = tempfile::tempdir().unwrap();
+        let check = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/forge_contract/accounts/github/token_check.json"),
+        )
+        .unwrap();
+        let check = Arc::new(Recorded::parse(&check).unwrap());
+        let reach = move |_: &purlis_core::forge::Forge,
+                          _: Arc<dyn TokenSource>|
+              -> Result<Arc<dyn Transport>, ForgeError> {
+            Ok(check.clone() as Arc<dyn Transport>)
+        };
+        let keyring = accounts::keyring_at(home.path());
+        accounts::sign_in_with_token(
+            &HostScope::for_a_test(),
+            home.path(),
+            keyring.as_ref(),
+            &reach,
+            Kind::GitHub,
+            "github.com",
+            Pasted::new("pasted-for-the-netlog-report".to_string()),
+        )
+        .expect("signed in");
+        signin::hand_over_at_root_for_a_test(
+            HostScope::for_a_test(),
+            home.path(),
+            ApiRoot::at(&server.uri()),
+            Arc::new(purlis_core::forge::cli::Cli::default()),
+        );
+        let caller = Caller::window();
+        let draft = purlis_core::report::Draft {
+            kind: purlis_core::report::Kind::Bug,
+            title: "The picker crashes".into(),
+            body: "Open the picker.".into(),
+            scrubbed: Vec::new(),
+        };
+        let tracker = purlis_core::report::as_the_reporter(&caller).expect("signed in");
+        purlis_core::report::search_duplicates(tracker.as_ref(), &caller, &draft)
+            .expect("searched");
+        purlis_core::report::file(tracker.as_ref(), &caller, &draft).expect("filed");
+        signin::take_back();
+
+        let authority = server.uri().trim_start_matches("http://").to_string();
+        let native: Vec<_> = entries()
+            .into_iter()
+            .filter(|e| e.via == Via::Https && e.host == authority)
+            .map(|e| (e.feature, e.method))
+            .collect();
+        assert!(
+            native.iter().any(|(_, method)| method == "GET")
+                && native.iter().any(|(_, method)| method == "POST")
+                && native
+                    .iter()
+                    .all(|(feature, _)| *feature == Feature::Report),
+            "{native:?}\n{}",
+            log_text()
+        );
+    }
+
     #[test]
     fn a_native_forge_call_is_listed_with_its_host_method_path_and_status() {
         purlis_core::unsteered!();
