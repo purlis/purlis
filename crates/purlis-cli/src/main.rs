@@ -2414,7 +2414,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
         WorkspaceCommand::Remove { name, force } => {
             // Never from a chat the app started under the sandbox (#1408, D-qw301-1): refused
             // before the guard and the delete run.
-            if brokered::sandboxed() {
+            if brokered::removal_held(&root) {
                 return Some(refused(&brokered::no_removal_in_a_sandbox(name)));
             }
             // The list it refused on is the window's (charter-app#182): a terminal has already

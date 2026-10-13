@@ -632,6 +632,82 @@ fn a_sandboxed_chat_removing_a_workspace_is_refused_before_anything_is_deleted()
     assert!(!root(&tmp).join("workspaces/beta").exists());
 }
 
+/// The project's manifest, written with `text`. A machine that keeps a chat from writing a
+/// manifest anywhere cannot run a test that calls this; CI runs it.
+fn a_manifest(tmp: &tempfile::TempDir, text: &str) -> PathBuf {
+    let manifest = root(tmp).join(purlis_core::names::PLANE_MANIFEST.write);
+    std::fs::write(&manifest, text).unwrap();
+    manifest
+}
+
+#[test]
+fn a_terminal_removes_a_workspace_and_leaves_the_project_s_manifest_as_it_was() {
+    // The hold asks the sandbox itself by opening the manifest to write, which a terminal may.
+    let tmp = a_project();
+    let manifest = a_manifest(&tmp, "# a project\n");
+    let before = std::fs::metadata(&manifest).unwrap().modified().unwrap();
+
+    let ran = purlis(&tmp, &["ws", "remove", "beta"], &[]);
+
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert!(!root(&tmp).join("workspaces/beta").exists());
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), "# a project\n");
+    assert_eq!(
+        std::fs::metadata(&manifest).unwrap().modified().unwrap(),
+        before
+    );
+}
+
+/// A removal is held where the sandbox itself holds the process: the kernel refuses writing the
+/// manifest with `EPERM`, as Seatbelt refuses a chat, here through macOS's user-immutable flag.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_removal_the_sandbox_itself_holds_is_refused_before_anything_is_deleted() {
+    struct Immutable(PathBuf);
+    impl Immutable {
+        fn flag(path: &Path, flag: &str) {
+            let done = std::process::Command::new("/usr/bin/chflags")
+                .arg(flag)
+                .arg(path)
+                .status()
+                .unwrap();
+            assert!(done.success(), "chflags {flag}");
+        }
+    }
+    impl Drop for Immutable {
+        fn drop(&mut self) {
+            Self::flag(&self.0, "nouchg");
+        }
+    }
+
+    let tmp = a_project();
+    let theirs = a_memory_in(&tmp, "beta", "Not this chat's");
+    let manifest = a_manifest(&tmp, "# a project\n");
+    Immutable::flag(&manifest, "uchg");
+    let _held = Immutable(manifest);
+
+    for args in [
+        vec!["ws", "remove", "beta"],
+        vec!["ws", "remove", "beta", "--force"],
+    ] {
+        let ran = purlis(&tmp, &args, &[(CHAT_ENV.to_owned(), "3".to_owned())]);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        assert!(
+            said(&ran).contains("nothing was removed"),
+            "{args:?}: {}",
+            said(&ran)
+        );
+    }
+    let memory = root(&tmp).join("workspaces/beta/memory");
+    assert!(
+        files(&memory)
+            .iter()
+            .any(|name| name.contains(theirs.as_str())),
+        "{:?}",
+        files(&memory)
+    );
+}
+
 // ---- the MCP server's persona_remember -------------------------------------------------------
 
 /// `purlis mcp` in chat 3, initialized, and `persona_remember` called once with `arguments`.

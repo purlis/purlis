@@ -238,6 +238,22 @@ pub fn no_removal_in_a_sandbox(name: &str) -> String {
     )
 }
 
+/// Whether `purlis workspace remove` is held in this process for the project at `root`
+/// (#1408, D-qw301-1): in a chat the app started under the sandbox, or wherever the sandbox
+/// itself holds this process ([`purlis_core::sandbox::held`]). Refused before the guard and the
+/// delete run.
+pub fn removal_held(root: &Path) -> bool {
+    removal_held_by(sandboxed(), || {
+        purlis_core::sandbox::held::writes_held_at(root)
+    })
+}
+
+/// [`removal_held`], from whether the chat `says` it is sandboxed and what the sandbox itself
+/// answers (`held`).
+fn removal_held_by(says: bool, held: impl FnOnce() -> bool) -> bool {
+    says || held()
+}
+
 /// Whether this command runs in a chat the app started under a sandbox, where a write outside
 /// the chat's own stores is refused rather than tried (#1408).
 pub fn sandboxed() -> bool {
@@ -300,6 +316,16 @@ pub fn named_here(here: &crate::Here, workspace: Option<&str>) -> Named {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_removal_is_held_where_the_sandbox_holds_this_process_whatever_it_says() {
+        // Either answer holds it.
+        assert!(removal_held_by(false, || true));
+        assert!(removal_held_by(true, || false));
+        assert!(removal_held_by(true, || true));
+        // Neither: a terminal, or a chat the app started without the sandbox.
+        assert!(!removal_held_by(false, || false));
+    }
 
     #[test]
     fn its_own_workspace_spelled_out_is_taken_as_no_w() {

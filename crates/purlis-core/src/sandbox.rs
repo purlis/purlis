@@ -3720,6 +3720,7 @@ pub mod claude;
 pub mod codex;
 pub mod egress;
 pub mod grant;
+pub mod held;
 pub mod hosts;
 pub mod local;
 pub mod opencode;
