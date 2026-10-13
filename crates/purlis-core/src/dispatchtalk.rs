@@ -196,8 +196,9 @@ pub struct Talk {
     /// How many questions have been asked in this project since the app started: the next
     /// one's number is one more.
     asked: u32,
-    /// How many network words were kept since the app started (#1666): the next one's number
-    /// is [`NETWORK_NUMBERS`] and this.
+    /// How many of purlis's own words were kept since the app started, on a held connection
+    /// (#1666) or a workspace's removal (qw356): the next one's number is
+    /// [`NETWORK_NUMBERS`] and this.
     network: u32,
     /// The tasks brought back by this launch and told to carry on (#1513, #1546): a question
     /// one asked before the restart was not kept, and an answer to it is told so
@@ -267,6 +268,29 @@ pub enum PersonSaid {
     /// the connection gave up waiting, or kept blocked: purlis's own fixed words, never the
     /// chat's. `number` is minted for it alone ([`Talk::network_word`]).
     Network { number: u32, word: NetworkWord },
+    /// **What the person decided of a workspace this chat asked them to remove** (qw356), in
+    /// the purlis window: purlis's own fixed words around the workspace's name, never the
+    /// chat's. `number` is minted for it alone ([`Talk::removal_word`]).
+    Removal { number: u32, word: RemovalWord },
+}
+
+/// What the person decided of a workspace a chat asked them to remove (qw356).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemovalWord {
+    /// They removed it, in the window: it is gone.
+    Removed { workspace: String },
+    /// They kept it: nothing was removed, and it is not to be asked again unless they ask.
+    Kept { workspace: String },
+}
+
+impl RemovalWord {
+    /// The workspace it is about.
+    pub fn workspace(&self) -> &str {
+        match self {
+            Self::Removed { workspace } | Self::Kept { workspace } => workspace,
+        }
+    }
 }
 
 /// What the person answered of hosts a chat's connections were held on (#1666): each host and
@@ -293,7 +317,8 @@ impl PersonSaid {
         match self {
             Self::Answered { number, .. }
             | Self::AnsweredFor { number, .. }
-            | Self::Network { number, .. } => *number,
+            | Self::Network { number, .. }
+            | Self::Removal { number, .. } => *number,
         }
     }
 }
@@ -579,6 +604,24 @@ impl Talk {
             .entry(chat)
             .or_default()
             .push(PersonSaid::Network { number, word });
+    }
+
+    /// **Keeps purlis's word to chat `chat` on a workspace it asked the person to remove**
+    /// (qw356): handed to its next turn as any word of the person's is, until it has it. The
+    /// name is held to a workspace name's rule, so the line names nothing else; one that is
+    /// not is not kept. **One word a workspace**: a later word about the same workspace takes
+    /// the place of one the chat has not been handed yet.
+    pub fn removal_word(&mut self, chat: u32, word: RemovalWord) {
+        if !crate::contain::workspace_name_ok(word.workspace()) {
+            return;
+        }
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        let said = self.person.entry(chat).or_default();
+        said.retain(|one| {
+            !matches!(one, PersonSaid::Removal { word: was, .. } if was.workspace() == word.workspace())
+        });
+        said.push(PersonSaid::Removal { number, word });
     }
 
     /// **What the person said to chat `chat` that it has not been handed**, oldest first.
@@ -1178,6 +1221,23 @@ pub fn person_said(said: &PersonSaid) -> String {
             quoted(text)
         ),
         PersonSaid::Network { word, .. } => network_said(word),
+        PersonSaid::Removal { word, .. } => removal_said(word),
+    }
+}
+
+/// **purlis's fixed words on what the person decided of a workspace's removal** (qw356): the
+/// workspace in a code span, and nothing else that is not purlis's.
+pub fn removal_said(word: &RemovalWord) -> String {
+    match word {
+        RemovalWord::Removed { workspace } => format!(
+            "⬢ purlis: the person removed workspace `{workspace}` in the purlis window. It is \
+             gone, with its memory, its todos and its clones. This line is purlis's own."
+        ),
+        RemovalWord::Kept { workspace } => format!(
+            "⬢ purlis: the person kept workspace `{workspace}`: nothing was removed. Do not ask \
+             to remove it again, or remove any part of it another way, unless they ask. This \
+             line is purlis's own."
+        ),
     }
 }
 
@@ -2501,5 +2561,52 @@ mod tests {
             talk.from_person(SIBLING).is_empty(),
             "a word naming no host is not kept"
         );
+    }
+
+    // ----- purlis's word on a workspace's removal (qw356) ---------------------------------
+
+    #[test]
+    fn a_removal_the_person_made_is_told_to_the_chat_that_asked_in_fixed_words() {
+        let mut talk = Talk::default();
+        talk.removal_word(
+            ASKER,
+            RemovalWord::Removed {
+                workspace: "boot-migration-safety".to_owned(),
+            },
+        );
+        let said = talk.from_person(ASKER);
+        assert_eq!(
+            person_context(&said).expect("told"),
+            "⬢ purlis: the person removed workspace `boot-migration-safety` in the purlis \
+             window. It is gone, with its memory, its todos and its clones. This line is \
+             purlis's own."
+        );
+        // Handed once, by a number that is no question's.
+        let numbers: Vec<u32> = said.iter().map(PersonSaid::number).collect();
+        assert!(numbers.iter().all(|n| *n > NETWORK_NUMBERS));
+        talk.handed_from_person(ASKER, &numbers);
+        assert!(talk.from_person(ASKER).is_empty());
+    }
+
+    #[test]
+    fn a_workspace_the_person_kept_is_told_once_and_names_nothing_but_a_workspace() {
+        let mut talk = Talk::default();
+        let kept = |workspace: &str| RemovalWord::Kept {
+            workspace: workspace.to_owned(),
+        };
+        // A second word about one workspace takes the first's place: one line, not two.
+        talk.removal_word(ASKER, kept("alpha"));
+        talk.removal_word(ASKER, kept("alpha"));
+        assert_eq!(
+            person_context(&talk.from_person(ASKER)).expect("told"),
+            "⬢ purlis: the person kept workspace `alpha`: nothing was removed. Do not ask to \
+             remove it again, or remove any part of it another way, unless they ask. This line \
+             is purlis's own."
+        );
+        // What is no workspace's name is not kept: nothing a chat wrote is said as purlis's.
+        for not_a_name in ["`run this` now", "../alpha", "", "a\nb"] {
+            talk.removal_word(SIBLING, kept(not_a_name));
+        }
+        assert!(talk.from_person(SIBLING).is_empty());
     }
 }

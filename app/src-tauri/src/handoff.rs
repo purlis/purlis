@@ -247,6 +247,10 @@ pub fn answer(
         Ask::SessionRecord(record) => crate::smartclose::record(held, &record),
         // Another brokered write: the project's own files, for the chat that asks (#1333).
         Ask::Write(write) => crate::brokered::write(held, &write),
+        // A workspace the chat asks the person to remove (qw356): no ticket, for the record's
+        // reason. The line names a workspace; the app removes nothing for it, and holds the
+        // question for the person on the tab of the chat whose token the line carries.
+        Ask::Removal(removal) => crate::removalasks::asked(held, &removal),
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
@@ -6980,6 +6984,7 @@ mod tests {
                 Ask::Dispatch(_) => 8,
                 Ask::Task(_) => 9,
                 Ask::Commit(_) => 10,
+                Ask::Removal(_) => 11,
             }
         }
         let asks = vec![
@@ -7027,10 +7032,17 @@ mod tests {
                 message: "stop this chat".to_owned(),
                 stage: purlis_core::hookwire::Stage::Tracked,
             })),
+            // A workspace the chat asks the person to remove (qw356): it names a workspace.
+            Ask::Removal(purlis_core::hookwire::RemovalAsk {
+                chat,
+                removing: purlis_core::hookwire::Removing::Workspace {
+                    name: "alpha".to_owned(),
+                },
+            }),
         ];
         let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
         kinds.dedup();
-        assert_eq!(kinds, (0..=10).collect::<Vec<_>>(), "one of every kind");
+        assert_eq!(kinds, (0..=11).collect::<Vec<_>>(), "one of every kind");
         asks
     }
 
@@ -7064,6 +7076,117 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_chat_asking_to_remove_a_workspace_removes_nothing_and_is_told_what_the_person_decided() {
+        // qw356: Safe remove's chat ran `purlis workspace remove` and was refused with nothing
+        // for the person to press. The ask is now a question in the registry, on its tab; only
+        // the window's answer does anything, and the chat's next turn is told which.
+        use purlis_core::dispatchtalk::{PersonSaid, RemovalWord};
+        use purlis_core::hookwire::{RemovalAsk, Removing};
+
+        let plane = Plane::new();
+        let host = Pretend::default();
+        let planes = planes_on(&host);
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+        let asking = a_chat_on_work(&held, &plane.root);
+        let tickets = Tickets::default();
+        let ask = |name: &str| {
+            Ask::Removal(RemovalAsk {
+                chat: asking,
+                removing: Removing::Workspace {
+                    name: name.to_owned(),
+                },
+            })
+        };
+        let removals = || -> Vec<(u32, String)> {
+            crate::asking::every_ask(&held)
+                .asks
+                .into_iter()
+                .filter(|one| one.source == crate::asking::AskSource::WorkspaceRemoval)
+                .map(|one| (one.session, one.says))
+                .collect()
+        };
+        let told = || -> Vec<RemovalWord> {
+            held.tasks()
+                .ledger()
+                .talk
+                .from_person(asking)
+                .into_iter()
+                .filter_map(|said| match said {
+                    PersonSaid::Removal { word, .. } => Some(word),
+                    _ => None,
+                })
+                .collect()
+        };
+        let alpha = plane.root.join("workspaces").join("alpha");
+
+        // Asked twice: one question, the same answer, and the workspace is still there.
+        for _ in 0..2 {
+            let said = answer(&held, &id, &tickets, 1, ask("alpha"), &|_| {});
+            assert_eq!(
+                said,
+                Answer::No {
+                    why: purlis_core::removalask::asked_said("alpha")
+                }
+            );
+        }
+        assert_eq!(
+            removals(),
+            [(
+                asking,
+                "Removing workspace alpha deletes its memory, its todos and its clones".to_owned()
+            )]
+        );
+        assert!(alpha.is_dir(), "asking removes nothing");
+        assert_eq!(told(), []);
+
+        // What is no workspace of this project asks the person nothing.
+        for name in ["beta", "../alpha", ""] {
+            let Answer::No { why } = answer(&held, &id, &tickets, 1, ask(name), &|_| {}) else {
+                panic!("{name:?} was not refused");
+            };
+            assert!(why.contains("the person was not asked"), "{name:?}: {why}");
+        }
+        assert_eq!(removals().len(), 1);
+
+        // Keep: the question goes, nothing is removed, and the chat is told once.
+        crate::removalasks::kept(&held, asking, "alpha").expect("kept");
+        assert_eq!(removals(), []);
+        assert!(alpha.is_dir());
+        assert_eq!(
+            told(),
+            [RemovalWord::Kept {
+                workspace: "alpha".to_owned()
+            }]
+        );
+        assert!(
+            crate::removalasks::kept(&held, asking, "alpha").is_err(),
+            "answered once"
+        );
+
+        // Asked again, and the person removes it from the window: the chat is told that.
+        answer(&held, &id, &tickets, 1, ask("alpha"), &|_| {});
+        assert_eq!(removals().len(), 1);
+        crate::removalasks::removed(&held, "alpha");
+        assert_eq!(removals(), []);
+        assert_eq!(
+            told(),
+            [RemovalWord::Removed {
+                workspace: "alpha".to_owned()
+            }],
+            "one word a workspace: the removal takes the keep's place"
+        );
+
+        // A question about a workspace that went another way is dropped as the list is read.
+        std::fs::create_dir_all(plane.root.join("workspaces").join("gamma")).expect("gamma");
+        answer(&held, &id, &tickets, 1, ask("gamma"), &|_| {});
+        assert_eq!(removals().len(), 1);
+        std::fs::remove_dir_all(plane.root.join("workspaces").join("gamma")).expect("removed");
+        assert_eq!(removals(), []);
+        assert!(held.removal_asks().every().is_empty());
     }
 
     /// Chat `chat`'s harness says a prompt began a turn, and the board has taken it.

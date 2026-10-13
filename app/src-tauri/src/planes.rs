@@ -252,6 +252,8 @@ pub struct Held {
     brokered: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
     vault_refusals: crate::vaultroute::Refusals,
+    /// The workspaces each chat asked the person to remove, until they answer (qw356).
+    removal_asks: crate::removalasks::Asked,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -493,6 +495,12 @@ impl Held {
     /// The vaults each chat was refused for its persona, for the Notice on its tab (#1430).
     pub fn vault_refusals(&self) -> &crate::vaultroute::Refusals {
         &self.vault_refusals
+    }
+
+    /// The workspaces each chat asked the person to remove, for the question on its tab
+    /// (qw356).
+    pub fn removal_asks(&self) -> &crate::removalasks::Asked {
+        &self.removal_asks
     }
 
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
@@ -939,6 +947,7 @@ impl Held {
         self.closing.forget(session);
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
+        self.removal_asks.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
         let id = self
@@ -3064,6 +3073,7 @@ impl Planes {
             activity: Arc::clone(&self.activity),
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
+            removal_asks: crate::removalasks::Asked::default(),
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),

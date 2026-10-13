@@ -91,6 +91,7 @@ mod readonly;
 mod rebrief;
 mod references;
 mod remotequestion;
+mod removalasks;
 mod repolist;
 mod restored;
 mod restoring;

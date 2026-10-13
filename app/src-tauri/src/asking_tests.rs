@@ -88,6 +88,8 @@ struct World {
     prompts: Vec<(u32, Prompt)>,
     dispatches: Vec<DispatchPending>,
     blocks: Vec<(u32, HeldBlock)>,
+    /// The workspaces a chat asked the person to remove, with what each holds (qw356).
+    removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     locks: Locks,
     names: Vec<(u32, &'static str)>,
     askers: Vec<(u32, u32)>,
@@ -109,6 +111,7 @@ impl World {
             prompts: Vec::new(),
             dispatches: Vec::new(),
             blocks: Vec::new(),
+            removals: Vec::new(),
             locks: Locks::none(),
             names: Vec::new(),
             askers: Vec::new(),
@@ -144,6 +147,7 @@ impl World {
             at_its_prompt: &at_prompt,
             dispatches: self.dispatches.clone(),
             blocks: self.blocks.clone(),
+            removals: self.removals.clone(),
             locks: &self.locks,
             name_of: &name_of,
             asker_of: &asker_of,
@@ -873,6 +877,73 @@ fn a_hold_ends_a_minute_after_it_began_and_one_past_that_is_looked_at_again_soon
     assert_eq!(hold_ends(None, 2_000), 2_000 + hold);
 }
 
+// A workspace a chat asked the person to remove (qw356).
+
+fn a_removal(session: u32, workspace: &str) -> crate::removalasks::Waits {
+    crate::removalasks::Waits {
+        session,
+        workspace: workspace.to_owned(),
+        since: 40,
+    }
+}
+
+#[test]
+fn a_workspace_a_chat_asked_to_remove_is_an_ask_with_remove_and_keep() {
+    let holds = purlis_core::removalask::Holds {
+        memories: 12,
+        todos: 3,
+    };
+
+    let shown = workspace_removal(&a_removal(3, "boot-migration-safety"), holds);
+
+    assert_eq!(shown.source, AskSource::WorkspaceRemoval);
+    assert_eq!(shown.session, 3);
+    assert_eq!(shown.ask, "removal:3:boot-migration-safety");
+    assert_eq!(
+        shown.says,
+        "Removing workspace boot-migration-safety deletes its memory, its todos and its clones"
+    );
+    // Remove is the one that lets something happen, so it waits to settle as an Allow does.
+    assert_eq!(ids(&shown), ["remove", "keep"]);
+    assert_eq!(
+        shown
+            .options
+            .iter()
+            .map(|one| (one.label.as_str(), one.allows))
+            .collect::<Vec<_>>(),
+        [("Remove", true), ("Keep", false)]
+    );
+    assert_eq!(
+        shown.answer,
+        AnswerPath::WorkspaceRemoval {
+            workspace: "boot-migration-safety".to_owned(),
+            memories: 12,
+            todos: 3,
+        }
+    );
+}
+
+#[test]
+fn a_chat_waiting_on_a_removal_s_answer_is_that_ask_and_no_question_beside_it() {
+    // Safe remove's chat ends its turn once it has asked: it is in the queue, and what it
+    // waits on is the removal, listed once, since when it was asked.
+    let mut world = World::new();
+    world.queue = vec![3, 4];
+    world.names = vec![(3, "Safe remove · alpha")];
+    world.removals = vec![(a_removal(3, "alpha"), Default::default())];
+    world.since = vec![("removal:3:alpha", 40)];
+
+    let asks = world.asks();
+
+    let sources: Vec<(u32, AskSource)> = asks.iter().map(|ask| (ask.session, ask.source)).collect();
+    assert_eq!(
+        sources,
+        [(3, AskSource::WorkspaceRemoval), (4, AskSource::Question)]
+    );
+    assert_eq!(asks[0].chain, ["Safe remove · alpha"]);
+    assert_eq!(asks[0].since, Some(40));
+}
+
 // Who may answer (V16).
 
 #[test]
@@ -887,6 +958,8 @@ fn every_command_an_ask_is_answered_by_is_the_window_s_alone() {
         "allow_sandbox_block",
         "keep_sandbox_block",
         "forget_sandbox_block",
+        "remove_asked_workspace",
+        "keep_asked_workspace",
         "asks_waiting",
     ] {
         assert!(

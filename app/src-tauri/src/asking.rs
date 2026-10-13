@@ -123,6 +123,9 @@ pub enum AskSource {
     /// A local socket or a system service a chat's sandbox refused, which an Allow can name
     /// (D-sock-1).
     SandboxLocal,
+    /// A workspace a chat asked the person to remove, which only their press removes
+    /// (qw356).
+    WorkspaceRemoval,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -145,6 +148,14 @@ pub enum AnswerPath {
     /// on a folder.
     SandboxBlock {
         shown: crate::taskblocks::BlockShown,
+    },
+    /// `remove_asked_workspace` for Remove, which is the window's own remove with its guard
+    /// and never forced, and `keep_asked_workspace` for Keep (qw356). `workspace` is one this
+    /// project lists; `memories` and `todos` are what it holds now, by the app's own count.
+    WorkspaceRemoval {
+        workspace: String,
+        memories: u32,
+        todos: u32,
     },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
@@ -633,6 +644,56 @@ pub fn question(session: u32) -> Shown {
     }
 }
 
+/// The option id of Remove on a workspace's removal (qw356).
+pub const REMOVE: &str = "remove";
+/// What Remove and Keep say on a workspace's removal: written once, here.
+const REMOVE_SAID: &str = "Remove";
+const KEEP_IT_SAID: &str = "Keep";
+
+/// The key of a workspace removal's ask, unique in its project: the chat and the workspace.
+fn removal_key(session: u32, workspace: &str) -> String {
+    format!("removal:{session}:{workspace}")
+}
+
+/// **The workspace removal adapter** (qw356): a workspace a chat asked the person to remove,
+/// held now. It offers Remove, which is the window's own remove, and Keep. Every word is
+/// purlis's; the workspace's name is the project's own listing's, drawn as data, and what it
+/// holds is counted by the app.
+pub fn workspace_removal(
+    waits: &crate::removalasks::Waits,
+    holds: purlis_core::removalask::Holds,
+) -> Shown {
+    let count = |many: usize| u32::try_from(many).unwrap_or(u32::MAX);
+    Shown {
+        session: waits.session,
+        ask: removal_key(waits.session, &waits.workspace),
+        // What a removal deletes is said wherever the question is: the Inbox draws this line
+        // beside Remove, with no Notice around it.
+        says: said_inertly(&format!(
+            "Removing workspace {} deletes its memory, its todos and its clones",
+            waits.workspace
+        )),
+        options: vec![
+            Offered {
+                id: REMOVE.to_owned(),
+                label: REMOVE_SAID.to_owned(),
+                allows: true,
+            },
+            refuses(KEEP, KEEP_IT_SAID),
+        ],
+        source: AskSource::WorkspaceRemoval,
+        chain: Vec::new(),
+        answer: AnswerPath::WorkspaceRemoval {
+            workspace: waits.workspace.clone(),
+            memories: count(holds.memories),
+            todos: count(holds.todos),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -684,6 +745,8 @@ pub struct Waiting<'a> {
     pub dispatches: Vec<crate::dispatchgrants::DispatchPending>,
     /// The blocks each chat is held on now.
     pub blocks: Vec<(u32, crate::taskblocks::HeldBlock)>,
+    /// The workspaces a chat asked the person to remove, with what each holds (qw356).
+    pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -714,6 +777,14 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         .filter_map(permission)
         .collect();
     asks.extend(waiting.dispatches.iter().map(dispatch));
+    // Before the queue is read: a chat that asked the person to remove a workspace waits on
+    // that answer, so its wait is that ask and no question of its own beside it (qw356).
+    asks.extend(
+        waiting
+            .removals
+            .iter()
+            .map(|(waits, holds)| workspace_removal(waits, *holds)),
+    );
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     asks.extend(
         waiting
@@ -844,7 +915,16 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             since.insert(block_key(*session, block), *first);
         }
     }
+    let removals: Vec<_> = crate::removalasks::waiting(held)
+        .into_iter()
+        .map(|waits| {
+            since.insert(removal_key(waits.session, &waits.workspace), waits.since);
+            let holds = purlis_core::removalask::holds(root, &waits.workspace);
+            (waits, holds)
+        })
+        .collect();
     let waiting = Waiting {
+        removals,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,

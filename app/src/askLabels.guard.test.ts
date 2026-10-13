@@ -23,6 +23,7 @@ const DRAWING_ASKS = [
   "DispatchGrantNotice.tsx",
   "TaskBlocksNotice.tsx",
   "TaskPromptNotice.tsx",
+  "WorkspaceRemovalNotice.tsx",
   "Inbox.tsx",
 ];
 

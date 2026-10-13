@@ -291,8 +291,27 @@ pub async fn workspace_remove(
         at_risk: Vec::new(),
     };
     let held = planes.held(&plane).map_err(unread)?;
+    remove_for_the_person(&app, &held, &heard, plane, workspace, force).await
+}
+
+/// **The window's one removal of a workspace**, whichever of its surfaces the person pressed:
+/// the sidebar's dialog ([`workspace_remove`]), or Remove on a question a chat raised
+/// (`crate::removalasks::remove_asked_workspace`, qw356), which never forces. The guard is
+/// inside it either way, and what follows a removal follows both.
+pub(crate) async fn remove_for_the_person(
+    app: &tauri::AppHandle,
+    held: &std::sync::Arc<crate::planes::Held>,
+    heard: &crate::heard::Heard,
+    plane: PlaneId,
+    workspace: String,
+    force: bool,
+) -> Result<Vec<String>, Refused> {
+    let unread = |said: String| Refused {
+        said,
+        at_risk: Vec::new(),
+    };
     let root = held.root().to_path_buf();
-    let (at, named) = (root.clone(), workspace.clone());
+    let (at, named, held) = (root.clone(), workspace.clone(), std::sync::Arc::clone(held));
     // Off the window's thread (#1007): the guard asks git about every clone, the delete walks
     // the tree, and the sidebar's model is read again under its lock.
     let removed = crate::off_the_window(REMOVING, move || {
@@ -302,12 +321,14 @@ pub async fn workspace_remove(
         if removed.is_ok() {
             // An open Activity tab stops showing what the removal forgot (#1556).
             crate::activity::forgotten_in(&held, &named);
+            // A chat that asked the person to remove it is told they did (qw356).
+            crate::removalasks::removed(&held, &named);
         }
         Ok(removed)
     })
     .await
     .map_err(unread)??;
-    heard.tell(&app, plane, root, Event::WorkspaceRemoved { workspace });
+    heard.tell(app, plane, root, Event::WorkspaceRemoved { workspace });
     Ok(removed)
 }
 

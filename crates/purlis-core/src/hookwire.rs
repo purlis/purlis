@@ -1290,6 +1290,36 @@ pub enum Ask {
     /// tasks, or cancel one. The app answers [`Answer::Task`], or [`Answer::No`] with the
     /// refusal. No ticket: see [`crate::dispatched::Asked`].
     Task(Box<crate::dispatched::Asked>),
+    /// Ask the person, in the window, whether to remove a workspace (qw356): what `purlis
+    /// workspace remove <name>` hands over from a chat whose sandbox holds the removal. **The
+    /// app removes nothing for it.** It holds the question on the asking chat's tab, and
+    /// answers [`Answer::No`] with the sentence that says the person has been asked, or why
+    /// they were not. No ticket, for a record's reason: nothing is made or removed by the ask.
+    Removal(RemovalAsk),
+}
+
+/// Something a chat asks the person to remove ([`crate::removalask`], qw356).
+///
+/// **It carries a name and nothing else, and that is the guard.** The name is looked up in
+/// the project by the app; what the question says, what a removal deletes and whether anything
+/// is removed are the app's and the person's. There is no field for a reason, for `--force`,
+/// or for another project.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RemovalAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// What it asks the person to remove.
+    pub removing: Removing,
+}
+
+/// What a chat may ask the person to remove: one arm for each removal a chat's sandbox holds
+/// and the window can make. A workspace today; a persona's and a branch folder's removal are
+/// refused the same way and would each be an arm here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "what")]
+pub enum Removing {
+    /// A workspace of this project, by the name the command was given.
+    Workspace { name: String },
 }
 
 /// A chat asking where it is working ([`crate::awareness`], #1450).
@@ -1864,6 +1894,7 @@ impl Line {
             Self::Ask(Ask::WhereWorking(asks)) => asks.chat,
             Self::Ask(Ask::Dispatch(dispatch)) => dispatch.chat,
             Self::Ask(Ask::Task(asked)) => asked.chat,
+            Self::Ask(Ask::Removal(removal)) => removal.chat,
             Self::ByHand(notice) => notice.chat,
             Self::Saved(saved) => saved.chat,
             Self::Refused(refused) => refused.chat,
@@ -4158,6 +4189,28 @@ mod tests {
     }
 
     #[test]
+    fn a_removal_ask_is_read_as_one_from_the_chat_it_names() {
+        // qw356: a name and the chat, and nothing else on the line.
+        let ask = Ask::Removal(RemovalAsk {
+            chat: 3,
+            removing: Removing::Workspace {
+                name: "alpha".to_owned(),
+            },
+        });
+        let token = ChatToken("t".repeat(64));
+        let line = line_with(Some(&token), &ask).expect("a line");
+        let text = std::str::from_utf8(&line).unwrap();
+        let (read, carried) = read_line(text).expect("a line");
+        assert_eq!(read.chat(), 3);
+        assert_eq!(carried.as_deref(), Some(token.0.as_str()));
+        let Line::Ask(read) = read else {
+            panic!("not read as an ask: {read:?}");
+        };
+        assert_eq!(read, ask);
+        assert!(!text.contains("force"), "{text}");
+    }
+
+    #[test]
     fn the_largest_write_a_chat_may_ask_for_fits_on_one_line_of_the_socket() {
         // Every byte a control character, which JSON spells in six: what `Write::check` lets
         // through at its worst is still read whole and answered, never cut (#1333).
@@ -6155,7 +6208,8 @@ mod tests {
                     | Ask::Vaults { .. }
                     | Ask::WhereWorking(_)
                     | Ask::Dispatch(_)
-                    | Ask::Task(_) => Answer::No {
+                    | Ask::Task(_)
+                    | Ask::Removal(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }

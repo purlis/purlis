@@ -65,8 +65,18 @@ work nothing else has (exit 2), and `persona remove` refuses while another perso
 uses the one being removed. A refusal is the answer: relay it in its own words and stop.
 `--force` belongs to the operator, and you pass it only when they say so.
 
-From a sandboxed chat both are refused before anything is deleted, because the sandbox would
-stop a delete partway: say so, and ask the operator to remove it from the window.
+**In a chat purlis started under its sandbox, the last step is the operator's press in the
+purlis window.** Neither command deletes anything there, because the sandbox would stop a
+delete partway.
+
+- `purlis workspace remove <name>` hands the name to purlis, which asks the operator on this
+  chat's tab: **Remove** or **Keep**. The command says the operator has been asked and exits
+  without removing anything. That is not a failure. Tell the operator the question is waiting
+  on this chat's tab, then end your turn. purlis tells you what they decided on your next
+  turn. Do not run it again, do not pass `--force`, and do not delete any part of the
+  workspace another way. If they kept it, it stays unless they ask again.
+- `purlis persona remove <name>` is refused: say so, and ask the operator to remove the
+  persona from the window.
 
 Removing a persona deletes its whole directory, memory and curation actions with it. The
 deletion is a change to the plane like any other and travels with its next save.

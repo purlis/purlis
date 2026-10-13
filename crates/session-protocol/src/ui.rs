@@ -253,6 +253,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "never_dispatch",
     // Keep blocked on a sandbox host ask (#1690): the person's no, told to the app.
     "forget_sandbox_block",
+    // The person's answers to a chat that asked them to remove a workspace (qw356): the
+    // removal and the no. No chat answers its own ask, and no link removes one for it.
+    "remove_asked_workspace",
+    "keep_asked_workspace",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",

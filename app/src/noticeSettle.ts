@@ -10,13 +10,15 @@ export const NOTICE_MOVED_JUST_NOW =
 
 /**
  * **Whether a Notice grants something** (#1695): its ways out allow a host for a persona or a
- * chat, accept a teammate's dispatch grant, allow a dispatch, or answer a task's permission
- * prompt. Its presses wait for it to settle where it is drawn.
+ * chat, accept a teammate's dispatch grant, allow a dispatch, answer a task's permission
+ * prompt, or remove a workspace a chat asked to have removed (qw356). Its presses wait for it
+ * to settle where it is drawn.
  */
 export const grants = (cause: string) =>
   (cause.startsWith("sandbox-blocked:") && !cause.endsWith(":allowed")) ||
   cause.startsWith("sandbox-hosts:persona:") ||
   cause.startsWith("task-permission:") ||
+  cause.startsWith("workspace-removal:") ||
   cause === "dispatch-grants" ||
   cause.startsWith("dispatch-grant:");
 

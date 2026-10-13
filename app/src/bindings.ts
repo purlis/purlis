@@ -597,6 +597,22 @@ export const commands = {
 	 */
 	keepVaultBlocked: (plane: PlaneId, session: number, vault: string) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault })),
 	/**
+	 *  **Remove** on a chat's question: the window's own remove of `workspace`, with its guard and
+	 *  never forced, for a question chat `session` has waiting about that workspace.
+	 * 
+	 *  `workspace` is what the question the person pressed showed. It is taken only where it is
+	 *  the workspace that chat's question is about now, and is one the project lists now: a
+	 *  question that changed under the pointer, or a name that is no workspace's, removes nothing.
+	 *  A refusal is the core's own, with what it refused over, as the sidebar's remove hands it
+	 *  back; the question still waits then.
+	 */
+	removeAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<string[], Refused>(__TAURI_INVOKE("remove_asked_workspace", { plane, session, workspace })),
+	/**
+	 *  **Keep** on a chat's question: puts it away and removes nothing. The chat is told on its
+	 *  next turn that the person kept the workspace, and not to ask again unless they ask.
+	 */
+	keepAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<null, string>(__TAURI_INVOKE("keep_asked_workspace", { plane, session, workspace })),
+	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
 	 * 
@@ -3073,6 +3089,12 @@ export type AnswerPath =
  *  on a folder.
  */
 { via: "sandbox-block"; shown: BlockShown } | 
+/**
+ *  `remove_asked_workspace` for Remove, which is the window's own remove with its guard
+ *  and never forced, and `keep_asked_workspace` for Keep (qw356). `workspace` is one this
+ *  project lists; `memories` and `todos` are what it holds now, by the app's own count.
+ */
+{ via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3172,6 +3194,11 @@ export type AskSource =
  *  (D-sock-1).
  */
 "sandbox-local" | 
+/**
+ *  A workspace a chat asked the person to remove, which only their press removes
+ *  (qw356).
+ */
+"workspace-removal" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
