@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useMemo, useState, useSyncExternalStore } from "react";
 import { commands, type OlderSandbox, type OnOlderSandbox, type PlaneId } from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { listen } from "./here";
@@ -61,11 +61,24 @@ export function usePolicyBehind(plane: PlaneId, session: number): string | undef
  * `undefined` until the core has answered, and `null` once it answers that no chat is behind:
  * only an answer lets a dismissal go.
  */
-export function useOlderSandbox(plane: PlaneId, asked: string): OlderSandbox | null | undefined {
+export function useOlderSandbox(
+  plane: PlaneId,
+  asked: string,
+  /** Whether the project is the one in front. One behind asks nothing, on a focus or for
+   *  anything else, and asks once as it comes to the front: nobody is shown its answer until
+   *  then (`projectShown.tsx`). */
+  shown = true,
+): OlderSandbox | null | undefined {
   const [older, setOlder] = useState<OlderSandbox | null>();
   const [focused, setFocused] = useState(0);
+  const shownNow = useRef(shown);
   useEffect(() => {
-    const again = () => setFocused((n) => n + 1);
+    shownNow.current = shown;
+  }, [shown]);
+  useEffect(() => {
+    const again = () => {
+      if (shownNow.current) setFocused((n) => n + 1);
+    };
     window.addEventListener("focus", again);
     // **And when this machine's policy changes** (#1431): the core reads its file now and
     // then, and says so, so a policy that lands is told with nothing else moving.
@@ -84,6 +97,7 @@ export function useOlderSandbox(plane: PlaneId, asked: string): OlderSandbox | n
     };
   }, []);
   useEffect(() => {
+    if (!shown) return;
     let gone = false;
     void commands
       .chatsOnOlderSandbox(plane)
@@ -97,7 +111,7 @@ export function useOlderSandbox(plane: PlaneId, asked: string): OlderSandbox | n
     return () => {
       gone = true;
     };
-  }, [plane, asked, focused]);
+  }, [plane, asked, focused, shown]);
   return older;
 }
 

@@ -8,11 +8,14 @@ import { forgetKeptScopes } from "./chatsScope";
 import { forgetExtensionThemes } from "./Extensions";
 import { forgetExtensionsOn } from "./extensionsOn";
 import { forgetProjectThemes } from "./projectTheme";
+import { forgetSwitches } from "./switchClock";
 import { forgetUnappliedRepos } from "./unappliedRepos";
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
 // test's window is a new one, and most of them share a plane path.
 afterEach(() => {
+  // The switches a window timed are its own (`switchClock.ts`); every test's window is a new one.
+  forgetSwitches();
   forgetExtensionsOn();
   forgetExtensionThemes();
   forgetProjectThemes();

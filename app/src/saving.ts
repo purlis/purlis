@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOnShownAgain, useProjectShown } from "./projectShown";
 import {
   commands,
   type PlaneId,
@@ -101,12 +102,16 @@ export function usePlaneSaving(plane: PlaneId | undefined): {
 
   // Coming back to the window is when the operator wants to know what came in: fetch, which the
   // core does at most once a minute, and whose answer reaches here as a plane change.
+  // **Asked for the project in front and for each project's own standing** (`PlaneView`, which
+  // marks a project's tab), and not by a view of a project kept behind another
+  // (`projectShown.tsx`): that view shows nobody anything.
+  const shown = useProjectShown();
   useEffect(() => {
-    if (plane === undefined) return;
+    if (plane === undefined || !shown) return;
     const fetch = () => void commands.planeFetch(plane).catch(() => undefined);
     window.addEventListener("focus", fetch);
     return () => window.removeEventListener("focus", fetch);
-  }, [plane]);
+  }, [plane, shown]);
 
   useRereads(setAsked);
 
@@ -129,7 +134,12 @@ export const RETURN_FOLD_MS = 1_000;
  *  {@link RETURN_FOLD_MS} of the last read asked here is the same return and asks nothing. A
  *  finished save always asks: it is news, not a return. */
 function useRereads(setAsked: (next: (n: number) => number) => void): void {
+  // Not for a view of a project kept behind another (`projectShown.tsx`), which asks once as
+  // its project comes back, after it is painted.
+  const shown = useProjectShown();
+  useOnShownAgain(() => setAsked((n) => n + 1));
   useEffect(() => {
+    if (!shown) return;
     // The monotonic clock: a wall clock set back would fold every return until it caught up.
     let last: number | undefined;
     const again = () => {
@@ -148,7 +158,7 @@ function useRereads(setAsked: (next: (n: number) => number) => void): void {
       window.removeEventListener(PLANE_SAVED, again);
       stop();
     };
-  }, [setAsked]);
+  }, [setAsked, shown]);
 }
 
 /** How many mounted hooks hold each project and workspace's repo rows (`useRepoSavingKept`). */

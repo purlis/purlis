@@ -489,10 +489,13 @@ type Typed =
  * **While it is off the window it is not drawn again** (`AsLastShown`): what it hears about its
  * chats is kept as state here and reported to the window, and its view takes it all at once as
  * it comes back. Its terminals are not React's to draw: they go on taking what their programs
- * write. What is asked over the whole window, a dialog, is put away with it (`OnlyInFront`).
+ * write. What it asks over the whole window, a dialog, is put away with it (`OnlyInFront`);
+ * and where a part of the view has something of its own drawn over the window as the project
+ * leaves the front, the view is not kept at all (`drawnOverTheWindow`).
  *
  * A project the person has not been in lately draws nothing, as every project behind the front
- * one used to, and is drawn again when they come back to it.
+ * one used to, and is drawn again when they come back to it. Only coming to the front draws a
+ * view: a project the window opens behind another draws nothing until then.
  *
  * **The palette is the window's, not a project's**, for the same reason turned round. It has
  * to be mounted before the core has said which project this launch opened — `F2` is a
@@ -5145,6 +5148,7 @@ export const PlaneView = memo(function PlaneView({
   const olderSandbox = useOlderSandbox(
     plane,
     `${settingsChanges}:${sandboxCommands}:${chatsOpen}:${owedRestarts.join(",")}`,
+    inFront,
   );
   const restartThem = useCallback(
     (sessions: readonly number[]) => {
@@ -7532,11 +7536,21 @@ export const PlaneView = memo(function PlaneView({
 
   /** The element this project draws into, in the window only while it is in front. */
   const host = useProjectHost();
+  /**
+   * Whether its view is drawn. **Only coming to the front draws it**; it stays drawn behind
+   * another project while it may (`kept`), and is taken down once it may not, or as it leaves
+   * the front with something drawn over the window (`drawnOverTheWindow`). So a project the
+   * window opens behind the front one draws nothing until the person goes to it.
+   */
+  const [drawn, setDrawn] = useState(inFront);
+  if (inFront && !drawn) setDrawn(true);
+  if (!inFront && drawn && !kept) setDrawn(false);
+  const leftCovered = useCallback(() => setDrawn(false), []);
 
   // A project the operator has not been in lately keeps every piece of state above and draws
   // none of it. One they were in lately stays drawn, off the window: see this module's own
   // docstring.
-  if (!inFront && !kept) return null;
+  if (!inFront && !(drawn && kept)) return null;
 
   /**
    * **The project's standing lines, in its Inbox** (#1695, I-4): what stood under the tab strip
@@ -8754,7 +8768,7 @@ export const PlaneView = memo(function PlaneView({
   );
   return createPortal(
     <ProjectShownProvider value={inFront}>
-      <InTheWindow host={host} slot={slot} shown={inFront} />
+      <InTheWindow host={host} slot={slot} shown={inFront} onLeftCovered={leftCovered} />
       <AsLastShown>{view}</AsLastShown>
     </ProjectShownProvider>,
     host,

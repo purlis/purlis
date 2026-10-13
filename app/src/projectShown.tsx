@@ -86,6 +86,53 @@ export function useOnShownAgain(run: () => void): void {
 export const KEPT_DRAWN = 4;
 
 /**
+ * The projects that may stay drawn while another is in front: the first {@link KEPT_DRAWN} of
+ * `recent`, the order the person was last in them, **among the ones the window still holds**. A
+ * project that was closed keeps its place in `recent` and takes none here, or three closed
+ * projects would leave room for one.
+ *
+ * May stay, and no more: a view is only ever drawn by its project coming to the front
+ * (`PlaneView`), so one named here that draws nothing, such as a project opened again behind
+ * the front one, goes on drawing nothing.
+ */
+export function keptOf(
+  recent: readonly string[],
+  open: readonly string[],
+  most = KEPT_DRAWN,
+): ReadonlySet<string> {
+  return new Set(recent.filter((plane) => open.includes(plane)).slice(0, most));
+}
+
+/**
+ * What is drawn over the whole window, wherever it was opened from: a dialog, an alert dialog,
+ * a menu and a select's list, each by the role Radix gives it. A tooltip is not one: it asks
+ * nothing. `projectShown.guard.test.ts` holds this to every kind of overlay the window uses.
+ */
+const OVER_THE_WINDOW = ["dialog", "alertdialog", "menu", "listbox"]
+  .map((role) => `[role="${role}"]`)
+  .join(", ");
+
+/**
+ * Whether something is drawn over the window that `slot` is in: outside the window's own
+ * element, where a portal puts it, and not the window's palette, which is how a project is
+ * switched to and closes with the switch.
+ *
+ * **A project that leaves the front with something over the window is not kept** (`PlaneView`).
+ * A dialog a part of its view opened is drawn outside the project's element, so it would stay
+ * up over the project that came forward: "Delete persona steward?" asked in one project,
+ * answered over another, and done in the first. Whose it is cannot be read off the document, so
+ * anything there counts, and the project's view is taken down as every project's used to be:
+ * what opened the dialog goes with it.
+ */
+export function drawnOverTheWindow(slot: Element): boolean {
+  let own: Element = slot;
+  while (own.parentElement !== null && own.parentElement !== document.body) own = own.parentElement;
+  return [...document.querySelectorAll(OVER_THE_WINDOW)].some(
+    (over) => !own.contains(over) && over.closest(".palette") === null,
+  );
+}
+
+/**
  * The element a project draws into, made once and kept for as long as its view is.
  *
  * `display: contents` (`.project-view`), so what is drawn in it is laid out as the window's own
@@ -147,11 +194,21 @@ export function InTheWindow({
   host,
   slot,
   shown,
+  onLeftCovered,
 }: {
   host: HTMLElement;
   slot: HTMLElement | null;
   shown: boolean;
+  /** Called as the project leaves the front with something drawn over the window
+   *  ({@link drawnOverTheWindow}): its view is not to be kept. */
+  onLeftCovered: () => void;
 }): null {
+  const was = useRef(shown);
+  useLayoutEffect(() => {
+    const before = was.current;
+    was.current = shown;
+    if (before && !shown && slot !== null && drawnOverTheWindow(slot)) onLeftCovered();
+  }, [shown, slot, onLeftCovered]);
   useEffect(() => {
     const places = scrolledIn(host);
     // A scroll does not bubble; it is heard on its way down.
@@ -169,7 +226,13 @@ export function InTheWindow({
     if (!shown || slot === null) return;
     slot.appendChild(host);
     scrollBack(host);
-    return () => host.remove();
+    return () => {
+      host.remove();
+      // What went while the view was in the window is forgotten as it leaves, so nothing that
+      // is no longer drawn is held on to for as long as the project is kept.
+      const places = scrolledIn(host);
+      for (const element of places.keys()) if (!host.contains(element)) places.delete(element);
+    };
   }, [host, slot, shown]);
   return null;
 }

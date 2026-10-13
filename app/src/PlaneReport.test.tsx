@@ -87,3 +87,51 @@ describe("a project's report", () => {
     expect(onReport.mock.calls.slice(before).map(([plane]) => plane)).toContain("/home/dev/two");
   });
 });
+
+describe("a project the window opens behind the one in front", () => {
+  /** What only a project's view asks of the core, as it is built. */
+  const VIEW_ASKS = ["sandbox_state", "project_lives_here"];
+
+  function drawn(plane: string, inFront: boolean, kept: boolean, onReport: () => void) {
+    return (
+      <PlaneView
+        plane={plane}
+        inFront={inFront}
+        kept={kept}
+        slot={document.body}
+        projects={NO_PROJECTS}
+        pinnedProjects={NO_PINS}
+        window={windowDoes}
+        onReport={onReport}
+      />
+    );
+  }
+
+  it("draws nothing until the person goes to it, though it may stay drawn once they have", async () => {
+    // `kept` says a project MAY stay drawn (`projectShown.tsx`). One opened again after it was
+    // closed is among the last the person was in, and has never been in front since: built
+    // there, it would start its terminals and read its settings for a view nobody asked for.
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return null;
+    });
+    const onReport = vi.fn();
+    const view = render(drawn("/home/dev/plane", false, true, onReport));
+    await settle(onReport);
+    // It reports, as every project the window holds does, and builds no view.
+    expect(onReport).toHaveBeenCalled();
+    expect(asked.filter((cmd) => VIEW_ASKS.includes(cmd))).toEqual([]);
+
+    view.rerender(drawn("/home/dev/plane", true, true, onReport));
+    await settle(onReport);
+    const built = asked.filter((cmd) => VIEW_ASKS.includes(cmd)).length;
+    expect(built).toBeGreaterThan(0);
+
+    // And it stays drawn behind another, once it has been in front.
+    view.rerender(drawn("/home/dev/plane", false, true, onReport));
+    view.rerender(drawn("/home/dev/plane", true, true, onReport));
+    await act(async () => {});
+    expect(asked.filter((cmd) => VIEW_ASKS.includes(cmd))).toHaveLength(built);
+  });
+});

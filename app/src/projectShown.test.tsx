@@ -9,11 +9,15 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import {
   AsLastShown,
+  drawnOverTheWindow,
   InTheWindow,
+  KEPT_DRAWN,
+  keptOf,
   OnlyInFront,
   ProjectShownProvider,
   useProjectHost,
 } from "./projectShown";
+import { RemovePersona } from "./RemovePersona";
 import { useWhileShown } from "./whileShown";
 import { useWindowFocused } from "./windowFocused";
 
@@ -34,7 +38,7 @@ function View({ shown, slot, name }: { shown: boolean; slot: HTMLElement; name: 
   const host = useProjectHost();
   return createPortal(
     <ProjectShownProvider value={shown}>
-      <InTheWindow host={host} slot={slot} shown={shown} />
+      <InTheWindow host={host} slot={slot} shown={shown} onLeftCovered={() => {}} />
       <AsLastShown>
         <Drawn name={name} />
       </AsLastShown>
@@ -150,6 +154,83 @@ describe("what is asked over the whole window", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
+
+describe("the projects that may stay drawn", () => {
+  it("are the ones the person was in last, among those the window still holds", () => {
+    // Three closed projects between two open ones took the room of one.
+    expect([...keptOf(["a", "x", "y", "z", "b"], ["a", "b"])]).toEqual(["a", "b"]);
+  });
+
+  it("are no more than so many, the last ones first", () => {
+    const open = ["a", "b", "c", "d", "e", "f"];
+    expect([...keptOf(["f", "e", "d", "c", "b", "a"], open)]).toEqual(["f", "e", "d", "c"]);
+    expect(KEPT_DRAWN).toBe(4);
+  });
+});
+
+describe("what is drawn over the whole window, as a project leaves the front", () => {
+  /** A window's own element with a place for the project in front, as `App` draws one. */
+  function aWindow() {
+    const own = document.body.appendChild(document.createElement("main"));
+    const slot = own.appendChild(document.createElement("div"));
+    return { own, slot };
+  }
+
+  it("is the confirm a part of a view opened, drawn outside the window's element", () => {
+    const { own, slot } = aWindow();
+    render(
+      <RemovePersona persona="steward" deleting={false} onDelete={() => {}} onCancel={() => {}} />,
+    );
+    expect(screen.getByRole("alertdialog", { name: "Delete persona steward?" })).toBeTruthy();
+    expect(drawnOverTheWindow(slot)).toBe(true);
+    own.remove();
+  });
+
+  it("is not what is drawn inside the window, nor a tooltip, nor the palette a switch is made in", () => {
+    const { own, slot } = aWindow();
+    // A list inside the view, as the Chats list is.
+    own.appendChild(document.createElement("ul")).setAttribute("role", "listbox");
+    const tip = document.body.appendChild(document.createElement("div"));
+    tip.setAttribute("role", "tooltip");
+    const palette = document.body.appendChild(document.createElement("div"));
+    palette.className = "ui-dialog warning palette";
+    palette.setAttribute("role", "dialog");
+    palette.appendChild(document.createElement("ul")).setAttribute("role", "listbox");
+    expect(drawnOverTheWindow(slot)).toBe(false);
+
+    // And a menu left open is.
+    const menu = document.body.appendChild(document.createElement("div"));
+    menu.setAttribute("role", "menu");
+    expect(drawnOverTheWindow(slot)).toBe(true);
+    for (const one of [own, tip, palette, menu]) one.remove();
+  });
+
+  it("is said by the view as it leaves, once, and only then", () => {
+    const { own, slot } = aWindow();
+    const covered = vi.fn();
+    const drawn = (shown: boolean) => <Leaving shown={shown} slot={slot} onLeftCovered={covered} />;
+    const { rerender } = render(drawn(true));
+    const asked = document.body.appendChild(document.createElement("div"));
+    asked.setAttribute("role", "alertdialog");
+    expect(covered).not.toHaveBeenCalled();
+
+    rerender(drawn(false));
+    expect(covered).toHaveBeenCalledTimes(1);
+
+    // Coming back, and leaving with nothing asked, says nothing.
+    asked.remove();
+    rerender(drawn(true));
+    rerender(drawn(false));
+    expect(covered).toHaveBeenCalledTimes(1);
+    own.remove();
+  });
+});
+
+/** A view's place in the window alone, for what it says as its project leaves the front. */
+function Leaving(props: { shown: boolean; slot: HTMLElement; onLeftCovered: () => void }) {
+  const host = useProjectHost();
+  return <InTheWindow host={host} {...props} />;
+}
 
 /** A hook run inside a project that is, or is not, the one in front. */
 function inAProject<T>(hook: () => T, shown: boolean) {
