@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791894769175,
+  "lastUpdate": 1791895762343,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9324,6 +9324,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8997135,
             "unit": "ms",
             "extra": "median of 5 runs: 100.703, 101.668, 101.900, 102.174, 102.329 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "51bf31b6fcb276f997e09e61131765fc37e62487",
+          "message": "review(train 93): git is asked about the local file only where it declares a harness\n\nThe declarations are read several times at every chat start. Reading the\nlocal layer whole asked git about charter.local.toml at each of those\nreads, in every project that has the file, and fifty chats starting at\nonce slowed on it. settings::local_layer_holding asks the same check only\nof a file that holds the table, and is nothing to its reader otherwise.\n\nRefs #968\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T16:33:54+04:00",
+          "tree_id": "0da23b17b9982f50b20afa26025bf4981a5b7c7b",
+          "url": "https://github.com/purlis/purlis/commit/51bf31b6fcb276f997e09e61131765fc37e62487"
+        },
+        "date": 1791895761322,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5098225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.508, 0.510, 0.532, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.875794499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.440, 16.850, 16.876, 17.521, 17.891 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.79074399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.334, 104.023, 105.791, 106.334, 107.330 ms"
           }
         ]
       }
