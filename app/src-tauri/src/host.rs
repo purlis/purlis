@@ -330,6 +330,13 @@ pub(crate) mod pretend {
         refusing: Mutex<Option<String>>,
         /// The numbers it starts nothing under, and why ([`Pretend::refuses_number`]).
         refusing_numbers: Mutex<Vec<(u32, String)>>,
+        /// How long each start takes ([`Pretend::takes`]).
+        taking: Mutex<Duration>,
+        /// The numbers whose start does not return until let go ([`Pretend::hangs_number`]).
+        hanging: Mutex<Vec<u32>>,
+        /// How many starts are under way now, and the most there were at once.
+        starting: AtomicU32,
+        most_starting: AtomicU32,
     }
 
     impl Pretend {
@@ -353,6 +360,27 @@ pub(crate) mod pretend {
         /// a launch meets when one chat's program will not start and the rest do.
         pub fn refuses_number(&self, number: u32, why: &str) {
             lock(&self.seen.refusing_numbers).push((number, why.to_owned()));
+        }
+
+        /// Every start from now takes `long`, as a harness and its sandbox coming up do.
+        pub fn takes(&self, long: Duration) {
+            *lock(&self.seen.taking) = long;
+        }
+
+        /// A start asked for under `number` does not return until [`Self::lets_go`]: a
+        /// program that hangs as it starts.
+        pub fn hangs_number(&self, number: u32) {
+            lock(&self.seen.hanging).push(number);
+        }
+
+        /// The start under `number` that hung returns.
+        pub fn lets_go(&self, number: u32) {
+            lock(&self.seen.hanging).retain(|one| *one != number);
+        }
+
+        /// The most starts that were under way at once.
+        pub fn most_at_once(&self) -> u32 {
+            self.seen.most_starting.load(Ordering::SeqCst)
         }
 
         /// Starts under `number` again.
@@ -414,6 +442,16 @@ pub(crate) mod pretend {
             if !opening.operator_shell && stopped {
                 return Err(crate::sessions::STOPPED.to_owned());
             }
+            let now = self.seen.starting.fetch_add(1, Ordering::SeqCst) + 1;
+            self.seen.most_starting.fetch_max(now, Ordering::SeqCst);
+            let long = *lock(&self.seen.taking);
+            if !long.is_zero() {
+                std::thread::sleep(long);
+            }
+            while wanted.is_some_and(|number| lock(&self.seen.hanging).contains(&number)) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            self.seen.starting.fetch_sub(1, Ordering::SeqCst);
             let id = wanted.unwrap_or_else(|| self.deal());
             self.seen.dealt.fetch_max(id, Ordering::SeqCst);
             announce(id);
