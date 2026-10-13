@@ -766,10 +766,10 @@ body {
 
 /* The menu itself: the one menu style (`.ui-menu`, `primitives/controls.css`), sized here. */
 .more-menu {
+  /* Past about twenty hidden tabs the menu would run off the window; it scrolls instead (the
+     one menu style caps it at the room the window has), and the palette remains the surface
+     for finding one by name. */
   min-width: 12rem;
-  /* Past about twenty hidden tabs the menu would run off the window; it scrolls instead, and
-     the palette remains the surface for finding one by name. */
-  max-height: 60vh;
 }
 
 /* **The `×` is inline with the title, on one line** (charter-app#130). It was drawn below it,
@@ -1930,7 +1930,6 @@ button.show-more:focus-visible {
 .tasks-menu {
   min-width: 16rem;
   max-width: min(30rem, 90vw);
-  max-height: 60vh;
   /* Never sideways (#1545): a line gives way with its own ellipsis and the footer wraps, so
      nothing is meant to be past the menu's edge; WebKit counted a few pixels at a row's end
      as overflow and drew a sideways scroll for them. */
@@ -5520,7 +5519,6 @@ h2.sidebar-title .node-icon {
 .item-menu {
   min-width: 14rem;
   max-width: 24rem;
-  max-height: 70vh;
 }
 
 /* ---------------------------------------------------------------------------------------

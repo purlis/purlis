@@ -267,6 +267,22 @@ describe("a menu on screen", () => {
     expect(switches).not.toHaveClass("ui-menu-item-danger");
   });
 
+  it("says a row's note once: under its words, and not again in a tooltip", async () => {
+    aMenu();
+    fireEvent.contextMenu(screen.getByTestId("tab"));
+    await screen.findByRole("menu");
+
+    // A note drawn in the row is read there, and the pointer resting on the row repeats nothing.
+    const ends = screen.getByRole("menuitem", { name: /^End chat 3 steward/ });
+    expect(ends).toHaveTextContent("Ends the program it runs. There is no undo.");
+    expect(ends).not.toHaveAttribute("title");
+    // A row that cannot run draws no note, and its tooltip says why.
+    expect(screen.getByRole("menuitem", { name: /^Switch to tab/ })).toHaveAttribute(
+      "title",
+      "It is already in front.",
+    );
+  });
+
   it("hands back the catalogue's own offer when a row is pressed", async () => {
     const pressed = aMenu();
     fireEvent.contextMenu(screen.getByTestId("tab"));

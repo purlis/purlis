@@ -420,7 +420,13 @@ describe("the stylesheet and the vocabulary agree", () => {
    * Radix sets each on the element it draws, so no stylesheet can declare it; listed by hand,
    * one at a time, as the window's are.
    */
-  const fromRadix = ["--radix-select-trigger-width", "--radix-select-content-available-height"];
+  const fromRadix = [
+    "--radix-select-trigger-width",
+    "--radix-select-content-available-height",
+    // A menu is never taller than the room beside what opened it (`primitives/controls.css`).
+    "--radix-context-menu-content-available-height",
+    "--radix-dropdown-menu-content-available-height",
+  ];
 
   it("every custom property the stylesheet reads is a token, its own, a primitive's, or the window's", () => {
     // A `var(--typo)` resolves to nothing and the rule silently disappears, which is the one
