@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import {
   type ChatBlocked,
@@ -24,7 +24,7 @@ import {
 } from "./actions";
 import { Menued } from "./Menus";
 import { RestoringPane } from "./RestoringPane";
-import { RestoringContext } from "./restoringChats";
+import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
@@ -288,6 +288,7 @@ export function NoticeOfChat({
 /** A tab's layout, as panes with a handle between each split. */
 export function LayoutPanes({
   plane,
+  restoring = NONE_RESTORING,
   layout,
   crumbs,
   placed,
@@ -330,6 +331,9 @@ export function LayoutPanes({
   firstTask,
   split,
 }: {
+  /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
+   *  place its terminal takes. */
+  restoring?: ReadonlySet<number>;
   /** Which plane's sessions these panes are showing. A session number belongs to a plane,
    *  and every command a pane makes carries it. */
   plane: PlaneId;
@@ -427,7 +431,6 @@ export function LayoutPanes({
     moved: (view: ViewRef, split: number) => void;
   };
 }) {
-  const restoring = useContext(RestoringContext);
   if (layout.kind === "pane") {
     const content = layout.content;
     if (content.kind === "view") {
@@ -666,6 +669,7 @@ export function LayoutPanes({
           <Panel>
             <LayoutPanes
               plane={plane}
+              restoring={restoring}
               layout={child}
               crumbs={crumbs}
               placed={placed}
