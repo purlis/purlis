@@ -59,7 +59,6 @@ export const TYPE_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".explorer .change-mark | color: var(--change-colour)",
     ".chats-section .task-count | font-size: 0.75rem",
     ".chats-section .task-count | line-height: 1.2",
-    ".chats-section | font-size: 0.85rem",
     ".chats-notes | font-size: 0.9em",
     ".chats-section li.chats-group | font-size: 0.85em",
     ".chats-section .stopping | font-size: 0.9em",

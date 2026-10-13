@@ -3542,7 +3542,10 @@ h2.sidebar-title .node-icon {
   /* The list's inset, the same token the head below cancels and puts back, so the filter's
      text and the rows' names stand on one line at every text size. */
   padding: 0 var(--space-4) var(--space-4);
-  font-size: 0.85rem;
+  /* **Its words wear text roles** (#1920, `primitives/text.css`): the section is a body's
+     surface (`ui-text-body` on it, 13px), a name is a body, what is said under or beside a row
+     is secondary, a count is meta and a heading is the section label. No rule below writes a
+     size, a weight or a colour of text. */
   /* **Where a top-level chat's name starts** (DS-11): the tree's first step, where a parent's
      twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
      and the row's gap. The filter's text starts here too, and the group headings, so the list
@@ -3566,6 +3569,11 @@ h2.sidebar-title .node-icon {
    own controls sit in its title bar; where the sidebar is too narrow for both, the switch goes
    under the title and is never cut. */
 .chats-top {
+  /* **The scope switch is sized by the text of the line it is on** (`.ui-levels-small`, in
+     `em`), and that line's text is the notes', the secondary's: the size the Inbox's own
+     switch stands in, and within a tenth of a pixel of what this one was before the list's
+     words took their roles (#1920). The title and the notes each wear their own role. */
+  font-size: var(--font-size-sm);
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem 0.5rem;
@@ -3883,7 +3891,6 @@ h2.sidebar-title .node-icon {
   overflow: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
   background: var(--surface-sunken);
 }
 

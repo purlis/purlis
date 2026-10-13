@@ -391,7 +391,7 @@ function FinishedRow({
           row until the next try. */}
       {task.not_reopened !== null && <p className="finished-note">{task.not_reopened}</p>}
       {shown && (
-        <div className="finished-report" role="region" aria-label={`Report of ${task.name}`}>
+        <div className="finished-report ui-text-body" role="region" aria-label={`Report of ${task.name}`}>
           {/* Text nodes, every one: a report is a chat's words, and is never markup here. */}
           <p className="report-text">{task.report}</p>
           {/* The task's own words for what it changed, as text; the line opens what purlis

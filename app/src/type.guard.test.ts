@@ -165,7 +165,7 @@ export function roleFor(entry: string): string {
  * raising one, or naming a new file, is adding a literal the guard exists to refuse.
  */
 export const CEILING: Readonly<Record<string, number>> = {
-  "App.css": 145,
+  "App.css": 144,
   "primitives/collections.css": 2,
   "primitives/controls.css": 2,
 };
