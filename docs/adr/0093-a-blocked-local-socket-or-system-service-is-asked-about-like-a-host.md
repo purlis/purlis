@@ -88,7 +88,9 @@ and Apple's app sandbox do.
   printed is ever put in the Notice by naming it. What stays ruled out is a result that only
   read the words: a line whose every program only reads or prints (`cat`, `grep`, `sed`, `git
   show` and the like, also inside a string a shell is handed), a file tool's read, and a result
-  with no command beside it name no service. Any other program may be the one that was
+  with no command beside it name no service. A here-document's body is text its opener reads
+  and is never read as a line; a result that holds both streams in one text keeps to the same
+  rule. Any other program may be the one that was
   refused: no list of the programs that check certificates could be kept whole. This rule
   holds for the certificate check alone, the one kind with a single service to grant; a socket
   and any other service keep to the rule above.

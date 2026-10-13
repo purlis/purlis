@@ -8,5 +8,5 @@
   is one service, and its name is purlis's own, never taken from what the chat printed. So a
   line that runs a program now names it however the line ended (a pipe, `|| true`,
   `; echo $?`, and the one text Codex and opencode hand over), and the Notice offers its Allow
-  choices. A line that only reads (`cat` of a log, `grep`, `git show`) and a file a chat read
-  still name no service.
+  choices. A line that only reads (`cat` of a log, `grep`, `git show`, a here-document's body)
+  and a file a chat read still name no service.

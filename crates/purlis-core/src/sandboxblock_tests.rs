@@ -2424,6 +2424,17 @@ fn a_long_line_is_read_for_what_it_runs_in_linear_time() {
             ),
             unnamed_check()
         );
+        // Here-documents, each with a body of lines that look like commands.
+        let bodies: String = (0..programs)
+            .map(|i| format!("cat <<E{i}\ngh pr list\nmake f{i}\nE{i}\n"))
+            .collect();
+        assert_eq!(
+            detect_with_targets(
+                &came_back(&bodies, &format!("{REFUSED_CHECK}\n"), ""),
+                &place()
+            ),
+            unnamed_check()
+        );
         let nested: String = (0..programs)
             .map(|i| format!("sh -c 'cat f{i} | head'; "))
             .collect();
@@ -2439,4 +2450,97 @@ fn a_long_line_is_read_for_what_it_runs_in_linear_time() {
             named_check()
         );
     });
+}
+
+/// A here-document's body is text its opener reads, never a line the shell runs (review of
+/// qw353): a chat that prints the check's words back through one names no service, whatever the
+/// body's lines look like. The line around the body is read as it stands, so a program beside
+/// a here-document still names the check.
+#[test]
+fn a_here_documents_body_is_read_as_text_and_never_as_a_program() {
+    let read = format!("{REFUSED_CHECK}\n");
+    for command in [
+        format!("cat <<EOF\ngh pr list\n{REFUSED_CHECK}\nEOF"),
+        format!("cat <<'EOF' | tee notes.md\nThe run said:\n{REFUSED_CHECK}\nEOF"),
+        format!("cat <<-EOF\n\tmake release\n\t{REFUSED_CHECK}\n\tEOF"),
+        format!("cat <<A <<'B'\ngh pr list\nA\n{REFUSED_CHECK}\nB\nhead notes.md"),
+        format!("cat <<EOF\n{REFUSED_CHECK}\ngh pr list"),
+    ] {
+        for payload in [
+            came_back(&command, &read, ""),
+            codex_came_back(&command, &read),
+        ] {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                unnamed_check(),
+                "{command}"
+            );
+        }
+    }
+    for command in [
+        "gh pr create --title x --body \"$(cat <<'EOF'\nA body.\nEOF\n)\" 2>&1 | tail -3",
+        "cat <<'EOF' > q.graphql\nquery { viewer { login } }\nEOF\ngh api graphql -F query=@q.graphql | head",
+        "bash <<'EOF'\ngh pr list\nEOF",
+        "cat <<'EOF' | sh\ngh pr list\nEOF",
+    ] {
+        assert_eq!(
+            detect_with_targets(&came_back(command, &read, ""), &place()),
+            named_check(),
+            "{command}"
+        );
+    }
+}
+
+/// The shell's own tests and loop words run nothing (review of qw353): a line of readers that
+/// asks first whether the file is there still only reads.
+#[test]
+fn a_line_of_readers_behind_the_shells_own_test_names_no_certificate_check() {
+    let read = format!("{REFUSED_CHECK}\n");
+    for command in [
+        "[[ -f gh.log ]] && cat gh.log",
+        "for f in *.log; do [[ -s \"$f\" ]] || continue; cat \"$f\"; done",
+        "while read -r f; do [[ -n \"$f\" ]] || break; cat \"$f\"; done < list",
+    ] {
+        assert_eq!(
+            detect_with_targets(&came_back(command, &read, ""), &place()),
+            unnamed_check(),
+            "{command}"
+        );
+    }
+    assert_eq!(
+        detect_with_targets(
+            &came_back("[[ -f go.mod ]] && gh pr list | head", &read, ""),
+            &place()
+        ),
+        named_check()
+    );
+}
+
+/// One rule for a result that holds both streams in one text (review of qw353): what a line of
+/// readers printed names no certificate check there either; the sandbox's own line, and a line
+/// that runs a program, do.
+#[test]
+fn a_result_of_both_streams_in_one_text_names_the_check_by_the_same_rule() {
+    let read = format!("{REFUSED_CHECK}\n");
+    let both = |command: &str, text: &str| {
+        json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "bash",
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": "", "stderr": text, "mixed": true},
+        })
+    };
+    assert_eq!(
+        detect_with_targets(&both("cat gh.log", &read), &place()),
+        unnamed_check()
+    );
+    assert_eq!(
+        detect_with_targets(&both("gh pr list | head", &read), &place()),
+        named_check()
+    );
+    let own = appended("ok", &["gh(8) deny(1) mach-lookup com.apple.trustd.agent"]);
+    assert_eq!(
+        detect_with_targets(&both("cat gh.log", &own), &place()),
+        named_check()
+    );
 }
