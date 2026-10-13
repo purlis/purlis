@@ -376,8 +376,9 @@ impl Held {
     /// that is not watched, or not wholly ([`Self::sidebar_model`]), whose panels are read
     /// fresh from the disk on every ask, as they were before there was a model.
     ///
-    /// Held for as long as the guard lives: a workspace's first ask reads its sections under
-    /// it, so it is taken off the window's thread (SC-2).
+    /// Held for as long as the guard lives, and the window's own commands wait on it
+    /// ([`Self::workspaces_moved`]): a workspace's first ask reads its sections with the
+    /// guard dropped (`panels::served`, #1160).
     pub fn watched_model(&self) -> Option<MutexGuard<'_, Model>> {
         let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
         self.trusted(&mut model).then_some(model)

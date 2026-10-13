@@ -450,16 +450,82 @@ pub(crate) fn of(root: &Path, workspace: &str) -> Result<Panels, String> {
 /// of it — a memory saved re-reads the workspace's `memory/`, not its todos, its records or
 /// its clones. A plane that is not watched reads them fresh ([`of`]).
 pub(crate) fn served(held: &crate::planes::Held, workspace: &str) -> Result<Panels, String> {
+    served_reading(held, workspace, Sections::read)
+}
+
+/// [`served`], with `read` reading a workspace's sections off the disk.
+///
+/// **A first ask reads with the model's lock let go** (#1160). It opens every todo, memory and
+/// session record of the workspace, and the commands that make and remove a workspace wait on
+/// that lock on the thread that draws the window ([`crate::planes::Held::workspaces_moved`]).
+/// So the model is asked what it holds, the rest is read with no lock held, and the model is
+/// handed what was read, which it keeps unless a change overtook the read
+/// ([`purlis_core::planemodel`]). An ask the model can answer whole takes the lock once.
+fn served_reading(
+    held: &crate::planes::Held,
+    workspace: &str,
+    read: impl FnOnce(&Path, &str) -> Result<Sections, String>,
+) -> Result<Panels, String> {
     let root = held.root();
-    let Some(mut model) = held.watched_model() else {
-        return of(root, workspace);
+    let (warm, personas, persona, mut counts) = {
+        let Some(mut model) = held.watched_model() else {
+            return of(root, workspace);
+        };
+        let warm = model.sections_held(workspace);
+        let personas = model.personas();
+        // Every count the Personas panel draws ([`personas_panel`]).
+        let counts: BTreeMap<String, Option<usize>> = personas
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .chain([purlis_core::personas::SHARED])
+            .map(|name| (name.to_owned(), model.memory_count_held(name)))
+            .collect();
+        let persona = model.default_persona().map(str::to_owned);
+        (warm, personas, persona, counts)
     };
-    let sections = model.sections(root, workspace)?;
-    let personas = model.personas()?;
-    let persona = model.default_persona().map(str::to_owned);
-    Ok(drawn(workspace, sections, personas, persona, &mut |name| {
-        model.memory_count(root, name)
-    }))
+    let cold = warm.is_none();
+    let mut sections = match warm {
+        Some(held) => Ok(held),
+        None => read(root, workspace),
+    };
+    let counted: Vec<(String, usize)> = counts
+        .iter()
+        .filter(|(_, held)| held.is_none())
+        .map(|(name, _)| {
+            (
+                name.clone(),
+                purlis_core::personas::memory_count(root, name),
+            )
+        })
+        .collect();
+    // A plane that stopped being watched meanwhile holds nothing: its next ask reads fresh.
+    if (cold || !counted.is_empty())
+        && let Some(mut model) = held.watched_model()
+    {
+        if cold {
+            sections = model.sections_read(workspace, sections);
+        }
+        for (name, count) in &counted {
+            model.memory_count_read(name, *count);
+        }
+    }
+    for (name, count) in counted {
+        counts.insert(name, Some(count));
+    }
+    Ok(drawn(
+        workspace,
+        sections?,
+        personas?,
+        persona,
+        &mut |name| {
+            counts
+                .get(name)
+                .copied()
+                .flatten()
+                .unwrap_or_else(|| purlis_core::personas::memory_count(root, name))
+        },
+    ))
 }
 
 /// The panels drawn from what was read: the workspace's sections, the plane's personas and
@@ -1442,6 +1508,37 @@ mod tests {
 
         held.wrote(&["workspaces/alpha/memory".to_owned()]);
 
+        assert_eq!(
+            rows_of(&served(&held, "alpha").expect("served"), "memory"),
+            ["Memory two", "Memory one"]
+        );
+    }
+
+    #[test]
+    fn a_first_ask_reads_the_workspace_with_the_models_lock_let_go() {
+        // #1160: making or removing a workspace reads the model again on the thread that
+        // draws the window, and must not wait there for another workspace's first read.
+        let (_dir, _planes, held) = held_plane();
+        let moving = std::sync::Arc::clone(&held);
+
+        let panels = served_reading(&held, "alpha", |root, workspace| {
+            let (done, moved) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                moving.workspaces_moved();
+                let _ = done.send(());
+            });
+            moved
+                .recv_timeout(std::time::Duration::from_secs(60))
+                .expect("the model's lock is free while the workspace is read");
+            Sections::read(root, workspace)
+        })
+        .expect("served");
+
+        assert_eq!(rows_of(&panels, "memory"), ["Memory one"]);
+        // The model was read again whole under the read, which is therefore not held: a
+        // memory written since is in the next answer, with nothing having told the model.
+        let store = held.root().join("workspaces/alpha/memory");
+        std::fs::write(store.join("m2.md"), "# Memory two\n").expect("a memory");
         assert_eq!(
             rows_of(&served(&held, "alpha").expect("served"), "memory"),
             ["Memory two", "Memory one"]

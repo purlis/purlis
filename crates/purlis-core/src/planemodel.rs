@@ -17,6 +17,12 @@
 //! that workspace's `memory/`, not its todos, its records or its clones. The personas' memory
 //! counts the Personas panel draws are held the same way, one persona at a time.
 //!
+//! **A first read is made off the model** ([`Model::sections_held`], [`Model::sections_read`]).
+//! The app holds the model under a lock the window's own commands wait on, and a workspace's
+//! first ask opens every todo, memory and session record of it. So the model only says it holds
+//! nothing, the asker reads the disk with the lock let go, and the model takes the read in
+//! afterwards, unless a change it would have been part of was applied in between (#1160).
+//!
 //! **In memory only.** Nothing here is written anywhere: the model is a reading of the plane,
 //! made again from the disk when the app holds the plane, and dropped with it. It is not a
 //! store, so it has no tier (ADR 0069). If it is ever persisted, it gets a tier line in
@@ -113,6 +119,41 @@ pub struct Model {
     asked: VecDeque<String>,
     /// Each persona's memory count (`_shared` included) that has been asked for.
     memory_counts: BTreeMap<String, usize>,
+    /// The first reads being made off the model, and whether a change has overtaken each
+    /// (#1160). Empty but while one is under way.
+    reading: BTreeMap<Cold, bool>,
+}
+
+/// What a first read made off the model is of.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Cold {
+    /// A workspace's sections, by its name.
+    Sections(String),
+    /// A persona's memory count, by its name.
+    Count(String),
+}
+
+impl Cold {
+    /// Whether `changes` may have moved what this is a read of: whether the model, holding
+    /// it, would have read any of it again ([`Model::apply`]).
+    fn overtaken_by(&self, changes: Option<&[Change]>) -> bool {
+        let Some(changes) = changes else {
+            return true;
+        };
+        changes.iter().any(|change| {
+            change.kind == Kind::Project
+                || match self {
+                    Self::Sections(name) => match change.workspace.as_deref() {
+                        Some(of) => of == name,
+                        None => change.kind == Kind::Workspace,
+                    },
+                    Self::Count(name) => match change.persona.as_deref() {
+                        Some(of) => of == name,
+                        None => change.kind == Kind::Persona,
+                    },
+                }
+        })
+    }
 }
 
 impl Model {
@@ -128,6 +169,7 @@ impl Model {
             sections: BTreeMap::new(),
             asked: VecDeque::new(),
             memory_counts: BTreeMap::new(),
+            reading: BTreeMap::new(),
         };
         model.read_project(&plane);
         model.read_personas(&plane);
@@ -138,6 +180,17 @@ impl Model {
     /// Brings the model up to date with `changes` in the plane at `root`, reading only what
     /// they are part of — or all of it again for `None`, "anything may have moved".
     pub fn apply(&mut self, root: &Path, changes: Option<&[Change]>) {
+        // The first reads under way outlive a rebuild, each marked where this overtakes it.
+        let mut reading = std::mem::take(&mut self.reading);
+        for (cold, overtaken) in &mut reading {
+            *overtaken = *overtaken || cold.overtaken_by(changes);
+        }
+        self.apply_to_held(root, changes);
+        self.reading = reading;
+    }
+
+    /// [`Self::apply`], to what the model holds.
+    fn apply_to_held(&mut self, root: &Path, changes: Option<&[Change]>) {
         let Some(changes) = changes else {
             *self = Self::read(root);
             return;
@@ -265,7 +318,21 @@ impl Model {
     /// Workspace `name`'s sections, read on the first ask and kept current from then on — or
     /// why the workspace could not be read, which is never held: the next ask reads again. A
     /// workspace with a store that could not be read is read again on every ask too.
+    ///
+    /// **The first ask reads the disk here**, so this is for a model nobody else waits on.
+    /// One held under a lock asks [`Self::sections_held`], reads with the lock let go, and
+    /// hands the read to [`Self::sections_read`].
     pub fn sections(&mut self, root: &Path, name: &str) -> Result<Sections, String> {
+        if let Some(held) = self.sections_held(name) {
+            return Ok(held);
+        }
+        self.sections_read(name, Sections::read(root, name))
+    }
+
+    /// Workspace `name`'s sections where the model holds them, reading nothing — or `None`,
+    /// which starts a first read: the asker reads them ([`Sections::read`]) and hands what it
+    /// read to [`Self::sections_read`].
+    pub fn sections_held(&mut self, name: &str) -> Option<Sections> {
         // A store that could not be read is not held either: what refused it — a link out of
         // the plane, a permission — can change with nothing the watch hears.
         if let Some(held) = self.sections.get(name)
@@ -274,11 +341,32 @@ impl Model {
         {
             let held = held.clone();
             self.asked_now(name);
-            return Ok(held);
+            return Some(held);
         }
-        let read = Sections::read(root, name)?;
-        self.sections.insert(name.to_owned(), read.clone());
-        self.asked_now(name);
+        self.reading
+            .entry(Cold::Sections(name.to_owned()))
+            .or_insert(false);
+        None
+    }
+
+    /// Takes in what a first read of workspace `name` gave, and answers it.
+    ///
+    /// **Held only where nothing overtook it**: a change to the workspace applied since
+    /// [`Self::sections_held`] found the model with nothing of it to bring up to date, so the
+    /// read may be older than the change. It is then served this once, as a read made a
+    /// moment before the change would have been, and the next ask reads again. A read nobody
+    /// started — another first ask took its place in — is not held either.
+    pub fn sections_read(
+        &mut self,
+        name: &str,
+        read: Result<Sections, String>,
+    ) -> Result<Sections, String> {
+        let overtaken = self.reading.remove(&Cold::Sections(name.to_owned()));
+        let read = read?;
+        if overtaken == Some(false) {
+            self.sections.insert(name.to_owned(), read.clone());
+            self.asked_now(name);
+        }
         Ok(read)
     }
 
@@ -297,12 +385,35 @@ impl Model {
     }
 
     /// How many memories `persona` holds (`_shared` for the shared store), counted on the
-    /// first ask and kept current from then on.
+    /// first ask and kept current from then on. The first ask reads the disk here, as
+    /// [`Self::sections`] does.
     pub fn memory_count(&mut self, root: &Path, persona: &str) -> usize {
-        *self
-            .memory_counts
-            .entry(persona.to_owned())
-            .or_insert_with(|| crate::personas::memory_count(root, persona))
+        if let Some(held) = self.memory_count_held(persona) {
+            return held;
+        }
+        let counted = crate::personas::memory_count(root, persona);
+        self.memory_count_read(persona, counted);
+        counted
+    }
+
+    /// `persona`'s memory count where the model holds it, reading nothing — or `None`, which
+    /// starts a first read the asker hands to [`Self::memory_count_read`].
+    pub fn memory_count_held(&mut self, persona: &str) -> Option<usize> {
+        let held = self.memory_counts.get(persona).copied();
+        if held.is_none() {
+            self.reading
+                .entry(Cold::Count(persona.to_owned()))
+                .or_insert(false);
+        }
+        held
+    }
+
+    /// Takes in a first count of `persona`'s memories, held only where nothing overtook it
+    /// ([`Self::sections_read`]).
+    pub fn memory_count_read(&mut self, persona: &str, counted: usize) {
+        if self.reading.remove(&Cold::Count(persona.to_owned())) == Some(false) {
+            self.memory_counts.insert(persona.to_owned(), counted);
+        }
     }
 
     /// The workspaces, sorted by name — or why `workspaces/` could not be listed.
@@ -936,6 +1047,166 @@ mod tests {
         assert_eq!(model.memory_count(root, "scribe"), 0);
         model.apply(root, None);
         assert_eq!(model.memory_count(root, "scribe"), 1);
+    }
+
+    fn memory_change(workspace: &str, slug: &str) -> Change {
+        change(
+            Kind::Memory,
+            Some(workspace),
+            &format!("workspaces/{workspace}/memory/{slug}.md"),
+        )
+    }
+
+    #[test]
+    fn a_first_ask_is_not_answered_from_the_model_and_what_was_read_for_it_is_held() {
+        let plane = full_plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+
+        assert_eq!(model.sections_held("alpha"), None);
+        let read = Sections::read(root, "alpha");
+        let served = model
+            .sections_read("alpha", read)
+            .expect("alpha's sections");
+
+        assert_eq!(titles(&served.memories), ["Memory one"]);
+        assert_eq!(model.sections_held("alpha"), Some(served));
+    }
+
+    #[test]
+    fn a_first_read_a_change_overtook_is_served_once_and_never_held() {
+        // The read is made with the model's lock let go, so a change can be applied between
+        // the read and its being taken in. The model had nothing of `alpha` to bring up to
+        // date then, and holding the read would serve the old journal until a rebuild.
+        let plane = full_plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+        assert_eq!(model.sections_held("alpha"), None);
+        let read = Sections::read(root, "alpha");
+        memory(root, "alpha", "m2", "Memory two");
+        model.apply(root, Some(&[memory_change("alpha", "m2")]));
+
+        let served = model
+            .sections_read("alpha", read)
+            .expect("alpha's sections");
+
+        assert_eq!(titles(&served.memories), ["Memory one"]);
+        assert_eq!(model.sections_held("alpha"), None);
+        let read = Sections::read(root, "alpha");
+        let again = model.sections_read("alpha", read).expect("read again");
+        assert_eq!(titles(&again.memories), ["Memory one", "Memory two"]);
+        assert_eq!(model.sections_held("alpha"), Some(again));
+    }
+
+    #[test]
+    fn a_first_read_is_overtaken_by_a_rebuild_and_not_by_another_workspaces_change() {
+        let plane = full_plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+
+        assert_eq!(model.sections_held("alpha"), None);
+        let read = Sections::read(root, "alpha");
+        model.apply(root, Some(&[memory_change("beta", "b1")]));
+        model
+            .sections_read("alpha", read)
+            .expect("alpha's sections");
+        assert!(model.sections_held("alpha").is_some(), "beta's change");
+
+        for overtaking in [
+            None,
+            Some(vec![change(Kind::Project, None, "charter.toml")]),
+            Some(vec![change(Kind::Workspace, None, "workspaces")]),
+            Some(vec![change(
+                Kind::Workspace,
+                Some("alpha"),
+                "workspaces/alpha",
+            )]),
+        ] {
+            model.apply(root, overtaking.as_deref());
+            assert_eq!(model.sections_held("alpha"), None, "{overtaking:?}");
+            let read = Sections::read(root, "alpha");
+            model.apply(root, overtaking.as_deref());
+            model
+                .sections_read("alpha", read)
+                .expect("alpha's sections");
+            assert_eq!(model.sections_held("alpha"), None, "{overtaking:?}");
+            // The ask after it is a first ask again, and nothing overtakes this one.
+            let read = Sections::read(root, "alpha");
+            model
+                .sections_read("alpha", read)
+                .expect("alpha's sections");
+            assert!(model.sections_held("alpha").is_some(), "{overtaking:?}");
+        }
+    }
+
+    #[test]
+    fn a_read_nobody_asked_the_model_for_is_not_held_over_what_it_holds() {
+        // Two first asks at once: the second to arrive must not put its older read over
+        // sections the model has kept current since the first one was taken in.
+        let plane = full_plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+        assert_eq!(model.sections_held("alpha"), None);
+        assert_eq!(model.sections_held("alpha"), None);
+        let first = Sections::read(root, "alpha");
+        let second = Sections::read(root, "alpha");
+        model.sections_read("alpha", first).expect("the first");
+        memory(root, "alpha", "m2", "Memory two");
+        model.apply(root, Some(&[memory_change("alpha", "m2")]));
+
+        model.sections_read("alpha", second).expect("the second");
+
+        let held = model.sections_held("alpha").expect("held");
+        assert_eq!(titles(&held.memories), ["Memory one", "Memory two"]);
+    }
+
+    #[test]
+    fn a_workspace_that_could_not_be_read_off_the_model_is_not_held() {
+        let plane = plane();
+        let mut model = Model::read(plane.path());
+        assert_eq!(model.sections_held("nobody"), None);
+        let read = Sections::read(plane.path(), "nobody");
+        assert!(model.sections_read("nobody", read).is_err());
+        assert_eq!(model.sections_held("nobody"), None);
+    }
+
+    #[test]
+    fn a_memory_count_made_off_the_model_is_held_unless_a_change_overtook_it() {
+        let plane = plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+        let steward = Change {
+            kind: Kind::Memory,
+            workspace: None,
+            persona: Some("steward".to_owned()),
+            path: "personas/steward/memory/s1.md".to_owned(),
+        };
+
+        assert_eq!(model.memory_count_held("steward"), None);
+        let counted = crate::personas::memory_count(root, "steward");
+        persona_memory(root, "steward", "s1");
+        model.apply(root, Some(std::slice::from_ref(&steward)));
+        model.memory_count_read("steward", counted);
+        assert_eq!(model.memory_count_held("steward"), None, "overtaken");
+
+        let counted = crate::personas::memory_count(root, "steward");
+        model.apply(root, Some(&[memory_change("alpha", "m1")]));
+        model.memory_count_read("steward", counted);
+        assert_eq!(model.memory_count_held("steward"), Some(1));
+    }
+
+    #[test]
+    fn a_model_with_a_first_read_under_way_and_then_done_equals_one_read_fresh() {
+        let plane = plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+        assert_eq!(model.sections_held("nobody"), None);
+        assert_eq!(model.memory_count_held("nobody"), None);
+        let read = Sections::read(root, "nobody");
+        assert!(model.sections_read("nobody", read).is_err());
+        model.memory_count_read("nobody", 0);
+        model.apply(root, None);
+        assert_eq!(model, Model::read(root));
     }
 
     /// One thing done to a plane on disk, as the CLI, an editor or another chat does it.
