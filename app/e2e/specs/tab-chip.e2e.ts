@@ -205,6 +205,8 @@ async function measured(name: string) {
           count.getAttribute("data-count"),
         ),
         nameCut: label ? label.scrollWidth > label.clientWidth + 1 : false,
+        // How wide the title is drawn: a tab gives up its counts before its whole title (#1867).
+        nameWidth: label ? label.getBoundingClientRect().width : 0,
         said: counts?.getAttribute("aria-label") ?? null,
       };
     },
@@ -484,9 +486,12 @@ describe("the chip a session's tab wears for its tasks", () => {
     if (seen.shown.length !== 3)
       console.log(`tab-chip.e2e: the chip with room was ${JSON.stringify(seen)}`);
     expect(seen.said).toContain("2 working, 1 failed, 3 done");
-    // With room to spare the chip shows every count, and sits inside its tab's own cell,
-    // between the tab's button and its close.
-    expect(seen.shown).toEqual(["working", "failed", "done"]);
+    // The chip shows every count the tab has room for beside its drawn title, from the start
+    // and whole (#1867: the title is never squeezed out for a count), and sits inside its
+    // tab's own cell, between the tab's button and its close.
+    check("the tab's title is not drawn", seen.nameWidth, "atLeast", 1);
+    expect(["working", "failed", "done"].slice(0, seen.shown.length)).toEqual(seen.shown);
+    check("the chip shows no count", seen.shown.length, "atLeast", 1);
     const [cell, tab, chip, closer] = [seen.cell, seen.tab, seen.chip, seen.closer] as Box[];
     check("the chip starts over the tab's button", chip.left, "atLeast", tab.right - 1);
     check("the chip runs under the close", chip.right, "atMost", closer.left + 1);

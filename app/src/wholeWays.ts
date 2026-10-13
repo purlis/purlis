@@ -69,17 +69,13 @@ export function fitCounts(counts: HTMLElement): void {
   if (chip !== null && short()) chip.dataset.away = "";
 }
 
-/** Whether the tab's button is down to its floor and its title `name`, which has a name to
- *  draw, is drawn not even a pixel wide (#1867): on a narrow strip the button's own floor can
- *  hold its mark and none of its name. Measured by the boxes, as the strip is laid out; a
- *  button not laid out, or one with room still to give, says nothing. */
+/** Whether the tab's title `name` has a name to draw and is drawn not even a pixel wide
+ *  (#1867): on a narrow strip the button's own floor can hold its mark and none of its name.
+ *  Measured by its box, as the strip is laid out; a button not laid out says nothing. */
 function undrawn(name: HTMLElement | null): boolean {
   if (name === null || !name.textContent) return false;
   const tab = name.closest<HTMLElement>('[role="tab"]');
-  if (tab === null) return false;
-  const width = tab.getBoundingClientRect().width;
-  const floor = parseFloat(getComputedStyle(tab).minWidth);
-  if (width === 0 || !(width <= floor + 0.5)) return false;
+  if (tab === null || tab.getBoundingClientRect().width === 0) return false;
   return name.getBoundingClientRect().width < 1;
 }
 

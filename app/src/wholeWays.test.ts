@@ -32,7 +32,6 @@ function tab(width: number, many: number, titled = false): Built {
   cell.className = "tab";
   const button = document.createElement("button");
   button.setAttribute("role", "tab");
-  button.style.minWidth = `${FLOOR}px`;
   const title = document.createElement("span");
   title.className = "tab-name";
   title.textContent = "steward 1";
