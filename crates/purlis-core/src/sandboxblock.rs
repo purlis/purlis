@@ -507,11 +507,14 @@ pub fn detect_with_targets(
                     // Standard error and output in one text (opencode's, #1353): what the
                     // command printed may name any host or path, so only a violation line,
                     // which is the sandbox's own, names a target to allow. A lookup's host is
-                    // said, and never offered.
+                    // said, and never offered. The certificate check keeps to its own rule,
+                    // below: what a line of readers printed names none here either.
                     let own = violations(stderr, place);
                     found.extend(on_stderr(stderr, place).into_iter().map(|(block, target)| {
                         let kept = target.is_some()
-                            && (own.contains(&(block, target.clone())) || names_a_lookup(&block));
+                            && (own.contains(&(block, target.clone()))
+                                || (names_a_lookup(&block)
+                                    && block.kind != Kind::CertificateCheck));
                         (block, if kept { target } else { None })
                     }));
                 } else {
@@ -643,13 +646,14 @@ fn runs_a_container_client(payload: &serde_json::Value) -> bool {
 
 /// The programs that only read or print: none of them makes a connection of its own, so none
 /// is ever refused the certificate check. By the name a line runs one under.
-const READERS: [&str; 56] = [
+const READERS: [&str; 62] = [
     "cat", "tac", "head", "tail", "less", "more", "bat", "nl", "wc", "grep", "egrep", "fgrep",
     "zgrep", "rg", "ag", "ack", "sed", "awk", "gawk", "cut", "tr", "sort", "uniq", "column",
     "fold", "rev", "tee", "strings", "xxd", "hexdump", "od", "jq", "yq", "diff", "cmp", "find",
     "ls", "stat", "file", "echo", "printf", "true", "false", "test", "[", "cd", "pwd", "sleep",
     // The shell's own, which run nothing.
-    "read", "export", "set", "unset", "local", "declare", "exit", ":",
+    "read", "export", "set", "unset", "local", "declare", "exit", ":", "[[", "break", "continue",
+    "return", "shift", "wait",
 ];
 
 /// The words that open a loop's or a choice's header, whose next word names no program
@@ -691,6 +695,11 @@ const MOST_SHELLS_DEEP: usize = 2;
 /// ruled out is what a failure ruled out, a result that merely read the words: a log, a file of
 /// tests, a page of search results, none of which can make its reader a program that connects.
 ///
+/// **A here-document's body is text, never a line the shell runs.** Its opener reads it, so a
+/// body that holds the check's words, or a line that looks like a command, is what a reader
+/// printed: every body line is left out before the line is read ([`without_bodies`]). A shell
+/// that opens one is a program on the opener's own line, whatever its body says.
+///
 /// Read whole or not at all: a result with no line beside it (a file tool's, a background
 /// command's output read back), a line too big for the guards, and one that does not tokenize
 /// run none here.
@@ -701,8 +710,25 @@ fn runs_a_program(payload: &serde_json::Value) -> bool {
     if line.len() > crate::guardcaps::MAX_COMMAND_BYTES {
         return false;
     }
-    let (runs, too_deep) = crate::shellseg::too_deep_within(|| runs_past_readers(line, 0));
+    let line = without_bodies(line);
+    let (runs, too_deep) = crate::shellseg::too_deep_within(|| runs_past_readers(&line, 0));
     runs && !too_deep
+}
+
+/// `line` without the body of any here-document it opens, terminators too
+/// ([`crate::heredoc::heredoc_layout`]). Every body goes, a shell's as well: leaving a line out
+/// can only make this reading find fewer programs, the way it is allowed to be wrong.
+fn without_bodies(line: &str) -> std::borrow::Cow<'_, str> {
+    if !line.contains("<<") {
+        return line.into();
+    }
+    crate::heredoc::heredoc_layout(line)
+        .into_iter()
+        .filter(|row| !row.body)
+        .map(|row| row.text)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into()
 }
 
 /// [`runs_a_program`] of one line, itself `shells` strings deep in the line a chat ran.
