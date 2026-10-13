@@ -125,8 +125,7 @@ pub(super) fn bare_row(out: &str) -> Row {
     let set = out
         .lines()
         .filter_map(|line| line.split_once('\t'))
-        .filter(|(scope, _)| *scope != "command")
-        .last();
+        .rfind(|(scope, _)| *scope != "command");
     let hint = "Run: git config --global safe.bareRepository explicit. A sandboxed chat can \
                 write a folder that git takes for a bare repository; a git run inside it later \
                 reads that folder's config, which can name a program that runs outside the \
