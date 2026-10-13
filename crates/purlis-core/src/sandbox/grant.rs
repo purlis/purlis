@@ -39,6 +39,10 @@
 //! - **You** ([`Level::You`]): this machine only. A host is one of your own hosts (#1341); a
 //!   folder is kept in `app/sandbox.json` ([`super::local::grant_write`]), which no sandboxed
 //!   chat writes.
+//! - **This machine, every project** ([`Level::Machine`]): a local socket or a system service
+//!   only (the operator's ruling R2 of 2026-10-13, ADR 0093 as amended). Kept in this
+//!   machine's one file for every project ([`super::local::everywhere_path`]), which no
+//!   sandboxed chat writes and no repository brings.
 //! - **The project** ([`Level::Project`]): a host only, as one of the project's own hosts in the
 //!   committed file. A folder is a path on one machine, so it is never the project's.
 //!
@@ -84,6 +88,12 @@ impl What {
         }
     }
 
+    /// Whether it may be allowed for every project on this machine ([`Level::Machine`], R2): a
+    /// socket or a service, never a host or a folder.
+    pub fn machine_wide(&self) -> bool {
+        matches!(self, Self::Socket(_) | Self::Service(_))
+    }
+
     /// Whether it is kept only on this machine: everything but a host. A socket or a service is
     /// this machine's alone, and a committed file that named one could grant itself to every
     /// chat of the project (D-sock-2).
@@ -115,6 +125,11 @@ pub enum Level {
     Chat,
     /// Every chat of this project on this machine.
     You,
+    /// Every chat of **every project** on this machine, those opened later too (R2,
+    /// 2026-10-13). Offered for a socket or a service only: what a machine has (a container
+    /// engine, an agent) is the same whichever project asks for it. Never a host or a folder,
+    /// which stay a project's.
+    Machine,
     /// Every chat of everyone who opens the project: committed.
     Project,
 }
@@ -126,13 +141,20 @@ impl Level {
             Self::Once => "once",
             Self::Chat => "chat",
             Self::You => "you",
+            Self::Machine => "machine",
             Self::Project => "project",
         }
     }
 
     /// The level `word` names.
     pub fn of_word(word: &str) -> Option<Self> {
-        [Self::Once, Self::Chat, Self::You, Self::Project]
+        [
+            Self::Once,
+            Self::Chat,
+            Self::You,
+            Self::Machine,
+            Self::Project,
+        ]
             .into_iter()
             .find(|level| level.word() == word)
     }
@@ -141,7 +163,7 @@ impl Level {
     /// ([`super::hosts::Locks`]): this chat's and yours are this machine's.
     pub fn hosts_level(self) -> super::hosts::Level {
         match self {
-            Self::Once | Self::Chat | Self::You => super::hosts::Level::You,
+            Self::Once | Self::Chat | Self::You | Self::Machine => super::hosts::Level::You,
             Self::Project => super::hosts::Level::Project,
         }
     }
@@ -152,6 +174,7 @@ impl Level {
             Self::Once => "once, for this chat's next run",
             Self::Chat => "for this chat",
             Self::You => "for me on this machine",
+            Self::Machine => "on this machine, for every project",
             Self::Project => "for everyone in this project",
         }
     }
@@ -745,6 +768,7 @@ pub fn told(what: &What, level: Level) -> String {
         Level::Once => "once, for this run of this chat",
         Level::Chat => "for this chat",
         Level::You => "for every chat of this project on their machine",
+        Level::Machine => "for every chat of every project on their machine",
         Level::Project => "for everyone in the project",
     };
     format!(

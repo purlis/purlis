@@ -1749,12 +1749,15 @@ impl Compiled {
         }
         let denied = Denied::of(root, machine);
         let writable = granted_folders(root, machine, &chat.writes, &locks);
-        // Sockets and services: this chat's, then yours on this machine (D-sock-2), never a
-        // committed file's.
+        // Sockets and services: this chat's, then yours for this project on this machine
+        // (D-sock-2), then yours for every project on it (R2), never a committed file's. Each
+        // is judged again below for this project, whichever level kept it.
         let mut sockets = chat.sockets.clone();
         sockets.extend(local::granted_sockets(root));
+        sockets.extend(local::sockets_everywhere());
         let mut named = chat.services.clone();
         named.extend(local::granted_services(root));
+        named.extend(local::services_everywhere());
         Self {
             widened: Widened::of(policy, machine, root, &denied).and_granted(
                 &sockets,

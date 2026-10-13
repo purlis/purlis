@@ -298,6 +298,7 @@ fn allow_said(level: crate::sandboxing::GrantLevel, sandbox: bool) -> &'static s
         GrantLevel::Chat if sandbox => "Allow only for this chat",
         GrantLevel::Chat => "Allow for this chat",
         GrantLevel::You => "Allow for me on this machine",
+        GrantLevel::Machine => "Allow on this machine, for every project",
         GrantLevel::Project => "Allow for everyone in this project",
     }
 }
@@ -314,6 +315,7 @@ pub fn level_id(level: crate::sandboxing::GrantLevel) -> &'static str {
         GrantLevel::Once => "once",
         GrantLevel::Chat => "chat",
         GrantLevel::You => "you",
+        GrantLevel::Machine => "machine",
         GrantLevel::Project => "project",
     }
 }
@@ -553,8 +555,16 @@ pub fn sandbox_local(
         _ => return None,
     };
     // The narrowest answer first: a container engine's socket is about the same as no sandbox,
-    // and a service purlis cannot tell could be anything.
-    let order = [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You];
+    // and a service purlis cannot tell could be anything. Then **every project on this
+    // machine** (R2, 2026-10-13), the standing answer the Notice draws beside it, so one press
+    // is the last for a thing every project of the person's uses; only this chat, and this
+    // project alone, are the other scopes.
+    let order = [
+        GrantLevel::Once,
+        GrantLevel::Machine,
+        GrantLevel::Chat,
+        GrantLevel::You,
+    ];
     let levels: Vec<GrantLevel> = order
         .into_iter()
         .filter(|level| locks.refuses_grant(&what, (*level).into()).is_none())

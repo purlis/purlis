@@ -896,6 +896,9 @@ pub enum GrantLevel {
     Chat,
     /// Every chat of this project on this machine.
     You,
+    /// Every chat of every project on this machine (R2, 2026-10-13): a socket or a service
+    /// only.
+    Machine,
     /// Everyone in the project: committed. A host only.
     Project,
 }
@@ -906,6 +909,7 @@ impl From<GrantLevel> for sandbox::grant::Level {
             GrantLevel::Once => Self::Once,
             GrantLevel::Chat => Self::Chat,
             GrantLevel::You => Self::You,
+            GrantLevel::Machine => Self::Machine,
             GrantLevel::Project => Self::Project,
         }
     }
@@ -917,6 +921,7 @@ impl From<sandbox::grant::Level> for GrantLevel {
             sandbox::grant::Level::Once => Self::Once,
             sandbox::grant::Level::Chat => Self::Chat,
             sandbox::grant::Level::You => Self::You,
+            sandbox::grant::Level::Machine => Self::Machine,
             sandbox::grant::Level::Project => Self::Project,
         }
     }
@@ -1113,6 +1118,14 @@ pub(crate) fn kept_for(
                 .to_owned(),
         );
     }
+    // Every project on this machine is a socket's or a service's alone (R2), whoever asks.
+    if level == Level::Machine && !what.machine_wide() {
+        return Err(
+            "purlis allows only a local socket or a system service for every project on this \
+             machine: a host and a folder are a project's."
+                .to_owned(),
+        );
+    }
     let already = match (what, level, session) {
         (What::Host(host), Level::You | Level::Project, _) => grant::allowed_already(root, host)
             .is_some_and(|held| held == level || held == Level::Project),
@@ -1122,6 +1135,12 @@ pub(crate) fn kept_for(
         }
         (What::Service(service), Level::You, _) => {
             sandbox::local::granted_services(root).contains(service)
+        }
+        (What::Socket(socket), Level::Machine, _) => {
+            sandbox::local::sockets_everywhere().contains(socket)
+        }
+        (What::Service(service), Level::Machine, _) => {
+            sandbox::local::services_everywhere().contains(service)
         }
         _ => false,
     };
@@ -1141,6 +1160,16 @@ pub(crate) fn kept_for(
         (_, Level::Once, Some(session)) => chats.hold_grant_once(session, what.clone(), at)?,
         (_, Level::Chat, Some(session)) => chats.hold_grant(session, what.clone(), at)?,
         (_, Level::Once | Level::Chat, None) => {}
+        // For every project on this machine (R2): this machine's one file, with when it was
+        // allowed, never a project's or a clone's.
+        (What::Socket(socket), Level::Machine, _) => {
+            sandbox::local::grant_socket_everywhere(socket, everywhere_made(what, already, at))
+                .map_err(|why| format!("purlis could not keep {}: {why}", socket.display()))?;
+        }
+        (What::Service(service), Level::Machine, _) => {
+            sandbox::local::grant_service_everywhere(service, everywhere_made(what, already, at))
+                .map_err(|why| format!("purlis could not keep {service}: {why}"))?;
+        }
         (What::Socket(socket), _, _) => {
             sandbox::local::grant_socket(root, socket)
                 .map_err(|why| format!("purlis could not keep {}: {why}", socket.display()))?;
@@ -1154,6 +1183,8 @@ pub(crate) fn kept_for(
                 purlis_core::settings::hosts::grant(root, hosts_file(level), host)?;
             }
         }
+        // Refused above: every project on this machine is never a host's.
+        (What::Host(_), Level::Machine, _) => {}
         (What::Write(folder), _, _) => {
             sandbox::local::grant_write(root, folder)
                 .map_err(|why| format!("purlis could not keep {}: {why}", folder.display()))?;
@@ -1172,7 +1203,7 @@ pub(crate) fn kept_for(
     {
         chats.owe_restart(session, told);
     }
-    if !matches!(level, Level::Once | Level::Chat)
+    if !matches!(level, Level::Once | Level::Chat | Level::Machine)
         && !already
         && let Err(why) = sandbox::local::record_made(
             root,
@@ -1192,6 +1223,21 @@ pub(crate) fn kept_for(
         live,
         retry,
         already,
+    })
+}
+
+/// The record of a grant for every project on this machine, where it is newly made.
+fn everywhere_made(
+    what: &sandbox::grant::What,
+    already: bool,
+    at: u64,
+) -> Option<sandbox::local::Made> {
+    (!already).then(|| sandbox::local::Made {
+        what: what.word().to_owned(),
+        target: what.target(),
+        level: sandbox::grant::Level::Machine.word().to_owned(),
+        at,
+        chat: None,
     })
 }
 
@@ -1422,6 +1468,27 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         let at = when(GrantWhat::Socket, &target, Level::You);
         out.push(row(GrantWhat::Socket, target, Level::You, at));
     }
+    // What you allowed for every project on this machine (R2): listed in each project, since
+    // each project's chats have it, and Remove takes it from them all.
+    let everywhere = sandbox::local::made_everywhere();
+    let when_everywhere = |what: GrantWhat, target: &str| {
+        everywhere
+            .iter()
+            .find(|one| one.what == what.word() && one.target == target)
+            .and_then(|one| u32::try_from(one.at).ok())
+    };
+    for socket in sandbox::local::sockets_everywhere() {
+        let target = socket.display().to_string();
+        let at = when_everywhere(GrantWhat::Socket, &target);
+        out.push(row(GrantWhat::Socket, target, Level::Machine, at));
+    }
+    for service in sandbox::local::services_everywhere()
+        .into_iter()
+        .filter(|service| service != sandbox::services::TRUSTD)
+    {
+        let at = when_everywhere(GrantWhat::Service, &service);
+        out.push(row(GrantWhat::Service, service, Level::Machine, at));
+    }
     // Never the certificate check's (R1): one an older build kept grants nothing.
     for service in sandbox::local::granted_services(root)
         .into_iter()
@@ -1595,6 +1662,12 @@ fn revoke(
         (What::Service(service), Level::You, _) => {
             sandbox::local::granted_services(root).contains(service)
         }
+        (What::Socket(socket), Level::Machine, _) => {
+            sandbox::local::sockets_everywhere().contains(socket)
+        }
+        (What::Service(service), Level::Machine, _) => {
+            sandbox::local::services_everywhere().contains(service)
+        }
         _ => false,
     };
     if !there {
@@ -1624,6 +1697,17 @@ fn revoke(
         (What::Write(folder), None) => {
             sandbox::local::revoke_write(root, folder)
                 .map_err(|why| format!("purlis could not remove {}: {why}", folder.display()))?;
+        }
+        // For every project (R2): out of this machine's one file, with its record.
+        (What::Socket(socket), None) if level == Level::Machine => {
+            sandbox::local::revoke_socket_everywhere(socket)
+                .map_err(|why| format!("purlis could not remove {}: {why}", socket.display()))?;
+            return Ok(());
+        }
+        (What::Service(service), None) if level == Level::Machine => {
+            sandbox::local::revoke_service_everywhere(service)
+                .map_err(|why| format!("purlis could not remove {service}: {why}"))?;
+            return Ok(());
         }
         (What::Socket(socket), None) => {
             sandbox::local::revoke_socket(root, socket)
@@ -2234,12 +2318,8 @@ mod tests {
         );
         // An unaudited grant is no grant.
         assert!(
-            refused(
-                GrantWhat::Service,
-                sandbox::services::TRUSTD,
-                GrantLevel::You
-            )
-            .contains("event log")
+            refused(GrantWhat::Service, "com.example.helper", GrantLevel::You)
+                .contains("event log")
         );
         assert!(sandbox::local::granted_services(project.path()).is_empty());
     }
@@ -2335,6 +2415,144 @@ mod tests {
                 .any(|one| one.target == TRUSTD),
             "it grants nothing, so it is not listed"
         );
+    }
+
+    /// R2 (2026-10-13): a socket or a service allowed "on this machine, for every project" is
+    /// judged as any grant is, audited once, kept in this machine's one file (never the
+    /// project's, nor under its clone's key), listed in every project's Allowed list with
+    /// Remove, and taken out of them all by one Remove. A host or a folder is never kept there.
+    #[test]
+    fn a_socket_or_a_service_is_allowed_for_every_project_listed_in_each_and_removed_once() {
+        use sandbox::grant::{Level, What};
+        let everywhere = tempfile::tempdir().expect("a config home");
+        sandbox::local::everywhere_for_this_test(Some(
+            everywhere.path().join(sandbox::local::EVERY_PROJECT),
+        ));
+        let project = tempfile::tempdir().expect("a project");
+        let other = tempfile::tempdir().expect("another project");
+        for root in [project.path(), other.path()] {
+            std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("toml");
+        }
+        let root = project.path();
+        let chats = crate::chats::Chats::new();
+        let seen = std::sync::Mutex::new(Vec::new());
+        let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+            seen.lock().unwrap().push((
+                chat,
+                audited.granted,
+                audited.what.to_owned(),
+                audited.target.to_owned(),
+                audited.level.word(),
+            ));
+            Ok(())
+        };
+        // Judged by the core at this level: a service by its whole name, never the
+        // certificate check's, and never a host or a folder.
+        let judge = |what, target: &str| {
+            judged(
+                root,
+                &sandbox::Machine::this(),
+                Some(root),
+                1,
+                (what, target, GrantLevel::Machine),
+            )
+        };
+        let (service, level) = judge(GrantWhat::Service, "com.example.helper").expect("judged");
+        assert_eq!(level, Level::Machine);
+        assert!(
+            judge(GrantWhat::Host, "api.example.com")
+                .expect_err("refused")
+                .contains("only a local socket or a system service")
+        );
+        assert!(judge(GrantWhat::Service, sandbox::services::TRUSTD).is_err());
+        // An unaudited Allow is no Allow.
+        assert!(
+            kept_for(root, &chats, None, (&service, level), &no_audit(), 100)
+                .expect_err("refused")
+                .contains("event log")
+        );
+        assert!(sandbox::local::services_everywhere().is_empty());
+
+        let socket = What::Socket("/purlis-test-nowhere/docker.sock".into());
+        for what in [&service, &socket] {
+            let kept = kept_for(root, &chats, None, (what, level), &audit, 100).expect("kept");
+            assert!(!kept.already);
+        }
+        // Allowed twice is kept once, and audited once.
+        assert!(
+            kept_for(root, &chats, None, (&socket, level), &audit, 101)
+                .expect("allowed already")
+                .already
+        );
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [
+                (
+                    None,
+                    true,
+                    "service".to_owned(),
+                    "com.example.helper".to_owned(),
+                    "machine"
+                ),
+                (
+                    None,
+                    true,
+                    "socket".to_owned(),
+                    "/purlis-test-nowhere/docker.sock".to_owned(),
+                    "machine"
+                ),
+            ]
+        );
+        // This machine's one file: nothing in the project, nothing under its clone's key.
+        assert!(sandbox::local::granted_sockets(root).is_empty());
+        assert!(sandbox::local::granted_services(root).is_empty());
+        assert!(sandbox::local::everywhere_path().starts_with(everywhere.path()));
+        // A host or a folder is refused there whoever asks.
+        let host = What::Host(sandbox::grant::host("api.example.com").expect("a host"));
+        assert!(kept_for(root, &chats, None, (&host, level), &audit, 102).is_err());
+
+        // Listed in each project, at that level, with when it was allowed.
+        let listed_in = |root: &std::path::Path| -> Vec<(GrantWhat, String, GrantLevel, Option<u32>)> {
+            grants_of(root, &chats)
+                .into_iter()
+                .filter(|one| one.level == GrantLevel::Machine)
+                .map(|one| (one.what, one.target, one.level, one.at))
+                .collect()
+        };
+        for root in [project.path(), other.path()] {
+            assert_eq!(
+                listed_in(root),
+                [
+                    (
+                        GrantWhat::Socket,
+                        "/purlis-test-nowhere/docker.sock".to_owned(),
+                        GrantLevel::Machine,
+                        Some(100)
+                    ),
+                    (
+                        GrantWhat::Service,
+                        "com.example.helper".to_owned(),
+                        GrantLevel::Machine,
+                        Some(100)
+                    ),
+                ]
+            );
+        }
+        // Remove, from the other project's list: gone from both, audited, with its record.
+        let id = grants_of(other.path(), &chats)
+            .into_iter()
+            .find(|one| one.level == GrantLevel::Machine && one.what == GrantWhat::Socket)
+            .expect("listed")
+            .id;
+        revoke(other.path(), &chats, &id, &audit).expect("removed");
+        assert!(sandbox::local::sockets_everywhere().is_empty());
+        assert_eq!(listed_in(root).len(), 1);
+        assert_eq!(sandbox::local::made_everywhere().len(), 1);
+        let last = seen.lock().unwrap().last().cloned().expect("audited");
+        assert_eq!((last.1, last.4), (false, "machine"));
+        // Removed twice, it is no longer there.
+        assert!(revoke(other.path(), &chats, &id, &audit).is_err());
+        sandbox::local::everywhere_for_this_test(None);
     }
 
     #[test]
@@ -3088,9 +3306,17 @@ mod tests {
         let project = tempfile::tempdir().expect("a project");
         std::fs::write(
             project.path().join("charter.toml"),
-            "[sandbox]\nmode = \"on\"\ncertificate-checks = true\n",
+            "[sandbox]\nmode = \"on\"\n",
         )
         .expect("toml");
+        // A default project tells nothing: certificate checks are among the defaults (R1).
+        assert_eq!(state_of(project.path()).presets_changed, None);
+        // This machine last saw the project before they were: told once, with the widening.
+        sandbox::local::acknowledge_presets(
+            project.path(),
+            &["model-providers", "forge", "toolchains"].map(str::to_owned),
+        )
+        .expect("seen");
         let told = state_of(project.path()).presets_changed.expect("told");
         assert_eq!(told.added, ["Certificate checks"]);
         assert_eq!(told.widens.len(), 1);

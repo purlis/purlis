@@ -22,6 +22,7 @@ const LEVELS: Readonly<Record<SandboxGrant["level"], string>> = {
   once: "This chat, once",
   chat: "This chat",
   you: "This project on this machine",
+  machine: "Every project on this machine",
   project: "Everyone in the project",
 };
 

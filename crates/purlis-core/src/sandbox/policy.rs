@@ -454,6 +454,14 @@ impl Locks {
                 self.locked_by()
             ));
         }
+        // Every project on this machine is a socket's or a service's alone (R2).
+        if level == grant::Level::Machine && !what.machine_wide() {
+            return Some(
+                "purlis allows only a local socket or a system service for every project on \
+                 this machine: a host and a folder are a project's."
+                    .to_owned(),
+            );
+        }
         match what {
             grant::What::Host(host) => self.refuses(&Granted {
                 host: host.clone(),
@@ -652,7 +660,11 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
             words
                 .iter()
                 .map(|word| {
-                    grant::Level::of_word(word).ok_or_else(|| {
+                    grant::Level::of_word(word)
+                        // No word of a policy's names "every project on this machine" (R2):
+                        // a policy that fixes the scopes leaves that one out.
+                        .filter(|level| *level != grant::Level::Machine)
+                        .ok_or_else(|| {
                         format!(
                             "its allow-scopes name \"{}\", which is not chat, you or project",
                             clip(word)

@@ -672,19 +672,28 @@ fn allowed_already(
     use purlis_core::sandbox::{grant, local};
     let level = match offer {
         BlockOffer::Host => grant::allowed_already(root, &grant::host(target?).ok()?)?,
+        // For this project, or for every project on this machine (R2).
         BlockOffer::Socket => {
             let target = std::path::Path::new(target?);
-            local::granted_sockets(root)
-                .iter()
-                .any(|socket| socket == target)
-                .then_some(grant::Level::You)?
+            if local::granted_sockets(root).iter().any(|one| one == target) {
+                grant::Level::You
+            } else {
+                local::sockets_everywhere()
+                    .iter()
+                    .any(|one| one == target)
+                    .then_some(grant::Level::Machine)?
+            }
         }
         BlockOffer::Service => {
             let target = target?;
-            local::granted_services(root)
-                .iter()
-                .any(|service| service == target)
-                .then_some(grant::Level::You)?
+            if local::granted_services(root).iter().any(|one| one == target) {
+                grant::Level::You
+            } else {
+                local::services_everywhere()
+                    .iter()
+                    .any(|one| one == target)
+                    .then_some(grant::Level::Machine)?
+            }
         }
         _ => return None,
     };
@@ -809,18 +818,24 @@ fn held(
                 _ => (offer, target, route, levels),
             }
         }
-        // A socket or a service (D-sock-1, D-sock-3): once, for this chat, or for this project
-        // on this machine, each a policy leaves open; never the project's.
+        // A socket or a service (D-sock-1, D-sock-3; R2): once, for this chat, for this project
+        // on this machine, or for every project on it, each a policy leaves open; never the
+        // project's.
         BlockOffer::Socket | BlockOffer::Service => {
             let named = target.as_deref().map(|target| match offer {
                 BlockOffer::Socket => What::Socket(target.into()),
                 _ => What::Service(target.to_owned()),
             });
             let mut why = locks.socket_grants_refused();
-            let levels: Vec<GrantLevel> = [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
-                .into_iter()
-                .filter(|level| {
-                    let refused = named
+            let levels: Vec<GrantLevel> = [
+                GrantLevel::Once,
+                GrantLevel::Machine,
+                GrantLevel::Chat,
+                GrantLevel::You,
+            ]
+            .into_iter()
+            .filter(|level| {
+                let refused = named
                         .as_ref()
                         .and_then(|what| locks.refuses_grant(what, (*level).into()));
                     if refused.is_some() && why.is_none() {
@@ -3812,9 +3827,24 @@ mod tests {
                 Some("Allowing it lets this chat control containers.".to_owned()),
             )
         };
+        // R2: every project on this machine is among them, the first standing answer.
         assert_eq!(
             held(&Locks::none(), socket()).3,
-            [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
+            [
+                GrantLevel::Once,
+                GrantLevel::Machine,
+                GrantLevel::Chat,
+                GrantLevel::You
+            ]
+        );
+        // A policy that fixes the scopes leaves every project out: no word of its names it.
+        let scoped = Locks::parse(
+            r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#,
+            Path::new("/etc/purlis/policy.json"),
+        );
+        assert_eq!(
+            held(&scoped, socket()).3,
+            [GrantLevel::Chat, GrantLevel::You]
         );
         let locked = Locks::parse(
             r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
@@ -3955,6 +3985,29 @@ mod tests {
         );
         local::grant_socket(&root, std::path::Path::new(socket)).expect("kept");
         assert!(allowed_already(&root, BlockOffer::Socket, Some(socket)).is_some());
+        // R2: allowed for every project on this machine, a chat of any project that started
+        // before is told the same, in that scope's words.
+        let everywhere = tempfile::tempdir().expect("a config home");
+        local::everywhere_for_this_test(Some(everywhere.path().join("every-project.json")));
+        let other = tempfile::tempdir().expect("another project");
+        let agent = "/purlis-test-nowhere/agent.sock";
+        assert_eq!(
+            allowed_already(other.path(), BlockOffer::Socket, Some(agent)),
+            None
+        );
+        local::grant_socket_everywhere(std::path::Path::new(agent), None).expect("kept");
+        local::grant_service_everywhere("com.example.everywhere", None).expect("kept");
+        let said = allowed_already(other.path(), BlockOffer::Socket, Some(agent)).expect("said");
+        assert!(said.contains("on this machine, for every project"), "{said}");
+        assert!(
+            allowed_already(
+                other.path(),
+                BlockOffer::Service,
+                Some("com.example.everywhere")
+            )
+            .is_some()
+        );
+        local::everywhere_for_this_test(None);
         // Revoked in Settings, it is asked about again.
         local::revoke_service(&root, HELPER).expect("revoked");
         assert_eq!(

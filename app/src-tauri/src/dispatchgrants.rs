@@ -1068,6 +1068,8 @@ impl Store {
             (Level::Once, _, _) => {
                 Err("purlis allows a dispatch for this chat or for longer, not once.".to_owned())
             }
+            // So is every project on this machine (R2).
+            (Level::Machine, _, _) => Err(NOT_EVERY_PROJECT.to_owned()),
             (Level::Chat, _, Some(chat)) => Ok(Kept::Chat(
                 chat.to_owned(),
                 ChatPair {
@@ -1096,6 +1098,7 @@ impl Store {
             Level::Once => GrantLevel::Once,
             Level::Chat => GrantLevel::Chat,
             Level::You => GrantLevel::You,
+            Level::Machine => GrantLevel::Machine,
             Level::Project => GrantLevel::Project,
         };
         if !now.missing && !now.levels.contains(&offered) {
@@ -1876,6 +1879,7 @@ fn stamp_of(offer: &Offer, told: &Facts, task: &Task) -> String {
             GrantLevel::Once => "once",
             GrantLevel::Chat => "chat",
             GrantLevel::You => "you",
+            GrantLevel::Machine => "machine",
             GrantLevel::Project => "project",
         })
         .collect();
@@ -2168,7 +2172,7 @@ pub async fn allow_dispatch(
             held.dispatch_grants().allow_with(
                 ground,
                 id,
-                level.into(),
+                dispatch_level(level)?,
                 &Ticked {
                     also: &also,
                     shown: Some(&shown),
@@ -2739,11 +2743,26 @@ fn allow_any(
     })
 }
 
+/// Why a dispatch grant is never kept for every project on this machine.
+const NOT_EVERY_PROJECT: &str = "purlis keeps a dispatch grant for a chat, for you in this \
+                                 project or for everyone in it, never for every project on this \
+                                 machine: that scope is a local socket's or a system service's.";
+
+/// **The level a dispatch grant is kept at, as the window sent it**: never every project on
+/// this machine ([`GrantLevel::Machine`], R2 of 2026-10-13), which is a socket's or a service's
+/// alone. Refused here, where a level comes in, so no path below reads it as one of its own.
+fn dispatch_level(level: GrantLevel) -> Result<Level, String> {
+    match level {
+        GrantLevel::Machine => Err(NOT_EVERY_PROJECT.to_owned()),
+        other => Ok(other.into()),
+    }
+}
+
 /// **Takes back `asking`'s grant of any persona at `level`**: checked to be there, audited,
 /// then taken out. A chat already running is left as it is.
 fn revoke_any(root: &Path, asking: &str, level: Level, audit: Audit<'_>) -> Result<(), String> {
     let there = match level {
-        Level::Once | Level::Chat => false,
+        Level::Once | Level::Chat | Level::Machine => false,
         Level::You => dispatchgrant::any_yours(root)
             .iter()
             .any(|one| one == asking),
@@ -2823,7 +2842,7 @@ pub async fn allow_dispatch_to_any(
                 root,
                 &|name| personas.iter().any(|one| one == name),
                 &asking,
-                level.into(),
+                dispatch_level(level)?,
                 ground.audit,
             )?;
             held.dispatch_grants().start_what_is_covered(ground);
@@ -2847,7 +2866,7 @@ pub fn revoke_dispatch_to_any(
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
     let root = held.root();
-    revoke_any(root, &asking, level.into(), &|number, audited| {
+    revoke_any(root, &asking, dispatch_level(level)?, &|number, audited| {
         held.hooks().record_dispatch_grant(root, number, audited)
     })?;
     held.dispatch_grants().drop_once(Some(&asking), None);
@@ -2983,7 +3002,7 @@ pub async fn allow_dispatch_anywhere(
             held.dispatch_grants().allow_anywhere_with(
                 ground,
                 id,
-                level.into(),
+                dispatch_level(level)?,
                 &Ticked {
                     also: &also,
                     shown: Some(&shown),
@@ -3029,6 +3048,7 @@ fn set_workspace(
                     .to_owned(),
             );
         }
+        Level::Machine => return Err(NOT_EVERY_PROJECT.to_owned()),
         Level::You => dispatchwithin::yours_holds(root, asking, target, from),
         Level::Project => dispatchwithin::project_holds(root, asking, target, from),
     };
@@ -3259,7 +3279,7 @@ pub async fn set_dispatch_workspace(
                 &|name| personas.iter().any(|one| one == name),
                 &asking,
                 &target,
-                level.into(),
+                dispatch_level(level)?,
                 (&Within::of(from.as_deref()), &Within::of(to.as_deref())),
             )
         })?;
@@ -3597,7 +3617,7 @@ pub async fn add_dispatch_grant(
                     .is_some()
                     .then_some(&known as &dyn Fn(&str) -> bool),
                 (&asking, &target),
-                level.into(),
+                dispatch_level(level)?,
                 workspace.as_deref(),
             )
         })?;

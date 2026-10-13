@@ -1009,6 +1009,174 @@ pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
     })
 }
 
+// ---- the sockets and services you let every project's chats reach (R2) ----------------------
+
+/// The name of this machine's one file for every project, beside the files kept per clone
+/// ([`MACHINE_GRANTS`]). A clone's key is sixteen hex characters, so no clone's file is it.
+pub const EVERY_PROJECT: &str = "every-project.json";
+
+/// **This machine's file of what you allowed for every project** (the operator's ruling R2 of
+/// 2026-10-13, ADR 0093 as amended): the local sockets and system services every sandboxed
+/// chat here may reach, whichever project it is in, one opened later too. In purlis's folder
+/// in the config home, which every chat is denied writing and no repository brings. An empty
+/// path where there is no config home.
+pub fn everywhere_path() -> PathBuf {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(file) = TEST_EVERYWHERE.with(|file| file.borrow().clone()) {
+        return file;
+    }
+    config_home()
+        .map(|home| {
+            crate::machine::dir(&home)
+                .join(MACHINE_GRANTS)
+                .join(EVERY_PROJECT)
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// A test's seam: the file [`everywhere_path`] answers on this thread, so a test that
+    /// allows something for every project writes a file of its own, and no other test's
+    /// project takes it. Only a test build has it.
+    static TEST_EVERYWHERE: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **A test's file for what is allowed for every project**, on this thread, in place of this
+/// machine's; `None` puts the machine's back. Only in a test build.
+#[cfg(any(test, feature = "test-support"))]
+pub fn everywhere_for_this_test(file: Option<PathBuf>) {
+    TEST_EVERYWHERE.with(|held| *held.borrow_mut() = file);
+}
+
+/// What [`everywhere_path`] holds.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct Everywhere {
+    /// The local sockets, each as the kernel names it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sockets: Vec<String>,
+    /// The system services, each by its whole name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    services: Vec<String>,
+    /// When each was allowed and from which chat, as Settings' Allowed list says it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    granted: Vec<Made>,
+}
+
+fn read_everywhere() -> Everywhere {
+    let file = everywhere_path();
+    if file.as_os_str().is_empty() {
+        return Everywhere::default();
+    }
+    std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn change_everywhere(how: impl FnOnce(&mut Everywhere)) -> io::Result<()> {
+    let file = everywhere_path();
+    if file.as_os_str().is_empty() {
+        return Err(io::Error::other(
+            "this machine has no config home to keep it in",
+        ));
+    }
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(&dir)?;
+    crate::rewrite::update(&dir, &file, |now| {
+        // A file that is not this shape reads as empty, as [`read_everywhere`] reads it: it
+        // grants nothing, and the next Allow starts it again.
+        let mut held: Everywhere = now
+            .and_then(|text| serde_json::from_str(text).ok())
+            .unwrap_or_default();
+        how(&mut held);
+        serde_json::to_string_pretty(&held)
+            .map(|text| Some(format!("{text}\n")))
+            .map_err(io::Error::other)
+    })
+    .map(|_| ())
+}
+
+/// The local sockets you let every project's chats connect to on this machine. A start judges
+/// each again, for the project it starts in ([`super::Compiled::granted`]).
+pub fn sockets_everywhere() -> Vec<PathBuf> {
+    read_everywhere()
+        .sockets
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// The system services you let every project's chats look up on this machine.
+pub fn services_everywhere() -> Vec<String> {
+    read_everywhere().services
+}
+
+/// Lets every project's chats connect to `socket` on this machine, recorded as `made`.
+/// `socket` is one [`super::services::socket`] took.
+pub fn grant_socket_everywhere(socket: &Path, made: Option<Made>) -> io::Result<()> {
+    let socket = socket.display().to_string();
+    change_everywhere(|held| {
+        if !held.sockets.contains(&socket) {
+            held.sockets.push(socket.clone());
+        }
+        record_everywhere(held, made);
+    })
+}
+
+/// Lets every project's chats look up `service` on this machine, recorded as `made`.
+/// `service` is one [`super::services::service`] took.
+pub fn grant_service_everywhere(service: &str, made: Option<Made>) -> io::Result<()> {
+    change_everywhere(|held| {
+        if !held.services.iter().any(|one| one == service) {
+            held.services.push(service.to_owned());
+        }
+        record_everywhere(held, made);
+    })
+}
+
+fn record_everywhere(held: &mut Everywhere, made: Option<Made>) {
+    if let Some(made) = made {
+        held.granted
+            .retain(|one| !(one.what == made.what && one.target == made.target));
+        held.granted.push(made);
+    }
+}
+
+/// Takes `socket` off what you let every project's chats connect to: Settings' Remove.
+pub fn revoke_socket_everywhere(socket: &Path) -> io::Result<()> {
+    let socket = socket.display().to_string();
+    change_everywhere(|held| {
+        held.sockets.retain(|one| *one != socket);
+        held.granted
+            .retain(|made| !(made.what == "socket" && made.target == socket));
+    })
+}
+
+/// Takes `service` off what you let every project's chats look up: Settings' Remove.
+pub fn revoke_service_everywhere(service: &str) -> io::Result<()> {
+    change_everywhere(|held| {
+        held.services.retain(|one| one != service);
+        held.granted
+            .retain(|made| !(made.what == "service" && made.target == service));
+    })
+}
+
+/// When each grant for every project was made, as recorded.
+pub fn made_everywhere() -> Vec<Made> {
+    read_everywhere().granted
+}
+
 /// The folders you listed as ones chats in the project at `root` may be granted (D-1342-10).
 pub fn grantable_folders(root: &Path) -> Vec<std::path::PathBuf> {
     read(root)

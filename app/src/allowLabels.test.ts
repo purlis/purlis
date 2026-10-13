@@ -45,6 +45,7 @@ describe("the Allow labels (#1700)", () => {
       once: arm("GrantLevel::Once"),
       chat: arm("GrantLevel::Chat"),
       you: arm("GrantLevel::You"),
+      machine: arm("GrantLevel::Machine"),
       project: arm("GrantLevel::Project"),
     });
   });
@@ -54,6 +55,7 @@ describe("the Allow labels (#1700)", () => {
       once: arm("GrantLevel::Once"),
       chat: arm("GrantLevel::Chat if sandbox"),
       you: arm("GrantLevel::You"),
+      machine: arm("GrantLevel::Machine"),
       project: arm("GrantLevel::Project"),
     });
     expect(SANDBOX_ALLOW_SAID.chat).not.toBe(ALLOW_SAID.chat);
