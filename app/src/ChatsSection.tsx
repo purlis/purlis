@@ -1437,7 +1437,7 @@ const Row = memo(function Row({
         </Menued>
         <Popover.Portal>
           <Popover.Content
-            className="ui-popover row-card chat-card"
+            className="ui-popover row-card chat-card ui-text-secondary"
             data-testid={`chat-card-${session}`}
             // Words about the row, read as its description, and nothing to press: a tooltip,
             // which leaves the keyboard on the row as it comes and goes.
@@ -1602,8 +1602,8 @@ function ChatCard({
   const tasks = useTaskCountSaid(session);
   return (
     <>
-      <p className="chat-card-head">
-        <span className="chat-card-name">{name}</span>
+      <p className="chat-card-head ui-text-body">
+        <span className="chat-card-name ui-text-body ui-text-strong">{name}</span>
         <ChatShownState {...state} />
       </p>
       {/* What a working chat is doing (#1493): read as a line of the card, where the row's own
@@ -1632,7 +1632,7 @@ function ChatCard({
 function Fact({ term, children }: { term: string; children: ReactNode }) {
   return (
     <div>
-      <dt>{term}</dt>
+      <dt className="ui-text-meta">{term}</dt>
       <dd>{children}</dd>
     </div>
   );
