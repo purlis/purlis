@@ -89,7 +89,7 @@ const NOT_STORES: &[(&str, &str)] = &[
         "a group heading: each file under it carries its own tier",
     ),
     (
-        "2d. Charter-private caches",
+        "2d. purlis-private caches",
         "a group heading: each file under it carries its own tier",
     ),
     (
@@ -101,7 +101,7 @@ const NOT_STORES: &[(&str, &str)] = &[
         "a group heading: each file under it carries its own tier",
     ),
     (
-        "State charter keeps **outside** the plane",
+        "State purlis keeps **outside** the plane",
         "its table's rows carry their tiers",
     ),
     ("Environment variables that move", "variables, not files"),
@@ -111,7 +111,7 @@ const NOT_STORES: &[(&str, &str)] = &[
     ),
 ];
 
-/// The first part of a tier line: the tier, or `None` for a path charter records but does not
+/// The first part of a tier line: the tier, or `None` for a path purlis records but does not
 /// own (a harness's own file, the operator's checkout).
 const TIERS: &[&str] = &[
     "Plane",
