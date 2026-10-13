@@ -28,6 +28,10 @@ const SIZE: Size = Size {
 /// proxy coming up, and enough to be told from nothing.
 const A_START: Duration = Duration::from_millis(40);
 
+/// The most registering a record may take, however many chats it holds: a tenth of what
+/// forty starts in turn take, and hundreds of times what registering them does.
+const STARTS_NOTHING_WITHIN: Duration = Duration::from_millis(160);
+
 /// How long a test waits for what a thread behind it is doing, before it calls it stuck.
 const SOON: Duration = Duration::from_secs(20);
 
@@ -95,9 +99,11 @@ fn the_window_waits_no_longer_for_forty_chats_than_for_one() {
             "registering a record started a chat"
         );
         assert_eq!(chats.drawn_now().len(), count as usize, "a tab each");
+        // Forty starts in turn are 1.6 s. Registering them is well under a millisecond; the
+        // line is far from both, so a busy machine does not move the answer.
         assert!(
-            usable < A_START,
-            "registering {count} chats took {usable:?}: as long as starting one"
+            usable < STARTS_NOTHING_WITHIN,
+            "registering {count} chats took {usable:?}: the window waited on them"
         );
 
         let opened = chats.finish_put_back(SIZE);

@@ -105,6 +105,15 @@ pub(crate) fn finish(
         coming,
     } = begun;
     let opened = held.chats().finish_put_back(size);
+    // **A quit, or the project's close, that began while the chats were starting cut the
+    // launch short.** The chats that had not started are in the record it wrote, for the next
+    // launch, so nothing is settled against them here: a task among them has not ended. The
+    // reports taken for the chats coming back go back where they were.
+    if held.chats().ending() {
+        let _deciding = held.chats().deciding();
+        coming.back_to_open(held);
+        return opened;
+    }
     // Only the chats that started: one waiting to start is marked if it starts (`retrying`).
     for open in &opened {
         // As old as its dispatch's record says, which the ledger did not see (#1463).

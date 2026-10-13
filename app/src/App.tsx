@@ -1064,7 +1064,9 @@ function App() {
               }),
             )
           : "ReopenAll";
-        // Awaited, so the launch's project has its chats before its tab asks what it holds.
+        // Awaited, so the launch's project has its chats registered before its tab asks what it
+        // holds: each is drawn at once, as restoring, and starts behind the window
+        // (`restoring.rs`).
         await commands.relaunch(choice).catch(() => undefined);
         // The launch's own project, which the core already opened and has now put the record
         // back for. Its tab is first and it is the one in front: the operator ran charter THERE.

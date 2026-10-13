@@ -366,6 +366,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "RestoringPane.tsx": {
+    count: 1,
+    why:
+      "A chat's pane before its program has started again (`restoring.rs`): what is happening, " +
+      "in the place its terminal takes, as an empty state says it. It asks nothing and offers " +
+      "nothing, and it goes when the chat arrives.",
+  },
   "RepoInstructionsTab.tsx": {
     count: 2,
     why:
