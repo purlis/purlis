@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LiveMark } from "./LiveDialog";
+import { NamedNotRead } from "./ExplorerRefused";
 import { Notice } from "./Notice";
 import {
   useEffect,
@@ -152,7 +153,10 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
  * **What a branch changed is marked on it** (FM-4, #1107): each file it changed, added,
  * deleted or renamed against the branch it was cut from, committed or not, and each folder
  * holding such a file with how many, read again as agents write (`branchStatus.ts`). A file
- * the branch deleted is drawn where it was, and does not open. *Changed only* collapses every
+ * the branch deleted is drawn where it was, and does not open. A path it changed that purlis
+ * names and does not read (a `.git` folder on its path, a name that is not a plain path) is a
+ * line of text under the branch's top, with its mark and why, never a row (`ExplorerRefused`,
+ * #704). *Changed only* collapses every
  * open branch's files to what it changed, every folder of it open. The *Filter files* box
  * narrows the file rows drawn to names holding what is typed, keeping the folders on the way to
  * one; Esc clears it.
@@ -1697,6 +1701,12 @@ export function FolderEntries({
   at: FileRows;
 }) {
   const { children: entries, more, narrowed } = level;
+  // What the branch changed and purlis names and does not read (#704), under its top only.
+  const refused =
+    branch.folder === "" ? (at.files.indexes.get(branchKey(branch))?.status.refused ?? []) : [];
+  const named = refused.length > 0 && (
+    <NamedNotRead refused={refused} filter={at.files.filter} said={MARK_SAID} />
+  );
   const unwatched = at.files.changedOnly ? undefined : unwatchedHere(at.files.reads, branch);
   const note = unwatched !== undefined && (
     <p className="none" data-testid="unwatched">
@@ -1707,13 +1717,18 @@ export function FolderEntries({
   );
   if (entries.length === 0 && more === 0) {
     // A folder the filter emptied says nothing: the rows that match say where to look.
-    if (narrowed) return note || null;
+    if (narrowed) return note || named || null;
+    // A branch whose only changes are paths it names and does not read did change something.
+    const nothing = !(at.files.changedOnly && refused.length > 0);
     return (
       <>
         {note}
-        <p className="none">
-          {at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here"}
-        </p>
+        {nothing && (
+          <p className="none">
+            {at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here"}
+          </p>
+        )}
+        {named}
       </>
     );
   }
@@ -1798,6 +1813,7 @@ export function FolderEntries({
           {`${more.toLocaleString("en")} ${at.files.changedOnly ? "more changes" : "more"} not shown`}
         </p>
       )}
+      {named}
     </>
   );
 }

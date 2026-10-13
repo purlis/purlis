@@ -215,3 +215,66 @@ describe("what a branch changed, in the explorer", () => {
     expect(await screen.findByText("12,345 more changes not shown")).toBeInTheDocument();
   });
 });
+
+describe("a path the branch changed that purlis names and does not read (#704)", () => {
+  const WHY =
+    "Named and not read: a folder on its path is called .git, the name git keeps for its own folder.";
+  const REFUSED: BranchStatus = {
+    ...CHANGED,
+    refused: [{ path: "vendor/.GIT/hooks/x", mark: "added", why: WHY, uncommitted: true }],
+  };
+  const refusedRows = () => screen.queryAllByTestId("explorer-refused-row");
+
+  it("is drawn under the branch's files as text, with its mark and why, and is no row of the tree", async () => {
+    core(TOP, { now: REFUSED });
+    draw();
+
+    const [one] = await screen.findAllByTestId("explorer-refused-row");
+    expect(one).toHaveTextContent("vendor/.GIT/hooks/x");
+    expect(one).toHaveTextContent("added");
+    expect(one).toHaveTextContent("not committed");
+    expect(one).toHaveTextContent(WHY);
+    expect(within(one).queryByRole("button")).toBeNull();
+    expect(within(one).queryByRole("link")).toBeNull();
+    expect(within(one).queryByRole("treeitem")).toBeNull();
+    expect(one.querySelector("[tabindex]")).toBeNull();
+    expect(one.closest("[role=treeitem]")).toBeNull();
+    expect(drawnNames()).not.toContain("file:svc/one:vendor");
+  });
+
+  it("is drawn under Changed only too, and a branch whose only change it is did not change nothing", async () => {
+    core(TOP, {
+      now: { changes: [], refused: REFUSED.refused, folders: [], more: 0, base: "main" },
+    });
+    draw();
+    await named("^README.md");
+    await userEvent.click(screen.getByRole("button", { name: "Changed only" }));
+
+    await waitFor(() => expect(refusedRows()).toHaveLength(1));
+    expect(screen.queryByText("Nothing changed")).toBeNull();
+  });
+
+  it("is narrowed by the filter like a file row", async () => {
+    core(TOP, { now: REFUSED });
+    draw();
+    await screen.findAllByTestId("explorer-refused-row");
+
+    await userEvent.type(screen.getByLabelText("Filter files"), "readme");
+
+    await waitFor(() => expect(refusedRows()).toHaveLength(0));
+  });
+
+  it("draws the first fifty and counts the rest", async () => {
+    const many = Array.from({ length: 53 }, (_, at) => ({
+      path: `v/.git/${String(at).padStart(2, "0")}`,
+      mark: "added" as const,
+      why: WHY,
+      uncommitted: false,
+    }));
+    core(TOP, { now: { ...CHANGED, refused: many } });
+    draw();
+
+    await waitFor(() => expect(refusedRows()).toHaveLength(50));
+    expect(screen.getByText("3 more named and not read")).toBeInTheDocument();
+  });
+});
