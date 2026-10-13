@@ -26,8 +26,8 @@
 //!
 //! **The report a harness appended to a command's result** ([`reported`]): Claude Code's
 //! `<sandbox_violations>` block, the last one, where nothing follows it but space or the
-//! harness's own note after it ([`TRAILING_NOTE`]). A block with anything else after it is
-//! what the command printed.
+//! harness's own note after it ([`TRAILING_NOTE`]), one paragraph that ends the text. A block
+//! with anything else after it is what the command printed.
 //!
 //! # What a record is not
 //!
@@ -142,7 +142,8 @@ const TRAILING_NOTE: &str = "[agent-proxy] ";
 
 /// **The denials in the report a harness appended to `text`**: the lines of the last
 /// `<sandbox_violations>` block, where nothing follows it but space or the harness's own note
-/// ([`TRAILING_NOTE`]). None where a block is left open, or has anything else after it.
+/// ([`TRAILING_NOTE`], [`ends_the_text`]). None where a block is left open, or has anything
+/// else after it.
 pub fn reported(text: &str) -> Vec<Denial<'_>> {
     const OPEN: &str = "<sandbox_violations>";
     const CLOSE: &str = "</sandbox_violations>";
@@ -153,11 +154,24 @@ pub fn reported(text: &str) -> Vec<Denial<'_>> {
     let Some(end) = inside.find(CLOSE) else {
         return Vec::new();
     };
-    let after = inside[end + CLOSE.len()..].trim();
-    if !(after.is_empty() || after.starts_with(TRAILING_NOTE)) {
+    if !ends_the_text(&inside[end + CLOSE.len()..]) {
         return Vec::new();
     }
     inside[..end].lines().filter_map(Denial::of_line).collect()
+}
+
+/// Whether `after`, the text below a report, leaves the report the harness's own: nothing but
+/// space, or the harness's note ([`TRAILING_NOTE`]) on a line of its own and as **one paragraph
+/// that ends the text**. A note with a blank line and more below it is a report quoted in what
+/// a command printed (a log read back), with the rest of that output after it.
+fn ends_the_text(after: &str) -> bool {
+    let Some(at) = after.find(|c: char| !c.is_whitespace()) else {
+        return true;
+    };
+    let note = after[at..].trim_end();
+    after[..at].contains('\n')
+        && note.starts_with(TRAILING_NOTE)
+        && note.lines().all(|line| !line.trim().is_empty())
 }
 
 /// The process a kernel line names before its `deny(`: `cargo` of `Sandbox: cargo(123) `.

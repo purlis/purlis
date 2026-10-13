@@ -134,8 +134,31 @@ fn a_line_that_is_no_denial_is_no_record() {
         // The proxy's request-level lines say a request its policy refused, not a host to allow.
         "deny http-request GET https://api.example.com/v1/x (user denied)",
         "deny socks-tunnel api.example.com:22 (refuseOpaqueTunnels)",
+        // A proxy's line begins with its `deny`: words before it make it a sentence, not a line.
+        "the proxy would deny network-outbound api.example.com:443 (not allowed)",
     ] {
         assert!(Denial::of_line(line).is_none(), "{line}");
+    }
+}
+
+/// The kernel puts a target that holds spaces in quotes on some lines: the record's target is
+/// the path alone. A line that names no target is a record with an empty one, sorted as the
+/// system's and naming nothing, never as a file in the folder the command ran in.
+#[test]
+fn a_quoted_target_is_read_bare_and_a_missing_one_names_nothing() {
+    let quoted =
+        Denial::of_line("touch(88) deny(1) file-write-create \"/Users/dev/My Files/x.db\"")
+            .unwrap();
+    assert_eq!(quoted.target, "/Users/dev/My Files/x.db");
+    for line in [
+        "cargo(1) deny(1) file-write-create",
+        "cargo(1) deny(1) process-exec",
+    ] {
+        let bare = Denial::of_line(line).unwrap_or_else(|| panic!("{line}"));
+        assert_eq!(bare.target, "", "{line}");
+        let (block, target) = bare.block(&place());
+        assert_eq!(block.kind, Kind::System, "{line}");
+        assert_eq!(target, None, "{line}");
     }
 }
 
@@ -260,6 +283,30 @@ fn the_report_is_read_past_the_harness_own_note_after_it() {
         report(&["gh(1) deny(1) mach-lookup com.example.helper"])
     );
     assert!(reported(&mid).is_empty());
+}
+
+/// The harness's note is one paragraph that ends the text (review of qw355). A report quoted
+/// in what a command printed, its note with it, has the rest of that output after it: that is
+/// the command's own text, and names nothing.
+#[test]
+fn a_note_with_more_text_after_it_is_what_the_command_printed() {
+    let block = report(&["gh(1) deny(1) mach-lookup com.example.helper"]);
+    let note = "[agent-proxy] While this command ran, 1 connection through the agent proxy \
+                failed:\n- api.example.com \u{2014} blocked (not allowed)";
+    assert_eq!(reported(&format!("out\n{block}\n\n{note}\n")).len(), 1);
+    for after in [
+        format!("{note}\n\n$ make test\nok"),
+        format!("{note}\n\n{note}"),
+        format!("{note}\n \t\nthe log goes on"),
+        format!("{note}\r\n\r\nthe log goes on"),
+    ] {
+        assert!(
+            reported(&format!("out\n{block}\n\n{after}")).is_empty(),
+            "{after}"
+        );
+    }
+    // And the note is the harness's only below the report, never on its closing line.
+    assert!(reported(&format!("{block} {note}")).is_empty());
 }
 
 #[test]

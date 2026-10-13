@@ -181,7 +181,7 @@ grants. What changed is that the Allow is easy to make and its state is said:
   purlis never ends a turn by itself. While a chat owed a restart is mid-turn its pane says the
   restart waits for the turn to end, with Restart now, which ends the turn.
 
-## A block is learned from the sandbox first (2026-10-13)
+## A block is learned from the sandbox first (2026-10-13, to be confirmed)
 
 The operator's words, the day D-sock-5's detection was patched three times: the dead ends are
 "not acceptable — should be fixed idiomatically." Each patch taught the reader one more shape
@@ -200,7 +200,9 @@ whatever the program does next.
 - **It only ever adds a name.** The target is judged again as a grant before anything is
   offered, and nothing is granted without the person's Allow. A harness hands its report over
   in the text of a result, so the rules for what a command printed stand: a report in standard
-  output, or with the command's own output after it, is the command's.
+  output, or with the command's own output after it, is the command's. The one thing read past
+  is the note Claude Code writes below a failed command's report, by its fixed opening and only
+  as one paragraph that ends the text.
 - **What a program printed is read only where no record can exist**: a chat purlis wraps
   (Codex, opencode), whose sockets, services and writes no one reports yet; a Claude Code
   command that ended before the kernel's entry reached its harness, or that runs in the
