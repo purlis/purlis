@@ -122,6 +122,9 @@ pub struct Open {
     /// brokered write is made in, which no link made later can move.
     pub workspace: Option<String>,
     pub harness: Option<Harness>,
+    /// The declaration it started on, where that is a project's or this machine's
+    /// (`purlis_core::start::Ready::declared`): what its header's card is made from (#1134).
+    pub declared: Option<purlis_core::harness_declaration::Declaration>,
     /// The harness profile it started on, and the persona it adopted — what the sidebar
     /// names a chat by, beside its harness.
     pub profile: Option<String>,
@@ -269,8 +272,9 @@ struct Running {
     chat: Chat,
     how: Reopened,
     harness: Option<Harness>,
-    /// The declaration of the harness a project declares, for a chat on one, as its start read
-    /// it (`purlis_core::start::Ready::declared`, #967): what its pane's Shift+Enter sends.
+    /// The declaration a project or this machine gives the chat's harness, as its start read
+    /// it (`purlis_core::start::Ready::declared`, #967, #968): what its pane's Shift+Enter sends
+    /// and its header's card is made from.
     declared: Option<purlis_core::harness_declaration::Declaration>,
     /// [`Open::workspace`], resolved as it started.
     workspace: Option<String>,
@@ -2555,16 +2559,16 @@ impl Chats {
         lock(&self.open).get(&session)?.harness
     }
 
-    /// What chat `session`'s pane sends for Shift+Enter (SI-4): its harness's newline
-    /// ([`Harness::newline`]), or the `[terminal] newline` of the harness a project declares
-    /// for it (#967), and none for a shell, a declared harness that names none, or a chat
-    /// charter does not have open, which keep the terminal's own Enter.
+    /// What chat `session`'s pane sends for Shift+Enter (SI-4): the `[terminal] newline` of the
+    /// declaration it started on, a project's or this machine's (#967, #968), else its
+    /// harness's newline ([`Harness::newline`]), and none for a shell, a declaration that names
+    /// none, or a chat charter does not have open, which keep the terminal's own Enter.
     pub fn newline(&self, session: u32) -> Option<String> {
         let open = lock(&self.open);
         let one = open.get(&session)?;
-        match (one.harness, &one.declared) {
-            (Some(harness), _) => Some(harness.newline().to_owned()),
-            (None, Some(declared)) => declared.terminal.newline.clone(),
+        match (&one.declared, one.harness) {
+            (Some(declared), _) => declared.terminal.newline.clone(),
+            (None, Some(harness)) => Some(harness.newline().to_owned()),
             (None, None) => None,
         }
     }
@@ -3187,6 +3191,7 @@ impl Chats {
                     // sidebar used to answer "no harness" for one while the board knew the
                     // kind. One idea of what is running, or the two drift.
                     harness: running.harness,
+                    declared: running.declared.clone(),
                     profile: chat.profile.clone(),
                     persona: chat.persona.clone(),
                     in_front: front == Some(session),
@@ -6821,6 +6826,51 @@ pub(crate) mod tests {
         assert_eq!(chats.newline(declared).as_deref(), Some("\x1b\r"));
         assert_eq!(chats.newline(without), None);
         assert_eq!(chats.newline(shell), None);
+    }
+
+    /// #968, #1134: a chat started on this machine's replacement of a built-in's facts keeps
+    /// its harness, so its arming is the built-in's, and takes the replacement's newline and
+    /// namespace; what is open carries the declaration its header's card is made from.
+    #[test]
+    fn a_replaced_built_ins_chat_keeps_its_harness_and_takes_the_replacements_facts() {
+        let replaced = purlis_core::harness_declaration::read_with(
+            std::path::Path::new("/nowhere/at/all"),
+            Ok(Some(
+                "[harnesses.claude]\nprogram = \"claude\"\nenv = [\"CLAUDE_*\", \"MODEL_HINT\"]\n\
+                 [harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\"]\n\
+                 [harnesses.claude.terminal]\nnewline = \"\\u001b[13;2u\"\n"
+                    .to_owned(),
+            )),
+        );
+        let replacement = replaced
+            .replacement(Harness::ClaudeCode)
+            .expect("a replacement")
+            .clone();
+        let dir = tempfile::tempdir().unwrap();
+        let host = Pretend::default();
+        let chats = Chats::on_host(
+            Box::new(|_| {}),
+            Box::new(host.clone()),
+            dir.path().to_path_buf(),
+        );
+
+        let session = chats
+            .start_ready(
+                &chat("/bin/sh", "claude 1", None),
+                &purlis_core::start::Ready {
+                    harness: Some(Harness::ClaudeCode),
+                    declared: Some(replacement.clone()),
+                    ..a_shell_ready()
+                },
+                SIZE,
+            )
+            .expect("the chat starts");
+
+        assert_eq!(chats.harness(session), Some(Harness::ClaudeCode));
+        assert_eq!(host.openings()[0].harness, Some(Harness::ClaudeCode));
+        assert_eq!(host.openings()[0].declared_env, ["CLAUDE_*", "MODEL_HINT"]);
+        assert_eq!(chats.newline(session).as_deref(), Some("\x1b[13;2u"));
+        assert_eq!(chats.open_now()[0].declared, Some(replacement));
     }
 
     #[test]

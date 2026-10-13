@@ -2210,9 +2210,14 @@ impl From<chats::Open> for OpenChat {
                 .harness
                 .and_then(Harness::unreported)
                 .map(str::to_owned),
-            card: open.harness.map(|harness| {
-                HarnessGlance::from(&purlis_core::harness_card::built_in_card(harness))
-            }),
+            // The declaration it started on, a project's or this machine's (#1134, #968), else
+            // the built-in's: a chat on a declared harness has its card's button too.
+            card: open
+                .declared
+                .as_ref()
+                .map(purlis_core::harness_card::of)
+                .or_else(|| open.harness.map(purlis_core::harness_card::built_in_card))
+                .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
             persona: open.persona,
             in_front: open.in_front,
