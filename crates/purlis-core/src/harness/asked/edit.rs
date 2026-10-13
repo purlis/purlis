@@ -12,7 +12,7 @@
 //! as it is: no NUL ([`Unshown::Binary`]), no character a window draws as nothing or elsewhere
 //! beyond a tab and a newline, a carriage return included, and no stack of marks drawn over
 //! the lines around it ([`Unshown::DrawnOtherwise`]), no
-//! credential shape ([`Unshown::Credential`]), at most [`MOST_LINES`] lines in all
+//! credential shape and no vault value this process knows ([`Unshown::Credential`]), at most [`MOST_LINES`] lines in all
 //! ([`Unshown::TooBig`]), and an input holding only the fields this reads, each of its type
 //! ([`Unshown::Unread`]). Anything else is said, with no Allow, and answered in the pane.
 //!
@@ -151,9 +151,13 @@ fn drawn_otherwise_in_a_file(c: char) -> bool {
     }
 }
 
-/// Whether `text` holds a credential shape, read whole and a line at a time.
+/// Whether `text` holds a credential shape, read whole and a line at a time, or a value this
+/// process read from a vault or stored in one ([`crate::secrets::seen`], #1047), which need
+/// look like nothing. Where that store cannot say, every text is said to hold one.
 fn holds_a_credential(text: &str) -> bool {
     use crate::secretshape::leak_spans;
 
-    !leak_spans(text).is_empty() || text.lines().any(|line| !leak_spans(line).is_empty())
+    !leak_spans(text).is_empty()
+        || text.lines().any(|line| !leak_spans(line).is_empty())
+        || crate::secrets::seen::holds(text)
 }
