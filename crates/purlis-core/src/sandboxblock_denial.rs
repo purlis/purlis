@@ -115,7 +115,11 @@ impl<'a> Denial<'a> {
     pub fn block(&self, place: &Place<'_>) -> (Block, Option<String>) {
         let operation = Operation::of_seatbelt(self.operation);
         let kind = match operation {
-            Operation::Lookup if self.target.contains("trustd") => Kind::CertificateCheck,
+            // The certificate check's own service by its whole name, never a part of one
+            // (#1927): a service that only has that name in its own is a system service.
+            Operation::Lookup if self.target == crate::sandbox::services::TRUSTD => {
+                Kind::CertificateCheck
+            }
             Operation::Lookup => Kind::SystemService,
             Operation::Connect if self.target.starts_with('/') => Kind::LocalSocket,
             Operation::Connect => Kind::Host,

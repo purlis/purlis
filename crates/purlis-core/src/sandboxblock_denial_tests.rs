@@ -209,6 +209,26 @@ fn each_kind_of_denial_names_exactly_what_a_grant_would() {
     }
 }
 
+/// #1927: only the certificate check's own service is the certificate check. A service that
+/// merely has its name in its own is a system service like any other, sorted and offered by
+/// its whole name, so nothing rides the certificate check's Notice under another name.
+#[test]
+fn only_the_certificate_check_s_whole_name_is_sorted_as_the_certificate_check() {
+    for service in [
+        "com.example.trustd.helper",
+        "com.apple.trustd",
+        "com.apple.trustd.agent.other",
+        "xcom.apple.trustd.agent",
+    ] {
+        let line = format!("tool(9) deny(1) mach-lookup {service}");
+        assert_eq!(
+            Denial::of_line(&line).unwrap().block(&place()),
+            named(Operation::Lookup, Kind::SystemService, service),
+            "{line}"
+        );
+    }
+}
+
 #[test]
 fn a_denial_that_is_not_of_a_file_is_never_sorted_as_a_folder() {
     // What these name is a device class, a kernel setting, a shared-memory name: read as a
