@@ -456,9 +456,13 @@ pub(crate) mod pretend {
             self.seen.dealt.fetch_max(id, Ordering::SeqCst);
             announce(id);
             let program = opening.program.clone().unwrap_or_default();
-            lock(&self.seen.asked).push((id, program));
+            // Under one hold: starts come several at once (`restoring.rs`), and a test reads
+            // an opening by its place among the ones asked.
+            let mut asked = lock(&self.seen.asked);
+            asked.push((id, program));
             lock(&self.seen.openings).push(opening.clone());
             lock(&self.seen.running).push(id);
+            drop(asked);
             Ok(id)
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {

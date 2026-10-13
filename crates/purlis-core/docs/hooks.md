@@ -724,7 +724,8 @@ the name, so a second assignment on that line or the next is still asked. The na
 narrowly as a reference is:
 
 - capitals, digits and underscores only, starting with a capital: two or more words parted by
-  single underscores, each of at most 20 characters, at most 64 characters and 4 digits in all;
+  single underscores, each of at most 20 characters, at most 64 characters and 4 digits in all,
+  and no word a number alone (`S3_ACCESS_KEY` is a name, `ADMIN_PASS_2024` is not);
 - one of its words is a word a credential's name carries: `TOKEN`, `SECRET`, `KEY`, `APIKEY`,
   `PASSWORD`, `PASSWD`, `PASSPHRASE`, `PASS`, `PWD`, `PAT`, `CREDENTIAL`, `CREDS`, `AUTH`,
   `BEARER` or `JWT` (the first five also in the plural);
@@ -737,8 +738,8 @@ So all of these are still refused:
 
 - a run of capitals and digits with no underscore, which is what a key in upper-case hex or
   base32 is, and anything with a lower-case letter in it;
-- capitals and underscores with no such word (`SUMMER_2024`, `CHANGE_ME_NOW`), and one word
-  alone (`PASSWORD`);
+- capitals and underscores with no such word (`SUMMER_2024`, `CHANGE_ME_NOW`), one word
+  alone (`PASSWORD`), and a name with a number as one of its words (`PASSWORD_1`);
 - a name with something written straight after it (`DEPLOY_TOKEN-x9…`, `DEPLOY_TOKEN:x9…`,
   `${DEPLOY_TOKEN:-x9…}`), and a name that is itself given a value (`DEPLOY_TOKEN = x9…`);
 - a value in quotes that holds more than the name;

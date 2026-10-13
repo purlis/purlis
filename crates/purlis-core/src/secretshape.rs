@@ -402,6 +402,10 @@ const CREDENTIAL_WORDS: [&str; 20] = [
 /// [`CREDENTIAL_WORDS`]; and no issuer's prefix in front ([`CREDENTIAL_PREFIXES`], as written:
 /// the ones in capitals are AWS's).
 ///
+/// **No word is a number alone.** A credential word with a number after it (a word and a
+/// year, a word and a count) is how a person writes a password in capitals, and a name
+/// carries its digits inside a word (`S3`, `OAUTH2`, `V2`).
+///
 /// So a run of capitals and digits with no underscore (a key in upper-case hex or base32) is
 /// not a name, and neither is anything holding a lower-case letter.
 fn is_a_variable_name(name: &str) -> bool {
@@ -413,6 +417,7 @@ fn is_a_variable_name(name: &str) -> bool {
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
         && words().count() >= 2
         && words().all(|word| (1..=VARIABLE_WORD_MAX).contains(&word.len()))
+        && words().all(|word| !word.bytes().all(|b| b.is_ascii_digit()))
         && name.bytes().filter(u8::is_ascii_digit).count() <= VARIABLE_DIGITS_MAX
         && words().any(|word| CREDENTIAL_WORDS.contains(&word))
         && !CREDENTIAL_PREFIXES
@@ -2557,6 +2562,11 @@ mod variable_name_tests {
             // One word, however it reads.
             "PASSWORD",
             "TOKEN1234",
+            // A word that is a number alone: a password in capitals, not a name.
+            "ADMIN_PASS_2024",
+            "PASSWORD_1",
+            "SECRET_KEY_123",
+            "ROOT_42_PASS",
             // Lower case anywhere.
             "Deploy_Token",
             "DEPLOY_TOKEn",

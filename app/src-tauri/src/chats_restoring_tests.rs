@@ -292,6 +292,37 @@ fn a_record_written_while_chats_come_back_holds_every_one_once_in_its_place() {
     assert!(last.chats.iter().all(|chat| chat.identity.run.is_some()));
 }
 
+/// A chat found not to start is listed so before it leaves the ones still to start, so a
+/// record built between the two reads it in both. It is written once: twice, the next launch
+/// would take the second for another chat, mint it an id and start both.
+#[test]
+fn a_record_built_as_a_chat_is_found_not_to_start_holds_it_once() {
+    let host = Pretend::default();
+    let (chats, _project) = chats_on(&host, 2);
+    chats.begin_put_back(&a_record_of(3, 1), &|_| None);
+    // As `start_what_is_coming` leaves it between its two steps: listed as one that did not
+    // start, and still among the ones to start.
+    let second = super::lock(&chats.coming)[1].clone();
+    chats.did_not_come(super::Waiting {
+        approval: None,
+        chat: second.chat,
+        why: "its program is gone".to_owned(),
+        told: None,
+    });
+
+    let record = chats.record();
+
+    assert_eq!(names(&record.chats), ["chat 2", "chat 1", "chat 3"]);
+    let mut ids: Vec<_> = record
+        .chats
+        .iter()
+        .filter_map(|chat| chat.identity.id.clone())
+        .collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3, "each chat under an id of its own");
+}
+
 #[test]
 fn a_quit_while_chats_come_back_keeps_the_ones_not_started_and_starts_no_more() {
     let host = Pretend::default();
