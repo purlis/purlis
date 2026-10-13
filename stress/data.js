@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791922715044,
+  "lastUpdate": 1791924909848,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1256,6 +1256,42 @@ window.BENCHMARK_DATA = {
             "value": 180.7,
             "unit": "MB",
             "extra": "median of 6 samples: 240.3, 189.8, 179.4, 180.3, 181, 134 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "2cd63f690c372e2f0330ecd27d933d82e7870ef2",
+          "message": "app: on the plane root's tab, Files lists the whole project's files\n\nThe operator's rulings of 2026-10-13: at the plane root Explorer shows the whole\nplane's files (G3), less what purlis keeps private, the exclusions a chat's\nsandbox applies to reads (F1), and with a workspace's clone as one row that leads\nto that workspace's tab (F2).\n\nThe core's branch type gains the plane root as a place no workspace, repo or\npiece name spells, read by the same bounded reader, tree, folder watch and file\ntab as a branch. files/kept.rs is the one place that decides what it leaves out.\nThe window's exclusion list and the sandbox's read denials are one list; a path\nis judged by spelling and by identity, so another name, a link or a second name\nof a kept file reaches nothing. A list that cannot be told whole lists nothing.\nNothing of the plane root is compared, found by name or searched.\n\nThe window reads it through two commands of its own, plane_tree and plane_file,\nwhich are the window's alone: no link is served them, the commands a link is\nserved still read a branch and nothing else, and a folder watch that names the\nplane root is refused on a link.\n\nADR 0038 and ADR 0081 are amended, and ADR 0067 notes the one list.\n\nRefs #1916\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T23:57:18+04:00",
+          "tree_id": "531c2173804ebb66d781ea2902d43e4738652c49",
+          "url": "https://github.com/purlis/purlis/commit/2cd63f690c372e2f0330ecd27d933d82e7870ef2"
+        },
+        "date": 1791924909026,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 935,
+            "unit": "MB",
+            "extra": "median of 3 samples: 794, 935, 969 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 177.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 206.1, 212, 179.5, 174.5, 175.2, 135.6 MB"
           }
         ]
       }
