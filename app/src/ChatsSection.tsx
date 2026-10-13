@@ -1424,7 +1424,7 @@ const Row = memo(function Row({
                       <TasksFolded session={session} />
                     </>
                   )}
-                  {stopping && <span className="stopping">Stopping…</span>}
+                  {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
                   {persona === null ? (
                     <SquareTerminal className="node-icon" aria-hidden="true" />
                   ) : (
@@ -1555,7 +1555,7 @@ const TasksFolded = memo(function TasksFolded({ session }: { session: number }) 
   const total = tasksIn(counts);
   if (total === 0) return null;
   return (
-    <span className="task-count" data-testid={`task-count-${session}`}>
+    <span className="task-count ui-text-meta" data-testid={`task-count-${session}`}>
       <span aria-hidden="true">{total}</span>
       <span className="hidden-words">{total === 1 ? "1 task" : `${total} tasks`}</span>
     </span>

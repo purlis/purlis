@@ -3480,16 +3480,15 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A folded row's tasks, as one small number** (#1675): a quiet badge after the name, as
-   wide as its digits, which never gives way. Its card says how they stand. */
+   wide as its digits, which never gives way. Its card says how they stand. A count is meta
+   (`ui-text-meta`, #1920), at the regular weight every meta has. */
 .chats-section .task-count {
   flex: none;
   padding: 0 0.3rem;
   border: 1px solid var(--border-subtle);
   border-radius: 2px;
-  color: var(--text-muted);
-  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: var(--line-height-tight);
 }
 
 .explorer .needs-you-mark.rolled-up:hover {
@@ -3903,11 +3902,6 @@ h2.sidebar-title .node-icon {
 
 .chats-section .needs-you-mark.rolled-up:hover {
   background: var(--surface-hover);
-}
-
-.chats-section .stopping {
-  color: var(--text-muted);
-  font-size: 0.9em;
 }
 
 .needs-you-mark svg {
