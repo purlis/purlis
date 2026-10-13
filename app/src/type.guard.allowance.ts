@@ -110,7 +110,6 @@ export const TYPE_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".warning h4 | font-size: 0.8rem",
     ".warning h4 | font-weight: normal",
     ".warning .where | font-size: 0.8rem",
-    ".status-line | font-size: 0.8rem",
     ".status-workspace | font-weight: 600",
     ".update-notes | font-size: 0.8rem",
     ".warning.doctor h3 | font-size: 0.85rem",
