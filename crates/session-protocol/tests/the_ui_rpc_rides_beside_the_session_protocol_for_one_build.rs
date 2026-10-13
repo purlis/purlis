@@ -284,6 +284,10 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And an existing gh or glab login: which ones could be imported, and the import (#1376).
     assert!(ui::WINDOW_ONLY.contains(&"forge_cli_logins"));
     assert!(ui::WINDOW_ONLY.contains(&"forge_import_cli_login"));
+    // And the browser sign-in by the device flow: its start, its wait and its cancel (#729).
+    assert!(ui::WINDOW_ONLY.contains(&"forge_device_sign_in_start"));
+    assert!(ui::WINDOW_ONLY.contains(&"forge_device_sign_in_wait"));
+    assert!(ui::WINDOW_ONLY.contains(&"forge_device_sign_in_cancel"));
     // And whether a project lives only on this machine, beside its Publish (#1820).
     assert!(ui::WINDOW_ONLY.contains(&"project_lives_here"));
     // And the person's answers to the Saving view's question about a clone's remote (#1848,
@@ -330,6 +334,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 2
             // Settings' Allow of the certificate check on this machine (ADR 0093).
             + 1
+            // The browser sign-in by the device flow (#729).
+            + 3
     );
 }
 

@@ -361,9 +361,46 @@ lists it, and its **Sign in with a token** dialog (also the welcome's "Sign in")
   forge: the person deletes it there, and the row says so.
 - **Only the window signs in or out.** Each act takes the host's scope, which a chat's process
   is refused, and the `purlis` binary names none of them
-  (`tests/a_signed_in_forge_token_never_reaches_a_chat.rs`). Nothing routes a forge call
-  through these accounts yet: that is the native transport going live, a later ticket of the
-  onboarding spec (#1810).
+  (`tests/a_signed_in_forge_token_never_reaches_a_chat.rs`).
+
+## Signing in to GitHub through the browser (#729)
+
+On github.com a person signs in without handling a token: **Sign in with GitHub**, on the same
+two surfaces, beside the token. It is the OAuth device flow (RFC 8628) through purlis's own
+registration (ADR 0077 §1 and §3, as amended 2026-10-12):
+
+- **The registration is compiled in** (`forge::registration`): github.com's OAuth app and
+  gitlab.com's OAuth application, each by its public client id. There is no client secret, in
+  the binary or anywhere else. A registration answers for its own host only, so a GitHub
+  Enterprise server or a self-managed GitLab has no browser sign-in and takes a token.
+- **A code, and GitHub's own page** (`forge::device`). purlis asks
+  `https://github.com/login/device/code` for a code with its client id and the scopes `repo` and
+  `read:org`. The window shows the code and offers to open GitHub's page in the system browser;
+  the code is shown there and nowhere else. A page that is not HTTPS on github.com itself is
+  refused. purlis then polls `https://github.com/login/oauth/access_token` no faster than
+  GitHub said, slower each time GitHub says `slow_down`, until the code is confirmed, refused or
+  lapses. Each of those ends in a sentence that says what to do next, and Cancel stops the
+  polling. Nothing of a flow is stored.
+- **The same account store.** What GitHub granted is checked as a pasted token is (`GET /user`)
+  and kept as the account's keyring item, `purlis/@forge/github.com/<id>`, with the method
+  `device`. The item then holds the access token with its refresh token and expiry, written
+  together. Signing in as a login that already has an account on that host signs that same
+  account in. A sign-in is one forge, one host and one login, and is never used on another host.
+- **Renewed before it expires** (`forge::refresh`). GitHub's token lasts eight hours and its
+  refresh token six months. When a request is about to be sent with less than five minutes
+  left, the window's process trades the refresh token for a new pair first, with the client id
+  and no secret, and writes the pair in one write. Only that process refreshes, one refresh at
+  a time, and it renews before starting a git that will ask the credential helper, which never
+  refreshes. GitLab's grant is renewed the same way, at its own token endpoint.
+- **A refresh GitHub refuses ends the sign-in, and says so.** The account stays listed, signed
+  out, with nothing in the keyring. The request that needed it fails with a sentence naming the
+  account and where to sign in again, and the window draws a Notice with **Sign in again**. It
+  is never retried under another account or through `gh`. A forge that cannot be reached ends
+  nothing: the token is used while it lasts.
+- **Sign out cannot revoke it at GitHub**, which needs a client secret purlis does not have.
+  The keyring item is deleted, the token lapses within eight hours, and the row says where on
+  GitHub to revoke purlis now.
+- **Each request is in the network log** by its host and path, and never its form or answer.
 
 ## The git the window runs (#752)
 

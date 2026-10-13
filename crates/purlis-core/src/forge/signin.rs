@@ -35,6 +35,7 @@ use super::accounts::{self, ForgeAccount, Method};
 use super::backend::{Account, Caller, Principal, Surface, Transports};
 use super::cli::Cli;
 use super::http::TokenSource;
+use super::refresh::Refresher;
 use super::route::{HostScope, Resolver, SignIn};
 use super::transport::Transport;
 use super::{Failure, Forge, ForgeError};
@@ -42,27 +43,20 @@ use super::{Failure, Forge, ForgeError};
 /// Where the person signs in, in the window's words.
 pub const SIGN_IN_AT: &str = "Settings › You › Accounts";
 
-/// One account's token, read from its own keyring item each time a request is sent.
+/// One account's token, read from its own keyring item each time a request is sent, and
+/// renewed first when a browser sign-in's token is about to expire ([`Refresher`], ADR 0077
+/// §3).
 pub struct KeyringToken {
-    config_root: PathBuf,
     account: ForgeAccount,
+    refresher: Arc<Refresher>,
 }
 
 impl TokenSource for KeyringToken {
     fn token(&self) -> Result<SecretString, ForgeError> {
-        let keyring = accounts::keyring_at(&self.config_root);
-        match accounts::token(keyring.as_ref(), &self.account) {
-            Ok(Some(token)) => Ok(token),
-            Ok(None) => Err(ForgeError::of(
-                Failure::Auth,
-                format!(
-                    "purlis's sign-in to {} as {} has no token in the keychain any more. Sign in \
-                     again in {SIGN_IN_AT}.",
-                    self.account.host, self.account.login
-                ),
-            )),
-            Err(why) => Err(ForgeError::transport(unechoed(&why))),
-        }
+        self.refresher.token(&self.account).map_err(|why| {
+            let said = unechoed(why.said());
+            why.reworded(said)
+        })
     }
 }
 
@@ -76,6 +70,13 @@ struct Host {
     native_through: Option<super::route::NativeThrough>,
     #[cfg(any(test, feature = "fenced"))]
     root: Option<super::http::ApiRoot>,
+}
+
+impl Host {
+    /// What renews this host's browser sign-ins before they expire.
+    fn refresher(&self) -> Refresher {
+        Refresher::new(&self.scope, &self.config_root)
+    }
 }
 
 /// The host's sign-ins, once handed over. Nothing else in the crate writes it.
@@ -305,14 +306,15 @@ fn window_over(
     // first.
     let every = accounts::every_signed_in_on(&host.config_root, forge.kind, &forge.host)
         .unwrap_or_default();
+    let refresher = Arc::new(host.refresher());
     for account in &every {
         resolver = resolver.signed_in(
             &host.scope,
             account_of(account),
             SignIn {
                 tokens: Arc::new(KeyringToken {
-                    config_root: host.config_root.clone(),
                     account: account.clone(),
+                    refresher: refresher.clone(),
                 }),
                 imported_from_cli: account.method == Method::Import,
             },

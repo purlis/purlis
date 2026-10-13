@@ -771,7 +771,7 @@ describe("the welcome's doors (#1812)", () => {
     ).toHaveFocus();
   });
 
-  it("says plainly that signing in from purlis comes later, and offers today's CLI sign-in", async () => {
+  it("offers the browser sign-in beside the token, and today's CLI sign-in under them", async () => {
     core((cmd) =>
       cmd === "first_run_found"
         ? {
@@ -790,7 +790,14 @@ describe("the welcome's doors (#1812)", () => {
     await person.click(await screen.findByRole("button", { name: SIGN_IN }));
 
     await screen.findByRole("heading", { level: 1, name: SIGN_IN });
-    expect(screen.getByText(/comes in a later update/)).toBeInTheDocument();
+    expect(screen.queryByText(/comes in a later update/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Sign in to github.com through your browser/)).toBeInTheDocument();
+    // Both ways in, side by side, the browser's first (#729, ruling Q3).
+    const ways = screen
+      .getAllByRole("button")
+      .map((button) => button.textContent)
+      .filter((name) => name?.startsWith("Sign in with"));
+    expect(ways).toEqual(["Sign in with GitHub", "Sign in with a token…"]);
     const found = await screen.findByRole("list", { name: "On this machine" });
     expect(
       within(found)

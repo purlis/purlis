@@ -205,6 +205,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": reading which forge tools this machine has, or that it could not",
   },
+  "ForgeDeviceSignIn.tsx": {
+    count: 4,
+    why:
+      ACTION +
+      ". The browser sign-in's own lines (#729), inside its dialog: the code being asked for, " +
+      "that the code was copied, the wait for the person to approve it on the forge's page, and " +
+      "the core's sentence for how the flow ended; its Try again and Cancel are the way out",
+  },
   "ForgeTokenSignIn.tsx": {
     count: 2,
     why:

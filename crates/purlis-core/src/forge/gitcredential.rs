@@ -28,6 +28,11 @@
 //! binary holds, and writes it to git's pipe and nowhere else: not to an argument, not to the
 //! environment, not to a file. It answers only `get`, only over HTTPS, only for the host of the
 //! account the window named, and never inside a chat's process tree ([`HostScope`]).
+//!
+//! **The helper never refreshes a token.** A browser sign-in's token expires, and renewing it
+//! rotates its refresh token, which only one process may do (ADR 0077 §3). So the window renews
+//! a token that is about to expire before it names the helper ([`for_the_window`]), and the
+//! helper only reads what the keyring item then holds.
 
 use std::cell::RefCell;
 use std::io::{Read, Write};
@@ -36,7 +41,8 @@ use std::path::{Path, PathBuf};
 use secrecy::ExposeSecret;
 
 use super::Kind;
-use super::accounts::{self, ForgeAccount, State};
+use super::accounts::{self, ForgeAccount, Method, State};
+use super::refresh::Refresher;
 use super::route::HostScope;
 use crate::worktree::git;
 
@@ -60,6 +66,8 @@ pub const REFUSED_IN_A_CHAT: &str =
 struct Window {
     exe: PathBuf,
     config_root: PathBuf,
+    /// Renews a browser sign-in's token before the git that will ask for it starts.
+    refresher: std::sync::Arc<Refresher>,
 }
 
 thread_local! {
@@ -70,7 +78,7 @@ thread_local! {
 /// the person has a purlis account on gets purlis's helper, the binary `exe` started again, with
 /// the accounts under `config_root`. Only the host can claim the [`HostScope`] this takes.
 pub fn as_the_window<T>(
-    _host: &HostScope,
+    host: &HostScope,
     exe: &Path,
     config_root: &Path,
     then: impl FnOnce() -> T,
@@ -85,6 +93,7 @@ pub fn as_the_window<T>(
     let window = Window {
         exe: exe.to_path_buf(),
         config_root: config_root.to_path_buf(),
+        refresher: std::sync::Arc::new(Refresher::new(host, config_root)),
     };
     let before = WINDOW.with(|held| held.borrow_mut().replace(window));
     let _restore = Restore(before);
@@ -106,7 +115,24 @@ pub fn for_the_window(host: &str) -> Option<String> {
         .ok()?
         .into_iter()
         .find(|account| account.state == State::SignedIn && account.host == host)?;
+    if !still_signed_in(&window.refresher, &account) {
+        return None;
+    }
     helper_command(&window.exe, &window.config_root, &account.id)
+}
+
+/// Whether `account` is still signed in once its token was renewed, if it was about to expire:
+/// the window is the one process that refreshes, so it does before git starts the helper. A
+/// pasted or imported token is never read here. `false` only when the forge ended the sign-in;
+/// a forge that could not be reached leaves the helper to answer with what the item holds.
+fn still_signed_in(refresher: &Refresher, account: &ForgeAccount) -> bool {
+    if !matches!(account.method, Method::Device | Method::Pkce) {
+        return true;
+    }
+    match refresher.token(account) {
+        Ok(_) => true,
+        Err(why) => *why.failure() != crate::forge::Failure::Auth,
+    }
 }
 
 /// The `-c` settings for a git the window runs against `host` that has no reset of its own: an

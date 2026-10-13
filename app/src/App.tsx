@@ -46,6 +46,7 @@ import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
+import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { SaidLink } from "./SaidLink";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
@@ -2204,6 +2205,8 @@ function App() {
               }}
             />
           ))}
+        {/* A browser sign-in a forge ended, with Sign in again (#729). */}
+        <ForgeSignInEnded />
         {/* An entry the store itself would not take back, said the same way. */}
         {notRestored.map((line) => (
           <Notice

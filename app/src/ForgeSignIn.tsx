@@ -4,6 +4,8 @@
 import { useEffect, useState } from "react";
 import { commands, type ForgeAccountRow, type ForgeRow } from "./bindings";
 import { DoorPage } from "./DoorPage";
+import { ForgeBrowserSignIn } from "./ForgeBrowserSignIn";
+import { forgeAccountsChanged } from "./ForgeSignInEnded";
 import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
 import { ImportCliLogin } from "./ImportCliLogin";
 
@@ -13,10 +15,11 @@ import { ImportCliLogin } from "./ImportCliLogin";
  *
  * Signing in is skippable and is asked again, inline, when an act needs it (ruling Q2), so the
  * welcome draws it as a quieter entry under its doors rather than as a fourth door. **Sign in
- * with a token** opens purlis's own token sign-in ({@link ForgeTokenSignIn}, #1814): any host,
- * the token kept in the keychain, never reaching a chat. The browser sign-in comes after the app
- * registration (#726), and the page says plainly that it comes in a later update. Below, what
- * also works: each forge's own command-line tool, `gh` or `glab`, signed in on this machine,
+ * with GitHub** is the browser sign-in on github.com ({@link ForgeBrowserSignIn}, #729): a code
+ * shown here and confirmed on GitHub's own page. Beside it, **Sign in with a token** opens
+ * purlis's own token sign-in ({@link ForgeTokenSignIn}, #1814): any host, and the only way on a
+ * forge a team hosts. Either way the sign-in is kept in the keychain and never reaches a chat.
+ * Below, what also works: each forge's own command-line tool, `gh` or `glab`, signed in on this machine,
  * which a host with no purlis sign-in falls back to and which chats always use (#1816). A tool
  * that is installed and not signed in has its sign-in one press away, typed into a shell tab in the
  * project purlis keeps here (FR-4's "detected and offered"); one that is not installed says it
@@ -53,7 +56,7 @@ export function ForgeSignIn({
   const [unread, setUnread] = useState<string>();
   /** Whether the token sign-in is open. */
   const [withToken, setWithToken] = useState(false);
-  /** The account a token signed in to here, said once it is done. */
+  /** The account a sign-in here made, said once it is done. */
   const [signedIn, setSignedIn] = useState<ForgeAccountRow>();
 
   useEffect(() => {
@@ -76,10 +79,17 @@ export function ForgeSignIn({
   return (
     <DoorPage title="Sign in to GitHub or GitLab" className="forge-sign-in" onBack={onBack}>
       <p className="welcome-lede">
-        Sign in with a token on github.com, gitlab.com or a forge your team hosts. purlis keeps it
-        in your system keychain, uses it for the forge work you do in this window, and never lets it
-        reach a chat. Signing in through the browser comes in a later update.
+        Sign in to github.com through your browser, or with a token on github.com, gitlab.com or a
+        forge your team hosts. purlis keeps the sign-in in your system keychain, uses it for the
+        forge work you do in this window, and never lets it reach a chat.
       </p>
+      <ForgeBrowserSignIn
+        onSignedIn={(account) => {
+          setSignedIn(account);
+          forgeAccountsChanged();
+          onSignedIn?.();
+        }}
+      />
       <p>
         <button type="button" tabIndex={0} onClick={() => setWithToken(true)}>
           Sign in with a token…
@@ -90,7 +100,9 @@ export function ForgeSignIn({
           Signed in to {signedIn.host} as {signedIn.login}
           {signedIn.method === "imported"
             ? `, with your ${signedIn.kind === "gitlab" ? "glab" : "gh"} login`
-            : ""}
+            : signedIn.method === "browser"
+              ? ", through your browser"
+              : ""}
           .
         </p>
       )}
