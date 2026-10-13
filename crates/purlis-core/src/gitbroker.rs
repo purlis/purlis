@@ -496,7 +496,9 @@ fn names_a_program(key: &str) -> bool {
         "diff" => key == "diff.external" || (sub && matches!(name, "textconv" | "command")),
         "merge" => sub && name == "driver",
         "core" => matches!(name, "sshcommand" | "gitproxy" | "alternaterefscommand"),
-        "remote" => sub && matches!(name, "uploadpack" | "receivepack"),
+        "remote" => sub && matches!(name, "uploadpack" | "receivepack" | "vcs"),
+        // Commands the gc a commit can start runs (#1853).
+        "gc" => !sub && name == "recentobjectshook",
         "credential" => name == "helper",
         // A trailer's command, which `commit --trailer` and `interpret-trailers` run.
         "trailer" => sub && matches!(name, "cmd" | "command"),

@@ -587,6 +587,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     let mut not_required: Vec<String> = Vec::new();
     let mut lfs_runs_programs = false;
     let mut hooks_off: Vec<String> = Vec::new();
+    let mut no_automatic_gc = false;
     let mut hold = |key: String, filter: Option<String>, held: &mut Vec<String>| {
         if !held.contains(&key) {
             held.push(key);
@@ -647,14 +648,21 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
                 hooks_off.push(off);
             }
         }
-        // What a remote by name starts at the other end. git keeps the first of these it
-        // reads, so no `-c` can hold one: a call that reaches a remote is refused instead.
+        // What a remote by name starts at the other end, and the remote helper its `vcs` names
+        // (#1853). git keeps the first of the first two it reads, and an empty `vcs` names a
+        // helper too, so no `-c` can hold one: a call that reaches a remote is refused instead.
         if section == "remote"
             && sub.is_some()
-            && matches!(variable, "uploadpack" | "receivepack")
+            && matches!(variable, "uploadpack" | "receivepack" | "vcs")
             && reaches_remote
         {
             return None;
+        }
+        // Commands a gc runs (git 2.42 and later), a list no `-c` empties: the automatic gc and
+        // maintenance that would reach them are turned off ([`NO_AUTOMATIC_GC`]), and a verb
+        // that collects garbage itself is refused ([`collects_garbage_with_a_hook`]).
+        if section == "gc" && sub.is_none() && variable == "recentobjectshook" {
+            no_automatic_gc = true;
         }
         if let Some(filter) = driver {
             if key.contains(['=', '\n', '\0']) {
@@ -679,7 +687,39 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             .map(|filter| format!("{filter}.required=false")),
     );
     settings.extend(hooks_off);
+    if no_automatic_gc {
+        settings.extend(NO_AUTOMATIC_GC.map(str::to_owned));
+    }
     Some(settings)
+}
+
+/// The verbs that collect garbage themselves, and so run `gc.recentObjectsHook` when it is set:
+/// `pack-objects` only when it writes a cruft pack.
+const COLLECTS_GARBAGE: [&str; 4] = ["gc", "repack", "prune", "maintenance"];
+
+/// What turns off the gc and the maintenance a commit, a merge or a fetch starts on its own,
+/// which would run `gc.recentObjectsHook` ([`held_programs`]).
+const NO_AUTOMATIC_GC: [&str; 2] = ["gc.auto=0", "maintenance.auto=false"];
+
+/// Whether the call whose verb starts `from` collects garbage itself ([`COLLECTS_GARBAGE`]) where
+/// the repository's own config (`listing`, as [`listed_entries`] reads it) names a
+/// `gc.recentObjectsHook`. That key is a list, which no `-c` empties, so such a call is refused.
+fn collects_garbage_with_a_hook(from: &[&str], listing: &str) -> bool {
+    let collects = match from {
+        ["pack-objects", rest @ ..] => rest.contains(&"--cruft"),
+        [verb, ..] => COLLECTS_GARBAGE.contains(verb),
+        [] => false,
+    };
+    collects && repo_names_a_recent_objects_hook(listing)
+}
+
+/// Whether the repository's own config (any scope but the operator's and the command line's)
+/// names a `gc.recentObjectsHook`.
+fn repo_names_a_recent_objects_hook(listing: &str) -> bool {
+    listed_entries(listing).any(|(scope, key, _)| {
+        !matches!(scope, "global" | "system" | "unknown" | "command")
+            && key.eq_ignore_ascii_case("gc.recentobjectshook")
+    })
 }
 
 /// Whether a config key (lowercased as git lists it) names a program `git-lfs` runs when git
@@ -748,6 +788,9 @@ fn programs_held(
     }
     if repo_names_a_signer(&said) && would_sign(&args[at..], &said) {
         return Ok(Err(refused_raw(SIGNER_IN_REPO)));
+    }
+    if collects_garbage_with_a_hook(&args[at..], &said) {
+        return Ok(Err(refused_raw(UNHELD_PROGRAM)));
     }
     match held_programs(reaches_a_remote(&args[at..]), &listed) {
         Some(settings) => {
@@ -2786,8 +2829,51 @@ mod tests {
     }
 
     #[test]
+    fn a_recent_objects_hook_the_repository_names_is_never_reached() {
+        // #1853: `gc.recentObjectsHook` is a list of commands, so an empty `-c` adds one rather
+        // than clearing them. What reaches it is held instead: the automatic gc and maintenance
+        // a commit or a fetch starts are turned off, and a verb that collects garbage itself is
+        // refused.
+        let named = listing(&[("local", "gc.recentobjectshook", "./hook")]);
+        assert_eq!(
+            held_programs(false, &named),
+            Some(vec![
+                "gc.auto=0".to_owned(),
+                "maintenance.auto=false".to_owned()
+            ])
+        );
+        let said = String::from_utf8(named.clone()).unwrap();
+        for collects in [
+            &["gc"][..],
+            &["gc", "--auto"],
+            &["repack", "-a", "-d"],
+            &["prune"],
+            &["maintenance", "run"],
+            &["pack-objects", "--cruft", "x"],
+        ] {
+            assert!(
+                collects_garbage_with_a_hook(collects, &said),
+                "{collects:?}"
+            );
+        }
+        for reads in [&["commit", "-m", "x"][..], &["status"], &[]] {
+            assert!(!collects_garbage_with_a_hook(reads, &said), "{reads:?}");
+        }
+        // The operator's own is theirs.
+        let theirs = listing(&[("global", "gc.recentobjectshook", "./hook")]);
+        assert_eq!(held_programs(false, &theirs), Some(Vec::new()));
+        let theirs = String::from_utf8(theirs).unwrap();
+        assert!(!collects_garbage_with_a_hook(&["gc"], &theirs));
+    }
+
+    #[test]
     fn a_remote_verb_is_refused_where_the_repository_names_what_a_remote_starts() {
-        for key in ["remote.origin.uploadpack", "remote.up.receivepack"] {
+        // `vcs` picks the remote helper git starts for the remote (#1853).
+        for key in [
+            "remote.origin.uploadpack",
+            "remote.up.receivepack",
+            "remote.origin.vcs",
+        ] {
             let named = listing(&[("local", key, "./program")]);
             assert_eq!(held_programs(true, &named), None, "{key}");
             assert_eq!(held_programs(false, &named), Some(Vec::new()), "{key}");

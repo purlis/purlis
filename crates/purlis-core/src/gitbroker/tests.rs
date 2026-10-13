@@ -153,6 +153,9 @@ fn every_kind_of_key_that_names_a_program_is_one_and_ordinary_keys_are_not() {
         "trailer.sign.command",
         "hook.lint.command",
         "hook.lint.event",
+        // What a gc a commit starts runs, and the helper a remote's transport starts (#1853).
+        "gc.recentobjectshook",
+        "remote.origin.vcs",
     ] {
         assert!(names_a_program(key), "{key}");
     }

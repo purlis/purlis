@@ -142,6 +142,8 @@ call site.
   | `core.alternateRefsCommand` | a listing of an alternate's refs | turned off |
   | `hook.<name>.command`, `hook.<name>.event` | a hook named in config (git 2.54 and later), which `core.hooksPath` does not reach | that hook is turned off by its name (`hook.<name>.enabled=false`); a verb that writes a ref (`update-ref`, and `branch` or `symbolic-ref` when they write) is listed for it too |
   | `remote.<name>.uploadpack`, `.receivepack` | a program at the other end of a remote | git keeps the first one it reads, so `-c` cannot turn it off: a fetch, pull, push or `ls-remote` there, or a `remote` that asks the remote, is refused |
+  | `remote.<name>.vcs` | the remote helper git starts for that remote | an empty one names a helper too: a call that reaches the remote is refused, as above |
+  | `gc.recentObjectsHook` | commands a gc runs (git 2.42 and later) | a list that no `-c` empties: the gc and maintenance a commit, merge or fetch starts on its own are turned off (`gc.auto=0`, `maintenance.auto=false`), and a `gc`, `repack`, `prune`, `maintenance` or cruft `pack-objects` is refused |
 
   **Git LFS keeps working.** The three values `git lfs install` writes are left alone, and
   `git-lfs` is found on the runner's fixed `PATH`. If the repo's config also names a program
@@ -152,8 +154,12 @@ call site.
   `core.pager` and `pager.<verb>` (git's output is never a terminal), `alias.<verb>` (never
   taken under a verb of git's own), `credential.helper`, `core.askPass` and `core.sshCommand`
   (only network calls ask for a credential or a transport, and those hold the one-credential
-  rule above), `core.gitProxy` (only `git://`, which every network call refuses), and the keys
-  of verbs purlis never runs (merge and diff tools, `send-email`, a browser). The planted test
+  rule above), `core.gitProxy` (only `git://`, which every network call refuses),
+  `uploadpack.packObjectsHook` (git reads it only from your own config), and the keys of verbs
+  purlis never runs (merge and diff tools, `send-email` and its commands, a browser, a GUI tool,
+  `interactive.diffFilter` for `add -p`, and `submodule.<name>.update` for `submodule update`,
+  which only the network entry point could run). Checked against `git help --config` of git
+  2.50 (#1853). The planted test
   plants the credential helper, the askpass program, the ssh command and the diff and merge
   tools too, so a call that one day reached one is caught.
 - **No git of its own inside a submodule**, and no lazy fetch of a missing object, which would
@@ -239,8 +245,9 @@ repo and sees them run.
 - **A config rewritten between the runner's listing and git's own read** is read by git as it
   is then. The listing is taken, or found unchanged, before each git call; it is not a lock
   on the file.
-- **Other ways for git to start a program** that the table above does not name are not held
-  until the runner is checked against them. #1853 tracks the follow-ups.
+- **Other ways for git to start a program** that the table above does not name, in a git
+  newer than the one it was last checked against, are not held until the runner is checked
+  against them.
 - **`HOME`'s global config** stays readable, because credential helpers and your identity live
   there. A program it names is yours, not a chat's.
 - **`run_as_session` and `run_in_hook`** are held to the link check (#1476): a folder whose
