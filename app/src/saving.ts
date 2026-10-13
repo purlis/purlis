@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { commands, type PlaneId, type PlaneSaving, type RepoSaving } from "./bindings";
+import {
+  commands,
+  type PlaneId,
+  type PlaneSaving,
+  type RepoSaving,
+  type SaveMerge,
+} from "./bindings";
 import { GIT, usePlaneChanged } from "./planeChanged";
 import { everyWhileShown } from "./whileShown";
 
@@ -254,6 +260,47 @@ export function requestOf(repos: readonly RepoSaving[]): string {
   return nouns.size === 1 ? [...nouns][0] : "request";
 }
 
+/** What carries a save's request: the forge's noun for it, and where it stands with merging. */
+type Merging = { request: string; merge?: SaveMerge | null };
+
+/** Whether a save's request is red: a check failed on it, so it stays open and unmerged. */
+export function requestIsRed(of: Merging): boolean {
+  return of.merge?.state === "red";
+}
+
+/**
+ * **What a pushed save waits on, as the Saving view and the title bar say it** (ADR 0051,
+ * amended 2026-10-13). purlis merges a `pr-merge` save's request itself, behind its own reading
+ * of every check, and what its last look found is the standing's `merge`:
+ *
+ * - `red`: a check failed, required or not. It is not merged, and the words name what failed;
+ * - `waiting`: its checks are running, or have not started yet. purlis looks again by itself;
+ * - `queued`: it is in its branch's merge queue or merge train;
+ * - `cannot-merge`: a conflict, a required review, or another rule of the forge's own;
+ * - `merged`: merged, and the project has not moved onto what merged yet.
+ *
+ * With no `merge` (a `pr` save, which purlis never merges) the words are the ones they were.
+ */
+export function requestWords(of: Merging): string {
+  const waiting = `Pushed — waiting on its ${of.request}`;
+  const merge = of.merge;
+  if (merge == null) return waiting;
+  switch (merge.state) {
+    case "red":
+      return `Pushed — its ${of.request} is red: ${merge.why}`;
+    case "waiting":
+      return `Pushed — its ${of.request} waits for its checks`;
+    case "queued":
+      return `Pushed — its ${of.request} is in the merge queue`;
+    case "cannot-merge":
+      return `Pushed — its ${of.request} cannot merge`;
+    case "merged":
+      return `Merged — moving onto what merged`;
+    default:
+      return waiting;
+  }
+}
+
 /** A repo's stage, as its row and the title bar say it. */
 export function repoStageText(repo: RepoSaving): string {
   switch (repo.stage) {
@@ -266,7 +313,7 @@ export function repoStageText(repo: RepoSaving): string {
     case "committed":
       return repo.ahead === null ? "Committed, not pushed" : `${repo.ahead} committed, not pushed`;
     case "pr-open":
-      return `Pushed — waiting on its ${repo.request}`;
+      return requestWords(repo);
     default:
       return "Saved";
   }
@@ -300,7 +347,7 @@ export function repoSaveGoesTo(repo: RepoSaving, workspace: string): string {
         ? `pushes that commit as purlis/${workspace}/… (never to ${on})`
         : `pushes ${on}`;
       const merge =
-        repo.mode === "pr-merge" ? ", and asks it to merge itself once its checks pass" : "";
+        repo.mode === "pr-merge" ? ", and merges it once every check on it has passed" : "";
       return `Commits on ${on}, ${pushed}, and opens a ${repo.request} into ${repo.target}${merge}`;
     }
     default:

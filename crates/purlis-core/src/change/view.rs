@@ -279,6 +279,7 @@ mod tests {
                 total: Some(0),
                 ci,
                 why: None,
+                failed: Vec::new(),
             }),
             landed: Err("its request is open".into()),
             waiting_on: vec![],

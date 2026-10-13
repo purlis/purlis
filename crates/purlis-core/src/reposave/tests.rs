@@ -835,6 +835,7 @@ fn at_rest() -> Standing {
         changed: 0,
         ahead: Some(0),
         pr: None,
+        merge: None,
         blocked: None,
         head: Some("abc123".into()),
         pushes: true,

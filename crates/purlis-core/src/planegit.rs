@@ -498,6 +498,12 @@ pub struct Standing {
     /// Each changed file the next save would refuse for what looks like a credential, while
     /// that is why it is blocked ([`SECRET_REFUSED`]); empty otherwise.
     pub secrets: Vec<SecretAt>,
+    /// Where the open pull request of a `pr-merge` plane stands with merging, as the last look
+    /// at the forge found it: waiting on its checks, red with the checks that failed, in a
+    /// merge queue, unable to merge, or merged and not moved onto yet. `None` when no request
+    /// is open, or the mode does not merge it. Never a block: a red request stays open, and a
+    /// later save pushes onto it (ADR 0051, amended 2026-10-13).
+    pub merge: Option<Merging>,
 }
 
 impl Standing {
@@ -532,6 +538,7 @@ pub fn standing(root: &Path) -> Standing {
             conflicts: Vec::new(),
             notice: None,
             secrets: Vec::new(),
+            merge: None,
             // An unborn branch is a repository with nothing to count against, and what is
             // staged in it is still the root being worked in (FD-11: the alerts read this).
             tracked: status_of(root).1,
@@ -667,6 +674,10 @@ pub fn standing(root: &Path) -> Standing {
     } else {
         Stage::Saved
     };
+    // Only while a request is known to be open: what is kept goes when it is settled.
+    let merge = (plane.mode.value == Some(crate::planesave::Mode::PrMerge) && pr.is_some())
+        .then(|| prsave::known_merging(root))
+        .flatten();
     Standing {
         stage,
         changed,
@@ -686,7 +697,91 @@ pub fn standing(root: &Path) -> Standing {
         tracked,
         head,
         secrets,
+        merge,
     }
+}
+
+/// What a look at a `pr-merge` plane's open pull request came to ([`look`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Looked {
+    /// A request is still open after the look, so there is something to look at again.
+    pub open: bool,
+    /// What the standing says changed: the request merged, or its state did.
+    pub changed: bool,
+    /// The plane was moved onto what merged, so its working tree moved.
+    pub moved: bool,
+}
+
+/// The request this plane's saves keep open: when its head was pushed (seconds since the
+/// epoch; `None` when not kept) and its head. `None` when nothing is open. One small file, and
+/// no git: what the app paces its looks by ([`crate::autosave::Looks`]). It does not ask the
+/// mode, which [`look`] does: a caller that has the settings asks only for a `pr-merge` plane.
+pub fn request_to_look_at(root: &Path) -> Option<(Option<u64>, String)> {
+    prsave::open_request(root)
+}
+
+/// **Look again at a `pr-merge` plane's open pull request**, with no save: merge it if every
+/// check has passed since, or if it has been there long enough and nothing says a check will
+/// run, and then move the plane onto what merged; otherwise keep where it stands (waiting,
+/// red with the failed checks, unable to merge) for the standing to say. This is what merges a
+/// green request without the person saving again (ADR 0051, amended 2026-10-13).
+///
+/// One look is a handful of forge reads. The caller paces them (the app's auto-save worker
+/// backs off from a minute to five, and stops after two hours; `app/src-tauri/src/autosave.rs`).
+/// `Err` when a save of the plane is running, or the target could not be fetched from.
+pub fn look(root: &Path, caller: &forge::Caller, say: Sink) -> Result<Looked, String> {
+    let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
+    let plane = crate::planesave::Settings::read(root).plane;
+    if plane.mode.value != Some(crate::planesave::Mode::PrMerge) {
+        return Ok(Looked::default());
+    }
+    let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
+        .map(|r| r.line().trim().to_string())
+        .unwrap_or_default();
+    let branch = plane.branch.value.clone().unwrap_or_else(|| here.clone());
+    if here != branch {
+        return Ok(Looked::default());
+    }
+    let before = prsave::known_merging(root);
+    let fetch = prsave::fetch_for_a_look(root, &plane)?;
+    let fetch = fetch
+        .as_ref()
+        .map(|(https, helper)| (https.as_str(), helper.as_str()));
+    let settled = prsave::settle(root, &plane, &branch, plane.sign.value, fetch, caller, say);
+    // What is kept beside the request moved, and no git file did: the shared standing is told.
+    touch(root);
+    let moved = settled == prsave::Settled::Moved;
+    let after = prsave::known_merging(root);
+    Ok(Looked {
+        open: prsave::knows_a_pr(root),
+        changed: moved || before != after || matches!(settled, prsave::Settled::Blocked(_)),
+        moved,
+    })
+}
+
+/// **Merge the plane's open save request as it stands**, its failed and missing checks
+/// included. The person's own action in the window, and only there: no save, no look and no
+/// chat ever calls this (the operator's ruling P1, 2026-10-13). Every other rule still holds: a
+/// conflict, a review the branch requires and whatever the forge itself enforces refuse it.
+pub fn merge_as_it_stands(
+    root: &Path,
+    caller: &forge::Caller,
+    say: Sink,
+) -> Result<MergedAsItStands, String> {
+    let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
+    let plane = crate::planesave::Settings::read(root).plane;
+    let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
+        .map(|r| r.line().trim().to_string())
+        .unwrap_or_default();
+    let branch = plane.branch.value.clone().unwrap_or_else(|| here.clone());
+    if here != branch {
+        return Err(format!(
+            "this project is on {here}, and its saves go into {branch}"
+        ));
+    }
+    let merged = prsave::merge_as_it_stands(root, &plane, &branch, plane.sign.value, caller, say);
+    touch(root);
+    merged
 }
 
 /// The longest a shared plane standing is kept without its git files moving or anyone saying
@@ -3028,8 +3123,11 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
 }
 
 mod blockedby;
+pub mod merging;
 mod prsave;
 mod update;
+pub use merging::{MergeState, Merging};
+pub use prsave::{MergedAsItStands, settled_at};
 pub use update::{Left, Moved, Updated, update};
 
 pub use blockedby::{SecretAt, file_of as blocked_file};

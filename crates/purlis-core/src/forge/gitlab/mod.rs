@@ -15,8 +15,9 @@ use super::backend::{
 };
 use super::checks::{self, Checks};
 use super::pr::{
-    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, MergeAs, MergedAt, Opened, Pr, Ready, Request,
-    State, check_gate, commit_named, is_ours, not_queued_when, own_mr, pr_of, unknown_state,
+    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, MergeAs, MergedAt, Opened, Pr,
+    Ready, Request, State, check_gate, commit_named, is_ours, none_will_run, not_queued_when,
+    own_mr, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
 use super::{
@@ -35,6 +36,66 @@ pub(crate) mod work;
 pub(super) struct GitLab(pub(super) Asker);
 
 /// Whether a merge request record says GitLab will merge it later, by either spelling.
+impl GitLab {
+    /// A merge request's own pipelines, newest first: what `checks_at` judges.
+    fn pipelines_of(&self, caller: &Caller, path: &str, request: u64) -> Result<Value, ForgeError> {
+        self.0.ask(
+            caller,
+            &Call::get(
+                format!(
+                    "projects/{}/merge_requests/{request}/pipelines?per_page=100",
+                    quote(path)
+                ),
+                LIST_TIMEOUT,
+            ),
+            &format!("reading the pipelines of merge request !{request} of {path}"),
+        )
+    }
+
+    /// Whether anything says a pipeline will run for a merge request that has none: `Some`
+    /// with the sign, in words, or `None` when the repository shows none.
+    ///
+    /// The sign is a pipeline, among the repository's twenty newest, that ran for a ref other
+    /// than the merge request's target branch: a branch's own pipeline, another merge
+    /// request's, or a tag's. A repository whose pipelines all ran on the target branch runs
+    /// none for a merge request, and one with no pipeline at all has no CI. A tag's pipeline
+    /// counts as a sign, which waits where it need not: the listing does not tell a tag from a
+    /// branch, and waiting is the side to be wrong on.
+    fn pipelines_expected(
+        &self,
+        caller: &Caller,
+        path: &str,
+        record: &Value,
+    ) -> Result<Option<String>, ForgeError> {
+        let doing = format!("reading whether {path} runs pipelines for merge requests");
+        let target = record["target_branch"]
+            .as_str()
+            .filter(|branch| !branch.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no target branch")))?;
+        let answer = self.0.ask(
+            caller,
+            &Call::get(
+                format!("projects/{}/pipelines?per_page=20", quote(path)),
+                LIST_TIMEOUT,
+            ),
+            &doing,
+        )?;
+        let newest = answer.as_array().ok_or_else(|| {
+            ForgeError::new(format!("{doing}: GitLab's pipelines answer is not a list"))
+        })?;
+        Ok(newest
+            .iter()
+            .filter_map(|pipeline| pipeline["ref"].as_str())
+            .find(|on| *on != target)
+            .map(|on| {
+                format!(
+                    "this repository ran a pipeline for {}",
+                    crate::shown::readable(on, crate::shown::DISPLAY_LIMIT)
+                )
+            }))
+    }
+}
+
 fn set_to_merge_later(record: &Value) -> bool {
     truthy(&record["merge_when_pipeline_succeeds"]) || truthy(&record["auto_merge_enabled"])
 }
@@ -608,17 +669,25 @@ impl Requests for GitLab {
     }
 
     /// The repo's squash preference and the merge request's state, head, draft flag and
-    /// `detailed_merge_status`; the pipelines at the head, read as `checks_at` reads them; then
-    /// the merge call with `sha` and **no** `auto_merge`, by the repo's own merge method, squashed
-    /// when the repo squashes by default. Only `mergeable` merges: GitLab's own word that no
-    /// approval, discussion, pipeline or other rule the project sets blocks it. A repo with a
-    /// merge train is never merged here, only through its train.
+    /// `detailed_merge_status`; the pipelines at the head, read as `checks_at` reads them and
+    /// held to `gate`; then the merge call with `sha` and **no** `auto_merge`, by the repo's own
+    /// merge method, squashed when the repo squashes by default. Only `mergeable` merges:
+    /// GitLab's own word that no approval, discussion, pipeline or other rule the project sets
+    /// blocks it.
+    ///
+    /// **No pipeline at a settled head** merges only when GitLab itself skipped one there
+    /// (`[ci skip]`), or the repository's twenty newest pipelines all ran on the target branch
+    /// ([`Self::pipelines_expected`]).
+    ///
+    /// **A repo with a merge train** is never merged here: once the pipelines let it through,
+    /// the merge request is added to the train at `head_sha` ([`Ready::Queued`]).
     fn merge_when_ready(
         &self,
         caller: &Caller,
         path: &str,
         pr: &Pr,
         head_sha: &str,
+        gate: Gate,
     ) -> Result<Ready, ForgeError> {
         let project = format!("projects/{}", quote(path));
         let settings = self.0.ask(
@@ -630,15 +699,9 @@ impl Requests for GitLab {
             settings["squash_option"].as_str(),
             Some("always" | "default_on")
         );
-        // A train repo lands only through its train (`join_train`): a direct merge would skip
-        // it. A repo whose settings do not name `merge_trains_enabled` is read as
-        // `request_auto_merge` reads it, as one without a train.
-        if settings["merge_trains_enabled"].as_bool() == Some(true) {
-            return Ok(Ready::Refused(format!(
-                "{path} lands through a merge train, and purlis never merges !{} past it",
-                pr.number
-            )));
-        }
+        // A repo whose settings do not name `merge_trains_enabled` is read as one without a
+        // train, as `request_auto_merge` reads it.
+        let train = settings["merge_trains_enabled"].as_bool() == Some(true);
         let mr = format!("{project}/merge_requests/{}", pr.number);
         let number = pr.number;
         let record = self.0.ask(
@@ -663,8 +726,27 @@ impl Requests for GitLab {
                 "!{number} is no longer at the commit this save pushed, {head_sha}"
             )));
         }
-        if let Some(gated) = check_gate(&self.checks_at(caller, path, head_sha, number)) {
-            return Ok(gated);
+        // The person's own "merge it as it stands" passes over the pipelines, so they are not
+        // read for it; every rule GitLab itself enforces below still holds.
+        if gate != Gate::Person {
+            let mut skipped = false;
+            let pipelines = checks::guarded(head_sha, || {
+                let answer = self.pipelines_of(caller, path, number)?;
+                skipped = checks::gitlab_skipped_at(&answer, head_sha);
+                Ok(checks::gitlab(&answer, head_sha, number)?)
+            });
+            match check_gate(&pipelines, gate) {
+                Gated::Go => {}
+                Gated::Stop(stopped) => return Ok(stopped),
+                // A pipeline GitLab skipped at this head is its own word that none will run.
+                Gated::NoneRan if skipped => {}
+                Gated::NoneRan => {
+                    let expected = self.pipelines_expected(caller, path, &record);
+                    if let Some(waits) = none_will_run(expected) {
+                        return Ok(waits);
+                    }
+                }
+            }
         }
         let status = record["detailed_merge_status"].as_str().unwrap_or("");
         match status {
@@ -699,6 +781,24 @@ impl Requests for GitLab {
                     }
                 )));
             }
+        }
+        if train {
+            // A direct merge would skip the train. The train squashes as the repo does.
+            let how = MergeAs {
+                squash,
+                title: String::new(),
+                message: String::new(),
+            };
+            return Ok(match self.enqueue_at(caller, path, pr, head_sha, &how) {
+                Ok(()) => Ready::Queued(format!(
+                    "!{number} is on {path}'s merge train, which merges it in its turn"
+                )),
+                Err(why) => Ready::Refused(format!(
+                    "{path} lands through a merge train, and GitLab would not add !{number} to \
+                     it: {}",
+                    why.said()
+                )),
+            });
         }
         let call = Call::write(
             Method::Put,
@@ -871,17 +971,7 @@ impl Requests for GitLab {
 
     fn checks_at(&self, caller: &Caller, path: &str, sha: &str, request: u64) -> Checks {
         checks::guarded(sha, || {
-            let answer = self.0.ask(
-                caller,
-                &Call::get(
-                    format!(
-                        "projects/{}/merge_requests/{request}/pipelines?per_page=100",
-                        quote(path)
-                    ),
-                    LIST_TIMEOUT,
-                ),
-                &format!("reading the pipelines of merge request !{request} of {path}"),
-            )?;
+            let answer = self.pipelines_of(caller, path, request)?;
             Ok(checks::gitlab(&answer, sha, request)?)
         })
     }

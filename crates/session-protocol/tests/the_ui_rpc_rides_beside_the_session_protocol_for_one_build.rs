@@ -317,6 +317,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"open_blocked_file"));
     // And Update from remote, which moves the project's working tree under its chats (qw348).
     assert!(ui::WINDOW_ONLY.contains(&"update_project"));
+    // And merging a save's pull request past its failed or missing checks (ADR 0051, amended
+    // 2026-10-13): the person's own press in the window, which no link and no chat sends.
+    assert!(ui::WINDOW_ONLY.contains(&"merge_save_request"));
     // And the person's Keep on a chat's question whether to remove a workspace (qw356), which
     // no link and no chat sends. The removal has no command of the question's: it is the
     // window's own Delete workspace.

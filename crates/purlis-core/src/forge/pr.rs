@@ -12,10 +12,13 @@
 //! - `request_auto_merge`: the forge queues it to merge when its checks allow, by the
 //!   repo's own method, preferring rebase, then a merge commit, then squash — and only at the
 //!   commit this save pushed.
-//! - `merge_when_ready`: where the forge cannot auto-merge a save's request — the repo or its
-//!   plan has no auto-merge, or there is nothing for the forge to wait for — purlis merges it
-//!   itself, at the commit the save pushed, once the forge says it may merge and every check at
-//!   that commit has passed. Never past a failing check, a pending one or a required review.
+//! - `merge_when_ready`: purlis merges a `pr-merge` save's request itself, at the commit the
+//!   save pushed, once the forge says it may merge and purlis has read every check at that
+//!   commit as passed. Never past a failing check, required or not, a pending one or a
+//!   required review; and with no check at all, only once the commit has been on the forge
+//!   long enough for checks to have started and nothing says any will ([`Gate`], ADR 0051,
+//!   amended 2026-10-13). A branch that lands through a merge queue or train is put in it then,
+//!   and never earlier.
 //! - `merge_at` and `enqueue_at`: `charter change land`'s merge, now or through the target
 //!   branch's merge queue or merge train, each pinned to the head commit whose checks charter
 //!   read (ADR 0060 D3, ruling Q16). `lands_through_queue` says which.
@@ -43,13 +46,15 @@
 //! # Only the app asks for auto-merge, and only `charter change land` merges
 //!
 //! An agent never merges: `floorguard` refuses `gh pr merge` and `charter change land` from a
-//! session nobody is watching, and keeps doing so. `request_auto_merge` is called by charter's
-//! own save, for a project whose mode asks for it (ADR 0051). When the forge will not queue a
-//! merge because there is nothing to wait for, the answer is [`AutoMerge::NotQueued`] with the
-//! forge's reason; when the repo or its plan has no auto-merge at all, it is
-//! [`AutoMerge::Unavailable`]. Either way the save takes [`Capability::AutoMerge`]'s fallback,
-//! [`Fallback::MergeWhenReady`]: `merge_when_ready`, the same merge auto-merge would have made,
-//! made by purlis once the forge's own gates allow it (ADR 0051, amended 2026-10-12).
+//! session nobody is watching, and keeps doing so. **A save no longer asks the forge to
+//! auto-merge** (ADR 0051, amended 2026-10-13): a forge's own auto-merge waits for the checks
+//! the branch *requires* and merges past a failing one that is not, so a request handed to it
+//! can merge red. Every `pr-merge` save takes what was [`Capability::AutoMerge`]'s fallback,
+//! [`Fallback::MergeWhenReady`]: `merge_when_ready`, behind purlis's own reading of every
+//! check. `request_auto_merge` stays on the seam, with its contract cases, and no save calls
+//! it: when the forge will not queue a merge because there is nothing to wait for, its answer
+//! is [`AutoMerge::NotQueued`] with the forge's reason, and when the repo or its plan has no
+//! auto-merge at all, [`AutoMerge::Unavailable`].
 //!
 //! [`Capability::AutoMerge`]: super::backend::Capability::AutoMerge
 //! [`Fallback::MergeWhenReady`]: super::backend::Fallback::MergeWhenReady
@@ -64,7 +69,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::checks::{Checks, Ci};
+use super::checks::{Checks, Ci, FailedCheck};
 use super::{Forge, ForgeError};
 use crate::worktree::git;
 
@@ -126,14 +131,39 @@ pub enum Ready {
     /// Merged now, at the commit the save pushed, by the repo's own method — or merged
     /// already, by somebody else.
     Merged,
-    /// Not yet: a check at the commit is still running, or the forge is still working out
-    /// whether it can merge. Nothing was merged; asking again later may. Carries why.
+    /// Not yet: a check at the commit is still running, none has had time to start, none has
+    /// started where the repository's other requests have them, or the forge is still working
+    /// out whether it can merge. Nothing was merged; asking again later may. Carries why.
     Waiting(String),
-    /// It cannot merge as it stands — a check failed, it conflicts, a review or another rule
-    /// the branch has is not met, or its head moved — and nothing was merged. It stays open
-    /// for a person. Carries why, in words.
+    /// A check at the commit failed, required or not, and nothing was merged. It stays open;
+    /// a later save pushes onto the same request. Carries the checks that failed.
+    Red(Vec<FailedCheck>),
+    /// Every check passed, and its branch lands through a merge queue or a merge train: purlis
+    /// put it there, at the commit the save pushed, and the forge merges it in its turn.
+    /// Nothing more is asked of the forge about merging it. Carries where it went, in words.
+    Queued(String),
+    /// It cannot merge as it stands — it conflicts, a review or another rule the branch has is
+    /// not met, or its head moved — and nothing was merged. It stays open for a person.
+    /// Carries why, in words.
     Refused(String),
 }
+
+/// What stands between a save's request and `merge_when_ready` merging it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    /// purlis's own reading of the checks at the head: every one passed, or none exists and
+    /// none will. `settled` is whether the head has been on the forge long enough for its
+    /// checks to have started ([`SETTLE`]): until it has, no check is "not yet", never "none".
+    Checks { settled: bool },
+    /// The person in the window said to merge it as it stands, failed and missing checks
+    /// included (the operator's ruling P1, 2026-10-13). Only the checks are passed over: a
+    /// conflict, a required review and every rule the forge itself enforces still refuse it.
+    Person,
+}
+
+/// How long a pushed commit is given for its checks to start before none at all is read as
+/// "none ran": a forge registers a workflow's checks seconds after the push, not at it.
+pub const SETTLE: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl Repo {
     /// Its forge's backend, over the transport every call takes today.
@@ -324,17 +354,137 @@ pub(super) fn not_queued_when(
     }
 }
 
-/// What the checks at the head say before a merge purlis makes itself: `None` when they let it
-/// merge — every one passed, or none ran — and otherwise why it waits or is refused. Silence is
-/// never a pass: a forge that gave no answer waits.
-pub(super) fn check_gate(checks: &Checks) -> Option<Ready> {
+/// What the checks at the head say before a merge purlis makes itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Gated {
+    /// Every check there passed, or the person said to merge it as it stands.
+    Go,
+    /// No check exists at the head, and it has had time to: the backend now asks whether the
+    /// repository shows any sign that one will run ([`none_will_run`]).
+    NoneRan,
+    /// It waits, or it is red.
+    Stop(Ready),
+}
+
+/// What [`Gate::Checks`] waits with while the head is too new for "no check" to mean none.
+pub const NOT_STARTED_YET: &str =
+    "it was pushed a moment ago, and its checks have not had time to start";
+
+/// [`Gated`] for `checks` under `gate`. Silence is never a pass: a forge that gave no answer
+/// waits, a head with no check waits until it has had time to get one, and a failed check of
+/// any kind stops it, whatever the forge's own rules require.
+pub(super) fn check_gate(checks: &Checks, gate: Gate) -> Gated {
+    let Gate::Checks { settled } = gate else {
+        return Gated::Go;
+    };
     match checks.ci {
-        Ci::Passed | Ci::NotRun => None,
-        Ci::Running => Some(Ready::Waiting("its checks are still running".into())),
-        Ci::Failed => Some(Ready::Refused("a check failed".into())),
-        Ci::Unknown => Some(Ready::Waiting(format!(
+        Ci::Passed => Gated::Go,
+        Ci::NotRun if settled => Gated::NoneRan,
+        Ci::NotRun => Gated::Stop(Ready::Waiting(NOT_STARTED_YET.into())),
+        Ci::Running => Gated::Stop(Ready::Waiting("its checks are still running".into())),
+        Ci::Failed => Gated::Stop(Ready::Red(checks.failed.clone())),
+        Ci::Unknown => Gated::Stop(Ready::Waiting(format!(
             "purlis could not read its checks ({})",
             checks.why.as_deref().unwrap_or("no answer")
         ))),
+    }
+}
+
+/// [`Gated::NoneRan`], settled by what the repository shows: `Ok(None)` when nothing says a
+/// check will run on this head, so it may merge with none; `Ok(Some(why))` when something does,
+/// and it waits; and a read that failed waits too, because not knowing is never "none".
+pub(super) fn none_will_run(expected: Result<Option<String>, ForgeError>) -> Option<Ready> {
+    match expected {
+        Ok(None) => None,
+        Ok(Some(sign)) => Some(Ready::Waiting(format!(
+            "no check has started on it, and {sign}, so purlis waits for its checks"
+        ))),
+        Err(why) => Some(Ready::Waiting(format!(
+            "no check has started on it, and purlis could not read whether this repository              runs any ({})",
+            why.said()
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    fn checks(ci: Ci, total: u64) -> Checks {
+        Checks {
+            total: Some(total),
+            ci,
+            why: None,
+            failed: if ci == Ci::Failed {
+                vec![FailedCheck::of(Some("lint"), None)]
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    const SETTLED: Gate = Gate::Checks { settled: true };
+    const FRESH: Gate = Gate::Checks { settled: false };
+
+    #[test]
+    fn no_check_at_a_head_just_pushed_waits_and_is_never_read_as_none_ran() {
+        // The fault (2026-10-13): zero checks straight after the push merged, and CI failed
+        // on a request already merged.
+        assert_eq!(
+            check_gate(&checks(Ci::NotRun, 0), FRESH),
+            Gated::Stop(Ready::Waiting(NOT_STARTED_YET.into()))
+        );
+    }
+
+    #[test]
+    fn no_check_at_a_settled_head_asks_whether_any_will_run_before_it_merges() {
+        assert_eq!(check_gate(&checks(Ci::NotRun, 0), SETTLED), Gated::NoneRan);
+        assert_eq!(none_will_run(Ok(None)), None);
+        let waits = none_will_run(Ok(Some("the last request into main had checks".into())));
+        assert!(
+            matches!(&waits, Some(Ready::Waiting(why)) if why.contains("the last request")),
+            "{waits:?}"
+        );
+        let unread = none_will_run(Err(ForgeError::new("HTTP 502".to_string())));
+        assert!(
+            matches!(&unread, Some(Ready::Waiting(why)) if why.contains("could not read")),
+            "{unread:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_check_is_red_with_its_name_whether_or_not_the_head_is_settled() {
+        for gate in [FRESH, SETTLED] {
+            let Gated::Stop(Ready::Red(failed)) = check_gate(&checks(Ci::Failed, 2), gate) else {
+                panic!("a failed check let it through");
+            };
+            assert_eq!(failed[0].name, "lint");
+        }
+    }
+
+    #[test]
+    fn running_and_unreadable_checks_wait_and_passed_ones_go() {
+        for gate in [FRESH, SETTLED] {
+            assert!(matches!(
+                check_gate(&checks(Ci::Running, 1), gate),
+                Gated::Stop(Ready::Waiting(_))
+            ));
+            assert!(matches!(
+                check_gate(&checks(Ci::Unknown, 0), gate),
+                Gated::Stop(Ready::Waiting(_))
+            ));
+            assert_eq!(check_gate(&checks(Ci::Passed, 1), gate), Gated::Go);
+        }
+    }
+
+    #[test]
+    fn only_the_person_passes_over_the_checks() {
+        for ci in [Ci::Failed, Ci::Running, Ci::NotRun, Ci::Unknown, Ci::Passed] {
+            assert_eq!(
+                check_gate(&checks(ci, 1), Gate::Person),
+                Gated::Go,
+                "{ci:?}"
+            );
+        }
     }
 }

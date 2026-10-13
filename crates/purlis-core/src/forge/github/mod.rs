@@ -14,9 +14,9 @@ use super::backend::{
 };
 use super::checks::{self, Checks};
 use super::pr::{
-    AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, MergeAs,
-    MergedAt, Opened, Pr, Ready, Request, State, check_gate, commit_named, first, is_ours,
-    not_queued_when, pr_of, unknown_state,
+    AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
+    Gated, MergeAs, MergedAt, Opened, Pr, Ready, Request, State, check_gate, commit_named, first,
+    is_ours, none_will_run, not_queued_when, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -641,16 +641,25 @@ impl Requests for GitHub {
 
     /// One GraphQL read of the repo's merge methods and the pull request's state, head,
     /// `mergeStateStatus` and `reviewDecision`; the checks at the head, read by the commit as
-    /// `checks_at` reads them; then REST's merge with `sha`, by the method auto-merge would have
-    /// taken. Only `CLEAN` and `HAS_HOOKS` merge: GitHub's own word that every required check
-    /// passed and no rule blocks it. A review GitHub says is required or asked changes refuses
-    /// it even then, so a token that may bypass a rule never does so here.
+    /// `checks_at` reads them, and held to `gate`; then REST's merge with `sha`, by the repo's
+    /// preferred method. Only `CLEAN` and `HAS_HOOKS` merge: GitHub's own word that every
+    /// required check passed and no rule blocks it. A review GitHub says is required or asked
+    /// changes refuses it even then, so a token that may bypass a rule never does so here.
+    ///
+    /// **No check at a settled head** is settled by [`Self::checks_expected`]: it merges with
+    /// none only when neither this pull request's earlier commits nor the repository's other
+    /// pull requests into the same branch ever had one.
+    ///
+    /// **A base that lands through a merge queue** is not merged directly: once the checks
+    /// let it through, the pull request is put in the queue at `head_sha`
+    /// ([`Ready::Queued`]).
     fn merge_when_ready(
         &self,
         caller: &Caller,
         path: &str,
         pr: &Pr,
         head_sha: &str,
+        gate: Gate,
     ) -> Result<Ready, ForgeError> {
         let (owner, name) = owner_name(path);
         let number = pr.number.to_string();
@@ -692,8 +701,19 @@ impl Requests for GitHub {
                 "#{number} is no longer at the commit this save pushed, {head_sha}"
             )));
         }
-        if let Some(refused) = check_gate(&self.checks_at(caller, path, head_sha, pr.number)) {
-            return Ok(refused);
+        // The person's own "merge it as it stands" passes over the checks, so they are not
+        // read for it; every rule GitHub itself enforces below still holds.
+        if gate != Gate::Person {
+            match check_gate(&self.checks_at(caller, path, head_sha, pr.number), gate) {
+                Gated::Go => {}
+                Gated::Stop(stopped) => return Ok(stopped),
+                Gated::NoneRan => {
+                    let expected = self.checks_expected(caller, path, pr, found, head_sha);
+                    if let Some(waits) = none_will_run(expected) {
+                        return Ok(waits);
+                    }
+                }
+            }
         }
         if let Some(review) = found["reviewDecision"]
             .as_str()
@@ -711,6 +731,9 @@ impl Requests for GitHub {
         let status = found["mergeStateStatus"].as_str().unwrap_or("");
         match status {
             "CLEAN" | "HAS_HOOKS" => {}
+            // What `UNSTABLE` means is a check that is not required and did not pass: exactly
+            // what the person's "merge it as it stands" is for.
+            "UNSTABLE" if gate == Gate::Person => {}
             "UNKNOWN" => {
                 return Ok(Ready::Waiting(format!(
                     "GitHub is still working out whether #{number} can merge"
@@ -732,8 +755,12 @@ impl Requests for GitHub {
                     "#{number} is behind its base branch, which must be up to date to merge"
                 )));
             }
+            // purlis read every check at the head as passed, and GitHub still counts one as
+            // not: its own roll-up is behind, or a check purlis cannot see is. Asked again.
             "UNSTABLE" => {
-                return Ok(Ready::Refused(format!("a check on #{number} did not pass")));
+                return Ok(Ready::Waiting(format!(
+                    "GitHub still counts a check on #{number} as not passed"
+                )));
             }
             other => {
                 return Ok(Ready::Refused(format!(
@@ -745,6 +772,23 @@ impl Requests for GitHub {
                     }
                 )));
             }
+        }
+        if found["isMergeQueueEnabled"] == Value::Bool(true) {
+            // The queue merges by its own rule and writes its own message.
+            let how = MergeAs {
+                squash: false,
+                title: String::new(),
+                message: String::new(),
+            };
+            return Ok(match self.enqueue_at(caller, path, pr, head_sha, &how) {
+                Ok(()) => Ready::Queued(format!(
+                    "#{number} is in its base branch's merge queue, which merges it in its turn"
+                )),
+                Err(why) => Ready::Refused(format!(
+                    "#{number} lands through a merge queue, and GitHub would not take it: {}",
+                    why.said()
+                )),
+            });
         }
         let Some(&(_, method)) = GITHUB_METHODS
             .iter()
@@ -912,6 +956,85 @@ impl Requests for GitHub {
 
     fn ci_word(&self, caller: &Caller, path: &str, branch: &str) -> Result<Option<String>, Raised> {
         self.rollup(caller, path, branch)
+    }
+}
+
+impl GitHub {
+    /// Whether anything says a check will run on a pull request whose head has none: `Some`
+    /// with the sign, in words, or `None` when the repository shows none.
+    ///
+    /// Two signs, both of pull requests and neither of the base branch, whose own commits may
+    /// carry checks a pull request never gets (a workflow on `push` to it):
+    ///
+    /// - an earlier commit of this pull request had a check or a status (`found`, the
+    ///   `MergeReady` answer's twenty newest commits);
+    /// - another of the ten most recently updated pull requests into the same base had one at
+    ///   its head.
+    ///
+    /// "Had one" is a commit whose `statusCheckRollup` is not null. Only that it exists is
+    /// read, never its state: the roll-up's state is what turns "nothing ran" into green
+    /// ([`super::checks`]), and its absence is exactly "no check run and no status".
+    fn checks_expected(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        found: &Value,
+        head_sha: &str,
+    ) -> Result<Option<String>, ForgeError> {
+        let number = pr.number;
+        let had = |commit: &Value| commit["statusCheckRollup"].is_object();
+        let doing = format!("reading whether {path} runs checks on pull requests");
+        let own = found["commits"]["nodes"].as_array().ok_or_else(|| {
+            ForgeError::new(format!("{doing}: GitHub did not list #{number}'s commits"))
+        })?;
+        if own
+            .iter()
+            .map(|node| &node["commit"])
+            .any(|commit| commit["oid"].as_str() != Some(head_sha) && had(commit))
+        {
+            return Ok(Some(format!("an earlier commit of #{number} had checks")));
+        }
+        let base = found["baseRefName"].as_str().ok_or_else(|| {
+            ForgeError::new(format!(
+                "{doing}: GitHub named no base branch for #{number}"
+            ))
+        })?;
+        let (owner, name) = owner_name(path);
+        let answer = self.0.ask(
+            caller,
+            &Call::graphql(
+                graphql::checks_expected::QUERY,
+                vec![
+                    Field::text("owner", owner),
+                    Field::text("name", name),
+                    // The repository's own word: a literal, never a typed field (#323).
+                    Field::text("base", base),
+                ],
+                LIST_TIMEOUT,
+            ),
+            &doing,
+        )?;
+        let others = answer["data"]["repository"]["pullRequests"]["nodes"]
+            .as_array()
+            .ok_or_else(|| {
+                ForgeError::new(format!("{doing}: GitHub did not list its pull requests"))
+            })?;
+        let sign = others
+            .iter()
+            .filter(|other| other["number"].as_u64() != Some(number))
+            .find(|other| {
+                other["commits"]["nodes"]
+                    .as_array()
+                    .is_some_and(|commits| commits.iter().any(|node| had(&node["commit"])))
+            })
+            .map(|other| match other["number"].as_u64() {
+                Some(theirs) => {
+                    format!("#{theirs}, another pull request into the same branch, had checks")
+                }
+                None => "another pull request into the same branch had checks".to_string(),
+            });
+        Ok(sign)
     }
 }
 

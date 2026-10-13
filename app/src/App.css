@@ -7121,7 +7121,8 @@ h2.sidebar-title .node-icon {
 .save-indicator[data-stage="saved"] svg {
   color: var(--state-success);
 }
-.save-indicator[data-stage="blocked"] svg {
+.save-indicator[data-stage="blocked"] svg,
+.save-indicator[data-checks="failed"] svg {
   color: var(--state-failed);
 }
 

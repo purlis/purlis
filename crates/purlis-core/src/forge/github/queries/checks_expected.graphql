@@ -1,0 +1,19 @@
+# Whether the repository runs checks on pull requests into a branch: the ten most recently updated ones, each with the roll-up of its last commit, which is null where that commit has no check run and no status.
+query ChecksExpected($owner: String!, $name: String!, $base: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 10, baseRefName: $base, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes {
+        number
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

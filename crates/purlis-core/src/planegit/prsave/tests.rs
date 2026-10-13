@@ -197,6 +197,8 @@ fn kept_open_on(root: &Path, branch: &str) {
             head: "a".repeat(40),
             target: "main".into(),
             merges_itself: false,
+            pushed_at: None,
+            merge: None,
         }),
         held: false,
     }
@@ -355,5 +357,81 @@ fn the_fetch_after_purlis_merges_its_request_is_held_to_the_recorded_remote() {
     assert_eq!(
         in_the_window(&|| fetch_after_merge(&root, &on)),
         Err(FETCH_REMOTE_CHANGED)
+    );
+}
+
+/// **A commit just pushed is not settled, and one from a minute ago is** (ADR 0051, amended
+/// 2026-10-13): no check at a head that new is "not yet", never "none ran".
+#[test]
+fn a_head_is_settled_a_minute_after_its_push_and_never_at_it() {
+    let wait = crate::forge::pr::SETTLE.as_secs();
+    let pushed = 1_800_000_000;
+    assert!(!settled_at(Some(pushed), pushed));
+    assert!(!settled_at(Some(pushed), pushed + wait - 1));
+    assert!(settled_at(Some(pushed), pushed + wait));
+    // A request kept by a purlis from before the push time was kept has been open long enough.
+    assert!(settled_at(None, pushed));
+    // A clock that went back a little is still "just pushed"; one that went back by more than
+    // the wait says nothing, and the request is not held for ever on it.
+    assert!(!settled_at(Some(pushed), pushed - 5));
+    assert!(settled_at(Some(pushed), pushed - wait - 1));
+}
+
+/// What is kept about the request survives its file: when its head was pushed, that purlis
+/// merges it, and where it stands, with the checks that failed.
+#[test]
+fn where_a_request_stands_is_kept_beside_it_and_read_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let red = Merging::of(&Ok(Ready::Red(vec![
+        crate::forge::checks::FailedCheck::of(
+            Some("lint"),
+            Some("https://github.com/acme/plane/actions/runs/9/job/5"),
+        ),
+    ])));
+    let kept = Kept {
+        branch: Some(SAVE.to_string()),
+        pushed: Some("a".repeat(40)),
+        pr: Some(KeptPr {
+            number: 12,
+            url: "https://x.invalid/pull/12".into(),
+            head: "a".repeat(40),
+            target: "main".into(),
+            merges_itself: true,
+            pushed_at: Some(1_800_000_000),
+            merge: Some(red.clone()),
+        }),
+        held: false,
+    };
+    kept.write(&root);
+    assert_eq!(Kept::read(&root), kept);
+    assert_eq!(known_merging(&root), Some(red.clone()));
+    assert_eq!(
+        open_request(&root),
+        Some((Some(1_800_000_000), "a".repeat(40)))
+    );
+
+    // Kept again only when it changed, and a request put in a queue is no longer purlis's
+    // to merge.
+    assert!(!remember(&root, &red, false));
+    let queued = Merging::new(MergeState::Queued, "in the merge queue");
+    assert!(remember(&root, &queued, true));
+    let after = Kept::read(&root).pr.expect("still open");
+    assert!(!after.merges_itself);
+    assert_eq!(after.merge, Some(queued));
+
+    // A file from before any of this was kept reads as it always did.
+    std::fs::write(
+        kept_path(&root),
+        serde_json::json!({"branch": SAVE, "pushed": "a".repeat(40),
+            "pr": {"number": 12, "url": "https://x.invalid/pull/12", "head": "a".repeat(40),
+                   "target": "main", "merges_itself": true}})
+        .to_string(),
+    )
+    .unwrap();
+    let old = Kept::read(&root).pr.expect("a request");
+    assert_eq!(
+        (old.pushed_at, old.merge, old.merges_itself),
+        (None, None, true)
     );
 }

@@ -1,0 +1,73 @@
+{
+  "source": "GitHub REST API version 2022-11-28 (pulls: Merge a pull request; checks: List check runs for a Git reference; commit statuses) and GraphQL schema.graphql (PullRequest.mergeStateStatus, reviewDecision, headRefOid, isMergeQueueEnabled, baseRefName, commits; Commit.statusCheckRollup; Repository.pullRequests; enqueuePullRequest)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": "graphql",
+        "fields": [
+          {
+            "text": [
+              "query",
+              "# What purlis reads before it merges a save's pull request itself: the merge methods the repo allows, and the pull request's state, head, mergeability, review decision, whether its base lands through a merge queue, and whether its earlier commits had checks.\nquery MergeReady($owner: String!, $name: String!, $number: Int!) {\n  repository(owner: $owner, name: $name) {\n    rebaseMergeAllowed\n    mergeCommitAllowed\n    squashMergeAllowed\n    pullRequest(number: $number) {\n      state\n      isDraft\n      headRefOid\n      mergeStateStatus\n      reviewDecision\n      isMergeQueueEnabled\n      baseRefName\n      commits(last: 20) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n"
+            ]
+          },
+          {
+            "text": [
+              "owner",
+              "acme"
+            ]
+          },
+          {
+            "text": [
+              "name",
+              "api"
+            ]
+          },
+          {
+            "typed": [
+              "number",
+              "12"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"data\": {\"repository\": {\"rebaseMergeAllowed\": true, \"mergeCommitAllowed\": true, \"squashMergeAllowed\": true, \"pullRequest\": {\"state\": \"OPEN\", \"isDraft\": false, \"headRefOid\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"mergeStateStatus\": \"CLEAN\", \"reviewDecision\": null, \"isMergeQueueEnabled\": false, \"baseRefName\": \"main\", \"commits\": {\"nodes\": [{\"commit\": {\"oid\": \"1111111111111111111111111111111111111111\", \"statusCheckRollup\": {\"state\": \"SUCCESS\"}}}, {\"commit\": {\"oid\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"statusCheckRollup\": null}}]}}}}}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/commits/6dcb09b5b57875f334f61aebed695e2e4193db5e/check-runs?per_page=100"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"total_count\": 0, \"check_runs\": []}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/commits/6dcb09b5b57875f334f61aebed695e2e4193db5e/status?per_page=100"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"state\": \"pending\", \"total_count\": 0, \"statuses\": []}",
+        "err": ""
+      }
+    }
+  ]
+}

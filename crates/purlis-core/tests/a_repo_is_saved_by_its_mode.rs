@@ -432,13 +432,80 @@ mod repo_saves {
         );
     }
 
-    #[test]
-    fn pr_merge_that_the_forge_will_not_queue_is_merged_by_purlis_once_ready() {
-        purlis_core::unsteered!();
-        if !in_child() {
-            return;
-        }
-        let host = "repo-merge.test";
+    /// What one look at widget's #12 reads, written down once: GitHub's `mergeStateStatus`
+    /// for it at `head`, and the check runs there. Answers the read of its merge state.
+    fn looked(scene: &Scene, head: &str, merge_state: &str, runs: &[&str]) -> PathBuf {
+        let read = scene.answers(
+            "gh",
+            &[
+                "api",
+                "graphql",
+                "--hostname",
+                &scene.host,
+                "-f",
+                &format!("query={MERGE_READY}"),
+                "-f",
+                "owner=acme",
+                "-f",
+                "name=widget",
+                "-F",
+                "number=12",
+            ],
+            0,
+            &format!(
+                r#"{{"data": {{"repository": {{"rebaseMergeAllowed": true,
+                "mergeCommitAllowed": true, "squashMergeAllowed": true,
+                "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
+                "mergeStateStatus": "{merge_state}", "reviewDecision": null,
+                "isMergeQueueEnabled": false, "baseRefName": "main",
+                "commits": {{"nodes": [{{"commit": {{"oid": "{head}",
+                "statusCheckRollup": null}}}}]}}}}}}}}}}"#
+            ),
+            "",
+        );
+        scene.gh_api(
+            &format!("repos/acme/widget/commits/{head}/check-runs?per_page=100"),
+            0,
+            &format!(
+                r#"{{"total_count": {}, "check_runs": [{}]}}"#,
+                runs.len(),
+                runs.join(", ")
+            ),
+            "",
+        );
+        scene.gh_api(
+            &format!("repos/acme/widget/commits/{head}/status?per_page=100"),
+            0,
+            r#"{"state": "pending", "total_count": 0, "statuses": []}"#,
+            "",
+        );
+        read
+    }
+
+    /// GitHub's merge of widget's #12 at `head`, by rebase, answered as merged.
+    fn merged_by_purlis(scene: &Scene, head: &str) -> PathBuf {
+        scene.answers(
+            "gh",
+            &[
+                "api",
+                "--hostname",
+                &scene.host,
+                "-X",
+                "PUT",
+                "repos/acme/widget/pulls/12/merge",
+                "-f",
+                "merge_method=rebase",
+                "-f",
+                &format!("sha={head}"),
+            ],
+            0,
+            r#"{"merged": true, "message": "Pull Request successfully merged"}"#,
+            "",
+        )
+    }
+
+    /// A `pr-merge` widget on `feature/y` with one commit, saved: #12 is open from it.
+    fn saved_in_pr_merge(host: &str) -> (Repo, Scene, String, String) {
         let scene = Scene::new(host);
         let r = repo(host, "[repos.widget]\nmode = \"pr-merge\"\n");
         support::git(&r.clone, &["checkout", "-q", "-b", "feature/y"]);
@@ -446,7 +513,60 @@ mod repo_saves {
         let body = "body=Saved by charter from the alpha workspace ([repos.widget] mode = pr-merge).\n\n<!-- purlis-save -->";
         lookup(&scene, "feature/y", "[]");
         create(&scene, "feature/y", "a change", body, 12);
-        scene.answers(
+        let head = r.head();
+        let (code, said) = r.save();
+        assert_eq!(code, 0, "{said}");
+        (r, scene, head, said)
+    }
+
+    /// The wait for the pushed commit's checks to start is over: the journal says the save
+    /// that pushed it ran an hour ago.
+    fn the_settle_wait_is_over(r: &Repo) {
+        let path = planegit::journal_path(&r.plane);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut lines: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let last = lines.last_mut().expect("a journal line");
+        last["at"] = serde_json::json!(last["at"].as_f64().expect("when it ran") - 3600.0);
+        let rewritten: String = lines.iter().map(|line| format!("{line}\n")).collect();
+        std::fs::write(&path, rewritten).unwrap();
+    }
+
+    fn widget(r: &Repo) -> purlis_core::repos::Repo {
+        purlis_core::repos::Repo {
+            name: "widget".into(),
+            path: r.clone.clone(),
+        }
+    }
+
+    /// The app's look at widget's open pull request, with no save.
+    fn look(r: &Repo) -> planegit::Looked {
+        reposave::look(
+            &r.plane,
+            "alpha",
+            &widget(r),
+            &purlis_core::forge::Caller::trigger(),
+        )
+        .expect("the look")
+    }
+
+    const FAILED: &str = r#"{"id": 7, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "https://repo-merge.example/acme/widget/actions/runs/9/job/7"}"#;
+
+    /// **A repo's save merges nothing itself, and asks the forge for no auto-merge** (ADR
+    /// 0051, amended 2026-10-13), as the plane's does not: the request waits, the row says so,
+    /// and a look a moment later still waits, because no check has had time to start.
+    #[test]
+    fn a_pr_merge_repo_save_merges_nothing_at_the_save_and_asks_for_no_auto_merge() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let host = "repo-merge.test";
+        let (r, scene, head, said) = saved_in_pr_merge(host);
+        // What a save used to ask, written down so the test can say it was not asked.
+        let settings = scene.answers(
             "gh",
             &[
                 "api",
@@ -480,22 +600,92 @@ mod repo_saves {
                 "-f",
                 "method=REBASE",
                 "-f",
-                &format!("head={}", r.head()),
+                &format!("head={head}"),
             ],
-            1,
+            0,
+            r#"{"data": {"enablePullRequestAutoMerge": {"clientMutationId": null}}}"#,
             "",
-            "gh: Pull request Pull request is in clean status\n",
         );
-        // Nothing for GitHub to wait for: purlis merges it itself, now, since GitHub says it
-        // may merge and no check ran at the pushed commit.
-        let head = r.head();
+        let put = merged_by_purlis(&scene, &head);
+
+        assert!(said.contains("not had time to start"), "{said}");
+        let line = r.last();
+        assert_eq!(line["outcome"], "pr-open");
+        assert_eq!(line["number"], 12);
+        assert_eq!(line["merge"]["state"], "waiting");
+        let standing = r.standing();
+        assert_eq!(standing.stage, Stage::PrOpen, "{standing:?}");
+        assert_eq!(
+            standing.merge.map(|merge| merge.state),
+            Some(planegit::MergeState::Waiting)
+        );
+
+        // A look a moment after the push: no check yet is "not yet".
+        looked(&scene, &head, "CLEAN", &[]);
+        let found = look(&r);
+
+        assert!(found.open && !found.changed, "{found:?}");
+        assert!(
+            !was_asked(&settings) && !was_asked(&enable),
+            "auto-merge was asked for"
+        );
+        assert!(!was_asked(&put), "merged before any check could start");
+    }
+
+    /// **The fault, for a repo**: no check at the save, a failed one a minute later. The
+    /// request stays open and unmerged, red and named by the check, and the repo is not
+    /// blocked. Only the person's own "merge it as it stands" merges it.
+    #[test]
+    fn a_repo_pr_whose_check_fails_after_the_save_stays_open_red_until_the_person_merges_it() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (r, scene, head, _) = saved_in_pr_merge("repo-merge-red.test");
+        the_settle_wait_is_over(&r);
+        looked(&scene, &head, "UNSTABLE", &[FAILED]);
+        let put = merged_by_purlis(&scene, &head);
+
+        let found = look(&r);
+
+        assert!(!was_asked(&put), "merged past a failed check");
+        assert!(found.open && found.changed, "{found:?}");
+        let standing = r.standing();
+        assert_eq!(
+            standing.stage,
+            Stage::PrOpen,
+            "red is not a block: {standing:?}"
+        );
+        assert_eq!(standing.blocked, None);
+        let merge = standing.merge.expect("where the request stands");
+        assert_eq!(merge.state, planegit::MergeState::Red, "{merge:?}");
+        assert_eq!(merge.checks[0].name, "test");
+        let line = r.last();
+        assert_eq!(line["trigger"], "look");
+        assert_eq!(line["outcome"], "pr-open");
+        assert!(
+            line["detail"]
+                .as_str()
+                .unwrap()
+                .contains("is red and stays open"),
+            "{line}"
+        );
+
+        // Looked at again with nothing new: no second journal line for the same answer.
+        let lines = planegit::journal(&r.plane).len();
+        looked(&scene, &head, "UNSTABLE", &[FAILED]);
+        let found = look(&r);
+        assert!(found.open && !found.changed, "{found:?}");
+        assert_eq!(planegit::journal(&r.plane).len(), lines);
+
+        // The person's merge reads the merge state and no check.
         scene.answers(
             "gh",
             &[
                 "api",
                 "graphql",
                 "--hostname",
-                host,
+                &scene.host,
                 "-f",
                 &format!("query={MERGE_READY}"),
                 "-f",
@@ -510,55 +700,80 @@ mod repo_saves {
                 r#"{{"data": {{"repository": {{"rebaseMergeAllowed": true,
                 "mergeCommitAllowed": true, "squashMergeAllowed": true,
                 "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
-                "mergeStateStatus": "CLEAN", "reviewDecision": null}}}}}}}}"#
+                "mergeStateStatus": "UNSTABLE", "reviewDecision": null,
+                "isMergeQueueEnabled": false, "baseRefName": "main",
+                "commits": {{"nodes": []}}}}}}}}}}"#
             ),
             "",
         );
-        scene.gh_api(
-            &format!("repos/acme/widget/commits/{head}/check-runs?per_page=100"),
-            0,
-            r#"{"total_count": 0, "check_runs": []}"#,
-            "",
+        let merged = reposave::merge_as_it_stands(
+            &r.plane,
+            "alpha",
+            &widget(&r),
+            &purlis_core::forge::Caller::window(),
         );
-        scene.gh_api(
-            &format!("repos/acme/widget/commits/{head}/status?per_page=100"),
-            0,
-            r#"{"state": "pending", "total_count": 0, "statuses": []}"#,
-            "",
-        );
-        let merged = scene.answers(
+        assert!(merged.is_ok(), "{merged:?}");
+        assert!(was_asked(&put), "merged at the pushed commit");
+        let line = r.last();
+        assert_eq!(line["trigger"], "merge");
+        assert_eq!(line["outcome"], "pushed");
+        assert_eq!(line["merge"]["state"], "merged");
+    }
+
+    /// No check, and no sign of CI in the repository: a look once the head is settled merges
+    /// the request **without a new save**.
+    #[test]
+    fn a_repo_pr_with_no_check_and_no_sign_of_ci_is_merged_by_a_later_look() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let host = "repo-merge-none.test";
+        let (r, scene, head, _) = saved_in_pr_merge(host);
+        the_settle_wait_is_over(&r);
+        looked(&scene, &head, "CLEAN", &[]);
+        let asked = scene.answers(
             "gh",
             &[
                 "api",
+                "graphql",
                 "--hostname",
                 host,
-                "-X",
-                "PUT",
-                "repos/acme/widget/pulls/12/merge",
                 "-f",
-                "merge_method=rebase",
+                &format!("query={CHECKS_EXPECTED}"),
                 "-f",
-                &format!("sha={head}"),
+                "owner=acme",
+                "-f",
+                "name=widget",
+                "-f",
+                "base=main",
             ],
             0,
-            r#"{"merged": true, "message": "Pull Request successfully merged"}"#,
+            r#"{"data": {"repository": {"pullRequests": {"nodes": [
+                {"number": 12, "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}},
+                {"number": 11, "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}}
+            ]}}}}"#,
             "",
         );
+        let put = merged_by_purlis(&scene, &head);
 
-        let (code, said) = r.save();
+        let found = look(&r);
 
-        assert_eq!(code, 0, "{said}");
         assert!(
-            was_asked(&enable),
-            "the merge was not asked for at the pushed commit"
+            was_asked(&asked),
+            "whether the repository runs checks was not asked"
         );
-        assert!(was_asked(&merged), "merged at the pushed commit: {said}");
-        assert!(said.contains("clean status"), "{said}");
-        assert!(said.contains("so purlis merged your save itself"), "{said}");
+        assert!(was_asked(&put), "merged at the pushed commit");
+        assert!(!found.open && found.changed, "{found:?}");
         let line = r.last();
         assert_eq!(line["outcome"], "pushed");
-        assert!(line["detail"].as_str().unwrap().contains("clean status"));
+        assert_eq!(line["merge"]["state"], "merged");
+        // Merged: nothing is left to look at.
+        assert_eq!(look(&r), planegit::Looked::default());
     }
+
+    const CHECKS_EXPECTED: &str =
+        include_str!("../src/forge/github/queries/checks_expected.graphql");
 
     #[test]
     fn a_pr_a_person_opened_from_the_branch_is_never_rewritten_nor_set_to_merge() {
@@ -660,38 +875,6 @@ mod repo_saves {
                 &format!(r#"{{"iid": 3, "id": 9003, "web_url": "{}"}}"#, mr_url(host, 3)),
                 "",
             );
-            scene.glab_api(
-                "projects/acme%2Fwidget",
-                0,
-                r#"{"squash_option": "default_off"}"#,
-                "",
-            );
-            scene.glab_api(
-                &format!("{MRS}/3"),
-                0,
-                r#"{"iid": 3, "state": "opened", "head_pipeline": null}"#,
-                "",
-            );
-            // No pipeline, so GitLab sets no auto-merge, and purlis merges it itself once it is
-            // ready: here GitLab is still checking it, and nothing is merged.
-            scene.glab_api(
-                "projects/acme%2Fwidget",
-                0,
-                r#"{"squash_option": "default_off"}"#,
-                "",
-            );
-            scene.glab_api(
-                &format!("{MRS}/3"),
-                0,
-                &format!(
-                    r#"{{"iid": 3, "state": "opened", "draft": false, "sha": "{}",
-                    "detailed_merge_status": "checking"}}"#,
-                    r.head()
-                ),
-                "",
-            );
-            scene.glab_api(&format!("{MRS}/3/pipelines?per_page=100"), 0, "[]", "");
-
             let (code, said) = r.save();
 
             assert_eq!(code, 0, "{said}");
@@ -703,18 +886,20 @@ mod repo_saves {
                 )),
                 "{said}"
             );
+            // Nothing about merging is written down: the save asks none of it, and says the
+            // merge request waits for its pipeline.
             assert!(
-                said.contains("had nothing to wait for before merging !3"),
+                said.contains("purlis merges merge request !3 itself"),
                 "{said}"
             );
-            assert!(said.contains("the next save asks again"), "{said}");
+            assert!(said.contains("not had time to start"), "{said}");
             assert!(!said.to_lowercase().contains("pull request"), "{said}");
         }
 
-        /// A repo with merge trains (#805): from GitLab 19.1, `auto_merge` adds the merge request
-        /// to the target branch's train, and the save says it joined the train.
+        /// A repo with merge trains (#805): never merged directly. Once purlis reads the
+        /// pipeline at the pushed commit as passed, a look adds the merge request to the train.
         #[test]
-        fn a_pr_merge_save_on_a_merge_train_says_the_merge_request_joined_the_train() {
+        fn a_pr_merge_save_on_a_merge_train_joins_the_train_once_its_pipeline_passed() {
             purlis_core::unsteered!();
             if !in_child() {
                 return;
@@ -747,6 +932,9 @@ mod repo_saves {
                 &format!(r#"{{"iid": 3, "id": 9003, "web_url": "{}"}}"#, mr_url(host, 3)),
                 "",
             );
+            let (code, said) = r.save();
+            assert_eq!(code, 0, "{said}");
+            let head = r.head();
             scene.glab_api(
                 "projects/acme%2Fwidget",
                 0,
@@ -756,10 +944,18 @@ mod repo_saves {
             scene.glab_api(
                 &format!("{MRS}/3"),
                 0,
-                r#"{"iid": 3, "state": "opened", "head_pipeline": {"id": 77, "status": "running"}}"#,
+                &format!(
+                    r#"{{"iid": 3, "state": "opened", "draft": false, "sha": "{head}",
+                    "target_branch": "main", "detailed_merge_status": "mergeable"}}"#
+                ),
                 "",
             );
-            scene.glab_api("metadata", 0, r#"{"version": "19.4.0-ee"}"#, "");
+            scene.glab_api(
+                &format!("{MRS}/3/pipelines?per_page=100"),
+                0,
+                &format!(r#"[{{"id": 77, "sha": "{head}", "status": "success"}}]"#),
+                "",
+            );
             let joined = scene.answers(
                 "glab",
                 &[
@@ -767,29 +963,44 @@ mod repo_saves {
                     host,
                     "api",
                     "-X",
-                    "PUT",
-                    &format!("{MRS}/3/merge"),
-                    "-F",
-                    "auto_merge=true",
+                    "POST",
+                    "projects/acme%2Fwidget/merge_trains/merge_requests/3",
                     "-F",
                     "squash=false",
                     "-f",
-                    &format!("sha={}", r.head()),
+                    &format!("sha={head}"),
                 ],
                 0,
-                r#"{"iid": 3, "state": "opened", "merge_when_pipeline_succeeds": true}"#,
+                r#"[{"id": 267, "merge_request": {"iid": 3}, "status": "idle"}]"#,
                 "",
             );
 
-            let (code, said) = r.save();
+            let found = reposave::look(
+                &r.plane,
+                "alpha",
+                &purlis_core::repos::Repo {
+                    name: "widget".into(),
+                    path: r.clone.clone(),
+                },
+                &purlis_core::forge::Caller::trigger(),
+            )
+            .expect("the look");
 
-            assert_eq!(code, 0, "{said}");
-            assert!(was_asked(&joined), "{said}");
+            assert!(was_asked(&joined), "not added to the train");
+            assert!(!found.open && found.changed, "{found:?}");
+            let line = r.last();
+            assert_eq!(line["merge"]["state"], "queued");
             assert!(
-                said.contains("!3 joined main's merge train, and merges in its turn"),
-                "{said}"
+                line["detail"].as_str().unwrap().contains("merge train"),
+                "{line}"
             );
-            assert!(!said.to_lowercase().contains("pull request"), "{said}");
+            assert!(
+                !line["detail"]
+                    .as_str()
+                    .unwrap()
+                    .to_lowercase()
+                    .contains("pull request")
+            );
         }
 
         #[test]

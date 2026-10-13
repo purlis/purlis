@@ -896,7 +896,7 @@ _Avoid_: PR branch, `charter/<sha>` branch
 
 **Request mode**:
 A save mode that keeps one request open into the target branch instead of pushing to it: `pr`,
-and `pr-merge`, which also sets the request to auto-merge.
+and `pr-merge`, in which purlis also merges the request itself once every check on it has passed.
 Prose says "request mode" on every forge; `pr` and `pr-merge` stay the words `charter.toml` takes
 (V81).
 _Avoid_: PR mode, MR mode
