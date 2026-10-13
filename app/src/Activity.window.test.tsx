@@ -14,6 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
@@ -230,9 +231,8 @@ async function opened(): Promise<HTMLElement> {
     return all;
   });
   fireEvent.contextMenu(tabs[0]);
-  await userEvent.click(
-    within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Activity" }),
-  );
+  await screen.findByRole("menu");
+  await pressMenuPath("Open", "Activity");
   return screen.findByRole("list", { name: "Activity of steward 3" });
 }
 
@@ -550,9 +550,8 @@ describe("a session's Activity tab", () => {
     render(<App />);
     await screen.findAllByTestId("pane");
     fireEvent.contextMenu(within(strip()).getAllByRole("tab")[0]);
-    await userEvent.click(
-      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Activity" }),
-    );
+    await screen.findByRole("menu");
+    await pressMenuPath("Open", "Activity");
     expect(await screen.findByTestId("activity-empty")).toBeInTheDocument();
 
     await act(() => emit("activity-line", { plane: PLANE, line: LINES[0] }));
@@ -784,9 +783,8 @@ describe("a session's Activity tab", () => {
     });
     // The task's own Activity: the pretend core knows only the steward's.
     fireEvent.contextMenu(tabs[1]);
-    await userEvent.click(
-      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Activity" }),
-    );
+    await screen.findByRole("menu");
+    await pressMenuPath("Open", "Activity");
 
     expect(await screen.findByTestId("activity-closed")).toHaveTextContent("This chat is not open");
     // Reading again would say the same, so it is not offered.

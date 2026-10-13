@@ -271,9 +271,7 @@ describe("the Sessions panel", () => {
     const row = await within(panel).findByRole("button", { name: /Ship the widget/ });
 
     fireEvent.contextMenu(row);
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Resume session: Ship the widget" }),
-    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
 
     await waitFor(() => expect(tabNames()).toContain("steward 1"));
     const call = asked.find((one) => one.cmd === "resume_session");
@@ -340,9 +338,7 @@ describe("the Sessions panel", () => {
     render(<App />);
     const panel = await showThePanel("Sessions");
     fireEvent.contextMenu(await within(panel).findByRole("button", { name: /Ship the widget/ }));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Resume session: Ship the widget" }),
-    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
 
     expect(await screen.findByText(/was resumed where it left off/)).toBeTruthy();
     expect(
@@ -364,7 +360,7 @@ describe("the Sessions panel", () => {
     render(<App />);
     const panel = await showThePanel("Sessions");
     fireEvent.contextMenu(await within(panel).findByRole("button", { name: /Plan it/ }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Resume session: Plan it" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
 
     expect(
       await screen.findByText(
@@ -388,9 +384,7 @@ describe("the Sessions panel", () => {
     render(<App />);
     const panel = await showThePanel("Sessions");
     fireEvent.contextMenu(await within(panel).findByRole("button", { name: /Ship the widget/ }));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Resume session: Ship the widget" }),
-    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
     await waitFor(() => expect(tabNames()).toContain("steward 1"));
 
     window.move({

@@ -4,11 +4,11 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { pressMenuPath, ROW } from "../menus.js";
 import {
   closeTab,
   focusWorkspace,
   openMenuOn,
-  pressMenuRow,
   projectRoot,
   tabTexts,
   untilInFront,
@@ -106,7 +106,7 @@ describe("the file preview, from bytes", function () {
     await showView("Explorer");
     await focusWorkspace("alpha");
     await openMenuOn(`[data-testid="piece-svc-${PIECE}"] .spot`);
-    await pressMenuRow(`Browse the files of ${PIECE}`);
+    await pressMenuPath(ROW.browseFiles);
     await untilInFront(TAB);
   });
 

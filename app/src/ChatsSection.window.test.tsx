@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { menuNames, menuRow, openSubmenus, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { FinishedTask, Moved, OpenChat } from "./bindings";
@@ -972,10 +973,13 @@ describe("stopping a chat (#1448)", () => {
 
     // The session's own row: a task under it is not stopped as a chat is, and has its own two
     // ways to end (#1488), so the stops are a session's.
+    // One *Stop* row on the menu, which opens the ways to stop it (the menus' rule 3).
     fireEvent.contextMenu(row(tree, "steward 1"));
-    expect(await screen.findByRole("menuitem", { name: "Stop chat steward 1" })).toBeTruthy();
+    await screen.findByRole("menu");
+    const ways = await openSubmenus("Stop");
+    expect(within(ways).getByRole("menuitem", { name: "Stop" })).toBeTruthy();
     await userEvent.click(
-      screen.getByRole("menuitem", { name: "Stop chat steward 1 and everything below it" }),
+      within(ways).getByRole("menuitem", { name: "Stop and everything below it" }),
     );
 
     const question = await screen.findByRole("alertdialog", {
@@ -997,7 +1001,8 @@ describe("stopping a chat (#1448)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
 
     fireEvent.contextMenu(row(tree, "steward 1"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Stop chat steward 1" }));
+    await screen.findByRole("menu");
+    await pressMenuPath("Stop", "Stop");
     const question = await screen.findByRole("alertdialog", { name: "Stop chat steward 1?" });
     // A session reports to nobody: it ends, and that is all the question has to say.
     expect(question.textContent).toContain("steward 1 ends. There is no undo.");
@@ -1014,11 +1019,16 @@ describe("stopping a chat (#1448)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
 
     fireEvent.contextMenu(row(tree, "steward 4"));
-    const below = await screen.findByRole("menuitem", {
-      name: "Stop chat steward 4 and everything below it",
+    await screen.findByRole("menu");
+    const below = within(await openSubmenus("Stop")).getByRole("menuitem", {
+      name: "Stop and everything below it",
     });
 
     expect(below.getAttribute("aria-disabled")).toBe("true");
+    // Why it cannot run is the one line under its words.
+    expect(below.querySelector(".ui-menu-note")).toHaveTextContent(
+      "steward 4 started no chat that is still running.",
+    );
   });
 
   it("offers both stops on the chat's tab menu too", async () => {
@@ -1029,10 +1039,12 @@ describe("stopping a chat (#1448)", () => {
 
     // The session's own tab: a task's tab is named for its session too (#1489).
     fireEvent.contextMenu(within(strip()).getByRole("tab", { name: /^steward 1/ }));
+    await screen.findByRole("menu");
+    const ways = await openSubmenus("Stop");
     expect(
-      await screen.findByRole("menuitem", { name: "Stop chat steward 1 and everything below it" }),
+      within(ways).getByRole("menuitem", { name: "Stop and everything below it" }),
     ).toBeTruthy();
-    await userEvent.click(screen.getByRole("menuitem", { name: "Stop chat steward 1" }));
+    await userEvent.click(within(ways).getByRole("menuitem", { name: "Stop" }));
     const question = await screen.findByRole("alertdialog", { name: "Stop chat steward 1?" });
     // The person started this one: nobody is waiting on what it would write.
     expect(question.textContent).toContain("steward 1 ends. There is no undo.");
@@ -1052,7 +1064,10 @@ describe("stopping a chat (#1448)", () => {
     expect(row(tree, "steward 1").querySelector(".stopping")?.textContent).toBe("Stopping…");
     // Pressed again, it ends without waiting, and the row says so.
     fireEvent.contextMenu(row(tree, "steward 1"));
-    expect(await screen.findByRole("menuitem", { name: "End chat steward 1 now" })).toBeTruthy();
+    await screen.findByRole("menu");
+    expect(
+      within(await openSubmenus("Stop")).getByRole("menuitem", { name: "End now" }),
+    ).toBeTruthy();
     await userEvent.keyboard("{Escape}");
 
     stop(1, "stopped");
@@ -1120,11 +1135,8 @@ describe("what the chat that asked is shown of a stop (#1448)", () => {
     stop(1, "stopping");
 
     fireEvent.contextMenu(row(tree, "steward 1"));
-    await userEvent.click(
-      await screen.findByRole("menuitem", {
-        name: "Stop chat steward 1 and everything below it",
-      }),
-    );
+    await screen.findByRole("menu");
+    await pressMenuPath("Stop", "Stop and everything below it");
     const question = await screen.findByRole("alertdialog", {
       name: "Stop chat steward 1 and everything below it?",
     });
@@ -1150,15 +1162,10 @@ describe("stopping all of a session's tasks (#1498)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
 
     fireEvent.contextMenu(row(tree, "steward 1"));
-    await screen.findByRole("menuitem", { name: "Stop chat steward 1" });
-    const names = screen
-      .getAllByRole("menuitem")
-      .map((one) => one.getAttribute("aria-label") ?? one.textContent);
-    const below = names.findIndex((name) =>
-      name?.startsWith("Stop chat steward 1 and everything below it"),
-    );
-    expect(names[below + 1]).toMatch(/^Stop all tasks of steward 1/);
-    await userEvent.click(screen.getByRole("menuitem", { name: "Stop all tasks of steward 1" }));
+    await screen.findByRole("menu");
+    await openSubmenus("Stop");
+    expect(menuNames()).toEqual(["Stop", "Stop and everything below it", "Stop all tasks"]);
+    await userEvent.click(menuRow("Stop all tasks"));
 
     const question = await screen.findByRole("alertdialog", {
       name: "Stop all 2 tasks of steward 1?",
@@ -1186,9 +1193,8 @@ describe("stopping all of a session's tasks (#1498)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
 
     fireEvent.contextMenu(row(tree, "steward 1"));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Stop all tasks of steward 1" }),
-    );
+    await screen.findByRole("menu");
+    await pressMenuPath("Stop", "Stop all tasks");
     const question = await screen.findByRole("alertdialog", {
       name: "Stop all 2 tasks of steward 1?",
     });

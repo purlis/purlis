@@ -7,6 +7,7 @@ import { Check, LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type SettingsEdit, type SettingsWhich } from "../bindings";
 import { NewPersona } from "../NewPersona";
 import { NewWorkspace } from "../NewWorkspace";
+import { MenuTip, MenuWords, useRested } from "../primitives/MenuRow";
 import { settled } from "../PlaneEdits";
 import { cloneRepos } from "../repoClones";
 import { DEFAULT_THEME, inForce } from "../theme/theme";
@@ -1186,31 +1187,47 @@ function MoveTo({
           {held !== undefined ? (
             places
               .filter((one) => one.value !== held)
-              .map((one) => (
-                <Menu.Item
-                  key={one.value}
-                  className="ui-menu-item"
-                  onSelect={() => onMove(one.value)}
-                >
-                  {one.label}{" "}
-                  <span className="ui-menu-note">
-                    {one.value === "shared" && replacing !== undefined
-                      ? `${one.says}, replacing ${replacing}`
-                      : one.says}
-                  </span>
-                </Menu.Item>
-              ))
+              .map((one) => {
+                // What the move writes over, which no Undo puts back: the one line that stays
+                // under the row, because it changes the decision (the menus' rule 2).
+                const over =
+                  one.value === "shared" && replacing !== undefined ? replacing : undefined;
+                return (
+                  <Place
+                    key={one.value}
+                    label={one.label}
+                    says={over === undefined ? one.says : `${one.says}, replacing ${over}`}
+                    under={over === undefined ? undefined : `Replaces ${over} there.`}
+                  >
+                    {(row) => (
+                      <Menu.Item
+                        className="ui-menu-item"
+                        onSelect={() => onMove(one.value)}
+                        {...row.props}
+                      >
+                        {row.inside}
+                      </Menu.Item>
+                    )}
+                  </Place>
+                );
+              })
           ) : (
             <>
-              <Menu.Label className="ui-menu-label">Where the next value is kept</Menu.Label>
+              <Menu.Label className="ui-menu-label ui-text-label">
+                Where the next value is kept
+              </Menu.Label>
               <Menu.RadioGroup value={pick} onValueChange={(to) => onPick(to as SettingsWhich)}>
                 {places.map((one) => (
-                  <Menu.RadioItem key={one.value} className="ui-menu-item" value={one.value}>
-                    {one.label} <span className="ui-menu-note">{one.says}</span>
-                    <Menu.ItemIndicator className="ui-menu-mark">
-                      <Check className="node-icon" aria-hidden />
-                    </Menu.ItemIndicator>
-                  </Menu.RadioItem>
+                  <Place key={one.value} label={one.label} says={one.says}>
+                    {(row) => (
+                      <Menu.RadioItem className="ui-menu-item" value={one.value} {...row.props}>
+                        {row.inside}
+                        <Menu.ItemIndicator className="ui-menu-mark">
+                          <Check className="node-icon" aria-hidden />
+                        </Menu.ItemIndicator>
+                      </Menu.RadioItem>
+                    )}
+                  </Place>
                 ))}
               </Menu.RadioGroup>
             </>
@@ -1219,6 +1236,53 @@ function MoveTo({
       </Menu.Portal>
     </Menu.Root>
   );
+}
+
+/**
+ * One place a value can be kept, as a row of "Move to…"'s menu, by the menus' rules
+ * (`docs/ui-primitives.md`, "Menus"): the row says the level, and which file that is, and who
+ * sees it, is its tooltip and its description rather than a line under it.
+ */
+function Place({
+  label,
+  says,
+  under,
+  children,
+}: {
+  label: string;
+  /** Which file, and who sees it: the row's tooltip and description. */
+  says: string;
+  /** The one line under the row: what choosing it writes over. */
+  under?: string;
+  children: (row: {
+    props: {
+      textValue: string;
+      "aria-label": string;
+      "aria-describedby": string;
+      onFocus: () => void;
+      onBlur: () => void;
+    };
+    inside: ReactNode;
+  }) => ReactNode;
+}) {
+  const noted = useId();
+  const { rested, rest, wake } = useRested(true);
+  return children({
+    props: { textValue: label, "aria-label": label, "aria-describedby": noted, ...rest },
+    inside: (
+      <>
+        <MenuWords said={label} under={under} />
+        <span id={noted} hidden>
+          {says}
+        </span>
+        {rested && (
+          <MenuTip side="left" onClose={wake}>
+            {says}
+          </MenuTip>
+        )}
+      </>
+    ),
+  });
 }
 
 /** What New… is called in a picker over each collection (ST-1). */

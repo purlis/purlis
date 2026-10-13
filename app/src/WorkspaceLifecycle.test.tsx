@@ -12,6 +12,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
@@ -228,7 +229,7 @@ async function menuOn(workspace: string) {
 /** Opens the delete dialog for one workspace, through the menu an operator would use. */
 async function askToDelete(workspace: string) {
   await menuOn(workspace);
-  await userEvent.click(screen.getByRole("menuitem", { name: `Delete workspace ${workspace}` }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
   return await screen.findByRole("alertdialog");
 }
 
@@ -245,19 +246,17 @@ describe("deleting a workspace", () => {
 
     const menu = await menuOn("alpha");
 
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((row) => row.textContent?.trim()),
-    ).toEqual([
-      "Focus workspace alpha",
-      expect.stringContaining("New shell in alpha"),
-      expect.stringContaining("Pin workspace alpha"),
-      expect.stringContaining("Workspace settings…"),
-      expect.stringContaining("Make alpha live…"),
-      expect.stringContaining("Rename workspace alpha…"),
+    // Short verbs, about the workspace the menu names once. alpha is focused, so there is no
+    // Focus row, which could only say so.
+    expect(menu).toHaveAccessibleName("Workspace alpha");
+    expect(menuNames()).toEqual([
+      "Pinned",
+      "Settings…",
+      "Make live…",
+      "Rename…",
+      "New shell",
       "New workspace…",
-      expect.stringContaining("Delete workspace alpha"),
+      "Delete",
     ]);
   });
 
@@ -704,7 +703,7 @@ describe("a workspace's settings (charter-app#280, SE-20)", () => {
     await settled();
 
     await menuOn("beta");
-    await userEvent.click(screen.getByRole("menuitem", { name: /Workspace settings/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Settings…" }));
 
     expect(await screen.findByRole("heading", { name: "Settings · beta" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Workspace" })).toHaveAttribute(
@@ -731,7 +730,7 @@ describe("a workspace's settings (charter-app#280, SE-20)", () => {
     render(<App />);
     await settled();
     await menuOn("beta");
-    await userEvent.click(screen.getByRole("menuitem", { name: /Workspace settings/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Settings…" }));
     await userEvent.click(
       await within(screen.getByRole("navigation", { name: "Groups" })).findByRole("button", {
         name: "Repos",
@@ -756,7 +755,7 @@ describe("a workspace's settings (charter-app#280, SE-20)", () => {
     await settled();
 
     await menuOn("beta");
-    await userEvent.click(screen.getByRole("menuitem", { name: "Focus workspace beta" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Focus" }));
 
     await vi.waitFor(() =>
       expect(calls("extensions_on").map((one) => one.args)).toContainEqual({
@@ -774,7 +773,7 @@ describe("renaming a workspace (charter#367)", () => {
     await settled();
 
     await menuOn("alpha");
-    await userEvent.click(screen.getByRole("menuitem", { name: /Rename workspace alpha/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace alpha" });
     const box = within(dialog).getByLabelText("New name");
 
@@ -811,7 +810,7 @@ describe("renaming a workspace (charter#367)", () => {
     await settled();
 
     await menuOn("alpha");
-    await userEvent.click(screen.getByRole("menuitem", { name: /Rename workspace alpha/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace alpha" });
 
     const note = await within(dialog).findByLabelText("Chats that will start fresh");
@@ -839,7 +838,7 @@ describe("renaming a workspace (charter#367)", () => {
     await settled();
 
     await menuOn("alpha");
-    await userEvent.click(screen.getByRole("menuitem", { name: /Rename workspace alpha/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace alpha" });
     const box = within(dialog).getByLabelText("New name");
     await userEvent.clear(box);
@@ -858,7 +857,7 @@ describe("renaming a workspace (charter#367)", () => {
     await settled();
 
     await menuOn("alpha");
-    await userEvent.click(screen.getByRole("menuitem", { name: /Rename workspace alpha/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace alpha" });
 
     expect(within(dialog).getByRole("button", { name: "Rename workspace" })).toBeDisabled();

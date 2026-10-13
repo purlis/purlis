@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { menuNames, ROW } from "../menus.js";
 import { anEmptyRecord, cloneTheFixtureRepos, copyFixturePlane } from "../harness.js";
 
 /**
@@ -233,8 +234,10 @@ describe("making a workspace and deleting one", function () {
 
     const menu = await $('[role="menu"]');
     await menu.waitForDisplayed({ timeout: 20_000 });
-    await expect(menu).toHaveText("New workspace…", { containing: true });
-    await expect(menu).toHaveText("Delete workspace", { containing: true });
+    // The rows by their names: the menu is about the workspace, so no row says its name.
+    const rows = (await menuNames())[0];
+    expect(rows).toContain("New workspace…");
+    expect(rows).toContain(ROW.delete);
     await browser.keys(["Escape"]);
   });
 

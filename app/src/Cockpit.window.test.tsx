@@ -131,7 +131,7 @@ describe("the branch cockpit in the window (FM-5)", () => {
 
     fireEvent.contextMenu(await within(tree).findByRole("treeitem", { name: /^one/ }));
     const menu = await screen.findByRole("menu");
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "Focus on branch one" }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Focus" }));
 
     const head = await screen.findByRole("region", { name: "Branch one" });
     await within(head).findByText("3 ahead, 0 behind main");

@@ -177,7 +177,7 @@ describe("a project moved into a window of its own", () => {
     render(<App />);
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
 
-    await fromTheMenu("two", "Move project two to a new window");
+    await fromTheMenu("two", "Move to a new window");
 
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     expect(sent("move_projects")).toEqual([{ projects: [TWO], front: TWO, to: null }]);
@@ -198,7 +198,7 @@ describe("a project moved into a window of its own", () => {
     render(<App />);
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
 
-    await fromTheMenu("two", "Move project two to a new window");
+    await fromTheMenu("two", "Move to a new window");
 
     expect(await screen.findByText("purlis could not make a window: no display")).toBeVisible();
     expect(projectTabs()).toEqual(["one*", "two"]);
@@ -252,7 +252,7 @@ describe("a project moved into a window of its own", () => {
     render(<App />);
     await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
 
-    await fromTheMenu("two", "Move project two to the main window");
+    await fromTheMenu("two", "Move to the main window");
 
     expect(sent("move_projects")).toEqual([{ projects: [TWO], front: TWO, to: "main" }]);
     // Holding nothing, a split window says so, and the core closes it (`windows.rs`).

@@ -511,14 +511,15 @@ describe("a piece row's menu", () => {
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual([
-      "Focus on branch one",
-      "Browse the files of one",
+      "Focus",
+      "Browse files",
       // The branch's own folder (#1143).
-      "Copy the absolute path of branch one",
-      expect.stringMatching(/^Reveal branch one in /),
-      "Open a shell tab in branch one",
-      "Merge branch one into svc",
-      "Remove folder one in svc",
+      "Copy absolute path",
+      expect.stringMatching(/^Reveal in /),
+      "Open a shell tab here",
+      // The repo it merges into is another thing than the branch, so the row names it.
+      "Merge into svc",
+      "Remove folder",
     ]);
   });
 
@@ -531,7 +532,7 @@ describe("a piece row's menu", () => {
     });
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     await screen.findByRole("menu");
-    await userEvent.click(screen.getByRole("menuitem", { name: "Remove folder one in svc" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Remove folder" }));
 
     expect(pressed).toEqual(["worktree.remove:svc/one"]);
   });
@@ -572,12 +573,7 @@ describe("a clone row's menu", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual([
-      "Focus on repo svc",
-      "New tab in svc",
-      "New branch in svc…",
-      "Start new chats in svc",
-    ]);
+    ).toEqual(["Focus", "New tab", "New branch…", "Start new chats here"]);
   });
 
   it("hands the catalogue's offer back when a row is pressed", async () => {
@@ -586,7 +582,7 @@ describe("a clone row's menu", () => {
 
     heading().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     await screen.findByRole("menu");
-    await userEvent.click(screen.getByRole("menuitem", { name: "Start new chats in svc" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Start new chats here" }));
 
     expect(pressed).toEqual(["clone.pick:svc"]);
   });

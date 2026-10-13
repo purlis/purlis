@@ -5,13 +5,13 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
+import { pressMenuPath, ROW } from "../menus.js";
 import {
   closeTab,
   focusOn,
   focusWorkspace,
   keyWithFallback,
   openMenuOn,
-  pressMenuRow,
   projectRoot,
   tabTexts,
   typeInto,
@@ -110,7 +110,7 @@ describe("find in a file", function () {
     await showView("Explorer");
     await focusWorkspace("alpha");
     await openMenuOn(`[data-testid="piece-svc-${PIECE}"] .spot`);
-    await pressMenuRow(`Browse the files of ${PIECE}`);
+    await pressMenuPath(ROW.browseFiles);
     await untilInFront(TAB);
 
     const row = `[data-testid="piece-files-tree"] [data-row="file:svc/${PIECE}:${FILE}"]`;

@@ -3,50 +3,78 @@
 
 import { browser, expect } from "@wdio/globals";
 import { closeMenus, openMenuOn } from "../acting.js";
+import { menuNames, pressMenuPath, ROW, SUB } from "../menus.js";
 import { SELECTED_TAB, endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
  * **A chat tab's menu, measured in the real WebView.**
  *
- * A row of this menu is a title with a note under it, and the note wraps. What is held here is
- * the engine's and not jsdom's: that each row is as tall as what it says, so no row is drawn
- * over the next; that the menu ends inside the window and scrolls where its rows do not fit;
- * and that a row is written no larger than the window's text. `primitives/controls.test.tsx`
- * holds the rules these come from.
+ * A row of this menu is one line of short words (`docs/ui-primitives.md`, "Menus"): its note is
+ * its tooltip, and only a row that cannot be undone, or one that cannot run, has a line under
+ * its words. What is held here is the engine's and not jsdom's: that a row is one row tall
+ * unless it has that line, and then as tall as the two say; that the menu is a handful of rows
+ * which ends inside the window without scrolling; that its submenus end inside the window too;
+ * and that each word is drawn at its role's size. `primitives/controls.test.tsx` and
+ * `Menus.test.tsx` hold the rules these come from, the second with twelve personas, which this
+ * run's project does not have.
  *
  * **Ranges, never exact pixels.** The menu is opened with the event a right-click would have
- * sent (`acting.ts`).
+ * sent (`acting.ts`), and a row is found by its name (`menus.ts`).
  */
 
-/** What the open menu measures: its box, its rows' boxes and sizes, and the window's. */
+/** What the innermost open menu measures: its box, its rows' boxes and sizes, and the window's. */
 async function measured() {
   return browser.execute(() => {
-    const menu = document.querySelector<HTMLElement>('[role="menu"]');
+    const menus = document.querySelectorAll<HTMLElement>('[role="menu"]');
+    const menu = menus[menus.length - 1];
     if (!menu) return null;
     const box = menu.getBoundingClientRect();
+    // A control's height, as the page's own tokens give it: what one row is at least.
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;block-size:var(--size-control)";
+    document.body.appendChild(probe);
+    const control = probe.getBoundingClientRect().height;
+    probe.remove();
     return {
       top: box.top,
       bottom: box.bottom,
+      left: box.left,
+      right: box.right,
+      width: box.width,
       window: window.innerHeight,
+      across: window.innerWidth,
       cap: getComputedStyle(menu).maxHeight,
       scrolls: getComputedStyle(menu).overflowY,
       inside: menu.scrollHeight,
       shown: menu.clientHeight,
       body: parseFloat(getComputedStyle(document.body).fontSize),
-      rows: [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((row) => {
+      root: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      control,
+      rows: [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].map((row) => {
         const at = row.getBoundingClientRect();
-        const title = row.querySelector<HTMLElement>(".menu-title");
+        const title = row.querySelector<HTMLElement>(".ui-menu-title");
         const note = row.querySelector<HTMLElement>(".ui-menu-note");
+        const keys = row.querySelector<HTMLElement>(".ui-menu-keys");
         return {
           name: row.getAttribute("aria-label") ?? "",
           top: at.top,
           bottom: at.bottom,
+          height: at.height,
           // What the row's content needs against what the row was given.
           needs: row.scrollHeight,
           given: row.clientHeight,
           title: title ? parseFloat(getComputedStyle(title).fontSize) : NaN,
           note: note ? parseFloat(getComputedStyle(note).fontSize) : null,
           noteBottom: note ? note.getBoundingClientRect().bottom : null,
+          noteLines: note
+            ? Math.round(
+                note.getBoundingClientRect().height / parseFloat(getComputedStyle(note).lineHeight),
+              )
+            : null,
+          keys: keys ? parseFloat(getComputedStyle(keys).fontSize) : null,
+          danger: row.classList.contains("ui-menu-item-danger"),
+          off: row.getAttribute("aria-disabled") === "true",
+          opens: row.getAttribute("aria-haspopup") === "menu",
           tooltip: row.getAttribute("title"),
         };
       }),
@@ -60,7 +88,7 @@ type Measured = NonNullable<Awaited<ReturnType<typeof measured>>>;
 function rowsAmiss(drawn: Measured): string[] {
   const amiss: string[] = [];
   drawn.rows.forEach((row, i) => {
-    // A row holds all of what it says: its note ends inside it.
+    // A row holds all of what it says: the line under its words ends inside it.
     if (row.given < row.needs - 1) amiss.push(`${row.name} is ${row.given} tall for ${row.needs}`);
     if (row.noteBottom !== null && row.noteBottom > row.bottom + 1)
       amiss.push(`${row.name}'s note ends under it`);
@@ -68,6 +96,20 @@ function rowsAmiss(drawn: Measured): string[] {
     if (next && row.bottom > next.top + 1) amiss.push(`${row.name} is drawn over ${next.name}`);
   });
   return amiss;
+}
+
+/** The rows taller than one row that have no line under their words to be taller for: none. */
+function tallerThanARow(drawn: Measured): string[] {
+  return drawn.rows
+    .filter((row) => row.note === null && row.height > drawn.control * 1.25)
+    .map((row) => `${row.name} is ${row.height} tall, and a row is ${drawn.control}`);
+}
+
+/** The rows with a line under their words that neither cannot be undone nor cannot run: none. */
+function notedForNothing(drawn: Measured): string[] {
+  return drawn.rows
+    .filter((row) => row.note !== null && !row.danger && !row.off)
+    .map((row) => row.name);
 }
 
 describe("a chat tab's menu", () => {
@@ -85,35 +127,70 @@ describe("a chat tab's menu", () => {
     await endChatsStartedHere([mine]);
   });
 
-  it("draws each row as tall as what it says, and none over the next", async () => {
+  it("draws one row per line, and a line under a row only where it cannot be undone or cannot run", async () => {
     await openMenuOn(SELECTED_TAB);
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 
-    // Some rows carry a note under their words: those are the rows that were squeezed.
     expect(drawn.rows.length).toBeGreaterThan(2);
-    expect(drawn.rows.some((row) => row.note !== null)).toBe(true);
     expect(rowsAmiss(drawn)).toEqual([]);
+    expect(tallerThanARow(drawn)).toEqual([]);
+    expect(notedForNothing(drawn)).toEqual([]);
+    // The line under a row is one line, however long its sentence.
+    expect(drawn.rows.filter((row) => (row.noteLines ?? 1) > 1).map((row) => row.name)).toEqual([]);
+    // The row that ends the chat is there, and says what it costs.
+    expect(drawn.rows.filter((row) => row.danger && row.note !== null).length).toBeGreaterThan(0);
   });
 
-  it("writes a row no larger than the window's text, and its note smaller, said once", async () => {
+  it("is a handful of rows that say no tab's name, with the kinds of row folded into submenus", async () => {
+    const name = await browser.execute(
+      (selected: string) =>
+        document.querySelector(`${selected} .tab-name`)?.textContent?.trim() ?? "",
+      SELECTED_TAB,
+    );
     await openMenuOn(SELECTED_TAB);
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 
-    const noted = drawn.rows.filter((row) => row.note !== null);
-    expect(noted.length).toBeGreaterThan(0);
+    // However many personas the project has, they are behind one row.
+    expect(drawn.rows.length).toBeLessThanOrEqual(10);
+    expect(name).not.toBe("");
+    expect(drawn.rows.filter((row) => row.name.includes(name)).map((row) => row.name)).toEqual([]);
+    const names = drawn.rows.map((row) => row.name);
+    expect(names).toContain(ROW.rename);
+    expect(names).toContain(ROW.pinned);
+    // The tab in front has no row that could only say it is in front.
+    expect(names).not.toContain(ROW.switchTo);
+    // Activity and Network are views of the chat: one row, which opens them.
+    expect(names).not.toContain(ROW.activity);
+    expect(drawn.rows.find((row) => row.name === SUB.open)?.opens).toBe(true);
+    // No platform tooltip repeats a row's words or its note: a row that can run has none.
+    expect(
+      drawn.rows.filter((row) => !row.off && row.tooltip !== null).map((row) => row.name),
+    ).toEqual([]);
+  });
+
+  it("writes each word at its role's size: a row at the body's, a line under it and a key smaller", async () => {
+    await openMenuOn(SELECTED_TAB);
+    const drawn = await measured();
+    if (drawn === null) throw new Error("no menu is open");
+
+    // The body role is no larger than the window's own text.
     expect(drawn.rows.filter((row) => !(row.title <= drawn.body)).map((row) => row.name)).toEqual(
       [],
     );
+    const noted = drawn.rows.filter((row) => row.note !== null);
     expect(noted.filter((row) => !((row.note ?? NaN) < row.title)).map((row) => row.name)).toEqual(
       [],
     );
-    // The note is under the row's words, so no tooltip says it again.
-    expect(noted.filter((row) => row.tooltip !== null).map((row) => row.name)).toEqual([]);
+    const keyed = drawn.rows.filter((row) => row.keys !== null);
+    expect(keyed.length).toBeGreaterThan(0);
+    expect(keyed.filter((row) => !((row.keys ?? NaN) < row.title)).map((row) => row.name)).toEqual(
+      [],
+    );
   });
 
-  it("ends inside the window, and scrolls where its rows do not fit", async () => {
+  it("ends inside the window without scrolling, no narrower than its least width nor wider than its most", async () => {
     await openMenuOn(SELECTED_TAB);
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
@@ -121,12 +198,46 @@ describe("a chat tab's menu", () => {
     // Its cap is the room the window has for it: a length, and no more than the window.
     expect(drawn.top).toBeGreaterThanOrEqual(0);
     expect(drawn.bottom).toBeLessThanOrEqual(drawn.window);
+    expect(drawn.left).toBeGreaterThanOrEqual(0);
+    expect(drawn.right).toBeLessThanOrEqual(drawn.across);
     expect(drawn.cap).toMatch(/px$/);
     expect(parseFloat(drawn.cap)).toBeLessThanOrEqual(drawn.window);
     expect(drawn.scrolls).toBe("auto");
+    // A handful of one-line rows fits the window: nothing is past the menu's own edge.
+    expect(drawn.inside).toBeLessThanOrEqual(drawn.shown + 1);
+    // Between the one menu style's least and most width: six and ten of the largest space
+    // step, which is 32px at the root's default 14px, with room for rounding.
+    const step = (drawn.root / 14) * 32;
+    expect(drawn.width).toBeGreaterThanOrEqual(step * 6 - 2);
+    expect(drawn.width).toBeLessThanOrEqual(step * 10 + 2);
+  });
 
-    // Given less room than its rows need, as a short window or a long list of personas gives
-    // it, it scrolls: the rows keep their size and stand apart as before.
+  it("opens Open beside it, inside the window, with a row per view", async () => {
+    await openMenuOn(SELECTED_TAB);
+    await pressMenuPath(SUB.open);
+    await browser.waitUntil(async () => (await menuNames()).length === 2, {
+      timeout: 10_000,
+      timeoutMsg: "Open opened no submenu",
+    });
+    const sub = await measured();
+    if (sub === null) throw new Error("the submenu closed");
+
+    expect(sub.rows.map((row) => row.name)).toEqual([ROW.activity, ROW.network]);
+    expect(sub.top).toBeGreaterThanOrEqual(0);
+    expect(sub.bottom).toBeLessThanOrEqual(sub.window);
+    expect(sub.right).toBeLessThanOrEqual(sub.across);
+    expect(rowsAmiss(sub)).toEqual([]);
+    expect(tallerThanARow(sub)).toEqual([]);
+    expect(notedForNothing(sub)).toEqual([]);
+  });
+
+  it("scrolls where it is given less room than its rows need, and squeezes none of them", async () => {
+    await openMenuOn(SELECTED_TAB);
+    const drawn = await measured();
+    if (drawn === null) throw new Error("no menu is open");
+
+    // Given less room than its rows need, as a short window gives it, it scrolls: the rows
+    // keep their size and stand apart as before.
     await browser.execute(
       (room: number) => {
         const menu = document.querySelector<HTMLElement>('[role="menu"]');

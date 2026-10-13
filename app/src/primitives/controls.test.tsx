@@ -30,6 +30,7 @@ import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as Select from "@radix-ui/react-select";
 import * as Switch from "@radix-ui/react-switch";
 import { drawnWith } from "../cascade.testkit";
+import { MenuKeys, MenuWords } from "./MenuRow";
 import { isGeometry } from "../theme/geometry";
 import { MOTION_TOKENS, motionProperty } from "../theme/motion";
 import { property, TOKENS } from "../theme/theme";
@@ -84,12 +85,15 @@ describe("the primitives stylesheet", () => {
   it("reads only tokens: a theme's colours and motion, the core geometry, and its own", () => {
     const colours = new Set(TOKENS.map(property));
     const motion = new Set(MOTION_TOKENS.map(motionProperty));
-    // Its own: a length one primitive works out once (`--ui-switch-track`), and the one a view may
-    // set for it (`--ui-menu-indent`, and a leading icon's `--ui-input-lead-*`, which `App.css`
+    // Its own: a length one primitive works out once (`--ui-switch-track`), and the ones a view
+    // may set for it (a menu row's `--ui-menu-indent` and a menu's least and most width,
+    // `--ui-menu-min` and `--ui-menu-max`; a leading icon's `--ui-input-lead-*`, which `App.css`
     // declares for the Chats filter).
     const own = new Set([...CSS.matchAll(/^\s+(--[\w-]+):/gm)].map((hit) => hit[1]));
     const fromViews = new Set([
       "--ui-menu-indent",
+      "--ui-menu-min",
+      "--ui-menu-max",
       "--ui-input-lead-at",
       "--ui-input-lead-size",
       "--ui-input-lead-text",
@@ -530,12 +534,18 @@ describe("the menu", () => {
     expect(drawnWith(rename, "background")).toBe("var(--tab-active)");
     const del = within(menu).getByRole("menuitem", { name: "Delete" });
     expect(drawnWith(del, "color")).toBe("var(--danger-base)");
-    // A surface sizes its menu; the look is the one style's, whatever the surface's class says.
-    expect(drawnWith(menu, "min-width")).toBe("12rem");
+    // The width is the one style's too, from the spacing scale: two short verbs do not make a
+    // sliver, and a long name does not widen the menu across the window.
+    expect(drawnWith(menu, "min-inline-size")).toBe("var(--ui-menu-min, calc(var(--space-8) * 6))");
+    expect(drawnWith(menu, "max-inline-size")).toBe(
+      "var(--ui-menu-max, calc(var(--space-8) * 10))",
+    );
+    expect(drawnWith(menu, "min-width")).toBeUndefined();
     expect(drawnWith(menu, "background")).toBe("var(--surface-overlay)");
   });
 
-  /** A menu whose rows say what they do under their words, as a tab's context menu does. */
+  /** A menu drawn from the row's parts (`MenuRow.tsx`), as a tab's context menu is: a row
+   *  with a key at its end, and a row that cannot be undone with the one line under it. */
   function Noted() {
     return (
       <Menu.Root modal={false}>
@@ -544,17 +554,14 @@ describe("the menu", () => {
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Content className="ui-menu item-menu" aria-label="More">
-            <Menu.Label className="ui-menu-label">This chat</Menu.Label>
-            <Menu.Item className="ui-menu-item" aria-label="Pin chat">
-              <span className="menu-title">Pin chat</span>
-              <span className="ui-menu-note">
-                Draws it first on its strip. Yours, on this machine only.
-              </span>
+            <Menu.Label className="ui-menu-label ui-text-label">This chat</Menu.Label>
+            <Menu.Item className="ui-menu-item" aria-label="Rename…">
+              <MenuWords said="Rename…" />
+              <MenuKeys>F2</MenuKeys>
             </Menu.Item>
             <Menu.Separator className="ui-menu-line" />
-            <Menu.Item className="ui-menu-item ui-menu-item-danger" aria-label="End chat">
-              <span className="menu-title">End chat</span>
-              <span className="ui-menu-note">Ends the program it runs. There is no undo.</span>
+            <Menu.Item className="ui-menu-item ui-menu-item-danger" aria-label="End">
+              <MenuWords said="End" under="Ends the program it runs. There is no undo." danger />
             </Menu.Item>
           </Menu.Content>
         </Menu.Portal>
@@ -570,7 +577,7 @@ describe("the menu", () => {
     return screen.findByRole("menu");
   }
 
-  it("sizes a row with a note to what it says: no fixed height, and never squeezed by the menu", async () => {
+  it("sizes a row to what it says: no fixed height, and never squeezed by the menu", async () => {
     // The menu is a column with a cap on its height. A row whose least height is written down
     // has no automatic one, so a column that is too tall squeezed every row to a control's
     // height and drew each over the next row's note. A row keeps its size and the menu scrolls.
@@ -581,24 +588,58 @@ describe("the menu", () => {
       expect(drawnWith(row, "max-block-size")).toBeUndefined();
       expect(drawnWith(row, "min-block-size")).toBe("var(--size-control)");
       expect(drawnWith(row, "flex-shrink")).toBe("0");
-      // Its note is on a line of its own, under its words.
-      expect(drawnWith(row, "flex-wrap")).toBe("wrap");
+      // One line: its words give way, and nothing wraps under them.
+      expect(drawnWith(row, "flex-wrap")).toBeUndefined();
     }
     // Neither is the line between groups nor a group's name squeezed away: nothing in a menu is.
     expect(drawnWith(within(menu).getByRole("separator"), "flex-shrink")).toBe("0");
     expect(drawnWith(within(menu).getByText("This chat"), "flex-shrink")).toBe("0");
   });
 
-  it("writes a row at the menu's step of the type scale, and its note a step quieter", async () => {
+  it("writes a row's words, the line under them, its key and a group's name in their text roles", async () => {
     const menu = await openNoted();
-    const row = within(menu).getByRole("menuitem", { name: "Pin chat" });
+    const row = within(menu).getByRole("menuitem", { name: "Rename…" });
+    // A row with nothing inside it but text is the body role's size by the row's own rule.
     expect(drawnWith(row, "font-size")).toBe("var(--font-size-md)");
-    // The title is the row's own size: nothing redraws it as a heading.
-    expect(drawnWith(within(row).getByText("Pin chat"), "font-size")).toBeUndefined();
-    const note = within(row).getByText(/^Draws it first/);
-    expect(drawnWith(note, "font-size")).toBe("var(--font-size-xs)");
-    expect(drawnWith(note, "color")).toBe("var(--text-muted)");
-    expect(drawnWith(note, "flex-basis")).toBe("100%");
+    const words = within(row).getByText("Rename…");
+    expect(words).toHaveClass("ui-menu-title", "ui-text-body");
+    expect(drawnWith(words, "font-size")).toBe("var(--font-size-md)");
+    expect(drawnWith(words, "color")).toBe("var(--text-primary)");
+    const keys = within(row).getByText("F2");
+    expect(keys).toHaveClass("ui-menu-keys", "ui-text-meta");
+    expect(drawnWith(keys, "font-size")).toBe("var(--font-size-xs)");
+    expect(drawnWith(keys, "color")).toBe("var(--text-muted)");
+    // At the row's end, and never squeezed by the words.
+    expect(drawnWith(keys, "margin-inline-start")).toBe("auto");
+    expect(drawnWith(keys, "flex")).toBe("none");
+    const label = within(menu).getByText("This chat");
+    expect(drawnWith(label, "font-size")).toBe("var(--font-size-xs)");
+    expect(drawnWith(label, "text-transform")).toBe("uppercase");
+    expect(drawnWith(label, "color")).toBe("var(--text-secondary)");
+  });
+
+  it("keeps the words and the line under them to one line each, cut with an ellipsis", async () => {
+    const menu = await openNoted();
+    const row = within(menu).getByRole("menuitem", { name: "End" });
+    const words = within(row).getByText("End");
+    const under = within(row).getByText("Ends the program it runs. There is no undo.");
+    for (const line of [words, under]) {
+      expect(drawnWith(line, "white-space")).toBe("nowrap");
+      expect(drawnWith(line, "overflow")).toBe("hidden");
+      expect(drawnWith(line, "text-overflow")).toBe("ellipsis");
+    }
+    // The two are a column that gives way before the key or the mark at the row's end does.
+    const column = words.parentElement as HTMLElement;
+    expect(column).toHaveClass("ui-menu-words");
+    expect(drawnWith(column, "flex-direction")).toBe("column");
+    expect(drawnWith(column, "min-inline-size")).toBe("0");
+    // The line under is the secondary role, and stays so on a row in the danger colour; the
+    // row's words take the row's colour and wear no role that would set another.
+    expect(under).toHaveClass("ui-menu-note", "ui-text-secondary");
+    expect(drawnWith(under, "color")).toBe("var(--text-secondary)");
+    expect(drawnWith(under, "font-size")).toBe("var(--font-size-sm)");
+    expect(words).not.toHaveClass("ui-text-body");
+    expect(drawnWith(row, "color")).toBe("var(--danger-base)");
   });
 
   it("is never taller than the room the window has for it, and scrolls inside", async () => {
@@ -611,8 +652,7 @@ describe("the menu", () => {
     // that the menu's place may not have.
     for (const shell of [".more-menu", ".tasks-menu", ".item-menu"]) {
       const body = new RegExp(`(?:^|\\n)\\${shell} \\{([^}]*)\\}`).exec(sheet("App.css"))?.[1];
-      expect(body, shell).toBeDefined();
-      expect(body, shell).not.toMatch(/max-(height|block-size)/);
+      expect(body ?? "", shell).not.toMatch(/max-(height|block-size)/);
     }
   });
 });
@@ -678,7 +718,11 @@ describe("every menu in the window", () => {
     const looks = ["background", "border", "border-radius", "box-shadow", "padding"];
     for (const shell of [".more-menu", ".tasks-menu", ".item-menu"]) {
       const body = new RegExp(`\\n\\${shell} \\{([^}]*)\\}`).exec(app)?.[1] ?? "";
-      expect(body, `${shell} is sized`).toMatch(/min-width/);
+      // Not its width either: the one style has a least and a most width, and a surface that
+      // needs another hands the style a custom property, never a width of its own.
+      expect(body, `${shell} writes a width`).not.toMatch(
+        /(?<![\w-])(?:min-|max-)?(?:width|inline-size):/,
+      );
       for (const look of looks)
         expect(body, `${shell} draws ${look}`).not.toMatch(new RegExp(`(?<![\\w-])${look}:`));
     }

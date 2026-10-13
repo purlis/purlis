@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect, $$ } from "@wdio/globals";
+import { pressMenuPath, ROW, SUB } from "../menus.js";
 import { READY } from "../harness.js";
 import {
   SELECTED_TAB,
@@ -194,18 +195,8 @@ async function openActivityOf(session: number): Promise<void> {
     return true;
   }, SELECTED_TAB);
   expect(sent).toBe(true);
-  await browser.waitUntil(
-    async () =>
-      browser.execute(() => {
-        // By the row's name: its text also holds the note under the title (Menus.tsx).
-        const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-          (one) => one.getAttribute("aria-label") === "Activity",
-        );
-        item?.click();
-        return item !== undefined;
-      }),
-    { timeout: 10_000, interval: 100, timeoutMsg: `chat ${session}'s menu never offered Activity` },
-  );
+  // Activity is one of the tab's views: a row of the menu's *Open* submenu.
+  await pressMenuPath(SUB.open, ROW.activity);
   // The core's own read has answered, whatever it said, before the timeline is handed over.
   await browser.waitUntil(
     async () =>

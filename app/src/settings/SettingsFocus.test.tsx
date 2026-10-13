@@ -330,7 +330,7 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
     const menu = await screen.findByRole("menu");
 
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "Workspace settings…" }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Settings…" }));
 
     await waitFor(() => expect(level("Workspace")).toBeChecked());
     await onTheCurrentGroup();

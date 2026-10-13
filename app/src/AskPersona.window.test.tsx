@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { openSubmenus, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
@@ -215,16 +216,19 @@ describe("Ask a persona from a chat's tab", () => {
   it("offers one row per persona the project has finished, on the tab's menu", async () => {
     await aStewardChat();
 
-    const menu = await tabMenu();
+    // One *Ask* row on the tab's menu, which opens a row per persona, named by the persona.
+    await tabMenu();
+    const sub = await openSubmenus("Ask");
 
-    expect(within(menu).getByRole("menuitem", { name: "Ask devops…" })).toBeEnabled();
-    expect(within(menu).getByRole("menuitem", { name: "Ask steward…" })).toBeEnabled();
+    expect(within(sub).getByRole("menuitem", { name: "devops…" })).toBeEnabled();
+    expect(within(sub).getByRole("menuitem", { name: "steward…" })).toBeEnabled();
   });
 
   it("asks for a task name and what to ask, and starts a devops chat under this one", async () => {
     const { asked } = await aStewardChat();
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Ask devops…" }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
 
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     const send = within(dialog).getByRole("button", { name: "Ask devops" });
@@ -286,7 +290,8 @@ describe("Ask a persona from a chat's tab", () => {
     // #1453: this chat's folder, a branch of its own, or another workspace. The window says
     // branch and folder, never worktree (ADR 0072 §4); the core's word for it is `worktree`.
     const { asked } = await aStewardChat();
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Ask devops…" }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     await userEvent.type(within(dialog).getByLabelText("Task name"), "check prod");
     await userEvent.type(within(dialog).getByLabelText("What to ask"), "Is prod healthy?");
@@ -322,7 +327,8 @@ describe("Ask a persona from a chat's tab", () => {
     const HERE =
       "'lint' is already working in workspaces/alpha with no branch of its own. There are no file locks between tasks: a file two of them change cannot be told apart afterwards. To keep them apart, choose a branch of its own for this one.";
     const { asked } = await aStewardChat({ shared: { here: HERE } });
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Ask devops…" }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
 
     expect(await within(dialog).findByTestId("ask-folder-shared")).toHaveTextContent(HERE);
@@ -349,7 +355,8 @@ describe("Ask a persona from a chat's tab", () => {
 
   it("asks which workspace before it sends a chat into another one", async () => {
     const { asked } = await aStewardChat();
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Ask devops…" }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     await userEvent.type(within(dialog).getByLabelText("Task name"), "check prod");
     await userEvent.type(within(dialog).getByLabelText("What to ask"), "Is prod healthy?");
@@ -375,7 +382,8 @@ describe("Ask a persona from a chat's tab", () => {
     const why =
       "this chat already has 6 persona chats running, which is as many as it may have at once. Wait for one to report, then dispatch again.";
     await aStewardChat({ refused: why });
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Ask devops…" }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     await userEvent.type(within(dialog).getByLabelText("Task name"), "check prod");
     await userEvent.type(within(dialog).getByLabelText("What to ask"), "Is prod healthy?");
@@ -389,7 +397,8 @@ describe("Ask a persona from a chat's tab", () => {
 
   it("starts nothing on Cancel", async () => {
     const { asked } = await aStewardChat();
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Ask devops…" }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -526,7 +535,8 @@ describe("a refused vault, on a pane whose chat has not asked", () => {
   it("does not say so when you open it yourself, from the tab's menu", async () => {
     await aStewardChat();
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: /Ask devops/ }));
+    await tabMenu();
+    await pressMenuPath("Ask", "devops…");
 
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     expect(dialog).not.toHaveTextContent("Write the request yourself");
@@ -538,7 +548,7 @@ describe("where policy locks all dispatch", () => {
     await aStewardChat({ offer: { personas: [], locked: LOCKED, locked_for: [] } });
 
     const menu = await tabMenu();
-    expect(within(menu).queryByRole("menuitem", { name: /^Ask / })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Ask" })).toBeNull();
     await userEvent.keyboard("{Escape}");
 
     await userEvent.keyboard("{F2}");
@@ -555,9 +565,10 @@ describe("where policy locks all dispatch", () => {
       offer: { ...OPEN, locked_for: [{ session: 4, persona: "devops", why }] },
     });
 
-    const menu = await tabMenu();
-    expect(within(menu).queryByRole("menuitem", { name: "Ask devops…" })).toBeNull();
-    expect(within(menu).getByRole("menuitem", { name: "Ask steward…" })).toBeEnabled();
+    await tabMenu();
+    const sub = await openSubmenus("Ask");
+    expect(within(sub).queryByRole("menuitem", { name: "devops…" })).toBeNull();
+    expect(within(sub).getByRole("menuitem", { name: "steward…" })).toBeEnabled();
     await userEvent.keyboard("{Escape}");
 
     await userEvent.keyboard("{F2}");
@@ -591,6 +602,6 @@ describe("where policy locks all dispatch", () => {
     await screen.findByTestId("pane");
     await settled();
 
-    expect(within(await tabMenu()).queryByRole("menuitem", { name: /^Ask / })).toBeNull();
+    expect(within(await tabMenu()).queryByRole("menuitem", { name: "Ask" })).toBeNull();
   });
 });

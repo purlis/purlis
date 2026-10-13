@@ -766,7 +766,12 @@ describe("one form for Shared and Local (SE-18)", () => {
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(1);
     expect(moves).toEqual([]);
     await userEvent.click(
-      within(menu).getByRole("menuitem", { name: /^This machine charter\.local\.toml/ }),
+      // Which file that is, and who sees it, is the row's description and tooltip (the menus'
+      // rule 2), not a line under its words.
+      within(menu).getByRole("menuitem", {
+        name: "This machine",
+        description: "charter.local.toml, on this machine only",
+      }),
     );
 
     await waitFor(() => expect(moves).toHaveLength(1));
@@ -794,11 +799,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open("Saving");
 
-    await userEvent.click(
-      within(await moveMenu("Mode")).getByRole("menuitem", {
-        name: "Team charter.toml, which your team sees, replacing push",
-      }),
-    );
+    await userEvent.click(within(await moveMenu("Mode")).getByRole("menuitem", { name: "Team" }));
 
     await waitFor(() => expect(moves).toHaveLength(1));
     expect(moves[0]).toMatchObject({ to: "shared", paths: [MODE] });
@@ -815,11 +816,10 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open("Saving");
 
-    expect(
-      within(await moveMenu("Mode")).getByRole("menuitem", {
-        name: "Team charter.toml, which your team sees, replacing push",
-      }),
-    ).toBeInTheDocument();
+    const team = within(await moveMenu("Mode")).getByRole("menuitem", { name: "Team" });
+    expect(team).toHaveAccessibleDescription("charter.toml, which your team sees, replacing push");
+    // No Undo puts the team's value back, so that much stays under the row's words.
+    expect(team.querySelector(".ui-menu-note")).toHaveTextContent("Replaces push there.");
   });
 
   it("puts the focus back on Move to… once a move is chosen", async () => {

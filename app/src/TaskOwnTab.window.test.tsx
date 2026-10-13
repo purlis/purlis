@@ -315,7 +315,7 @@ async function pick(name: string | RegExp) {
 /** Moves a task to a tab of its own from its row's menu in the Chats list. */
 async function toOwnTab(tree: HTMLElement, name: string) {
   fireEvent.contextMenu(row(tree, name));
-  await pick(`Move ${name} to its own tab`);
+  await pick("Move to its own tab");
   await waitFor(() => expect(tabNames()).toContain(name));
 }
 
@@ -516,7 +516,7 @@ describe("moving a task to a tab of its own", () => {
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
     fireEvent.contextMenu(screen.getByRole("navigation", { name: "Chat path" }));
-    await pick("Open talk beside steward 1");
+    await pick("Open beside steward 1");
 
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
   });
@@ -604,7 +604,7 @@ describe("opening a task beside its session", () => {
   it("gives the task's pane a minimise and the session's pane its close", async () => {
     const { tree, asked } = await drawn(withTasks());
     fireEvent.contextMenu(row(tree, "talk"));
-    await pick("Open talk beside steward 1");
+    await pick("Open beside steward 1");
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
     // One close, the session's pane's; and one minimise, the task's.
@@ -855,7 +855,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       await toOwnTab(tree, "talk");
 
       fireEvent.contextMenu(tab("talk"));
-      const row = await screen.findByRole("menuitem", { name: /^Start chat .*talk fresh/ });
+      const row = await screen.findByRole("menuitem", { name: "Start fresh" });
       expect(row.getAttribute("aria-disabled")).toBe("true");
       expect(row.title).toContain("This chat is a task");
       expect(commandsOf(asked, "start_chat_fresh")).toEqual([]);
@@ -874,7 +874,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       await toOwnTab(tree, "talk");
 
       fireEvent.contextMenu(tab("talk"));
-      await pick(/^Start chat .*talk fresh/);
+      await pick("Start fresh");
       const question = await screen.findByRole("alertdialog");
       expect(commandsOf(asked, "start_chat_fresh")).toEqual([]);
       await userEvent.click(within(question).getByRole("button", { name: "Start fresh" }));
@@ -894,7 +894,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     await toOwnTab(tree, "talk");
 
     fireEvent.contextMenu(tab("talk"));
-    await pick(/^Restart chat .*talk/);
+    await pick("Restart");
 
     // Asked where an end of the task is asked (#1488): on its own breadcrumb's line, with
     // Keep, and no dialog.
@@ -928,7 +928,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 
     fireEvent.contextMenu(tab("left behind"));
-    await pick(/^Restart chat .*left behind/);
+    await pick("Restart");
     const restart = await screen.findByRole("alertdialog", { name: "Restart left behind?" });
     expect(commandsOf(asked, "ask_chat_restart")).toEqual([]);
     await userEvent.click(within(restart).getByRole("button", { name: "Restart it" }));
@@ -944,11 +944,18 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
 
     fireEvent.contextMenu(tab("talk"));
     const menu = await screen.findByRole("menu");
-    const items = [...menu.querySelectorAll('[role="menuitem"], [role="separator"]')];
-    const back = items.findIndex((one) => one.textContent?.includes("Send talk back"));
-    const line = items.findIndex((one) => one.getAttribute("role") === "separator");
+    // With the rows that say where a task is drawn, uncoloured, and before every row that ends
+    // something: the menu's last group is what cannot be undone.
+    const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
+    const back = items.findIndex((one) =>
+      one.getAttribute("aria-label")?.startsWith("Send back into"),
+    );
     expect(back).toBeGreaterThanOrEqual(0);
-    expect(line < 0 || back < line).toBe(true);
+    expect(items[back]).not.toHaveClass("ui-menu-item-danger");
+    const ends = items.findIndex((one) => one.classList.contains("ui-menu-item-danger"));
+    expect(ends).toBeGreaterThan(back);
+    const lastGroup = menu.querySelector('[role="group"]:last-of-type');
+    expect(lastGroup?.contains(items[back])).toBe(false);
   });
 });
 
@@ -1046,7 +1053,7 @@ describe("what the core is told is on screen (M1, M4)", () => {
 
     // steward 1 is started again on its conversation: the same tab, in front, is chat 21's.
     fireEvent.contextMenu(tab("steward 1"));
-    await pick(/^Restart chat .*steward 1/);
+    await pick("Restart");
     await waitFor(() => expect(open[0].session).toBe(21));
 
     await waitFor(() =>

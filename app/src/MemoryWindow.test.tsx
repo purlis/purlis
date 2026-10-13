@@ -14,6 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { MemoryView, PanelRow } from "./bindings";
@@ -343,17 +344,20 @@ describe("a persona's memory row", () => {
     fireEvent.contextMenu(row);
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((item) => item.textContent),
-    ).toEqual([
-      "Open memory: Never pkill by name",
-      "Edit memory: Never pkill by name",
+    expect(menu).toHaveAccessibleName("Memory Never pkill by name");
+    expect(menuNames()).toEqual([
+      "Open",
+      "Edit",
       // Its other stores, in a submenu (#1190).
       "Move to",
-      "Delete memory: Never pkill by nameMoves it to the store's archive. Undo puts it back.",
+      "Delete",
     ]);
+    // What Delete does is its description and its tooltip, not a line under its words: it is
+    // an archive with an Undo, so it is not drawn as a row that cannot be undone either.
+    const del = within(menu).getByRole("menuitem", { name: "Delete" });
+    expect(del).toHaveAccessibleDescription("Moves it to the store's archive. Undo puts it back.");
+    expect(del.querySelector(".ui-menu-note")).toBeNull();
+    expect(del).not.toHaveClass("ui-menu-item-danger");
   });
 
   it("opens straight into the editor from Edit, and keeps the tab", async () => {
@@ -361,7 +365,7 @@ describe("a persona's memory row", () => {
     render(<App />);
     fireEvent.contextMenu(await memoryRowIn("never-pkill"));
 
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Edit memory/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
 
     expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue(
       "Never pkill by name",
@@ -411,7 +415,7 @@ describe("Delete, in the window", () => {
     render(<App />);
     fireEvent.contextMenu(await memoryRowIn("never-pkill"));
 
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Delete memory/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     await memoryUndo();
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -669,7 +673,7 @@ describe("Move's Undo, when it does not simply land", () => {
 
     // While the move back is on its way, another memory is deleted: its Undo takes the line.
     fireEvent.contextMenu(await memoryRowIn("defects-go-upstream"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Delete memory/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
     const deleted = await memoryUndo();
     await act(async () => {
       land();

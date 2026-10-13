@@ -3,23 +3,12 @@
 
 import { useEffect, useId, type KeyboardEvent, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { ChevronRight } from "lucide-react";
-import {
-  askRows,
-  curateRows,
-  curateSubjectOf,
-  menuRows,
-  moveRows,
-  noteOf,
-  titleOf,
-  type Catalogued,
-  type MenuOn,
-  type Offer,
-} from "./actions";
-import { cardRowsFor } from "./cardLink";
+import { Check, ChevronRight } from "lucide-react";
+import { noteOf, type Catalogued, type MenuOn, type Offer } from "./actions";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
+import { menuIsEmpty, menuOf, type GroupDrawn, type RowDrawn, type SubDrawn } from "./menuModel";
+import { MenuKeys, MenuTip, MenuWords, useRested } from "./primitives/MenuRow";
 import { landSettingsFocus } from "./settings/entering";
-import { storeLabel } from "./memoryMoves";
 
 /**
  * The window's context menus: right-click on a thing, and charter offers what it can do to it.
@@ -32,10 +21,14 @@ import { storeLabel } from "./memoryMoves";
  * the tmux frame grew a second answer on: `frame/tabmenu.py` and the palette drifted, and the
  * fix there was to make the menu a view of the one catalogue rather than to keep them in step.
  *
- * **Destructive rows are under a separator and marked.** The catalogue puts them last so that
- * Enter in the palette is never one keystroke from ending a chat. A context menu pops up under
- * the pointer, where the operator did not choose the layout — so the separator and the danger
- * colour are the same rule with more at stake, not less.
+ * **How a row is drawn is `menuModel.ts`'s, for every menu alike**: its short words, its group,
+ * the submenu it is folded into, its key, and whether it is in the danger colour. This file
+ * draws that model and decides none of it (`docs/ui-primitives.md`, "Menus").
+ *
+ * **What cannot be undone is last, under a line, and marked.** The catalogue puts such rows last
+ * so that Enter in the palette is never one keystroke from ending a chat. A context menu pops
+ * up under the pointer, where the operator did not choose the layout — so the line and the
+ * danger colour are the same rule with more at stake, not less.
  *
  * **Not modal** (`modal={false}`), for the show-more menu's reason (`docs/ui-primitives.md`): a
  * modal Radix surface marks the rest of the window `aria-hidden`, which is right for a question
@@ -63,177 +56,129 @@ export function Menued({
    *  `asChild`, so no wrapper is added to a strip whose layout is measured. */
   children: ReactNode;
 }) {
-  const rows = menuRows(on, offers);
-  const curating = curateSubjectOf(on);
   // Nothing to offer — a project this window holds while its catalogue has not been built yet,
   // for instance. The element is drawn exactly as it was, and `useNoBrowserMenu` still takes
   // the browser's own menu away: a surface with no charter menu must not fall back to
   // `Reload` and `Inspect Element`.
-  if (rows.above.length === 0 && rows.below.length === 0 && curating === undefined)
-    return <>{children}</>;
+  if (menuIsEmpty(on, offers)) return <>{children}</>;
   return (
     <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild onKeyDown={openFromTheKeyboard}>
         {children}
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content
-          className="ui-menu item-menu"
-          collisionPadding={8}
-          onCloseAutoFocus={(event) => {
-            // A row that went into Settings sent the keyboard there, not back to the tab (#1206).
-            if (landSettingsFocus()) event.preventDefault();
-          }}
-        >
-          {rows.above.map((offer) => (
-            <Row key={offer.id} offer={offer} onPress={onPress} />
-          ))}
-          {/* **Ask a persona**, on a chat's tab: one row per persona the project has finished.
-              Read here, inside the content, so the scan is paid by a menu that is open. */}
-          {on.on === "chat" &&
-            askRows(on.tab, offers).map((offer) => (
-              <Row key={offer.id} offer={offer} onPress={onPress} />
-            ))}
-          {curating !== undefined && (
-            <Curate subject={curating} offers={offers} onPress={onPress} />
-          )}
-          {/* **Move to ▸**, on a memory's row (#1190): a row per store but its own. */}
-          {on.on === "memory" && <MoveTo memory={on.key} offers={offers} onPress={onPress} />}
-          {rows.above.length > 0 && rows.below.length > 0 && (
-            <ContextMenu.Separator className="ui-menu-line" />
-          )}
-          {rows.below.map((offer) => (
-            <Row key={offer.id} offer={offer} onPress={onPress} dangerous />
-          ))}
-        </ContextMenu.Content>
+        <Drawn on={on} offers={offers} onPress={onPress} />
       </ContextMenu.Portal>
     </ContextMenu.Root>
   );
 }
 
 /**
- * The "Curate ▸" submenu of a workspace, a persona or the plane (ADR 0061): charter's own
- * actions first, then a group per persona that declared one, named, then every action the core
- * left out as a row that cannot run, with the core's sentence as its tooltip — never dropped
- * silently.
- *
- * **Drawn only while its menu is open**, because it is inside the menu's content, which Radix
- * mounts only then — so the scan `curateRows` makes is paid by a menu the operator opened and
- * not by every tab on a strip per render. A subject with nothing at all draws no submenu.
- *
- * Radix's own `ContextMenu.Sub` (ADR 0037): the arrow keys, the hover intent and the collision
- * handling of a nested menu are the primitive's.
+ * The menu's content. A component of its own so the model is made **only while the menu is
+ * open**: Radix mounts what is in the portal only then, and `menuOf` scans the catalogue for
+ * the Ask, Curate and Move to rows, which a strip of fifty tabs must not pay per render.
  */
-function Curate({
-  subject,
+function Drawn({
+  on,
   offers,
   onPress,
 }: {
-  subject: string;
+  on: MenuOn;
   offers: Catalogued;
   onPress: (offer: Offer) => void;
 }) {
-  const { charter, personas, leftOut } = curateRows(subject, offers);
-  if (charter.length === 0 && personas.length === 0 && leftOut.length === 0) return null;
-  // The card an off row's reason ends with, as a row of its own under them (#1134): a disabled
-  // row is skipped by the keyboard, so a link inside it would be one no keyboard reaches.
-  const cards = cardRowsFor(
-    [...charter, ...personas.flatMap((group) => group.rows), ...leftOut],
-    offers,
-  );
+  const menu = menuOf(on, offers);
   return (
-    <ContextMenu.Sub>
-      <ContextMenu.SubTrigger className="ui-menu-item">
-        <span className="menu-title">Curate</span>
-        <span className="ui-menu-mark" aria-hidden="true">
-          <ChevronRight />
-        </span>
-      </ContextMenu.SubTrigger>
-      <ContextMenu.Portal>
-        <ContextMenu.SubContent className="ui-menu item-menu" collisionPadding={8}>
-          {charter.map((offer) => (
-            <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
-          ))}
-          {personas.map(({ persona, rows }, i) => (
-            <ContextMenu.Group key={persona}>
-              {(i > 0 || charter.length > 0) && <ContextMenu.Separator className="ui-menu-line" />}
-              <ContextMenu.Label className="ui-menu-label">{persona}</ContextMenu.Label>
-              {rows.map((offer) => (
-                <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
-              ))}
-            </ContextMenu.Group>
-          ))}
-          {leftOut.length > 0 && (
-            <ContextMenu.Group>
-              {(charter.length > 0 || personas.length > 0) && (
-                <ContextMenu.Separator className="ui-menu-line" />
-              )}
-              {leftOut.map((offer) => (
-                <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
-              ))}
-            </ContextMenu.Group>
-          )}
-          {cards.length > 0 && (
-            <ContextMenu.Group>
-              <ContextMenu.Separator className="ui-menu-line" />
-              {cards.map((offer) => (
-                <Row key={offer.id} offer={offer} onPress={onPress} />
-              ))}
-            </ContextMenu.Group>
-          )}
-        </ContextMenu.SubContent>
-      </ContextMenu.Portal>
-    </ContextMenu.Sub>
+    <ContextMenu.Content
+      className="ui-menu item-menu"
+      collisionPadding={8}
+      // **The thing the menu is about is said once, here**, and by no row: "Tab steward 4".
+      aria-label={menu.about}
+      onCloseAutoFocus={(event) => {
+        // A row that went into Settings sent the keyboard there, not back to the tab (#1206).
+        if (landSettingsFocus()) event.preventDefault();
+      }}
+    >
+      <Groups groups={menu.groups} onPress={onPress} />
+    </ContextMenu.Content>
+  );
+}
+
+/** A menu's groups, or a submenu's: a line between two, and a group's name over it. */
+function Groups({
+  groups,
+  onPress,
+}: {
+  groups: readonly GroupDrawn[];
+  onPress: (offer: Offer) => void;
+}) {
+  return groups.map((group, i) => (
+    // Keyed by its first row: a group has no name of its own, and its place can change.
+    <ContextMenu.Group key={keyOf(group)}>
+      {i > 0 && <ContextMenu.Separator className="ui-menu-line" />}
+      {group.label !== undefined && (
+        <ContextMenu.Label className="ui-menu-label ui-text-label">{group.label}</ContextMenu.Label>
+      )}
+      {group.entries.map((entry) =>
+        entry.kind === "row" ? (
+          <Row key={entry.offer.id} row={entry} onPress={onPress} />
+        ) : (
+          <Sub key={entry.key} sub={entry} onPress={onPress} />
+        ),
+      )}
+    </ContextMenu.Group>
+  ));
+}
+
+function keyOf(group: GroupDrawn): string {
+  const first = group.entries[0];
+  return (
+    group.label ?? (first === undefined ? "" : first.kind === "row" ? first.offer.id : first.key)
   );
 }
 
 /**
- * The "Move to ▸" submenu of a memory's row (KN-3, #1190): one row per store the memory can go
- * to, named as the tab's Move names it, each with the catalogue's note on who reads that store.
- * Drawn only while its menu is open, for `Curate`'s reason; a memory with nowhere to go (the
- * stores not read yet, or a project with one store) draws none.
+ * A row that opens a submenu: *Open*, *Ask*, *Stop*, *Curate*, *Move to*. Radix's own
+ * `ContextMenu.Sub` (ADR 0037), so Right opens it, Left and Escape close it, and the hover
+ * intent and the collision handling of a nested menu are the primitive's.
+ *
+ * What every row inside does is said once, as this row's tooltip and description, and on the
+ * side away from the submenu it opens.
  */
-function MoveTo({
-  memory,
-  offers,
-  onPress,
-}: {
-  memory: string;
-  offers: Catalogued;
-  onPress: (offer: Offer) => void;
-}) {
-  const rows = moveRows(memory, offers);
-  if (rows.length === 0) return null;
+function Sub({ sub, onPress }: { sub: SubDrawn; onPress: (offer: Offer) => void }) {
+  const noted = useId();
+  const { rested, rest, wake } = useRested(sub.tip !== undefined);
   return (
     <ContextMenu.Sub>
-      <ContextMenu.SubTrigger className="ui-menu-item">
-        <span className="menu-title">Move to</span>
+      <ContextMenu.SubTrigger
+        className="ui-menu-item"
+        textValue={sub.said}
+        aria-label={sub.said}
+        aria-describedby={sub.tip === undefined ? undefined : noted}
+        {...rest}
+      >
+        <MenuWords said={sub.said} />
         <span className="ui-menu-mark" aria-hidden="true">
           <ChevronRight />
         </span>
+        {sub.tip !== undefined && (
+          <span id={noted} hidden>
+            {sub.tip}
+          </span>
+        )}
+        {rested && (
+          <MenuTip side="left" onClose={wake}>
+            {sub.tip}
+          </MenuTip>
+        )}
       </ContextMenu.SubTrigger>
       <ContextMenu.Portal>
         <ContextMenu.SubContent className="ui-menu item-menu" collisionPadding={8}>
-          {rows.map((offer) => (
-            <Row
-              key={offer.id}
-              offer={offer}
-              onPress={onPress}
-              words={offer.does.verb === "moveMemory" ? storeLabel(offer.does.to) : undefined}
-            />
-          ))}
+          <Groups groups={sub.groups} onPress={onPress} />
         </ContextMenu.SubContent>
       </ContextMenu.Portal>
     </ContextMenu.Sub>
   );
-}
-
-/** A curation row's words inside its submenu: the action alone. The palette's title names the
- *  subject too (`Curate smart-ide: Safe remove`), and inside a menu opened on that subject the
- *  subject is already said. */
-function labelOf(offer: Offer): string {
-  const said = `Curate ${offer.name ?? ""}: `;
-  return offer.title.startsWith(said) ? offer.title.slice(said.length) : offer.title;
 }
 
 /**
@@ -268,27 +213,14 @@ function openFromTheKeyboard(event: KeyboardEvent<HTMLElement>) {
   );
 }
 
-/** One row of a menu: a catalogue offer, drawn.
+/** One row of a menu: a catalogue offer, drawn as the model says.
  *
- *  Its words are `title` and its tooltip is the reason it cannot run or the note about what it
- *  costs — the same two strings, in the same order, that a bar button uses (`Doer`). A row that
- *  cannot run is drawn disabled with its reason rather than left out, which is the catalogue's
- *  own rule: an operator cannot ask about an option they cannot see. */
-function Row({
-  offer,
-  onPress,
-  dangerous,
-  words,
-}: {
-  offer: Offer;
-  onPress: (offer: Offer) => void;
-  /** Whether this row is below the line — it loses something, and says so in the colour as
-   *  well as in the words. */
-  dangerous?: boolean;
-  /** What the row says, where a submenu says less than the catalogue's title because its
-   *  parent already said the rest. Its accessible name too. */
-  words?: string;
-}) {
+ *  **Its note is its tooltip and its description, never a second line.** What stands under a
+ *  row's words is one line and one of two things: what a row that cannot be undone costs, or
+ *  why a row cannot run. A row that cannot run is drawn with its reason rather than left out,
+ *  which is the catalogue's own rule: an operator cannot ask about an option they cannot see. */
+function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void }) {
+  const { offer } = row;
   const noted = useId();
   // A row about a chat that is mid-turn says so, and one about a chat that reports no state
   // says that, both read as the menu is drawn (`Offer.midTurn`, `Offer.noState`).
@@ -296,34 +228,66 @@ function Row({
   const state = useChatsSelect(useChatsHere(), (states) =>
     about === undefined ? undefined : stateOf(states, about),
   );
-  const said = words ?? titleOf(offer, state === "running");
-  const note = offer.available ? noteOf(offer, state === "unknown") : undefined;
+  const said = state === "running" && row.midTurn !== undefined ? row.midTurn : row.said;
+  const note = noteOf(offer, state === "unknown");
+  // Under its words: why it cannot run, or what it costs where that cannot be undone.
+  const under = offer.available ? row.warns : offer.reason;
+  // Its tooltip: the catalogue's note, for a row that can run and is not one of a submenu that
+  // says it once. A row that cannot run takes no keyboard, so its reason is the platform's.
+  const tip = offer.available && !row.untipped ? note : undefined;
+  const described = offer.available ? (note ?? row.warns) : offer.reason;
+  const { rested, rest, wake } = useRested(tip !== undefined);
+  const inside = (
+    <>
+      <MenuWords said={said} under={under} danger={row.danger} />
+      {row.keys !== undefined && <MenuKeys>{row.keys}</MenuKeys>}
+      {described !== undefined && described !== "" && (
+        <span id={noted} hidden>
+          {described}
+        </span>
+      )}
+      {rested && (
+        <MenuTip side="right" onClose={wake}>
+          {tip}
+        </MenuTip>
+      )}
+    </>
+  );
+  const shared = {
+    disabled: !offer.available,
+    // The whole reason, where the line under the row's words had no room for it.
+    title: offer.available ? undefined : offer.reason || undefined,
+    // **The row's NAME is its words and nothing else**, and its note is its description. Left
+    // to the content, an accessible name would be the words with the consequence run onto the
+    // end of them, so every row would announce as a paragraph and no surface could ask for one
+    // by name. Type-ahead reads the same words.
+    textValue: said,
+    "aria-label": said,
+    "aria-describedby": described ? noted : undefined,
+    onSelect: () => {
+      wake();
+      onPress(offer);
+    },
+    ...rest,
+  };
+  // A toggle is one row with a tick while it is on, not two rows that take turns.
+  if (row.checked !== undefined)
+    return (
+      <ContextMenu.CheckboxItem className="ui-menu-item" checked={row.checked} {...shared}>
+        {inside}
+        <ContextMenu.ItemIndicator className="ui-menu-mark">
+          <Check className="node-icon" aria-hidden />
+        </ContextMenu.ItemIndicator>
+      </ContextMenu.CheckboxItem>
+    );
   return (
     <ContextMenu.Item
       // `ui-menu-item-danger` is the look; `ends-it` is the house meaning, "cannot be undone
       // from purlis" (D-1719-3), which a migrating control keeps beside its look (DS-2).
-      className={dangerous ? "ui-menu-item ui-menu-item-danger ends-it" : "ui-menu-item"}
-      disabled={!offer.available}
-      // A tooltip says what the row does not: why it cannot run, or the note of a row drawn
-      // without one. A note under the row's words is read there, and is not said twice.
-      title={offer.reason || (note ? undefined : noteOf(offer, state === "unknown")) || undefined}
-      // **The row's NAME is the catalogue's title and nothing else**, and the note is its
-      // description. Left to the content, an accessible name would be the title with the
-      // consequence run onto the end of it — "End chat 3 steward Ends the program it runs." —
-      // so every row would announce as a paragraph and no surface could ask for one by name.
-      // The note is still read, as a description, which is where a consequence belongs.
-      aria-label={said}
-      aria-describedby={note ? noted : undefined}
-      onSelect={() => onPress(offer)}
+      className={row.danger ? "ui-menu-item ui-menu-item-danger ends-it" : "ui-menu-item"}
+      {...shared}
     >
-      <span className="menu-title">{said}</span>
-      {/* What the row costs, under its words. Only where the catalogue wrote one, and never
-          for a row that cannot run — then the tooltip and the grey say what is true instead. */}
-      {note && (
-        <span className="ui-menu-note" id={noted}>
-          {note}
-        </span>
-      )}
+      {inside}
     </ContextMenu.Item>
   );
 }

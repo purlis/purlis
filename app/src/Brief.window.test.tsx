@@ -219,7 +219,7 @@ describe("Brief, from a task's row menu in the Chats list", () => {
     const tree = await section();
 
     fireEvent.contextMenu(row(tree, "read the logs"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Brief of read the logs" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Brief" }));
 
     const dialog = await panel("read the logs");
     await waitFor(() => expect(box(dialog).textContent).toBe(BRIEF));
@@ -245,7 +245,7 @@ describe("Brief, from a task's row menu in the Chats list", () => {
     // Shift+F10 on the row that has the keyboard, then the menu's row by the keyboard too.
     task.focus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    const item = await screen.findByRole("menuitem", { name: "Brief of read the logs" });
+    const item = await screen.findByRole("menuitem", { name: "Brief" });
     item.focus();
     await userEvent.keyboard("{Enter}");
     const dialog = await panel("read the logs");
@@ -293,7 +293,7 @@ describe("Brief, from a task's row menu in the Chats list", () => {
     fireEvent.contextMenu(row(tree, "steward 4"));
 
     await screen.findAllByRole("menuitem");
-    expect(screen.queryByRole("menuitem", { name: /^Brief of/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Brief" })).toBeNull();
   });
 });
 
@@ -304,7 +304,7 @@ describe("the Brief panel", () => {
     render(<App />);
     const tree = await section();
     fireEvent.contextMenu(row(tree, "read the logs"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Brief of read the logs" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Brief" }));
     return { said, tree, dialog: await panel("read the logs") };
   }
 

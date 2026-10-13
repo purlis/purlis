@@ -204,7 +204,7 @@ describe("a chat's work link", () => {
     await waitFor(() => expect(theTab()).toBeTruthy());
 
     fireEvent.contextMenu(theTab());
-    await screen.findByRole("menuitem", { name: /^Rename chat/ });
+    await screen.findByRole("menuitem", { name: "Rename…" });
     expect(screen.queryByRole("menuitem", { name: "Link to work item…" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Unlink work item" })).not.toBeInTheDocument();
   });

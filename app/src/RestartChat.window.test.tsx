@@ -205,9 +205,7 @@ describe("Restart chat on a chat's tab", () => {
     const { asked } = await aChat();
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart chat claude claude 4" }),
-    );
+    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     // Asked for first: the core restarts only a chat it owes one.
@@ -221,12 +219,10 @@ describe("Restart chat on a chat's tab", () => {
     await act(() => emit("chat-moved", RUNNING));
 
     const menu = await tabMenu();
-    expect(
-      within(menu).queryByRole("menuitem", { name: "Restart chat claude claude 4" }),
-    ).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Restart" })).toBeNull();
     await userEvent.click(
       within(menu).getByRole("menuitem", {
-        name: "Restart chat claude claude 4 when this turn ends",
+        name: "Restart when this turn ends",
       }),
     );
     await waitFor(() => expect(asked("ask_chat_restart")).toEqual(ASKED));
@@ -247,7 +243,7 @@ describe("Restart chat on a chat's tab", () => {
     const menu = await tabMenu();
     await userEvent.click(
       within(menu).getByRole("menuitem", {
-        name: "Restart chat claude claude 4 when this turn ends",
+        name: "Restart when this turn ends",
       }),
     );
     await waitFor(() => expect(asked("ask_chat_restart")).toEqual(ASKED));
@@ -267,7 +263,7 @@ describe("Restart chat on a chat's tab", () => {
     await act(() => emit("chat-moved", WAITING));
 
     expect(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart chat claude claude 4" }),
+      within(await tabMenu()).getByRole("menuitem", { name: "Restart" }),
     ).toHaveAccessibleDescription(
       "It keeps its conversation and starts on this project's settings as they are now. Mid-turn, it restarts when the turn ends.",
     );
@@ -277,7 +273,7 @@ describe("Restart chat on a chat's tab", () => {
     const { asked } = await aChat();
 
     const row = within(await tabMenu()).getByRole("menuitem", {
-      name: "Restart chat claude claude 4",
+      name: "Restart",
     });
     // docs/ui-copy.md, "Uncertainty is stated, not hidden": no wait is promised for it.
     expect(row).toHaveAccessibleDescription(
@@ -298,9 +294,7 @@ describe("Restart chat on a chat's tab", () => {
     });
     const { asked } = await aChat({ held });
 
-    await userEvent.click(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart chat claude claude 4" }),
-    );
+    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     expect(await screen.findByRole("status", { name: "Restart" })).toHaveTextContent(
@@ -326,9 +320,7 @@ describe("Restart chat on a chat's tab", () => {
     const held = await aChat({ notYet });
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart chat claude claude 4" }),
-    );
+    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
 
     expect(await screen.findByRole("status", { name: "Restart" })).toHaveTextContent(notYet);
     expect(screen.getByText("session 4")).toBeInTheDocument();
@@ -347,9 +339,7 @@ describe("Restart chat on a chat's tab", () => {
     await aChat({ notices: [line] });
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart chat claude claude 4" }),
-    );
+    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
 
     expect(await screen.findByText(line)).toBeInTheDocument();
     // Nothing here offers to start it without the sandbox again.
@@ -362,9 +352,7 @@ describe("Restart chat on a chat's tab", () => {
     const { asked } = await aChat({ refused });
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart chat claude claude 4" }),
-    );
+    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
 
     // Why, and what to do about it (S8).
     await waitFor(() =>
@@ -405,7 +393,7 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
     const { asked } = await aChat({ tasks: [TASK] });
 
     fireEvent.contextMenu(await row("talk"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Restart chat talk" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
 
     // A task's program ends to start again: asked on its row first, and nothing restarts yet.
     const question = await screen.findByRole("group", { name: /^Restart talk\?/ });
@@ -424,7 +412,7 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
     const { asked } = await aChat({ tasks: [TASK], refused });
 
     fireEvent.contextMenu(await row("talk"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Restart chat talk" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
     await userEvent.click(
       within(await screen.findByRole("group", { name: /^Restart talk\?/ })).getByRole("button", {
         name: "Restart it",
@@ -444,7 +432,7 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
 
     fireEvent.contextMenu(await row("claude claude 4"));
     await screen.findAllByRole("menuitem");
-    expect(screen.queryByRole("menuitem", { name: /^Restart chat/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Restart" })).toBeNull();
   });
 });
 

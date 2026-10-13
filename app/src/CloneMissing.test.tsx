@@ -230,7 +230,7 @@ describe("a repo that is not cloned here", () => {
     await absent();
 
     fireEvent.contextMenu(within(absentRow("web")).getByText("web"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Clone web" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Clone" }));
 
     expect(await screen.findByTestId("clone-web")).toBeInTheDocument();
     expect(clones().map((one) => one.args.repo)).toEqual(["web"]);
@@ -243,7 +243,7 @@ describe("a repo that is not cloned here", () => {
     const row = await within(bar).findByTestId("repo-web");
 
     fireEvent.contextMenu(within(row).getByText("web"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Clone web" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Clone" }));
 
     await waitFor(() => expect(clones().map((one) => one.args.repo)).toEqual(["web"]));
     expect(bar.querySelectorAll("button, input, textarea, select, a[href]")).toHaveLength(0);
@@ -425,11 +425,9 @@ describe("removing a repo that is not cloned here from the workspace", () => {
     const items = within(menu)
       .getAllByRole("menuitem")
       .map((item) => item.getAttribute("aria-label"));
-    expect(items).toEqual(["Clone web", "Remove web from workspace…"]);
+    expect(items).toEqual(["Clone", "Remove from workspace…"]);
     expect(within(menu).getByRole("separator")).toBeInTheDocument();
-    await userEvent.click(
-      within(menu).getByRole("menuitem", { name: "Remove web from workspace…" }),
-    );
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Remove from workspace…" }));
     await userEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Remove from workspace",
@@ -454,7 +452,7 @@ describe("removing a repo that is not cloned here from the workspace", () => {
       }),
     ).toBeNull();
     fireEvent.contextMenu(within(absentRow("charter")).getByText("charter"));
-    const item = await screen.findByRole("menuitem", { name: /Remove charter from workspace/ });
+    const item = await screen.findByRole("menuitem", { name: "Remove from workspace…" });
     expect(item).toHaveAttribute("aria-disabled", "true");
     await userEvent.keyboard("{Escape}");
     release();

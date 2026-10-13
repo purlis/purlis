@@ -5,6 +5,7 @@ import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render as renderBare, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { stripNamed } from "./test-strips";
@@ -121,20 +122,17 @@ describe("making a project", () => {
     fireEvent.contextMenu(tab);
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((row) => row.getAttribute("aria-label")),
-    ).toEqual([
-      "Switch to project plane",
-      "Pin project plane",
-      "Project settings…",
+    // The project in front: no Switch to row, which could only say it is in front.
+    expect(menu).toHaveAccessibleName("Project plane");
+    expect(menuNames()).toEqual([
+      "Pinned",
+      "Settings…",
       "Saving…",
       // Greyed: it is the only project in this window (charter#126).
-      "Move project plane to a new window",
+      "Move to a new window",
       "New project…",
       "Open a project…",
-      "Close project plane",
+      "Close",
     ]);
   });
 

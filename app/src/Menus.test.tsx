@@ -3,13 +3,22 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render as renderBare, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { catalogue, catalogued, menuRows, OUTSIDE, type Now } from "./actions";
+import { askId, catalogue, catalogued, menuRows, OUTSIDE, type Now } from "./actions";
 import { Menued, useNoBrowserMenu } from "./Menus";
-import { noTabs, openTab } from "./tabs";
+import { TIP_AFTER_MS } from "./primitives/MenuRow";
+import { noTabs, openTab, selectTab } from "./tabs";
 
 /**
  * The context menus, and the browser menu they replace.
@@ -216,79 +225,314 @@ describe("what a menu lists", () => {
   });
 });
 
+/** Twelve personas, as the project in the report had. */
+const TWELVE = [
+  "authz-master",
+  "backend-developer",
+  "console-developer",
+  "devops",
+  "keycloak-master",
+  "marketing",
+  "product-owner",
+  "qa",
+  "steward",
+  "trading-master",
+  "ux-writer",
+  "zookeeper",
+];
+
 describe("a menu on screen", () => {
-  /** A trigger with one chat's rows on it, and what was pressed. */
+  const NAME = "console-developer 16";
+
+  /** A trigger with a chat's rows on it, and what was pressed: the chat's tab is behind another,
+   *  the project has twelve personas, and the chat is listed, so it has its Stop rows. */
   function aMenu() {
     const pressed: string[] = [];
-    const offers = catalogued(catalogue(now({ tabs: openTab(noTabs(), 7, "3 steward") })));
+    const tabs = openTab(openTab(noTabs(), 7, "16", "console-developer"), 9, "1", "smart-ide");
+    const listed = (session: number, name: string) => ({
+      session,
+      name,
+      persona: null,
+      workspace: "beta",
+      shell: false,
+      parent: null,
+      mode: null,
+      from: null,
+      tab: true,
+      branch: null,
+      report: null,
+      outcome: null,
+      asking: null,
+      harness: "claude",
+    });
+    const offers = catalogued(
+      catalogue(
+        now({
+          tabs: selectTab(tabs, tabs.order[1]),
+          ask: { personas: TWELVE, locked: null },
+          askable: () => true,
+          restartable: () => true,
+          listed: [listed(7, NAME), listed(9, "smart-ide 1")],
+        }),
+      ),
+    );
     render(
       <Menued
-        on={{ on: "chat", tab: 1 }}
+        on={{ on: "chat", tab: tabs.order[0], session: 7 }}
         offers={offers}
         onPress={(offer) => pressed.push(offer.id)}
       >
-        <span data-testid="tab">3 steward</span>
+        <span data-testid="tab" tabIndex={0}>
+          {NAME}
+        </span>
       </Menued>,
     );
     return pressed;
   }
 
-  it("opens on a right-click and draws the rows it was given", async () => {
+  /** Every row of a menu, whatever kind of row it is. */
+  const rowsIn = (menu: HTMLElement) =>
+    Array.from(menu.querySelectorAll<HTMLElement>('[role^="menuitem"]'));
+
+  async function open(): Promise<HTMLElement> {
+    fireEvent.contextMenu(screen.getByTestId("tab"));
+    return screen.findByRole("menu");
+  }
+
+  /** The submenu a row of the open menu opens, opened. */
+  async function openSub(name: string): Promise<HTMLElement> {
+    await userEvent.click(screen.getByRole("menuitem", { name }));
+    const menus = await screen.findAllByRole("menu");
+    return menus[menus.length - 1];
+  }
+
+  it("opens on a right-click, named for the tab, and draws short rows", async () => {
     aMenu();
 
-    fireEvent.contextMenu(screen.getByTestId("tab"));
+    const menu = await open();
 
-    const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((row) => row.textContent),
-    ).toEqual([
-      "Switch to tab 3 steward",
-      "Rename chat 3 steward…",
-      "Pin chat 3 stewardDraws it first on its strip. Yours, on this machine only.",
-      "ActivityChat 3 steward: what it and its tasks said to each other, in a tab of its own.",
-      "NetworkChat 3 steward: what it can reach now and what it was refused, in a tab of its own.",
-      "End chat 3 stewardEnds the program it runs. There is no undo.",
+    // **The tab is named once, by the menu**, and by no row of it.
+    expect(menu).toHaveAccessibleName(`Tab ${NAME}`);
+    expect(rowsIn(menu).map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Switch to",
+      "Rename…",
+      "Pinned",
+      "Open",
+      "Ask",
+      "Restart",
+      "Stop",
+      "End",
     ]);
+    // What a row draws: its words, and the one line that may stand under them.
+    for (const row of rowsIn(menu))
+      expect(row.querySelector(".ui-menu-words")?.textContent).not.toContain(NAME);
   });
 
-  it("marks a row below the line as one that cannot be undone, by meaning and by look", async () => {
-    // `ends-it` is the house meaning (D-1719-3) and `ui-menu-item-danger` the look (DS-2):
-    // a row that destroys something carries both, and a row above the line carries neither.
+  it("has at most ten rows with twelve personas, and Ask is one row that opens them all", async () => {
     aMenu();
-    fireEvent.contextMenu(screen.getByTestId("tab"));
-    await screen.findByRole("menu");
 
-    const ends = screen.getByRole("menuitem", { name: /^End chat 3 steward/ });
-    expect(ends).toHaveClass("ui-menu-item", "ui-menu-item-danger", "ends-it");
-    const switches = screen.getByRole("menuitem", { name: /^Switch to tab 3 steward/ });
-    expect(switches).not.toHaveClass("ends-it");
-    expect(switches).not.toHaveClass("ui-menu-item-danger");
-  });
+    const menu = await open();
+    expect(rowsIn(menu).length).toBeLessThanOrEqual(10);
+    expect(within(menu).queryByRole("menuitem", { name: /authz-master/ })).toBeNull();
+    const ask = within(menu).getByRole("menuitem", { name: "Ask" });
+    expect(ask).toHaveAttribute("aria-haspopup", "menu");
 
-  it("says a row's note once: under its words, and not again in a tooltip", async () => {
-    aMenu();
-    fireEvent.contextMenu(screen.getByTestId("tab"));
-    await screen.findByRole("menu");
-
-    // A note drawn in the row is read there, and the pointer resting on the row repeats nothing.
-    const ends = screen.getByRole("menuitem", { name: /^End chat 3 steward/ });
-    expect(ends).toHaveTextContent("Ends the program it runs. There is no undo.");
-    expect(ends).not.toHaveAttribute("title");
-    // A row that cannot run draws no note, and its tooltip says why.
-    expect(screen.getByRole("menuitem", { name: /^Switch to tab/ })).toHaveAttribute(
-      "title",
-      "It is already in front.",
+    const sub = await openSub("Ask");
+    expect(rowsIn(sub).map((row) => row.getAttribute("aria-label"))).toEqual(
+      TWELVE.map((persona) => `${persona}…`),
     );
+    // What asking does is said once, by the row that opened them, and under no persona.
+    expect(sub.querySelector(".ui-menu-note")).toBeNull();
+    expect(ask).toHaveAccessibleDescription(/^A task starts as the persona you pick/);
+  });
+
+  it("draws a note under no row but one that cannot be undone or cannot run", async () => {
+    aMenu();
+    const menu = await open();
+
+    const noted = rowsIn(menu).filter((row) => row.querySelector(".ui-menu-note"));
+    expect(noted.map((row) => row.getAttribute("aria-label"))).toEqual(["End"]);
+    expect(noted[0].querySelector(".ui-menu-note")).toHaveTextContent(
+      "Ends the program it runs. There is no undo.",
+    );
+
+    // In the Stop submenu: each way to stop it ends something, and the two that have nothing
+    // to end cannot run and say why.
+    const sub = await openSub("Stop");
+    expect(
+      rowsIn(sub).map((row) => [
+        row.getAttribute("aria-label"),
+        row.querySelector(".ui-menu-note")?.textContent,
+      ]),
+    ).toEqual([
+      ["Stop", "Ends the chat."],
+      ["Stop and everything below it", `${NAME} started no chat that is still running.`],
+      ["Stop all tasks", `${NAME} has no task open.`],
+    ]);
+    for (const row of rowsIn(sub))
+      expect(
+        row.classList.contains("ui-menu-item-danger") ||
+          row.getAttribute("aria-disabled") === "true",
+      ).toBe(true);
+  });
+
+  it("keeps every row's description: its note, or why it cannot run", async () => {
+    aMenu();
+    const menu = await open();
+
+    const row = (name: string) => {
+      const found = rowsIn(menu).find((one) => one.getAttribute("aria-label") === name);
+      if (found === undefined) throw new Error(`no row ${name}`);
+      return found;
+    };
+    expect(row("Pinned")).toHaveAccessibleDescription(
+      "Draws it first on its strip. Yours, on this machine only.",
+    );
+    // The catalogue's note as it reads now: this chat reports no state, and the note says so.
+    expect(row("Restart")).toHaveAccessibleDescription(/It keeps its conversation/);
+    expect(row("End")).toHaveAccessibleDescription("Ends the program it runs. There is no undo.");
+    // A row with nothing more to say than its words has none.
+    expect(row("Rename…")).not.toHaveAttribute("aria-describedby");
+
+    const sub = await openSub("Stop");
+    const below = within(sub).getByRole("menuitem", { name: "Stop and everything below it" });
+    expect(below).toHaveAccessibleDescription(`${NAME} started no chat that is still running.`);
+    // The whole reason, where the line under the row had no room for it.
+    expect(below).toHaveAttribute("title", `${NAME} started no chat that is still running.`);
+  });
+
+  it("shows a row's note as its tooltip once the keyboard has rested on it, and not before", async () => {
+    aMenu();
+    const menu = await open();
+    const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
+    vi.useFakeTimers();
+    try {
+      act(() => pinned.focus());
+      act(() => {
+        vi.advanceTimersByTime(TIP_AFTER_MS - 1);
+      });
+      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+      // No `title` either: the platform's tooltip would say it a second time.
+      expect(pinned).not.toHaveAttribute("title");
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      const tip = document.querySelector(".ui-menu-tip");
+      expect(tip).toHaveTextContent("Draws it first on its strip. Yours, on this machine only.");
+      expect(tip).toHaveClass("ui-tooltip", "ui-text-secondary");
+
+      // It goes when the keyboard leaves the row.
+      act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
+      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closes the menu on one Escape while a tooltip is up", async () => {
+    aMenu();
+    const menu = await open();
+    vi.useFakeTimers();
+    try {
+      act(() => within(menu).getByRole("menuitemcheckbox", { name: "Pinned" }).focus());
+      act(() => {
+        vi.advanceTimersByTime(TIP_AFTER_MS);
+      });
+      expect(document.querySelector(".ui-menu-tip")).not.toBeNull();
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(document.querySelector(".ui-menu-tip")).toBeNull();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("colours only what cannot be undone, by meaning and by look", async () => {
+    // `ends-it` is the house meaning (D-1719-3) and `ui-menu-item-danger` the look (DS-2): a
+    // row that cannot be undone carries both, and no other row carries either.
+    aMenu();
+    const menu = await open();
+
+    expect(
+      rowsIn(menu)
+        .filter((row) => row.classList.contains("ui-menu-item-danger"))
+        .map((row) => row.getAttribute("aria-label")),
+    ).toEqual(["End"]);
+    const ends = within(menu).getByRole("menuitem", { name: "End" });
+    expect(ends).toHaveClass("ui-menu-item", "ui-menu-item-danger", "ends-it");
+    // Restart keeps the conversation, and Stop only opens the ways to stop.
+    for (const name of ["Restart", "Stop", "Switch to"]) {
+      const row = within(menu).getByRole("menuitem", { name });
+      expect(row).not.toHaveClass("ends-it");
+      expect(row).not.toHaveClass("ui-menu-item-danger");
+    }
+  });
+
+  it("says the key that does the same at the row's end, and ticks a toggle that is on", async () => {
+    aMenu();
+    const menu = await open();
+
+    const keys = (name: string) =>
+      within(menu).getByRole("menuitem", { name }).querySelector(".ui-menu-keys");
+    expect(keys("Rename…")).toHaveTextContent("F2");
+    expect(keys("Rename…")).toHaveClass("ui-text-meta");
+    expect(keys("End")).toHaveTextContent(/^(⌫|Delete)$/);
+    expect(keys("Restart")).toBeNull();
+    expect(within(menu).getByRole("menuitemcheckbox", { name: "Pinned" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  });
+
+  it("moves by the arrows, opens a submenu on Right, finds a persona by its letters, and closes on Left and Escape", async () => {
+    const user = userEvent.setup();
+    const pressed = aMenu();
+    const tab = screen.getByTestId("tab");
+    tab.focus();
+    fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
+    const menu = await screen.findByRole("menu");
+
+    // Opened from the keyboard, so the first row has it; the arrows move on from there.
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "Switch to" })).toHaveFocus(),
+    );
+    await user.keyboard("{ArrowDown}");
+    expect(within(menu).getByRole("menuitem", { name: "Rename…" })).toHaveFocus();
+    // Type-ahead reads a row's words, not its note.
+    await user.keyboard("a");
+    const ask = within(menu).getByRole("menuitem", { name: "Ask" });
+    expect(ask).toHaveFocus();
+
+    await user.keyboard("{ArrowRight}");
+    const sub = (await screen.findAllByRole("menu"))[1];
+    expect(within(sub).getByRole("menuitem", { name: "authz-master…" })).toHaveFocus();
+    await user.keyboard("q");
+    expect(within(sub).getByRole("menuitem", { name: "qa…" })).toHaveFocus();
+
+    await user.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(screen.getAllByRole("menu")).toHaveLength(1));
+    expect(ask).toHaveFocus();
+
+    await user.keyboard("{ArrowRight}q{Enter}");
+    expect(pressed).toEqual([askId(1, "qa")]);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
+    await screen.findByRole("menu");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("hands back the catalogue's own offer when a row is pressed", async () => {
     const pressed = aMenu();
-    fireEvent.contextMenu(screen.getByTestId("tab"));
-    await screen.findByRole("menu");
+    const menu = await open();
 
-    await userEvent.click(screen.getByRole("menuitem", { name: /^End chat 3 steward/ }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "End" }));
 
     expect(pressed).toEqual(["tab.close:1"]);
   });
@@ -569,16 +813,12 @@ describe("a menu from the keyboard (charter-app#174)", () => {
       fireEvent.keyDown(row, key);
 
       const menu = await screen.findByRole("menu");
+      expect(menu).toHaveAccessibleName("Repo svc");
       expect(
         within(menu)
           .getAllByRole("menuitem")
           .map((item) => item.textContent),
-      ).toEqual([
-        "Focus on repo svc",
-        "New tab in svc",
-        "New branch in svc…",
-        "Start new chats in svc",
-      ]);
+      ).toEqual(["Focus", "New tab", "New branch…", "Start new chats here"]);
       await userEvent.keyboard("{Enter}");
       expect(pressed).toEqual(["clone.focus:svc"]);
     });
@@ -701,19 +941,20 @@ describe("a real contextmenu event, with the suppressor live", () => {
     tab.dispatchEvent(event);
 
     const menu = await screen.findByRole("menu");
+    // The focused workspace's own tab: no Focus row, which could only say it is focused.
+    expect(menu).toHaveAccessibleName("Workspace alpha");
     expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((row) => row.getAttribute("aria-label")),
+      Array.from(menu.querySelectorAll('[role^="menuitem"]')).map((row) =>
+        row.getAttribute("aria-label"),
+      ),
     ).toEqual([
-      "Focus workspace alpha",
-      "New shell in alpha",
-      "Pin workspace alpha",
-      "Workspace settings…",
-      "Make alpha live…",
-      "Rename workspace alpha…",
+      "Pinned",
+      "Settings…",
+      "Make live…",
+      "Rename…",
+      "New shell",
       "New workspace…",
-      "Delete workspace alpha",
+      "Delete",
     ]);
     // Both halves of one event: charter answered it, and the WebView's own menu is still gone.
     expect(event.defaultPrevented).toBe(true);

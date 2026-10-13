@@ -1110,9 +1110,9 @@ const DIALOGS: Opened[] = [
         "Add secret",
         async () => userEvent.click(await screen.findByRole("button", { name: "Add" })),
       ],
-      ["Edit value", () => fromTheMenuOf("API_TOKEN", "Edit value")],
-      ["Rename", () => fromTheMenuOf("API_TOKEN", "Rename")],
-      ["Delete", () => fromTheMenuOf("API_TOKEN", "Delete")],
+      ["Edit value", () => fromTheMenuOf("API_TOKEN", "Edit value…")],
+      ["Rename", () => fromTheMenuOf("API_TOKEN", "Rename…")],
+      ["Delete", () => fromTheMenuOf("API_TOKEN", "Delete…")],
       [
         "how it signs in",
         async () =>

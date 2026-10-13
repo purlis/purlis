@@ -4,6 +4,7 @@
 import { realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { pressMenuPath, ROW } from "../menus.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject } from "../opening.js";
 
@@ -96,10 +97,8 @@ async function fromItsMenu(tab: string, row: string): Promise<void> {
       new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true }),
     );
   }, tab);
-  // A row's text is its words and then its note, so it is found by how it starts.
-  const item = await $(`//*[@role="menuitem"][starts-with(normalize-space(), "${row}")]`);
-  await item.waitForDisplayed({ timeout: 20_000 });
-  await item.click();
+  await $('[role="menu"]').waitForDisplayed({ timeout: 20_000 });
+  await pressMenuPath(row);
   await expect($('[role="menu"]')).not.toBeExisting();
 }
 
@@ -161,12 +160,12 @@ describe("a tab's menu opens Settings at that tab's level", function () {
     );
     expect(focused).not.toBe("");
 
-    await fromItsMenu(`${PROJECTS} [role="tab"][aria-selected="true"]`, "Project settings…");
+    await fromItsMenu(`${PROJECTS} [role="tab"][aria-selected="true"]`, ROW.settings);
 
     await levelBecomes("Project");
     await expect(inFront()).toHaveText("Settings", { containing: true });
 
-    await fromItsMenu(`${WORKSPACES} [role="tab"][aria-selected="true"]`, "Workspace settings…");
+    await fromItsMenu(`${WORKSPACES} [role="tab"][aria-selected="true"]`, ROW.settings);
 
     await levelBecomes("Workspace");
     const title = `Settings · ${focused}`;
