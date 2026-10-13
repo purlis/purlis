@@ -493,12 +493,21 @@ fn in_a_project(path: &std::path::Path) -> Result<bool, String> {
 ///
 /// A plane that is already open is answered with the id it already has, and nothing is bound
 /// or started a second time — which is `Planes::open`'s rule and the reason it exists.
+///
+/// **On a blocking thread, never the window's own** (`restoring.rs`): attaching a project
+/// reads its record, binds its hook socket and starts its watches, and a launch opens every
+/// project the window had. The chats its record names are registered here and start behind
+/// the window, so this answers as soon as the project is held.
 #[tauri::command]
 #[specta::specta]
-pub fn open_plane(planes: tauri::State<'_, Planes>, path: String) -> Result<Opened, String> {
-    planes
-        .open_if_approved(std::path::Path::new(&path))
-        .map(Opened::from)
+pub async fn open_plane(app: tauri::AppHandle, path: String) -> Result<Opened, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<Planes>()
+            .open_if_approved(std::path::Path::new(&path))
+            .map(Opened::from)
+    })
+    .await
+    .map_err(|err| format!("opening the project did not finish: {err}"))?
 }
 
 /// The operator's answer to [`Ask`]: yes, open it.
@@ -509,14 +518,21 @@ pub fn open_plane(planes: tauri::State<'_, Planes>, path: String) -> Result<Open
 ///
 /// **This is a separate click from the one that opened the dialog, and it has to be.** A
 /// command that both asked and opened would be asking nothing.
+///
+/// On a blocking thread, for [`open_plane`]'s reason.
 #[tauri::command]
 #[specta::specta]
-pub fn approve_plane(
-    planes: tauri::State<'_, Planes>,
+pub async fn approve_plane(
+    app: tauri::AppHandle,
     path: String,
     contributes: PlaneContribution,
 ) -> Result<PlaneId, String> {
-    planes.approve_and_open(std::path::Path::new(&path), &contributes.into_core())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<Planes>()
+            .approve_and_open(std::path::Path::new(&path), &contributes.into_core())
+    })
+    .await
+    .map_err(|err| format!("opening the project did not finish: {err}"))?
 }
 
 /// The projects a cold launch has to put back, and every one it would not take back.
@@ -650,7 +666,9 @@ pub async fn relaunch_ask(app: tauri::AppHandle) -> Result<Option<RelaunchQuesti
 /// ask. **Every launch sends one**, because the launch's own project is put back here and
 /// nowhere else; a second answer, from a window that reloaded, changes nothing.
 ///
-/// On a blocking thread because the answer starts every chat the launch's project held.
+/// On a blocking thread because the answer reads the record of the launch's project. Its
+/// chats are registered by the time this answers, and start behind the window
+/// (`restoring.rs`).
 #[tauri::command]
 #[specta::specta]
 pub async fn relaunch(app: tauri::AppHandle, choice: RelaunchChoice) -> Result<(), String> {
@@ -681,6 +699,9 @@ pub fn window_holds_planes(
     planes: tauri::State<'_, Planes>,
     held: WindowTabs,
 ) {
+    let in_front = held
+        .active
+        .and_then(|at| held.planes.get(at as usize).cloned());
     crate::windows::said_it_holds(
         &window,
         &showing,
@@ -689,6 +710,17 @@ pub fn window_holds_planes(
             active: held.active.map(|at| at as usize),
         },
     );
+    // The first of these is the launch's restore over: the window can be used (the bench's
+    // `restore` case reads it, `tools/bench.mjs`).
+    crate::restoring::say_for_the_bench(crate::restoring::BENCH_USABLE, crate::STARTED.elapsed());
+    // The main window's project in front is the one whose chats start first
+    // (`restoring.rs`).
+    if window.label() == crate::lifecycle::WINDOW {
+        let front = in_front
+            .and_then(|plane| planes.held(&plane).ok())
+            .map(|held| held.root().to_path_buf());
+        crate::restoring::project_in_front(front.as_deref());
+    }
     // Every window's, not this one's: the store holds the arrangement of the whole app, and
     // writing one window's tabs over it would forget the others.
     planes.remember_arrangement(&showing.arrangement());
