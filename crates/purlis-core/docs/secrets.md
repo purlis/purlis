@@ -276,6 +276,15 @@ refused too, and purlis runs the file itself, not the link. A copy further along
 that no chat can write is used. With none, purlis refuses, names the file it passed over, and
 stores no pin for it. The rule is the one a harness's program is held to.
 
+**A read with no chat behind it is held to what every chat of the project may write.** Reveal
+and Copy in the window, storing a token, and `purlis doctor` are not made for one chat, so
+they have no chat's own grants to go by. They refuse a program in the project, in the folders
+you let every chat write, in the project's cache home, in a harness's own folders and in the
+temp directories. A folder that only one chat was let write is not on that list: a program
+there is refused for that chat's own reads, and not for these. So keep the programs your
+vaults run where installers put them (`~/.local/bin`, Homebrew's, the system's), and in no
+folder you grant a chat. Then every read, whoever asks, judges the same file.
+
 A refusal names every directory searched. A program installed somewhere else is found once a
 link to it is in `~/.local/bin`. `purlis doctor` has a row for each such program your vaults
 use (`op for vaults`): green where it is found however purlis is started, a warning where only

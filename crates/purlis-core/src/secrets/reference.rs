@@ -16,6 +16,7 @@
 //! `browser://` is recognised as a scheme and refused at read time: the browser lane is not in
 //! this charter. Resolving it, or refusing it when it is written instead, is #996.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde_json::{Map, Value};
@@ -392,11 +393,17 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     let mut needed: Vec<&'static str> = data.values().filter_map(scheme_of).collect();
     needed.sort();
     needed.dedup();
-    let missing: Vec<&'static str> = needed
-        .iter()
-        .copied()
-        .filter(|s| ctx.program(cli_of(s)).is_err())
-        .collect();
+    // Each CLI no reference can be resolved through, under why (#1517): not found, or found
+    // only where a chat can write.
+    let mut missing: BTreeMap<&'static str, Vec<&'static str>> = BTreeMap::new();
+    for scheme in &needed {
+        if let Err(why) = ctx.program(cli_of(scheme)) {
+            missing
+                .entry(super::program::status_of(&why))
+                .or_default()
+                .push(cli_of(scheme));
+        }
+    }
     let n = data.len();
     let unsupported = data.values().filter(|v| scheme_of(v).is_none()).count();
     if unsupported > 0 || !missing.is_empty() {
@@ -406,9 +413,8 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
                 "{unsupported} not a supported URI (purlis vault verify names them)"
             ));
         }
-        if !missing.is_empty() {
-            let clis: Vec<&str> = missing.iter().map(|s| cli_of(s)).collect();
-            problems.push(format!("not on PATH: {}", clis.join(", ")));
+        for (status, clis) in &missing {
+            problems.push(format!("{status}: {}", clis.join(", ")));
         }
         return (
             false,

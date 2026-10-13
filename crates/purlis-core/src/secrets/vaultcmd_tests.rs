@@ -183,7 +183,7 @@ fn a_1password_vault_needs_an_op_vault_and_takes_no_file_unless_given_one() {
         json!({"op-vault": "Eng", "op-item": "item", "account": "me.1password.com"})
     );
     let said = io.said();
-    assert!(said.contains("warn:   op CLI not on PATH"), "{said}");
+    assert!(said.contains("warn:   op CLI not found"), "{said}");
     assert!(
         said.contains("one 1Password item, 'item' in vault 'Eng', tagged 'purlis:o'"),
         "{said}"
@@ -490,7 +490,7 @@ fn list_is_a_table_whose_status_never_holds_a_value() {
     );
     assert_eq!(
         lines[3],
-        "bb     1password   ops                      local  op CLI not on PATH"
+        "bb     1password   ops                      local  op CLI not found"
     );
     assert!(
         lines[4].starts_with("cc     plain-file  ghost (no such persona)  local  not created yet"),

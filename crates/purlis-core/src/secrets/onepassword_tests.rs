@@ -473,13 +473,13 @@ fn health_counts_the_secrets_and_never_reads_one() {
 }
 
 #[test]
-fn health_without_op_on_path_says_so() {
+fn health_without_op_anywhere_says_it_is_not_found() {
     let empty = tempfile::tempdir().unwrap();
     let ctx = Ctx::new(
         empty.path(),
         Env::of(&[("PATH", &empty.path().to_string_lossy())]),
     );
-    assert_eq!(health(&ctx, &eng()), (false, "op CLI not on PATH".into()));
+    assert_eq!(health(&ctx, &eng()), (false, "op CLI not found".into()));
 }
 
 #[test]
@@ -605,7 +605,7 @@ fn an_op_installed_only_where_a_login_shell_looks_is_found_and_run() {
     std::fs::write(at.plane.path().join("read.out"), "hunter2").unwrap();
     assert_eq!(get(&at.ctx, &eng(), "A").unwrap(), "hunter2");
     let (ok, said) = health(&at.ctx, &eng());
-    assert_ne!((ok, said.as_str()), (false, "op CLI not on PATH"));
+    assert_ne!((ok, said.as_str()), (false, "op CLI not found"));
 }
 
 #[test]

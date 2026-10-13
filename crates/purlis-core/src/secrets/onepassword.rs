@@ -558,8 +558,8 @@ pub fn delete(ctx: &Ctx, vault: &Vault, key: &str) -> Result<(), VaultError> {
 
 /// `health`: whether the item is reachable and how many fields it holds. Never a value.
 pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
-    if ctx.program("op").is_err() {
-        return (false, "op CLI not on PATH".into());
+    if let Err(why) = ctx.program("op") {
+        return (false, format!("op CLI {}", super::program::status_of(&why)));
     }
     let item = match op_item(vault) {
         Ok(item) => item,

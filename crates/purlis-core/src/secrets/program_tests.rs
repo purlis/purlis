@@ -265,6 +265,58 @@ fn a_reference_vaults_cli_found_only_where_a_chat_may_write_is_refused_and_never
     assert!(!ran.exists(), "the planted program was run");
 }
 
+/// #1517: a vault's status says why its program is not run, by the lookup's own answer, and
+/// never that it is "not on PATH": the lookup is wider than `PATH`, and a program found where a
+/// chat may write is found, not missing.
+#[cfg(unix)]
+#[test]
+fn a_vaults_status_says_its_program_is_not_found_or_found_only_where_a_chat_can_write() {
+    stand_ins_live_in_temp_folders();
+    let vault =
+        |name: &str, provider: &str, config: serde_json::Value| crate::secrets::registry::Vault {
+            name: name.into(),
+            provider: provider.into(),
+            persona: None,
+            config: config.as_object().cloned().unwrap(),
+        };
+    let one = vault("ops", "1password", serde_json::json!({"op-vault": "Ops"}));
+    let refs = vault(
+        "refs",
+        "reference",
+        serde_json::json!({"file": "refs.json"}),
+    );
+
+    let nowhere = Machine::new();
+    let ctx = nowhere.ctx();
+    crate::secrets::reference::set(&ctx, &refs, "A", "op://Eng/item/field").unwrap();
+    assert_eq!(
+        crate::secrets::onepassword::health(&ctx, &one),
+        (false, "op CLI not found".to_owned())
+    );
+    let (_, said) = crate::secrets::reference::health(&ctx, &refs);
+    // A temp project is listed by other accounts, which the status adds after a comma.
+    assert_eq!(
+        said.split(", listed").next(),
+        Some("1 reference(s), but not found: op")
+    );
+
+    let planted = Machine::new();
+    let dir = planted.project.path().join("workspaces/x/bin");
+    a_program(&dir, "op");
+    let ctx = planted.ctx_with(&[&dir]);
+    crate::secrets::reference::set(&ctx, &refs, "A", "op://Eng/item/field").unwrap();
+    assert_eq!(
+        crate::secrets::onepassword::health(&ctx, &one),
+        (false, "op CLI found only where a chat can write".to_owned())
+    );
+    let (_, said) = crate::secrets::reference::health(&ctx, &refs);
+    // A temp project is listed by other accounts, which the status adds after a comma.
+    assert_eq!(
+        said.split(", listed").next(),
+        Some("1 reference(s), but found only where a chat can write: op")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_program_a_chat_may_write_is_passed_over_for_one_further_along_that_it_may_not() {

@@ -130,7 +130,7 @@ describe("the Vaults section", () => {
       vault("team", {
         provider: "1password",
         count: null,
-        health: { ok: false, detail: "op CLI not on PATH" },
+        health: { ok: false, detail: "op CLI not found" },
       }),
     ]);
     draw();
@@ -138,7 +138,7 @@ describe("the Vaults section", () => {
     const row = within(list).getByRole("listitem");
     expect(row).toHaveClass("is-trouble");
     // No card: the tab says why, at the top, where the operator is looking when it matters.
-    expect(screen.queryByText("op CLI not on PATH")).not.toBeInTheDocument();
+    expect(screen.queryByText("op CLI not found")).not.toBeInTheDocument();
   });
 
   it("draws the core's refusal rather than an empty list, with Read again", async () => {

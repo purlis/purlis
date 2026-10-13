@@ -106,6 +106,16 @@ impl NotRun {
     }
 }
 
+/// Why a provider's program is not run, as a vault's status says it after the program's name
+/// (#1517): short, with no path, since `purlis vault list` and the window give it one column.
+/// Never "not on PATH": the lookup is wider than `PATH`. The read itself says where it looked.
+pub fn status_of(why: &NotRun) -> &'static str {
+    match why {
+        NotRun::NotFound(_) => "not found",
+        NotRun::Writable { .. } => "found only where a chat can write",
+    }
+}
+
 /// Every directory searched for a provider's program, in order.
 ///
 /// [`programs::search_dirs_from`]'s list for `path` and `home`, less the machine-wide

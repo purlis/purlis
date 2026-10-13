@@ -505,7 +505,7 @@ fn a_reference_vaults_health_names_the_clis_it_needs_and_what_is_wrong() {
         reference::health(&ctx, &v),
         (
             false,
-            "2 reference(s), but not on PATH: op, vault".to_string()
+            "2 reference(s), but not found: op, vault".to_string()
         )
     );
     write(&ctx, r#"{"A": "browser://x", "B": "nope"}"#);
@@ -514,7 +514,7 @@ fn a_reference_vaults_health_names_the_clis_it_needs_and_what_is_wrong() {
         (
             false,
             "2 reference(s), but 1 not a supported URI (purlis vault verify names them); not \
-             on PATH: npx"
+             found: npx"
                 .to_string()
         )
     );
