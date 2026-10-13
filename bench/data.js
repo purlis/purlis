@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791901655208,
+  "lastUpdate": 1791902427776,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9534,6 +9534,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5587685,
             "unit": "ms",
             "extra": "median of 5 runs: 101.189, 101.449, 101.559, 101.628, 101.635 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "4ac110f2c335d48f5425d86c198d79e58e3a9a3f",
+          "message": "review(qw355): the harness's note below a report is one paragraph that ends the text\n\nReview of the lane:\n\n- The report was read past any text that began with the note's opening, so a report quoted\n  in what a command printed, its note with it and more output below, read as the harness's\n  own. The note is read past only on a line of its own, below the report, and as one\n  paragraph that ends the text (red first).\n- The new module was mutated by hand, 24 ways. Three mutants lived and each has its test now:\n  a target the kernel put in quotes, a line that names no target (the system's, and nothing\n  to grant), and words before a proxy's `deny` (a sentence, not a line).\n\nADR 0093's new section is marked \"to be confirmed\" and says the note's rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T18:38:49+04:00",
+          "tree_id": "0e922e5e4c3529ce35cf22983bb08e2971650d67",
+          "url": "https://github.com/purlis/purlis/commit/4ac110f2c335d48f5425d86c198d79e58e3a9a3f"
+        },
+        "date": 1791902426759,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27030350000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.262, 0.267, 0.270, 0.280, 0.296 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.605078,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.491, 16.571, 16.605, 16.652, 16.691 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4601515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.645, 101.057, 101.460, 101.495, 101.897 ms"
           }
         ]
       }
