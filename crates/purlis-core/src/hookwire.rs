@@ -1111,7 +1111,9 @@ pub(crate) fn deliveries() -> &'static Deliveries {
 }
 
 /// What [`Deliveries`] keeps of a line to tell a copy of it: the line itself, as JSON, without
-/// its token or id. A live line and its spooled copy are the one value the hook sent both ways.
+/// its token or id. A live line and its spooled copy are the one value the hook sent both ways,
+/// but for a tool line's argument digest, which the spooled copy leaves out, so a tool line is
+/// told by [`ToolCall::at_rest`].
 #[cfg(unix)]
 pub(crate) fn content_of(line: &impl serde::Serialize) -> Vec<u8> {
     serde_json::to_vec(line).unwrap_or_default()
@@ -1958,7 +1960,7 @@ pub type Refused = Box<dyn Fn(CommitRefused) -> std::io::Result<()> + Send + Syn
 /// **Neither a report nor an ask, and it moves no chat.** Every tool hook `charter hook`
 /// answers sends one, after it has answered, so the host has one event per hook call. It never
 /// carries the tool's arguments: `args` is their SHA-256 ([`crate::eventlog::args_hash`]), which
-/// the host keys again before anything is written. A line that cannot be sent changes nothing
+/// the host keys again before anything is written, and which a spooled line leaves out (#977). A line that cannot be sent changes nothing
 /// about the answer the harness was given.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ToolCall {
@@ -1991,6 +1993,19 @@ pub struct ToolCall {
     /// call's pre and post hooks into a duration whichever the host hears first. 0 is unknown.
     #[serde(default)]
     pub at_ms: u64,
+}
+
+impl ToolCall {
+    /// The line as it may be kept on disk: the same call without its argument digest (#977).
+    /// The digest is unkeyed, so anyone who reads it can match it against a guess at the
+    /// arguments; only the host keys it ([`crate::eventlog::ArgsKey`]) before anything is
+    /// written, and a spooled line, which no host has keyed yet, leaves it out.
+    pub(crate) fn at_rest(&self) -> ToolCall {
+        ToolCall {
+            args: None,
+            ..self.clone()
+        }
+    }
 }
 
 /// What a tool hook answered the harness.
@@ -3271,7 +3286,8 @@ fn serve(
         // hearer runs either way, for what the line moves.
         let content = match &line {
             Line::Report(report) => Some(content_of(report)),
-            Line::Tool(call) => Some(content_of(call)),
+            // Without its digest, which its spooled copy leaves out (#977).
+            Line::Tool(call) => Some(content_of(&call.at_rest())),
             Line::Refused(refused) => Some(content_of(refused)),
             _ => None,
         };

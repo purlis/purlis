@@ -118,6 +118,79 @@ pub fn in_fallback(base: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The key in the name of the fallback folder an app listens in for the project at `plane`
+/// (`<program>-<user>-<key>`, `key` as 16 hex digits), or for no project: a 64-bit FNV-1a hash
+/// of the path's bytes, or of `no plane`. Short and stable, so two apps do not land on one
+/// socket; it is no secret, and the folder's own `0700` is what keeps others out. The app
+/// names its folder by this, and the inside-a-chat check finds that folder by it.
+pub fn fallback_key(plane: Option<&Path>) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let bytes = plane.map_or(b"no plane".as_slice(), |plane| {
+        plane.as_os_str().as_encoded_bytes()
+    });
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// The hook sockets in the fallback folders under `base` that an app made for the project at
+/// `plane` ([`in_fallback`] whose folder's name ends in [`fallback_key`]), under any user name:
+/// where an app listens for a project whose own socket path would be too long.
+pub fn in_fallback_for(base: &Path, plane: &Path) -> Vec<PathBuf> {
+    let key = format!("-{:016x}", fallback_key(Some(plane)));
+    in_fallback(base)
+        .into_iter()
+        .filter(|socket| {
+            socket
+                .parent()
+                .and_then(Path::file_name)
+                .is_some_and(|folder| folder.to_string_lossy().ends_with(&key))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+
+    #[test]
+    fn a_fallback_key_is_the_one_the_app_has_always_named_its_folder_by() {
+        // A key that moved would hide a running app's socket from every check that looks for
+        // it, so the hash is pinned.
+        assert_eq!(fallback_key(Some(Path::new("/a"))), 0x07d6_6707_b49c_d92d);
+        assert_eq!(fallback_key(None), 0x0b3f_a8c8_dae2_4470);
+    }
+
+    #[test]
+    fn a_project_s_fallback_sockets_are_its_own_under_any_user_and_either_spelling() {
+        let base = tempfile::tempdir().unwrap();
+        let project = Path::new("/a");
+        let key = format!("{:016x}", fallback_key(Some(project)));
+        for folder in [
+            format!("charter-someone-{key}"),
+            format!("purlis-other-{key}"),
+            "charter-someone-0000000000000000".to_owned(),
+            format!("elsewhere-{key}"),
+        ] {
+            std::fs::create_dir(base.path().join(folder)).unwrap();
+        }
+
+        let mut found = in_fallback_for(base.path(), project);
+        found.sort();
+
+        assert_eq!(
+            found,
+            [
+                base.path()
+                    .join(format!("charter-someone-{key}/hooks.sock")),
+                base.path().join(format!("purlis-other-{key}/hooks.sock")),
+            ]
+        );
+    }
+}
+
 /// Where the app's single-instance endpoints are on a machine: what [`Instances::of`] reads off
 /// this one, and what a test hands in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

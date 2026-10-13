@@ -203,31 +203,108 @@ fn admit_peer_on(
 /// the last component cannot be swapped for a link between them. The components above it are
 /// walked by path: whoever can write to `dir`'s parent can replace `dir` itself, so the parent
 /// must already be this user's (a runtime directory, the machine store, or a directory the
-/// caller has made private). Its parents are created when missing.
+/// caller has made private), or what is written into it must go through the checked
+/// descriptor ([`PrivateDirectory`]). Its parents are created when missing.
 pub fn private_directory(dir: &Path) -> io::Result<()> {
-    private_directory_of(dir, Uid::effective())
+    PrivateDirectory::open(dir).map(drop)
 }
 
-fn private_directory_of(dir: &Path, owner: Uid) -> io::Result<()> {
-    if let Some(above) = dir.parent() {
-        std::fs::create_dir_all(above)?;
+/// A directory made this user's alone ([`private_directory`]'s checks), held open by the one
+/// descriptor those checks were made on.
+///
+/// **What is written through it lands in the directory that was checked** (#992). A file is
+/// made and renamed relative to the descriptor (`openat`, `renameat`), never by path, so a
+/// directory put in its place after the check, by whoever can write to its parent, is never
+/// written to.
+#[derive(Debug)]
+pub struct PrivateDirectory {
+    opened: File,
+    path: std::path::PathBuf,
+}
+
+impl PrivateDirectory {
+    /// `dir`, made this user's alone as [`private_directory`] makes it, and held open.
+    pub fn open(dir: &Path) -> io::Result<PrivateDirectory> {
+        Self::open_of(dir, Uid::effective())
     }
-    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
-        Ok(()) => {}
-        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(err) => return Err(err),
+
+    fn open_of(dir: &Path, owner: Uid) -> io::Result<PrivateDirectory> {
+        if let Some(above) = dir.parent() {
+            std::fs::create_dir_all(above)?;
+        }
+        match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(err),
+        }
+        let opened = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_DIRECTORY | nix::libc::O_CLOEXEC)
+            .open(dir)
+            .map_err(|err| refused_open(dir, "a directory", err))?;
+        let found = opened.metadata()?;
+        if !found.is_dir() {
+            return Err(not_private(dir, "is not a directory"));
+        }
+        owned_by(dir, &found, owner)?;
+        opened.set_permissions(std::fs::Permissions::from_mode(0o700))?;
+        Ok(PrivateDirectory {
+            opened,
+            path: dir.to_path_buf(),
+        })
     }
-    let opened = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_DIRECTORY | nix::libc::O_CLOEXEC)
-        .open(dir)
-        .map_err(|err| refused_open(dir, "a directory", err))?;
-    let found = opened.metadata()?;
-    if !found.is_dir() {
-        return Err(not_private(dir, "is not a directory"));
+
+    /// Puts `bytes` in this directory as the file `name`, `0600`, replacing whole any file of
+    /// that name by a rename, so a reader never sees half of one. The file is written under a
+    /// name of its own made exclusively (`O_EXCL`, `O_NOFOLLOW`), synced, renamed over `name`,
+    /// and the directory synced, all through the held descriptor. `name` is one plain name:
+    /// a path, `.` and `..` are refused.
+    pub fn replace_file(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        use nix::fcntl::{OFlag, openat, renameat};
+        use nix::sys::stat::Mode;
+        use std::io::Write;
+
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{name:?} is not one plain file name"),
+            ));
+        }
+        let flags =
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+        let mode = Mode::from_bits_truncate(0o600);
+        let mut tries = 0u32;
+        let (temporary, file) = loop {
+            let temporary = format!(".{name}.{}.{tries}.part", std::process::id());
+            match openat(&self.opened, temporary.as_str(), flags, mode) {
+                Ok(made) => break (temporary, File::from(made)),
+                Err(nix::errno::Errno::EEXIST) if tries < 64 => tries += 1,
+                Err(err) => return Err(err.into()),
+            }
+        };
+        let written = (&file)
+            .write_all(bytes)
+            .and_then(|()| file.set_permissions(std::fs::Permissions::from_mode(0o600)))
+            .and_then(|()| file.sync_all())
+            .and_then(|()| {
+                renameat(&self.opened, temporary.as_str(), &self.opened, name)
+                    .map_err(io::Error::from)
+            });
+        if let Err(err) = written {
+            let _ = nix::unistd::unlinkat(
+                &self.opened,
+                temporary.as_str(),
+                nix::unistd::UnlinkatFlags::NoRemoveDir,
+            );
+            return Err(err);
+        }
+        nix::unistd::fsync(&self.opened).map_err(io::Error::from)
     }
-    owned_by(dir, &found, owner)?;
-    opened.set_permissions(std::fs::Permissions::from_mode(0o700))
+
+    /// The path the directory was opened by, for what is said of it.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 /// The most [`read_private_file`] reads. What it is for is a credential, a few dozen bytes; a
@@ -522,10 +599,64 @@ mod tests {
         std::fs::DirBuilder::new().mode(0o755).create(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let refused = private_directory_of(&dir, other()).unwrap_err();
+        let refused = PrivateDirectory::open_of(&dir, other()).unwrap_err();
 
         assert!(refused.to_string().contains("owned by uid"), "{refused}");
         assert_eq!(mode(&dir), 0o755, "it was changed before it was refused");
+    }
+
+    /// #992: a file is written into the directory that was checked, not into one put in its
+    /// place afterwards by whoever can write to its parent.
+    #[test]
+    fn a_file_written_through_a_held_directory_lands_in_it_after_the_path_is_replaced() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("credentials");
+        let held = PrivateDirectory::open(&dir).unwrap();
+        // The checked directory moved aside and another put at its path.
+        let moved = home.path().join("moved");
+        std::fs::rename(&dir, &moved).unwrap();
+        std::fs::DirBuilder::new().mode(0o755).create(&dir).unwrap();
+
+        held.replace_file("operator", b"held").unwrap();
+
+        assert_eq!(std::fs::read(moved.join("operator")).unwrap(), b"held");
+        assert_eq!(mode(&moved.join("operator")), 0o600);
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "the directory put in its place was written to"
+        );
+    }
+
+    #[test]
+    fn a_file_replaced_through_a_held_directory_is_replaced_whole_and_leaves_nothing_beside_it() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("credentials");
+        let held = PrivateDirectory::open(&dir).unwrap();
+        std::fs::write(dir.join("operator"), "old").unwrap();
+        std::fs::set_permissions(dir.join("operator"), std::fs::Permissions::from_mode(0o644))
+            .unwrap();
+
+        held.replace_file("operator", b"new").unwrap();
+
+        assert_eq!(std::fs::read(dir.join("operator")).unwrap(), b"new");
+        assert_eq!(mode(&dir.join("operator")), 0o600);
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["operator"]);
+        assert_eq!(held.path(), dir);
+    }
+
+    #[test]
+    fn a_held_directory_writes_one_plain_name_only() {
+        let home = tempfile::tempdir().unwrap();
+        let held = PrivateDirectory::open(&home.path().join("credentials")).unwrap();
+        for name in ["", ".", "..", "../out", "a/b", "nul\0"] {
+            assert!(held.replace_file(name, b"x").is_err(), "{name:?}");
+        }
+        assert!(!home.path().join("out").exists());
     }
 
     #[test]

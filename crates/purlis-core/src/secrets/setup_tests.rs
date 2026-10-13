@@ -1552,6 +1552,58 @@ fn a_process_below_the_app_holding_a_project_s_hook_socket_is_inside_a_chat() {
 }
 
 #[test]
+fn a_process_below_the_app_holding_a_project_s_fallback_hook_socket_is_inside_a_chat() {
+    // A project whose path is too long for a socket beside it has its app listen in a fallback
+    // folder named by the project's key, under the runtime or the temporary folder. That
+    // holder is found too.
+    let runtime = tempfile::tempdir().unwrap();
+    let base = runtime.path().to_string_lossy().into_owned();
+    let set = Set::with_env("unused", &[("XDG_RUNTIME_DIR", &base)]);
+    let key = crate::renamelocal::busy::fallback_key(Some(&set.ctx.root));
+    let ours = runtime.path().join(format!("charter-someone-{key:016x}"));
+    let another = runtime.path().join("charter-someone-0000000000000000");
+    for folder in [&ours, &another] {
+        std::fs::create_dir(folder).unwrap();
+    }
+    let parents = |pid: u32| match pid {
+        70 => Some(25),
+        25 => Some(20),
+        20 | 30 => Some(1),
+        _ => None,
+    };
+    let held_by = |folder: &Path, pid: u32| {
+        let folder = folder.to_path_buf();
+        move |asked: &Path| (asked.parent() == Some(folder.as_path())).then_some(pid)
+    };
+
+    assert_eq!(
+        in_a_chat_around(
+            &set.ctx,
+            70,
+            parents,
+            |_| Ok(25),
+            |_| None,
+            held_by(&ours, 20),
+            None
+        ),
+        Where::Inside
+    );
+    assert_eq!(
+        in_a_chat_around(
+            &set.ctx,
+            70,
+            parents,
+            |_| Ok(25),
+            |_| None,
+            held_by(&another, 20),
+            None
+        ),
+        Where::Outside,
+        "another project's fallback folder vouches for nothing here"
+    );
+}
+
+#[test]
 fn a_chat_of_another_project_this_machine_opened_is_a_chat_too() {
     // #1542: a chat of another project that clears its variables and names this project is
     // below a program the OTHER project's record names. Every project the machine store

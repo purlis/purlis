@@ -298,6 +298,10 @@ fn a_tool_call_no_host_takes_is_spooled_and_the_harness_gets_the_same_answer() {
     assert_eq!(spooled.len(), 1, "{spooled:?}");
     assert_eq!(spooled[0].call.as_deref(), Some("toolu_5"));
     assert_eq!(spooled[0].decision, Decision::Deny);
+    assert_eq!(
+        spooled[0].args, None,
+        "no unkeyed digest of the arguments is kept on disk (#977)"
+    );
 }
 
 #[test]

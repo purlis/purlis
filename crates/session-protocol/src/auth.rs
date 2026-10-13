@@ -259,25 +259,20 @@ impl Credentials {
 
     /// A fresh credential for every scope, each written to its own `0600` file in `dir`, which
     /// is made `0700` and must be a directory of this user's, never a link
-    /// (`purlis_same_user::private_directory`). A file already
-    /// there is replaced whole, by a rename, so a client never reads half of one.
+    /// (`purlis_same_user::PrivateDirectory`). A file already there is replaced whole, by a
+    /// rename, so a client never reads half of one.
+    ///
+    /// **Each file is written through the descriptor the directory was checked on** (#992):
+    /// made and renamed relative to it, never by path, so a directory put in `dir`'s place
+    /// after the check is never written to, whoever can write to its parent.
     #[cfg(unix)]
     pub fn mint_into(dir: &Path) -> std::io::Result<Self> {
-        use std::io::Write;
-
-        purlis_same_user::private_directory(dir)?;
-        let held = Credentials::mint()?;
+        let held = purlis_same_user::PrivateDirectory::open(dir)?;
+        let minted = Credentials::mint()?;
         for scope in Scope::WITH_A_CREDENTIAL {
-            let mut file = tempfile::Builder::new()
-                .prefix(".minting-")
-                .permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))
-                .tempfile_in(dir)?;
-            file.write_all(held.of(scope).expose().as_bytes())?;
-            file.as_file().sync_all()?;
-            file.persist(dir.join(scope.word()))
-                .map_err(|failed| failed.error)?;
+            held.replace_file(scope.word(), minted.of(scope).expose().as_bytes())?;
         }
-        Ok(held)
+        Ok(minted)
     }
 
     /// `scope`'s credential.

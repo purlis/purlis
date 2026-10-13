@@ -1194,6 +1194,28 @@ pub fn change(
     Ok(with_unread(ctx, &was, marked))
 }
 
+/// The folders an app's fallback hook socket may be under, as the app picks them:
+/// `$XDG_RUNTIME_DIR` when it is an absolute folder, and the temporary folder. Both are asked,
+/// since the app's environment is not this process's to know.
+fn fallback_bases(ctx: &Ctx) -> Vec<std::path::PathBuf> {
+    let runtime = ctx
+        .env
+        .get("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| dir.is_absolute() && dir.is_dir());
+    let temporary = ctx
+        .env
+        .get("TMPDIR")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(std::env::temp_dir);
+    let mut bases: Vec<_> = runtime.into_iter().collect();
+    if !bases.contains(&temporary) {
+        bases.push(temporary);
+    }
+    bases
+}
+
 /// Whether this process runs inside a chat (or a shell) the app started, as far as purlis can
 /// tell.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1306,7 +1328,8 @@ pub(crate) fn in_a_chat_seen(
 /// but its parent is not.
 ///
 /// **And the app that holds a project's hook socket now** (#1542), under either spelling of the
-/// project's state folder: its chats are below it whether or not any record names one, so an
+/// project's state folder, or in the fallback folder an app listens in when that path is too
+/// long for a socket ([`crate::renamelocal::busy::in_fallback_for`]): its chats are below it whether or not any record names one, so an
 /// app with no recorded live chat, or a project that writes no record, still counts as the host.
 /// The holder is read as the hook's own host check reads it (`purlis_same_user::socket_holder`):
 /// this user's process, holding the socket itself now, so a crashed app's leftover socket names
@@ -1373,7 +1396,13 @@ pub(crate) fn in_a_chat_around(
                 _ => programs.push(pid),
             }
         }
-        for socket in crate::renamelocal::busy::beside(project) {
+        let fallback = fallback_bases(ctx)
+            .into_iter()
+            .flat_map(|base| crate::renamelocal::busy::in_fallback_for(&base, project));
+        for socket in crate::renamelocal::busy::beside(project)
+            .into_iter()
+            .chain(fallback)
+        {
             programs.extend(holder(&socket).filter(|app| *app > 1));
         }
     }

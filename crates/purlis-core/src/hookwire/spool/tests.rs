@@ -2365,3 +2365,81 @@ fn a_line_under_another_lines_id_is_recorded_as_its_own() {
     // And heard live under it: recorded too.
     assert!(deliveries().begin(9, &id, &content_of(&call(9, "live")), NOW));
 }
+
+/// Every file under `dir`, as bytes, for a look at what reached the disk.
+fn every_file_under(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut all = Vec::new();
+    let mut left = vec![dir.to_path_buf()];
+    while let Some(at) = left.pop() {
+        for entry in std::fs::read_dir(&at).expect("a directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                left.push(path);
+            } else {
+                all.push((path.clone(), std::fs::read(&path).expect("a file")));
+            }
+        }
+    }
+    all
+}
+
+/// #977: a tool line's argument digest is the unkeyed SHA-256 the hook sends, which anyone can
+/// match against a guess. It is never written to disk: the spooled line leaves it out, and the
+/// drained line has none.
+#[test]
+fn no_unkeyed_argument_digest_is_written_to_disk() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 11);
+    let digest = crate::eventlog::args_hash(&serde_json::json!({"command": "ls -la"}));
+    let mut with_args = call(11, "digested");
+    with_args.args = Some(digest.clone());
+    let delivery = crate::hookwire::Delivery::new().expect("an id");
+    let line = crate::hookwire::with_delivery(&with_args, Some(&delivery)).expect("a line");
+
+    append(&spool, 11, &token, &with_args).expect("spooled");
+    append(&spool, 11, &token, &line).expect("spooled");
+
+    for (path, bytes) in every_file_under(dir.path()) {
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            !text.contains(&digest),
+            "{} holds the unkeyed digest: {text}",
+            path.display()
+        );
+    }
+    let items = drained(&spool);
+    let calls: Vec<_> = items
+        .iter()
+        .filter_map(|item| match item {
+            Drained::Line {
+                line: Spooled::Tool(call),
+                ..
+            } => Some(call.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(calls.len(), 2, "{items:?}");
+    assert!(calls.iter().all(|call| call.args.is_none()), "{calls:?}");
+}
+
+/// #977 with #952: the host heard a tool line live with its digest, and its spooled copy has
+/// none; the copy is still known for the same line, and is recorded once.
+#[test]
+fn a_tool_line_heard_live_with_its_digest_is_known_in_its_spooled_copy_without_one() {
+    use crate::hookwire::{Delivery, content_of, deliveries, with_delivery};
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 12);
+    let late = Delivery::new().expect("an id");
+    let mut with_args = call(12, "late");
+    with_args.args = Some(crate::eventlog::args_hash(&serde_json::json!({"x": 1})));
+    // What the host keeps of the line it heard live, digest and all.
+    let content = content_of(&with_args.at_rest());
+    assert!(deliveries().begin(12, &late, &content, NOW));
+    deliveries().finish(12, &late, &content, true);
+    let line = with_delivery(&with_args, Some(&late)).expect("a line");
+    append(&spool, 12, &token, &line).expect("spooled");
+
+    assert_eq!(tools(&drained_running(&spool, 12)), Vec::new());
+}

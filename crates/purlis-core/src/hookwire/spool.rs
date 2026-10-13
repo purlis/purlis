@@ -64,6 +64,11 @@
 //! a hook socket anywhere else (the fallback for a project whose path is too long for a
 //! socket) nothing is spooled and no key is written, and the hook says the line is lost.
 //!
+//! **No unkeyed argument digest is kept** (#977). A tool line's `args` is the arguments'
+//! unkeyed SHA-256, which the host keys with the device's key before it writes it. A spooled
+//! line leaves it out ([`append`]), so the event a drained tool line becomes has no `args`; a
+//! line a build before this one spooled is drained with the digest it holds, and keyed then.
+//!
 //! **Numbers are per key.** A key is one token, and a token is one start of a chat, so its
 //! sequence starts at 1 and runs on across every drain until the chat ends.
 
@@ -721,7 +726,8 @@ impl Bounds {
 }
 
 /// Writes `what`, chat `chat`'s line, into its spool in `dir`, under `token`'s key and the next
-/// number in that key's sequence, and answers the number.
+/// number in that key's sequence, and answers the number. A tool line's argument digest is left
+/// out ([`at_rest`], #977).
 ///
 /// **No hook waits for another** (#983). The number is taken by making a file exclusively, and
 /// the line is written to a file of its own ([`write_line`]), so however many hooks of one chat
@@ -764,7 +770,7 @@ fn append_within(
     refused_unless_covered(dir)?;
     private(dir)?;
     let key = SpoolKey::of(token);
-    let line = serde_json::to_string(what).map_err(io::Error::other)?;
+    let line = serde_json::to_string(&at_rest(what)?).map_err(io::Error::other)?;
     let dir = dir.to_path_buf();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
@@ -788,6 +794,22 @@ fn append_within(
         )),
     }
 }
+
+/// `what` as a spooled line may hold it (#977): without the argument digest a tool line carries
+/// ([`ToolCall::args`]). That digest is the arguments' unkeyed SHA-256, which anyone who reads it
+/// can match against a guess at them, and only the host keys it, with the device's key, before
+/// it writes it anywhere. A spooled line is on disk before any host has seen it, so it is left
+/// out, and the event a drained tool line becomes has no `args`.
+fn at_rest(what: &impl serde::Serialize) -> io::Result<serde_json::Value> {
+    let mut value = serde_json::to_value(what).map_err(io::Error::other)?;
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove(ARGS);
+    }
+    Ok(value)
+}
+
+/// The field a tool line carries its argument digest in ([`ToolCall::args`]).
+const ARGS: &str = "args";
 
 /// [`append`]'s write: a number taken, the line written and synced under it, and given its
 /// name.
@@ -1077,7 +1099,7 @@ impl Spooled {
     fn content(&self) -> Vec<u8> {
         match self {
             Self::Report(report) => super::content_of(report),
-            Self::Tool(call) => super::content_of(call),
+            Self::Tool(call) => super::content_of(&call.at_rest()),
             Self::Refused(refused) => super::content_of(refused),
         }
     }

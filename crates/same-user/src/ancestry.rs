@@ -484,9 +484,48 @@ pub fn holds_a_socket_at(
     if !out.status.success() && !(out.status.code() == Some(1) && out.stdout.is_empty()) {
         return Err(io::Error::other("lsof did not list the process's sockets"));
     }
-    Ok(lsof_names(&String::from_utf8_lossy(&out.stdout))
+    Ok(lsof_lists(
+        &String::from_utf8_lossy(&out.stdout),
+        path,
+        &target,
+    ))
+}
+
+/// Whether `lsof -F n`'s output `text` lists a socket bound at `path`, which resolves to
+/// `target` (#1146). `lsof` prints a name with every byte that is not printable ASCII escaped
+/// ([`lsof_spelling`]): a newline as `\n`, a byte past ASCII as `\xNN`. So a name is the
+/// socket's when it resolves to `target` as printed, or when it is the escaped spelling of
+/// `path` or of `target` exactly. Nothing shorter or near is taken for it.
+pub fn lsof_lists(text: &str, path: &Path, target: &Path) -> bool {
+    let spelled = [lsof_spelling(path), lsof_spelling(target)];
+    lsof_names(text)
         .iter()
-        .any(|name| resolves_to(name, &target)))
+        .any(|name| spelled.contains(name) || resolves_to(name, target))
+}
+
+/// `path` as `lsof` prints a name, in the C locale it is run in ([`lsof_command`]): each
+/// printable ASCII byte as it is, a backspace, form feed, newline, carriage return and tab as
+/// `\b`, `\f`, `\n`, `\r`, `\t`, every other control byte as `^` and the letter 0x40 above
+/// it, `0xff` as `^?`, and every other byte as `\x` and its two hex digits.
+pub fn lsof_spelling(path: &Path) -> String {
+    let mut spelled = String::new();
+    for byte in path.as_os_str().as_encoded_bytes() {
+        match *byte {
+            b' '..=b'~' => spelled.push(char::from(*byte)),
+            0x08 => spelled.push_str("\\b"),
+            0x0c => spelled.push_str("\\f"),
+            b'\n' => spelled.push_str("\\n"),
+            b'\r' => spelled.push_str("\\r"),
+            b'\t' => spelled.push_str("\\t"),
+            control @ 0..=0x1f => {
+                spelled.push('^');
+                spelled.push(char::from(control + 0x40));
+            }
+            0xff => spelled.push_str("^?"),
+            other => spelled.push_str(&format!("\\x{other:02x}")),
+        }
+    }
+    spelled
 }
 
 /// `lsof` asked for the unix sockets of process `pid` alone, by its full path, with no
@@ -512,19 +551,56 @@ pub fn lsof_names(text: &str) -> Vec<String> {
 
 /// The inodes of `/proc/net/unix`'s listening sockets bound at a path that resolves to
 /// `target`. A listening socket carries `__SO_ACCEPTCON` (`0x10000`) in its flags.
+///
+/// **A path is read whole, as the kernel wrote it** (#1146): everything after the one space
+/// that follows the inode, its own spaces kept, and a path with a newline in it, which the
+/// kernel writes raw, runs on into the lines after it until the next line that opens an entry.
 pub fn listening_at(table: &str, target: &Path) -> Vec<u64> {
-    table
-        .lines()
-        .skip(1)
-        .filter_map(|line| {
-            // Num RefCount Protocol Flags Type St Inode Path
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            let flags = u64::from_str_radix(fields.get(3)?, 16).ok()?;
-            let inode = fields.get(6)?.parse().ok()?;
-            let path = fields.get(7..)?.join(" ");
-            (flags & 0x10000 != 0 && resolves_to(&path, target)).then_some(inode)
-        })
+    let mut entries: Vec<(u64, u64, String)> = Vec::new();
+    for line in table.lines().skip(1) {
+        match entry_of(line) {
+            Some(entry) => entries.push(entry),
+            None => {
+                if let Some((_, _, path)) = entries.last_mut() {
+                    path.push('\n');
+                    path.push_str(line);
+                }
+            }
+        }
+    }
+    entries
+        .into_iter()
+        .filter(|(flags, _, path)| flags & 0x10000 != 0 && resolves_to(path, target))
+        .map(|(_, inode, _)| inode)
         .collect()
+}
+
+/// One line of `/proc/net/unix` that opens an entry, as its flags, inode and path (empty for a
+/// socket bound at none): `Num: RefCount Protocol Flags Type St Inode[ Path]`, where `Num` is
+/// hex and ends in a colon and the six fields after it are numbers.
+fn entry_of(line: &str) -> Option<(u64, u64, String)> {
+    let mut rest = line;
+    let mut fields = Vec::with_capacity(7);
+    for _ in 0..7 {
+        let start = rest.len() - rest.trim_start_matches(' ').len();
+        rest = &rest[start..];
+        let end = rest.find(' ').unwrap_or(rest.len());
+        fields.push(&rest[..end]);
+        rest = &rest[end..];
+    }
+    let num = fields[0].strip_suffix(':')?;
+    if num.is_empty() || !num.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    for hex in &fields[1..6] {
+        if hex.is_empty() || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+    }
+    let flags = u64::from_str_radix(fields[3], 16).ok()?;
+    let inode = fields[6].parse().ok()?;
+    let path = rest.strip_prefix(' ').unwrap_or(rest).to_owned();
+    Some((flags, inode, path))
 }
 
 /// The inode of a `/proc/<pid>/fd` link that is a socket: `socket:[<inode>]`.
@@ -704,6 +780,70 @@ mod tests {
         assert_eq!(listening_at(&table, &target), [4242]);
         assert_eq!(socket_inode(Path::new("socket:[4242]")), Some(4242));
         assert_eq!(socket_inode(Path::new("pipe:[4242]")), None);
+    }
+
+    /// #1146: a path the kernel writes with its own spaces, or with a newline in it, is still
+    /// the socket's path.
+    #[test]
+    fn proc_net_unix_reads_a_path_with_spaces_or_a_newline_whole() {
+        let dir = tempfile::tempdir().expect("a directory");
+        for folder in ["two  spaces", "a\nnewline", "both  \n0000: and more"] {
+            let at = dir.path().join(folder);
+            std::fs::create_dir(&at).expect("a folder");
+            let path = at.join("hooks.sock");
+            std::fs::write(&path, "").expect("a file to resolve");
+            let target = std::fs::canonicalize(&path).expect("resolves");
+            let shown = path.display();
+            let table = format!(
+                "Num       RefCount Protocol Flags    Type St Inode Path\n\
+                 0000000000000000: 00000002 00000000 00010000 0001 01  4242 {shown}\n\
+                 0000000000000000: 00000002 00000000 00010000 0001 01 4444 /elsewhere.sock\n"
+            );
+
+            assert_eq!(listening_at(&table, &target), [4242], "{folder:?}");
+        }
+    }
+
+    /// #1146: `lsof` escapes what is not printable ASCII in a name, so a hook socket under a
+    /// folder with a newline, or with letters past ASCII, is listed as its escaped spelling,
+    /// and that is the socket; the longest path the app binds a socket at is listed whole.
+    #[test]
+    fn lsof_lists_a_socket_whose_path_it_escaped_and_nothing_near_it() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let base = std::fs::canonicalize(dir.path()).expect("resolves");
+        let long = "l".repeat(
+            103usize
+                .saturating_sub(base.as_os_str().len() + "/hooks.sock".len() + 1)
+                .max(1),
+        );
+        for folder in [
+            "a\nnewline",
+            "tab\there",
+            "Проекты",
+            "del\u{7f}",
+            long.as_str(),
+        ] {
+            let at = base.join(folder);
+            std::fs::create_dir(&at).expect("a folder");
+            let path = at.join("hooks.sock");
+            std::fs::write(&path, "").expect("a file to resolve");
+            let target = std::fs::canonicalize(&path).expect("resolves");
+            let printed = format!("p1\nf3\nn{}\n", lsof_spelling(&path));
+            assert!(
+                printed.is_ascii(),
+                "lsof prints ASCII in the C locale: {printed}"
+            );
+            assert!(
+                lsof_lists(&printed, &path, &target),
+                "{folder:?}: {printed}"
+            );
+
+            let shorter = lsof_spelling(&path);
+            let near = format!("p1\nf3\nn{}\n", &shorter[..shorter.len() - 1]);
+            assert!(!lsof_lists(&near, &path, &target), "{folder:?}: {near}");
+        }
+        assert!(base.join(long).join("hooks.sock").as_os_str().len() <= 103);
+        assert_eq!(lsof_spelling(Path::new("/a\u{1}\u{ff}")), "/a^A\\xc3\\xbf");
     }
 
     #[test]

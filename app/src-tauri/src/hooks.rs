@@ -1043,7 +1043,11 @@ pub fn socket_for(plane: Option<&Path>) -> Where {
     }
     let within = private_dir();
     let socket = within
-        .join(format!("charter-{}-{:016x}", whoami(), keyed_on(plane)))
+        .join(format!(
+            "charter-{}-{:016x}",
+            whoami(),
+            purlis_core::renamelocal::busy::fallback_key(plane)
+        ))
         .join("hooks.sock");
     Where { within, socket }
 }
@@ -1082,19 +1086,6 @@ fn whoami() -> String {
                 .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         })
         .unwrap_or_else(|| "charter".to_owned())
-}
-
-/// A short, stable name for a plane — or for having none.
-fn keyed_on(plane: Option<&Path>) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    let bytes = plane.map_or(b"no plane".as_slice(), |plane| {
-        plane.as_os_str().as_encoded_bytes()
-    });
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
 }
 
 impl Hooks {

@@ -26,12 +26,12 @@ base64 = "0.23"
 yamux = "0.14"
 # Each scope's credential (FD-6): minted from the OS generator, proved by an HMAC-SHA256 over
 # a fresh challenge, compared in constant time, written by a rename from a `0600` temporary
-# file. The same crates purlis-core mints and checks a chat's token and keys its MACs with.
+# file through the checked directory's descriptor (`purlis_same_user::PrivateDirectory`, #992).
+# The same crates purlis-core mints and checks a chat's token and keys its MACs with.
 getrandom = "0.4"
 subtle = "2"
 hmac = "0.13"
 sha2 = "0.11"
-tempfile.workspace = true
 
 [target."cfg(unix)".dependencies]
 # Whether a connection's peer, and the credentials' directory and files, are this user's alone
