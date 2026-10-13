@@ -150,9 +150,22 @@ const SSH_REMOTE: &str = "ssh://purlis-planted.invalid/r";
 const FILL: &str =
     "alias.fill=!printf 'protocol=https\\nhost=purlis-planted.invalid\\n\\n' | git credential fill";
 
-/// Whether this git runs hooks named in config: 2.54 and later. Said when it does not, since the
-/// plant then checks nothing.
-fn config_hooks_here() -> bool {
+/// A command a gc runs to name the objects it must keep (`gc.recentObjectsHook`, git 2.42 and
+/// later), and its mark. The key is a list, which no `-c` empties, so a verb that collects
+/// garbage is refused and the gc any other verb would start on its own is turned off.
+const RECENT_OBJECTS_HOOK: (&str, &str) = ("gc.recentObjectsHook", "recent-objects");
+
+/// The verbs that collect garbage themselves, each of which would run [`RECENT_OBJECTS_HOOK`].
+const COLLECTS_GARBAGE: [&[&str]; 4] = [
+    &["gc", "-q"],
+    &["repack", "-q", "-d", "--cruft"],
+    &["prune"],
+    &["maintenance", "run", "--task=gc"],
+];
+
+/// Whether this git is at least `want` (major, minor). Said when it is not, since the plant
+/// named by `what` then checks nothing.
+fn git_at_least(want: [u32; 2], what: &str) -> bool {
     let mut cmd = support::unsigned();
     cmd.arg("version");
     let out = purlis_core::forklock::output(&mut cmd).expect("git runs");
@@ -165,14 +178,21 @@ fn config_hooks_here() -> bool {
         .take(2)
         .map(|part| part.parse().unwrap_or(0))
         .collect();
-    let here = version >= vec![2, 54];
+    let here = version >= want.to_vec();
     if !here {
-        println!(
-            "{}: no hooks named in config, so that plant checks nothing",
-            said.trim()
-        );
+        println!("{}: no {what}, so that plant checks nothing", said.trim());
     }
     here
+}
+
+/// Whether this git runs hooks named in config: 2.54 and later.
+fn config_hooks_here() -> bool {
+    git_at_least([2, 54], "hooks named in config")
+}
+
+/// Whether this git runs `gc.recentObjectsHook`: 2.42 and later.
+fn recent_objects_hooks_here() -> bool {
+    git_at_least([2, 42], "gc.recentObjectsHook")
 }
 
 /// An identity on the command line, for a commit in a fixture whose machine has none.
@@ -395,6 +415,11 @@ fn planted(layout: Layout) -> Planted {
         format!("hook.{hook}.command"),
         mark(&case, &ran, hook_mark).display().to_string(),
     ));
+    let (recent, recent_mark) = RECENT_OBJECTS_HOOK;
+    config.push((
+        recent.to_owned(),
+        mark(&case, &ran, recent_mark).display().to_string(),
+    ));
     for (key, value) in &config {
         support::git(&work, &["config", key, value]);
     }
@@ -552,6 +577,16 @@ fn run_everything(planted: &Planted) {
         "branch",
         git::run(work, &["branch", "made", "main"], git::READ),
     );
+    // A verb that collects garbage would run the gc's command, which no `-c` turns off: refused
+    // before git runs (`maintenance` already off the network entry point, as it can fetch).
+    for args in COLLECTS_GARBAGE {
+        let refused = git::run_untimed(work, args)
+            .unwrap_or_else(|e| panic!("{args:?}: git did not start: {e}"));
+        assert!(
+            !refused.ok() && refused.err.contains("so git was not run"),
+            "{args:?}: {refused:?}"
+        );
+    }
     // An ssh remote, by URL and as `host:path`: every network call refuses the transport before
     // the ssh command starts.
     for remote in [SSH_REMOTE, "purlis-planted.invalid:r"] {
@@ -708,18 +743,45 @@ fn the_plant_is_live_in(layout: Layout) {
     plain(&planted.work, &["fetch", "-q", SSH_REMOTE]);
     plain(&planted.work, &["-c", FILL, "fill"]);
     plain(&planted.work, &["difftool", "--no-prompt"]);
+    // An object nothing reaches, older than the gc keeps such an object for: git asks the gc's
+    // command only about an object it would otherwise remove.
+    let loose = planted.case.join("loose");
+    std::fs::write(&loose, "reached by nothing\n").unwrap();
+    let written = plain(
+        &planted.work,
+        &["hash-object", "-w", &loose.display().to_string()],
+    );
+    let id = String::from_utf8_lossy(&written.stdout).trim().to_owned();
+    let at = plain(
+        &planted.work,
+        &[
+            "rev-parse",
+            "--git-path",
+            &format!("objects/{}/{}", &id[..2], &id[2..]),
+        ],
+    );
+    let object = planted
+        .work
+        .join(String::from_utf8_lossy(&at.stdout).trim());
+    std::fs::File::open(&object)
+        .unwrap_or_else(|e| panic!("the loose object {}: {e}", object.display()))
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 86_400))
+        .unwrap();
+    plain(&planted.work, &["gc", "-q"]);
 
     let said = ran(&planted);
     let drivers = DRIVERS.map(|(_, name)| name);
     let programs = PROGRAMS.map(|(_, name)| name);
     let cannot_run = CANNOT_RUN.map(|(_, name)| name);
     let hook = config_hooks_here().then_some(CONFIG_HOOK.1);
+    let recent = recent_objects_hooks_here().then_some(RECENT_OBJECTS_HOOK.1);
     for expected in ["fsmonitor", "post-checkout"]
         .iter()
         .chain(&drivers)
         .chain(&programs[..REACHED])
         .chain(&cannot_run)
         .chain(hook.as_ref())
+        .chain(recent.as_ref())
     {
         assert!(
             said.iter().any(|name| name == expected),
@@ -999,4 +1061,78 @@ fn a_clones_remote_programs_are_never_reached() {
 fn a_kept_beside_git_directorys_remote_programs_are_never_reached() {
     purlis_core::unsteered!();
     a_remote_s_programs_are_never_reached_in(Layout::KeptBeside);
+}
+
+/// The remote helper a remote's `vcs` names (`remote.<name>.vcs`, #1853): git starts
+/// `git-remote-<vcs>` for a call that reaches that remote, an empty `vcs` names a helper too, and
+/// no command line turns one off, so purlis refuses every call that can reach a remote in a
+/// repository whose own config names one. The control: plain git, finding the helper on its
+/// `PATH`, runs it. The runner's refusal is said before git runs, so where the helper is on
+/// no `PATH` the refusal still names the setting rather than git's failure to find it.
+fn a_remote_helper_is_never_reached_in(layout: Layout) {
+    let planted = planted(layout);
+    let work = planted.work.as_path();
+    let helpers = planted.case.join("helpers");
+    std::fs::create_dir_all(&helpers).unwrap();
+    mark(&helpers, &planted.ran, "git-remote-planted");
+    for (key, value) in [
+        ("remote.vh.url", "planted-address"),
+        ("remote.vh.vcs", "planted"),
+    ] {
+        support::git(work, &["config", key, value]);
+    }
+    let upstream = planted.upstream.display().to_string();
+
+    for args in [
+        &["fetch", "-q", "vh"][..],
+        &["push", "-q", "vh", "ahead:refs/heads/pushed"],
+        &["ls-remote", "vh"],
+        // By its address, too: purlis does not tell which remote a call will reach.
+        &[
+            "fetch",
+            "-q",
+            &upstream,
+            "ahead:refs/remotes/upstream/ahead",
+        ],
+    ] {
+        let refused = git::run_network(work, None, args)
+            .unwrap_or_else(|e| panic!("{args:?}: git did not start: {e}"));
+        assert!(
+            !refused.ok() && refused.err.contains("purlis cannot turn off"),
+            "{args:?}: {refused:?}"
+        );
+    }
+    assert_eq!(ran(&planted), Vec::<String>::new(), "a remote's helper ran");
+
+    let path = std::env::join_paths(
+        std::iter::once(helpers.clone()).chain(
+            std::env::var_os("PATH")
+                .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        ),
+    )
+    .unwrap();
+    let mut cmd = support::unsigned();
+    cmd.arg("-C").arg(work).args(["fetch", "-q", "vh"]);
+    cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("PATH", path);
+    purlis_core::forklock::output(&mut cmd).expect("git runs");
+    let said = ran(&planted);
+    assert!(
+        said.iter().any(|name| name == "git-remote-planted"),
+        "plain git did not run the planted remote helper: {said:?}"
+    );
+}
+
+#[test]
+fn a_clones_remote_helper_is_never_reached() {
+    purlis_core::unsteered!();
+    a_remote_helper_is_never_reached_in(Layout::Clone);
+}
+
+#[test]
+fn a_kept_beside_git_directorys_remote_helper_is_never_reached() {
+    purlis_core::unsteered!();
+    a_remote_helper_is_never_reached_in(Layout::KeptBeside);
 }
