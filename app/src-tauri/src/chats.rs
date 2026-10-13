@@ -3338,6 +3338,13 @@ impl Chats {
                 ..chat.clone()
             })
             .collect();
+        // The ids written so far, as chats that could not be started. A chat of a launch is
+        // listed there before it leaves the ones still to start (`start_what_is_coming`), and
+        // those were read first here, so one found not to start meanwhile is in both.
+        let not_started: std::collections::HashSet<String> = chats
+            .iter()
+            .filter_map(|chat| chat.identity.id.clone())
+            .collect();
         // Then the running ones, in the strip's order — which is the order the next launch
         // puts them back in.
         chats.extend(ordered.into_iter().filter_map(|session| {
@@ -3345,6 +3352,17 @@ impl Chats {
                 let one = coming.iter().find(|one| one.number == session)?;
                 // Open already, under this id: its start has just returned.
                 if superseded(&one.chat, None) {
+                    return None;
+                }
+                // Written above already, as one that did not start: **one chat, once**. Twice,
+                // the next launch would read the second as another chat and start both.
+                if one
+                    .chat
+                    .identity
+                    .id
+                    .as_ref()
+                    .is_some_and(|id| not_started.contains(id))
+                {
                     return None;
                 }
                 return Some(Chat {
@@ -3592,7 +3610,6 @@ impl Chats {
             let first = self.told_put_back(&next.chat, next.told);
             let started =
                 self.start_recorded_told(&next.chat, size, next.why, first.as_deref(), None);
-            drop(place);
             let session = match started {
                 Ok(session) => {
                     lock(opened).push(session);
@@ -3641,7 +3658,9 @@ impl Chats {
             if let Some(session) = session
                 && self.ending.load(Ordering::SeqCst)
             {
-                let _ = self.sessions.close(session);
+                // As any chat is closed, so nothing of it is left held; nothing is written,
+                // since the quit's record is the last.
+                let _ = self.close(session);
             }
             crate::restoring::tell(crate::restoring::Moved {
                 root: self.project.clone(),
@@ -3649,6 +3668,9 @@ impl Chats {
                 session,
                 left,
             });
+            // The place is kept until the window has been told: the tells of one project come
+            // in the order its chats settled, and how many are left only goes down.
+            drop(place);
         }
         PUTTING_BACK_HERE.set(false);
     }
