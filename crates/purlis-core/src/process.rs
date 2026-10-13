@@ -133,7 +133,9 @@ pub fn alive(_pid: u32) -> bool {
 /// - **A recycled pid.** The app records a pid only while its program runs (it writes the
 ///   record again when one ends, and names no pid at quit), so a reused pid is on disk only
 ///   for the moment between a program's reap and that write, and after an app that crashed or
-///   was killed, until its next launch writes the record again.
+///   was killed, until its next launch writes the record again. The caller holds the pid to the
+///   record's last write too ([`could_be_recorded`], #1021): a later process given the number
+///   started after that write.
 pub fn descends_from(ancestor: u32) -> bool {
     // 0 is the kernel's and 1 is `init` or `launchd`, an ancestor of every process: a record
     // naming either would vouch for anything carrying the chat's environment.
@@ -148,6 +150,27 @@ pub fn descends_from(ancestor: u32) -> bool {
     }
     #[cfg(not(unix))]
     false
+}
+
+/// How much later than a record's last write a process may have started and still be one the
+/// record names: the record's time and a process's start are read from the same clock, which
+/// may be stepped a little between them, and Linux knows a start only to a second or so
+/// (`purlis_same_user::Parents::started_at`).
+pub const A_RECORD_S_CLOCK_SLACK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Whether a process that started at `started` can be the one a record written at `written`
+/// names by its number (#1021, #1542).
+///
+/// The app writes a process's number into a record only while that process runs, so every
+/// process a record names had started by the time it was written. One with the same number that
+/// started later is another process, given a number the first left behind (an app that crashed
+/// leaves its record as it was). Held to [`A_RECORD_S_CLOCK_SLACK`], so a number handed on
+/// within that much of the write is not told apart: what a record does not carry, the start
+/// itself beside the number, would close that too.
+pub fn could_be_recorded(started: std::time::SystemTime, written: std::time::SystemTime) -> bool {
+    written
+        .checked_add(A_RECORD_S_CLOCK_SLACK)
+        .is_none_or(|latest| started <= latest)
 }
 
 #[cfg(test)]

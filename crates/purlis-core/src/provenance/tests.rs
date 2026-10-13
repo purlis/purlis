@@ -249,6 +249,81 @@ fn a_process_inside_a_chat_finds_its_chat_by_the_number_the_app_set() {
     assert_eq!(Provenance::in_chat(plane.path(), &not_a_number), None);
 }
 
+/// The record's last write, as its reader sees it.
+fn written(plane: &std::path::Path) -> std::time::SystemTime {
+    crate::reopen::chat_pids(plane)
+        .unwrap()
+        .1
+        .expect("the system says when the record was written")
+}
+
+/// #1021: a recorded number is the chat's program only while the process with that number
+/// started no later than the record was written. One that started after is a later process
+/// given a number an app that crashed left on disk, and claims nothing.
+#[test]
+fn a_recorded_program_is_the_process_with_its_number_only_if_it_started_before_the_record() {
+    let plane = plane_with(vec![crate::reopen::Chat {
+        pid: Some(4242),
+        ..chat(3, Some("claude"), Some("steward"), Some(CHAT))
+    }]);
+    let at = written(plane.path());
+    let second = std::time::Duration::from_secs(1);
+    let a_minute = std::time::Duration::from_secs(60);
+
+    assert!(
+        still_recorded(plane.path(), 4242, |_| Some(at - a_minute)),
+        "started a minute before the write"
+    );
+    assert!(
+        still_recorded(plane.path(), 4242, |_| Some(at + second)),
+        "a second after, inside the clock's slack"
+    );
+    assert!(
+        !still_recorded(plane.path(), 4242, |_| Some(at + a_minute)),
+        "a minute after the write: a later process given the number"
+    );
+    assert!(
+        !still_recorded(plane.path(), 4242, |_| None),
+        "a start that cannot be read is a doubt, and stamps nothing"
+    );
+    assert!(
+        !still_recorded(plane.path(), 4343, |_| Some(at - a_minute)),
+        "a number the record does not name"
+    );
+    let empty = tempfile::tempdir().unwrap();
+    assert!(
+        !still_recorded(empty.path(), 4242, |_| Some(at - a_minute)),
+        "no record at all"
+    );
+}
+
+/// The same, through the check a commit makes: a record last written before this process began
+/// cannot name it, so the number it holds is another process's, and the commit claims nothing.
+#[cfg(unix)]
+#[test]
+fn a_record_written_before_the_recorded_program_began_names_some_other_process() {
+    let plane = plane_with(vec![crate::reopen::Chat {
+        pid: Some(std::process::id()),
+        ..chat(3, Some("claude"), Some("steward"), Some(CHAT))
+    }]);
+    let env = |n: &str| (n == "PURLIS_SESSION_ID").then(|| "3".to_owned());
+    assert!(
+        Provenance::in_chat(plane.path(), &env).is_some(),
+        "written after this process began"
+    );
+    let long_ago = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(crate::reopen::path(plane.path()))
+        .and_then(|record| record.set_modified(long_ago))
+        .expect("the record's time");
+    assert_eq!(
+        Provenance::in_chat(plane.path(), &env),
+        None,
+        "written in 2001, before this process began"
+    );
+}
+
 /// A project whose chat 3 runs claude as the steward, holding workspace `ws`'s clone `api` on
 /// the change's branch, and the message git hands `commit-msg`.
 struct Commit {

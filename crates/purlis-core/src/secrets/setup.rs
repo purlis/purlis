@@ -1277,11 +1277,6 @@ pub(crate) fn in_a_chat_with(
     in_a_chat_seen(ctx, me, parent, session, |_| None, account_home)
 }
 
-/// How much later than its record's last write a process may have started and still be the one
-/// the record names: the record's time and a process's start are read from the same clock, which
-/// may be stepped a little between them.
-const A_RECORD_S_CLOCK_SLACK: std::time::Duration = std::time::Duration::from_secs(2);
-
 /// [`in_a_chat`] for process `me`, with the kernel's answers, when each process `started`, and
 /// this account's home handed in.
 ///
@@ -1346,7 +1341,7 @@ pub(crate) fn in_a_chat_seen(
         // vouches for nothing.
         for pid in pids.into_iter().filter(|pid| *pid > 1) {
             match (started(pid), written) {
-                (Some(at), Some(written)) if at > written + A_RECORD_S_CLOCK_SLACK => {}
+                (Some(at), Some(written)) if !crate::process::could_be_recorded(at, written) => {}
                 (Some(_), Some(_)) => {
                     programs.push(pid);
                     programs.extend(parent(pid).filter(|app| *app > 1));

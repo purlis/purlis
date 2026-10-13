@@ -179,10 +179,16 @@ impl Provenance {
     /// process must run below the program the record says the app started for that chat
     /// ([`crate::reopen::Chat::pid`], [`crate::process::descends_from`]); a chat recorded with
     /// no running program has no agent run to claim.
+    ///
+    /// **And the program must still be the process the record named** (#1021): one that started
+    /// after the record was last written is a later process given the number of a program that
+    /// has gone ([`still_recorded`]), and a start that cannot be read claims nothing.
     pub fn in_chat(plane: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<Self> {
         let number = env(crate::active::SESSION_ID_ENV)?.trim().parse().ok()?;
         let chat = chat_numbered(plane, number)?;
-        if !chat.pid.is_some_and(crate::process::descends_from) {
+        if !chat.pid.is_some_and(|pid| {
+            crate::process::descends_from(pid) && still_recorded(plane, pid, started_at)
+        }) {
             return None;
         }
         Self::of(plane, &chat)
@@ -226,6 +232,38 @@ impl Provenance {
 
 /// Chat `number` as the project's record holds it, or `None` where it does not or cannot be
 /// read.
+/// When process `pid` started, as the kernel says, where it does.
+fn started_at(pid: u32) -> Option<std::time::SystemTime> {
+    #[cfg(unix)]
+    {
+        purlis_same_user::Parents::started_at(pid)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// Whether process `pid` is still the one the project's record of open chats names (#1021):
+/// the record names it, read with when it was last written from one descriptor, and the process
+/// with that number now started by then ([`crate::process::could_be_recorded`]).
+///
+/// **Every doubt is no**: no record, a record that cannot be read, a number it does not name, a
+/// write time or a start the system does not give. A commit left unstamped loses a claim; one
+/// stamped puts a chat's name on someone else's work (V67).
+pub(crate) fn still_recorded(
+    plane: &Path,
+    pid: u32,
+    started: impl Fn(u32) -> Option<std::time::SystemTime>,
+) -> bool {
+    let Ok((pids, Some(written))) = crate::reopen::chat_pids(plane) else {
+        return false;
+    };
+    pids.contains(&pid)
+        && started(pid).is_some_and(|at| crate::process::could_be_recorded(at, written))
+}
+
 fn chat_numbered(plane: &Path, number: u32) -> Option<crate::reopen::Chat> {
     crate::reopen::read_or_refusal(plane)
         .ok()?
