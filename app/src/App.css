@@ -3467,6 +3467,13 @@ h2.sidebar-title .node-icon {
   unicode-bidi: isolate;
 }
 
+/* A path a task changed is git's name for it, so its direction never runs into the mark and the
+   sentence drawn after it (#704). */
+.task-changes-files button,
+.task-changes-files .refused-path {
+  unicode-bidi: isolate;
+}
+
 /* The filter over the list: the box, then its two chips. The box gives way first. */
 .chats-filter {
   display: flex;
