@@ -5,7 +5,8 @@
 //!
 //! A port of `charter/hooks.py:pretooluse`'s REFUSALS — the arms and the order alone, with
 //! nothing that writes. Each arm already stands on its own: [`crate::leakguard`] (A),
-//! [`crate::credguard`] (A2), [`crate::planeroot`] (A3, A3b), [`crate::floorguard`] (A4),
+//! [`crate::credguard`] (A2), [`crate::planeroot`] (A3, A3b), [`crate::rootupdate`] (A3c,
+//! purlis's own), [`crate::floorguard`] (A4),
 //! [`crate::proseguard`] (A5, A6) and [`crate::handoffguard`] (A7). What is here is the one
 //! thing none of them could carry: **which of two firing arms the chat is told about**.
 //!
@@ -60,7 +61,7 @@ use crate::forge::Forge;
 use crate::handoffguard::{self, Caller};
 use crate::{
     commitguard, consentspelling, credguard, floorguard, guardcaps, leakguard, planeroot,
-    projectgit, proseguard, pyjson, rulespelling, shellseg,
+    projectgit, proseguard, pyjson, rootupdate, rulespelling, shellseg,
 };
 
 /// What to do when a guard is WRONG about your case (charter#370) — `_OVERRIDE_NOTE`.
@@ -317,6 +318,18 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
         // only speaks when it has measured that something really would be lost.
         if let Some(wipe) = planeroot::plane_root_reset_reason(cmd, call.cwd, plane.root) {
             return Some(Verdict::new(REASON_PLANE_ROOT_RESET, None, wipe));
+        }
+        // A3c: git that would rewrite the root's working tree from another commit, from a chat
+        // whose sandbox would stop the checkout partway and leave the project half-updated
+        // (qw346). After A3 and A3b, so a branch move and a destroyed commit are refused in
+        // their own words. Asked only of a chat the app says it gave a sandbox, as A9 is; it
+        // answers for a chat that may write the root folder, where A9 answers for one that may
+        // not. purlis's own, so no recorded answer moves.
+        if plane.launched.sandboxed
+            && let Some((sub, why)) =
+                rootupdate::refusal(cmd, call.cwd, plane.root, plane.chat_dir().as_deref())
+        {
+            return Some(Verdict::new(rootupdate::REASON, Some(sub), why));
         }
         // A4: an unattended run may not publish (#299).
         let unattended = floorguard::unattended(call.caller.permission_mode);
@@ -650,6 +663,73 @@ mod tests {
         assert_eq!(ask_as("git fetch", "", launched(true, Some(&root))), None);
         // Nothing says where the chat was started: never guessed from the command's folder.
         assert_eq!(ask_as("git fetch", "", launched(true, None)), None);
+    }
+
+    /// A3c speaks only to a chat the app says it gave a sandbox, and only where that chat may
+    /// write the project's root folder (qw346). It writes a manifest, which a test run inside
+    /// a chat's sandbox may not.
+    #[test]
+    fn an_update_the_sandbox_would_stop_partway_is_refused_only_to_a_sandboxed_chat_at_the_root() {
+        let fix = Fixture::new();
+        let root = fix.root();
+        std::fs::write(
+            fix.dir.path().join(crate::names::PLANE_MANIFEST.write),
+            "[plane]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(fix.dir.path().join("workspaces/ide")).unwrap();
+        std::fs::create_dir_all(fix.dir.path().join(".git")).unwrap();
+        let workspace = fix.dir.path().join("workspaces/ide").display().to_string();
+        let forges = forges();
+        let state = fix.state();
+        let ask = |cmd: &str, cwd: &str, sandboxed: bool, chat_dir: Option<&str>| {
+            let plane = Plane {
+                root: &root,
+                forges: &forges,
+                session_dir: "",
+                launched: Launched {
+                    sandboxed,
+                    chat_dir,
+                },
+            };
+            let call = Call {
+                command: cmd,
+                cwd,
+                state_dir: &state,
+                caller: attended(),
+            };
+            verdict(&call, Some(&plane)).map(|v| (v.reason, v.shape))
+        };
+        let refused = |sub: &str| Some((rootupdate::REASON.to_string(), Some(sub.to_string())));
+        let at_root = Some(root.as_str());
+        assert_eq!(
+            ask("git rebase origin/main", &root, true, at_root),
+            refused("rebase")
+        );
+        assert_eq!(
+            ask("git pull --rebase", &root, true, at_root),
+            refused("pull")
+        );
+        // Nothing says where the chat was started: taken to be one that may write the root.
+        assert_eq!(
+            ask("git merge origin/main", &root, true, None),
+            refused("merge")
+        );
+        // The way back, and git that writes no file from another commit.
+        for kept in [
+            "git restore --source=HEAD --worktree -- README.md",
+            "git rebase --abort",
+            "git status",
+        ] {
+            assert_eq!(ask(kept, &root, true, at_root), None, "{kept}");
+        }
+        // A chat started without a sandbox, or by no app at all, finishes what it starts.
+        assert_eq!(ask("git rebase origin/main", &root, false, at_root), None);
+        // A chat in a folder below the root stops on git's lock file: A9's to explain.
+        assert_eq!(
+            ask("git pull", &workspace, true, Some(workspace.as_str())),
+            Some((projectgit::REASON.to_string(), Some("pull".to_string())))
+        );
     }
 
     #[test]

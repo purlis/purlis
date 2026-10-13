@@ -2062,3 +2062,103 @@ fn many_loose_cds_are_read_in_time_and_fail_closed() {
         began.elapsed()
     );
 }
+
+/// What these two guards answer for an update of the root from another commit, and for the
+/// way back from one that stopped partway (qw346). Neither guard judges an update: a rebase, a
+/// pull or a merge moves no branch and destroys no commit, so they stand aside, and the arm
+/// for a sandboxed chat ([`crate::rootupdate`]) is the one that speaks. A restore to the
+/// current commit is no branch move wherever its paths are on the line.
+#[test]
+fn an_update_from_another_commit_is_not_these_guards_to_judge_and_a_restore_is_allowed() {
+    let f = fixture();
+    for update in [
+        "git rebase origin/main",
+        "git pull",
+        "git pull --rebase",
+        "git pull --rebase origin main",
+        "git merge origin/main",
+        "git merge --ff-only origin/main",
+        "git stash pop",
+        "git stash apply",
+        "git cherry-pick feature",
+        "git am patch.mbox",
+        "git revert HEAD",
+    ] {
+        assert_eq!(branch(&f, update), None, "{update}");
+        assert_eq!(reset(&f, update), None, "{update}");
+    }
+    // A reset to another commit is refused only where it would lose a commit no remote has.
+    assert_eq!(branch(&f, "git reset --hard feature"), None);
+    assert!(
+        reset(&f, "git reset --hard origin/main")
+            .unwrap()
+            .starts_with("would delete 1 commit from the PLANE ROOT")
+    );
+    assert_eq!(reset(&f, "git reset --hard HEAD"), None);
+    // A branch move is refused, as it always was.
+    for moving in ["git checkout feature", "git switch feature"] {
+        assert!(
+            branch(&f, moving)
+                .unwrap()
+                .starts_with("would switch to 'feature' in the PLANE ROOT. "),
+            "{moving}"
+        );
+    }
+    // The way back: files put back as the current commit has them.
+    for restore in [
+        "git restore --source=HEAD --worktree -- README both",
+        "git restore --source=HEAD --worktree --pathspec-from-file=list.z --pathspec-file-nul",
+        "git restore README",
+        "git checkout HEAD -- README both",
+        "git checkout -- README",
+        "git checkout HEAD README",
+    ] {
+        assert_eq!(branch(&f, restore), None, "{restore}");
+        assert_eq!(reset(&f, restore), None, "{restore}");
+    }
+}
+
+/// `git checkout HEAD` with no path on the line after a `--` reads as a move to `HEAD`: the
+/// paths a file or `xargs` hands git are out of the guard's sight. It stays refused, and the
+/// refusal names the spelling that cannot move HEAD, which is allowed (qw346).
+#[test]
+fn a_checkout_of_head_with_its_paths_out_of_sight_is_refused_with_the_restore_that_is_allowed() {
+    let f = fixture();
+    for unseen in [
+        "git checkout HEAD --pathspec-from-file=list.z --pathspec-file-nul",
+        "git checkout HEAD",
+        "git checkout HEAD --",
+        "git checkout @ --pathspec-from-file=list.z",
+        "git zzco HEAD",
+    ] {
+        let said = branch(&f, unseen).unwrap_or_else(|| panic!("{unseen}: allowed"));
+        assert!(
+            said.contains("`git restore --source=HEAD --worktree -- <paths>`"),
+            "{unseen}: {said}"
+        );
+        assert!(
+            said.contains("--pathspec-from-file=<file>"),
+            "{unseen}: {said}"
+        );
+        assert!(
+            said.ends_with("is always allowed."),
+            "{unseen}: the tail every denial ends with: {said}"
+        );
+    }
+    // Only that: a detach, another commit and `git switch` keep their own sentences.
+    assert!(
+        branch(&f, "git checkout --detach HEAD")
+            .unwrap()
+            .starts_with("would detach HEAD at 'HEAD'")
+    );
+    assert!(
+        branch(&f, "git switch HEAD")
+            .unwrap()
+            .starts_with("would switch to 'HEAD' in the PLANE ROOT. ")
+    );
+    assert!(
+        branch(&f, "git checkout HEAD~1")
+            .unwrap()
+            .starts_with("would switch to 'HEAD~1' in the PLANE ROOT. ")
+    );
+}
