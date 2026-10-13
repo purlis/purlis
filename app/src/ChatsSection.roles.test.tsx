@@ -168,6 +168,7 @@ function draw(chats: ListedChat[] = CHATS) {
           stopping={new Set([3])}
           restarts={{ 2: "It is restarted when its turn ends." }}
           finished={FINISHED}
+          onReopen={() => Promise.resolve("It could not be reopened: its branch is gone.")}
         />
       </TasksBelowLent>
     </ChatsHere.Provider>,
@@ -298,6 +299,18 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     wears(section.querySelector(".report-where"), "secondary", "where a report was written");
   });
 
+  it("draws why a finished task was not reopened at its name's size, in the danger colour", async () => {
+    const section = draw();
+    await userEvent.click(section.querySelector(".finished-task .finished-reopen") as Element);
+    const refusal = await within(section).findByRole("alert");
+
+    // No role has the danger colour, so it wears none: one rule built from a token sizes it.
+    expect([...refusal.classList]).toEqual(["trouble"]);
+    expect(px(named(drawnWith(refusal, "font-size")))).toBe(12);
+    expect(named(drawnWith(refusal, "color"))).toBe("--danger-text");
+    expect(drawnWith(refusal, "font-weight")).toBeUndefined();
+  });
+
   it("draws a row's card as secondary lines under a strong body name, its terms meta", async () => {
     const section = draw();
     await userEvent.hover(rowOf(section, "steward 3"));
@@ -331,7 +344,10 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     // A token, for a control sized in `em`; every word on that line wears its own role.
     expect(
       own.map(({ context, property: name, value }) => `${context.join(" ")} ${name}: ${value}`),
-    ).toEqual([".chats-top font-size: var(--font-size-sm)"]);
+    ).toEqual([
+      ".chats-top font-size: var(--font-size-sm)",
+      ".chats-section .finished-task > .trouble font-size: var(--font-size-sm)",
+    ]);
   });
 });
 
