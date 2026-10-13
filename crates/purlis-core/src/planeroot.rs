@@ -1130,7 +1130,8 @@ const STRING_BUDGET_FLOOR: usize = 64 * 1024;
 
 /// What the segment that hands a shell a string gives it: the environment exported to it,
 /// every bare assignment before it, its own assignments, whether a loose `cd` came before it,
-/// and what the line around it does to a `cd`. Empty for the line itself.
+/// what the line around it does to a `cd`, and whether `set -a` is on where an `eval` runs the
+/// string in this shell. Empty for the line itself.
 ///
 /// The lists are borrowed in parts, one or two for each level the string is in, and joined
 /// only for a segment that may be git: a line of many assignments handing many strings on
@@ -1142,6 +1143,7 @@ struct Outer<'a> {
     own_env: Vec<&'a [String]>,
     loose_cd: bool,
     context: Option<CdContext>,
+    allexport: bool,
 }
 
 /// The parts of a list, in order, as one.
@@ -1149,12 +1151,14 @@ fn joined(parts: &[&[String]]) -> Vec<String> {
     parts.iter().flat_map(|part| part.iter().cloned()).collect()
 }
 
-/// What a line leaves the shell that read it: every directory it may be in, and what it
-/// exported and assigned there. Where an `eval` leaves the shell that ran it (#1325).
+/// What a line leaves the shell that read it: every directory it may be in, what it exported
+/// and assigned there, and whether `set -a` is on after it. Where an `eval` leaves the shell
+/// that ran it (#1325).
 struct Left {
     here: Whereabouts,
     exported: Vec<String>,
     assigned: Vec<String>,
+    allexport: bool,
 }
 
 impl Left {
@@ -1163,6 +1167,7 @@ impl Left {
             here,
             exported: Vec::new(),
             assigned: Vec::new(),
+            allexport: false,
         }
     }
 }
@@ -1223,6 +1228,11 @@ fn walk_line(
     // is still there to be read (D-1358f). A string's line's come before them.
     let mut assigned: Vec<String> = Vec::new();
     let mut assigned_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // `set -a`: on from a segment of this line, which `carried` reads too, or on in the shell
+    // before the line began or from an `eval` in it, which `carried` cannot know. Under the
+    // second, this walk exports each bare assignment itself.
+    let mut allexport_own = false;
+    let mut allexport_given = outer.allexport;
     for (i, seg) in segments.iter().enumerate() {
         // Taken apart each segment, so a string handed on can be walked with the whole of it.
         let own = carried.before(i);
@@ -1416,6 +1426,7 @@ fn walk_line(
             .chain(crate::consentspelling::fed_on_its_stdin(&segments, i))
             .collect();
         let found = shellwrap::commands_a_find_runs(&prog, &args);
+        let evals = shellwrap::basename(&prog) == "eval";
         let handed = (!scripts.is_empty() || !found.is_empty()).then(|| {
             let gives = Outer {
                 exported: outer.exported.iter().copied().chain([before]).collect(),
@@ -1428,6 +1439,9 @@ fn walk_line(
                 own_env: outer.own_env.iter().copied().chain([&env[..]]).collect(),
                 loose_cd,
                 context: Some(context.clone()),
+                // An `eval` runs its string in this shell, under its options; any other shell
+                // starts with its own.
+                allexport: evals && (allexport_own || allexport_given),
             };
             let runs_at = where_a_shell_runs(&here, &chdir, &seg.argv, &context, made);
             (runs_at, gives)
@@ -1437,13 +1451,13 @@ fn walk_line(
         // `eval` leaves this shell is where they run.
         let mut evaled = Left::at(Whereabouts::default());
         if let Some((runs_at, gives)) = handed {
-            let evals = shellwrap::basename(&prog) == "eval";
             for script in &scripts {
                 let left = walk_line(script, runs_at.clone(), &gives, depth + 1, shared, walk);
                 if evals {
                     evaled.here.merge(left.here);
                     evaled.exported.extend(left.exported);
                     evaled.assigned.extend(left.assigned);
+                    evaled.allexport |= left.allexport;
                 }
             }
             if !found.is_empty() {
@@ -1475,6 +1489,7 @@ fn walk_line(
         // later `export NAME` exports a variable it set.
         here.merge(evaled.here);
         exported.extend(evaled.exported);
+        allexport_given |= evaled.allexport;
         for assign in evaled.assigned {
             if assigned_seen.insert(assign.clone()) {
                 assigned.push(assign.clone());
@@ -1498,7 +1513,11 @@ fn walk_line(
                     assigned.push(assign.clone());
                 }
             }
+            if allexport_given && !allexport_own {
+                exported.extend(seg.argv.iter().cloned());
+            }
         }
+        allexport_own |= shellwrap::sets_allexport(&seg.argv);
     }
     here.merge(left_behind);
     exported.extend_from_slice(&carried.before(segments.len())[exports_taken..]);
@@ -1532,6 +1551,7 @@ fn walk_line(
             own_env: outer.own_env.clone(),
             loose_cd: false,
             context: Some(context.clone()),
+            allexport: false,
         };
         for body in &bodies {
             walk_line(body, ever.clone(), &gives, depth + 1, shared, walk);
@@ -1541,6 +1561,7 @@ fn walk_line(
         here,
         exported,
         assigned,
+        allexport: allexport_own || allexport_given,
     }
 }
 

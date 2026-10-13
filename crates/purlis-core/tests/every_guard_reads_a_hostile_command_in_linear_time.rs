@@ -161,6 +161,20 @@ fn shapes(deep: usize) -> Vec<Shape> {
             }),
         ),
         (
+            // Under `set -a` what an `eval` assigns is exported, and so is what the line assigns
+            // after an `eval` turned it on (#1325).
+            "assignments inside evals under set -a before many gits",
+            Box::new(|b| {
+                let mut s = String::from("eval set -a; ");
+                let mut i = 0;
+                while s.len() < b {
+                    s += &format!("eval GIT_V{i}=x; GIT_W{i}=y; git status; ");
+                    i += 1;
+                }
+                s
+            }),
+        ),
+        (
             "a shell's -c inside a shell's -c",
             Box::new(|b| fill(&format!("{}ls\n", "bash -c ".repeat(MAX_LAYERS)), b)),
         ),

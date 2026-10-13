@@ -468,6 +468,42 @@ fn an_export_made_inside_eval_carries_to_the_rest_of_the_line() {
     }
 }
 
+/// Under `set -a` every bare assignment is exported, one an `eval` makes as well: the `eval` runs
+/// in this shell, under its options. A `set -a` an `eval` runs is this shell's from there on.
+/// A shell handed a string does not take the option from the line, nor give it back (#1325).
+#[test]
+fn an_assignment_an_eval_makes_under_set_a_is_exported() {
+    let (_dir, root, elsewhere) = bare_root();
+    std::fs::create_dir_all(format!("{root}/.git")).unwrap();
+    let moves = |cmd: &str| {
+        plane_root_git(cmd, &elsewhere, &root)
+            .iter()
+            .any(|inv| BRANCH_MOVERS.contains(&inv.sub.as_str()))
+    };
+    for cmd in [
+        format!("set -a; eval GIT_DIR={root}/.git; git checkout feature"),
+        format!("set -o allexport; eval 'GIT_DIR={root}/.git'; git checkout feature"),
+        format!("set -ax && eval \"GIT_DIR={root}/.git\" && git switch -c x"),
+        format!("set -a; eval 'GIT_DIR={root}/.git; git checkout feature'"),
+        format!("set -a; eval \"eval GIT_DIR={root}/.git\"; git checkout feature"),
+        format!("set -a; eval GIT_DIR={root}/.git; sh -c 'git checkout feature'"),
+        format!("eval 'set -a'; GIT_DIR={root}/.git; git checkout feature"),
+        format!("eval set -a; eval GIT_DIR={root}/.git; git checkout feature"),
+        format!("eval 'eval set -a'; GIT_DIR={root}/.git; git checkout feature"),
+    ] {
+        assert!(moves(&cmd), "{cmd:?}");
+    }
+    for cmd in [
+        format!("eval GIT_DIR={root}/.git; git checkout feature"),
+        format!("set -a; sh -c 'GIT_DIR={root}/.git'; git checkout feature"),
+        format!("sh -c 'set -a'; GIT_DIR={root}/.git; git checkout feature"),
+        format!("set -a; eval GIT_DIR={root}/.git; git status"),
+        "set -a; eval GIT_DIR=/nowhere/.git; git checkout feature".to_owned(),
+    ] {
+        assert!(!moves(&cmd), "{cmd:?}");
+    }
+}
+
 /// What a shell is fed, or a `find -exec` runs, in the root is answered as the same command
 /// typed bare, and so is a git after an `eval` that exported where it acts (#1325).
 #[test]

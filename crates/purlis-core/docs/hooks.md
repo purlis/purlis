@@ -222,7 +222,8 @@ rule while one who reads a bare refusal files an issue.
   the guard's corpus, crossed with the commands rather than listed beside them. The walk also carries the **environment a command
   line establishes for its later segments**, so `export GIT_DIR=<plane>/.git && git checkout
   <branch>` reaches the same denial the attached `GIT_DIR=… git …` does — as do `declare -x`/`typeset
-  -x`, `GIT_DIR=…; export GIT_DIR`, and a bare assignment under `set -a`. A bare
+  -x`, `GIT_DIR=…; export GIT_DIR`, and a bare assignment under `set -a`, one an `eval` makes
+  among them, and one after an `eval` that ran `set -a`. A bare
   `GIT_DIR=…;` segment on its own is *not* one of them, because a shell exports nothing
   there. That environment only ever grows: `unset` and `export -n` are not modelled, since
   forgetting a variable is the direction that opens a door. What is still outside it is the

@@ -1141,6 +1141,19 @@ pub(crate) fn exports(toks: &[String]) -> bool {
         .is_some_and(|first| EXPORT_BUILTINS.contains(&base_lower(first).as_str()))
 }
 
+/// Whether the segment `toks` turns on `set -a` (`set -ax`, `set -o allexport`), past the
+/// shell's keywords: from there on the shell exports every bare assignment it makes. The
+/// LETTER, not the token, for the reason `wrapper_option` walks letters: `-ax` is `-a -x`.
+pub(crate) fn sets_allexport(toks: &[String]) -> bool {
+    let mut rest = toks
+        .iter()
+        .skip_while(|t| SHELL_KEYWORDS.contains(&t.as_str()));
+    rest.next().is_some_and(|first| base_lower(first) == "set")
+        && rest.any(|a| {
+            (a.starts_with('-') && !a.starts_with("--") && a[1..].contains('a')) || a == "allexport"
+        })
+}
+
 /// [`exported_env`]'s answer, shared — see [`ExportedEnv`].
 pub fn exported_env_shared(segments: &[Vec<String>]) -> ExportedEnv {
     let mut upto: Vec<usize> = Vec::with_capacity(segments.len());
@@ -1159,14 +1172,7 @@ pub fn exported_env_shared(segments: &[Vec<String>]) -> ExportedEnv {
         let prog = base_lower(first);
         let args = &rest[1..];
         if prog == "set" {
-            // `set -a`, `set -ax`, `set -o allexport` — the LETTER, not the token, for the reason
-            // `wrapper_option` walks letters: `-ax` is `-a -x`.
-            if args.iter().any(|a| {
-                (a.starts_with('-') && !a.starts_with("--") && a[1..].contains('a'))
-                    || a == "allexport"
-            }) {
-                allexport = true;
-            }
+            allexport |= sets_allexport(toks);
             continue;
         }
         if EXPORT_BUILTINS.contains(&prog.as_str()) {
