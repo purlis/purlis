@@ -138,6 +138,10 @@ impl Asker {
 ///
 /// **An opencode command or edit is never allowed from here** (#1691): its ask names the
 /// commands opencode matched (`patterns`), not the line that runs, and an edit only its path.
+///
+/// **A Claude Code question is answered, never allowed** (#1703): its options are its answers,
+/// offered only where the window shows the question and every answer whole
+/// ([`super::asked::question`]), and the hook sends the chosen one back as the tool's own.
 pub fn ask(source: Source, payload: &Value) -> Ask {
     ask_within(source, payload, HOOK_TIMEOUT)
 }
@@ -207,7 +211,10 @@ pub fn shown_in_full(ask: &Ask) -> bool {
     let whole = match &ask.action {
         Action::Command { line } => format!("Run a command: {line}"),
         Action::Tool { name, input } => format!("Use {name}: {input}"),
-        Action::Edit { .. } | Action::Elicit { .. } | Action::Unsaid => return false,
+        Action::Question { question } if !question.is_empty() => format!("Asks you: {question}"),
+        Action::Edit { .. } | Action::Elicit { .. } | Action::Question { .. } | Action::Unsaid => {
+            return false;
+        }
     };
     ask.summary.as_str() == whole && !whole.chars().any(drawn_otherwise)
 }
@@ -286,6 +293,9 @@ fn claude_decision(payload: &Value, choice: &Choice) -> Option<Value> {
         ChoiceKind::Reject | ChoiceKind::Cancel => "deny",
     };
     let mut decision = serde_json::json!({ "behavior": behavior });
+    if let Some(input) = super::asked::question::answered(payload, choice) {
+        decision["updatedInput"] = input;
+    }
     if let Some(n) = choice.id.strip_prefix("suggestion:") {
         let n: usize = n.parse().ok()?;
         let entry = payload["permission_suggestions"].get(n)?.clone();
@@ -509,5 +519,7 @@ impl HookAsks {
     }
 }
 
+#[cfg(test)]
+mod question_tests;
 #[cfg(test)]
 mod tests;

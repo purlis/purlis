@@ -186,6 +186,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
             Action::Edit { path } => format!("Change {path}"),
             Action::Tool { name, .. } => format!("Use {name}"),
             Action::Elicit { .. } => "Asks you for values".to_owned(),
+            Action::Question { .. } => "Asks you a question".to_owned(),
             Action::Unsaid => "Asks for your permission".to_owned(),
         }
     } else {

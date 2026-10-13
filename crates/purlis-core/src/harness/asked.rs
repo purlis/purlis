@@ -16,12 +16,17 @@ use super::model::{
     Action, Ask, Channel, Choice, ChoiceKind, ChoiceScope, Deadline, Risk, Summary,
 };
 
+pub mod question;
+
 /// Claude Code's `PermissionRequest` hook payload, on a hook armed with `hook_timeout`.
 ///
 /// Its options are allow and deny for this call, and between them one for each
 /// `permission_suggestions` entry charter can say truthfully ([`suggestion`]). The hook answers
 /// with a `decision` naming one.
 pub fn claude_permission_request(payload: &Value, hook_timeout: std::time::Duration) -> Ask {
+    if payload["tool_name"].as_str() == Some(question::TOOL) {
+        return question::claude(payload, hook_timeout);
+    }
     let mut options = vec![choice(
         "allow",
         "Allow",
@@ -343,6 +348,7 @@ fn asking(action: Action, options: Vec<Choice>) -> Ask {
         Action::Edit { path } => format!("Change {path}"),
         Action::Tool { name, input } => format!("Use {name}: {input}"),
         Action::Elicit { fields } => format!("Give values for: {}", fields.join(", ")),
+        Action::Question { question } => format!("Asks you: {question}"),
     });
     Ask {
         risk: risk_of(&action),
@@ -365,7 +371,9 @@ pub fn risk_of(action: &Action) -> Risk {
     match action {
         Action::Command { line } => risk::of_line(line, 0),
         Action::Tool { name, .. } => risk::of_tool(name),
-        Action::Unsaid | Action::Edit { .. } | Action::Elicit { .. } => Risk::Normal,
+        Action::Unsaid | Action::Edit { .. } | Action::Elicit { .. } | Action::Question { .. } => {
+            Risk::Normal
+        }
     }
 }
 

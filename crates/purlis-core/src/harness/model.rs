@@ -171,6 +171,9 @@ pub enum Action {
     /// Hand over values the agent asks for: an ACP elicitation's form, by its fields' labels.
     /// The form itself goes to the window with the ask (`crate::acp::Event::Elicited`).
     Elicit { fields: Vec<String> },
+    /// Answer a question the agent asks the person, in its words: Claude Code's
+    /// `AskUserQuestion` on its permission hook (#1703). The answers are the ask's options.
+    Question { question: String },
 }
 
 /// One answer a source offers.

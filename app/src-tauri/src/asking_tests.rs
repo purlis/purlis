@@ -199,6 +199,33 @@ fn a_permission_prompt_s_answer_through_the_registry_closes_it_once() {
     assert!(asks.answer("3", &raised.id, "allow", window, now).is_err());
 }
 
+#[test]
+fn a_question_on_the_permission_hook_lists_its_answers_as_the_ways_to_answer_it() {
+    // #1703: Claude Code's AskUserQuestion, one question and one choice, answered in the Inbox
+    // with one of its own answers, back on its hook, and never in place of its terminal row.
+    let payload = serde_json::json!({
+        "tool_name": "AskUserQuestion",
+        "tool_input": {"questions": [{
+            "question": "Which database?", "header": "DB", "multiSelect": false,
+            "options": [{"label": "SQLite"}, {"label": "Postgres"}]
+        }]}
+    });
+    let ask = purlis_core::harness::hooked::ask(
+        purlis_core::harness::hooked::Source::ClaudeCode,
+        &payload,
+    );
+    let asks = Asks::new();
+    let raised = asks.raise("5", ask, Instant::now()).raised;
+
+    let shown = permission(raised).expect("a chat of this project's");
+
+    assert_eq!(shown.says, "Asks you: Which database?");
+    assert_eq!(ids(&shown), ["answer:0", "answer:1"]);
+    let labels: Vec<&str> = shown.options.iter().map(|one| one.label.as_str()).collect();
+    assert_eq!(labels, ["SQLite", "Postgres"]);
+    assert_eq!(shown.answer, AnswerPath::Hook);
+}
+
 // The dispatch grant adapter.
 
 #[test]
