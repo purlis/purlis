@@ -363,24 +363,35 @@ export function SavingView({
           )}
           {saving.pr !== null && saving.merge != null && (
             <RequestMerge
+              plane={plane}
+              workspace={null}
+              repo={null}
               name="this project"
               request={saving.request}
               pr={saving.pr}
+              target={saving.branch}
               merge={saving.merge}
             />
           )}
-          {/* A repo's row says where its request stands; what is wrong with one is said in
-              full here, as the project's is. */}
+          {/* A repo's row says where its request stands; what is wrong with one, or what its
+              wait needs of the person, is said in full here, as the project's is. */}
           {(repos ?? []).map(
             (repo) =>
+              workspace !== undefined &&
               repo.pr !== null &&
               repo.merge != null &&
-              (repo.merge.state === "red" || repo.merge.state === "cannot-merge") && (
+              (repo.merge.state === "red" ||
+                repo.merge.state === "cannot-merge" ||
+                repo.merge.needs != null) && (
                 <RequestMerge
                   key={repo.name}
+                  plane={plane}
+                  workspace={workspace}
+                  repo={repo.name}
                   name={repo.name}
                   request={repo.request}
                   pr={repo.pr}
+                  target={repo.target}
                   merge={repo.merge}
                 />
               ),

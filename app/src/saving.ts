@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
 import {
   commands,
+  type Fixing,
   type PlaneId,
   type PlaneSaving,
   type RepoSaving,
@@ -28,6 +29,21 @@ export type WayOut = { plane: string; way: "chat" | "terminal" };
 export function askWayOut(plane: string, way: WayOut["way"]): void {
   window.dispatchEvent(new CustomEvent<WayOut>(WAY_OUT, { detail: { plane, way } }));
 }
+
+/** The window event a Fix sends once its chat is there (the operator's ruling P2): the window of
+ *  the project puts the chat's tab in front, or brings forward the one already open. */
+export const FIX_STARTED = "purlis-save-fix-started";
+
+/** A Fix's chat, and the project it is in. */
+export type FixStarted = { plane: string; chat: Fixing };
+
+/** Tell the window of the project `plane` that a Fix's chat is there (`PlaneView` hears it). */
+export function tellFixStarted(plane: string, chat: Fixing): void {
+  window.dispatchEvent(new CustomEvent<FixStarted>(FIX_STARTED, { detail: { plane, chat } }));
+}
+
+/** The size a Fix's chat starts at, until its pane says its own: a new chat's. */
+export const FIX_STARTING_SIZE = { columns: 80, rows: 24 };
 
 /** The window event that asks a project's window for its Saving tab: a dialog's way out to
  *  where a save that did not happen is mended (LiveDialog, NO-8's follow-up #1296). */
@@ -284,7 +300,8 @@ export function requestIsRed(of: Merging): boolean {
  * of every check, and what its last look found is the standing's `merge`:
  *
  * - `red`: a check failed, required or not. It is not merged, and the words name what failed;
- * - `waiting`: its checks are running, or have not started yet. purlis looks again by itself;
+ * - `waiting`: its checks are running, or have not started yet. purlis looks again by itself.
+ *   A wait nothing purlis reads will end says so, and one for want of a sign-in says that;
  * - `queued`: it is in its branch's merge queue or merge train;
  * - `cannot-merge`: a conflict, a required review, or another rule of the forge's own;
  * - `merged`: merged, and the project has not moved onto what merged yet.
@@ -299,6 +316,10 @@ export function requestWords(of: Merging): string {
     case "red":
       return `Pushed — its ${of.request} is red: ${merge.why}`;
     case "waiting":
+      if (merge.needs === "person")
+        return `Pushed — its ${of.request} waits, and nothing says for how long: ${merge.why}`;
+      if (merge.needs === "sign-in")
+        return `Pushed — purlis needs a sign-in to look at its ${of.request}`;
       return `Pushed — its ${of.request} waits for its checks`;
     case "queued":
       return `Pushed — its ${of.request} is in the merge queue`;

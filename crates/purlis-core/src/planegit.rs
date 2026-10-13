@@ -701,11 +701,46 @@ pub fn standing(root: &Path) -> Standing {
     }
 }
 
-/// **Who the app's own look asks the forge as**: a trigger, which never takes the person's
-/// sign-in, because nobody pressed for the look (ADR 0070 §5; D-qw371-8, with the operator).
-/// The one place it is chosen, for the plane's look and every repo's.
-pub fn look_caller() -> forge::Caller {
-    forge::Caller::trigger()
+/// Where a look at a save's open request is run from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Looker {
+    /// The app, for the person whose window it is.
+    Window,
+    /// Anything else, with nobody there.
+    Unattended,
+}
+
+/// **Who the app's own look asks the forge as.** The one place it is chosen, for the plane's
+/// look and every repo's.
+///
+/// From the window it asks as a save pressed there would, with nobody waiting on it: with the
+/// person's purlis sign-in where there is one for the forge, and through the forge's own CLI
+/// otherwise (ADR 0070 §5, amended 2026-10-14 by the operator's ruling, for this one job).
+/// Anywhere else it is a trigger, which never takes the person's sign-in.
+///
+/// Nothing else that runs with nobody at the keyboard asks as the window: an automatic save's
+/// own calls stay a trigger's ([`Trigger::caller`]).
+pub fn look_caller(from: Looker) -> forge::Caller {
+    match from {
+        Looker::Window => forge::Caller::window().background(),
+        Looker::Unattended => forge::Caller::trigger(),
+    }
+}
+
+/// **What the window's Fix hands a chat about the project's red pull request** (the operator's
+/// ruling P2, 2026-10-13): the request's number, and what failed on it with what each failed
+/// check found, asked of the forge as `caller`. Refused unless the last look found it red.
+/// Nothing is written and nothing is merged.
+pub fn trouble(
+    root: &Path,
+    caller: &forge::Caller,
+) -> Result<(u64, crate::savefix::Trouble), String> {
+    let plane = crate::planesave::Settings::read(root).plane;
+    let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
+        .map(|r| r.line().trim().to_string())
+        .unwrap_or_default();
+    let branch = plane.branch.value.clone().unwrap_or(here);
+    prsave::trouble(root, &plane, &branch, caller)
 }
 
 /// What a look at a `pr-merge` plane's open pull request came to ([`look`]).

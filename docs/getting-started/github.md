@@ -143,7 +143,7 @@ before it:
 | `commit` | commits on this machine |
 | `push` | also pushes to the project's branch |
 | `pr` | pushes to a save branch and opens or updates one pull request |
-| `pr-merge` | also merges that pull request itself, once every check on the pushed commit has passed. It never merges past a failed check, required or not, and never before its checks could have started; a red pull request stays open, and your next save goes onto it |
+| `pr-merge` | also merges that pull request itself, once every check on the pushed commit has passed. It never merges past a failed check, required or not, and never before its checks could have started; a red pull request stays open, and your next save goes onto it. The Saving view and the Inbox then offer **Fix in a chat** and **Merge as it stands…** |
 
 Until a mode is set, the **Saving** view asks once, before anything is pushed. The project from
 the first run has no remote, so only `off` and `commit` have anywhere to go until you push it to

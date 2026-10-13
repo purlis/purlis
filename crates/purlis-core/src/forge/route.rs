@@ -359,6 +359,36 @@ mod tests {
     }
 
     #[test]
+    fn the_apps_look_at_a_saves_request_takes_the_windows_sign_in_and_no_other_unattended_job_does()
+    {
+        use crate::planegit::{Looker, Trigger, look_caller};
+        for state in every_state() {
+            // From the window: the sign-in where there is one, the CLI otherwise, as before.
+            assert_eq!(
+                route(state, &look_caller(Looker::Window)) == Route::Native,
+                state.signed_in && !state.prefer_cli,
+                "{state:?}"
+            );
+            // With no window, and for every save nobody pressed: never the sign-in.
+            let unattended = [
+                look_caller(Looker::Unattended),
+                Trigger::Quiet.caller(),
+                Trigger::SessionEnd.caller(),
+                Trigger::Quit.caller(),
+                Trigger::Launch.caller(),
+            ];
+            for caller in unattended {
+                assert_eq!(route(state, &caller), Route::Cli, "{state:?} {caller:?}");
+            }
+        }
+        // Nobody waits on the look: it is admitted as background work.
+        assert_eq!(
+            look_caller(Looker::Window).priority(),
+            crate::forge::backend::Priority::Background
+        );
+    }
+
+    #[test]
     fn only_a_human_in_the_window_on_a_signed_in_account_resolves_to_the_sign_in_token() {
         for state in every_state() {
             for caller in every_caller() {

@@ -3,11 +3,12 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
-import { commands, type AlertRow, type DoctorFixed, type PlaneId } from "./bindings";
+import { commands, type AlertRow, type AlertWay, type DoctorFixed, type PlaneId } from "./bindings";
 import type { AlertsReading } from "./alerts";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
 import { drawWhatIsInForce } from "./Extensions";
 import { Notice, type NoticeAction } from "./Notice";
+import { RequestMerge } from "./SavingMerge";
 import {
   sayAboutThisMachine,
   usingTheBuiltIn,
@@ -139,14 +140,33 @@ function ThisProject({
           found before that, and there may be more.
         </Notice>
       )}
-      {read.alerts.map((alert) => (
-        <ProjectRow
-          key={`${alert.subject}\n${alert.detail}`}
-          plane={plane}
-          alert={alert}
-          does={does}
-        />
-      ))}
+      {read.alerts.map((alert) => {
+        const way = alert.way;
+        // A save's red request (`save-request-red`): the Notice the Saving view draws for it,
+        // with the same two answers, so it is seen and answered from here.
+        if (way.kind === "save-request")
+          return (
+            <RequestMerge
+              key={`${alert.subject}\n${way.pr}`}
+              plane={plane}
+              workspace={way.workspace}
+              repo={way.repo}
+              name={way.name}
+              request={way.request}
+              pr={way.pr}
+              target={way.target}
+              merge={way.merge}
+            />
+          );
+        return (
+          <ProjectRow
+            key={`${alert.subject}\n${alert.detail}`}
+            plane={plane}
+            alert={{ ...alert, way }}
+            does={does}
+          />
+        );
+      })}
     </>
   );
 }
@@ -210,7 +230,8 @@ function ProjectRow({
   does,
 }: {
   plane: PlaneId;
-  alert: AlertRow;
+  /** Any alert but a save's red request, which draws its own Notice (`RequestMerge`). */
+  alert: Omit<AlertRow, "way"> & { way: Exclude<AlertWay, { kind: "save-request" }> };
   does: InboxAlertsDo;
 }) {
   /** What the last fix answered, when it did not cure the row: its refusal, or what it said. */

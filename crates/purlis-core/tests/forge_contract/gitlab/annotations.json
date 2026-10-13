@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), jobs.md: List pipeline jobs",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/pipelines/4/jobs?scope%5B%5D=failed&per_page=50"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 8, \"name\": \"lint\", \"stage\": \"test\", \"status\": \"failed\", \"failure_reason\": \"script_failure\", \"web_url\": \"https://gitlab.com/acme/api/-/jobs/8\"}]",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -157,6 +157,7 @@ pub const WORDS: &[&str] = &[
     "merge",
     "commits",
     "check-runs",
+    "annotations",
     "check-suites",
     "status",
     "statuses",

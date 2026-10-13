@@ -3490,7 +3490,7 @@ pub(crate) fn profile_now(
 ///
 /// Last on the line: a positional prompt is what nothing may come after, and the app's own
 /// hook arguments go in FRONT of these (`Chats::open_it`).
-fn told_first(
+pub(crate) fn told_first(
     mut ready: purlis_core::start::Ready,
     profile: &str,
     message: &str,

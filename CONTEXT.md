@@ -897,6 +897,10 @@ _Avoid_: PR branch, `charter/<sha>` branch
 **Request mode**:
 A save mode that keeps one request open into the target branch instead of pushing to it: `pr`,
 and `pr-merge`, in which purlis also merges the request itself once every check on it has passed.
+A red request stays open and is a **Notice** of the kind `save-request-red`, in the Saving view
+and the **Inbox**, with two answers: **Fix in a chat**, which starts a chat at the **plane root**
+(or in the repo's workspace) on what failed, and **Merge as it stands**, the person's own merge
+past the checks, which asks first.
 Prose says "request mode" on every forge; `pr` and `pr-merge` stay the words `charter.toml` takes
 (V81).
 _Avoid_: PR mode, MR mode

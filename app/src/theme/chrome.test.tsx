@@ -69,6 +69,7 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
+import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
 import { ChatsSection } from "../ChatsSection";
@@ -973,6 +974,31 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<SavingView plane={PLANE} workspace="alpha" />);
       await userEvent.click(await screen.findByRole("button", { name: "Save all" }));
+    },
+  },
+  {
+    name: "Merge as it stands",
+    file: "SavingMerge.tsx",
+    open: async () => {
+      render(
+        <RequestMerge
+          plane={PLANE}
+          workspace={null}
+          repo={null}
+          name="this project"
+          request="pull request"
+          pr="https://github.com/acme/plane/pull/12"
+          target="main"
+          merge={{
+            state: "red",
+            why: "1 check failed: lint",
+            checks: [{ name: "lint", url: null }],
+            needs: null,
+            number: "#12",
+          }}
+        />,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
     },
   },
   {

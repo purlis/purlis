@@ -80,7 +80,15 @@ import {
 } from "./actions";
 import { CHOOSE_EDITOR, NO_EDITOR, yourEditor } from "./yourEditor";
 import { LICENCES_TITLE } from "./LicencesView";
-import { OPEN_SAVING, usePlaneSaving, useRepoSavingKept, WAY_OUT, type WayOut } from "./saving";
+import {
+  FIX_STARTED,
+  OPEN_SAVING,
+  usePlaneSaving,
+  useRepoSavingKept,
+  WAY_OUT,
+  type FixStarted,
+  type WayOut,
+} from "./saving";
 import { HARNESS_SETUP, type HarnessSetupAsk } from "./harnessSetup";
 import { curationSubjects, useCurations } from "./curations";
 import { LiveDialog, LiveMark } from "./LiveDialog";
@@ -3628,6 +3636,29 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(OPEN_SAVING, asked);
     return () => window.removeEventListener(OPEN_SAVING, asked);
   }, [plane, showView]);
+
+  /**
+   * **A Fix's chat** (the operator's ruling P2, 2026-10-13; `saving.tellFixStarted`): the core
+   * started it on what failed, and its tab goes on the strip it is filed under, in front, as a
+   * curation chat's does. A second press for the same request starts nothing: the chat already
+   * open for it comes forward.
+   */
+  useEffect(() => {
+    const started = (event: Event) => {
+      const { plane: of, chat } = (event as CustomEvent<FixStarted>).detail;
+      if (of !== plane) return;
+      if (chat.existing) {
+        showChat(chat.session);
+        return;
+      }
+      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+      change((tabs) =>
+        openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+      );
+    };
+    window.addEventListener(FIX_STARTED, started);
+    return () => window.removeEventListener(FIX_STARTED, started);
+  }, [change, plane, showChat]);
 
   /** Settings at a workspace's level (SE-20; charter-app#280), on that workspace's strip: what
    *  its menu's and the palette's Workspace settings… open. */

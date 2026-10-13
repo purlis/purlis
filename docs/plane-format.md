@@ -6441,7 +6441,9 @@ about. The next save or fetch settles a `pr-open` record by asking the forge whe
     and `merge`, where it stands with merging as the last look at the forge found it:
     `state` (one of `waiting`, `red`, `queued`, `cannot-merge`, `merged`), `why` (a sentence
     fragment, at most 600 bytes) and `checks` (the checks that failed, at most 20, each a
-    `name` and a `url` or null). Read back, every one of these is held to that shape again
+    `name` and a `url` or null), and, on a `waiting` that nothing purlis reads will end,
+    `needs`: `person` (the person's own merge ends it) or `sign-in` (purlis's look has no
+    sign-in for the forge). Read back, every one of these is held to that shape again
   - `held`: `true` only while a request this clone forgot without seeing it end may still be
     open on a save branch from before the rename (V93j)
 

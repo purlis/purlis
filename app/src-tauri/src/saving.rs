@@ -43,7 +43,7 @@ pub struct SaveEntry {
 /// One check that failed on a save's pull request: its name as the forge shows it, and its
 /// page there when it has one. Both are made safe to show by the core
 /// (`purlis_core::forge::checks::FailedCheck`): the name is whoever wrote the check's.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FailedCheck {
     pub name: String,
@@ -54,7 +54,7 @@ pub struct FailedCheck {
 /// Where a `pr-merge` save's pull request stands with merging, as the last look at the forge
 /// found it (ADR 0051, amended 2026-10-13). Never a block: a red request stays open, and a
 /// later save pushes onto it.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveMerge {
     /// `waiting`: its checks are running, have not had time to start, or are expected and
@@ -68,11 +68,32 @@ pub struct SaveMerge {
     pub why: String,
     /// The checks that failed when it is `red`, at most twenty; empty otherwise.
     pub checks: Vec<FailedCheck>,
+    /// What ends a `waiting` that nothing purlis reads will end, or `null`. `person`: the
+    /// wait has no bound (no check where the repository's other requests have them, checks
+    /// purlis cannot read at this commit, a required check that has not reported), and the
+    /// window offers the person's own merge. `sign-in`: purlis's look has no sign-in for the
+    /// forge, and the window offers one.
+    pub needs: Option<String>,
+    /// The request as its forge names it, `#12` or `!12`; `null` when its page does not end
+    /// in a number.
+    pub number: Option<String>,
 }
 
 impl SaveMerge {
-    fn of(merge: planegit::Merging) -> SaveMerge {
+    /// `merge`, for the request whose page is `page`, on a forge that calls a request
+    /// `request` (`pull request` or `merge request`).
+    pub(crate) fn of(merge: planegit::Merging, page: Option<&str>, request: &str) -> SaveMerge {
+        let number = page
+            .and_then(|page| page.trim_end_matches('/').rsplit('/').next())
+            .filter(|last| !last.is_empty() && last.len() <= 10)
+            .filter(|last| last.bytes().all(|b| b.is_ascii_digit()))
+            .map(|digits| {
+                let sigil = if request == "merge request" { '!' } else { '#' };
+                format!("{sigil}{digits}")
+            });
         SaveMerge {
+            number,
+            needs: merge.needs.map(|needs| needs.word().to_owned()),
             state: merge.state.word().to_owned(),
             why: merge.why,
             checks: merge
@@ -248,9 +269,15 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .pushes
         .then(|| crate::remotequestion::of(root, root))
         .flatten();
+    let request = purlis_core::forge::request_words_of(root, root)
+        .request_noun()
+        .to_owned();
     PlaneSaving {
         remote,
-        merge: standing.merge.clone().map(SaveMerge::of),
+        merge: standing
+            .merge
+            .clone()
+            .map(|merge| SaveMerge::of(merge, standing.pr.as_deref(), &request)),
         secrets: crate::blockedsave::shown(&standing.secrets),
         // Said with the file and line for a secret-shaped value, so the title bar names it.
         blocked: standing.blocked_said(),
@@ -258,9 +285,7 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         changed: standing.changed,
         ahead: standing.ahead,
         pr: standing.pr,
-        request: purlis_core::forge::request_words_of(root, root)
-            .request_noun()
-            .to_owned(),
+        request,
         branch: standing.branch,
         pushes: standing.pushes,
         behind: standing.behind,
@@ -589,9 +614,15 @@ pub fn repos_saving(root: &Path, workspace: &str) -> Result<Vec<RepoSaving>, Str
             let remote = (standing.mode != planesave::Mode::Off && standing.pushes)
                 .then(|| crate::remotequestion::of(root, &repo.path))
                 .flatten();
+            let request = purlis_core::forge::request_words_of(root, &repo.path)
+                .request_noun()
+                .to_owned();
             RepoSaving {
                 remote,
-                merge: standing.merge.clone().map(SaveMerge::of),
+                merge: standing
+                    .merge
+                    .clone()
+                    .map(|merge| SaveMerge::of(merge, standing.pr.as_deref(), &request)),
                 target,
                 own_branch,
                 stage: if standing.mode == planesave::Mode::Off {
@@ -607,9 +638,7 @@ pub fn repos_saving(root: &Path, workspace: &str) -> Result<Vec<RepoSaving>, Str
                 changed: standing.changed,
                 ahead: standing.ahead,
                 pr: standing.pr,
-                request: purlis_core::forge::request_words_of(root, &repo.path)
-                    .request_noun()
-                    .to_owned(),
+                request,
                 blocked: standing.blocked,
                 pushes: standing.pushes,
             }
@@ -912,6 +941,36 @@ mod tests {
             repos_saving(dir.path(), "alpha").unwrap()[0].request,
             "merge request"
         );
+    }
+
+    #[test]
+    fn a_request_is_named_as_its_forge_names_it_and_says_what_ends_a_wait() {
+        use purlis_core::forge::pr::Ready;
+        let stalled = planegit::Merging::of(&Ok(Ready::Stalled("no check has started".into())));
+        let github = SaveMerge::of(
+            stalled.clone(),
+            Some("https://github.com/acme/api/pull/12"),
+            "pull request",
+        );
+        assert_eq!(
+            (github.number.as_deref(), github.needs.as_deref()),
+            (Some("#12"), Some("person"))
+        );
+        let gitlab = SaveMerge::of(
+            stalled.clone(),
+            Some("https://gitlab.com/acme/api/-/merge_requests/7/"),
+            "merge request",
+        );
+        assert_eq!(gitlab.number.as_deref(), Some("!7"));
+        // A page that ends in no number names none, and a wait that ends by itself needs nothing.
+        for page in [None, Some("https://github.com/acme/api/pull/x1"), Some("")] {
+            assert_eq!(
+                SaveMerge::of(stalled.clone(), page, "pull request").number,
+                None
+            );
+        }
+        let running = planegit::Merging::of(&Ok(Ready::Waiting("its checks run".into())));
+        assert_eq!(SaveMerge::of(running, None, "pull request").needs, None);
     }
 
     #[test]

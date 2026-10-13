@@ -135,6 +135,13 @@ pub enum Ready {
     /// started where the repository's other requests have them, or the forge is still working
     /// out whether it can merge. Nothing was merged; asking again later may. Carries why.
     Waiting(String),
+    /// Not yet, and nothing purlis reads says when: no check has started where the
+    /// repository's other requests have them (a workflow its paths filtered out looks the
+    /// same as one that has not started), its checks cannot be read at this commit, or a
+    /// check its branch requires has not reported. Nothing was merged, and purlis looks again
+    /// as for [`Ready::Waiting`]; it is the person's own merge that ends a wait like this one
+    /// (the operator's ruling, 2026-10-14). Carries why.
+    Stalled(String),
     /// A check at the commit failed, required or not, and nothing was merged. It stays open;
     /// a later save pushes onto the same request. Carries the checks that failed.
     Red(Vec<FailedCheck>),
@@ -406,7 +413,8 @@ pub(super) fn check_gate(checks: &Checks, gate: Gate) -> Gated {
         Ci::NotRun => Gated::Stop(Ready::Waiting(NOT_STARTED_YET.into())),
         Ci::Running => Gated::Stop(Ready::Waiting("its checks are still running".into())),
         Ci::Failed => Gated::Stop(Ready::Red(checks.failed.clone())),
-        Ci::Unknown => Gated::Stop(Ready::Waiting(format!(
+        // Not read is not passed, and nothing says when it will be read.
+        Ci::Unknown => Gated::Stop(Ready::Stalled(format!(
             "purlis could not read its checks: {}",
             checks.why.as_deref().unwrap_or("no answer")
         ))),
@@ -494,10 +502,10 @@ pub(super) fn not_this_saves(
 pub(super) fn none_will_run(expected: Result<Option<String>, ForgeError>) -> Option<Ready> {
     match expected {
         Ok(None) => None,
-        Ok(Some(sign)) => Some(Ready::Waiting(format!(
+        Ok(Some(sign)) => Some(Ready::Stalled(format!(
             "no check has started on it, and {sign}, so purlis waits for its checks"
         ))),
-        Err(why) => Some(Ready::Waiting(format!(
+        Err(why) => Some(Ready::Stalled(format!(
             "no check has started on it, and purlis could not read whether this repository              runs any ({})",
             why.said()
         ))),
@@ -540,12 +548,12 @@ mod gate_tests {
         assert_eq!(none_will_run(Ok(None)), None);
         let waits = none_will_run(Ok(Some("the last request into main had checks".into())));
         assert!(
-            matches!(&waits, Some(Ready::Waiting(why)) if why.contains("the last request")),
+            matches!(&waits, Some(Ready::Stalled(why)) if why.contains("the last request")),
             "{waits:?}"
         );
         let unread = none_will_run(Err(ForgeError::new("HTTP 502".to_string())));
         assert!(
-            matches!(&unread, Some(Ready::Waiting(why)) if why.contains("could not read")),
+            matches!(&unread, Some(Ready::Stalled(why)) if why.contains("could not read")),
             "{unread:?}"
         );
     }
@@ -567,9 +575,10 @@ mod gate_tests {
                 check_gate(&checks(Ci::Running, 1), gate),
                 Gated::Stop(Ready::Waiting(_))
             ));
+            // Not read is not passed, and nothing says when it will be: the person's to end.
             assert!(matches!(
                 check_gate(&checks(Ci::Unknown, 0), gate),
-                Gated::Stop(Ready::Waiting(_))
+                Gated::Stop(Ready::Stalled(_))
             ));
         }
         assert_eq!(check_gate(&checks(Ci::Passed, 1), SETTLED), Gated::Go);

@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::forge::backend::{About, Issues, NewWorkItem, PushProtection, Visibility};
-use purlis_core::forge::checks::{Checks, Ci, FailedCheck};
+use purlis_core::forge::checks::{Annotation, Checks, Ci, FailedCheck};
 use purlis_core::forge::pr::{
     AutoMerge, Gate, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State,
 };
@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 24] = [
+const CASES: [&str; 25] = [
     "owned",
     "about",
     "reachable",
@@ -69,6 +69,7 @@ const CASES: [&str; 24] = [
     "merge_at",
     "enqueue_at",
     "checks_at",
+    "annotations",
     "open_on_branch",
     "ci_word",
     "support",
@@ -83,7 +84,7 @@ const CASES: [&str; 24] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 9] = [
+const NOT_LIVE: [(&str, &str); 10] = [
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
@@ -99,6 +100,10 @@ const NOT_LIVE: [(&str, &str); 9] = [
     (
         "enqueue_at",
         "it needs a merge queue or train on the fixture, and a request opened per run (#712)",
+    ),
+    (
+        "annotations",
+        "it needs a failed check on the fixture's open request, which the read cases need green (#712)",
     ),
     (
         "read",
@@ -556,6 +561,39 @@ mod cases {
                 why: None,
                 failed: Vec::new(),
             }
+        );
+        spent(&over);
+    }
+
+    pub fn annotations(kind: &str, how: How) {
+        let Some(over) = over(kind, "annotations", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let read_by = |run| FailedCheck::of(Some("lint"), None).read_by(run);
+        // What broke comes first, whatever order the forge lists its findings in.
+        let found = over
+            .backend
+            .annotations(&over.caller, &scene.path("api"), &read_by(Some(4)))
+            .expect("the findings read");
+        let first = match kind {
+            "github" => Annotation {
+                title: Some("unused variable".into()),
+                at: Some("src/lib.rs:3".into()),
+                message: "`x` is never read".into(),
+            },
+            _ => Annotation {
+                title: Some("lint (stage test)".into()),
+                at: None,
+                message: "the job failed: script_failure".into(),
+            },
+        };
+        assert_eq!(found.first(), Some(&first), "{found:?}");
+        // A check the forge reads nothing by (a commit status) is not asked about.
+        assert_eq!(
+            over.backend
+                .annotations(&over.caller, &scene.path("api"), &read_by(None)),
+            Ok(Vec::new())
         );
         spent(&over);
     }
@@ -1036,6 +1074,12 @@ macro_rules! contract {
             fn checks_at_counts_one_passing_check_at_the_head() {
                 purlis_core::unsteered!();
                 super::cases::checks_at(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn annotations_reads_what_a_failed_check_found_failures_first() {
+                purlis_core::unsteered!();
+                super::cases::annotations(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -1888,10 +1932,10 @@ mod network_log {
             // read the checks and merge: thirty-three on GitHub, forty-nine on GitLab (qw371:
             // a scene per answer of purlis's own gate). Making a repo asks who the account is,
             // its owners, the create, and the delete (GitHub reads the repo first; #1819). A
-            // search is one call (#806).
+            // search is one call (#806). What a failed check found is one call (qw378).
             let expected = match kind {
-                "github" => 58,
-                _ => 91,
+                "github" => 59,
+                _ => 92,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
@@ -2376,7 +2420,7 @@ mod merge_when_ready_scenes {
                 let (backend, me, check) = scene(kind, name, how);
                 let got = backend.merge_when_ready(&me, "acme/api", &PR, &AT, SETTLED);
                 assert!(
-                    matches!(&got, Ok(Ready::Waiting(why)) if why.contains(sign)),
+                    matches!(&got, Ok(Ready::Stalled(why)) if why.contains(sign)),
                     "{kind} {name}: {got:?}"
                 );
                 check();
@@ -2681,7 +2725,7 @@ mod merge_when_ready_scenes {
         );
         let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
-            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("too many checks to read")),
+            matches!(&got, Ok(Ready::Stalled(why)) if why.contains("too many checks to read")),
             "{got:?}"
         );
         spent(&recorded);
@@ -2702,7 +2746,7 @@ mod merge_when_ready_scenes {
         );
         let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
-            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("requires has not reported")),
+            matches!(&got, Ok(Ready::Stalled(why)) if why.contains("requires has not reported")),
             "{got:?}"
         );
         spent(&recorded);
@@ -2728,7 +2772,7 @@ mod merge_when_ready_scenes {
         );
         let got = backend.merge_when_ready(&caller(), "acme/api", &PR, &AT, SETTLED);
         assert!(
-            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("requires a pipeline to pass")),
+            matches!(&got, Ok(Ready::Stalled(why)) if why.contains("requires a pipeline to pass")),
             "{got:?}"
         );
         spent(&recorded);
