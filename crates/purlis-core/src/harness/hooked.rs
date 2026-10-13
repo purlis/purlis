@@ -123,7 +123,8 @@ impl Asker {
 ///
 /// **Nothing that lets the call run is offered on a display that hides part of it** (HP-6
 /// review). The window shows an ask's one-line summary, which collapses newlines, cuts at
-/// [`super::model::SUMMARY_WIDTH`] and masks credential shapes; a command whose harmless head
+/// [`super::model::SUMMARY_WIDTH`] and masks credential shapes and the vault values this process
+/// knows (#1047); a command whose harmless head
 /// is all that shows is not the command that runs. Unless the summary IS the action, word for
 /// word ([`shown_in_full`]), the allowing options are dropped and the window offers deny, or
 /// the chat's own pane, which shows it whole. An edit is allowed from here only where the
@@ -163,6 +164,9 @@ fn ask_within(source: Source, payload: &Value, left: Duration) -> Ask {
         option.scope != ChoiceScope::Always
             && !switches_the_mode(source, payload, option)
             && !option.label.chars().any(drawn_otherwise)
+            // Nor one whose words carry a vault value this process knows (#1047): it is not
+            // shown, and a label with a mask in it does not say what it grants.
+            && !crate::secrets::seen::holds(&option.label)
     });
     // An edit is allowed this once from here, on the change shown, and never by a rule or a
     // directory that would let later edits run that nobody was shown (#1146).
@@ -556,3 +560,5 @@ mod edit_tests;
 mod question_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vault_value_tests;

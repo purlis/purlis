@@ -328,8 +328,9 @@ impl Risk {
     }
 }
 
-/// One line saying what an ask is, with every credential shape masked. It can only be made by
-/// masking, read back from the wire included, so no path yields an unmasked one.
+/// One line saying what an ask is, with every credential shape masked, and every vault value
+/// this process knows (#1047). It can only be made by masking, read back from the wire
+/// included, so no path yields an unmasked one.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(from = "String", into = "String")]
 pub struct Summary(String);
@@ -337,20 +338,53 @@ pub struct Summary(String);
 /// The most characters a [`Summary`] keeps.
 pub const SUMMARY_WIDTH: usize = 200;
 
+/// What a [`Summary`] says where a vault value stood: a mask that names its kind, as a
+/// credential shape's does.
+pub const VAULT_VALUE: &str = "vault value";
+
 impl Summary {
     /// `text` on one line, cut to [`SUMMARY_WIDTH`], with each credential shape, as written and
     /// through its escapes ([`crate::secretshape::leak_spans`], overlapping ones joined),
     /// replaced by a mask that names its kind.
+    ///
+    /// **And each value this process read from a vault or stored in one**
+    /// ([`crate::secrets::seen`], #1047), whatever its shape: a database password or a
+    /// passphrase looks like nothing, and the person who revealed it in the window is not shown
+    /// it back in what a chat asks to run. A value and a shape that overlap are masked as one,
+    /// so no part of either is left beside the mask.
+    ///
+    /// **It fails closed.** Where the store cannot say what it holds, the whole line is the
+    /// mask. So is a line on which a value the text held still stands once it is written: one
+    /// that held the value across white space this collapses.
+    ///
+    /// A masked summary is not its action word for word, so nothing that lets the call run is
+    /// offered beside it ([`super::hooked::shown_in_full`]).
     pub fn of(text: &str) -> Self {
         let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut spans = crate::secretshape::leak_spans(&line);
+        spans.extend(
+            crate::secrets::seen::found_in(&line)
+                .into_iter()
+                .map(|span| (span, VAULT_VALUE)),
+        );
+        spans.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
         let mut out = String::with_capacity(line.len());
         let mut at = 0;
-        for (span, kind) in crate::secretshape::leak_spans(&line) {
-            out.push_str(&line[at..span.start]);
-            out.push_str(&format!("[{kind}]"));
+        for (span, kind) in spans {
+            if span.end <= at {
+                continue;
+            }
+            // One that begins inside the last is joined to it: its mask is already written.
+            if span.start >= at {
+                out.push_str(&line[at..span.start]);
+                out.push_str(&format!("[{kind}]"));
+            }
             at = span.end;
         }
         out.push_str(&line[at..]);
+        if still_holds_a_vault_value(text, &out) {
+            out = format!("[{VAULT_VALUE}]");
+        }
         if out.chars().count() > SUMMARY_WIDTH {
             out = out.chars().take(SUMMARY_WIDTH - 1).collect();
             out.push('…');
@@ -361,6 +395,18 @@ impl Summary {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// Whether `written`, the masked line made from `text`, still shows a vault value `text` held:
+/// one found in `text` whose words, on one line, stand in `written`. The masks hide every
+/// value found on the line itself, so this is a value the text held across white space.
+fn still_holds_a_vault_value(text: &str, written: &str) -> bool {
+    crate::secrets::seen::found_in(text)
+        .into_iter()
+        .any(|span| {
+            let held = text[span].split_whitespace().collect::<Vec<_>>().join(" ");
+            !held.is_empty() && written.contains(&held)
+        })
 }
 
 impl From<String> for Summary {
