@@ -45,6 +45,14 @@ export const WAITS_BY_DESIGN: ReadonlySet<string> = new Set([
   "vaultSetupTest",
   "vaultSetupCreate",
   "vaultSetupChange",
+  "forgeDeviceSignInStart",
+  // A vault's provider: its own program, which may ask the person (a fingerprint, a password)
+  // before it answers.
+  "vaultOpen",
+  "vaultRefresh",
+  "vaultSecretReveal",
+  "vaultSecretCopy",
+  "vaultIdentityPut",
   // The network.
   "getProject",
   "openRepo",
@@ -66,6 +74,15 @@ export const WAITS_BY_DESIGN: ReadonlySet<string> = new Set([
   "fixSaveRequest",
   "taskBranchMerge",
   "worktreeMerge",
+  "lookAtSaveRequest",
+  "changePushQuestion",
+  "taskBranchMergeQuestion",
+  // A program of the person's or of a project's: an extension's action, a doctor's fix, a chat's
+  // harness starting with what it brings (curation, the first task).
+  "runAction",
+  "planeDoctorFix",
+  "curate",
+  "firstTaskRun",
   "checkForUpdate",
   "installUpdate",
   "installExtension",
@@ -111,7 +128,10 @@ export function timed(command: string, ask: Ask, lateMs = LATE_MS): Ask {
     return ask(...args).finally(() => {
       clearTimeout(timer);
       if (mine === undefined) return;
-      mine.ms = performance.now() - from;
+      // A new entry in its place, so whoever drew the old one sees it changed.
+      const was = mine;
+      const answered = { ...was, ms: performance.now() - from };
+      late = late.map((one) => (one === was ? answered : one));
       changed();
     });
   };
