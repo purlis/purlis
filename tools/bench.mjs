@@ -601,6 +601,8 @@ function fixtureNames(dir) {
 
 function hookCall() {
   const plane = join(tmpdir(), "charter-bench-plane");
+  // Fresh each run: a copy left by the last one would have its fixtures under their real names.
+  rmSync(plane, { recursive: true, force: true });
   cpSync(join(ROOT, "tests", "fixtures", "planes", "daily"), plane, { recursive: true, force: true });
   fixtureNames(plane);
   // PINNED, and not left to `cwd`: `$CHARTER_ROOT` beats the walk, charter puts it into every
