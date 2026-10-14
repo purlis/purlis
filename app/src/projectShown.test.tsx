@@ -15,6 +15,8 @@ import {
   keptOf,
   OnlyInFront,
   ProjectShownProvider,
+  SCROLLED_MOST,
+  scrolledPlacesHeld,
   useProjectHost,
 } from "./projectShown";
 import { RemovePersona } from "./RemovePersona";
@@ -115,6 +117,35 @@ describe("a project's view and the window", () => {
 
     rerender(two("one", slot));
     expect([list.scrollTop, list.scrollLeft]).toEqual([240, 12]);
+    slot.remove();
+  });
+
+  it("lets go of the places of what has since gone, once they pile up, while it is still in front", () => {
+    // A view in front for a day scrolls rows that are long gone. Each place holds its element,
+    // so they are let go past so many, and not only when the project next leaves the front.
+    const slot = document.body.appendChild(document.createElement("div"));
+    render(two("one", slot));
+    const host = screen.getByTestId("view").parentElement as HTMLElement;
+    const scrolled = (still: boolean) => {
+      const row = host.appendChild(document.createElement("div"));
+      row.scrollTop = 10;
+      fireEvent.scroll(row);
+      if (!still) row.remove();
+      return row;
+    };
+
+    // Rows scrolled and then gone, up to the most held: every one is still held.
+    for (let n = 0; n < SCROLLED_MOST; n++) scrolled(false);
+    expect(scrolledPlacesHeld(host)).toBe(SCROLLED_MOST);
+
+    // One more, still drawn: the ones that went are let go, and it is kept.
+    const here = scrolled(true);
+    expect(scrolledPlacesHeld(host)).toBe(1);
+
+    // And what is still drawn is never let go, however many there are.
+    for (let n = 0; n < SCROLLED_MOST + 5; n++) scrolled(true);
+    expect(scrolledPlacesHeld(host)).toBe(SCROLLED_MOST + 6);
+    expect(host.contains(here)).toBe(true);
     slot.remove();
   });
 

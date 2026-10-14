@@ -1567,6 +1567,10 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   held is what it shows meanwhile. A part with another reason to read again, or that reads only
   as it mounts, uses `useOnShownAgain`, or it reads once for as long as its project is kept; one
   that reads on a timer of its own asks `useProjectShown()` before it does.
+  **Never in the switch itself**: a part there is one of many (a pane has a gauge, a tab forty
+  panes), and a read as its project comes back is that many commands ahead of the paint.
+  `projectSwitch.cost.test.tsx` holds the count before the paint, and that it does not grow
+  with the panes.
 - **A measurement** taken while the element is in no document measures nothing: `fits.ts` and
   `wholeWays.ts` keep what they last measured, and measure again as the view comes back.
 - **A split that resizes** uses `Separator` from `shownSeparator.tsx`, not the library's own:
@@ -1582,8 +1586,11 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   the portal, the content and the scrim drawn only while their project is in front
   (`onlyWhileShown`). Nothing of a project behind is ever mounted over the window, so nothing a
   dialog does to the document as it mounts happens either, and what opened it is there when
-  the person is back. `projectShown.guard.test.tsx` fails for an overlay imported from the
-  package, for a kind with no file in `overlays/`, and for a new `createPortal`. Behind that
+  the person is back. Each file hands on Radix's parts by their short names alone
+  (`Content`, never `DialogContent`, which is the same part with nothing asked of it).
+  `projectShown.guard.test.tsx` fails for an overlay imported from the package, for a kind with
+  no file in `overlays/`, for a part that draws handed on as it is under any name, and for a new
+  `createPortal`. Behind that
   stands one backstop: a project that leaves the front with anything still over the window once
   the press is over (`drawnOverTheWindow`) is not kept.
 - **A prop that says the project is in front** is the last one the part was drawn with while

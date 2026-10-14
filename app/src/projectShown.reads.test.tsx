@@ -81,7 +81,7 @@ describe("a read made only as a part is drawn", () => {
 });
 
 describe("a chat's gauge", () => {
-  it("is not read on its beat for a project behind, and is read at once as it comes back", async () => {
+  it("is not read on its beat for a project behind, and is read after the paint as it comes back", async () => {
     let shown = true;
     const { rerender } = renderHook(() => useChatUsage(PLANE, 3, 1, true), {
       wrapper: ({ children }) => (
@@ -102,8 +102,29 @@ describe("a chat's gauge", () => {
 
     shown = true;
     rerender();
+    // **Not in the switch.** The core answers this on the window's own thread, and every pane
+    // of the tab in front has a gauge: one each, ahead of the paint, is what a switch waited on.
+    expect(sent("chat_usage")).toBe(before);
     await painted();
     expect(sent("chat_usage")).toBe(before + 1);
+
+    // And from there on its beat again, as before it left.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WHILE_RUNNING_MS);
+    });
+    expect(sent("chat_usage")).toBe(before + 2);
+  });
+
+  it("is still read at once when its chat moves, and when its pane opens", async () => {
+    const { rerender } = renderHook(
+      ({ moved }: { moved: number }) => useChatUsage(PLANE, 3, moved, false),
+      {
+        initialProps: { moved: 1 },
+      },
+    );
+    expect(sent("chat_usage")).toBe(1);
+    rerender({ moved: 2 });
+    expect(sent("chat_usage")).toBe(2);
   });
 });
 
