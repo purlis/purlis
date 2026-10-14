@@ -103,8 +103,9 @@ pub enum Write {
     /// `purlis workspace create <name> [--vision]`: a new workspace, with its vision (ADR 0067
     /// §2's "creating a workspace", #1408). **The one write that names a place, and only one
     /// that is not there yet**: a workspace that is, or anything at its path, is refused, so a
-    /// chat never reaches one it has through it. What a terminal's `create` takes beside these
-    /// (`--live`, `--use`, repos to clone) the write has nowhere to carry.
+    /// chat never reaches one it has through it. Repos to clone go as a git ask that makes the
+    /// workspace the same way ([`crate::hookwire::GitWork::Create`], qw387); `--live` and
+    /// `--use` are refused in a sandboxed chat before anything is asked.
     WorkspaceCreate {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -719,6 +720,24 @@ fn create_workspace(
     now: chrono::NaiveDateTime,
     say: &mut dyn FnMut(crate::repocmd::Say),
 ) -> Result<u8, String> {
+    let now = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
+        .earliest()
+        .map_or_else(chrono::Utc::now, |at| at.with_timezone(&chrono::Utc));
+    create_workspace_at(root, name, vision, &[], None, now, say)
+}
+
+/// [`create_workspace`], stamped at `now`, with `repos` cloned into the new workspace, each
+/// reaching only `hosts`: how a chat's `workspace create <name> <repo>…` is made
+/// ([`crate::gitbroker`], qw387). Nothing is cloned where the workspace was not made.
+pub(crate) fn create_workspace_at(
+    root: &Path,
+    name: &str,
+    vision: Option<&str>,
+    repos: &[String],
+    hosts: Option<&[String]>,
+    now: chrono::DateTime<chrono::Utc>,
+    say: &mut dyn FnMut(crate::repocmd::Say),
+) -> Result<u8, String> {
     let shown_name = crate::shown::short(name);
     let Some(dir) = crate::wscmd::workspace_dir(root, name) else {
         return Err(format!(
@@ -739,9 +758,6 @@ fn create_workspace(
         return Err(format!("{why}: nothing was created"));
     }
     guard(root, &dir, None).map_err(|why| format!("{why}: nothing was created"))?;
-    let now = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
-        .earliest()
-        .map_or_else(chrono::Utc::now, |at| at.with_timezone(&chrono::Utc));
     Ok(crate::wscmd::create::create(
         &crate::wscmd::create::Request {
             root,
@@ -750,7 +766,8 @@ fn create_workspace(
             live: false,
             use_it: false,
             force: false,
-            repos: &[],
+            repos,
+            hosts,
             now,
             ids: &crate::active::Ids::default(),
         },

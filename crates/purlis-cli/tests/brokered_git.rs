@@ -195,6 +195,15 @@ fn chat_3<'a>(socket: &'a Path, token: &'a ChatToken) -> [(&'a str, &'a str); 3]
 /// Its git reads no global config, so the stand-in forge's rewrite is handed to it on top of
 /// the identity, which is all the app hands it.
 fn the_broker(root: PathBuf, forge: &Path) -> impl Fn(Ask) -> Answer + Send + Sync + 'static {
+    the_broker_at(root.clone(), root, forge)
+}
+
+/// [`the_broker`], for chat 3 standing at `cwd`.
+fn the_broker_at(
+    root: PathBuf,
+    cwd: PathBuf,
+    forge: &Path,
+) -> impl Fn(Ask) -> Answer + Send + Sync + 'static {
     let isolation = git::Isolated::identity(Some("Tester"), Some("t@e.invalid")).also(
         &format!("url.file://{}/acme/.insteadOf", forge.display()),
         "https://github.com/acme/",
@@ -204,7 +213,7 @@ fn the_broker(root: PathBuf, forge: &Path) -> impl Fn(Ask) -> Answer + Send + Sy
             &root,
             &Asker {
                 chat: 3,
-                cwd: Some(root.clone()),
+                cwd: Some(cwd.clone()),
                 persona: Some("steward".to_owned()),
                 harnessed: true,
                 unsandboxed: false,
@@ -378,6 +387,112 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
     assert_eq!(claimed["event"], "claimed");
     assert_eq!(claimed["session"], "3");
     assert_eq!(claimed["persona"], "steward");
+}
+
+const CREATING: &str =
+    "a_sandboxed_chats_create_with_repos_is_made_by_the_app_whole_and_only_there";
+
+#[test]
+fn a_sandboxed_chats_create_with_repos_is_made_by_the_app_whole_and_only_there() {
+    // qw387: `workspace create <name> <repo>` in a sandboxed chat ran in the chat's own
+    // process, said the workspace was ready, and made nothing.
+    purlis_core::unsteered!();
+    let Some(base) = std::env::var_os(IN_THE_CHILD) else {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(tmp.path()).unwrap().join("home");
+        purlis_core::testrun::rerun(
+            &[CREATING],
+            &[
+                (IN_THE_CHILD, tmp.path().as_os_str()),
+                ("HOME", home.as_os_str()),
+            ],
+        );
+        return;
+    };
+    let world = World::at(Path::new(&base));
+    world.widget();
+    let root = world.plane("creating", "[\"forge\"]");
+    // The chat works in `alpha`.
+    let (_reading, token, socket, asked) = an_app(
+        &world.base,
+        the_broker_at(root.clone(), root.join("workspaces/alpha"), &world.forge),
+    );
+    let mut chat = chat_3(&socket, &token).to_vec();
+    chat.push((SANDBOXED_ENV, "1"));
+
+    // The workspace and its clone, made by the app in one ask.
+    let made = world.purlis(
+        &root,
+        &[
+            "workspace",
+            "create",
+            "beta",
+            "widget",
+            "--vision",
+            "Ship it",
+        ],
+        &chat,
+    );
+    assert!(made.status.success(), "{}", err(&made));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!(
+            "the app was not asked to make the workspace: {}",
+            err(&made)
+        );
+    };
+    assert_eq!(git.workspace, "beta");
+    assert_eq!(
+        git.work,
+        GitWork::Create {
+            vision: Some("Ship it".to_owned()),
+            repos: vec!["widget".to_owned()],
+        }
+    );
+    let beta = root.join("workspaces/beta");
+    let charter = std::fs::read_to_string(beta.join("workspace.md")).expect("a charter");
+    assert!(charter.contains("Ship it"), "{charter}");
+    for written in [".git/config", ".vscode/settings.json", "README.md"] {
+        assert!(
+            beta.join("widget").join(written).is_file(),
+            "{written} is not in the clone: {}",
+            err(&made)
+        );
+    }
+
+    // Made once: the same ask again is refused, and so is a clone into the workspace now that
+    // it is there, as a clone into any workspace the chat does not work in is.
+    let again = world.purlis(&root, &["workspace", "create", "beta", "widget"], &chat);
+    assert_eq!(again.status.code(), Some(1), "{}", err(&again));
+    assert!(err(&again).contains("already there"), "{}", err(&again));
+    let cloned = world.purlis(&root, &["clone", "widget", "-w", "beta"], &chat);
+    assert_eq!(cloned.status.code(), Some(1), "{}", err(&cloned));
+    assert!(
+        err(&cloned).contains("this chat works in workspace 'alpha'"),
+        "{}",
+        err(&cloned)
+    );
+
+    // What the app does not do for a chat is refused before anything is asked or made.
+    while asked.try_recv().is_ok() {}
+    for (args, names) in [
+        (
+            &["workspace", "create", "gamma", "--live"][..],
+            "purlis workspace live gamma",
+        ),
+        (&["workspace", "create", "gamma", "--use"][..], "-w gamma"),
+        (
+            &["workspace", "create", "gamma", "widget", "--use", "--force"][..],
+            "-w gamma",
+        ),
+    ] {
+        let ran = world.purlis(&root, args, &chat);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", err(&ran));
+        assert!(err(&ran).contains("nothing was created"), "{}", err(&ran));
+        assert!(err(&ran).contains(names), "{}", err(&ran));
+        assert!(!err(&ran).contains("ready"), "{}", err(&ran));
+    }
+    assert!(asked.try_recv().is_err(), "the app was asked");
+    assert!(!root.join("workspaces/gamma").exists());
 }
 
 #[test]

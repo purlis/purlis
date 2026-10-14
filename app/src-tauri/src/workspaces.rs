@@ -234,6 +234,7 @@ fn create_in(
             use_it: false,
             force: false,
             repos: &[],
+            hosts: None,
             now: chrono::Utc::now(),
             ids: &ids,
         },

@@ -1365,7 +1365,9 @@ Two rules hold for the whole area and are not repeated per file:
 - **Status:** stable — it *is* the workspace.
 - **Tier:** Plane when LIVE, Clone state when LOCAL — a LIVE workspace's charter, memory, todos, sessions and changes are committed; a LOCAL one's stay in this clone and are backed up as clone state (FR-10).
 - **Written by:** `workspace.ensure` (`charter/workspace.py:1313`), which then calls
-  `scaffold` best-effort (`charter/workspace.py:1315`). Reached from `workspace create`,
+  `scaffold` best-effort (`charter/workspace.py:1315`). A directory that could not be made is
+  an error, and a baseline path still missing after the scaffold is reported to the caller,
+  which `workspace create` fails on (qw387). Reached from `workspace create`,
   `workspace use`, `purlis clone` (`charter/commands.py:385`), `restore`, `fork`, and every
   frame launch.
 - **Read by:** everything in this area.

@@ -16,7 +16,10 @@
 //! What the app takes from the ask is checked against its own record of the chat, never the
 //! ask's word:
 //! - **the workspace** must be one the chat already writes its ordinary files in: the chat
-//!   stands at the project root, or inside that workspace ([`bound`]);
+//!   stands at the project root, or inside that workspace ([`bound`]). The one exception is a
+//!   workspace the ask itself makes (`purlis workspace create <name> <repo>…`,
+//!   [`GitWork::Create`]): it must not be there yet, and is made by the brokered create's own
+//!   rules before anything is cloned into it;
 //! - **the clone's host** must be one the chat's sandbox may reach, where the chat runs
 //!   sandboxed ([`hosts`]);
 //! - **the piece log** credits the chat and the persona the app recorded for it;
@@ -70,7 +73,13 @@ fn isolated_answer(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Answer {
     let no = |why: String| Answer::No { why };
-    if let Err(why) = bound(root, asker.cwd.as_deref(), &ask.workspace) {
+    // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
+    // project. Every other ask writes a workspace the chat already writes.
+    let placed = match &ask.work {
+        GitWork::Create { .. } => in_the_project(root, asker.cwd.as_deref()),
+        _ => bound(root, asker.cwd.as_deref(), &ask.workspace),
+    };
+    if let Err(why) = placed {
         return no(why);
     }
     let hosts = match hosts(root, asker) {
@@ -87,6 +96,18 @@ fn isolated_answer(
     let mut lines = Vec::new();
     let mut say = |line: Say| lines.push(line);
     let code = match &ask.work {
+        GitWork::Create { vision, repos } => match crate::brokered::create_workspace_at(
+            root,
+            &ask.workspace,
+            vision.as_deref(),
+            repos,
+            hosts.as_deref(),
+            now,
+            &mut say,
+        ) {
+            Ok(code) => code,
+            Err(why) => return no(why),
+        },
         GitWork::Clone { repos } => repocmd::clone::clone(
             &repocmd::clone::Request {
                 root,
@@ -254,6 +275,27 @@ pub fn bound(root: &Path, cwd: Option<&Path>, workspace: &str) -> Result<(), Str
     }
 }
 
+/// Whether a chat standing at `cwd` stands in the project at `root`: at its root, or in one of
+/// its workspaces. Where a chat may ask for a workspace to be made (qw387).
+pub fn in_the_project(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
+    let Some(cwd) = cwd else {
+        return Err(
+            "the app has no record of where this chat stands, so it will not make a workspace \
+             for it"
+                .to_owned(),
+        );
+    };
+    if crate::active::workspace_of_tree(root, cwd).is_some() || same_dir(root, cwd) {
+        Ok(())
+    } else {
+        Err(
+            "this chat stands outside the project's workspaces, so the app will not make a \
+             workspace for it. Run the command from a chat in the project"
+                .to_owned(),
+        )
+    }
+}
+
 /// The hosts a clone made for `asker` may reach: its sandbox's egress where it runs sandboxed
 /// (D-5), or `None`, no limit, where it does not — a shell tab, a chat a person started without
 /// the sandbox, or a project where none is in force. A `charter.toml` that cannot be read
@@ -352,6 +394,8 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         GitWork::Clone { .. } => crate::repos::clones(root, ws)
             .map(|found| found.repos.into_iter().map(|repo| repo.path).collect())
             .unwrap_or_default(),
+        // A workspace that is not there yet holds no clone; one that is there is refused.
+        GitWork::Create { .. } => Vec::new(),
     }
 }
 

@@ -168,10 +168,13 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         return 1;
     }
     // The local structure, before anything is cloned into it: `refs/`, the memory store, the
-    // charter, the layer and the version stamp. Silent, as Python's is — every path it could
-    // not write is `charter workspace reinit`'s to report.
+    // charter, the layer and the version stamp. A path below the folder it could not write is
+    // `purlis workspace reinit`'s to report; a folder it could not make is the end of this.
     let author = ensure::author();
-    let _ = ensure::ensure(root, ws, now, &author);
+    if let Err(why) = ensure::ensure(root, ws, now, &author) {
+        say(Say::Fail(why));
+        return 1;
+    }
 
     let said = |key: &str| match manifest.get(key) {
         None => "?".to_string(),
