@@ -875,6 +875,19 @@ pub fn allow_persona_hosts(
     Ok(state_of(&root))
 }
 
+/// **A persona's hosts and tools on one line**, as its Allow is audited and its Granted row
+/// says it: the hosts by commas, then each tool's whole line after a semicolon, since a tool
+/// handed several values names them with commas and "and" of its own (T-1). Empty where it has
+/// neither.
+fn hosts_and_tools(hosts: &[sandbox::hosts::Host], tools: &[sandbox::tools::Tool]) -> String {
+    let hosts: Vec<String> = hosts.iter().map(ToString::to_string).collect();
+    std::iter::once(hosts.join(", "))
+        .filter(|hosts| !hosts.is_empty())
+        .chain(tools.iter().map(sandbox::tools::Tool::whole))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// [`allow_persona_hosts`] in the project at `root`: checked against the list as it stands,
 /// audited, then kept with the digest of what was shown, and recorded for the Granted list.
 /// Chats already running take it at their next start.
@@ -886,12 +899,6 @@ fn allow_persona(
     at: u64,
 ) -> Result<(), String> {
     let shown = sandbox::persona::shown_now(root, persona, digest)?;
-    let hosts: Vec<String> = shown
-        .hosts
-        .iter()
-        .map(ToString::to_string)
-        .chain(shown.tools.iter().map(sandbox::tools::Tool::whole))
-        .collect();
     audit(
         None,
         &sandbox::grant::Audited {
@@ -899,7 +906,7 @@ fn allow_persona(
             what: sandbox::local::PERSONA_HOSTS,
             target: &format!(
                 "{persona}: {}{}",
-                hosts.join(", "),
+                hosts_and_tools(&shown.hosts, &shown.tools),
                 if shown.default {
                     " (the default persona: every chat that names no persona too)"
                 } else {
@@ -1875,14 +1882,8 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
     for kept in sandbox::local::allowed_persona_hosts(root) {
         let now = shown.iter().find(|one| one.persona == kept.persona);
         let in_force = now.is_some_and(sandbox::persona::Shown::allowed);
-        let hosts: Vec<String> = now
-            .map(|one| {
-                one.hosts
-                    .iter()
-                    .map(ToString::to_string)
-                    .chain(one.tools.iter().map(sandbox::tools::Tool::whole))
-                    .collect()
-            })
+        let hosts = now
+            .map(|one| hosts_and_tools(&one.hosts, &one.tools))
             .unwrap_or_default();
         out.push(SandboxGrant {
             id: format!(
@@ -1903,7 +1904,7 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
                 if hosts.is_empty() {
                     "no host or tool now".to_owned()
                 } else {
-                    hosts.join(", ")
+                    hosts
                 },
                 Level::You,
                 None,

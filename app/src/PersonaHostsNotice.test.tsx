@@ -228,6 +228,25 @@ describe("a persona's hosts Notice", () => {
     expect(alone).toHaveTextContent(`let chats as devops run ${KUBECTL}, through purlis`);
   });
 
+  it("shows every value a tool is handed, and keeps two tools apart", async () => {
+    // T-1: a tool handed several values names each on its line, which an Allow is bound to.
+    const KUBECTL = "kubectl with kubeconfig from vault devops as KUBECONFIG file";
+    const CURL =
+      'curl with "kibana-password" as KIBANA_PASS file and "kibana-username" as KIBANA_USER env from vault elastic-logs-master';
+    core({
+      ...QUIET,
+      persona_hosts: [{ ...DEVOPS, hosts: [], reached: [], tools: [KUBECTL, CURL] }],
+    });
+    render(<PersonaHostsNotice plane={PLANE} />);
+
+    const notice = await screen.findByRole("status", { name: "devops's tools wait for you" });
+    expect(notice).toHaveTextContent(
+      `let chats as devops run ${KUBECTL}; and ${CURL}, through purlis`,
+    );
+    expect(notice).toHaveTextContent('"kibana-password" as KIBANA_PASS file');
+    expect(notice).toHaveTextContent('"kibana-username" as KIBANA_USER env');
+  });
+
   it("hides on Not now and keeps nothing", async () => {
     const asked = core(WAITING);
     render(<PersonaHostsNotice plane={PLANE} />);

@@ -51,13 +51,13 @@ pub const DEFAULT_SESSION: &str = "default";
 /// The longest session name taken.
 const MOST_SESSION: usize = 64;
 
-/// **A browser login**: the page it opens, the origin it fills only on, and the key of the user
-/// name, where the page asks for one.
+/// **A browser login**: the page it opens and the origin it fills only on. Its keys are the
+/// tool's values ([`super::Tool::values`]): the password's file in [`PASS_VAR`], and the user
+/// name's in [`USER_VAR`] where the page asks for one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Login {
     pub url: String,
     pub origin: String,
-    pub user: Option<String>,
 }
 
 /// **The origin a login page's `url` is on** (`https://host[:port]`, the port left out where it
@@ -164,14 +164,6 @@ pub fn session_of(args: &[String], tool: &str, url: &str) -> Result<String, Stri
              '.', '_' and '-'. No page, host or program is the chat's to choose, so nothing ran"
         )
     })
-}
-
-/// The hand-overs a login asks `secret exec` for, in order: the password's file, then the user
-/// name's, where it has one.
-pub fn hand_over(key: &str, login: &Login) -> Vec<String> {
-    std::iter::once(format!("{PASS_VAR}={key}"))
-        .chain(login.user.iter().map(|user| format!("{USER_VAR}={user}")))
-        .collect()
 }
 
 /// **The run of a login**, after the vault's files are handed: `purlis browser _login`, by

@@ -27,14 +27,13 @@ fn read(text: &str) -> (Vec<Tool>, Vec<String>) {
 }
 
 fn kubectl() -> Tool {
-    Tool {
-        name: "kubectl".to_owned(),
-        vault: "devops".to_owned(),
-        var: "KUBECONFIG".to_owned(),
-        handed: Handed::File,
-        key: "kubeconfig".to_owned(),
-        login: None,
-    }
+    Tool::one(
+        "kubectl",
+        "devops",
+        "KUBECONFIG",
+        Handed::File,
+        "kubeconfig",
+    )
 }
 
 #[test]
@@ -48,14 +47,7 @@ fn a_tool_is_read_with_its_vault_key_and_how_its_value_is_handed() {
         tools,
         [
             kubectl(),
-            Tool {
-                name: "psql".to_owned(),
-                vault: "devops".to_owned(),
-                var: "PGPASSWORD".to_owned(),
-                handed: Handed::Env,
-                key: "db/password".to_owned(),
-                login: None,
-            }
+            Tool::one("psql", "devops", "PGPASSWORD", Handed::Env, "db/password"),
         ]
     );
 }
@@ -346,10 +338,13 @@ fn a_tool_is_armed_for_a_chat_only_once_this_machine_allows_it() {
         }]
     );
     // A teammate hands it another key: no shim until it is allowed again.
-    let changed = grants(Tool {
-        key: "admin".to_owned(),
-        ..kubectl()
-    });
+    let changed = grants(Tool::one(
+        "kubectl",
+        "devops",
+        "KUBECONFIG",
+        Handed::File,
+        "admin",
+    ));
     assert_eq!(armed(&changed), None);
     let _ = std::fs::remove_dir_all(&base);
 }
@@ -368,10 +363,7 @@ fn the_shim_runs_secret_exec_with_the_absolute_program_and_every_argument() {
         Path::new("/Applications/Purlis.app/Contents/MacOS/purlis"),
         "devops",
         &Ready {
-            tool: Tool {
-                key: "it's".to_owned(),
-                ..kubectl()
-            },
+            tool: Tool::one("kubectl", "devops", "KUBECONFIG", Handed::File, "it's"),
             program: PathBuf::from("/opt/homebrew/bin/kubectl"),
         },
     );
@@ -558,6 +550,14 @@ fn an_undeclared_program_is_refused_naming_the_tool_to_declare_and_a_shell_never
         ),
         "{why}"
     );
+    // A tool that needs more than one value is told the form that hands it several (T-1).
+    assert!(
+        why.contains(
+            "(for several values, values = { <VARIABLE> = { key = \"<key>\", as = \"file\" }, \
+             … } in place of as and key)"
+        ),
+        "{why}"
+    );
     let bash = super::Asked {
         program: "/bin/bash",
         ..curl
@@ -629,5 +629,294 @@ fn the_loaders_and_runtimes_start_up_variables_load_code_and_others_do_not() {
         "PYTHONUNBUFFERED",
     ] {
         assert!(!loads_code(var), "{var}");
+    }
+}
+
+// ---- a tool handed several values (T-1, the operator's ruling of 2026-10-14) ----------------
+
+const KIBANA: &str = r#"tools = { curl = { vault = "logs", values = {
+    KIBANA_USER = { key = "kibana-username", as = "env" },
+    KIBANA_PASS = { key = "kibana-password", as = "file" } } } }"#;
+
+fn value(var: &str, handed: Handed, key: &str) -> super::Value {
+    super::Value {
+        var: var.to_owned(),
+        handed,
+        key: key.to_owned(),
+    }
+}
+
+fn kibana() -> Tool {
+    Tool {
+        name: "curl".to_owned(),
+        vault: "logs".to_owned(),
+        values: vec![
+            value("KIBANA_PASS", Handed::File, "kibana-password"),
+            value("KIBANA_USER", Handed::Env, "kibana-username"),
+        ],
+        login: None,
+    }
+}
+
+#[test]
+fn a_tool_is_read_with_each_of_its_values_in_the_order_of_their_variables() {
+    let (tools, refused) = read(KIBANA);
+    assert_eq!(refused, Vec::<String>::new());
+    assert_eq!(tools, [kibana()]);
+}
+
+#[test]
+fn a_tool_written_both_ways_or_with_a_faulty_value_is_left_out_whole() {
+    let several = |values: &str| {
+        format!(r#"tools = {{ curl = {{ vault = "logs", values = {{ {values} }} }} }}"#)
+    };
+    for (text, says) in [
+        (
+            r#"tools = { curl = { vault = "logs", key = "k", as = "A env", values = { B = { key = "k", as = "env" } } } }"#.to_owned(),
+            "both values and key",
+        ),
+        (
+            r#"tools = { curl = { vault = "logs", as = "A env", values = { B = { key = "k", as = "env" } } } }"#.to_owned(),
+            "both values and as",
+        ),
+        (
+            r#"tools = { curl = { vault = "logs", browser = "https://a.example.test/", values = { B = { key = "k", as = "file" } } } }"#.to_owned(),
+            "both values and browser",
+        ),
+        (
+            several(r#"KIBANA_USER = { key = "u", as = "env" }, kibana_user = { key = "p", as = "file" }"#),
+            "one variable twice",
+        ),
+        (several(r#"PATH = { key = "k", as = "env" }"#), "PATH decides"),
+        (several(r#"LD_PRELOAD = { key = "k", as = "file" }"#), "LD_PRELOAD decides"),
+        (several(r#"DYLD_LIBRARY_PATH = { key = "k", as = "file" }"#), "DYLD_LIBRARY_PATH decides"),
+        (several(r#"PURLIS_X = { key = "k", as = "env" }"#), "PURLIS_X decides"),
+        (several(r#"CHARTER_X = { key = "k", as = "env" }"#), "CHARTER_X decides"),
+        (several(r#"HOME = { key = "k", as = "env" }"#), "HOME decides"),
+        (several(r#""1ST" = { key = "k", as = "env" }"#), "not a variable's name"),
+        (several(r#""A-B" = { key = "k", as = "env" }"#), "not a variable's name"),
+        (
+            several(r#"A = { key = "k", as = "env", run = "x" }"#),
+            "values.A.run is not a key purlis reads",
+        ),
+        (several(r#"A = { key = "k", as = "A env" }"#), "neither \"file\" nor \"env\""),
+        (several(r#"A = { key = "k" }"#), "does not say as what"),
+        (several(r#"A = { as = "env" }"#), "names no key"),
+        (several(r#"A = { key = " ", as = "env" }"#), "names no key"),
+        (several(r#"A = "k""#), "not a table of key and as"),
+        (several(""), "names no value"),
+        (
+            r#"tools = { curl = { vault = "logs", values = ["A"] } }"#.to_owned(),
+            "values is not a table",
+        ),
+    ] {
+        let (tools, refused) = read(&text);
+        assert_eq!(tools, Vec::<Tool>::new(), "{text}");
+        assert_eq!(refused.len(), 1, "{text}: {refused:?}");
+        assert!(refused[0].contains(says), "{text}: {}", refused[0]);
+        assert!(refused[0].contains("runs nothing"), "{}", refused[0]);
+    }
+    // The same variable written twice is not TOML at all: the file is refused before purlis
+    // reads a tool from it.
+    assert!(
+        toml::from_str::<toml::Value>(
+            r#"tools = { curl = { vault = "logs", values = { A = { key = "u", as = "env" }, A = { key = "p", as = "file" } } } }"#
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn a_tool_is_handed_at_most_sixteen_values() {
+    let values = |n: usize| {
+        (0..n)
+            .map(|i| format!(r#"V{i} = {{ key = "k{i}", as = "file" }}"#))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let text = |n: usize| {
+        format!(
+            r#"tools = {{ curl = {{ vault = "logs", values = {{ {} }} }} }}"#,
+            values(n)
+        )
+    };
+    assert_eq!(super::MOST_VALUES, 16);
+    let (tools, refused) = read(&text(16));
+    assert_eq!(refused, Vec::<String>::new());
+    assert_eq!(tools[0].values.len(), 16);
+    let (tools, refused) = read(&text(17));
+    assert_eq!(tools, Vec::<Tool>::new());
+    assert!(
+        refused[0].contains("names 17 values, and a tool is handed at most 16"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_tool_s_line_names_every_value_with_its_key_quoted() {
+    assert_eq!(
+        kibana().whole(),
+        "curl with \"kibana-password\" as KIBANA_PASS file and \"kibana-username\" as \
+         KIBANA_USER env from vault logs"
+    );
+    let three = Tool {
+        values: vec![
+            value("A", Handed::Env, "a"),
+            value("B", Handed::File, "b"),
+            value("C", Handed::Env, "c"),
+        ],
+        ..kibana()
+    };
+    assert_eq!(
+        three.whole(),
+        "curl with \"a\" as A env, \"b\" as B file and \"c\" as C env from vault logs"
+    );
+    // One value is the one-value form, whichever way it is written: the same line and Allow.
+    let (written_once, _) = read(
+        r#"tools = { kubectl = { vault = "devops", values = { KUBECONFIG = { key = "kubeconfig", as = "file" } } } }"#,
+    );
+    assert_eq!(written_once, [kubectl()]);
+    assert_eq!(
+        kubectl().whole(),
+        "kubectl with kubeconfig from vault devops as KUBECONFIG file"
+    );
+}
+
+/// T-1: the Allow covers the whole declaration. Any change to any value's variable, key or
+/// hand-over, a value added or taken away, or the vault, asks again; the order the values are
+/// written in does not.
+#[test]
+fn the_allow_is_bound_to_every_value_and_not_to_the_order_they_are_written_in() {
+    let digest =
+        |tool: &Tool| super::super::persona::digest_of(&[], std::slice::from_ref(tool), false);
+    let (reordered, refused) = read(
+        r#"tools = { curl = { vault = "logs", values = {
+            KIBANA_PASS = { as = "file", key = "kibana-password" },
+            KIBANA_USER = { as = "env", key = "kibana-username" } } } }"#,
+    );
+    assert_eq!(refused, Vec::<String>::new());
+    assert_eq!(digest(&reordered[0]), digest(&kibana()));
+    let changed = |change: &dyn Fn(&mut Tool)| {
+        let mut tool = kibana();
+        change(&mut tool);
+        tool
+    };
+    let others = [
+        changed(&|tool| tool.values[0].key = "admin-password".to_owned()),
+        changed(&|tool| tool.values[1].key = "admin-username".to_owned()),
+        changed(&|tool| tool.values[0].var = "ES_PASS".to_owned()),
+        changed(&|tool| tool.values[1].var = "ES_USER".to_owned()),
+        changed(&|tool| tool.values[0].handed = Handed::Env),
+        changed(&|tool| tool.values[1].handed = Handed::File),
+        changed(&|tool| {
+            tool.values.swap(0, 1);
+            let (a, b) = (tool.values[0].key.clone(), tool.values[1].key.clone());
+            tool.values[0].key = b;
+            tool.values[1].key = a;
+            tool.values.swap(0, 1);
+        }),
+        changed(&|tool| {
+            tool.values.pop();
+        }),
+        changed(&|tool| {
+            tool.values
+                .push(value("KIBANA_SPACE", Handed::Env, "space"))
+        }),
+        changed(&|tool| tool.vault = "other".to_owned()),
+    ];
+    for other in &others {
+        assert_ne!(digest(other), digest(&kibana()), "{}", other.whole());
+    }
+}
+
+#[test]
+fn the_shim_hands_every_value_the_way_it_is_declared() {
+    let text = shim(
+        Path::new("/Applications/Purlis.app/Contents/MacOS/purlis"),
+        "logs",
+        &Ready {
+            tool: kibana(),
+            program: PathBuf::from("/usr/bin/curl"),
+        },
+    );
+    assert!(
+        text.ends_with(
+            "exec '/Applications/Purlis.app/Contents/MacOS/purlis' 'secret' 'exec' 'logs' \
+             '--file' 'KIBANA_PASS=kibana-password' '--env' 'KIBANA_USER=kibana-username' \
+             '--' '/usr/bin/curl' \"$@\"\n"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("hands it KIBANA_PASS and KIBANA_USER from the logs vault"),
+        "{text}"
+    );
+}
+
+/// T-1, from the hostile side: a chat's `secret exec` of a tool handed several values runs only
+/// with exactly the declared set. Any other vault, a subset, a superset, the same pair twice,
+/// another pairing of variable and key, a file where an env was declared or the other way, or a
+/// `--dotenv`, is refused with a sentence naming the declared line, and never names a value.
+#[test]
+fn a_tool_handed_several_values_runs_only_with_exactly_its_declared_set() {
+    let armed = vec![Ready {
+        tool: kibana(),
+        program: PathBuf::from("/usr/bin/curl"),
+    }];
+    let strings = |words: &[&str]| words.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+    let ask = |vault: &str, file: &[&str], env: &[&str], dotenv: &[&str]| {
+        let (file, env, dotenv) = (strings(file), strings(env), strings(dotenv));
+        super::declared(
+            &armed,
+            &[kibana()],
+            "logs",
+            &super::Asked {
+                vault,
+                env: &env,
+                file: &file,
+                dotenv: &dotenv,
+                program: "curl",
+            },
+        )
+        .map(|ready| ready.tool.clone())
+    };
+    let pass = "KIBANA_PASS=kibana-password";
+    let user = "KIBANA_USER=kibana-username";
+    assert_eq!(ask("logs", &[pass], &[user], &[]), Ok(kibana()));
+    /// A vault, then the `--file`, `--env` and `--dotenv` hand-overs asked for.
+    type Asking<'a> = (&'a str, &'a [&'a str], &'a [&'a str], &'a [&'a str]);
+    let hostile: [Asking<'_>; 13] = [
+        ("other", &[pass], &[user], &[]),
+        ("logs", &[pass], &[], &[]),
+        ("logs", &[], &[user], &[]),
+        ("logs", &[], &[], &[]),
+        ("logs", &[pass], &[user, "KIBANA_SPACE=space"], &[]),
+        ("logs", &[pass, "EXTRA=kibana-username"], &[user], &[]),
+        ("logs", &[pass, pass], &[user], &[]),
+        ("logs", &[pass], &[user, user], &[]),
+        (
+            "logs",
+            &["KIBANA_PASS=kibana-username"],
+            &["KIBANA_USER=kibana-password"],
+            &[],
+        ),
+        ("logs", &[pass, user], &[], &[]),
+        ("logs", &[], &[pass, user], &[]),
+        ("logs", &[user], &[pass], &[]),
+        ("logs", &[pass], &[user], &["F=A:kibana-password"]),
+    ];
+    for (vault, file, env, dotenv) in hostile {
+        let why = ask(vault, file, env, dotenv).expect_err("refused");
+        assert!(
+            why.contains("is logs's tool curl with \"kibana-password\" as KIBANA_PASS file and"),
+            "{vault} {file:?} {env:?} {dotenv:?}: {why}"
+        );
+        assert!(
+            why.contains(
+                "`purlis secret exec logs --file KIBANA_PASS=kibana-password --env \
+                 KIBANA_USER=kibana-username -- curl`"
+            ),
+            "{why}"
+        );
     }
 }

@@ -1582,6 +1582,53 @@ fn a_personas_tools_are_shown_and_allowed_with_its_hosts() {
     assert!(persona_hosts_of(root.path(), &plane, &none)[0].allowed);
 }
 
+/// T-1: a tool handed several values is shown with every value on its line, its Allow is of
+/// all of them, and a change to any one asks again.
+#[test]
+fn a_tool_handed_several_values_is_shown_and_allowed_whole() {
+    let root = tempfile::tempdir().expect("a project");
+    let declared = |key: &str| {
+        sandbox::Plane::of(Some(&format!(
+            "[sandbox]\nmode = \"on\"\n\n[sandbox.personas.logs]\ntools = {{ curl = {{ vault = \
+             \"elastic-logs-master\", values = {{ KIBANA_USER = {{ key = \"kibana-username\", as = \
+             \"env\" }}, KIBANA_PASS = {{ key = \"{key}\", as = \"file\" }} }} }} }}\n"
+        )))
+    };
+    let none = sandbox::policy::Locks::none();
+    let plane = declared("kibana-password");
+    let shown = persona_hosts_of(root.path(), &plane, &none);
+    let line = "curl with \"kibana-password\" as KIBANA_PASS file and \"kibana-username\" as \
+                KIBANA_USER env from vault elastic-logs-master";
+    assert_eq!(shown[0].tools, [line]);
+    sandbox::local::allow_persona_hosts(root.path(), "logs", &shown[0].digest).expect("kept");
+    assert!(persona_hosts_of(root.path(), &plane, &none)[0].allowed);
+    let changed = persona_hosts_of(root.path(), &declared("admin-password"), &none);
+    assert!(!changed[0].allowed, "one value's key changed: asked again");
+    // On the Granted row and in the audit, hosts by commas, and two tools never run together.
+    let host = sandbox::hosts::Host::parse("10.0.0.5:6443").expect("a host");
+    let kubectl = sandbox::tools::Tool::one(
+        "kubectl",
+        "devops",
+        "KUBECONFIG",
+        sandbox::tools::Handed::File,
+        "kubeconfig",
+    );
+    let tools = sandbox::persona::shown_in(root.path(), &plane, &none)[0]
+        .tools
+        .iter()
+        .cloned()
+        .chain([kubectl])
+        .collect::<Vec<_>>();
+    assert_eq!(
+        hosts_and_tools(&[host.clone(), host], &tools),
+        format!(
+            "10.0.0.5:6443, 10.0.0.5:6443; {line}; kubectl with kubeconfig from vault devops as \
+             KUBECONFIG file"
+        )
+    );
+    assert_eq!(hosts_and_tools(&[], &[]), "");
+}
+
 #[test]
 fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
     let project = tempfile::tempdir().expect("a project");

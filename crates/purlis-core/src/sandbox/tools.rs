@@ -18,6 +18,19 @@
 //! is the one to prefer; `"<VAR> env"` puts the value itself in `VAR` (`--env`), which another
 //! process of the same user can read while the program runs.
 //!
+//! **A tool that needs several values** (T-1, the operator's ruling of 2026-10-14) names them
+//! under `values`, each with its variable, key and hand-over, all from the tool's one vault:
+//!
+//! ```toml
+//! [sandbox.personas.logs]
+//! tools = { curl = { vault = "elastic", values = {
+//!     KIBANA_USER = { key = "kibana-username", as = "env" },
+//!     KIBANA_PASS = { key = "kibana-password", as = "file" } } } }
+//! ```
+//!
+//! A tool takes one form or the other: `key` and `as`, or `values` ([`MOST_VALUES`] at most,
+//! no variable twice).
+//!
 //! **How a plain `kubectl` reaches it: a shim** (ADR 0062's kind). As a sandboxed chat running
 //! as the persona starts, purlis writes one small script per tool under
 //! `.purlis/app/tools/<persona>/bin/`, a folder no chat writes ([`super::Class::Integrity`]),
@@ -63,9 +76,27 @@ pub mod login;
 /// The key in a persona's table that holds its tools.
 pub const KEY: &str = "tools";
 
-/// The keys one tool's table holds: `as` for a program's, `browser` and `user` for a browser
-/// login's ([`login`]).
-const TOOL_KEYS: [&str; 5] = ["vault", "as", "key", login::KEY, login::USER_KEY];
+/// The key of a tool's table that names several values ([`Value`]).
+pub const VALUES_KEY: &str = "values";
+
+/// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser` and
+/// `user` for a browser login's ([`login`]).
+const TOOL_KEYS: [&str; 6] = [
+    "vault",
+    "as",
+    "key",
+    VALUES_KEY,
+    login::KEY,
+    login::USER_KEY,
+];
+
+/// The keys one of a tool's `values` holds.
+const VALUE_KEYS: [&str; 2] = ["key", "as"];
+
+/// **The most values one tool is handed** (T-1). Each is a file or a variable the run makes and
+/// a flag on the shim's line; a program that needs more than a handful of credentials at once is
+/// not one tool, and the bound keeps the line a person allows short enough to read whole.
+pub const MOST_VALUES: usize = 16;
 
 /// The longest tool name read.
 const MOST_NAME: usize = 64;
@@ -79,75 +110,155 @@ pub enum Handed {
     Env,
 }
 
-/// **One tool of a persona's**: the program's name, the vault and key its value comes from,
-/// and the variable it is handed in.
+impl Handed {
+    /// The `secret exec` flag that hands a value this way.
+    pub fn flag(self) -> &'static str {
+        match self {
+            Self::File => "--file",
+            Self::Env => "--env",
+        }
+    }
+
+    /// The word a declaration spells it with.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Env => "env",
+        }
+    }
+}
+
+/// **One value a tool is handed**: the variable its program reads, how it is handed, and the key
+/// of the tool's vault it comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Value {
+    pub var: String,
+    pub handed: Handed,
+    pub key: String,
+}
+
+impl Value {
+    /// The value as `secret exec` spells it after its flag: `VAR=key`.
+    pub fn spec(&self) -> String {
+        format!("{}={}", self.var, self.key)
+    }
+}
+
+/// **One tool of a persona's**: the program's name, the vault its values come from, and each
+/// value with the variable it is handed in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
     pub name: String,
     pub vault: String,
-    pub var: String,
-    pub handed: Handed,
-    pub key: String,
-    /// Where the tool is a browser login ([`login`]): the page, its origin and the user name's
-    /// key. `var` is then [`login::PASS_VAR`], handed as a file.
+    /// Every value the program is handed, in the order of their variables: one for a tool
+    /// written with `key` and `as`, each of its `values` otherwise. For a browser login, the
+    /// password's file ([`login::PASS_VAR`]), then the user name's where it has one.
+    pub values: Vec<Value>,
+    /// Where the tool is a browser login ([`login`]): the page and its origin. Its keys are
+    /// among [`Self::values`].
     pub login: Option<login::Login>,
 }
 
 impl Tool {
+    /// A program's tool handed one value, as `key` and `as` write it.
+    pub fn one(name: &str, vault: &str, var: &str, handed: Handed, key: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            vault: vault.to_owned(),
+            values: vec![Value {
+                var: var.to_owned(),
+                handed,
+                key: key.to_owned(),
+            }],
+            login: None,
+        }
+    }
+
+    /// The values handed `handed`, as `secret exec` spells each (`VAR=key`), in order.
+    pub fn specs(&self, handed: Handed) -> Vec<String> {
+        self.values
+            .iter()
+            .filter(|value| value.handed == handed)
+            .map(Value::spec)
+            .collect()
+    }
+
+    /// The key of the vault the value handed in `var` comes from, where one is.
+    fn key_in(&self, var: &str) -> Option<&str> {
+        self.values
+            .iter()
+            .find(|value| value.var == var)
+            .map(|value| value.key.as_str())
+    }
+
     /// The tool whole, as an Allow of it is bound to and a person reads it: its name, then the
     /// vault, key and variable it is handed; for a browser login, the page and both keys.
     ///
     /// **One line is one tool** (#1828): a login's keys are quoted, since a key or a user name
     /// may hold the words that join them, and two logins must never share a line, so neither
-    /// shares an Allow. A program's tool keeps its spelling: its key is the only free text in
-    /// it, and what follows the key is a vault's and a variable's name, which hold no space.
+    /// shares an Allow. A program's tool handed one value keeps its spelling: its key is the only
+    /// free text in it, and what follows the key is a vault's and a variable's name, which hold
+    /// no space. One handed several names every value on its one line, each key quoted for the
+    /// same reason (T-1): `curl with "kibana-password" as KIBANA_PASS file and
+    /// "kibana-username" as KIBANA_USER env from vault elastic`.
     pub fn whole(&self) -> String {
         if let Some(login) = &self.login {
-            let user = login
-                .user
-                .as_ref()
+            let user = self
+                .key_in(login::USER_VAR)
                 .map_or_else(String::new, |user| format!("{user:?} and "));
             return format!(
                 "{} logs in to {} with {user}{:?} from vault {} in a browser",
-                self.name, login.url, self.key, self.vault
+                self.name,
+                login.url,
+                self.key_in(login::PASS_VAR).unwrap_or_default(),
+                self.vault
             );
         }
-        let handed = match self.handed {
-            Handed::File => "file",
-            Handed::Env => "env",
+        if let [one] = self.values.as_slice() {
+            return format!(
+                "{} with {} from vault {} as {} {}",
+                self.name,
+                one.key,
+                self.vault,
+                one.var,
+                one.handed.word()
+            );
+        }
+        let each: Vec<String> = self
+            .values
+            .iter()
+            .map(|value| format!("{:?} as {} {}", value.key, value.var, value.handed.word()))
+            .collect();
+        let listed = match each.split_last() {
+            Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+            _ => each.join(""),
         };
-        format!(
-            "{} with {} from vault {} as {} {handed}",
-            self.name, self.key, self.vault, self.var
-        )
+        format!("{} with {listed} from vault {}", self.name, self.vault)
+    }
+
+    /// Each hand-over as `secret exec` writes it, flag then `VAR=key`, in order.
+    fn flags(&self) -> Vec<String> {
+        self.values
+            .iter()
+            .flat_map(|value| [value.handed.flag().to_owned(), value.spec()])
+            .collect()
     }
 
     /// The words of `purlis secret exec` that run `program` as this tool, after the binary:
-    /// `secret exec <vault> --file <VAR>=<key> -- <program>`. A browser login names its tool by
-    /// its name instead, after its files.
+    /// `secret exec <vault> --file <VAR>=<key> [--env <VAR>=<key> …] -- <program>`, one flag per
+    /// value. A browser login names its tool by its name instead, after its files.
     pub fn secret_exec(&self, program: &Path) -> Vec<String> {
-        if let Some(login) = &self.login {
-            // A login runs by its name: the app, not the shim, picks what runs (D-PE-browser-1).
-            let mut words = vec!["secret".to_owned(), "exec".to_owned(), self.vault.clone()];
-            for spec in login::hand_over(&self.key, login) {
-                words.extend(["--file".to_owned(), spec]);
-            }
-            words.extend(["--".to_owned(), self.name.clone()]);
-            return words;
-        }
-        let flag = match self.handed {
-            Handed::File => "--file",
-            Handed::Env => "--env",
+        // A login runs by its name: the app, not the shim, picks what runs (D-PE-browser-1).
+        let run = if self.login.is_some() {
+            self.name.clone()
+        } else {
+            program.display().to_string()
         };
-        vec![
-            "secret".to_owned(),
-            "exec".to_owned(),
-            self.vault.clone(),
-            flag.to_owned(),
-            format!("{}={}", self.var, self.key),
-            "--".to_owned(),
-            program.display().to_string(),
-        ]
+        ["secret".to_owned(), "exec".to_owned(), self.vault.clone()]
+            .into_iter()
+            .chain(self.flags())
+            .chain(["--".to_owned(), run])
+            .collect()
     }
 }
 
@@ -368,7 +479,8 @@ pub fn keyed(
         };
         if let Some(other) = tool.keys().find(|key| !TOOL_KEYS.contains(&key.as_str())) {
             fault(format!(
-                "{other} is not a key purlis reads — a tool holds vault, as and key"
+                "{other} is not a key purlis reads — a tool holds vault, then as and key, or \
+                 values"
             ));
             continue;
         }
@@ -387,20 +499,55 @@ pub fn keyed(
             fault(format!("{vault:?} is not a vault's name"));
             continue;
         }
+        if let Some(values) = tool.get(VALUES_KEY) {
+            if let Some(single) = ["key", "as", login::KEY, login::USER_KEY]
+                .into_iter()
+                .find(|key| tool.contains_key(*key))
+            {
+                fault(format!(
+                    "it has both values and {single} — a tool names its values either with key \
+                     and as, for one, or under values, for several, not both"
+                ));
+                continue;
+            }
+            match values_of(values) {
+                Ok(values) => tools.push(Tool {
+                    name: name.clone(),
+                    vault,
+                    values,
+                    login: None,
+                }),
+                Err(why) => fault(why),
+            }
+            continue;
+        }
         let Some(key) = text("key").filter(|key| !key.chars().any(char::is_control)) else {
             fault("it names no key of the vault".to_owned());
             continue;
         };
         if tool.contains_key(login::KEY) {
             match login_of(tool, &text) {
-                Ok(login) => tools.push(Tool {
-                    name: name.clone(),
-                    vault,
-                    var: login::PASS_VAR.to_owned(),
-                    handed: Handed::File,
-                    key,
-                    login: Some(login),
-                }),
+                // Its keys are handed as any tool's values are: the password's file, then the
+                // user name's (D-PE-browser-1).
+                Ok((login, user)) => {
+                    let values = std::iter::once(Value {
+                        var: login::PASS_VAR.to_owned(),
+                        handed: Handed::File,
+                        key,
+                    })
+                    .chain(user.map(|user| Value {
+                        var: login::USER_VAR.to_owned(),
+                        handed: Handed::File,
+                        key: user,
+                    }))
+                    .collect();
+                    tools.push(Tool {
+                        name: name.clone(),
+                        vault,
+                        values,
+                        login: Some(login),
+                    });
+                }
                 Err(why) => fault(why),
             }
             continue;
@@ -433,23 +580,94 @@ pub fn keyed(
             fault(why);
             continue;
         }
-        tools.push(Tool {
-            name: name.clone(),
-            vault,
-            var: var.to_owned(),
-            handed,
-            key,
-            login: None,
-        });
+        tools.push(Tool::one(name, &vault, var, handed, &key));
     }
     (tools, refused)
 }
 
-/// A browser login's `browser` and `user`, or why the tool is not one ([`login`]).
+/// **A tool's `values`** (T-1): each variable with its key and hand-over, in the order of their
+/// variables, or why they are not taken. Refused: not a table, none or more than
+/// [`MOST_VALUES`], a variable [`refused_var`] refuses or one written twice in any case, a
+/// value that is not a table of key and as, an `as` that is not `env` or `file`, and a key
+/// that is empty or holds a control character.
+fn values_of(values: &toml::Value) -> Result<Vec<Value>, String> {
+    let example = "values = { USER = { key = \"…\", as = \"env\" }, PASS = { key = \"…\", as = \
+                   \"file\" } }";
+    let Some(table) = values.as_table() else {
+        return Err(format!("values is not a table — write {example}"));
+    };
+    if table.is_empty() {
+        return Err(format!("values names no value — write {example}"));
+    }
+    if table.len() > MOST_VALUES {
+        return Err(format!(
+            "values names {} values, and a tool is handed at most {MOST_VALUES}",
+            table.len()
+        ));
+    }
+    let mut out: Vec<Value> = Vec::with_capacity(table.len());
+    for (var, value) in table {
+        if let Some(why) = refused_var(var) {
+            return Err(why);
+        }
+        if let Some(twice) = out.iter().find(|one| one.var.eq_ignore_ascii_case(var)) {
+            return Err(format!(
+                "values names {} and {var}, one variable twice — each value goes in a variable \
+                 of its own",
+                twice.var
+            ));
+        }
+        let Some(value) = value.as_table() else {
+            return Err(format!(
+                "values.{var} is not a table of key and as — {var} = {{ key = \"…\", as = \
+                 \"file\" }}"
+            ));
+        };
+        if let Some(other) = value.keys().find(|key| !VALUE_KEYS.contains(&key.as_str())) {
+            return Err(format!(
+                "values.{var}.{other} is not a key purlis reads — a value holds key and as"
+            ));
+        }
+        let text = |key: &str| {
+            value
+                .get(key)
+                .and_then(toml::Value::as_str)
+                .map(str::trim)
+                .filter(|it| !it.is_empty())
+        };
+        let Some(key) = text("key").filter(|key| !key.chars().any(char::is_control)) else {
+            return Err(format!("values.{var} names no key of the vault"));
+        };
+        let handed = match text("as") {
+            Some("file") => Handed::File,
+            Some("env") => Handed::Env,
+            Some(other) => {
+                return Err(format!(
+                    "values.{var} has as = {other:?}, which is neither \"file\" nor \"env\""
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "values.{var} does not say as what it is handed — as = \"file\" or \"env\""
+                ));
+            }
+        };
+        out.push(Value {
+            var: var.clone(),
+            handed,
+            key: key.to_owned(),
+        });
+    }
+    out.sort_by(|a, b| a.var.cmp(&b.var));
+    Ok(out)
+}
+
+/// A browser login's `browser`, and the key its `user` names, or why the tool is not one
+/// ([`login`]).
 fn login_of(
     tool: &toml::map::Map<String, toml::Value>,
     text: &dyn Fn(&str) -> Option<String>,
-) -> Result<login::Login, String> {
+) -> Result<(login::Login, Option<String>), String> {
     if tool.contains_key("as") {
         return Err(
             "a browser login is handed its login by purlis, so it takes no as — write browser, \
@@ -469,7 +687,7 @@ fn login_of(
                 .ok_or_else(|| "user names no key of the vault".to_owned())?,
         ),
     };
-    Ok(login::Login { url, origin, user })
+    Ok((login::Login { url, origin }, user))
 }
 
 /// The folder a persona's tools are written in, in the project at `root`: under the app's
@@ -692,9 +910,14 @@ fn names(ready: &Ready, named: &str) -> bool {
                 .is_ok_and(|real| ready.program.canonicalize().is_ok_and(|its| its == real)))
 }
 
-/// The one hand-over `ready` declares, as `secret exec` spells it: `VAR=key`.
-fn handed(ready: &Ready) -> String {
-    format!("{}={}", ready.tool.var, ready.tool.key)
+/// Whether `asked`, the hand-overs a chat asked for one way, are exactly `want`, the ones the
+/// tool declares that way: the same ones, each once, in any order.
+fn same_hand_overs(asked: &[String], want: &[String]) -> bool {
+    let mut asked: Vec<&str> = asked.iter().map(String::as_str).collect();
+    let mut want: Vec<&str> = want.iter().map(String::as_str).collect();
+    asked.sort_unstable();
+    want.sort_unstable();
+    asked == want
 }
 
 /// **Which of the chat's tools a brokered `secret exec` runs** (D-PE-ruling-2, the operator's
@@ -739,50 +962,27 @@ pub fn declared<'a>(
             "a chat runs only {persona}'s declared tools with a vault, and {named} is not one, so \
              nothing ran. Declare it in the project's settings, [sandbox.personas.{persona}] \
              tools = {{ {named} = {{ vault = \"{vault}\", as = \"<VARIABLE> file\", key = \
-             \"<key>\" }} }}, and allow it on this machine; {terminal}."
+             \"<key>\" }} }} (for several values, values = {{ <VARIABLE> = {{ key = \"<key>\", \
+             as = \"file\" }}, … }} in place of as and key), and allow it on this machine; \
+             {terminal}."
         ));
     };
-    if let Some(login) = &ready.tool.login {
-        let want = login::hand_over(&ready.tool.key, login);
-        if asked.vault == ready.tool.vault
-            && asked.file == want.as_slice()
-            && asked.env.is_empty()
-            && asked.dotenv.is_empty()
-        {
-            return Ok(ready);
-        }
-        let files: String = want.iter().map(|spec| format!(" --file {spec}")).collect();
-        return Err(format!(
-            "{} is {persona}'s tool {}, and a chat runs it with exactly that: run `{}`, or \
-             `purlis secret exec {}{files} -- {}`; {terminal}.",
-            ready.tool.name,
-            ready.tool.whole(),
-            ready.tool.name,
-            ready.tool.vault,
-            ready.tool.name,
-        ));
-    }
-    let want = handed(ready);
-    let (asked_for, others) = match ready.tool.handed {
-        Handed::File => (asked.file, [asked.env, asked.dotenv]),
-        Handed::Env => (asked.env, [asked.file, asked.dotenv]),
-    };
+    // Exactly the tool's vault and every one of its hand-overs, each the way it is declared,
+    // and nothing else: not a subset, not one more, not another pairing of variable and key,
+    // not a file where an env was declared, and never a `--dotenv` (T-1, D-PE-ruling-2).
     let exact = asked.vault == ready.tool.vault
-        && asked_for.len() == 1
-        && asked_for[0] == want
-        && others.iter().all(|other| other.is_empty());
+        && same_hand_overs(asked.file, &ready.tool.specs(Handed::File))
+        && same_hand_overs(asked.env, &ready.tool.specs(Handed::Env))
+        && asked.dotenv.is_empty();
     if !exact {
-        let flag = match ready.tool.handed {
-            Handed::File => "--file",
-            Handed::Env => "--env",
-        };
         return Err(format!(
             "{} is {persona}'s tool {}, and a chat runs it with exactly that: run `{}`, or \
-             `purlis secret exec {} {flag} {want} -- {}`; {terminal}.",
+             `purlis secret exec {} {} -- {}`; {terminal}.",
             ready.tool.name,
             ready.tool.whole(),
             ready.tool.name,
             ready.tool.vault,
+            ready.tool.flags().join(" "),
             ready.tool.name,
         ));
     }
@@ -991,7 +1191,13 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
          on, or\n# outside the chat. The program itself, with nothing added.\n\
          exec {program} \"$@\"\nfi\nexec {words} \"$@\"\n",
         name = ready.tool.name,
-        var = ready.tool.var,
+        var = ready
+            .tool
+            .values
+            .iter()
+            .map(|value| value.var.as_str())
+            .collect::<Vec<_>>()
+            .join(" and "),
         vault = ready.tool.vault,
         program = quoted(&ready.program.display().to_string()),
         words = words.join(" "),

@@ -555,6 +555,38 @@ describe("Settings › Project › Sandbox", () => {
     expect(within(page).queryByText("This project expects")).toBeNull();
   });
 
+  it("names every value a persona's tool is handed", async () => {
+    // T-1: a tool handed several values, each named with its variable, key and hand-over.
+    const CURL =
+      'curl with "kibana-password" as KIBANA_PASS file and "kibana-username" as KIBANA_USER env from vault elastic-logs-master';
+    const KUBECTL = "kubectl with kubeconfig from vault devops as KUBECONFIG file";
+    core({
+      sandbox: state({
+        persona_hosts: [
+          {
+            persona: "logs",
+            hosts: [],
+            reached: [],
+            tools: [CURL, KUBECTL],
+            digest: "d1",
+            allowed: false,
+            default: false,
+            waiting: false,
+          },
+        ],
+      }),
+      sharedName: "purlis.toml",
+      localName: "purlis.local.toml",
+    });
+    const page = await atSandbox();
+
+    await waitFor(() =>
+      expect(page).toHaveTextContent(
+        `A chat as logs may run ${CURL}; and ${KUBECTL} only once you allow them on this machine, below.`,
+      ),
+    );
+  });
+
   it("names a persona's own hosts", async () => {
     const { allowed } = core({
       sandbox: state({

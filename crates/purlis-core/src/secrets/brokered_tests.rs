@@ -153,14 +153,7 @@ fn as_tool(mut asker: Asker, mut wanted: Wanted) -> (Asker, Wanted) {
             .file_name()
             .map_or(program.clone(), |name| name.to_string_lossy().into_owned());
         confines.tools.push(Ready {
-            tool: Tool {
-                name,
-                vault: wanted.vault.clone(),
-                var: var.to_owned(),
-                handed,
-                key: key.to_owned(),
-                login: None,
-            },
+            tool: Tool::one(&name, &wanted.vault, var, handed, key),
             program: found,
         });
     }
@@ -2696,14 +2689,7 @@ fn a_declared_tool_runs_its_own_program_from_a_path_without_the_chats_folders() 
         .expect("a printenv");
     let mut asker = asker(project.path(), Some("devops"));
     asker.confines.as_mut().unwrap().tools = vec![Ready {
-        tool: Tool {
-            name: "printenv".into(),
-            vault: "team".into(),
-            var: "X".into(),
-            handed: Handed::Env,
-            key: "TOKEN".into(),
-            login: None,
-        },
+        tool: Tool::one("printenv", "team", "X", Handed::Env, "TOKEN"),
         program: real,
     }];
     let path = format!("{}:/usr/bin:/bin", planted.display());
@@ -2760,6 +2746,98 @@ fn a_declared_tool_asked_for_anything_but_its_own_hand_over_is_refused() {
         Some(&Frame::Exit(0)),
         "its own hand-over runs"
     );
+}
+
+/// T-1: a tool declared with several values runs, through the broker, with each value handed
+/// the way it is declared: one in a variable, one in a private file that is gone once the run
+/// ends, both masked in what comes back. Asked for anything but exactly that set, from the
+/// hostile side, nothing runs, and the refusal names no value.
+#[test]
+fn a_tool_handed_several_values_runs_with_exactly_them_and_nothing_else() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, Value};
+    let project = project();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![Ready {
+        tool: Tool {
+            values: vec![
+                Value {
+                    var: "CONF".into(),
+                    handed: Handed::File,
+                    key: "KUBECONFIG".into(),
+                },
+                Value {
+                    var: "PASS".into(),
+                    handed: Handed::Env,
+                    key: "TOKEN".into(),
+                },
+            ],
+            ..Tool::one("sh", "team", "PASS", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    }];
+    // The value in its variable, the other in a file only its owner reads; both printed, so
+    // the mask is seen to hold for each.
+    let script = sh(
+        r#"test "$PASS" = 's3cret-value' && test "$(ls -l "$CONF" | cut -c1-10)" = '-rw-------' && cat "$CONF" && echo "$PASS" && echo "$CONF" > kept-path"#,
+    );
+    let mut base = wanted(project.path(), "team", script);
+    base.file = vec!["CONF=KUBECONFIG".into()];
+    base.env = vec!["PASS=TOKEN".into()];
+    let frames = served_as_asked(&asker, base.clone());
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    let out = stdout(&frames);
+    assert!(!out.contains(TOKEN), "{out}");
+    assert!(!out.contains("k8s-s3cret"), "{out}");
+    assert!(out.contains("***"), "{out}");
+    let kept = std::fs::read_to_string(project.path().join("work/kept-path")).unwrap();
+    assert!(
+        !Path::new(kept.trim()).exists(),
+        "the value's file is removed once the run ends: {kept}"
+    );
+    /// The `--file`, `--env` and `--dotenv` hand-overs asked for, then the vault.
+    type Asking<'a> = (&'a [&'a str], &'a [&'a str], &'a [&'a str], &'a str);
+    let hostile: [Asking<'_>; 8] = [
+        (&["CONF=KUBECONFIG"], &[], &[], "team"),
+        (&[], &["PASS=TOKEN"], &[], "team"),
+        (
+            &["CONF=KUBECONFIG", "MORE=TOKEN"],
+            &["PASS=TOKEN"],
+            &[],
+            "team",
+        ),
+        (&["CONF=TOKEN"], &["PASS=KUBECONFIG"], &[], "team"),
+        (&["CONF=KUBECONFIG", "PASS=TOKEN"], &[], &[], "team"),
+        (&[], &["CONF=KUBECONFIG", "PASS=TOKEN"], &[], "team"),
+        (
+            &["CONF=KUBECONFIG"],
+            &["PASS=TOKEN"],
+            &["F=A:TOKEN"],
+            "team",
+        ),
+        (&["CONF=KUBECONFIG"], &["PASS=TOKEN"], &[], "other"),
+    ];
+    for (file, env, dotenv, vault) in hostile {
+        let want = Wanted {
+            vault: vault.into(),
+            file: file.iter().map(|one| (*one).to_owned()).collect(),
+            env: env.iter().map(|one| (*one).to_owned()).collect(),
+            dotenv: dotenv.iter().map(|one| (*one).to_owned()).collect(),
+            ..base.clone()
+        };
+        let frames = served_as_asked(&asker, want);
+        let [Frame::Refused { why, .. }] = frames.as_slice() else {
+            panic!("one refusal for {vault} {file:?} {env:?} {dotenv:?}: {frames:?}");
+        };
+        assert!(!why.contains(TOKEN) && !why.contains("k8s-s3cret"), "{why}");
+        if vault == "team" {
+            assert!(
+                why.contains(
+                    "`purlis secret exec team --file CONF=KUBECONFIG --env PASS=TOKEN -- sh`"
+                ),
+                "{file:?} {env:?} {dotenv:?}: {why}"
+            );
+        }
+    }
 }
 
 /// A `--dotenv` is never a tool's hand-over, so a chat's is refused.
@@ -2890,16 +2968,17 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
     ]);
     asker.confines.as_mut().unwrap().tools = vec![Ready {
         tool: Tool {
-            name: "shop-login".into(),
-            vault: "team".into(),
-            var: "BROWSER_LOGIN_PASS".into(),
-            handed: Handed::File,
-            key: "TOKEN".into(),
             login: Some(Login {
                 url: "https://shop.example.test/login".into(),
                 origin: "https://shop.example.test".into(),
-                user: None,
             }),
+            ..Tool::one(
+                "shop-login",
+                "team",
+                "BROWSER_LOGIN_PASS",
+                Handed::File,
+                "TOKEN",
+            )
         },
         program: PathBuf::from("/opt/tools/bin/playwright-cli"),
     }];
