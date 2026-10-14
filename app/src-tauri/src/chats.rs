@@ -627,6 +627,8 @@ struct Settled {
     /// on this machine. One allowed since a chat started reaches it only when it restarts.
     sockets: Vec<std::path::PathBuf>,
     services: Vec<String>,
+    /// The services on this Mac a chat may connect to, each by its port (qw384).
+    ports: Vec<u16>,
 }
 
 impl Settled {
@@ -657,6 +659,12 @@ impl Settled {
                 services.sort();
                 services.dedup();
                 services
+            },
+            ports: {
+                let mut ports = confines.widened.ports.clone();
+                ports.sort_unstable();
+                ports.dedup();
+                ports
             },
         }
     }
@@ -695,6 +703,11 @@ impl Settled {
                 list("writable", &mut paths(&settled.writable).into_iter());
                 list("sockets", &mut paths(&settled.sockets).into_iter());
                 list("services", &mut settled.services.iter().cloned());
+                // Only where there is one, so what stood for a sandbox with none stays as it
+                // was before ports were allowed (qw384).
+                if !settled.ports.is_empty() {
+                    list("ports", &mut settled.ports.iter().map(u16::to_string));
+                }
             }
         }
         let digest = sha2::Sha256::digest(text.as_bytes());
@@ -4215,7 +4228,7 @@ fn refused_by_the_proxy(
     ))
     .telling_local({
         let (hear, whose) = (Arc::clone(&hear_local), Arc::clone(&whose_local));
-        Arc::new(move |_: &str, _: u16| {
+        Arc::new(move |host: &str, port: u16| {
             let chat = whose.load(std::sync::atomic::Ordering::SeqCst);
             let Some(told) = lock(&hear).clone() else {
                 return;
@@ -4223,18 +4236,26 @@ fn refused_by_the_proxy(
             if chat == 0 {
                 return;
             }
-            // This machine, a link-local address or a metadata service (#1664): never a host
-            // to allow, so the Block names none, and its Notice offers what a local socket's
-            // does.
+            // This machine's loopback at a port is a service on this Mac (qw384): its Block
+            // names the port, which its Notice offers to allow. Any other local address (a
+            // link-local address, a metadata service) is never a host to allow (#1664), so its
+            // Block names none, and its Notice offers what a local socket's does.
+            let local = purlis_core::sandbox::localport::loopback_port(
+                &purlis_core::sandbox::egress::host_and_port(host, port),
+            );
             let block = purlis_core::hookwire::SandboxBlocked {
                 chat,
                 sandbox_blocked: Block {
                     operation: Operation::Connect,
-                    kind: Kind::LocalSocket,
+                    kind: if local.is_some() {
+                        Kind::LocalService
+                    } else {
+                        Kind::LocalSocket
+                    },
                     ours: false,
                 },
                 harness: harness.map(|harness| harness.name().to_owned()),
-                target: None,
+                target: local.map(|port| port.to_string()),
                 read_back: false,
             };
             let _ = std::thread::Builder::new()
@@ -4770,6 +4791,41 @@ pub(crate) mod tests {
         assert!(
             refusals.refused().is_empty(),
             "never kept as a host to allow"
+        );
+    }
+
+    /// qw384: this machine's loopback at a port, refused by the proxy, is the chat's Block of a
+    /// service on this Mac, naming the port its Notice offers to allow.
+    #[test]
+    fn a_loopback_port_the_proxy_refused_is_a_block_of_a_service_on_this_mac() {
+        use purlis_core::sandboxblock::{Block, Kind, Operation};
+        let hear: Arc<Mutex<Option<crate::hooks::Blocks>>> = Arc::new(Mutex::new(None));
+        let whose = Arc::new(std::sync::atomic::AtomicU32::new(7));
+        let refusals = super::refused_by_the_proxy(
+            Arc::clone(&hear),
+            Arc::clone(&whose),
+            Some(Harness::Codex),
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx = Mutex::new(tx);
+        *lock(&hear) = Some(Arc::new(move |block| lock(&tx).send(block).unwrap()));
+        refusals.heard_local("127.0.0.1", 50795);
+        let told = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("told");
+        assert_eq!(
+            told,
+            purlis_core::hookwire::SandboxBlocked {
+                chat: 7,
+                sandbox_blocked: Block {
+                    operation: Operation::Connect,
+                    kind: Kind::LocalService,
+                    ours: false,
+                },
+                harness: Some(Harness::Codex.name().to_owned()),
+                target: Some("50795".to_owned()),
+                read_back: false,
+            }
         );
     }
 

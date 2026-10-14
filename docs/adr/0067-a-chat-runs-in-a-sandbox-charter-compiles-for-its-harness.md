@@ -1421,3 +1421,36 @@ cannot finish still does not start.
    could not be made is an error, nothing below it is tried, and a baseline path still missing
    after the scaffold, a vision or a share that could not be written fails `create`, naming them
    and `purlis workspace reinit`.
+
+## Amended (2026-10-14, qw384; extends section 2 and ADR 0093): a service on this Mac is allowed by its one port — to be confirmed
+
+Decided under delegation; the operator confirms or changes it.
+
+- **A service on this Mac** is whatever listens on one port of this machine's loopback
+  interface. A chat reaches none but its own proxy's two ports and the app's hook socket until a
+  person allows that one port: **for this chat**, or **for every chat of this project on this
+  machine**. Never once, never every project, never the project's committed file, never a range
+  or every port. It is this machine's, kept as a socket is (in memory for one chat, in this
+  machine's sandbox file for the project), audited as `trust.sandbox.grant` with `what = "port"`,
+  and listed in Settings' Network page with Remove.
+- **Never purlis's own.** A port one of purlis's proxies or tunnels listens on is refused when it
+  is allowed and left out when a chat starts, and a proxy or tunnel purlis opens never listens on
+  a port a chat's sandbox was started with.
+- **The refusal is a Block naming the port.** A program's own words for a refused connection to
+  a loopback port (Go's `dial tcp 127.0.0.1:<port>: connect: operation not permitted`, Node's
+  `connect EPERM 127.0.0.1:<port>`), the sandbox's own `network-outbound` line for one, and the
+  chat's proxy refusing a loopback address are each a Block of kind `local-service`. Its Notice
+  says "a connection to a service on this Mac", names the port where the failed command's own
+  error, the sandbox's line or the proxy named it, and otherwise asks the person to type it.
+- **What it compiles to.** A chat purlis wraps (Codex, opencode) is let connect to that port on
+  the loopback interface (`(allow network-outbound (remote ip "localhost:<port>"))`), and its
+  proxy carries exactly `127.0.0.1`, `::1` and `localhost` at that port, so a client that
+  ignores the proxy for this machine (every Go client) and one that uses it both reach it. The
+  profile is fixed when the chat starts, so an Allow restarts the chat on its conversation, as a
+  socket's does.
+- **Claude Code.** Its sandbox lets a command reach this machine's loopback on the proxy's two
+  ports, or on every port (`allowLocalBinding`), and on no one port alone, so purlis cannot hand
+  it one port. Its Notice says so and offers Start without the sandbox. A route that gives a
+  Claude Code chat one port is follow-up work.
+- **Policy.** `sandbox.socket-grants = false` holds a service on this Mac as it holds a socket,
+  and `allow-scopes` holds its two scopes as any other.

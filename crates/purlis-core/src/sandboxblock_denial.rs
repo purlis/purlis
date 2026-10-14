@@ -122,6 +122,12 @@ impl<'a> Denial<'a> {
             }
             Operation::Lookup => Kind::SystemService,
             Operation::Connect if self.target.starts_with('/') => Kind::LocalSocket,
+            // This machine's loopback at a port (qw384): a service on this Mac, never a host.
+            Operation::Connect
+                if crate::sandbox::localport::loopback_port(self.target).is_some() =>
+            {
+                Kind::LocalService
+            }
             Operation::Connect => Kind::Host,
             Operation::Other => Kind::System,
             _ if self.target.is_empty() => Kind::System,

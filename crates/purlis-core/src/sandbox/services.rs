@@ -623,7 +623,7 @@ impl Declared {
                 .iter()
                 .any(|one| one == path || super::real(one) == *path),
             What::Service(name) => self.services.iter().any(|one| one == name),
-            What::Host(_) | What::Write(_) => false,
+            What::Host(_) | What::Write(_) | What::Port(_) => false,
         }
     }
 }
@@ -850,7 +850,7 @@ pub fn start_note(root: &Path, machine: &super::Machine, has: &super::Widened) -
         .filter(|item| match &item.what {
             What::Socket(path) => !has.sockets.contains(path),
             What::Service(name) => !has.services.contains(name),
-            What::Host(_) | What::Write(_) => false,
+            What::Host(_) | What::Write(_) | What::Port(_) => false,
         })
         .count();
     let (what, it) = match missing {

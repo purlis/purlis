@@ -474,6 +474,7 @@ impl Locks {
             }),
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
+            grant::What::Port(_) => self.port_grants_refused(),
         }
     }
 
@@ -514,6 +515,7 @@ impl Locks {
         let locked = match what {
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
+            grant::What::Port(_) => self.port_grants_refused(),
             grant::What::Host(_) => None,
         };
         let a_list_of_hosts = matches!(what, grant::What::Host(_))
@@ -572,6 +574,18 @@ impl Locks {
         self.no_socket_grants.then(|| {
             format!(
                 "Policy forbids allowing a chat a local socket or a system service. {}",
+                self.locked_by()
+            )
+        })
+    }
+
+    /// Why no service on this Mac may be allowed by its port (qw384), where policy forbids it:
+    /// the lock that forbids socket and service grants holds ports too, since what listens on
+    /// this machine's loopback is as much this machine's as a socket is.
+    pub fn port_grants_refused(&self) -> Option<String> {
+        self.no_socket_grants.then(|| {
+            format!(
+                "Policy forbids allowing a chat a service on this Mac. {}",
                 self.locked_by()
             )
         })
