@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791944305840,
+  "lastUpdate": 1791946139632,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10458,6 +10458,48 @@ window.BENCHMARK_DATA = {
             "value": 104.146585,
             "unit": "ms",
             "extra": "median of 5 runs: 102.623, 102.876, 104.147, 105.091, 105.717 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "5a1f2aafaa4e3ccab4e876fd5129995f5b8eac58",
+          "message": "fix(qw378): the merge's question is an overlay of its project, held back while the project is behind\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T06:47:49+04:00",
+          "tree_id": "28b649f1cb465fb2d6cc7edef85b1a35e51fc242",
+          "url": "https://github.com/purlis/purlis/commit/5a1f2aafaa4e3ccab4e876fd5129995f5b8eac58"
+        },
+        "date": 1791946138803,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46963299999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.453, 0.459, 0.470, 0.471, 0.480 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.275183499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.154, 16.269, 16.275, 16.326, 16.370 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.332551,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.155, 101.174, 101.333, 101.666, 101.991 ms"
           }
         ]
       }
