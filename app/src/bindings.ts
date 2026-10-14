@@ -6083,8 +6083,8 @@ export type McpFailed = {
 	session: number,
 	/**  The server's name, as the persona declares it. */
 	server: string,
-	/**  The persona the app started the chat as. */
-	persona: string,
+	/**  The persona the app started the chat as, where the chat was open when the server failed. */
+	persona: string | null,
 	/**  The server's own error: its last words, bounded and masked. */
 	error: string,
 };

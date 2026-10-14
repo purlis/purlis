@@ -3178,8 +3178,12 @@ impl Io for Piped {
 /// How a stand-in app answers one ask.
 #[derive(Clone, Copy)]
 enum Answers {
-    /// Refuses it before anything runs.
-    Refuses,
+    /// Refuses it before anything runs, for now: the chat is not open yet.
+    RefusesForNow,
+    /// Refuses it before anything runs, as it will every time: the vault is not the persona's.
+    RefusesForGood,
+    /// Takes nothing: no app runs it.
+    TakesNothing,
     /// Starts it, reads its stdin to the end, and ends with status 1 having said nothing on
     /// stdout: a server that took `initialize` and died.
     DiesSilently,
@@ -3234,10 +3238,24 @@ fn a_stand_in_app(
                 }
             };
             match answer {
-                Answers::Refuses => frame(
+                Answers::RefusesForNow => frame(
                     &mut writer,
                     Frame::Refused {
                         why: "chat 7 is not one this app has open".into(),
+                        code: NOT_YET,
+                    },
+                ),
+                Answers::RefusesForGood => frame(
+                    &mut writer,
+                    Frame::Refused {
+                        why: "vault 'team' is not one persona 'x' may use".into(),
+                        code: 1,
+                    },
+                ),
+                Answers::TakesNothing => frame(
+                    &mut writer,
+                    Frame::Refused {
+                        why: crate::hookwire::NOTHING_ANSWERS.into(),
                         code: 1,
                     },
                 ),
@@ -3338,10 +3356,10 @@ fn a_server_that_fails_once_then_works_is_tried_once_more_with_what_it_was_sent(
     );
 }
 
-/// A run refused before anything ran is tried again too: the chat may still be starting.
+/// A run refused because the chat was not open yet is tried again: it may still be starting.
 #[test]
 fn a_server_refused_once_then_run_is_tried_once_more() {
-    let (connect, asked) = a_stand_in_app(vec![Answers::Refuses, Answers::Echoes]);
+    let (connect, asked) = a_stand_in_app(vec![Answers::RefusesForNow, Answers::Echoes]);
     let mut io = piped();
     assert_eq!(start_server(&connect, &mut io), Some(0));
     assert_eq!(io.rec.out, INITIALIZE);
@@ -3351,9 +3369,9 @@ fn a_server_refused_once_then_run_is_tried_once_more() {
 /// T-3: a second failure is given up, with the app's own words, and only twice was it asked.
 #[test]
 fn a_server_that_fails_twice_is_given_up_after_the_last_try() {
-    let (connect, asked) = a_stand_in_app(vec![Answers::DiesSilently, Answers::Refuses]);
+    let (connect, asked) = a_stand_in_app(vec![Answers::DiesSilently, Answers::RefusesForNow]);
     let mut io = piped();
-    assert_eq!(start_server(&connect, &mut io), Some(1));
+    assert_eq!(start_server(&connect, &mut io), Some(NOT_YET));
     assert!(io.rec.out.is_empty());
     assert_eq!(asked.lock().unwrap().len(), 2);
     assert!(
@@ -3361,6 +3379,34 @@ fn a_server_that_fails_twice_is_given_up_after_the_last_try() {
         "{:?}",
         io.rec.said
     );
+}
+
+/// A refusal that is the same every time (the vault, the command) is not asked again: one
+/// cause, one failure.
+#[test]
+fn a_server_refused_for_good_is_not_tried_again() {
+    let (connect, asked) = a_stand_in_app(vec![Answers::RefusesForGood]);
+    let mut io = piped();
+    assert_eq!(start_server(&connect, &mut io), Some(1));
+    assert_eq!(asked.lock().unwrap().len(), 1);
+}
+
+/// Where the second ask finds no app to run it after the first run took the stdin, nothing runs
+/// here: the stdin is that run's, and a run here would read none of it.
+#[test]
+fn a_second_ask_no_app_takes_never_runs_here_once_a_run_took_the_stdin() {
+    let (connect, asked) = a_stand_in_app(vec![Answers::DiesSilently, Answers::TakesNothing]);
+    let mut io = piped();
+    assert_eq!(start_server(&connect, &mut io), Some(1));
+    assert_eq!(asked.lock().unwrap().len(), 2);
+    assert!(
+        matches!(io.rec.said.last(), Some(Say::Err(why)) if why == GIVEN_OVER),
+        "{:?}",
+        io.rec.said
+    );
+    // And a first ask no app takes runs here, as any `secret exec` does: no run has its stdin.
+    let (connect, _) = a_stand_in_app(vec![Answers::TakesNothing]);
+    assert_eq!(start_server(&connect, &mut piped()), None);
 }
 
 /// A server that spoke is the harness's: it is never started a second time behind its back.
@@ -3432,4 +3478,64 @@ fn a_chat_still_starting_is_waited_for_and_one_never_recorded_is_not() {
         None
     );
     assert!(began.elapsed() >= Duration::from_millis(120));
+}
+
+/// `forwarded` itself: a `secret exec` whose environment carries purlis's mark is a server's
+/// start and is tried once more after a first run that ended before it spoke; the same command
+/// without the mark is any other command and is asked for once. Through the app's hook channel.
+#[test]
+fn only_a_marked_secret_exec_is_tried_again_through_the_app() {
+    for (marked, asks) in [(true, 2), (false, 1)] {
+        let project = project();
+        let asked = Arc::new(AtomicBool::new(false));
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counting = Arc::clone(&count);
+        let (_dir, _reading, mut env) = an_app(
+            Box::new(move |_ask, mut reader, mut writer| {
+                let n = counting.fetch_add(1, Ordering::SeqCst);
+                let frame = |writer: &mut Box<dyn Write + Send>, frame: Frame| {
+                    let mut line = serde_json::to_vec(&frame).unwrap();
+                    line.push(b'\n');
+                    let _ = writer.write_all(&line);
+                };
+                frame(&mut writer, Frame::Started);
+                let mut got = Vec::new();
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    match serde_json::from_str::<Input>(&line) {
+                        Ok(Input::Stdin(bytes)) => got.extend(unb64(&bytes)),
+                        _ => break,
+                    }
+                }
+                if n > 0 {
+                    frame(&mut writer, Frame::Stdout(b64(&got)));
+                    frame(&mut writer, Frame::Exit(0));
+                } else {
+                    frame(&mut writer, Frame::Exit(1));
+                }
+            }),
+            Arc::clone(&asked),
+        );
+        if marked {
+            env.push((mcpstart::SERVER_ENV.to_owned(), "elasticsearch".to_owned()));
+        }
+        let ctx = chat_ctx(project.path(), &env);
+        let req = Request {
+            vault: "team".into(),
+            env: vec!["X=TOKEN".into()],
+            ..Request::default()
+        };
+        let mut io = piped();
+        let code = forwarded(&ctx, &req, &["elastic-mcp".to_owned()], &mut io);
+        assert_eq!(count.load(Ordering::SeqCst), asks, "marked: {marked}");
+        if marked {
+            assert_eq!(code, Some(0));
+            assert_eq!(io.rec.out, INITIALIZE);
+        } else {
+            assert_eq!(code, Some(1));
+        }
+    }
 }

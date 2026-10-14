@@ -411,6 +411,11 @@ fn started_server(
 ) -> Option<i32> {
     use super::mcpstart::{AGAIN, McpStart, RETRY_AFTER};
     let feed = super::mcpstart::Feed::new(stdin_of(io), true);
+    // Once a run has started, the stdin is the feed's: nothing may then run here instead.
+    let given_over = |io: &mut dyn Io| {
+        io.say(Say::Err(GIVEN_OVER.to_owned()));
+        Some(1)
+    };
     for last in [false, true] {
         let start = McpStart {
             server: server.to_owned(),
@@ -431,17 +436,32 @@ fn started_server(
             None => Outcome::NotTaken,
         };
         match outcome {
-            Outcome::Ended { code, spoke } if spoke || last || !feed.replayable() => {
+            // Not taken: no app runs it, now or on a second ask. It runs here, unless a run
+            // already took the stdin.
+            Outcome::NotTaken if feed.started() => return given_over(io),
+            Outcome::NotTaken => return None,
+            // Tried again only where asking again can change it: the server ended before it
+            // spoke, or the chat was not open yet. A refusal of the vault or of the command is
+            // the same every time.
+            Outcome::Ended {
+                code,
+                spoke,
+                refused,
+            } if spoke || last || !feed.replayable() || (refused && code != NOT_YET) => {
                 return Some(code);
             }
-            Outcome::NotTaken if last => return None,
-            _ => {}
+            Outcome::Ended { .. } => {}
         }
         io.say(Say::Info(AGAIN.to_owned()));
         std::thread::sleep(RETRY_AFTER);
     }
     None
 }
+
+/// What a server's start says where its second ask found no app to run it after its first run
+/// had started: the stdin was handed to that run, so nothing runs here.
+pub const GIVEN_OVER: &str = "the app that started this chat stopped answering after the MCP \
+                              server's first run, so it was not started again.";
 
 /// The asker's stdin, where it is not a terminal and the caller can hand it on as a stream.
 #[cfg(unix)]
@@ -459,8 +479,13 @@ fn stdin_of(io: &mut dyn Io) -> Option<Box<dyn Read + Send>> {
 enum Outcome {
     /// No app took it: nothing ran.
     NotTaken,
-    /// It ended with `code`; `spoke` where the child wrote on stdout.
-    Ended { code: i32, spoke: bool },
+    /// It ended with `code`; `spoke` where the child wrote on stdout, `refused` where nothing
+    /// ran.
+    Ended {
+        code: i32,
+        spoke: bool,
+        refused: bool,
+    },
 }
 
 /// One ask on `stream`, and what comes back printed through `io`. The child is given `feed`
@@ -525,7 +550,11 @@ fn exchange(
                 "the app stopped answering while the command ran, so how it ended is not known."
                     .into(),
             ));
-            return Outcome::Ended { code: 1, spoke };
+            return Outcome::Ended {
+                code: 1,
+                spoke,
+                refused: false,
+            };
         };
         match frame {
             Frame::Started => {
@@ -543,13 +572,23 @@ fn exchange(
                 io.out(&unb64(&bytes));
             }
             Frame::Stderr(bytes) => io.err(&unb64(&bytes)),
-            Frame::Exit(code) => return Outcome::Ended { code, spoke },
+            Frame::Exit(code) => {
+                return Outcome::Ended {
+                    code,
+                    spoke,
+                    refused: false,
+                };
+            }
             Frame::Refused { why, .. } if why == crate::hookwire::NOTHING_ANSWERS && !started => {
                 return Outcome::NotTaken;
             }
             Frame::Refused { why, code } => {
                 io.say(Say::Err(why));
-                return Outcome::Ended { code, spoke };
+                return Outcome::Ended {
+                    code,
+                    spoke,
+                    refused: true,
+                };
             }
         }
     }
@@ -1107,6 +1146,16 @@ fn send(writer: &mut dyn Write, frame: &Frame) -> std::io::Result<()> {
 /// Refuses the ask on `writer` with `why`: nothing was run.
 pub fn refused(mut writer: Box<dyn Write + Send>, why: String) {
     let _ = send(&mut *writer, &Frame::Refused { why, code: 1 });
+}
+
+/// The status of a refusal that may pass if asked again shortly: the chat is not one the app
+/// has open yet (qw381). `EX_TEMPFAIL`, as `sysexits.h` names it. Every other refusal is the
+/// same however often it is asked, and a persona's MCP server's start is not tried again for it.
+pub const NOT_YET: i32 = 75;
+
+/// [`refused`], for a refusal that may pass if asked again shortly ([`NOT_YET`]).
+pub fn refused_for_now(mut writer: Box<dyn Write + Send>, why: String) {
+    let _ = send(&mut *writer, &Frame::Refused { why, code: NOT_YET });
 }
 
 /// What an app with nothing that runs a brokered command answers, so the asker runs it itself.

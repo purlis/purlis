@@ -123,6 +123,12 @@ impl Feed {
         self.lock().has
     }
 
+    /// Whether a run has started and was handed the stdin.
+    pub(crate) fn started(&self) -> bool {
+        let fed = self.lock();
+        fed.has && fed.stdin.is_none()
+    }
+
     /// Whether a run after this one can be handed the whole stdin so far.
     pub(crate) fn replayable(&self) -> bool {
         let fed = self.lock();
@@ -230,6 +236,10 @@ impl Seen {
             return None;
         }
         if let Some(why) = &self.refused {
+            // Not taken: the asker runs it itself, so nothing failed here.
+            if why == crate::hookwire::NOTHING_ANSWERS {
+                return None;
+            }
             return Some(error_shown(why));
         }
         let code = self.exit?;
@@ -239,6 +249,14 @@ impl Seen {
         } else {
             said
         })
+    }
+}
+
+impl Seen {
+    /// Whether the app refused the run before anything ran: the same on every ask, so the
+    /// server's start is not tried again for it.
+    pub fn refused(&self) -> bool {
+        self.refused.is_some()
     }
 }
 
