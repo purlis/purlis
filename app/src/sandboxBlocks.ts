@@ -50,7 +50,10 @@ export type Blocks = Readonly<Record<number, readonly HeldBlock[]>>;
  * host lowered, without a trailing dot and without the default port (`:443`, `:80`); a folder
  * as the core offered it.
  */
-export function matched(offer: "host" | "write" | "socket" | "service", target: string): string {
+export function matched(
+  offer: "host" | "write" | "socket" | "service" | "port",
+  target: string,
+): string {
   if (offer !== "host") return target;
   const host = target
     .trim()
@@ -220,8 +223,9 @@ export function inertly(text: string): string {
   );
 }
 
-/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1). */
-type GrantedOffer = "host" | "write" | "socket" | "service";
+/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1), or a
+ *  service on this Mac by its port (qw384). */
+type GrantedOffer = "host" | "write" | "socket" | "service" | "port";
 
 /** Whether `block` is an ask (#1695): one of the chat's own work a grant can name, which the
  *  registry lists while the chat is held on it. */
@@ -230,7 +234,8 @@ export const isAnAsk = (block: ChatBlocked) =>
   (block.offer === "host" ||
     block.offer === "write" ||
     block.offer === "socket" ||
-    block.offer === "service");
+    block.offer === "service" ||
+    block.offer === "port");
 
 /**
  * **The asks the registry lists for `block`** (#1695): a sandbox ask of the same chat, on the

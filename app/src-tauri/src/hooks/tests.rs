@@ -2456,3 +2456,48 @@ fn a_clear_begins_a_run_the_record_is_told_even_with_no_event_log() {
         "{run:?}"
     );
 }
+
+/// qw384: a refused connection to a port on this Mac is offered as that one port, with what
+/// allowing it means, at this chat or every chat of this project on this machine; a port the
+/// refusal did not name is typed; Claude Code's sandbox takes no one port, so there its Notice
+/// offers Start without the sandbox, saying why.
+#[test]
+fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_takes_none_alone() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandbox::localport::RISK;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalService,
+        ours: false,
+    };
+    let named = offered(&root, &refused, Some("50795"));
+    assert_eq!(named.0, BlockOffer::Port);
+    assert_eq!(named.1.as_deref(), Some("50795"));
+    assert!(named.2.as_deref().is_some_and(|said| said.contains(RISK)));
+    let locks = purlis_core::sandbox::policy::Locks::of(&root);
+    let (offer, target, _, levels) = held(&locks, named.clone());
+    assert_eq!(offer, BlockOffer::Port);
+    assert_eq!(target.as_deref(), Some("50795"));
+    assert_eq!(
+        levels,
+        vec![
+            crate::sandboxing::GrantLevel::Chat,
+            crate::sandboxing::GrantLevel::You
+        ]
+    );
+    // Named by nothing: the person types it.
+    assert_eq!(offered(&root, &refused, None).0, BlockOffer::Port);
+    assert_eq!(offered(&root, &refused, None).1, None);
+    // purlis's own wrap takes one port.
+    assert_eq!(
+        for_its_harness(Some(Harness::Opencode), named.clone()).0,
+        BlockOffer::Port
+    );
+    let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), named);
+    assert_eq!(offer, BlockOffer::Unsandboxed);
+    assert_eq!(target.as_deref(), Some("50795"));
+    assert_eq!(why.as_deref(), Some(CLAUDE_CODE_PORT_SAID));
+}

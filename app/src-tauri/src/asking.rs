@@ -540,6 +540,69 @@ pub fn sandbox_block(
     sandbox_host(session, block, locks)
         .or_else(|| sandbox_write(session, block, locks))
         .or_else(|| sandbox_local(session, block, locks))
+        .or_else(|| sandbox_port(session, block, locks))
+}
+
+/// **The service-on-this-Mac adapter** (qw384): a port of this machine chat `session`'s
+/// sandbox refused, held now, is an ask as a host is. Allow is offered for this chat and for
+/// the person (never once, never everyone's: it is this machine's and lasts past a run), at
+/// each level `locks` leaves open; then Keep blocked. A port the block did not name is typed in
+/// its Notice, so it is answered there ([`AnswerPath::InItsPane`]).
+pub fn sandbox_port(
+    session: u32,
+    block: &crate::taskblocks::HeldBlock,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Option<Shown> {
+    use crate::sandboxing::{GrantLevel, GrantWhat};
+    use purlis_core::sandbox::grant::What;
+    if block.what != GrantWhat::Port {
+        return None;
+    }
+    let order = [GrantLevel::Chat, GrantLevel::You];
+    let named: Option<u16> = block.target.parse().ok();
+    let levels: Vec<GrantLevel> = order
+        .into_iter()
+        .filter(|level| match named {
+            Some(port) => locks
+                .refuses_grant(&What::Port(port), (*level).into())
+                .is_none(),
+            None => {
+                locks.port_grants_refused().is_none()
+                    && locks.scope_removed((*level).into()).is_none()
+            }
+        })
+        .collect();
+    let says = match named {
+        Some(port) => format!(
+            "The sandbox refused the service on this Mac at port {port}. Allowing it {}.",
+            purlis_core::sandbox::localport::RISK
+        ),
+        None => "The sandbox refused a service on this Mac at a port it did not name".to_owned(),
+    };
+    Some(Shown {
+        session,
+        ask: block_key(session, block),
+        says: said_inertly(&says),
+        options: allows(&levels, true)
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        source: AskSource::SandboxLocal,
+        chain: Vec::new(),
+        answer: match named {
+            Some(_) => AnswerPath::SandboxBlock {
+                shown: crate::taskblocks::BlockShown {
+                    operation: block.operation.clone(),
+                    kind: block.kind.clone(),
+                    what: GrantWhat::Port,
+                    target: block.target.clone(),
+                },
+            },
+            None => AnswerPath::InItsPane,
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    })
 }
 
 /// **The socket and service adapter** (D-sock-1): a local socket or a system service chat

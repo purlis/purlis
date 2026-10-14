@@ -985,9 +985,17 @@ or *everyone in the project*, which is committed so teammates follow it. It is s
 never as a wildcard, and every one can be removed from Settings' Network page.
 _Avoid_: grant (in UI text; that is a runner's **Grant**), exception, allowlist entry
 
+**A service on this Mac**:
+Whatever listens on one port of this machine's loopback interface: a local Kubernetes cluster, a
+database in a container, a dev server. A sandboxed chat reaches none of them until a person
+allows that one port, for *this chat* or for *this project on this machine*; never a range,
+never every port, never one of purlis's own. Kept on this machine only, listed in Settings'
+Network page with Remove.
+_Avoid_: localhost (in UI text), local port grant, loopback
+
 **Block**:
-One refused reach: a sandboxed chat was refused a host and port, a local socket, a lookup or a
-file. purlis records the chat, what was refused, the time and why in this machine's network
+One refused reach: a sandboxed chat was refused a host and port, a local socket, a service on
+this Mac, a lookup or a file. purlis records the chat, what was refused, the time and why in this machine's network
 record, kept 30 days and never committed, shows a **Notice** on the chat's tab, and lists it
 under Blocked lately.
 _Avoid_: denial, violation (that is the sandbox's own report), egress refusal

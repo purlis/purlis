@@ -187,6 +187,10 @@ struct OnDisk {
     /// The system services you let every chat of this project look up by name (ADR 0093).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     services_mine: Vec<String>,
+    /// The services on this Mac you let every chat of this project connect to (qw384), each by
+    /// its one port.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ports_mine: Vec<u16>,
     /// What the project's committed file declared it expects (`[sandbox] expects`) when this
     /// machine last asked the person about it and was answered, each as the file writes it;
     /// absent before the first answer. **An answer, never a grant**: it only stops the same
@@ -1017,6 +1021,32 @@ pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
         held.services_mine.retain(|one| one != service);
         held.granted
             .retain(|made| !(made.what == "service" && made.target == service));
+    })
+}
+
+/// The services on this Mac you let every chat of the project at `root` connect to, each by its
+/// port (qw384). [`super::Compiled::granted`] judges each again before a start compiles it in.
+pub fn granted_ports(root: &Path) -> Vec<u16> {
+    read(root).ports_mine
+}
+
+/// Lets every chat of the project at `root` connect to the service on this Mac at `port`: a
+/// block's Notice, never a chat. `port` is one [`super::localport::port`] took.
+pub fn grant_port(root: &Path, port: u16) -> io::Result<()> {
+    change(root, |held| {
+        if !held.ports_mine.contains(&port) {
+            held.ports_mine.push(port);
+        }
+    })
+}
+
+/// Takes `port` off what you let every chat connect to: Settings' Remove.
+pub fn revoke_port(root: &Path, port: u16) -> io::Result<()> {
+    let target = port.to_string();
+    change(root, |held| {
+        held.ports_mine.retain(|one| *one != port);
+        held.granted
+            .retain(|made| !(made.what == "port" && made.target == target));
     })
 }
 

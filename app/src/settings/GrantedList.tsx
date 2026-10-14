@@ -46,7 +46,9 @@ export function grantSaid(one: SandboxGrant): string {
             ? `Connect to the local socket ${one.target}${one.expected ? " (this project expects it)" : ""}`
             : one.what === "service"
               ? `Reach the system service ${one.target}${one.expected ? " (this project expects it)" : ""}`
-              : `Write ${one.target} and everything in it`;
+              : one.what === "port"
+                ? `Connect to the service on this Mac at port ${one.target}`
+                : `Write ${one.target} and everything in it`;
   const by =
     one.level !== "project"
       ? "allowed by you"
@@ -65,6 +67,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "persona-hosts") return `${one.persona ?? "a persona"}'s hosts`;
   if (one.what === "socket") return `connecting to ${one.target}`;
   if (one.what === "service") return `reaching ${one.target}`;
+  if (one.what === "port") return `connecting to port ${one.target}`;
   return `writing ${one.target}`;
 }
 

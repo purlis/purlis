@@ -145,7 +145,7 @@ export function SandboxBlockNotice({
         ? [{ what: block.choose, target: "" }]
         : isAnAsk(block)
           ? eachHost(block).map((one) => ({
-              what: block.offer as "host" | "write" | "socket" | "service",
+              what: block.offer as "host" | "write" | "socket" | "service" | "port",
               target: one.target ?? "",
             }))
           : [];
@@ -396,7 +396,10 @@ function AllowNotice({
   /** The hosts the chat's proxy refused past the ones it names (#1353): said, never offered. */
   const moreRefused = useRefusedMore(block.plane, block.session);
   const what: GrantWhat =
-    block.offer === "host" || block.offer === "socket" || block.offer === "service"
+    block.offer === "host" ||
+    block.offer === "socket" ||
+    block.offer === "service" ||
+    block.offer === "port"
       ? block.offer
       : "write";
   const target = block.target ?? typed.trim();
@@ -733,7 +736,8 @@ function AllowNotice({
     block.offer !== "host" &&
     block.offer !== "write" &&
     block.offer !== "socket" &&
-    block.offer !== "service"
+    block.offer !== "service" &&
+    block.offer !== "port"
   )
     return (
       <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
@@ -793,11 +797,15 @@ function AllowNotice({
   const named =
     block.target === null ? (
       <SettingRow
-        label={what === "host" ? "Host to allow" : "Folder to allow"}
+        label={
+          what === "host" ? "Host to allow" : what === "port" ? "Port to allow" : "Folder to allow"
+        }
         help={
           what === "host"
             ? "An Allow lets the chat reach the host you type here."
-            : "An Allow lets the chat write in the folder you type here and everything in it."
+            : what === "port"
+              ? "An Allow lets the chat connect to whatever listens on this Mac at the port you type here, as you."
+              : "An Allow lets the chat write in the folder you type here and everything in it."
         }
         control={(ids) => (
           <Field
@@ -805,7 +813,7 @@ function AllowNotice({
             ids={ids}
             value={typed}
             onChange={setTyped}
-            placeholder={what === "host" ? "api.example.com" : undefined}
+            placeholder={what === "host" ? "api.example.com" : what === "port" ? "6443" : undefined}
           />
         )}
       />
@@ -813,6 +821,12 @@ function AllowNotice({
       <p>
         {what === "host" ? (
           <>Allow reaching {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />}</>
+        ) : what === "port" ? (
+          // qw384: one port, named whole, with what allowing it means, in purlis's words.
+          <>
+            Allow connecting to the service on this Mac at port <Target of={block.target} />.{" "}
+            {block.route}
+          </>
         ) : what === "socket" || what === "service" ? (
           // D-sock-6: named whole, with what allowing it means, in purlis's words.
           <>
