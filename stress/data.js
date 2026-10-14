@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791991203012,
+  "lastUpdate": 1791991219176,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3950,6 +3950,42 @@ window.BENCHMARK_DATA = {
             "value": 447.3,
             "unit": "MB",
             "extra": "median of 6 samples: 398.6, 423.3, 438.5, 456.1, 456.6, 581.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "01ab033d5f33693fc01aa014597b7ed7d0eb3c74",
+          "message": "review(qw390): the deny job prints all of cargo-deny's output, pass or fail\n\nThe annotations stay at ten (GitHub keeps ten error annotations a step);\nthe notice for the rest now points at the log, which has every finding\nand warning.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T18:40:18+04:00",
+          "tree_id": "8a19c036891e4bcf2e5bb25cd0291b567ff1ffc3",
+          "url": "https://github.com/purlis/purlis/commit/01ab033d5f33693fc01aa014597b7ed7d0eb3c74"
+        },
+        "date": 1791991218431,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1370.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1320.7, 1370.9, 1538.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 437.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 408.5, 427.9, 431, 444.6, 445, 538.5 MB"
           }
         ]
       }
