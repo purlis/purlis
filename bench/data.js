@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791975542595,
+  "lastUpdate": 1791978652996,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10794,6 +10794,48 @@ window.BENCHMARK_DATA = {
             "value": 101.51117149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.103, 101.338, 101.511, 101.578, 101.584 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "d21610f8d6417871057c8b1354fd967c2d9d9fb9",
+          "message": "docs(changes): name the fragment for the rule it states\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T15:49:32+04:00",
+          "tree_id": "b4dc72c61e43bf70a9c35396fc57d59167935428",
+          "url": "https://github.com/purlis/purlis/commit/d21610f8d6417871057c8b1354fd967c2d9d9fb9"
+        },
+        "date": 1791978651889,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5957574999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.590, 0.590, 0.596, 0.603, 0.607 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2673435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.232, 16.258, 16.267, 16.455, 16.554 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6161135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.704, 101.337, 101.616, 101.642, 103.456 ms"
           }
         ]
       }
