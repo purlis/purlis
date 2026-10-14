@@ -180,9 +180,20 @@ fn go_and_node_refusals_of_this_machine_name_the_port() {
 /// the sentence says to free it first, then start the service, then restart this chat.
 #[test]
 fn a_port_purlis_took_is_freed_before_the_service_is_started_again() {
-    let free = TAKEN_SAID.find("close the chat").expect("says how to free the port");
-    let quit = TAKEN_SAID.find("quit and reopen purlis").expect("or to reopen purlis");
-    let start = TAKEN_SAID.find("start your service").expect("then to start the service");
-    let restart = TAKEN_SAID.find("restart this chat").expect("then to restart this chat");
-    assert!(free < start && quit < start && start < restart, "{TAKEN_SAID}");
+    let free = TAKEN_SAID
+        .find("close the chat")
+        .expect("says how to free the port");
+    let quit = TAKEN_SAID
+        .find("quit and reopen purlis")
+        .expect("or to reopen purlis");
+    let start = TAKEN_SAID
+        .find("start your service")
+        .expect("then to start the service");
+    let restart = TAKEN_SAID
+        .find("restart this chat")
+        .expect("then to restart this chat");
+    assert!(
+        free < start && quit < start && start < restart,
+        "{TAKEN_SAID}"
+    );
 }
