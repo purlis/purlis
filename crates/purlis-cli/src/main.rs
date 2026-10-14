@@ -1440,6 +1440,13 @@ const PANIC_ON_PURPOSE_ENV: &str = "CHARTER_TEST_HOOK_PANICS";
 #[cfg(debug_assertions)]
 const CORE_WARNS_ON_PURPOSE_ENV: &str = "CHARTER_TEST_CORE_WARNS";
 
+/// Set in a debug build, `purlis` says whose process group the gits it runs are in, and does
+/// nothing else: the test suite's way to hold that this command keeps them in its own
+/// ([`purlis_core::worktree::git::stay_in_the_callers_group`]). Compiled out of a release
+/// build.
+#[cfg(debug_assertions)]
+const SAYS_ITS_GITS_GROUP_ENV: &str = "PURLIS_TEST_SAYS_ITS_GITS_GROUP";
+
 /// How long the payload on stdin is waited for.
 ///
 /// **Two seconds, and it used to be 25 milliseconds.** The spec allows the whole call 50 ms
@@ -3409,6 +3416,18 @@ fn main() -> ExitCode {
     // terminal's Ctrl-C, a harness ending a hook, the app ending a chat), so the gits it runs
     // stay in that group, where the same stop reaches them.
     purlis_core::worktree::git::stay_in_the_callers_group();
+    #[cfg(debug_assertions)]
+    if std::env::var_os(SAYS_ITS_GITS_GROUP_ENV).is_some() {
+        println!(
+            "{}",
+            if purlis_core::worktree::git::each_git_leads_its_own_group() {
+                "each git leads a group of its own"
+            } else {
+                "each git stays in this command's group"
+            }
+        );
+        return ExitCode::SUCCESS;
+    }
     // A warning the core raises is said on this terminal rather than dropped (#647). Output a
     // command prints on purpose never goes through it.
     purlis_core::applog::install_for_a_terminal();
