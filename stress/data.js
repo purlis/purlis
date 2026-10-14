@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792018452273,
+  "lastUpdate": 1792018466668,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4310,6 +4310,42 @@ window.BENCHMARK_DATA = {
             "value": 446.7,
             "unit": "MB",
             "extra": "median of 6 samples: 409, 420.1, 442, 451.4, 452, 557.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d8c63d31e34a7521e593a8a42b09872ef05bc8a0",
+          "message": "test(qw392): fixtures are tracked under neutral names, so a sandboxed chat can always update a clone (#2094)\n\n* test(qw392): fixtures are tracked under neutral names, so a sandboxed chat can always update a clone\n\nA fixture whose name a sandboxed chat may never write (an agent's\n`.claude/settings.json`, `opencode.json`) is tracked as `<name>.fixture`\nand copied to its real name at test time (`purlis_core::testfixture`,\nand `fixtureNames` in the e2e harness and the benchmark). The editor\nrecommendation `app/.vscode/extensions.json` is no longer tracked. A test\nfails on any tracked path the sandbox denies a chat (#2089).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw392): the guard judges a fresh checkout, and the bench copies anew\n\nThe guard test judges every tracked path as a fresh clone would write\nit, so a file under a folder a chat may not make counts whatever this\ncheckout already holds. `testfixture` sits apart from `testrun`'s note,\nand the hook benchmark removes its last copy before it copies again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw392): the guard test's checkout answers every question the clone guard asks\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T01:42:53+04:00",
+          "tree_id": "6d70e12598a4e8efde0d4f6e826f681641dd4e45",
+          "url": "https://github.com/purlis/purlis/commit/d8c63d31e34a7521e593a8a42b09872ef05bc8a0"
+        },
+        "date": 1792018465397,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1459.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1249.3, 1459.2, 1510.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 439.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 403.8, 421.8, 438.2, 441.5, 442.1, 529.7 MB"
           }
         ]
       }
