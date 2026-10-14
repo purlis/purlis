@@ -282,7 +282,18 @@ fn call_with(
             "purlis could not find {cli} on PATH — install it and log in (`{cli} auth login`)"
         )));
     };
-    let mut cmd = Command::new(&path);
+    run_found(cli, &path, args, timeout, keep)
+}
+
+/// [`call_with`], once the CLI has been found at `path`.
+fn run_found(
+    cli: &str,
+    path: &std::path::Path,
+    args: &[String],
+    timeout: Duration,
+    keep: impl Fn(&str) -> bool,
+) -> Result<Reply, NoAnswer> {
+    let mut cmd = Command::new(path);
     cmd.args(args)
         .env_clear()
         .envs(cli_env_keeping(path.parent(), keep))
@@ -312,6 +323,46 @@ fn strings(args: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// In the host, where nothing but its own deadline ends what purlis starts: `gh` and
+    /// `glab` run git and helpers of their own, and a deadline that ended the CLI alone would
+    /// leave them. Each is its group's leader, which is what the deadline's stop ends.
+    #[cfg(unix)]
+    #[test]
+    fn each_forge_cli_is_started_as_the_leader_of_a_process_group_of_its_own() {
+        for cli in ["gh", "glab"] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let said = dir.path().join("which-process-it-is");
+            let over = dir.path().join("the-test-is-over");
+            let program = stand_in::program(
+                dir.path(),
+                cli,
+                &format!(
+                    "#!/bin/sh\necho $$ > '{said}.part'\n/bin/mv '{said}.part' '{said}'\n\
+                     while [ ! -e '{over}' ]; do /bin/sleep 0.1; done\n",
+                    said = said.display(),
+                    over = over.display()
+                ),
+            );
+            let running = std::thread::spawn(move || {
+                run_found(cli, &program, &[], Duration::from_secs(30), |_| false).is_ok()
+            });
+            let pid = stand_in::pid_named_in(&said, Duration::from_secs(10))
+                .expect("the stand-in said which process it is");
+            let _ends = stand_in::Ends::group(pid);
+            let it = rustix::process::Pid::from_raw(pid.cast_signed()).expect("a pid");
+            let group = rustix::process::getpgid(Some(it));
+
+            std::fs::write(&over, "").expect("the stand-in is told to end");
+            assert!(running.join().expect("the call returns"), "{cli} answered");
+            assert_eq!(group.ok(), Some(it), "{cli} did not lead its own group");
+            assert_ne!(
+                Some(rustix::process::getpgrp()),
+                group.ok(),
+                "{cli} ran in this process's group"
+            );
+        }
+    }
 
     fn args(words: &[&str]) -> Vec<String> {
         strings(words)
