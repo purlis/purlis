@@ -5134,7 +5134,8 @@ fn a_chats_confines_keep_the_layers_its_sandbox_was_compiled_with() {
 /// (`require-all`) is left out, so this answers for an ordinary file.
 pub(super) fn writes(profile: &str, path: &std::path::Path) -> bool {
     let path = path.display().to_string();
-    let mut verdict = false;
+    // A floor profile starts from everything allowed (#2071).
+    let mut verdict = profile.contains("(allow default)");
     for form in forms(profile) {
         let allow = form.starts_with("(allow ");
         if !(allow || form.starts_with("(deny ")) || form.contains("require-all") {

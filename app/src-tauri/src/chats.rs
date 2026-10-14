@@ -782,6 +782,8 @@ type Armed = (Vec<String>, Vec<(String, String)>);
 type Decided = (
     Option<(purlis_core::sandbox::Applied, String)>,
     Option<purlis_core::sandbox::Lifted>,
+    // Where the floor could not be applied, the sentence its tab says (#2071, Q2).
+    Option<String>,
 );
 
 /// What a chat that was closed was, kept for a start in its place
@@ -1103,7 +1105,7 @@ impl Chats {
         opt_out: Option<&purlis_core::sandbox::OptOut>,
     ) -> Result<Decided, String> {
         let Some(harness) = chat.harness() else {
-            return Ok((None, None));
+            return Ok((None, None, None));
         };
         let root = &self.project;
         let decided = project_sandbox(
@@ -1115,11 +1117,13 @@ impl Chats {
             opt_out,
             grants,
         )?;
-        let (applied, lifted) = match decided {
-            Some(purlis_core::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None),
-            Some(purlis_core::sandbox::Decided::Unsandboxed(lifted)) => (None, Some(lifted)),
-            // Where the floor cannot be applied the chat starts as before (#2071, Q2).
-            Some(purlis_core::sandbox::Decided::Floorless(_)) | None => (None, None),
+        let (applied, lifted, floorless) = match decided {
+            Some(purlis_core::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None, None),
+            Some(purlis_core::sandbox::Decided::Unsandboxed(lifted)) => (None, Some(lifted), None),
+            // Where the floor cannot be applied the chat starts as before, and says why (#2071,
+            // Q2).
+            Some(purlis_core::sandbox::Decided::Floorless(why)) => (None, None, Some(why)),
+            None => (None, None, None),
         };
         // Ruling V87g: the program is the harness the sandbox was compiled for, and not a file
         // a sandboxed chat could have changed. The real file it names is what the check asks;
@@ -1131,7 +1135,10 @@ impl Chats {
                 .map_err(|gone| format!("{} Nothing was started.", gone.said()))?;
             let cwd = chat.cwd.clone().unwrap_or_else(|| root.clone());
             let mut writable = applied.writable();
-            writable.extend(purlis_core::sandbox::program::temp_roots(&[]));
+            // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+            if applied.level() == purlis_core::sandbox::Level::Full {
+                writable.extend(purlis_core::sandbox::program::temp_roots(&[]));
+            }
             let (checked, said) = purlis_core::sandbox::program::checked_answering(
                 harness,
                 &words,
@@ -1152,9 +1159,9 @@ impl Chats {
             }
             // At the floor, the program it starts is never written by the chat (#2071, Q4).
             applied.hold_programs(&checked);
-            return Ok((Some((applied, checked[0].clone())), None));
+            return Ok((Some((applied, checked[0].clone())), None, None));
         }
-        Ok((None, lifted))
+        Ok((None, lifted, floorless))
     }
 
     /// Starts a chat the core has already worked out the launch for — a chat on a profile.
@@ -2052,7 +2059,7 @@ impl Chats {
         };
         #[cfg(not(test))]
         let decided = self.sandbox_off_profile(chat, &grants, opt_out);
-        let (sandboxed, unsandboxed) = decided?;
+        let (sandboxed, unsandboxed, floorless) = decided?;
         let mut launch = chat.launch();
         let sandbox = sandboxed.map(|(applied, program)| {
             launch.program = program;
@@ -2089,6 +2096,16 @@ impl Chats {
             operator_shell,
             why,
         )
+        // Where the floor could not be applied, its tab says why (#2071, Q2), with what else
+        // its start found to say.
+        .inspect(|session| {
+            if let Some(why) = floorless {
+                lock(&self.late_notes)
+                    .entry(*session)
+                    .or_default()
+                    .push(why);
+            }
+        })
     }
 
     /// What a shell tab's shell is started with beyond `args`, the chat's own words: charter's
@@ -5225,7 +5242,7 @@ pub(crate) mod tests {
         let seen = std::sync::Arc::clone(&compiled);
         let chats = Chats::new().deciding_by(Box::new(move |chat, grants, _| {
             lock(&seen).push((chat.name.clone(), grants.clone()));
-            Ok((None, None))
+            Ok((None, None, None))
         }));
         let size = Size {
             columns: 80,
@@ -6395,7 +6412,7 @@ pub(crate) mod tests {
                 use purlis_core::sandbox::Decided;
                 // A shell is the person's own, as in the start this stands in for.
                 let Some(harness) = chat.harness() else {
-                    return Ok((None, None));
+                    return Ok((None, None, None));
                 };
                 let decided = purlis_core::sandbox::decide_granted(
                     harness,
@@ -6409,10 +6426,11 @@ pub(crate) mod tests {
                 .map_err(|not| not.to_string())?;
                 Ok(match decided {
                     Some(Decided::Sandboxed(applied)) => {
-                        (Some((applied, chat.program.clone())), None)
+                        (Some((applied, chat.program.clone())), None, None)
                     }
-                    Some(Decided::Unsandboxed(lifted)) => (None, Some(lifted)),
-                    Some(Decided::Floorless(_)) | None => (None, None),
+                    Some(Decided::Unsandboxed(lifted)) => (None, Some(lifted), None),
+                    Some(Decided::Floorless(why)) => (None, None, Some(why)),
+                    None => (None, None, None),
                 })
             }),
         );

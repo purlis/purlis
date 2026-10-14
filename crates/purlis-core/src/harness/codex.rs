@@ -214,6 +214,15 @@ impl HarnessAdapter for Codex {
                  it write, so nothing was started."
             ));
         };
+        let Some((confinement, tmp)) = at
+            .confinement
+            .and_then(|confinement| Some((confinement, confinement.tmp()?)))
+        else {
+            return Err(format!(
+                "{lead} purlis's egress proxy was not started for this Codex chat, so nothing \
+                 was started."
+            ));
+        };
         // D-88q: a Codex home of the project's own, never the operator's.
         let Some(home) = &wrap.home else {
             return Err(format!(
@@ -221,34 +230,14 @@ impl HarnessAdapter for Codex {
                  home in, so nothing was started."
             ));
         };
-        // The floor (#2071): no proxy and no temp directory of its own, since nothing limits
-        // the network or the folders it writes.
-        let floor = wrap.level == crate::sandbox::Level::Floor;
-        let confined = at
-            .confinement
-            .and_then(|confinement| Some((confinement, confinement.tmp()?)));
-        let (profile, proxied) = if floor {
-            (crate::sandbox::codex::floor_profile(wrap), Vec::new())
-        } else {
-            let Some((confinement, tmp)) = confined else {
-                return Err(format!(
-                    "{lead} purlis's egress proxy was not started for this Codex chat, so \
-                     nothing was started."
-                ));
-            };
-            (
-                crate::sandbox::codex::profile(
-                    wrap,
-                    cwd,
-                    tmp,
-                    &confinement.proxy_ports(),
-                    at.hook_socket,
-                ),
-                crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp),
-            )
-        };
-        let profile = profile
-            .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+        let profile = crate::sandbox::codex::profile(
+            wrap,
+            cwd,
+            tmp,
+            &confinement.proxy_ports(),
+            at.hook_socket,
+        )
+        .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         // Only now, with the line known to start (review F6): a refused chat seeds no home.
         crate::sandbox::codex::prepare(wrap, cwd, &armed);
         let mut charters = charters;
@@ -266,7 +255,7 @@ impl HarnessAdapter for Codex {
             ]
             .concat(),
             env: [
-                proxied,
+                crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp),
                 vec![
                     (
                         crate::sandbox::codex::ROOTS_ENV.to_owned(),

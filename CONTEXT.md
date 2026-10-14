@@ -1085,6 +1085,21 @@ _Avoid_: scope (that word is kept off settings), layer, tier (tiers are where st
 
 ### The sandbox
 
+**Sandbox level**:
+How much a chat's sandbox holds, shown on its tab: **full sandbox** (a project's `mode = "on"`:
+the hosts it lists, the folders a chat writes, the asks), **floor** (the default, #2071), or
+**no sandbox** (a person's choice for a chat, or where the floor cannot be applied).
+_Avoid_: mode (that is the file's key), strict, relaxed
+
+**Floor**:
+The sandbox a chat runs in where its project has not turned the full sandbox on: every host
+reached through the chat's own proxy and none asked about, every folder written but what it
+holds. It holds the denial classes (no vault or purlis key read, nothing a later program runs
+written, at the person's own level too), the folders on the person's `PATH` and the programs
+it starts, which a block's Allow can lift, and no program started outside it, no local socket
+and no port of this machine but its own proxy's.
+_Avoid_: light sandbox, partial sandbox, sandbox off
+
 **Brokered write**:
 A write to the project's own files that a sandboxed chat asks purlis to make for it: a session
 record, memory, todos, `workspace.md`, persona files, a workspace or handoff made, and the

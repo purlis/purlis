@@ -407,9 +407,7 @@ fn ready_given(
             // The floor could not be applied here (#2071): the chat starts as before, and its
             // tab says why.
             Some(crate::sandbox::Decided::Floorless(why)) => {
-                if !why.is_empty() {
-                    notices.push(why);
-                }
+                notices.push(why);
                 (None, None)
             }
             None => (None, None),
@@ -477,7 +475,10 @@ fn ready_given(
             .chain(argv.iter().cloned())
             .collect();
         let mut writable = applied.writable();
-        writable.extend(crate::sandbox::program::temp_roots(&env));
+        // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+        if applied.level() == crate::sandbox::Level::Full {
+            writable.extend(crate::sandbox::program::temp_roots(&env));
+        }
         let (checked, said) = crate::sandbox::program::checked_answering(
             harness,
             &words,
@@ -597,7 +598,10 @@ pub fn sandbox_ahead(
         };
         let env = environment(profile, root, None, false, &Standing::of(root, root));
         let mut writable = applied.writable();
-        writable.extend(crate::sandbox::program::temp_roots(&env));
+        // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+        if applied.level() == crate::sandbox::Level::Full {
+            writable.extend(crate::sandbox::program::temp_roots(&env));
+        }
         crate::sandbox::program::checked(
             harness,
             &words,

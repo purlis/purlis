@@ -1618,3 +1618,32 @@ the person applies.
    pause. They are on the chat's own Ask, on the same ask's row in the Inbox, naming the chat
    ("restarts steward 3 at its next pause"), and, for each task listed, on a folder's question
    for several tasks.
+
+## Amended (2026-10-14, #2071; the operator's ruling SO-9/SO-10): the floor is the default
+
+Ruled by the operator on 2026-10-14 (#2071, as amended that day). A chat has one of three
+levels: the **full sandbox** of this ADR, **the floor**, or **no sandbox**. A project that has
+not turned the sandbox on (no `[sandbox] mode`) runs every chat at the floor, where before it ran
+them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-closed.
+
+- **What the floor lets a chat do.** Reach every host, through the chat's own proxy, whose reach
+  carries every host and asks about none; this machine's own addresses, a link-local address, a
+  metadata service and a host policy pins as never allowed stay refused there. Write every
+  folder but what it holds.
+- **What it holds.** Every denial class of section 5, path for path. The later-code class at
+  every depth anywhere and at the person's own level: git's own config, ssh's, what macOS
+  starts at login, each harness's user-level config and hooks, each editor's user settings and
+  tasks. The folders on the person's `PATH`, the package each link there leads to, and the
+  program the chat starts with its package: a write there is a sandbox block whose Allow lets
+  that chat write the folder (SO-10). No program started outside the profile (no Apple Event,
+  no Launch Services, no job handed to launchd, cron or at), no unix socket but the hook socket
+  and the ones a person allowed (ruling Q1), no port of this machine but the proxy's. The
+  certificate check as the project says it, and as policy leaves it.
+- **Per harness.** Claude Code: its own sandbox, every folder but the held ones writable, no
+  domain list, its commands' network through the chat's proxy, local binding off. Codex and
+  opencode on macOS: purlis's own profile from `(allow default)` with the floor's denials. A
+  brokered `secret exec` for a floor chat runs under the floor's profile, through the proxy.
+- **Where it cannot be applied** (ruling Q2): a harness purlis cannot wrap on this system, no
+  backend, or a vault registry purlis cannot read. The chat starts as it did before the floor,
+  and its tab says why. A person may still start a chat without the floor, audited as the
+  opt-out is.

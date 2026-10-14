@@ -421,27 +421,54 @@ pub fn profile(
     Ok(out)
 }
 
-/// **The floor's profile** (#2071): everything allowed, as a harness runs unsandboxed, but the
-/// denial classes and the floor's `held` folders, and what the harness keeps for itself
-/// (`own.deny`, `own.after`). Seatbelt takes the last rule that matches, so each denial follows
-/// the `(allow default)` it narrows.
+/// **The floor's profile** (#2071): files and the network as with no sandbox, but the denial
+/// classes and the floor's `held` folders, and what the harness keeps for itself (`own.deny`,
+/// `own.after`). Seatbelt takes the last rule that matches, so each denial follows the
+/// `(allow default)` it narrows. What else stays held ([`FLOOR_HELD`]):
 ///
-/// Every denied path is held as the full profile holds it: under each name the kernel may give
-/// it (#1336, #1356), and every folder above it pinned as an entry, so it is never moved aside
-/// with what it holds; here up to `/`, since the chat may write anywhere. Every name a later
-/// program runs ([`PLANTED`]) is never written at any depth anywhere, and no directory is made
-/// under a `.git/modules`.
+/// - nothing is started outside the profile: no Apple Event is sent, nothing is opened through
+///   Launch Services, and no program that hands a job to launchd, cron or at is run;
+/// - no unix socket but the chat's hook socket and the ones a person allowed it (the operator's
+///   ruling Q1), whose folder is never written, and no port of this machine but the chat's own
+///   proxy's `proxy_ports`, through which every host is reached;
+/// - every denied path held as the full profile holds it: under each name the kernel may give it
+///   (#1336, #1356), and every folder above it pinned as an entry up to `/`, so it is never moved
+///   aside with what it holds; every name a later program runs ([`PLANTED`]) never written at any
+///   depth anywhere, and no directory made under a `.git/modules`.
 pub fn floor_profile(
     denied: &[Denial],
     held: &[PathBuf],
     own: &Own,
+    proxy_ports: &[u16],
+    hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     let mut out = String::from(FLOOR_BASE);
+    out.push_str(FLOOR_HELD);
     let mut line = |text: String| {
         out.push_str(&text);
         out.push('\n');
     };
+    for port in proxy_ports {
+        line(format!(
+            "(allow network-outbound (remote ip \"localhost:{port}\"))"
+        ));
+    }
     let mut all: Vec<Denial> = denied.to_vec();
+    if let Some(socket) = hook_socket {
+        line(format!(
+            "(allow network-outbound (remote unix-socket (path-literal {})))",
+            quote(socket)?
+        ));
+        // Its folder is never written, so the socket is never replaced (#1408).
+        if let Some(folder) = socket.parent() {
+            all.push(Denial {
+                class: super::Class::Integrity,
+                path: folder.to_path_buf(),
+                access: Access::Write,
+                named: None,
+            });
+        }
+    }
     all.extend(held.iter().map(|path| Denial {
         class: super::Class::LaterCode,
         path: path.clone(),
@@ -493,7 +520,10 @@ pub fn floor_profile(
     for rule in floor_planted_rules()? {
         line(rule);
     }
-    line("(deny file-write-create (require-all (vnode-type DIRECTORY) (regex #\"^/(.*/)?\\.git/modules/.+\")))".to_owned());
+    line(
+        "(deny file-write-create (require-all (vnode-type DIRECTORY) (regex #\"^/(.*/)?\\.git/modules/.+\")))"
+            .to_owned(),
+    );
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
@@ -502,6 +532,25 @@ pub fn floor_profile(
     }
     Ok(out)
 }
+
+/// What the floor holds besides files ([`floor_profile`]): nothing started outside the profile,
+/// no unix socket and no port of this machine. The hook socket, the proxy's ports and what a
+/// person allowed are given back after it.
+pub const FLOOR_HELD: &str = "(deny appleevent-send)
+(deny lsopen)
+(deny mach-lookup
+  (global-name \"com.apple.coreservices.launchservicesd\")
+  (global-name \"com.apple.coreservices.appleevents\"))
+(deny process-exec
+  (literal \"/bin/launchctl\")
+  (literal \"/usr/bin/osascript\")
+  (literal \"/usr/bin/open\")
+  (literal \"/usr/bin/crontab\")
+  (literal \"/usr/bin/at\")
+  (literal \"/usr/bin/batch\"))
+(deny network-outbound (remote unix-socket))
+(deny network-outbound (remote ip \"localhost:*\"))
+";
 
 /// The rules that keep every [`PLANTED`] name from being written, at any depth anywhere: the
 /// floor lets a chat write every folder, so each name is held wherever it is.

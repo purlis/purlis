@@ -567,7 +567,7 @@ pub fn profile(
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     if wrap.level == super::Level::Floor {
-        return floor_profile(wrap);
+        return floor_profile(wrap, proxy_ports, hook_socket);
     }
     seatbelt::profile(
         &wrap.denied,
@@ -579,10 +579,21 @@ pub fn profile(
     )
 }
 
-/// The floor's profile (#2071): every folder written and the network open, but what the wrap
-/// denies and holds, and what the harness keeps for itself ([`seatbelt::floor_profile`]).
-pub fn floor_profile(wrap: &Wrap) -> Result<String, &'static str> {
-    seatbelt::floor_profile(&wrap.denied, &wrap.held, &own(wrap)?)
+/// The floor's profile (#2071): every folder written and every host reached through the chat's
+/// own proxy's `proxy_ports`, but what the wrap denies and holds, and what the harness keeps for
+/// itself ([`seatbelt::floor_profile`]); reporting on `hook_socket`.
+pub fn floor_profile(
+    wrap: &Wrap,
+    proxy_ports: &[u16],
+    hook_socket: Option<&Path>,
+) -> Result<String, &'static str> {
+    seatbelt::floor_profile(
+        &wrap.denied,
+        &wrap.held,
+        &own(wrap)?,
+        proxy_ports,
+        hook_socket,
+    )
 }
 
 /// What a wrapped Codex keeps for itself.

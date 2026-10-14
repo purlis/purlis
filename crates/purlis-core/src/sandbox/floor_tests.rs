@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The floor (#2071, the operator's ruling of 2026-10-14): the default for a project that has
-//! not turned the sandbox on. No network limits, no folder limits, no Allow asks; still no vault
+//! not turned the sandbox on. Every host and every folder but what it holds; still no vault
 //! read, nothing a later program runs written, and no folder on the person's `PATH` written.
 
 use super::*;
 use serde_json::Value;
+use std::io::Write as _;
 
 /// A project that has not turned the sandbox on, with a plain-file vault registered.
 fn project() -> (tempfile::TempDir, PathBuf) {
@@ -65,8 +66,7 @@ fn a_project_that_has_not_turned_the_sandbox_on_starts_its_chats_at_the_floor() 
         &machine_with(bin.path()),
     ));
     assert_eq!(applied.level(), Level::Floor);
-    // No proxy, so no Allow asks and no host list.
-    assert!(!applied.through_purlis_proxy());
+    // No host is listed: the chat's proxy carries every one ([`reach::Reach::anything`]).
     assert!(applied.confines().hosts.is_empty());
     let settings = settings_of(&applied);
     let network = &settings.sandbox["network"];
@@ -242,50 +242,253 @@ fn a_project_that_turned_the_sandbox_on_keeps_the_full_sandbox() {
     assert!(settings.deny.iter().any(|rule| rule == "WebFetch"));
 }
 
+/// The floor profile of a wrapped harness for a chat in `root`, reporting on `socket`, with its
+/// proxy on `ports`.
+fn wrapped_floor(
+    harness: Harness,
+    root: &Path,
+    machine: &Machine,
+    ports: &[u16],
+    socket: Option<&Path>,
+) -> String {
+    let compiled = Compiled::floor(root, machine, &grant::Grants::default());
+    let compile = compiler(harness).expect("a compiler");
+    match compile(&compiled).expect("compiled") {
+        Form::Codex(wrap) => codex::floor_profile(&wrap, ports, socket),
+        Form::Opencode(wrap) => opencode::floor_profile(&wrap, ports, socket),
+        Form::ClaudeCode(_) => unreachable!(),
+    }
+    .expect("a profile")
+}
+
 #[test]
-fn a_wrapped_harness_at_the_floor_allows_everything_but_what_the_floor_denies() {
+fn a_wrapped_harness_at_the_floor_writes_everything_but_what_the_floor_holds() {
+    use super::tests::writes;
     let (_dir, root) = project();
     let bin = tempfile::tempdir().expect("a bin");
     let held = real(bin.path());
     let machine = machine_with(bin.path());
+    let socket = root.join(".purlis/app/hooks.sock");
     for harness in [Harness::Codex, Harness::Opencode] {
-        let compiled = Compiled::floor(&root, &machine, &grant::Grants::default());
-        let compile = compiler(harness).expect("a compiler");
-        let profile = match compile(&compiled).expect("compiled") {
-            Form::Codex(wrap) => codex::floor_profile(&wrap),
-            Form::Opencode(wrap) => opencode::floor_profile(&wrap),
-            Form::ClaudeCode(_) => unreachable!(),
-        }
-        .expect("a profile");
+        let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], Some(&socket));
+        // Every folder written…
+        assert!(writes(&profile, &root.join("src/main.rs")), "{harness:?}");
         assert!(
-            profile.starts_with("(version 1)\n(allow default)\n"),
+            writes(&profile, Path::new("/Users/op/scratch/a.txt")),
             "{harness:?}"
         );
-        assert!(
-            profile.contains(&format!(
-                "(deny file-write* (subpath \"{}\"))",
-                held.display()
-            )),
-            "{harness:?}: the PATH folder is held"
-        );
-        for denial in compiled
-            .denied
-            .paths
-            .iter()
-            .filter(|d| d.access == Access::ReadWrite)
-        {
-            let path = real(&denial.path).display().to_string();
+        // …but a PATH folder, the hook socket's folder, and what a later program runs, at any
+        // depth and at the person's own level.
+        for not in [
+            held.join("tool"),
+            socket.parent().expect("a folder").join("other"),
+            root.join("repo/.git/hooks/pre-commit"),
+            PathBuf::from("/Users/op/.gitconfig"),
+            PathBuf::from("/Users/op/.config/git/config"),
+            PathBuf::from("/Users/op/.ssh/config"),
+            PathBuf::from("/Users/op/Library/LaunchAgents/x.plist"),
+            PathBuf::from("/Users/op/.zshrc"),
+            PathBuf::from("/Users/op/.config/fish/config.fish"),
+            PathBuf::from("/Users/op/.claude/settings.json"),
+            PathBuf::from("/Users/op/.claude/hooks/run.sh"),
+            PathBuf::from("/Users/op/.codex/config.toml"),
+            PathBuf::from("/Users/op/.config/opencode/opencode.json"),
+            PathBuf::from("/Users/op/Library/Application Support/Code/User/tasks.json"),
+            PathBuf::from("/Users/op/Library/Application Support/Cursor/User/settings.json"),
+        ] {
             assert!(
-                profile.contains(&format!(
-                    "(deny file-read* file-write* (subpath \"{path}\"))"
-                )),
-                "{harness:?}: {path}"
+                !writes(&profile, &not),
+                "{harness:?}: {} is writable",
+                not.display()
             );
         }
-        assert!(profile.contains("\\.git/"), "{harness:?}: later-code names");
-        assert!(
-            !profile.contains("localhost:"),
-            "{harness:?}: no proxy port"
-        );
     }
+}
+
+/// The floor holds what reaches outside it (#2071 review): the profile applied for real, where
+/// this machine can apply one.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_machine() {
+    let can_apply =
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let (_dir, root) = project();
+    let sockets = tempfile::tempdir().expect("a folder for sockets");
+    let hook = real(sockets.path()).join("hook.sock");
+    let other = real(sockets.path()).join("other.sock");
+    let _hook = std::os::unix::net::UnixListener::bind(&hook).expect("the hook socket");
+    let _other = std::os::unix::net::UnixListener::bind(&other).expect("another socket");
+    let proxy = std::net::TcpListener::bind("127.0.0.1:0").expect("a proxy port");
+    let service = std::net::TcpListener::bind("127.0.0.1:0").expect("a local service");
+    let proxy_port = proxy.local_addr().expect("its port").port();
+    let service_port = service.local_addr().expect("its port").port();
+    let bin = tempfile::tempdir().expect("a bin");
+    let held = real(bin.path());
+    let machine = machine_with(bin.path());
+    let profile = wrapped_floor(Harness::Codex, &root, &machine, &[proxy_port], Some(&hook));
+    let run = |script: &str| -> String {
+        let out = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/bin/sh", "-c", script])
+                .current_dir(&root),
+        )
+        .expect("it runs");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let tried = |what: &str| format!("{what} >/dev/null 2>&1 && echo yes || echo no");
+    // Files: written where nothing holds them, and not where the floor does.
+    assert_eq!(
+        run(&tried(&format!("touch {}/notes.txt", root.display()))),
+        "yes"
+    );
+    assert_eq!(run(&tried(&format!("touch {}/tool", held.display()))), "no");
+    // Nothing started outside the profile.
+    for program in [
+        "/bin/launchctl list",
+        "/usr/bin/osascript -e 1",
+        "/usr/bin/open -h",
+    ] {
+        assert_eq!(run(&tried(program)), "no", "{program}");
+    }
+    // The hook socket and the proxy's port, and no other socket or port of this machine.
+    let nc = |target: &str| tried(&format!("/usr/bin/nc -z -w 2 {target}"));
+    assert_eq!(
+        run(&tried(&format!("/usr/bin/nc -U -z {}", hook.display()))),
+        "yes"
+    );
+    assert_eq!(
+        run(&tried(&format!("/usr/bin/nc -U -z {}", other.display()))),
+        "no"
+    );
+    assert_eq!(run(&nc(&format!("127.0.0.1 {proxy_port}"))), "yes");
+    assert_eq!(run(&nc(&format!("127.0.0.1 {service_port}"))), "no");
+}
+
+#[test]
+fn a_claude_code_chat_at_the_floor_reaches_every_host_through_its_proxy() {
+    let (_dir, root) = project();
+    let applied = floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_with(Path::new("/opt/none")),
+    ));
+    let settings = settings_of(&applied);
+    // No domain list, so Claude Code's own list and prompts decide nothing; no port of this
+    // machine but the proxy's.
+    assert!(settings.sandbox["network"].get("allowedDomains").is_none());
+    assert_eq!(
+        settings.sandbox["network"]["allowLocalBinding"],
+        Value::Bool(false)
+    );
+    let through = settings.through([4040, 4041]);
+    assert_eq!(through.sandbox["network"]["httpProxyPort"], 4040);
+    // The proxy carries any host, and still no address of this machine.
+    let serving = applied.serving(egress::Refusals::default(), None);
+    let reach = &serving.reach;
+    assert!(reach.decide("example.org", 443, &[443], &[]).carries());
+    assert!(
+        reach
+            .decide("registry.example", 8080, &[443], &[])
+            .carries()
+    );
+    assert!(!reach.decide("127.0.0.1", 6379, &[443], &[]).carries());
+}
+
+#[test]
+fn the_floor_holds_the_package_a_link_on_the_path_leads_to() {
+    assert_eq!(
+        package_root(Path::new("/opt/homebrew/Cellar/git/2.50.1/bin/git")),
+        PathBuf::from("/opt/homebrew/Cellar/git")
+    );
+    assert_eq!(
+        package_root(Path::new(
+            "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+        )),
+        PathBuf::from("/opt/homebrew/lib/node_modules/@openai/codex")
+    );
+    assert_eq!(
+        package_root(Path::new("/Users/op/.local/pipx/venvs/black/bin/black")),
+        PathBuf::from("/Users/op/.local/pipx/venvs/black")
+    );
+    assert_eq!(
+        package_root(Path::new("/usr/local/bin/tool")),
+        PathBuf::from("/usr/local/bin")
+    );
+    // And a link on the PATH is followed to it.
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let keg = tempfile::tempdir().expect("a prefix");
+    let program = real(keg.path()).join("Cellar/tool/1.0/bin/tool");
+    std::fs::create_dir_all(program.parent().expect("a folder")).expect("a keg");
+    std::fs::write(&program, "").expect("a program");
+    std::os::unix::fs::symlink(&program, bin.path().join("tool")).expect("a link");
+    let held = floor_held(&root, &machine_with(bin.path()), &[]);
+    assert!(
+        held.contains(&real(keg.path()).join("Cellar/tool")),
+        "{held:?}"
+    );
+}
+
+/// SO-10: at the floor a folder on the PATH is a block whose Allow lets the chat write it; at
+/// the full sandbox it stays refused.
+#[test]
+fn a_path_folder_the_floor_holds_may_be_allowed() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let held = real(bin.path());
+    // A harness's own temp root is never granted: a run inside one (a sandboxed developer
+    // session) cannot stand a PATH folder anywhere else.
+    if grant::HARNESS_TEMP.iter().any(|prefix| {
+        held.display()
+            .to_string()
+            .contains(&format!("/tmp/{prefix}"))
+    }) {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: the temp folder here is a harness's own"
+        );
+        return;
+    }
+    let machine = machine_with(bin.path());
+    let ground = grant::Ground::of(&root, &root, &machine);
+    assert_eq!(
+        grant::write(&held.display().to_string(), &ground.place()),
+        Ok(held.clone())
+    );
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
+    let ground = grant::Ground::of(&root, &root, &machine);
+    assert!(grant::write(&held.display().to_string(), &ground.place()).is_err());
+}
+
+#[test]
+fn the_floor_keeps_the_projects_certificate_checks() {
+    let (_dir, root) = project();
+    let machine = machine_with(Path::new("/opt/none"));
+    assert!(
+        Compiled::floor(&root, &machine, &grant::Grants::default())
+            .widened
+            .trust
+    );
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\ncertificate-checks = false\n",
+    )
+    .expect("charter.toml");
+    assert!(
+        !Compiled::floor(&root, &machine, &grant::Grants::default())
+            .widened
+            .trust
+    );
 }

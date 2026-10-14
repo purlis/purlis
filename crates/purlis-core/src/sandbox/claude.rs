@@ -229,6 +229,26 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     // The floor (#2071): no folder limits, so every folder is written but what it holds.
     if compiled.level == Level::Floor {
         allow_write = vec!["/".to_owned()];
+        // Every later-code name wherever it is, the home's among them: a relative `**/<name>`
+        // is read against the chat's folder, and at the floor every folder is written.
+        for planted in super::PLANTED
+            .iter()
+            .filter(|planted| planted.reach == super::Reach::AndBelow)
+        {
+            let mut globs = vec![format!("/**/{}", planted.path)];
+            if let Some(home) = &compiled.homes.home
+                && !planted.path.contains("**")
+            {
+                for name in names_for(&home.join(planted.path)) {
+                    globs.push(name.display().to_string());
+                }
+            }
+            for glob in globs {
+                edit_rules.push(format!("Edit(/{glob})"));
+                edit_rules.push(format!("Edit(/{glob}/**)"));
+                deny_write.push(glob);
+            }
+        }
         for path in &compiled.held {
             for name in names_for(path) {
                 let name = name.display().to_string();
@@ -284,11 +304,13 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
 }
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
-/// denial class, and the floor's held folders, with every other folder writable), and nothing
-/// limiting the network: no allowed domains, which is what leaves a command's network
-/// unrestricted (Claude Code restricts it only while they are set), no proxy, local binding on,
-/// and its web tools allowed. Unix sockets stay as at the full sandbox: none but the ones a
-/// person allowed (the operator's ruling Q1), and the hook socket the chat opens with.
+/// denial class, and the floor's held folders, with every other folder writable), and its
+/// network through the chat's own proxy, whose reach carries every host
+/// ([`super::reach::Reach::anything`]): the proxy's ports are added where the chat opens
+/// ([`Settings::through`]), and no domain is listed, so Claude Code's own list and its prompts
+/// decide nothing. Local binding stays off, so a command reaches no port of this machine but the
+/// proxy's. Its web tools are allowed. Unix sockets stay as at the full sandbox: none but the ones
+/// a person allowed (the operator's ruling Q1), and the hook socket the chat opens with.
 fn floor(
     filesystem: Value,
     read_rules: Vec<String>,
@@ -302,7 +324,7 @@ fn floor(
         "enableWeakerNetworkIsolation": compiled.widened.trust,
         "network": {
             "allowAllUnixSockets": false,
-            "allowLocalBinding": true,
+            "allowLocalBinding": false,
         },
         "filesystem": filesystem,
     });
