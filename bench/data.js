@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792007016468,
+  "lastUpdate": 1792008533655,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11088,6 +11088,48 @@ window.BENCHMARK_DATA = {
             "value": 101.85233600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.307, 101.720, 101.852, 102.445, 102.773 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b8a320a8744e9075c122cd52b9cf6c4f4df40a30",
+          "message": "Leftover persona sub-agent files: a Notice with Fix, not a line in every briefing (#2072)\n\n* Leftover persona sub-agent files: a Notice with Fix, not a line in every briefing\n\nThe briefing no longer tells each chat that the project still holds the sub-agent files purlis\ngenerated for a persona. The doctor's `personas` row, when it offers `persona-agents`, now\nstands as a Notice in the Inbox (FINDINGS_AS_NOTICES), whose Fix runs the same fix the dialog's\nrow runs through `plane_doctor_fix` (already window-only), and which goes once the doctor\nchecks again without the files (#1990, Q67).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(1990): The briefing's call site and the Notice rule name the persona-agents exception\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T00:07:33+04:00",
+          "tree_id": "fd44089c7dc7e8ed8489053ac0a7163a9ab187a7",
+          "url": "https://github.com/purlis/purlis/commit/b8a320a8744e9075c122cd52b9cf6c4f4df40a30"
+        },
+        "date": 1792008532480,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.512025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.493, 0.504, 0.512, 0.516, 0.526 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.981439,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.585, 16.857, 16.981, 17.064, 17.103 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.49175550000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.929, 103.249, 103.492, 104.470, 104.554 ms"
           }
         ]
       }
