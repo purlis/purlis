@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791942925087,
+  "lastUpdate": 1791945309066,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1580,6 +1580,42 @@ window.BENCHMARK_DATA = {
             "value": 285.7,
             "unit": "MB",
             "extra": "median of 6 samples: 283.1, 283.8, 285.3, 286.1, 287, 379.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "15d71518bfaa267523675538d27ed6d8cb7ad68e",
+          "message": "review(qw370): no overlay of a project behind is ever mounted, whenever it was opened\n\nFrom the second review of the pull request.\n\nA view kept behind another is not drawn again by its parent, but a part of it\ncan still set its own state. Land… asks the core and opens its question on the\nanswer: with nothing over the window while it waits, the person could go to\nanother project, and the answer then opened \"Land widget's pull request #7?\"\nover that one, naming no project, where Land would merge in the first. The rule\nthat looked as a project leaves the front could not see it.\n\nSo every overlay is written through overlays/, one file per Radix package: the\nsame parts, with the portal, the content and the scrim drawn only while their\nproject is in front. Nothing of a project behind is mounted over the window, so\nnothing a dialog does to the document as it mounts happens either, and the\nquestion is there when the person is back in the project it is about. A guard\nfails for an overlay imported from the package, for a kind with no file there,\nand for a new portal. The guards that find a file's dialogs and menus by what\nit imports read both spellings.\n\nThe look as a project leaves stays as a backstop, and is made once the press is\nover: a menu's row switches and then closes its menu, in that order.\n\nThe switch clock measures a command only where it was asked for a switch, and\nkeeps one measure of each name. A view's scrolled places are let go as they\npile up, and not only as it leaves.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T05:53:04+04:00",
+          "tree_id": "afa07ba07ef64e4a983599b12a521a57995f9be0",
+          "url": "https://github.com/purlis/purlis/commit/15d71518bfaa267523675538d27ed6d8cb7ad68e"
+        },
+        "date": 1791945308343,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 904,
+            "unit": "MB",
+            "extra": "median of 3 samples: 755, 904, 964 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 176.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 234.2, 218, 177.7, 174.8, 173.2, 122.2 MB"
           }
         ]
       }
