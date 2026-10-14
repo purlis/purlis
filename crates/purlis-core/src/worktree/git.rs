@@ -94,7 +94,7 @@ mod listing;
 mod network;
 pub mod presence;
 
-pub use group::stay_in_the_callers_group;
+pub use group::{each_git_leads_its_own_group, stay_in_the_callers_group};
 pub(crate) use group::{lead, stop};
 
 /// The deadline for a READ — a listing, a status, a config lookup.
