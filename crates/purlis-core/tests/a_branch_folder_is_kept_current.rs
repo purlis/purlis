@@ -130,6 +130,17 @@ fn said(lines: &[Say]) -> String {
 }
 
 fn add(w: &World, piece: &str, base: Option<&str>) -> (u8, String) {
+    add_judged(w, piece, base, false)
+}
+
+/// [`add`], judged as the app judges a cut for a sandboxed chat where `judged` is set.
+fn add_judged(w: &World, piece: &str, base: Option<&str>, judged: bool) -> (u8, String) {
+    let chat = w.plane.join("workspaces").join(WS);
+    let judge = |clone: &Path, start: &str, folder: &Path| {
+        purlis_core::cloneupdate::judged_cut(clone, start, folder, &w.plane, Some(&chat))
+            .map_or(Ok(()), Err)
+    };
+    let vet: Option<purlis_core::worktree::Vet<'_>> = judged.then_some(&judge);
     let mut lines = Vec::new();
     let code = brokered(|| {
         purlis_core::piececmd::add(
@@ -139,6 +150,7 @@ fn add(w: &World, piece: &str, base: Option<&str>) -> (u8, String) {
             piece,
             None,
             base,
+            vet,
             &Who::here(None, Some("3".to_owned()), None),
             chrono::Utc::now(),
             &mut |line| lines.push(line),
@@ -374,4 +386,47 @@ fn an_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_start(
     // From a terminal, the same update runs.
     let (code, said) = update(&w, "p1", &start(None), &Reach::default());
     assert_eq!(code, 0, "{said}");
+}
+
+#[test]
+fn a_cut_for_a_sandboxed_chat_is_judged_as_its_own_checkout_would_be() {
+    purlis_core::unsteered!();
+    let w = world();
+    // A commit that adds an editor's tasks file, which the clone does not have checked out,
+    // put under the default branch's name while the clone is on another branch.
+    git(&w.clone, &["checkout", "-q", "-b", "ci/theirs"]);
+    std::fs::create_dir_all(w.clone.join(".vscode")).unwrap();
+    write(&w.clone, ".vscode/tasks.json", "{}\n");
+    git(&w.clone, &["add", ".vscode/tasks.json"]);
+    git(&w.clone, &["commit", "-q", "-m", "tasks"]);
+    let crafted = out(&w.clone, &["rev-parse", "HEAD"]);
+    git(&w.clone, &["reset", "-q", "--hard", "HEAD~1"]);
+    std::fs::remove_dir_all(w.clone.join(".vscode")).ok();
+    git(&w.clone, &["update-ref", "refs/heads/main", &crafted]);
+
+    let (code, said) = add_judged(&w, "p1", None, true);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains(".vscode/tasks.json"), "{said}");
+    assert!(!w.piece("p1").exists());
+
+    // A cut whose start writes nothing of that kind runs, judged or not.
+    let (code, said) = add_judged(&w, "p2", Some("HEAD"), true);
+    assert_eq!(code, 0, "{said}");
+}
+
+#[test]
+fn the_apps_own_fetch_puts_back_a_remote_branch_moved_in_the_clone() {
+    purlis_core::unsteered!();
+    let w = world();
+    let theirs = out(&w.clone, &["rev-parse", "origin/main"]);
+    git(&w.clone, &["checkout", "-q", "-b", "side"]);
+    write(&w.clone, "side.txt", "s\n");
+    git(&w.clone, &["add", "side.txt"]);
+    git(&w.clone, &["commit", "-q", "-m", "side"]);
+    let side = out(&w.clone, &["rev-parse", "HEAD"]);
+    git(&w.clone, &["update-ref", "refs/remotes/origin/main", &side]);
+
+    brokered(|| purlis_core::repocmd::sync::fetch_remote(&w.plane, &w.clone, "origin", None))
+        .expect("fetched");
+    assert_eq!(out(&w.clone, &["rev-parse", "origin/main"]), theirs);
 }

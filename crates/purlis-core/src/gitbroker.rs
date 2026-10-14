@@ -175,6 +175,27 @@ fn isolated_answer(
                 GitWork::WorktreeCut { base, .. } => base.as_deref(),
                 _ => Some(crate::piececmd::HEAD),
             };
+            // For a sandboxed chat (qw387): the remote-tracking branches a cut may start from
+            // are the app's own fetch's, and the cut is judged as the chat's own checkout of
+            // its start would be.
+            let sandboxed = match commit::sandboxed(root, asker) {
+                Ok(sandboxed) => sandboxed,
+                Err(why) => return no(why),
+            };
+            if sandboxed
+                && base != Some(crate::piececmd::HEAD)
+                && let Ok(clone) = crate::worktree::clone_dir(root, &ask.workspace, repo)
+                && let Some(remote) = crate::pieceupdate::remote_of(&clone, base.unwrap_or("HEAD"))
+                && let Err(why) =
+                    crate::repocmd::sync::fetch_remote(root, &clone, &remote, hosts.as_deref())
+            {
+                return no(format!("{why}. Nothing was cut"));
+            }
+            let judged = |clone: &Path, start: &str, folder: &Path| {
+                crate::cloneupdate::judged_cut(clone, start, folder, root, asker.cwd.as_deref())
+                    .map_or(Ok(()), Err)
+            };
+            let vet: Option<crate::worktree::Vet<'_>> = sandboxed.then_some(&judged);
             let add = |say: &mut dyn FnMut(Say)| {
                 crate::piececmd::add(
                     root,
@@ -183,6 +204,7 @@ fn isolated_answer(
                     piece,
                     branch.as_deref(),
                     base,
+                    vet,
                     &who(asker),
                     now,
                     say,

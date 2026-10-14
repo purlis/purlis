@@ -1493,6 +1493,10 @@ same core code a terminal runs:
 3. **`purlis worktree add` cuts from the branch the remote names its default** (`origin/HEAD`),
    or `--base <branch>`, brought up as in 1; `--base HEAD` keeps the clone's HEAD. An ask from
    an older command, which names no base, keeps the clone's HEAD.
+4. **An app-run checkout is judged as a chat's own would be.** For a sandboxed chat the app
+   fetches before it cuts, so the remote-tracking branches it reads are its own fetch's, and a
+   cut that would write a file section 5 denies the chat, where the clone has that file
+   otherwise or not at all, is refused and named; the person cuts it from their own terminal.
 
 The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
 

@@ -93,6 +93,7 @@ pub fn add(
     piece: &str,
     branch: Option<&str>,
     base: Option<&str>,
+    vet: Option<worktree::Vet<'_>>,
     who: &Who,
     now: DateTime<Utc>,
     say: &mut dyn FnMut(Say),
@@ -108,8 +109,8 @@ pub fn add(
         None => worktree::fresh::remote_default(plane, ws, repo),
     };
     let cut = match base.as_deref() {
-        Some(base) => worktree::add_based(plane, ws, repo, piece, branch, base),
-        None => worktree::add(plane, ws, repo, piece, branch)
+        Some(base) => worktree::add_based(plane, ws, repo, piece, branch, base, vet),
+        None => worktree::add_vetted(plane, ws, repo, piece, branch, None, vet)
             .map(|added| (added, worktree::fresh::Fresh::default())),
     };
     let (added, fresh) = match cut {

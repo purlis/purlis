@@ -164,6 +164,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                     &piece,
                     branch.as_deref(),
                     base.as_deref(),
+                    None,
                     &who,
                     now,
                     &mut say,

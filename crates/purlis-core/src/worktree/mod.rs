@@ -700,6 +700,7 @@ pub fn add_based(
     piece: &str,
     branch: Option<&str>,
     base: &str,
+    vet: Option<Vet<'_>>,
 ) -> Result<(Added, fresh::Fresh), Refusal> {
     relocation_refusal(plane)?;
     path_for(plane, ws, repo, piece)?;
@@ -710,7 +711,7 @@ pub fn add_based(
         tree: fresh::checked_out_in(&clone, base)?,
         at: fresh.instead.clone(),
     };
-    let added = add_from(plane, ws, repo, piece, branch, Some(&start))?;
+    let added = add_vetted(plane, ws, repo, piece, branch, Some(&start), vet)?;
     Ok((added, fresh))
 }
 
@@ -727,6 +728,24 @@ pub fn add_from(
     piece: &str,
     branch: Option<&str>,
     from: Option<&Start>,
+) -> Result<Added, Refusal> {
+    add_vetted(plane, ws, repo, piece, branch, from, None)
+}
+
+/// What judges a cut before git makes it: the clone, the start as git is handed it (`None`,
+/// the clone's HEAD), and the folder it will be checked out into; a sentence refuses it.
+pub type Vet<'a> = &'a dyn Fn(&Path, &str, &Path) -> Result<(), String>;
+
+/// [`add_from`], with `vet` asked about the start just before git cuts from it (qw387): an
+/// app-run cut for a sandboxed chat is judged as the chat's own checkout would be.
+pub fn add_vetted(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    branch: Option<&str>,
+    from: Option<&Start>,
+    vet: Option<Vet<'_>>,
 ) -> Result<Added, Refusal> {
     relocation_refusal(plane)?;
     let path = path_for(plane, ws, repo, piece)?;
@@ -815,6 +834,15 @@ pub fn add_from(
         Some(at) if at.starts_with("refs/remotes/") => at.clone(),
         _ => name::as_ref(&start.branch),
     });
+    if let Some(vet) = vet {
+        vet(&clone, start_ref.as_deref().unwrap_or("HEAD"), &path).map_err(|why| {
+            Refusal::Stuck {
+                what: "worktree add".to_owned(),
+                terminal: why.clone(),
+                window: why,
+            }
+        })?;
+    }
     let mut args = vec!["worktree", "add", "-b", &branch, &shown_path];
     if let Some(start_ref) = start_ref.as_deref() {
         args.push(start_ref);

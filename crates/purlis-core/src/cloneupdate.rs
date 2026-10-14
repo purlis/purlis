@@ -945,6 +945,106 @@ pub fn said_clone(denied: &[String]) -> String {
     )
 }
 
+/// The refusal an app-run cut earns for a sandboxed chat (qw387), or `None`: a new branch
+/// folder at `folder` checked out from `start` in the clone at `clone`, judged as the chat's
+/// own checkout of it would be. Every file of `start` is written there, so a denied path it
+/// tracks is refused where its content is not what the clone already has checked out at that
+/// path, or where the clone has nothing there. `root` and `chat_dir` say which manifests the
+/// chat's sandbox holds. Fails closed: where git does not answer, the cut is refused.
+pub fn judged_cut(
+    clone: &Path,
+    start: &str,
+    folder: &Path,
+    root: &Path,
+    chat_dir: Option<&Path>,
+) -> Option<String> {
+    let unread = || {
+        Some(format!(
+            "purlis could not read what the new branch folder would hold ({}), so the app did \
+             not cut it for this chat. Ask the person to run the command in their own terminal",
+            crate::shown::short(start)
+        ))
+    };
+    if start.is_empty() || start.starts_with('-') {
+        return unread();
+    }
+    let clone_s = clone.to_string_lossy();
+    let Some(listing) = Asked::git(
+        &clone_s,
+        &["ls-tree", "-r", "-z", "--full-tree", start, "--"],
+    ) else {
+        return unread();
+    };
+    let denies = Denies::of(&folder.to_string_lossy(), &root.to_string_lossy(), chat_dir);
+    let nothing_there = NothingThere(&Asked);
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
+        let Some((meta, path)) = entry.split_once('\t') else {
+            return unread();
+        };
+        if !denies.path(path, &nothing_there) {
+            continue;
+        }
+        let mut meta = meta.split(' ');
+        let (mode, oid) = (meta.next().unwrap_or(""), meta.nth(1).unwrap_or(""));
+        wanted.push((path.to_owned(), format!("{mode} {oid}")));
+    }
+    if wanted.is_empty() {
+        return None;
+    }
+    // What the clone holds at each path now: a plain file's bytes as git would store them,
+    // through no filter; anything else (gone, a folder, a link) is not the same.
+    let mut differ: Vec<String> = Vec::new();
+    let mut plain: Vec<&(String, String)> = Vec::new();
+    for want in &wanted {
+        let file = clone.join(&want.0);
+        let is_file = std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file());
+        if is_file && want.1.starts_with("100") && !want.0.contains(['\n', '\r']) {
+            plain.push(want);
+        } else {
+            differ.push(want.0.clone());
+        }
+    }
+    if !plain.is_empty() {
+        let mut input = String::new();
+        for (path, _) in &plain {
+            input.push_str(path);
+            input.push('\n');
+        }
+        let asked = git::isolated(&Asked::held(), || {
+            git::run_with_input(
+                clone,
+                &["hash-object", "--no-filters", "--stdin-paths"],
+                input.into_bytes(),
+                crate::doctor::CHECK_TIMEOUT,
+            )
+        });
+        let Ok(asked) = asked else {
+            return unread();
+        };
+        let now = String::from_utf8_lossy(&asked.out).into_owned();
+        let now: Vec<&str> = now.lines().collect();
+        if asked.code != Some(0) || now.len() != plain.len() {
+            return unread();
+        }
+        for ((path, meta), oid) in plain.into_iter().zip(now) {
+            if !meta.ends_with(oid.trim()) {
+                differ.push(path.clone());
+            }
+        }
+    }
+    (!differ.is_empty()).then(|| {
+        format!(
+            "the new branch folder would be checked out from {} with {}, which differ from what \
+             the clone has checked out, and {WHY} The app checks a folder out for this chat as \
+             the chat's own checkout would be judged, so nothing was cut. Ask the person to run \
+             the command in their own terminal",
+            crate::shown::short(start),
+            listed(&differ)
+        )
+    })
+}
+
 /// What the chat is told of a command that would write the files of a folder that has none
 /// of them yet (cloned without a checkout): the whole tree is written, whatever commit the
 /// folder is already at.

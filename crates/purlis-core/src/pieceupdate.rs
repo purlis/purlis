@@ -163,7 +163,7 @@ fn first_line(text: &str) -> String {
 
 /// The remote branch `branch` of `clone` is fetched from: its own, else `origin` where the
 /// clone has one. `None` for a clone with no remote.
-fn remote_of(clone: &Path, branch: &str) -> Option<String> {
+pub(crate) fn remote_of(clone: &Path, branch: &str) -> Option<String> {
     let key = format!("branch.{branch}.remote");
     let said = git::run(clone, &["config", "--get", &key], git::READ).ok()?;
     let named = said.line().trim();
@@ -265,6 +265,8 @@ fn start(
             root: &root,
             chat_dir: Some(chat_dir),
             alone: true,
+            // The app runs exactly this rebase, with nothing beside it.
+            sparse: true,
         };
         let folder = here.folder.to_string_lossy();
         if let Some(why) = crate::cloneupdate::judged(

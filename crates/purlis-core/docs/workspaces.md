@@ -354,7 +354,10 @@ fast-forward and no worktree has it checked out, as `git fetch <remote> <branch>
 would. Where the base is checked out (the clone is on it, most often) and behind, it is left
 where it is and the piece is cut from, or rebased onto, the remote-tracking branch instead;
 the command says so, and until the clone is brought up (`purlis sync`) the piece's Changes
-count the remote's newer commits too. `add` fetches nothing: `update` does.
+count the remote's newer commits too. From a terminal `add` fetches nothing; `update` does.
+For a sandboxed chat the app fetches first, and checks the new folder out only as the chat's
+own checkout of it would be judged: a cut that would write a file the chat's sandbox denies,
+where the clone has that file otherwise or not at all, is refused, naming it.
 
 **Keeping a piece current, and publishing it.** A sandboxed chat may not write a piece's git
 directory, so its own `git fetch`, `git rebase` and `git reset` fail there. From inside the
