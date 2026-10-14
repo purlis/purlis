@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791975478166,
+  "lastUpdate": 1791977171615,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1866,6 +1866,42 @@ window.BENCHMARK_DATA = {
             "value": 222.9,
             "unit": "MB",
             "extra": "median of 6 samples: 208.8, 222, 223.8, 224, 224.7, 155.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "86112c50f1ad1243577a433874ccf0cc963b0a1d",
+          "message": "review(qw379b): the guard follows commands to the writes, and an open after the quit lets go\n\n- The lane guard (lane_writes_guard_tests.rs) follows each window command two\n  calls down, qualified calls to that module's file and plain calls in the\n  same file, and holds every command that reaches a listed write to that\n  site's `by`. Any function of the sandbox's local file that is not one of its\n  known reads counts as a write. Test modules are skipped by their braces, so\n  code after one is read. A row no command writes says why. Self-tests hold\n  each of these, with fixtures: a new command writing through a listed\n  helper, code after a test module, a new local function.\n- It found what the table missed: the settings commands that prune confirmed\n  hosts through `file_of`, choosePlaneMode through the settings writer, the\n  away list's Dismiss, and the sandbox's start tally (`local::count`).\n- An open still in its sweep when the quit stops waiting lets go of the\n  project it built instead of holding it: the quit sets a flag the open reads\n  under the registry's lock.\n\nRefs #1949\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T14:57:48+04:00",
+          "tree_id": "96bcd46eace2853b52aa623486cbe4ece6d20678",
+          "url": "https://github.com/purlis/purlis/commit/86112c50f1ad1243577a433874ccf0cc963b0a1d"
+        },
+        "date": 1791977170321,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 518,
+            "unit": "MB",
+            "extra": "median of 3 samples: 516, 518, 664 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 288.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 287.3, 287, 288.4, 289, 290, 395.6 MB"
           }
         ]
       }
