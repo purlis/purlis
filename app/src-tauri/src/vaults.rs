@@ -170,9 +170,20 @@ pub(crate) fn run_brokered(
         );
         let why = format!("chat {} is not one this app has open", ask.chat);
         // The last try of a server's start of a chat whose start outlasted the wait: still
-        // said, on the tab it will have and at its first turn.
-        if let Some(start) = start.as_ref().filter(|start| start.last) {
-            crate::mcpfailed::failed(held, plane, failed, ask.chat, None, &start.server, &why);
+        // said, on the tab it will have and at its first turn, held to the persona the chat is
+        // starting as. A chat on no persona has no persona's servers to name.
+        if let Some(start) = start.as_ref().filter(|start| start.last)
+            && let Some(Some(persona)) = held.chats().starting_as(ask.chat)
+        {
+            crate::mcpfailed::failed(
+                held,
+                plane,
+                failed,
+                ask.chat,
+                Some(&persona),
+                &start.server,
+                &why,
+            );
         }
         return if held.mcp_failures().starting(ask.chat) {
             brokered::refused_for_now(writer, why)

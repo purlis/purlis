@@ -8699,6 +8699,109 @@ mod tests {
             .unwrap_or_else(|e| purlis_core::hookwire::Answer::No { why: e.to_string() })
     }
 
+    /// qw381: `run_brokered` itself asks for the chat's record through
+    /// `vaults::the_askers_record`, so a run from a chat the app is still starting waits for it
+    /// before it is refused. The last try of an MCP server's start of a chat that never opened
+    /// is said only for a server the persona it is starting as declares (P1b).
+    #[cfg(unix)]
+    #[test]
+    fn run_brokered_waits_for_a_starting_chat_and_names_only_its_personas_server() {
+        use purlis_core::secrets::brokered::{A_START_IS_WAITED_FOR, Ask, Frame, NOT_YET, Wanted};
+        use purlis_core::secrets::mcpstart::McpStart;
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("plane"));
+        let persona = root.join("personas/elastic");
+        std::fs::create_dir_all(&persona).expect("a persona");
+        std::fs::write(
+            persona.join("persona.md"),
+            "---\nname: elastic\ndelegate_when: logs\n---\n# elastic\n",
+        )
+        .expect("its md");
+        std::fs::write(
+            persona.join("mcp.json"),
+            r#"{"mcpServers": {"elasticsearch": {"command": "node", "args": ["main.js"]}}}"#,
+        )
+        .expect("its servers");
+        let (planes, _told) = planes_telling();
+        let id = planes.open(&root);
+        let held = planes.held(&id).expect("it is held");
+        let chat = 42;
+        held.mcp_failures().began(chat, std::time::Instant::now());
+        held.chats().starting_as_for_test(chat, Some("elastic"));
+        let _token = held.hooks().token_for(chat);
+
+        let said: Arc<Mutex<Vec<crate::mcpfailed::McpFailed>>> = Arc::default();
+        let run = |server: &str| -> Vec<Frame> {
+            let wire: Arc<Mutex<Vec<u8>>> = Arc::default();
+            struct Wire(Arc<Mutex<Vec<u8>>>);
+            impl std::io::Write for Wire {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                    self.0.lock().unwrap().extend_from_slice(buf);
+                    Ok(buf.len())
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            let ask = Ask {
+                chat,
+                secret_exec: Wanted {
+                    vault: "elastic".to_owned(),
+                    command: vec!["node".to_owned()],
+                    mcp: Some(McpStart {
+                        server: server.to_owned(),
+                        last: true,
+                    }),
+                    ..Wanted::default()
+                },
+            };
+            let said = Arc::clone(&said);
+            crate::vaults::run_brokered(
+                &held,
+                &id,
+                &|_| {},
+                &move |failed| said.lock().unwrap().push(failed),
+                ask,
+                Box::new(std::io::Cursor::new(Vec::new())),
+                Box::new(Wire(Arc::clone(&wire))),
+                Arc::new(|_| {}),
+            );
+            let bytes = wire.lock().unwrap().clone();
+            String::from_utf8(bytes)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("a frame"))
+                .collect()
+        };
+
+        let began = std::time::Instant::now();
+        let frames = run("elasticsearch");
+        assert!(
+            began.elapsed() >= A_START_IS_WAITED_FOR,
+            "it waited for the chat's record"
+        );
+        assert!(
+            matches!(frames.as_slice(), [Frame::Refused { code, .. }] if *code == NOT_YET),
+            "{frames:?}"
+        );
+        let told = said.lock().unwrap().clone();
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert_eq!(told[0].server, "elasticsearch");
+        assert_eq!(told[0].persona.as_deref(), Some("elastic"));
+
+        // A server the persona it is starting as does not declare is not named.
+        crate::mcpfailed::failed(
+            &held,
+            &id,
+            &|failed| said.lock().unwrap().push(failed),
+            chat,
+            Some("elastic"),
+            "github",
+            "a process's words",
+        );
+        assert_eq!(said.lock().unwrap().len(), 1);
+    }
+
     /// qw381: a brokered run from a chat the app is still starting waits for the chat's record,
     /// through the app's own lookup (`vaults::the_askers_record`, which `run_brokered` asks). A
     /// chat the app is not starting is answered at once, and a record found after the chat's
