@@ -1207,6 +1207,39 @@ fn the_settings_save_refuses_a_depth_of_nine() {
     );
 }
 
+// ---- when a quiet task is noted (#1981) ---------------------------------------------------------
+
+#[test]
+fn a_quiet_task_is_noted_after_fifteen_minutes_and_one_command_after_thirty_unless_set() {
+    let limits = committed("");
+    assert_eq!(
+        (limits.quiet_note_minutes, limits.one_command_note_minutes),
+        (15, 30)
+    );
+    let limits = committed(
+        "[dispatch]\nquiet-note-minutes = 5\n\n[dispatch.personas.steward]\n\
+         one-command-note-minutes = 90\n",
+    );
+    assert_eq!(
+        (limits.quiet_note_minutes, limits.one_command_note_minutes),
+        (5, 90)
+    );
+    // A note limits no dispatch.
+    assert_eq!(decide(&limits, &quiet()), Decision::Allowed);
+    // A 0 would be a note every look: it is refused as written, and switches nothing off.
+    let read = read(Some("[dispatch]\nquiet-note-minutes = 0\n"), FILE);
+    assert_eq!(read.table.project.get(Limit::QuietNoteMinutes), None);
+    assert!(
+        read.refused
+            .join("\n")
+            .contains("quiet note after is a whole number of minutes, 1 or more"),
+        "{:?}",
+        read.refused
+    );
+    assert_eq!(Limit::QuietNoteMinutes.least(), 1);
+    assert!(!Limit::OneCommandNoteMinutes.persona_only());
+}
+
 // ---- a session's tokens and a task's time (#1512) ------------------------------------------------
 
 #[test]

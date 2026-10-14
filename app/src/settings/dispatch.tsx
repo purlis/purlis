@@ -121,6 +121,9 @@ const SHORT: Readonly<Record<string, string>> = {
   "may-run-at-once": "At once",
   "tokens-per-session": "Tokens",
   "minutes-per-task": "Minutes",
+  // When purlis notes a quiet task (#1981): a note, never a limit on dispatch.
+  "quiet-note-minutes": "Quiet",
+  "one-command-note-minutes": "Command",
 };
 
 /** One limit's box: empty where the row does not set it, showing what is in force beneath. */

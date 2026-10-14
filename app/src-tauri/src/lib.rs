@@ -104,6 +104,7 @@ mod saving;
 mod searchfiles;
 mod sessions;
 mod settings;
+mod silence;
 mod slowstart;
 mod smartclose;
 mod stopping;
@@ -3385,6 +3386,18 @@ pub fn run() {
                 // Each line of a dispatch as the app records it: an open Activity tab adds
                 // it without reading the records again (#1495). To the window holding the
                 // project only: a line carries what a chat said.
+                // A task gone quiet, on its tab (#1981).
+                .telling_task_quiet({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: silence::TaskQuiet| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            silence::EVENT,
+                            &told,
+                        );
+                    })
+                })
                 .telling_activity({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |heard: activity::ActivityHeard| {

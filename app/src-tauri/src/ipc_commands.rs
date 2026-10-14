@@ -100,6 +100,8 @@ macro_rules! app_commands {
                 removalasks::keep_asked_workspace,
                 mcpfailed::mcp_failures,
                 mcpfailed::put_away_mcp_failure,
+                silence::task_quiet,
+                silence::put_away_task_quiet,
                 dispatchlimits::dispatch_limits,
                 dispatchgrants::dispatch_grants_needed,
                 dispatchgrants::allow_dispatch,

@@ -641,6 +641,8 @@ pub(crate) fn keep_looking(app: tauri::AppHandle) {
                     };
                     roots.insert(held.root().to_owned());
                     look_guarded(&held);
+                    // And on the same clock, each task gone quiet (#1981).
+                    crate::silence::look(&held, std::time::Instant::now());
                 }
                 forget_all_but(&mut kept(), &roots);
             }

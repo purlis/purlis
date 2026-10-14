@@ -207,3 +207,70 @@ fn the_chat_that_asked_reads_what_its_task_said_and_ran_and_no_other_chat_does()
     let said = asks(&held, &id, task, What::Output { of: task });
     assert!(matches!(said, Answer::No { .. }), "{said:?}");
 }
+
+// ----- a task gone quiet (#1981, D-6) ----------------------------------------------------------
+
+#[test]
+fn a_task_unheard_for_its_quiet_limit_is_noted_to_the_chat_that_asked_and_on_its_tab() {
+    use std::time::{Duration, Instant};
+    let (_plane, _host, _planes, _id, held, steward, task) = a_steward_and_its_task();
+    a_turn_begins(&held, task);
+
+    // Inside the limit: nothing.
+    crate::silence::look(&held, Instant::now() + Duration::from_secs(14 * 60));
+    assert_eq!(held.tasks().quiet().note_of(task), None);
+
+    // Past it: purlis's note, on its tab and for the chat that asked. Nothing ends.
+    crate::silence::look(&held, Instant::now() + Duration::from_secs(16 * 60));
+    let said = held.tasks().quiet().note_of(task).expect("noted");
+    assert!(
+        said.starts_with(&format!(
+            "task 'check prod' (chat {task}) has shown no activity for"
+        )),
+        "{said}"
+    );
+    let words = held.tasks().ledger().talk.from_person(steward);
+    assert_eq!(words.len(), 1, "{words:?}");
+    assert!(
+        purlis_core::dispatchtalk::person_said(&words[0]).contains(&said),
+        "{words:?}"
+    );
+    assert!(open_chats(&held).contains(&task), "it ends nothing");
+
+    // Once a stretch.
+    crate::silence::look(&held, Instant::now() + Duration::from_secs(40 * 60));
+    assert_eq!(held.tasks().ledger().talk.from_person(steward).len(), 1);
+
+    // Heard from again: its tab's note comes down.
+    crate::dispatched::said(
+        &held,
+        TurnOutput {
+            chat: task,
+            turn_output: Output::Ran {
+                command: "ls".to_owned(),
+                exit: Some(0),
+                failed: false,
+            },
+            speaker: purlis_core::hookwire::Speaker::default(),
+        },
+    );
+    assert_eq!(held.tasks().quiet().note_of(task), None);
+}
+
+#[test]
+fn a_task_whose_turn_has_ended_is_not_noted_as_quiet() {
+    use std::time::{Duration, Instant};
+    let (_plane, _host, _planes, _id, held, steward, task) = a_steward_and_its_task();
+    a_turn_begins(&held, task);
+    its_turn_ends_saying(&held, task, "Done for now.");
+    crate::silence::look(&held, Instant::now() + Duration::from_secs(60 * 60));
+    assert_eq!(held.tasks().quiet().note_of(task), None);
+    assert!(
+        held.tasks()
+            .ledger()
+            .talk
+            .from_person(steward)
+            .iter()
+            .all(|one| !matches!(one, purlis_core::dispatchtalk::PersonSaid::Quiet { .. }))
+    );
+}

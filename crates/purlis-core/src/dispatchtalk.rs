@@ -276,6 +276,18 @@ pub enum PersonSaid {
     /// purlis tried it twice: purlis's own fixed words around the server's name and its own
     /// error, quoted as data. `number` is minted for it alone ([`Talk::mcp_word`]).
     McpServer { number: u32, word: McpWord },
+    /// **A task this chat dispatched has gone quiet** (#1981): purlis's own note, made from the
+    /// app's record of the task and what its hooks were heard say, never the task's words.
+    /// `number` is minted for it alone ([`Talk::quiet_word`]).
+    Quiet { number: u32, word: QuietWord },
+}
+
+/// purlis's note that a task has gone quiet (#1981): which task, by the app's number for it,
+/// and the note in purlis's words ([`crate::silence::Note::said`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct QuietWord {
+    pub chat: u32,
+    pub said: String,
 }
 
 /// A persona's MCP server that could not start for a chat (qw381): its name, held to a server
@@ -332,7 +344,8 @@ impl PersonSaid {
             | Self::AnsweredFor { number, .. }
             | Self::Network { number, .. }
             | Self::Removal { number, .. }
-            | Self::McpServer { number, .. } => *number,
+            | Self::McpServer { number, .. }
+            | Self::Quiet { number, .. } => *number,
         }
     }
 }
@@ -657,6 +670,19 @@ impl Talk {
             |one| !matches!(one, PersonSaid::McpServer { word: was, .. } if was.server == word.server),
         );
         said.push(PersonSaid::McpServer { number, word });
+    }
+
+    /// **Keeps purlis's note to chat `chat` that its task `word.chat` has gone quiet** (#1981):
+    /// handed to its next turn as purlis's other words are, until it has it. **One note a
+    /// task**: a later one takes the place of one the chat has not been handed yet.
+    pub fn quiet_word(&mut self, chat: u32, word: QuietWord) {
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        let said = self.person.entry(chat).or_default();
+        said.retain(
+            |one| !matches!(one, PersonSaid::Quiet { word: was, .. } if was.chat == word.chat),
+        );
+        said.push(PersonSaid::Quiet { number, word });
     }
 
     /// **What the person said to chat `chat` that it has not been handed**, oldest first.
@@ -1258,6 +1284,53 @@ pub fn person_said(said: &PersonSaid) -> String {
         PersonSaid::Network { word, .. } => network_said(word),
         PersonSaid::Removal { word, .. } => removal_said(word),
         PersonSaid::McpServer { word, .. } => mcp_said(word),
+        PersonSaid::Quiet { word, .. } => quiet_said(word),
+    }
+}
+
+/// **purlis's note that a task this chat dispatched has gone quiet** (#1981): purlis's sentence,
+/// the task by the app's number, and what the chat may do. Nothing in it is the task's.
+pub fn quiet_said(word: &QuietWord) -> String {
+    let chat = word.chat;
+    format!(
+        "⬢ purlis: {}. It is still running, and purlis ends nothing for it. You need not poll \
+         it: `purlis dispatch read {chat}` shows what it said last and the commands it ran, \
+         `purlis dispatch tell {chat} \"<text>\"` reaches it when its turn ends, and `purlis \
+         dispatch cancel {chat}` asks it for its report. This line is purlis's own.",
+        word.said
+    )
+}
+
+#[cfg(test)]
+mod quiet_tests {
+    use super::*;
+
+    #[test]
+    fn purlis_s_note_on_a_quiet_task_is_kept_once_a_task_and_said_as_purlis_s_own() {
+        let mut talk = Talk::default();
+        let word = |said: &str| QuietWord {
+            chat: 9,
+            said: said.to_owned(),
+        };
+        talk.quiet_word(
+            3,
+            word("task 'a' (chat 9) has shown no activity for 15 minutes"),
+        );
+        talk.quiet_word(
+            3,
+            word("task 'a' (chat 9) is running one command for 30 minutes"),
+        );
+        let said = talk.from_person(3);
+        assert_eq!(said.len(), 1, "one note a task: {said:?}");
+        let text = person_said(&said[0]);
+        assert!(
+            text.starts_with(
+                "⬢ purlis: task 'a' (chat 9) is running one command for 30 minutes. It is \
+                 still running, and purlis ends nothing for it."
+            ),
+            "{text}"
+        );
+        assert!(text.ends_with("This line is purlis's own."), "{text}");
     }
 }
 
