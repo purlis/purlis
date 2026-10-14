@@ -988,6 +988,32 @@ fn a_plain_rebase_onto_an_upstream_is_judged_by_what_it_writes_however_it_is_spe
     }
 }
 
+#[test]
+fn a_rebase_that_only_signs_or_skips_hooks_is_judged_by_what_it_writes() {
+    // qw387: `git -C <clone> rebase --no-gpg-sign origin/main`, as a lane wrote it. Signing
+    // and hooks change no file the rebase writes.
+    let f = folders();
+    let parent = Path::new(&f.clone).parent().unwrap().display().to_string();
+    for (flags, after) in [
+        ("--no-gpg-sign", ""),
+        ("-S", ""),
+        ("--gpg-sign", ""),
+        ("--no-verify", ""),
+        ("--no-gpg-sign", " 2>&1"),
+    ] {
+        let kept = format!("git -C {} rebase {flags} origin/plain{after}", f.clone);
+        assert_eq!(f.asked_in(&kept, &parent, &a_clone()), None, "{kept}");
+        let stopped = format!("git -C {} rebase {flags} origin/tasks{after}", f.clone);
+        let (_, said) = f
+            .asked_in(&stopped, &parent, &a_clone())
+            .unwrap_or_else(|| panic!("{stopped}: allowed"));
+        assert!(
+            said.contains("would write `app/.vscode/tasks.json`"),
+            "{stopped}: {said}"
+        );
+    }
+}
+
 /// Where a test line runs: from the clone's parent where it names the clone itself.
 fn parent_or(line: &str, parent: &str, clone: &str) -> String {
     if line.contains(clone) {
