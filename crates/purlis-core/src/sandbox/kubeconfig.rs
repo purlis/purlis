@@ -61,7 +61,7 @@ pub struct Context {
 pub fn on_this_mac(server: &str) -> Result<(String, u16), String> {
     let not = || {
         format!(
-            "{server} is not a cluster on this Mac: purlis points a chat's kubectl only at \
+            "{server} is not a cluster on this Mac: a chat's kubectl is pointed only at \
              https://127.0.0.1, https://localhost or https://kubernetes.docker.internal. A \
              cluster elsewhere is a host, which the chat's Notice can allow."
         )
@@ -119,7 +119,7 @@ pub fn for_this_chat(view: &Value, context: &str) -> Result<Pointed, String> {
     if inner.contains_key("proxy-url") {
         return Err(format!(
             "{context} names a proxy of its own, so its connections would not go through this \
-             chat's proxy: purlis does not point a chat at it."
+             chat's proxy: no chat is pointed at it."
         ));
     }
     if inner
@@ -129,7 +129,7 @@ pub fn for_this_chat(view: &Value, context: &str) -> Result<Pointed, String> {
     {
         return Err(format!(
             "{context} skips the cluster's certificate check, so it would trust whatever \
-             listens at that port: purlis does not point a chat at it."
+             listens at that port: no chat is pointed at it."
         ));
     }
     inner.insert(

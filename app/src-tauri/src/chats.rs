@@ -6042,11 +6042,29 @@ pub(crate) mod tests {
         chats.close(other).expect("closed");
     }
 
+    /// Chats on a pretend host armed to hand a sandbox to an opencode chat in `plane`, as the
+    /// app ships it.
+    fn armed_for_opencode(plane: &std::path::Path) -> (Chats, Pretend) {
+        let plugin = plane.join("plugin");
+        let shim = purlis_core::opencode::shim_in(&plugin);
+        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("the bundle");
+        std::fs::write(&shim, "export default {}\n").expect("the shim");
+        let host = Pretend::default();
+        host.reporting_on(plane.join(".charter/app/hooks.sock"));
+        let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+        chats.arming_with(crate::Shipped {
+            binary: Some(plane.join("charter")),
+            plugin: Some(plugin),
+            shims: None,
+            git_hooks: None,
+        });
+        (chats, host)
+    }
+
     #[test]
     fn a_sandboxed_chat_pointed_at_a_cluster_starts_with_kubeconfig_naming_its_own_copy() {
         let plane = a_sandboxed_plane();
-        let host = Pretend::default();
-        let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+        let (chats, host) = armed_for_opencode(plane.path());
         let ready = purlis_core::start::Ready {
             // A kubeconfig of the person's own, from the app's environment: the chat's copy
             // wins.
@@ -6054,7 +6072,10 @@ pub(crate) mod tests {
                 "KUBECONFIG".to_owned(),
                 "/Users/someone/.kube/config".to_owned(),
             )],
-            ..ready_under(Harness::ClaudeCode, a_claude_sandbox(plane.path()))
+            ..ready_under(
+                Harness::Opencode,
+                a_sandbox_for(Harness::Opencode, plane.path()),
+            )
         };
         let chat = Chat {
             cwd: Some(plane.path().to_path_buf()),
@@ -6111,9 +6132,11 @@ pub(crate) mod tests {
     fn a_port_removed_while_a_chat_runs_is_withdrawn_from_its_proxy_unless_it_still_holds_it() {
         use purlis_core::sandbox::grant::What;
         let plane = a_sandboxed_plane();
-        let host = Pretend::default();
-        let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
-        let ready = ready_under(Harness::ClaudeCode, a_claude_sandbox(plane.path()));
+        let (chats, host) = armed_for_opencode(plane.path());
+        let ready = ready_under(
+            Harness::Opencode,
+            a_sandbox_for(Harness::Opencode, plane.path()),
+        );
         let chat = Chat {
             cwd: Some(plane.path().to_path_buf()),
             ..chat("/bin/sh", "c", None)

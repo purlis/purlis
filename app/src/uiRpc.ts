@@ -341,17 +341,8 @@ export const commands = {
 	allowSandboxBlockForTasks: __WINDOW_ONLY_RESULT,
 	keepSandboxBlockForTasks: __WINDOW_ONLY_RESULT,
 	keepSandboxBlock: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **The contexts of the person's kubeconfig** (qw384b), as kubectl reads it (every file
-	 *  `KUBECONFIG` names), each with whether a chat can be pointed at it. Data a context holds
-	 *  (keys, certificates) is left out by kubectl itself.
-	 */
-	kubeContexts: () => typedError<KubeContext[], string>(__TAURI_INVOKE("kube_contexts")),
-	/**
-	 *  **Points chat `session`'s kubectl at `context`** (qw384b): a cluster on this Mac only, any
-	 *  other refused with why. What the Notice says once it is done.
-	 */
-	pointKubectl: (plane: PlaneId, session: number, context: string) => typedError<string, string>(__TAURI_INVOKE("point_kubectl", { plane, session, context })),
+	kubeContexts: __WINDOW_ONLY_RESULT,
+	pointKubectl: __WINDOW_ONLY_RESULT,
 	sandboxBlockChoices: __WINDOW_ONLY_RESULT,
 	chooseSandboxBlockTarget: __WINDOW_ONLY_RESULT,
 	takeUpSandboxBlock: __WINDOW_ONLY_RESULT,
