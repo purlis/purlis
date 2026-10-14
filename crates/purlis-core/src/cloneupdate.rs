@@ -1028,7 +1028,14 @@ pub fn judged_cut(
             return unread();
         }
         for ((path, meta), oid) in plain.into_iter().zip(now) {
-            if !meta.ends_with(oid.trim()) {
+            // The mode as git would record the file there: executable or not.
+            let mode = {
+                use std::os::unix::fs::PermissionsExt as _;
+                let exec = std::fs::metadata(clone.join(path))
+                    .is_ok_and(|found| found.permissions().mode() & 0o111 != 0);
+                if exec { "100755" } else { "100644" }
+            };
+            if *meta != format!("{mode} {}", oid.trim()) {
                 differ.push(path.clone());
             }
         }

@@ -205,6 +205,7 @@ fn isolated_answer(
                     branch.as_deref(),
                     base,
                     vet,
+                    hosts.as_deref(),
                     &who(asker),
                     now,
                     say,

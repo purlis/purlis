@@ -107,7 +107,31 @@ pub fn reach(
              purlis reaches a remote over HTTPS with a forge's token only (docs/git-policy.md)"
         ));
     }
+    // What git dials too, as its own config rewrites the address, to fetch and to push.
+    let dialled: Vec<String> = [
+        &["remote", "get-url", remote][..],
+        &["remote", "get-url", "--push", remote],
+    ]
+    .iter()
+    .filter_map(|args| {
+        git::run(clone, args, git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.line().trim().to_owned())
+    })
+    .collect();
     if let Some(hosts) = hosts {
+        for other in &dialled {
+            let host = forge::host_of(other);
+            if !host.is_empty() && !crate::sandbox::egress::allows(hosts, &host) {
+                return Err(format!(
+                    "remote '{remote}' reaches '{}', which this chat's sandbox may not reach. The \
+                     project's `[sandbox] egress` in {} says which hosts a chat reaches",
+                    crate::shown::escaped(&host),
+                    crate::plane::MANIFEST
+                ));
+            }
+        }
         let host = forge::host_of(&url);
         if !crate::sandbox::egress::allows(hosts, &host) {
             return Err(format!(

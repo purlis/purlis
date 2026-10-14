@@ -188,27 +188,32 @@ pub fn checked_out_in(clone: &Path, branch: &str) -> Result<Option<std::path::Pa
         .map(|row| row.path))
 }
 
-/// The branch `origin`'s HEAD names in the clone of `repo` in workspace `ws` (`main`, most
-/// often), where the clone records one and has a branch of that name.
-pub fn remote_default(plane: &Path, ws: &str, repo: &str) -> Option<String> {
-    let clone = super::clone_dir(plane, ws, repo).ok()?;
-    let named = git::run(
-        &clone,
-        &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
-        git::READ,
+/// The branch the remote `remote` of the clone at `clone` names its default, asked of the
+/// remote itself (`git ls-remote --symref <remote> HEAD`), reached as a fetch is
+/// ([`crate::repocmd::sync::reach`], `hosts` the chat's internet access where it has one).
+/// Never read from the clone, whose refs a chat may write. `None` where the remote does not
+/// answer or names none.
+pub fn remote_default(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    hosts: Option<&[String]>,
+) -> Option<String> {
+    let (_, helper) = crate::repocmd::sync::reach(root, clone, remote, hosts, false).ok()?;
+    let asked = git::run_network(
+        clone,
+        helper.as_deref(),
+        &["ls-remote", "--symref", remote, "HEAD"],
     )
     .ok()
     .filter(git::Run::ok)?;
-    let branch = named
-        .line()
-        .strip_prefix("refs/remotes/origin/")?
-        .to_owned();
+    let branch = asked.out.lines().find_map(|line| {
+        let (named, at) = line.strip_prefix("ref: ")?.split_once('\t')?;
+        (at.trim() == "HEAD")
+            .then(|| named.strip_prefix("refs/heads/"))
+            .flatten()
+            .map(str::to_owned)
+    })?;
     name::branch_name_ok(&branch).ok()?;
-    let there = git::run(
-        &clone,
-        &["show-ref", "--verify", "--quiet", &name::as_ref(&branch)],
-        git::READ,
-    )
-    .ok()?;
-    there.ok().then_some(branch)
+    Some(branch)
 }

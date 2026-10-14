@@ -1498,7 +1498,10 @@ same core code a terminal runs:
    cut that would write a file section 5 denies the chat, where the clone has that file
    otherwise or not at all, is refused and named; the person cuts it from their own terminal.
    So is the worktree a dispatch cuts for a task from the asking chat's branch: the dispatch
-   is refused, and the asking chat is told which file.
+   is refused, and the asking chat is told which file. Every such checkout runs on commit ids
+   read once: what is judged is what git checks out, and a branch is moved only from the
+   commit it was judged at. A lease is given only on purlis's own record of its last update,
+   and the remote's default branch is asked of the remote.
 
 The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
 

@@ -135,10 +135,25 @@ fn add(w: &World, piece: &str, base: Option<&str>) -> (u8, String) {
 
 /// [`add`], judged as the app judges a cut for a sandboxed chat where `judged` is set.
 fn add_judged(w: &World, piece: &str, base: Option<&str>, judged: bool) -> (u8, String) {
+    add_judged_then(w, piece, base, judged, &|| {})
+}
+
+/// [`add_judged`], with `after` run once the start has been judged and before git cuts: what
+/// a chat moving a ref in between would do.
+fn add_judged_then(
+    w: &World,
+    piece: &str,
+    base: Option<&str>,
+    judged: bool,
+    after: &dyn Fn(),
+) -> (u8, String) {
     let chat = w.plane.join("workspaces").join(WS);
     let judge = |clone: &Path, start: &str, folder: &Path| {
-        purlis_core::cloneupdate::judged_cut(clone, start, folder, &w.plane, Some(&chat))
-            .map_or(Ok(()), Err)
+        let said =
+            purlis_core::cloneupdate::judged_cut(clone, start, folder, &w.plane, Some(&chat))
+                .map_or(Ok(()), Err);
+        after();
+        said
     };
     let vet: Option<purlis_core::worktree::Vet<'_>> = judged.then_some(&judge);
     let mut lines = Vec::new();
@@ -151,6 +166,7 @@ fn add_judged(w: &World, piece: &str, base: Option<&str>, judged: bool) -> (u8, 
             None,
             base,
             vet,
+            None,
             &Who::here(None, Some("3".to_owned()), None),
             chrono::Utc::now(),
             &mut |line| lines.push(line),
@@ -429,4 +445,169 @@ fn the_apps_own_fetch_puts_back_a_remote_branch_moved_in_the_clone() {
     brokered(|| purlis_core::repocmd::sync::fetch_remote(&w.plane, &w.clone, "origin", None))
         .expect("fetched");
     assert_eq!(out(&w.clone, &["rev-parse", "origin/main"]), theirs);
+}
+
+/// A commit on its own, in the clone, that adds an editor's tasks file with `mode` and is
+/// not checked out: what a chat could write into the clone's objects and point a ref at.
+fn crafted(w: &World, mode: &str) -> String {
+    let file = w.clone.with_extension("crafted-blob");
+    std::fs::write(&file, "{}\n").unwrap();
+    let blob = out(&w.clone, &["hash-object", "-w", file.to_str().unwrap()]);
+    let index = w.clone.with_extension("crafted-index");
+    with_index(&w.clone, &index, &["read-tree", "main"]);
+    with_index(
+        &w.clone,
+        &index,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("{mode},{blob},.vscode/tasks.json"),
+        ],
+    );
+    let tree = with_index(&w.clone, &index, &["write-tree"]);
+    with_index(
+        &w.clone,
+        &index,
+        &["commit-tree", &tree, "-p", "main", "-m", "crafted"],
+    )
+}
+
+/// git in `dir` with its index at `index`: plumbing that writes no file of the folder.
+fn with_index(dir: &Path, index: &Path, args: &[&str]) -> String {
+    let mut cmd = support::unsigned();
+    cmd.arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_INDEX_FILE", index)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t");
+    let out = purlis_core::forklock::output(&mut cmd).expect("git runs");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+#[test]
+fn a_cut_checks_out_the_commit_it_judged_whatever_the_ref_names_after() {
+    purlis_core::unsteered!();
+    let w = world();
+    git(&w.clone, &["checkout", "-q", "-b", "ci/theirs"]);
+    let main = out(&w.clone, &["rev-parse", "main"]);
+    let crafted = crafted(&w, "100644");
+    let clone = w.clone.clone();
+    let move_main = || {
+        git(&clone, &["update-ref", "refs/heads/main", &crafted]);
+    };
+
+    let (code, said) = add_judged_then(&w, "p1", Some("main"), true, &move_main);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.piece("p1"), &["rev-parse", "HEAD"]), main);
+    assert!(!w.piece("p1").join(".vscode").exists());
+}
+
+#[test]
+fn a_cut_is_judged_by_mode_as_well_as_content() {
+    purlis_core::unsteered!();
+    let w = world();
+    // The clone has the tasks file checked out, as a plain file.
+    std::fs::create_dir_all(w.clone.join(".vscode")).unwrap();
+    write(&w.clone, ".vscode/tasks.json", "{}\n");
+    git(&w.clone, &["add", ".vscode/tasks.json"]);
+    git(&w.clone, &["commit", "-q", "-m", "tasks"]);
+    let main = out(&w.clone, &["rev-parse", "main"]);
+    git(&w.clone, &["checkout", "-q", "-b", "ci/theirs"]);
+    // Main moves to the same file, made executable.
+    let index = w.clone.with_extension("mode-index");
+    let with = |args: &[&str]| with_index(&w.clone, &index, args);
+    with(&["read-tree", &main]);
+    with(&["update-index", "--chmod=+x", ".vscode/tasks.json"]);
+    let tree = with(&["write-tree"]);
+    let exec = with(&["commit-tree", &tree, "-p", &main, "-m", "exec"]);
+    git(&w.clone, &["update-ref", "refs/heads/main", &exec]);
+
+    let (code, said) = add_judged(&w, "p1", Some("main"), true);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains(".vscode/tasks.json"), "{said}");
+}
+
+#[test]
+fn the_default_base_is_asked_of_the_remote_and_never_read_from_the_clone() {
+    purlis_core::unsteered!();
+    let w = world();
+    git(&w.clone, &["checkout", "-q", "-b", "ci/theirs"]);
+    // The clone's own record of the remote's default, pointed elsewhere.
+    git(&w.clone, &["branch", "evil", "main"]);
+    git(
+        &w.clone,
+        &["update-ref", "refs/remotes/origin/evil", "main"],
+    );
+    git(
+        &w.clone,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/evil",
+        ],
+    );
+
+    let (code, said) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("base:   main"), "{said}");
+}
+
+#[test]
+fn a_lease_is_asked_of_purlis_s_own_record_of_its_update_never_of_the_reflog() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "mine.txt", "mine\n");
+    git(&piece, &["add", "mine.txt"]);
+    git(&piece, &["commit", "-q", "-m", "mine"]);
+    assert_eq!(push(&w, "p1", false).0, 0);
+    // A reflog line that reads like a rebase, written by anyone who may write the clone's refs.
+    git(
+        &w.clone,
+        &[
+            "update-ref",
+            "-m",
+            "rebase (finish): refs/heads/p1 onto x",
+            "refs/heads/p1",
+            "p1",
+        ],
+    );
+    let (code, said) = push(&w, "p1", true);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("only right after"), "{said}");
+}
+
+#[test]
+fn an_update_whose_branch_moved_while_it_was_stopped_leaves_the_branch_where_it_was_moved() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "shared.txt", "a\nmine\nc\n");
+    git(&piece, &["commit", "-q", "-am", "mine"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    let (code, _) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 1);
+    // The branch is moved while the update is stopped.
+    let elsewhere = out(&w.clone, &["rev-parse", "main"]);
+    git(&w.clone, &["update-ref", "refs/heads/p1", &elsewhere]);
+    write(&piece, "shared.txt", "a\nboth\nc\n");
+
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("moved while purlis worked on it"), "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "refs/heads/p1"]), elsewhere);
 }

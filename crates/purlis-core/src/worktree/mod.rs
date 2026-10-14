@@ -834,19 +834,34 @@ pub fn add_vetted(
         Some(at) if at.starts_with("refs/remotes/") => at.clone(),
         _ => name::as_ref(&start.branch),
     });
+    // The start, read once as a commit id: what is judged is what is checked out, whatever a
+    // ref names by the time git runs (qw387). The base is recorded by its name below.
+    let named = start_ref.as_deref().unwrap_or("HEAD");
+    let at = git::run(
+        &clone,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{named}^{{commit}}"),
+        ],
+        git::READ,
+    )?;
+    let start = at.line().trim().to_owned();
+    if !at.ok() || start.is_empty() || start.starts_with('-') {
+        return Err(Refusal::Unreadable {
+            what: format!("'{named}'"),
+            why: format!("{repo} has no commit there, so nothing was cut from it"),
+        });
+    }
     if let Some(vet) = vet {
-        vet(&clone, start_ref.as_deref().unwrap_or("HEAD"), &path).map_err(|why| {
-            Refusal::Stuck {
-                what: "worktree add".to_owned(),
-                terminal: why.clone(),
-                window: why,
-            }
+        vet(&clone, &start, &path).map_err(|why| Refusal::Stuck {
+            what: "worktree add".to_owned(),
+            terminal: why.clone(),
+            window: why,
         })?;
     }
-    let mut args = vec!["worktree", "add", "-b", &branch, &shown_path];
-    if let Some(start_ref) = start_ref.as_deref() {
-        args.push(start_ref);
-    }
+    let args = ["worktree", "add", "-b", &branch, &shown_path, &start];
     let created = git::run_untimed(&clone, &args)?;
     if !created.ok() {
         return Err(Refusal::GitRefused {

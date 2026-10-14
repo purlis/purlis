@@ -94,6 +94,7 @@ pub fn add(
     branch: Option<&str>,
     base: Option<&str>,
     vet: Option<worktree::Vet<'_>>,
+    hosts: Option<&[String]>,
     who: &Who,
     now: DateTime<Utc>,
     say: &mut dyn FnMut(Say),
@@ -106,7 +107,12 @@ pub fn add(
     let base = match base {
         Some(HEAD) => None,
         Some(base) => Some(base.to_owned()),
-        None => worktree::fresh::remote_default(plane, ws, repo),
+        // Asked of the remote, never read from the clone; a clone with no default of a
+        // branch it has, or no answer, is cut from its HEAD.
+        None => worktree::clone_dir(plane, ws, repo).ok().and_then(|clone| {
+            worktree::fresh::remote_default(plane, &clone, "origin", hosts)
+                .filter(|branch| git_has(&clone, &worktree::name::as_ref(branch)))
+        }),
     };
     let cut = match base.as_deref() {
         Some(base) => worktree::add_based(plane, ws, repo, piece, branch, base, vet),
@@ -437,4 +443,12 @@ fn table(rows: &[[String; 5]], say: &mut dyn FnMut(Say)) {
             format!("    {cells}{}", row[4]).trim_end().to_string(),
         ));
     }
+}
+
+/// Whether the clone at `clone` has the ref `full`.
+fn git_has(clone: &Path, full: &str) -> bool {
+    crate::worktree::git::run(clone, &["show-ref", "--verify", "--quiet", full], {
+        crate::worktree::git::READ
+    })
+    .is_ok_and(|run| run.ok())
 }
