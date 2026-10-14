@@ -601,8 +601,8 @@ impl Held {
 
     /// The program's status if it has ended, having first ended what it left in its group.
     fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
-        #[cfg(unix)]
         if !self.waited_for {
+            #[cfg(unix)]
             self.end_what_it_left();
         }
         let asked = self.child.try_wait();
@@ -639,15 +639,14 @@ impl Held {
         if !matches!(waitid(WaitId::Pid(group), options), Ok(Some(_))) {
             return;
         }
-        if !crate::process::group_still_runs(group) {
+        // Where the group cannot be read, it is hung up and killed all the same: both are
+        // nothing to a group with nobody in it, and the wait between them is then short.
+        if crate::process::group_still_runs(group) == Some(false) {
             return;
         }
         let _ = kill_process_group(group, Signal::HUP);
         let _ = kill_process_group(group, Signal::CONT);
-        let until = Instant::now() + HANGUP_GRACE;
-        while Instant::now() < until && crate::process::group_still_runs(group) {
-            thread::sleep(POLL);
-        }
+        crate::process::wait_for_group_to_go(group, Instant::now() + HANGUP_GRACE);
         let _ = kill_process_group(group, Signal::KILL);
     }
 }
