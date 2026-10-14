@@ -5,6 +5,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // Started again by the window as its session host (#1997): serve until the window closes
+    // its end, before anything of the app starts. The same binary, so the Keychain sees the
+    // same program and asks nothing (ADR 0068 §1, amended 2026-10-14).
+    #[cfg(unix)]
+    if let Some(code) = purlis_app_lib::serve_as_the_session_host_if_asked() {
+        std::process::exit(code);
+    }
     // Started again as the bounded reader of a branch (FM-4, D-88h): answer one question and
     // exit, before anything of the app starts.
     if let Some(code) = purlis_core::files::serve_if_asked() {

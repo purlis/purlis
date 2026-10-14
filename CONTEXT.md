@@ -360,8 +360,9 @@ _Avoid_: login (unqualified), auth method, account (that is who a model is bille
 
 **Session host** (`purlisd`):
 The process that owns every **hosted program** on a device, every chat's terminal and every
-browser, one per OS user per device: the `purlis` binary run as `purlis serve`. The app is its
-client (ADR 0068).
+browser, one per OS user per device. On a desktop the window starts it with its own binary and
+is its first client; on a machine with no window it is `purlis serve` (ADR 0068, amended for
+#1997).
 _Avoid_: daemon, server (in UI text), backend
 
 **Hosted program**:
