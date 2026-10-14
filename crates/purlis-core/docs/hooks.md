@@ -346,10 +346,11 @@ rule while one who reads a bare refusal files an issue.
   git's: `git rebase <upstream> 2>&1 | tail -5` is judged as `git rebase <upstream>`.
 
   A path the folder's own sparse checkout leaves out is one git does not write, and is not
-  counted, where nothing on the line changes that checkout: the move is the only git that
-  writes on its line, sets no configuration there (`-c`, `--config-env`, `GIT_CONFIG_*`),
-  takes no option that checks out past the patterns, and no `git sparse-checkout` is beside
-  it. Then, where `core.sparseCheckout` is on in the folder, git's own `sparse-checkout
+  counted, where nothing on the line can change that checkout: the move is the only git that
+  writes on its line, every option it takes is on a short list of options spelled out whole
+  that change nothing about which paths git writes, no configuration is set anywhere on the
+  line (`-c`, `--config-env`, `GIT_CONFIG*`, an export of one), and every git on the line is
+  read, its alias included, and none is `git sparse-checkout`. Then, where `core.sparseCheckout` is on in the folder, git's own `sparse-checkout
   check-rules` says which paths those are. Otherwise, or where git does not answer, every path
   counts. A word spelled like a redirection but quoted (`'>'`) is an operand: on such a line
   nothing is read as a redirection.

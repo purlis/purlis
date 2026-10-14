@@ -1580,28 +1580,62 @@ pub fn refusal_with(
     refusal_of(&line, cwd, &root, chat_dir, asks)
 }
 
-/// Options with which git checks a tree out past the sparse patterns.
-const PAST_SPARSITY: [&str; 2] = ["--ignore-skip-worktree-bits", "--no-sparse-checkout"];
+/// The options a move may carry and still be judged by its folder's sparse checkout: each
+/// spelled out whole, and each one that changes nothing about which paths git writes. Any
+/// other option, an abbreviation or a bundle of short options included, and the paths the
+/// patterns leave out count again ([`Place::sparse`]).
+const SPARSE_KEEPS: [&str; 22] = [
+    "-q",
+    "--quiet",
+    "-v",
+    "--verbose",
+    "--hard",
+    "--keep",
+    "--merge",
+    "-m",
+    "-f",
+    "--force",
+    "--detach",
+    "-b",
+    "-B",
+    "-c",
+    "-C",
+    "--ff-only",
+    "--no-edit",
+    "--no-gpg-sign",
+    "-S",
+    "--gpg-sign",
+    "--no-verify",
+    "--no-autostash",
+];
 
-/// Whether `inv`, with its words `post`, may change what its folder's sparse checkout leaves
-/// out: configuration given on the line (`-c`, `--config-env`, `GIT_CONFIG_*`), or an option
-/// that checks out past the patterns.
-fn changes_sparsity(inv: &RootInvocation, post: &[String]) -> bool {
-    let configures = inv
-        .pre
+/// Whether every option among a move's words `post` is one [`SPARSE_KEEPS`] lists, or one of
+/// the flags the move's own arm already reads as harmless.
+fn sparse_keeps(post: &[String]) -> bool {
+    post.iter()
+        .take_while(|word| word.as_str() != "--")
+        .filter(|word| word.starts_with('-'))
+        .all(|word| {
+            let word = word.as_str();
+            SPARSE_KEEPS.contains(&word)
+                || MERGE_FLAGS.contains(&word)
+                || REBASE_FLAGS.contains(&word)
+                || PICK_FLAGS.contains(&word)
+                || BRANCHING_FLAGS.contains(&word)
+        })
+}
+
+/// Whether `inv` sets git configuration on the line: `-c`, `--config-env`, or a `GIT_CONFIG*`
+/// variable among the assignments and exports it runs with.
+fn configures(inv: &RootInvocation) -> bool {
+    inv.pre
         .iter()
-        .any(|word| word.starts_with("-c") || word.starts_with("--config-env"));
-    let environs = inv
-        .env
-        .iter()
-        .chain(&inv.own_env)
-        .any(|assign| assign.starts_with("GIT_CONFIG"));
-    let past = post.iter().any(|word| {
-        PAST_SPARSITY
-            .iter()
-            .any(|opt| word == opt || word.starts_with(&format!("{opt}=")))
-    });
-    configures || environs || past
+        .any(|word| word.starts_with("-c") || word.starts_with("--config-env"))
+        || inv.env.iter().chain(&inv.own_env).any(|assign| {
+            assign
+                .trim_start_matches("export ")
+                .starts_with("GIT_CONFIG")
+        })
 }
 
 /// How many folders one line's ways back are asked about ([`refusal_of`]). The way back is
@@ -1681,14 +1715,18 @@ pub fn refusal_of(
     // are put once for a folder ([`Once`]), and only the folders are bounded.
     let mut moves_asked = 0usize;
     let mut folders: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    // A `git sparse-checkout` anywhere on the line may change the patterns before a move reads
-    // them.
-    let sparsity_set = line
+    // The folder's own sparse checkout decides only where nothing on the line can change it:
+    // no configuration set anywhere on it, no alias the guard did not read, and no git that
+    // is `git sparse-checkout` once its alias is read.
+    let line_leaves_sparsity = line
         .elsewhere
         .iter()
         .map(|each| &each.inv)
         .chain(&line.root)
-        .any(|inv| inv.sub == "sparse-checkout");
+        .all(|inv| {
+            !configures(inv)
+                && read(inv).is_some_and(|(sub, _, unread)| !unread && sub != "sparse-checkout")
+        });
     for each in &line.elsewhere {
         let Some((sub, post, unread_alias)) = read(&each.inv) else {
             continue;
@@ -1713,7 +1751,7 @@ pub fn refusal_of(
             root,
             chat_dir,
             alone,
-            sparse: alone && !changes_sparsity(&each.inv, &post) && !sparsity_set,
+            sparse: alone && line_leaves_sparsity && sparse_keeps(&post),
         };
         for dir in &each.dirs {
             if !moves_from_another && folders.insert(dir.as_str()) && folders.len() > MAX_FOLDERS {

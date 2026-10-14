@@ -530,7 +530,13 @@ fn a_sparse_checkout_counts_only_where_nothing_on_the_line_can_change_it() {
         ..a_clone()
     };
     let f = folders();
-    for kept in ["git checkout tasks", "git rebase origin/tasks"] {
+    for kept in [
+        "git checkout tasks",
+        "git rebase origin/tasks",
+        "git checkout -q tasks",
+        "git reset --hard tasks",
+        "git rebase --no-gpg-sign origin/tasks",
+    ] {
         assert_eq!(f.asked(kept, &sparse), None, "{kept}");
     }
     for stopped in [
@@ -547,6 +553,17 @@ fn a_sparse_checkout_counts_only_where_nothing_on_the_line_can_change_it() {
         // The patterns changed on the same line.
         "git sparse-checkout disable && git checkout tasks",
         "printf '/*' > ../.git/info/sparse-checkout; git checkout tasks",
+        // An option abbreviated, which git takes for the whole of it.
+        "git checkout --ignore-skip tasks -- .",
+        "git checkout --ignore tasks -- .",
+        "git restore --ignore-skip --source tasks .",
+        "git read-tree -mu --no-sparse tasks",
+        "git checkout -fq tasks",
+        // An alias set on the line, and configuration exported before the move.
+        "git -c alias.sc=sparse-checkout sc disable && git checkout tasks",
+        "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.sparseCheckout \
+         GIT_CONFIG_VALUE_0=false; git checkout tasks",
+        "export GIT_CONFIG_COUNT=1; git checkout tasks",
     ] {
         let (_, said) = f
             .asked(stopped, &sparse)
