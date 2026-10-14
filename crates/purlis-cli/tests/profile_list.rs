@@ -35,23 +35,27 @@ fn plane(local: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn each_built_in_profile_is_listed_with_the_sign_in_its_harness_gives_it() {
+fn a_profile_whose_sign_in_purlis_cannot_see_is_listed_as_unknown() {
+    // A subscription is signed in through the harness's own flow, and purlis never looks.
     let dir = plane("");
 
     assert_eq!(
         purlis(dir.path()),
-        "  NAME      KIND      SIGN-IN       COMMAND   FROM\n\
-         \x20 claude    claude    subscription  claude    built-in\n\
-         \x20 opencode  opencode  subscription  opencode  built-in\n\
-         \x20 codex     codex     subscription  codex     built-in\n"
+        "  NAME      KIND      SIGN-IN  COMMAND   FROM\n\
+         \x20 claude    claude    unknown  claude    built-in\n\
+         \x20 opencode  opencode  unknown  opencode  built-in\n\
+         \x20 codex     codex     unknown  codex     built-in\n"
     );
 }
 
 #[test]
-fn a_profile_of_a_declared_harness_shows_the_sign_in_its_declaration_gives_or_unknown() {
+fn each_profile_shows_the_sign_in_purlis_can_see() {
     let dir = plane(
-        "[harness]\ndefault = \"claude-work\"\n\n\
-         [harness.claude-work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+        "[chat_env]\npass = [\"OPENAI_API_KEY\"]\n\n\
+         [harness]\ndefault = \"claude-work\"\n\n\
+         [harness.claude-work]\nkind = \"claude\"\ncommand = [\"claude\"]\n\n\
+         [harness.claude-aws]\nkind = \"claude\"\ncommand = [\"claude\"]\n\
+         env = { CLAUDE_CODE_USE_BEDROCK = \"1\" }\n",
     );
     fs::create_dir_all(dir.path().join("harnesses")).unwrap();
     fs::write(
@@ -67,12 +71,13 @@ fn a_profile_of_a_declared_harness_shows_the_sign_in_its_declaration_gives_or_un
 
     assert_eq!(
         purlis(dir.path()),
-        "  NAME         KIND      SIGN-IN       COMMAND   FROM\n\
-         \x20 claude       claude    subscription  claude    built-in\n\
-         \x20 opencode     opencode  subscription  opencode  built-in\n\
-         \x20 codex        codex     subscription  codex     built-in\n\
-         \x20 aider        aider     unknown       aider     harnesses\n\
-         * claude-work  claude    subscription  claude    charter.local.toml\n\
-         \x20 llamas       llamas    local         llamas    harnesses\n"
+        "  NAME         KIND      SIGN-IN  COMMAND                           FROM\n\
+         \x20 claude       claude    unknown  claude                            built-in\n\
+         \x20 opencode     opencode  api-key  opencode                          built-in\n\
+         \x20 codex        codex     api-key  codex                             built-in\n\
+         \x20 aider        aider     unknown  aider                             harnesses\n\
+         \x20 claude-aws   claude    cloud    CLAUDE_CODE_USE_BEDROCK=1 claude  charter.local.toml\n\
+         * claude-work  claude    unknown  claude                            charter.local.toml\n\
+         \x20 llamas       llamas    local    llamas                            harnesses\n"
     );
 }

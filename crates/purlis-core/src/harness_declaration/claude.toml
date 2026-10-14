@@ -33,18 +33,17 @@ hooks = true
 [sign_in]
 # A Claude plan through Claude Code's own /login; an Anthropic key; Bedrock or Vertex.
 kinds = ["subscription", "api-key", "cloud"]
-# Claude Code runs its commands in a sandbox of its own, apart from itself, which purlis
-# compiles (ADR 0067), so a profile's credential files can be denied to them.
-kept_from_commands = "yes"
+# Not yet measured: #2037 measures it, and until then it reads as no.
+kept_from_commands = "unknown"
 
 [folders]
 # Its settings, its sign-in and its conversations.
-config = "CLAUDE_CONFIG_DIR"
+config_env = "CLAUDE_CONFIG_DIR"
 
 [conversation]
-# One transcript per session, under a folder named after the directory it ran in.
-moved_by = "file"
-file = "{config}/projects/*/{id}.jsonl"
+# One transcript per session, under a folder named after the directory it ran in: `{cwd_key}`,
+# made again from the chat's directory where it comes back (`harness_declaration::cwd_key`).
+file = "{config}/projects/{cwd_key}/{id}.jsonl"
 
 [capabilities]
 reports_its_process = "yes"

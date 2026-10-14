@@ -2915,7 +2915,11 @@ fn run(command: Command) -> Result<u8, String> {
             let check = profiles::ignore_check(&root);
             let set = profiles::with_ignore_check(profiles::current(&root), &check);
             let declared = purlis_core::harness_declaration::read(&root);
-            eprint!("{}", harness_listing(&set, &check, Some(&declared)));
+            let passed = purlis_core::chatenv::read(&root);
+            eprint!(
+                "{}",
+                harness_listing(&set, &check, Some((&declared, &passed)))
+            );
         }
         Command::Harness(HarnessCommand::Show { name }) => {
             return Ok(harness_show(here.plane.root(), &name));
@@ -4140,8 +4144,9 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 }
 
 /// The profile listing, as `purlis harness list` prints it on stderr, and with `declared`, as
-/// `purlis profile list` does: a SIGN-IN column, the kind of sign-in each profile has from its
-/// harness's declaration (#2031), or `unknown` where the declaration does not tell.
+/// `purlis profile list` does: a SIGN-IN column, the kind of sign-in purlis can see a profile
+/// has, from its harness's declaration, its `env` and `[chat_env] pass` (`passed`), or
+/// `unknown` where it cannot tell (#2031).
 ///
 /// Built-ins first in registry order — a declared replacement keeps its kind's place — then
 /// declared profiles by name. **Every width is measured from the cells about to be printed**
@@ -4155,7 +4160,7 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 fn harness_listing(
     set: &ProfileSet,
     check: &profiles::IgnoreCheck,
-    declared: Option<&purlis_core::harness_declaration::Declarations>,
+    declared: Option<(&purlis_core::harness_declaration::Declarations, &[String])>,
 ) -> String {
     let order: Vec<String> = profiles::builtins().into_iter().map(|p| p.name).collect();
     let mut rows: Vec<&purlis_core::profiles::Profile> = set.profiles().iter().collect();
@@ -4164,14 +4169,18 @@ fn harness_listing(
         (place.is_none(), place.unwrap_or(0), p.name.clone())
     });
 
-    let sign_in = |p: &purlis_core::profiles::Profile,
-                   declared: &purlis_core::harness_declaration::Declarations| {
-        declared
-            .get(&p.kind)
-            .and_then(purlis_core::harness_declaration::Declaration::profile_sign_in)
-            .map_or("unknown", |kind| kind.word())
-            .to_owned()
-    };
+    let sign_in =
+        |p: &purlis_core::profiles::Profile,
+         (declared, passed): (&purlis_core::harness_declaration::Declarations, &[String])| {
+            declared
+                .get(&p.kind)
+                .and_then(|declaration| declaration.profile_sign_in(&p.env, passed))
+                // Through the closure, and never by the kind's type name: this binary names no
+                // forge sign-in, and `a_forge_token_never_reaches_a_chat.rs` holds its sources to
+                // that by the type's word.
+                .map_or("unknown", |kind| kind.word())
+                .to_owned()
+        };
     let heads: Vec<&str> = match declared {
         Some(_) => vec!["NAME", "KIND", "SIGN-IN", "COMMAND"],
         None => vec!["NAME", "KIND", "COMMAND"],

@@ -176,9 +176,10 @@ impl Answer {
 }
 
 /// A kind of sign-in a profile of a harness may have (#2030): the four words a declaration's
-/// `[sign_in] kinds` lists.
+/// `[sign_in] kinds` lists. Not a forge's sign-in ([`crate::forge::route::SignIn`]), which
+/// never reaches a chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SignIn {
+pub enum SignInKind {
     /// A plan (Claude Pro or Max, ChatGPT, Copilot), signed in through the harness's own flow
     /// and kept by the harness in its own folder. purlis never reads, copies, stores or relays
     /// it.
@@ -191,9 +192,9 @@ pub enum SignIn {
     Local,
 }
 
-impl SignIn {
+impl SignInKind {
     /// Every kind, in the order a declaration and a listing name them.
-    pub const ALL: [SignIn; 4] = [Self::Subscription, Self::ApiKey, Self::Cloud, Self::Local];
+    pub const ALL: [SignInKind; 4] = [Self::Subscription, Self::ApiKey, Self::Cloud, Self::Local];
 
     /// The word a declaration writes and a listing prints.
     pub fn word(self) -> &'static str {
@@ -214,21 +215,24 @@ impl SignIn {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignInFacts {
     /// The kinds it supports, as the declaration lists them. None listed: none is offered.
-    pub kinds: Vec<SignIn>,
+    pub kinds: Vec<SignInKind>,
     /// Whether its credential files can be kept from the commands it runs: only a yes counts,
     /// and silence is [`Answer::Unknown`], which reads as no.
     pub kept_from_commands: Answer,
 }
 
 /// The variables that set where a declared harness keeps its own files (`[folders]`, #2031):
-/// what purlis sets to a profile's folder. None declared: purlis sets none.
+/// what purlis sets to a profile's folder. None declared: purlis sets none. A harness may keep
+/// its files in the folder a variable names (Claude Code, Codex) or in a folder of its own name
+/// under it (opencode, under each XDG folder); `{config}` and `{data}` in a
+/// [`Conversation::File`] are the folder the variable names, either way.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Folders {
-    /// Where it keeps its settings and its sign-in, and its data unless `data` is given.
-    pub config: Option<String>,
+    /// Where it keeps its settings and its sign-in, and its data unless `data_env` is given.
+    pub config_env: Option<String>,
     /// Where it keeps its data (conversations, and for some its credentials), where that is a
     /// variable of its own.
-    pub data: Option<String>,
+    pub data_env: Option<String>,
 }
 
 /// How a declared harness's conversation leaves a device and comes back (`[conversation]`,
@@ -237,7 +241,8 @@ pub struct Folders {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Conversation {
     /// Copied as a file: `file` is where the session `{id}` lives, under `{config}/` or
-    /// `{data}/`, with `*` for a part that varies.
+    /// `{data}/`. A `*` part is kept as it was found, and `{cwd_key}` is made again from the
+    /// directory the chat runs in where it comes back ([`cwd_key`]).
     File {
         file: String,
         /// The session it was forked from has to come with it.
@@ -295,13 +300,38 @@ impl Declaration {
             .unwrap_or(Answer::Unknown)
     }
 
-    /// The sign-in a profile of this harness has today, or none where purlis cannot tell:
-    /// every chat is signed in through its harness's own flow, so a harness that supports a
-    /// subscription has one, and a harness that supports one kind alone has that one (#2031).
-    pub fn profile_sign_in(&self) -> Option<SignIn> {
-        match self.sign_in.kinds.as_slice() {
-            kinds if kinds.contains(&SignIn::Subscription) => Some(SignIn::Subscription),
-            [only] => Some(*only),
+    /// The sign-in a profile of this harness has, as far as purlis can see it, or none where
+    /// it cannot tell (#2031). Until a profile names its own (#2034, #2036), what purlis sees
+    /// is: a harness that supports one kind alone has that one; a profile of a harness purlis
+    /// ships whose `env` sets, or whose `[chat_env] pass` (`passed`) passes, the variables that
+    /// switch it to a cloud has `cloud`, or a provider's key has `api-key`, where only one of
+    /// the two is seen. Nothing else is a sign-in purlis can see: a subscription is the
+    /// harness's own, and never read.
+    pub fn profile_sign_in(
+        &self,
+        env: &[(String, String)],
+        passed: &[String],
+    ) -> Option<SignInKind> {
+        if let [only] = self.sign_in.kinds.as_slice() {
+            return Some(*only);
+        }
+        let harness = match self.origin {
+            Origin::BuiltIn => Harness::of_kind(&self.name),
+            Origin::Local => self.replaces(),
+            Origin::Project => None,
+        }?;
+        let (keys, clouds) = sign_in_variables(harness);
+        let seen = |names: &[&str]| {
+            names.iter().any(|name| {
+                env.iter().any(|(set, value)| {
+                    set == name && !matches!(value.as_str(), "" | "0" | "false")
+                }) || passed.iter().any(|entry| overlap(entry, name))
+            })
+        };
+        let supported = |kind| self.sign_in.kinds.contains(&kind);
+        match (seen(keys), seen(clouds)) {
+            (true, false) if supported(SignInKind::ApiKey) => Some(SignInKind::ApiKey),
+            (false, true) if supported(SignInKind::Cloud) => Some(SignInKind::Cloud),
             _ => None,
         }
     }
@@ -409,6 +439,56 @@ impl Declaration {
         }
         Harness::of_kind(&self.name)
     }
+}
+
+/// The variables by which a profile of `harness` would be signed in with a provider's key,
+/// and those that switch it to a cloud: what [`Declaration::profile_sign_in`] looks for in a
+/// profile's `env` and in `[chat_env] pass`. Names only; a value is never read.
+fn sign_in_variables(harness: Harness) -> (&'static [&'static str], &'static [&'static str]) {
+    match harness {
+        Harness::ClaudeCode => (
+            &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+            &[
+                "CLAUDE_CODE_USE_BEDROCK",
+                "CLAUDE_CODE_USE_VERTEX",
+                "CLAUDE_CODE_USE_FOUNDRY",
+            ],
+        ),
+        Harness::Codex => (
+            &["OPENAI_API_KEY", "CODEX_API_KEY"],
+            &["AZURE_OPENAI_API_KEY"],
+        ),
+        Harness::Opencode => (
+            &[
+                "ANTHROPIC_API_KEY",
+                "OPENAI_API_KEY",
+                "OPENROUTER_API_KEY",
+                "GEMINI_API_KEY",
+                "GOOGLE_GENERATIVE_AI_API_KEY",
+            ],
+            &[
+                "AWS_ACCESS_KEY_ID",
+                "AWS_PROFILE",
+                "AWS_BEARER_TOKEN_BEDROCK",
+                "GOOGLE_APPLICATION_CREDENTIALS",
+                "GOOGLE_CLOUD_PROJECT",
+                "AZURE_API_KEY",
+                "AZURE_RESOURCE_NAME",
+            ],
+        ),
+    }
+}
+
+/// The folder name Claude Code keeps a working directory's transcripts under, which
+/// `{cwd_key}` in a [`Conversation::File`] stands for: the directory's absolute path with every
+/// character other than an ASCII letter or digit written as `-` (`/Users/a/my.app` is
+/// `-Users-a-my-app`). It is made again from the directory a chat runs in on the device it
+/// comes back to, never copied.
+pub fn cwd_key(dir: &Path) -> String {
+    dir.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 fn filled(words: &[String], id: &SessionId, name: &str) -> Vec<String> {
@@ -788,14 +868,13 @@ struct RawSignIn {
 #[derive(serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawFolders {
-    config: Option<String>,
-    data: Option<String>,
+    config_env: Option<String>,
+    data_env: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawConversation {
-    moved_by: String,
     file: Option<String>,
     with_forked_from: Option<bool>,
     export: Option<Vec<String>>,
@@ -1145,12 +1224,12 @@ fn kept_as_built<T: PartialEq>(
 fn sign_in(raw: RawSignIn, at: &dyn Fn(&str) -> String) -> Result<SignInFacts, String> {
     let mut kinds = Vec::new();
     for word in &raw.kinds {
-        let Some(kind) = SignIn::of_word(word) else {
+        let Some(kind) = SignInKind::of_word(word) else {
             return Err(format!(
                 "{} holds {}, and a sign-in kind is one of: {}. Write one of them.",
                 at("[sign_in] kinds"),
                 shown::short(word),
-                SignIn::ALL.map(SignIn::word).join(", ")
+                SignInKind::ALL.map(SignInKind::word).join(", ")
             ));
         };
         if kinds.contains(&kind) {
@@ -1172,27 +1251,30 @@ fn sign_in(raw: RawSignIn, at: &dyn Fn(&str) -> String) -> Result<SignInFacts, S
     })
 }
 
-/// A declaration's `[folders]`: each a variable's whole name that a declaration's `env` may
-/// name, and for a harness purlis does not ship one inside its own namespace, `env`; the two
-/// apart.
+/// A declaration's `[folders]`: each a variable's whole name, and for a harness purlis does
+/// not ship one under `env`'s refusals and inside its own namespace, `env`; the two apart. A
+/// built-in's are purlis's own measured words (opencode's are XDG folders, which `env` refuses
+/// a project).
 fn folders(
     raw: RawFolders,
     env: &[String],
     origin: Origin,
     at: &dyn Fn(&str) -> String,
 ) -> Result<Folders, String> {
-    for (key, name) in [("config", &raw.config), ("data", &raw.data)] {
+    for (key, name) in [("config_env", &raw.config_env), ("data_env", &raw.data_env)] {
         let Some(name) = name else { continue };
         let what = at(&format!("[folders] {key}"));
-        let whole = !name.ends_with('*');
-        env_ok(name)
-            .and_then(|()| {
-                whole.then_some(()).ok_or_else(|| {
-                    "is a prefix, and a folder is one variable's whole name. Name it.".to_owned()
-                })
-            })
-            .map_err(|why| format!("{what} {}: {why}", shown::short(name)))?;
-        if origin != Origin::BuiltIn && !env.iter().any(|ours| overlap(name, ours)) {
+        if name.ends_with('*') {
+            return Err(format!(
+                "{what} {} is a prefix, and a folder is one variable's whole name. Name it.",
+                shown::short(name)
+            ));
+        }
+        if origin == Origin::BuiltIn {
+            continue;
+        }
+        env_ok(name).map_err(|why| format!("{what} {}: {why}", shown::short(name)))?;
+        if !env.iter().any(|ours| overlap(name, ours)) {
             return Err(format!(
                 "{what} is {}, which is not in its env namespace — a declaration's folders are \
                  variables of the harness's own. Add it to env, or name one there.",
@@ -1200,58 +1282,50 @@ fn folders(
             ));
         }
     }
-    if raw.config.is_some() && raw.config == raw.data {
+    if raw.config_env.is_some() && raw.config_env == raw.data_env {
         return Err(format!(
-            "{} names one variable for config and data. Leave data out where they are one \
-             folder.",
+            "{} names one variable for config_env and data_env. Leave data_env out where they \
+             are one folder.",
             at("[folders]")
         ));
     }
-    if raw.data.is_some() && raw.config.is_none() {
+    if raw.data_env.is_some() && raw.config_env.is_none() {
         return Err(format!(
-            "{} gives data and no config — config is where the harness keeps its settings and \
-             its sign-in. Name it.",
+            "{} gives data_env and no config_env — config_env is where the harness keeps its \
+             settings and its sign-in. Name it.",
             at("[folders]")
         ));
     }
     Ok(Folders {
-        config: raw.config,
-        data: raw.data,
+        config_env: raw.config_env,
+        data_env: raw.data_env,
     })
 }
 
 /// The most characters of a `[conversation] file`.
 const MOST_FILE: usize = 200;
 
-/// A declaration's `[conversation]`: a file under one of its folders, or its own export and
-/// import commands, whose words take the shapes every word after a program does.
+/// A declaration's `[conversation]`: a `file` under one of its folders, or its own `export`
+/// and `import` commands, whose words take the shapes every word after a program does; which
+/// one is the keys it gives.
 fn conversation(
     raw: RawConversation,
     folders: &Folders,
     origin: Origin,
     at: &dyn Fn(&str) -> String,
 ) -> Result<Conversation, String> {
-    match raw.moved_by.as_str() {
-        "file" => {
-            if raw.export.is_some() || raw.import.is_some() {
-                return Err(format!(
-                    "{} is \"file\", which moves a file and runs no export or import. Remove \
-                     them, or write moved_by = \"export\".",
-                    at("[conversation] moved_by")
-                ));
-            }
-            let Some(file) = raw.file else {
-                return Err(format!(
-                    "{} is \"file\" and names no file. Say where session {{id}} lives, as \
-                     file = \"{{config}}/<path>\".",
-                    at("[conversation] moved_by")
-                ));
-            };
+    match (raw.file, raw.export, raw.import) {
+        (Some(_), Some(_), _) | (Some(_), _, Some(_)) => Err(format!(
+            "{} gives a file and an export or import — a conversation moves as a file, or \
+             through the harness's own export and import. Keep one.",
+            at("[conversation]")
+        )),
+        (Some(file), None, None) => {
             if let Some(why) = file_refusal(&file, folders) {
                 return Err(format!(
                     "{} is {}, which {why}. Write it as {{config}}/ or {{data}}/ and a path \
-                     of plain parts, with * for a part that varies and {{id}} for the \
-                     session's id.",
+                     of plain parts, with * for a part kept as it is, {{cwd_key}} for the \
+                     working directory's folder and {{id}} for the session's id.",
                     at("[conversation] file"),
                     shown::short(&file)
                 ));
@@ -1261,19 +1335,19 @@ fn conversation(
                 with_forked_from: raw.with_forked_from.unwrap_or(false),
             })
         }
-        "export" => {
-            if raw.file.is_some() || raw.with_forked_from.is_some() {
+        (None, export, import) => {
+            if raw.with_forked_from.is_some() {
                 return Err(format!(
-                    "{} is \"export\", which runs the harness's own commands and copies no \
-                     file. Remove file and with_forked_from, or write moved_by = \"file\".",
-                    at("[conversation] moved_by")
+                    "{} gives with_forked_from and no file — it says a file comes with the \
+                     session's own. Give file, or remove it.",
+                    at("[conversation]")
                 ));
             }
-            let (Some(export), Some(import)) = (raw.export, raw.import) else {
+            let (Some(export), Some(import)) = (export, import) else {
                 return Err(format!(
-                    "{} is \"export\", and it needs both export and import: the words that \
-                     print session {{id}}, and the words that take what they printed.",
-                    at("[conversation] moved_by")
+                    "{} gives neither a file nor both export and import: the words that print \
+                     session {{id}}, and the words that take what they printed.",
+                    at("[conversation]")
                 ));
             };
             template(&export, at("[conversation] export"), origin)?;
@@ -1294,17 +1368,13 @@ fn conversation(
             }
             Ok(Conversation::Export { export, import })
         }
-        other => Err(format!(
-            "{} is {}, and it is \"file\" or \"export\". Write one of them.",
-            at("[conversation] moved_by"),
-            shown::short(other)
-        )),
     }
 }
 
 /// Why `file` may not be a `[conversation] file`, or nothing: it starts at a folder the
 /// declaration names (`{config}/`, `{data}/`), names `{id}`, and every part after is plain
-/// (letters, digits, `.`, `_`, `-`, `*`, and `{id}`), never empty, `.` or `..`.
+/// (letters, digits, `.`, `_`, `-`, `{id}`), or `*` alone (a part kept as it was found), or
+/// `{cwd_key}` alone; never empty, `.` or `..`, and no other glob.
 fn file_refusal(file: &str, folders: &Folders) -> Option<&'static str> {
     if file.chars().count() > MOST_FILE {
         return Some("is over 200 characters");
@@ -1313,8 +1383,8 @@ fn file_refusal(file: &str, folders: &Folders) -> Option<&'static str> {
         return Some("does not start at {config}/ or {data}/");
     };
     let named = match folder {
-        "{config}" => folders.config.is_some(),
-        "{data}" => folders.data.is_some(),
+        "{config}" => folders.config_env.is_some(),
+        "{data}" => folders.data_env.is_some(),
         _ => return Some("does not start at {config}/ or {data}/"),
     };
     if !named {
@@ -1324,13 +1394,19 @@ fn file_refusal(file: &str, folders: &Folders) -> Option<&'static str> {
         return Some("names no {id}");
     }
     let plain = |part: &str| {
-        let bare = part.replace("{id}", "");
+        if part == "*" || part == "{cwd_key}" {
+            return true;
+        }
+        let bare = part.replace("{id}", "").replace('*', "");
+        // A `*` inside a part stands for what varies in a name (`rollout-*-{id}.jsonl`), never
+        // for more than one part.
         !part.is_empty()
             && part != "."
             && part != ".."
+            && !part.contains("**")
             && bare
                 .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '*'))
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     };
     (!rest.split('/').all(plain)).then_some("holds a part that is not plain")
 }

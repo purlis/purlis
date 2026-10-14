@@ -36,11 +36,10 @@ kept_from_commands = "no: Codex and the commands it runs are wrapped in one sand
 
 [folders]
 # `CODEX_HOME`: its settings, its sign-in and its sessions.
-config = "CODEX_HOME"
+config_env = "CODEX_HOME"
 
 [conversation]
 # One session file per session, by date; a forked session needs the file it was forked from.
-moved_by = "file"
 file = "{config}/sessions/*/*/*/rollout-*-{id}.jsonl"
 with_forked_from = true
 
