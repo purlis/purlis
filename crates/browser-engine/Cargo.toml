@@ -1,0 +1,41 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-browser-engine"
+description = "The engine a browser runs on: a pinned Chrome for Testing, verified before it runs, started over an inherited pipe with no port, and ended with its host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+# The archive's digest, checked against the pin before a byte of it is unpacked.
+sha2 = "0.11"
+# The signature over an engine manifest that did not ship inside this build (ADR 0042's tool).
+minisign-verify = "0.2"
+# Chrome for Testing ships as a zip. Only the deflate reader, on the zlib-rs backend flate2
+# already links: the tree gains no crate.
+zip = { version = "4.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# The one download: core's own client and features, so the tree gains no crate.
+ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+[target."cfg(unix)".dependencies]
+# posix_spawn with dup2 file actions puts the DevTools pipe at descriptors 3 and 4 without a
+# `pre_exec` (the workspace denies `unsafe`); killpg ends the engine's process group. The
+# version purlis-same-user already links, so the tree gains no crate.
+nix = { version = "0.31", default-features = false, features = ["process", "signal"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+minisign = "0.10"
+stand-in.workspace = true
+
+[lints]
+workspace = true
