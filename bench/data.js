@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791942853658,
+  "lastUpdate": 1791944305840,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10416,6 +10416,48 @@ window.BENCHMARK_DATA = {
             "value": 104.0951925,
             "unit": "ms",
             "extra": "median of 5 runs: 102.574, 104.050, 104.095, 104.874, 104.913 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "b4b57accbc5f6e0150bec0c2846174990120c5b1",
+          "message": "feat(terminal): a right-click in a terminal has Copy, Paste and Select all\n\nA chat's or a shell's terminal had no menu of its own: a right-click\nopened the panes' menu (a new tab, the splits, ending the chat), and\nthere was no pointer route to the clipboard.\n\nA terminal now opens its own menu, declared and drawn as every context\nmenu is (a GroupDrawn of its own rows, then the pane's groups from\nmenuOf, drawn by Groups): Copy, Paste and Select all, with a Mac's keys\nat the rows' ends, and the pane's rows after them, so none is stranded.\n\n- Copy is off with nothing selected, writes xterm's own selection text\n  and keeps the selection. It reads the selection at the press.\n- Paste (the operator's ruling of 2026-10-14): a window-only command,\n  clipboard_text, reads the clipboard in the core on the press, and the\n  text goes through xterm's own paste, the path the keyboard's paste\n  takes, bracketed when the program asked. The command takes no\n  argument, reads only when asked by a handle of its own, keeps and\n  writes down nothing, and answers text only, up to 1 MiB; a read that\n  fails says it failed. It is of the value-bearing class and no link is\n  served it (ADR 0052, amended).\n- A menu opened from the keyboard rests on no row, so Enter after the\n  menu key never pastes.\n- While a program has mouse reporting on, a plain right-click is the\n  program's and opens no menu; Shift+right-click always opens it, a\n  Mac's Ctrl+click counting as the right button. The press kept from\n  xterm has its default prevented, and the menu puts the keyboard in\n  the terminal when it closes on Escape or one of its own rows.\n- The menu key opens the menu under the cursor. Shift+F10 does while no\n  program has the mouse, and a second Shift+F10 hands the key back; a\n  key held down is one press.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T06:17:09+04:00",
+          "tree_id": "508079a2abdcd2f589f76186bcd1f458b5457de7",
+          "url": "https://github.com/purlis/purlis/commit/b4b57accbc5f6e0150bec0c2846174990120c5b1"
+        },
+        "date": 1791944304718,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5275814999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.514, 0.528, 0.536, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7121425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.464, 16.574, 16.712, 16.901, 17.166 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.146585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.623, 102.876, 104.147, 105.091, 105.717 ms"
           }
         ]
       }
