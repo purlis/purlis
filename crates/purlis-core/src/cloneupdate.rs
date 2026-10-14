@@ -1611,9 +1611,17 @@ pub fn refusal_of(
             &inv.env,
             &inv.own_env,
         );
+        // The shell's redirections are its own, never git's words: `git rebase <upstream>
+        // 2>&1` names one commit, as `git rebase <upstream>` does.
+        let words = |post: &[String]| -> Vec<String> {
+            shellwrap::without_redirections(post)
+                .into_iter()
+                .cloned()
+                .collect()
+        };
         Some(match end {
-            AliasEnd::Resolved | AliasEnd::Unasked => (sub, post, false),
-            AliasEnd::Unread | AliasEnd::TooDeep => (inv.sub.clone(), inv.post.clone(), true),
+            AliasEnd::Resolved | AliasEnd::Unasked => (sub, words(&post), false),
+            AliasEnd::Unread | AliasEnd::TooDeep => (inv.sub.clone(), words(&inv.post), true),
         })
     };
     let hinted = |inv: &RootInvocation, why: String| {
