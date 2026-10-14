@@ -3453,6 +3453,12 @@ export type BlockOffer =
  *  means.
  */
 "service" | 
+/**
+ *  Allow a service on this Mac by its one port (qw384): [`ChatBlocked::route`] says what
+ *  allowing it means. [`ChatBlocked::target`] is null where the refusal named no port, which
+ *  the person types.
+ */
+"port" | 
 /**  Never granted, and there is a way that works: [`ChatBlocked::route`] says it. */
 "brokered" | 
 /**
@@ -3835,6 +3841,13 @@ export type ChatBlocked = {
 	 *  (`take_up_sandbox_block`). None for a block of a command the chat ran.
 	 */
 	quiet?: string | null,
+	/**
+	 *  **A port the command's own output names**, for a service on this Mac whose refusal named
+	 *  none ([`BlockOffer::Port`] with no [`Self::target`], qw384): the Notice pre-fills its
+	 *  port field with it and says it came from the command's output, for the person to check.
+	 *  Judged as a port is before it is sent here, and again before anything is allowed.
+	 */
+	suggested?: string | null,
 };
 
 /**
@@ -5556,7 +5569,9 @@ export type GrantWhat =
 /**  A local socket to connect to (D-sock-1): this machine's alone, never the project's. */
 "socket" | 
 /**  A system service to look up by name (D-sock-1): this machine's alone. */
-"service";
+"service" | 
+/**  A service on this Mac, by its one loopback port (qw384): this machine's alone. */
+"port";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {

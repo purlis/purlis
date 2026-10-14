@@ -969,3 +969,47 @@ fn every_command_an_ask_is_answered_by_is_the_window_s_alone() {
     }
     assert_eq!(Answerer::admitted(Admitted::Chat), None);
 }
+
+#[test]
+fn a_refused_port_on_this_mac_offers_this_chat_and_this_project_here_bound_to_the_block_shown() {
+    // qw384: one port, never once or everyone's; one the block did not name is typed in its
+    // Notice and answered there.
+    let block = |target: &str| HeldBlock {
+        operation: "connect".to_owned(),
+        kind: "local-service".to_owned(),
+        what: GrantWhat::Port,
+        target: target.to_owned(),
+    };
+    let shown = sandbox_block(5, &block("50795"), &Locks::none()).expect("an ask");
+    assert_eq!(shown.source, AskSource::SandboxLocal);
+    assert!(
+        shown
+            .says
+            .starts_with("The sandbox refused the service on this Mac at port 50795.")
+    );
+    assert_eq!(
+        shown
+            .options
+            .iter()
+            .map(|one| (one.id.as_str(), one.label.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("chat", "Allow only for this chat"),
+            ("you", "Allow for me on this machine"),
+            (KEEP, "Keep blocked"),
+        ]
+    );
+    assert_eq!(
+        shown.answer,
+        AnswerPath::SandboxBlock {
+            shown: BlockShown {
+                operation: "connect".to_owned(),
+                kind: "local-service".to_owned(),
+                what: GrantWhat::Port,
+                target: "50795".to_owned(),
+            }
+        }
+    );
+    let typed = sandbox_block(5, &block(""), &Locks::none()).expect("an ask");
+    assert_eq!(typed.answer, AnswerPath::InItsPane);
+}

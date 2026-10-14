@@ -652,8 +652,16 @@ impl Proxy {
 
     /// **A chat's proxy**: two new ports on the loopback interface, serving `serving`.
     pub fn serving(serving: Serving) -> io::Result<Self> {
-        let http = TcpListener::bind(("127.0.0.1", 0))?;
-        let socks = TcpListener::bind(("127.0.0.1", 0))?;
+        // Never a port a chat's sandbox lets it reach as a service on this Mac, and each kept
+        // as purlis's own while it listens, so no chat is allowed it (qw384).
+        let http = super::localport::bind_loopback()?;
+        let socks = match super::localport::bind_loopback() {
+            Ok(socks) => socks,
+            Err(err) => {
+                super::localport::release(http.local_addr()?.port());
+                return Err(err);
+            }
+        };
         let (http_addr, socks_addr) = (http.local_addr()?, socks.local_addr()?);
         let stop = Arc::new(AtomicBool::new(false));
         let ports: Vec<u16> = serving
@@ -795,6 +803,8 @@ impl Drop for Proxy {
             }
         }
         self.allowed.tell(|tally| tally.ended());
+        super::localport::release(self.http.port());
+        super::localport::release(self.socks.port());
     }
 }
 

@@ -426,3 +426,74 @@ describe("a host block past the hosts the chat's proxy names", () => {
     );
   });
 });
+
+describe("a service on this Mac's Notice (qw384)", () => {
+  const CLUSTER: ChatBlocked = {
+    ...UNNAMED,
+    harness: "codex",
+    kind: "local-service",
+    said: "a connection to a service on this Mac",
+    offer: "port",
+    target: "50795",
+    route:
+      "Allowing it lets this chat connect to whatever listens on that port on this Mac, as you; " +
+      "a container engine's or a cluster's port can reach much of your machine.",
+    levels: ["chat", "you"],
+  };
+
+  it("names the port, says what allowing it means, and sends that one port", async () => {
+    const { sent } = drawn(CLUSTER);
+
+    expect(screen.getByText("50795")).toBeTruthy();
+    expect(screen.getByText(/whatever listens on that port on this Mac/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "connect", kind: "local-service", what: "port", target: "50795" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+
+  it("pre-fills a port only the command's output named, and says to check it", async () => {
+    const { sent } = drawn({ ...CLUSTER, target: null, suggested: "50795" });
+    const box = screen.getByRole("textbox", { name: "Port to allow" });
+    expect(box).toHaveValue("50795");
+    expect(box).toHaveAccessibleDescription(/from the command's output: check it/);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "connect", kind: "local-service", what: "port", target: "50795" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+
+  it("asks for the port in a form row where the refusal named none", async () => {
+    const { sent } = drawn({ ...CLUSTER, target: null });
+    const box = screen.getByRole("textbox", { name: "Port to allow" });
+    expect(box).toHaveAttribute("placeholder", "6443");
+    await userEvent.type(box, "50795");
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "connect", kind: "local-service", what: "port", target: "50795" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+});
