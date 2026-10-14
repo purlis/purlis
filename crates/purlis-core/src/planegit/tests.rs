@@ -4979,3 +4979,98 @@ fn a_file_a_chats_sandbox_may_not_write_is_held_from_chats() {
         vec![crate::names::PLANE_MANIFEST.write.to_string()]
     );
 }
+
+#[test]
+fn skip_never_drops_a_commit_that_still_changes_files() {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+    resolve_start(&scene.fixture);
+
+    // Unsettled, then settled with a change of its own: neither is skipped.
+    assert!(refused_with(
+        &resolve::skip(&scene.fixture.root),
+        "nothing left to commit"
+    ));
+    write(&scene.fixture.root, "a.md", b"both\n");
+    run(&scene.fixture.root, &["add", "--", "a.md"]);
+    assert!(refused_with(
+        &resolve::skip(&scene.fixture.root),
+        "nothing left to commit"
+    ));
+    assert!(
+        gitstate::stopped(&scene.fixture.root).is_some(),
+        "still stopped"
+    );
+}
+
+#[test]
+fn a_project_that_stores_crlf_line_endings_can_continue() {
+    let scene = Scene::new(&[
+        (".gitattributes", b"*.md text eol=crlf\n"),
+        ("a.md", b"one\r\n"),
+    ]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\r\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\r\n"));
+    assert!(matches!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(_)
+    ));
+    write(&scene.fixture.root, "a.md", b"both\r\n");
+
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["a.md"]),
+        resolve::Settled::Replayed
+    );
+    assert_eq!(
+        ask(&scene.fixture.root, &["show", "HEAD:a.md"]),
+        "both\n",
+        "stored as git stores it"
+    );
+}
+
+#[test]
+fn what_is_staged_is_compared_with_the_bytes_that_were_checked() {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+    resolve_start(&scene.fixture);
+    write(&scene.fixture.root, "a.md", b"both\n");
+    run(&scene.fixture.root, &["add", "--", "a.md"]);
+
+    assert!(resolve::staged_as_checked(
+        &scene.fixture.root,
+        "a.md",
+        b"both\n"
+    ));
+    assert!(!resolve::staged_as_checked(
+        &scene.fixture.root,
+        "a.md",
+        b"something else\n"
+    ));
+    assert!(!resolve::staged_as_checked(
+        &scene.fixture.root,
+        "missing.md",
+        b"both\n"
+    ));
+}
+
+#[test]
+fn a_file_merged_without_markers_by_its_attributes_is_the_persons() {
+    let scene = Scene::new(&[(".gitattributes", b"a.md -merge\n"), ("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+
+    assert!(matches!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(_)
+    ));
+
+    assert_eq!(
+        resolve::conflicts(&scene.fixture.root).by_hand,
+        vec!["a.md".to_string()]
+    );
+    let refused = resolve_continue(&scene.fixture, &["a.md"]);
+    assert!(refused_with(&refused, "`a.md`"), "{refused:?}");
+    assert!(refused_with(&refused, "terminal"), "{refused:?}");
+}

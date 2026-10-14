@@ -414,15 +414,17 @@ Decided under delegation (the dispatcher's call), and recorded for the operator'
   sandbox may not write, no chat is started, and the window says to settle it in a terminal.
 - **What git stopped with is kept, for each stop**, in the window's process: the commit being
   replayed, the files in conflict, those git could not mark (a binary file, a file one side
-  deleted, a link, a submodule, a file that is gone), and every other change git staged. A
+  deleted, a link, a submodule, a file that is gone, or one git left without a marker because
+  its `.gitattributes` asked), and every other change git staged. A
   conflict git could not mark is the person's to settle in a terminal, and is never handed to
   a chat.
 - **Continue is the window's.** It refuses while a conflict git could not mark is unsettled,
   while anything outside the files in conflict is staged otherwise than git left it, and while
   a marker (`<<<<<<<`, `|||||||`, `>>>>>>>`) opens a line in the files. It stages the files from
-  the bytes it checked, reads back what git staged, and puts them back in conflict where that
-  differs. A further stop names the next files. A settling that leaves the commit empty offers
-  **Skip**, which drops it.
+  the bytes it checked, compares what git staged with those bytes as git stores them for each
+  path (its clean filter and line endings applied), and puts them back in conflict where they
+  differ. A further stop names the next files. A settling that leaves the commit empty offers
+  **Skip**, which drops it, and only while nothing is left to commit.
 - **When the replay finishes, what is committed is pushed**, as the project's mode says, and
   nothing new is committed. Files changed meanwhile are named and left for the person.
 - **Abort** is `git rebase --abort`: the project is where it was before Resolve.
