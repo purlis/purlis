@@ -24,7 +24,7 @@ export function profilesGroup(): SettingsGroup {
   return {
     id: "you.profiles",
     label: "Profiles",
-    help: "The profiles this machine keeps for every project: each a harness with its own settings, sign-in and conversations, in a folder of its own. A profile a project declares in charter.local.toml under the same name is that project's.",
+    help: "The profiles this machine keeps for every project: each a harness with its own settings, sign-in and conversations, in a folder of its own. A profile a project declares under the same name in its own local settings is that project's.",
     settings: [list, add],
   };
 }

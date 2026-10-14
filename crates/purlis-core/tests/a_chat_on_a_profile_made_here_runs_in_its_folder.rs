@@ -6,7 +6,8 @@
 //! finds the settings the profile imported there, and keeps its sign-in and conversations there.
 //!
 //! The profile store is found through this process's data home, so each body runs in a child
-//! whose `PURLIS_DATA_HOME` is the test's own folder.
+//! whose `PURLIS_DATA_HOME` is the test's own folder, with a stand-in for each harness first on
+//! its `PATH`, so the test is about the start and not about what the machine has installed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,11 +25,20 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
         return Some(PathBuf::from(data));
     }
     let data = tempfile::tempdir().unwrap();
+    let programs = tempfile::tempdir().unwrap();
+    for harness in ["claude", "opencode"] {
+        stand_in::program(programs.path(), harness, "#!/bin/sh\n");
+    }
+    let path = std::env::join_paths(std::iter::once(programs.path().to_path_buf()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .unwrap();
     purlis_core::testrun::rerun_steered(
         &[test],
         &[
             (purlis_core::datahome::HOME_VAR, data.path().as_os_str()),
             (DATA, data.path().as_os_str()),
+            ("PATH", path.as_os_str()),
         ],
     );
     None
