@@ -392,6 +392,9 @@ Decided under delegation, and recorded for the operator's ruling.
   `git am`, a cherry-pick, a revert or a bisect, finishing it is git's in a terminal, so no chat
   is offered, whether or not files are still unmerged. A stopped merge, or unmerged files with
   no operation, still offer one.
+- **The window's Save carries what the remote lacks.** Pressed in the window, Save on a clean
+  plane pushes the commits its upstream lacks even when `[plane] mode` is unset, so the window
+  never says "nothing to save" while there are some. `purlis save` keeps its recorded answer.
 
 ## Amended 2026-10-14 (the operator's rulings P1 and P2 of 2026-10-13, and of 2026-10-14): the window's side of a save's request
 
