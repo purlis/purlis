@@ -88,9 +88,11 @@ impl Waiting {
 impl Host for Waiting {
     async fn call(&self, command: Command, _peer: &Peer) -> Result<Answer, Refusal> {
         match command {
-            Command::Start(_) => {
+            Command::StartProgram(_) => {
                 self.wait().await;
-                Ok(Answer::Started { chat: ONE.into() })
+                Ok(Answer::ProgramStarted {
+                    program: ONE.into(),
+                })
             }
             Command::Write { chat, bytes } => {
                 if bytes == b"wait" {
