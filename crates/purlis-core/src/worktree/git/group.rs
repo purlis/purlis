@@ -68,6 +68,12 @@ fn leads() -> bool {
     !IN_THE_CALLERS_GROUP.load(Ordering::SeqCst)
 }
 
+/// Whether a git this process starts leads a process group of its own, rather than staying
+/// in this process's ([`stay_in_the_callers_group`]): for a program to say which it is.
+pub fn each_git_leads_its_own_group() -> bool {
+    leads()
+}
+
 /// Makes `command` the leader of a process group of its own, where this process ends what it
 /// starts by its group. Every program [`stop`] is handed is started through this.
 pub(crate) fn lead(command: &mut Command) {
@@ -99,7 +105,9 @@ const STOP_GRACE: Duration = Duration::from_secs(2);
 /// **The whole group, where git leads one** ([`lead`]). The grace is the group's, not the
 /// leader's: a git that `pull` started removes its own lock a moment after the `pull` above it
 /// has gone, so the wait ends when nothing of the group is left, and the kill that follows
-/// reaches only what would not go.
+/// reaches only what would not go. The group is looked at less and less often as the wait
+/// goes on, and one that cannot be read at all is given a tenth of a second once its leader
+/// has gone ([`crate::process::UNSEEN_GRACE`]), not the whole grace.
 ///
 /// **Never a group whose leader was reaped.** A group's id is its leader's process id, and
 /// the system may hand that id to a stranger once the leader has been waited for and nothing
@@ -110,10 +118,40 @@ pub(crate) fn stop(child: &mut Child) {
     let _ = end(child, leads(), STOP_GRACE);
 }
 
+/// Who a signal is for.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Whom {
+    /// Every process of the group this process leads.
+    Group(rustix::process::Pid),
+    /// This process alone.
+    Alone(rustix::process::Pid),
+}
+
+/// Sends `signal`, and says whether there was anyone to send it to.
+#[cfg(unix)]
+fn send(whom: Whom, signal: rustix::process::Signal) -> bool {
+    match whom {
+        Whom::Group(leader) => rustix::process::kill_process_group(leader, signal).is_ok(),
+        Whom::Alone(pid) => rustix::process::kill_process(pid, signal).is_ok(),
+    }
+}
+
 /// [`stop`], for a child that leads its group or does not, saying how the child ended.
 #[cfg(unix)]
 fn end(child: &mut Child, leads: bool, grace: Duration) -> Option<ExitStatus> {
-    use rustix::process::{Pid, Signal, kill_process, kill_process_group};
+    end_sending(child, leads, grace, &mut send)
+}
+
+/// [`end`], with every signal it sends going through `send`: how a test counts them.
+#[cfg(unix)]
+fn end_sending(
+    child: &mut Child,
+    leads: bool,
+    grace: Duration,
+    send: &mut dyn FnMut(Whom, rustix::process::Signal) -> bool,
+) -> Option<ExitStatus> {
+    use rustix::process::{Pid, Signal};
     use std::time::Instant;
 
     // Ended already: reaped here, and nothing is signalled.
@@ -130,24 +168,24 @@ fn end(child: &mut Child, leads: bool, grace: Duration) -> Option<ExitStatus> {
     };
     // A child that was not started as a leader has no group by its id, and the group signal
     // answers that there is none: it is then signalled alone.
-    let signal = |signal: Signal| {
-        (leads && kill_process_group(pid, signal).is_ok()) || kill_process(pid, signal).is_ok()
+    let mut all = |signal: Signal| {
+        (leads && send(Whom::Group(pid), signal)) || send(Whom::Alone(pid), signal)
     };
-    if signal(Signal::TERM) {
+    if all(Signal::TERM) {
         // A stopped process hears nothing until it is continued.
-        signal(Signal::CONT);
+        all(Signal::CONT);
         let until = Instant::now() + grace;
-        while Instant::now() < until
-            && !(exited(child) && !(leads && crate::process::group_still_runs(pid)))
-        {
-            std::thread::sleep(Duration::from_millis(10));
+        // The leader first, then what it left: looked for less and less often, since each
+        // look at a group on Linux reads every process's record.
+        if crate::process::wait_until(until, || exited(child)) && leads {
+            crate::process::wait_for_group_to_go(pid, until);
         }
     }
     // The leader is not reaped yet, so the id is still its group's.
     if leads {
-        let _ = kill_process_group(pid, Signal::KILL);
+        send(Whom::Group(pid), Signal::KILL);
     }
-    let _ = child.kill();
+    send(Whom::Alone(pid), Signal::KILL);
     child.wait().ok()
 }
 
@@ -383,14 +421,51 @@ mod tests {
 
     #[test]
     fn a_child_that_has_already_ended_is_waited_for_and_nothing_is_signalled() {
+        // Its id may be a stranger's the moment it is waited for, and a group's with it.
         let mut child = started("exit 3", true);
         let until = Instant::now() + SOON;
         while !exited(&child) && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(10));
         }
+        let mut sent = Vec::new();
+        let mut counting = |whom: Whom, signal: rustix::process::Signal| {
+            sent.push((whom, signal));
+            send(whom, signal)
+        };
 
-        let ended = end(&mut child, true, SOON).expect("it is waited for");
+        let ended = end_sending(&mut child, true, SOON, &mut counting).expect("it is waited for");
+        // And asked again, now that it has been waited for.
+        let again = end_sending(&mut child, true, SOON, &mut counting).expect("its status is kept");
 
-        assert_eq!(ended.code(), Some(3));
+        assert_eq!((ended.code(), again.code()), (Some(3), Some(3)));
+        assert_eq!(sent, [], "a signal was sent for a child that had ended");
+    }
+
+    #[test]
+    fn a_running_child_is_asked_then_woken_then_killed_as_a_group_and_in_that_order() {
+        // The count the test above holds at none is a count of something: every signal a
+        // stop sends goes through the same seam.
+        use rustix::process::Signal;
+        let mut child = started("exec sleep 30", true);
+        let _ends = stand_in::Ends::group(child.id());
+        let group = group_of(&child);
+        let mut sent = Vec::new();
+        let mut counting = |whom: Whom, signal: rustix::process::Signal| {
+            sent.push((whom, signal));
+            send(whom, signal)
+        };
+
+        let ended = end_sending(&mut child, true, SOON, &mut counting).expect("it is waited for");
+
+        assert_eq!(ended.signal(), Some(Signal::TERM.as_raw()), "{ended:?}");
+        assert_eq!(
+            sent,
+            [
+                (Whom::Group(group), Signal::TERM),
+                (Whom::Group(group), Signal::CONT),
+                (Whom::Group(group), Signal::KILL),
+                (Whom::Alone(group), Signal::KILL),
+            ]
+        );
     }
 }

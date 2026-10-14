@@ -100,19 +100,22 @@ pub fn alive(_pid: u32) -> bool {
 }
 
 /// Whether the group `leader` leads still has a process running in it, once `leader` itself
-/// has exited and is waiting to be reaped. Where that cannot be read, it says yes, and the
-/// group is given its whole grace.
+/// has exited and is waiting to be reaped. `None` where that cannot be read.
 ///
 /// Linux counts the exited leader as a member when the group is signalled, so the null signal
 /// cannot tell: each process's own record is read instead (`/proc/<pid>/stat`: after the
 /// name come the state, the parent and the group).
 #[cfg(target_os = "linux")]
-pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> bool {
-    let Ok(listed) = std::fs::read_dir("/proc") else {
-        return true;
-    };
-    let group = leader.as_raw_nonzero().get().to_string();
-    listed.flatten().any(|entry| {
+pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> Option<bool> {
+    group_runs_as_listed(std::path::Path::new("/proc"), leader.as_raw_nonzero().get())
+}
+
+/// [`group_still_runs`], reading the processes listed under `proc`.
+#[cfg(any(target_os = "linux", test))]
+fn group_runs_as_listed(proc: &std::path::Path, group: i32) -> Option<bool> {
+    let listed = std::fs::read_dir(proc).ok()?;
+    let group = group.to_string();
+    Some(listed.flatten().any(|entry| {
         let name = entry.file_name();
         if !name
             .to_str()
@@ -125,7 +128,7 @@ pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> bool {
             return false;
         };
         in_group_and_running(&stat, &group)
-    })
+    }))
 }
 
 /// Whether one `/proc/<pid>/stat` line is a process of `group` that has not exited. The name,
@@ -143,10 +146,50 @@ fn in_group_and_running(stat: &str, group: &str) -> bool {
 
 /// On the BSDs and macOS the null signal passes over a process that has exited (measured on
 /// macOS 26.2: a group holding only its unreaped leader answers `EPERM`, one with a running
-/// member answers yes), so it is the question itself.
+/// member answers yes), so it is the question itself, and always has an answer.
 #[cfg(all(unix, not(target_os = "linux")))]
-pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> bool {
-    rustix::process::test_kill_process_group(leader).is_ok()
+pub(crate) fn group_still_runs(leader: rustix::process::Pid) -> Option<bool> {
+    Some(rustix::process::test_kill_process_group(leader).is_ok())
+}
+
+/// How long a group that cannot be read is given, in all, once its leader has gone.
+///
+/// Not the whole grace: with nothing to say whether anyone is left, waiting it out would be
+/// two seconds on every stop for a group that is nearly always empty. A tenth of a second is
+/// many times what a process needs to act on a signal, and what is left after it is killed.
+#[cfg(unix)]
+pub(crate) const UNSEEN_GRACE: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Waits until `done` says so or `until` has come, and says whether it was `done`.
+///
+/// It looks at once, then again after ten milliseconds, twenty, forty, and so on up to a
+/// hundred and sixty: what is waited for is nearly always there within the first look or two,
+/// and each look at a process group on Linux reads every process's record.
+#[cfg(any(unix, test))]
+pub(crate) fn wait_until(until: std::time::Instant, mut done: impl FnMut() -> bool) -> bool {
+    let mut pause = std::time::Duration::from_millis(10);
+    loop {
+        if done() {
+            return true;
+        }
+        let left = until.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        std::thread::sleep(pause.min(left));
+        pause = (pause * 2).min(std::time::Duration::from_millis(160));
+    }
+}
+
+/// Waits until nothing of the group `leader` led is still running, or `until`. `leader` has
+/// exited and is not reaped. Where the group cannot be read, [`UNSEEN_GRACE`] in all.
+#[cfg(unix)]
+pub(crate) fn wait_for_group_to_go(leader: rustix::process::Pid, until: std::time::Instant) {
+    let began = std::time::Instant::now();
+    wait_until(until, || match group_still_runs(leader) {
+        Some(runs) => !runs,
+        None => began.elapsed() >= UNSEEN_GRACE,
+    });
 }
 
 /// Whether this process is `ancestor` or runs below it (V82, #1018): what decides that a
@@ -226,6 +269,58 @@ pub fn could_be_recorded(started: std::time::SystemTime, written: std::time::Sys
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_group_is_read_from_the_processes_listed_and_one_that_cannot_be_listed_is_unknown() {
+        let proc = tempfile::tempdir().expect("a directory");
+        let record = |pid: &str, stat: &str| {
+            std::fs::create_dir(proc.path().join(pid)).expect("an entry");
+            std::fs::write(proc.path().join(pid).join("stat"), stat).expect("its record");
+        };
+        record("77", "77 (git) Z 1 77 77 0 -1 4194304");
+        record("90", "90 (sh) S 1 12 12 0 -1 4194304");
+        // An entry that is no process, and a process whose record is already gone.
+        std::fs::create_dir(proc.path().join("self")).expect("an entry");
+        std::fs::create_dir(proc.path().join("91")).expect("an entry");
+        assert_eq!(
+            group_runs_as_listed(proc.path(), 77),
+            Some(false),
+            "only its exited leader"
+        );
+        record("78", "78 (git merge) R 77 77 77 0 -1 4194304");
+        assert_eq!(group_runs_as_listed(proc.path(), 77), Some(true));
+        assert_eq!(group_runs_as_listed(proc.path(), 12), Some(true));
+        assert_eq!(
+            group_runs_as_listed(&proc.path().join("not-there"), 77),
+            None,
+            "nothing to read is not an answer"
+        );
+    }
+
+    #[test]
+    fn a_wait_looks_at_once_then_less_and_less_often_and_ends_on_time() {
+        let began = std::time::Instant::now();
+        let mut looks = Vec::new();
+        let done = wait_until(began + std::time::Duration::from_millis(400), || {
+            looks.push(began.elapsed());
+            false
+        });
+        assert!(!done);
+        assert!(began.elapsed() >= std::time::Duration::from_millis(400));
+        // 0, 10, 30, 70, 150, 310, and the last at the end: never the forty of a fixed ten.
+        assert!((4..=9).contains(&looks.len()), "{looks:?}");
+        assert!(looks[0] < std::time::Duration::from_millis(10), "{looks:?}");
+
+        let mut asked = 0;
+        assert!(wait_until(
+            std::time::Instant::now() + std::time::Duration::from_secs(30),
+            || {
+                asked += 1;
+                asked == 3
+            }
+        ));
+        assert_eq!(asked, 3, "it stops asking once it is done");
+    }
 
     #[test]
     fn a_process_record_is_read_past_a_name_that_holds_spaces_and_parentheses() {
