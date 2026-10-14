@@ -20,13 +20,18 @@ type Answer = { status: "ok"; data: { said: string } | null } | { status: "error
  *   in this project on this machine. The core takes the persona from its own record of the
  *   chat, audits it, and keeps it where no chat writes; it is listed in Settings › Sandbox ›
  *   Network, and removed there. The chat does not restart: its next run reads it. The core
- *   tells the chat to run the command again only when that is safe (a waiting chat now, a
+ *   tells the chat what now runs only when that is safe (a waiting chat now, a
  *   chat mid-turn when its turn ends), and otherwise the Notice says to ask the chat.
  * - **Keep blocked**: puts the Notice away. The chat's next try raises it again.
  *
+ * **It never loops** (qw385): after any press, every chat's refusals of the project are read
+ * again, so a Notice the core no longer holds (answered by an Allow on another chat of the same
+ * persona) goes, saying once what the press answered.
+ *
  * - **Dispatch to {persona}…**, where the vault is tagged for a persona the project defines
  *   (#1438): opens Ask {persona} for this chat, the dialog its tab's menu opens, and you type
- *   what to ask. The chat's own refusal also told it how to dispatch to that persona.
+ *   what to ask, and puts the Notice away as Keep blocked does. The chat's own refusal also
+ *   told it how to dispatch to that persona.
  *
  * **The dialog opens empty.** What is typed there reaches the new chat as your own words, so
  * this Notice hands it nothing a chat produced: not the command that was refused, and not the
@@ -109,7 +114,21 @@ export function VaultRefusedNotice({
     );
 
   const newest = refused[refused.length - 1];
-  if (newest === undefined) return null;
+  // A press the core refused because the refusal is gone (answered from another chat's Notice,
+  // or put away since): the Notice is not drawn again, and what the press answered is said
+  // once, so no press can loop (qw385).
+  if (newest === undefined)
+    return said === undefined ? null : (
+      <Notice
+        cause={`vault-refused:${session}:said`}
+        at="pane"
+        tone="news"
+        label="Vault"
+        onDismiss={() => setSaid(undefined)}
+      >
+        {said}
+      </Notice>
+    );
   const { vault, persona } = newest;
   const theirs = newest.tagged_for;
   const more = refused.length - 1;
@@ -123,10 +142,9 @@ export function VaultRefusedNotice({
     void ask()
       .then((done) => {
         if (done.status === "error") setSaid(done.error);
-        else {
-          if (done.data !== null) setAnswered({ persona, said: done.data.said });
-          read();
-        }
+        else if (done.data !== null) setAnswered({ persona, said: done.data.said });
+        // Whatever the press answered, the Notice draws what the core holds now (qw385).
+        read();
       })
       .catch((err: unknown) => setSaid(`purlis could not do that: ${String(err)}`))
       .finally(() => setBusy(false));
@@ -160,8 +178,11 @@ export function VaultRefusedNotice({
             {
               label: `Dispatch to ${newest.dispatch_to}…`,
               onPress: () => {
-                if (newest.dispatch_to !== null)
-                  askPersona(session, newest.dispatch_to, undefined, "notice");
+                if (newest.dispatch_to === null) return;
+                askPersona(session, newest.dispatch_to, undefined, "notice");
+                // The way forward is taken: the Notice is put away, as Keep blocked puts it
+                // (qw385). The chat's next try at the vault raises it again.
+                press(() => commands.keepVaultBlocked(plane, session, vault));
               },
             },
           ];

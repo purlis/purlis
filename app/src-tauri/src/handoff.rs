@@ -262,6 +262,13 @@ pub fn answer(
         // `purlis vault list` from a sandboxed chat (#1430): no ticket, because it changes
         // nothing, and whose vaults it lists is the app's record of the chat the token is for.
         Ask::Vaults { chat } => crate::vaults::list_for_chat(held, chat),
+        // `purlis secret list <vault>` from a sandboxed chat (qw385): no ticket, for the
+        // listing's reason. The project's listener answers it before this, with the window's
+        // teller so a refusal raises the vault's Notice (`planes.rs`); here it is answered the
+        // same way with the refusal noted for the Notice and told to nobody.
+        Ask::Keys { chat, vault } => {
+            crate::vaults::keys_for_chat(held, plane, &|_| {}, chat, &vault)
+        }
         // Where the asking chat is working (#1450): no ticket, for the record's reason. The
         // line names only the chat whose token it carries, and the picture is this app's own
         // record of its open chats.
@@ -6985,6 +6992,7 @@ mod tests {
                 Ask::Task(_) => 9,
                 Ask::Commit(_) => 10,
                 Ask::Removal(_) => 11,
+                Ask::Keys { .. } => 12,
             }
         }
         let asks = vec![
@@ -7039,10 +7047,15 @@ mod tests {
                     name: "alpha".to_owned(),
                 },
             }),
+            // A vault's key names (qw385): it names a vault, and grants nothing.
+            Ask::Keys {
+                chat,
+                vault: "ops".to_owned(),
+            },
         ];
         let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
         kinds.dedup();
-        assert_eq!(kinds, (0..=11).collect::<Vec<_>>(), "one of every kind");
+        assert_eq!(kinds, (0..=12).collect::<Vec<_>>(), "one of every kind");
         asks
     }
 

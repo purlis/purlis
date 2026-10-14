@@ -231,8 +231,15 @@ pub fn trace_secret_use(ctx: &Ctx, event: &str, resolved: &[String], fields: &[(
 // list / get / audit / set / rm
 
 /// `cmd_secret_list`: the key names, one per line on stdout.
+///
+/// In a sandboxed chat the app answers it (qw385): the chat's own sandbox denies it the vault's
+/// storage, and the app lists the names of a vault the chat's persona may use
+/// ([`super::brokered::keys_for`]). Where no app answers, it is read here as before.
 pub fn list(ctx: &Ctx, vault: &str, io: &mut dyn Io) -> i32 {
-    let found = provider(ctx, vault).and_then(|v| keys(ctx, &v));
+    let found = match super::brokered::keys_from_the_app(ctx, vault) {
+        Some(answered) => answered.map_err(VaultError::new),
+        None => provider(ctx, vault).and_then(|v| keys(ctx, &v)),
+    };
     match found {
         Err(e) => {
             io.say(Say::Err(e.message));
@@ -293,6 +300,10 @@ pub fn held_note(ctx: &Ctx, v: &Vault) -> Option<String> {
 
 /// The value of `key` in `vault`, with the vault's one note said where it is due.
 fn read_saying(ctx: &Ctx, vault: &str, key: &str, io: &mut dyn Io) -> Result<String, VaultError> {
+    // A sandboxed chat never reads a value itself, whatever it was allowed (qw385).
+    if let Some(why) = super::brokered::value_refused_in_this_chat(ctx, vault) {
+        return Err(VaultError::new(why));
+    }
     let v = provider(ctx, vault)?;
     // `get` and `cp` are not handed to the app: a sandboxed chat never reads the keyring here.
     if let Some(why) =

@@ -644,6 +644,7 @@ fn in_the_app(
             | Answer::Written { .. }
             | Answer::Said { .. }
             | Answer::Vaults { .. }
+            | Answer::Keys { .. }
             | Answer::Working(_)
             | Answer::Dispatched { .. }
             | Answer::Task(_),
@@ -687,6 +688,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Written { .. }
             | Answer::Said { .. }
             | Answer::Vaults { .. }
+            | Answer::Keys { .. }
             | Answer::Working(_)
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }

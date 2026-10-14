@@ -914,6 +914,78 @@ pub fn listing_from_the_app(_ctx: &Ctx) -> Option<Result<Listing, String>> {
     None
 }
 
+/// **The key names of `vault`, for a chat started as `persona`** (qw385): what the app answers
+/// `purlis secret list <vault>` from a sandboxed chat, whose own sandbox denies it the vault's
+/// storage. Authorised exactly as a brokered `secret exec` is ([`authorise`]: the registry's tag
+/// or your grant on this machine), then read with the provider's own code in the app's
+/// process. **Names only, sorted: never a value.** The refusal is [`authorise`]'s sentence,
+/// which names the ways forward.
+pub fn keys_for(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<Vec<String>, String> {
+    authorise(ctx, persona, vault)?;
+    let v = cmd::provider(ctx, vault).map_err(|e| e.message)?;
+    let mut keys = cmd::keys(ctx, &v).map_err(|e| e.message)?;
+    keys.sort();
+    Ok(keys)
+}
+
+/// The app's answer to `purlis secret list <vault>` from a sandboxed chat it started
+/// (qw385): the key names, or its refusal. `None` where no app answers (no socket, an app
+/// older than the ask), and the vault is read here as it always was.
+#[cfg(unix)]
+pub fn keys_from_the_app(ctx: &Ctx, vault: &str) -> Option<Result<Vec<String>, String>> {
+    use crate::hookwire::{Answer, Ask, Asking, ChatToken};
+    let env = |name: &str| ctx.env.get(name);
+    if !crate::sandbox::chat_is_sandboxed_in(&env) {
+        return None;
+    }
+    let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
+    let chat = chat_number(&env)?;
+    let mut asking = Asking::on(Path::new(&socket), ChatToken::read(&env)).ok()?;
+    let asked = Ask::Keys {
+        chat,
+        vault: vault.to_owned(),
+    };
+    match asking.ask(&asked, A_LISTING_TAKES_AT_MOST).ok()? {
+        Answer::Keys { keys } => Some(Ok(keys)),
+        Answer::No { why } => Some(Err(why)),
+        _ => None,
+    }
+}
+
+/// Where there is no unix socket there is no app to ask.
+#[cfg(not(unix))]
+pub fn keys_from_the_app(_ctx: &Ctx, _vault: &str) -> Option<Result<Vec<String>, String>> {
+    None
+}
+
+/// **What reading a value directly is refused with in a sandboxed chat** (qw385): `secret
+/// get` and `secret cp` (and their `persona secret` forms), for every provider. A sandboxed
+/// chat never reads a vault, and no grant changes that; the route that works is a tool its
+/// persona declares, handed the value by `secret exec`, which the app runs. `None` outside a
+/// sandboxed chat.
+pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<String> {
+    let env = |name: &str| ctx.env.get(name);
+    if !crate::sandbox::chat_is_sandboxed_in(&env) {
+        return None;
+    }
+    // The app runs no command for a chat on this system yet ([`NO_WRAP`]).
+    let to_use = if cfg!(target_os = "macos") {
+        format!(
+            "To use a value, hand it to a tool this chat's persona declares: purlis secret exec \
+             {vault} --env NAME=key -- <tool> …; the app runs that for the chat."
+        )
+    } else {
+        "To use a value, run the command in a terminal outside the chat: purlis cannot yet run \
+         a command in a sandbox on this system."
+            .to_owned()
+    };
+    Some(format!(
+        "a sandboxed chat does not read a vault's values, so purlis did not read '{vault}', and \
+         no Allow changes that.\n  To check which keys it holds: purlis secret list {vault}\n  \
+         {to_use}"
+    ))
+}
+
 /// How a run is wrapped: in a Seatbelt profile built from the chat's policy, or, for a test of
 /// everything around it on a machine that cannot apply a second sandbox, not at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

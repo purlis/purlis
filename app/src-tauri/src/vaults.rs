@@ -296,6 +296,67 @@ pub(crate) fn list_for_chat(
     }
 }
 
+/// Answers `purlis secret list <vault>` for chat `chat` of `held` (qw385): the vault's key
+/// names, where the persona this app started the chat as may use it
+/// (`purlis_core::secrets::brokered::keys_for`, the authorisation a brokered `secret exec`
+/// has). **Never a value.** A vault the persona may not use is refused in the core's words,
+/// and noted first for the Notice on the chat's tab, as a brokered run's refusal is
+/// (`crate::vaultroute::refused`), so the person's Allow lets the same command run.
+pub(crate) fn keys_for_chat(
+    held: &crate::planes::Held,
+    plane: &PlaneId,
+    refused: &(dyn Fn(crate::vaultroute::VaultRefused) + Send + Sync),
+    chat: u32,
+    vault: &str,
+) -> purlis_core::hookwire::Answer {
+    use purlis_core::hookwire::Answer;
+    use purlis_core::secrets::brokered;
+    let Some(open) = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .find(|open| open.session == chat)
+    else {
+        return Answer::No {
+            why: format!("chat {chat} is not one this app has open"),
+        };
+    };
+    let asker = brokered::Asker {
+        root: held.root().to_path_buf(),
+        env: Env::from_process(),
+        chat,
+        persona: open.persona,
+        folder: open.cwd,
+        confines: held.chats().confines_now(chat),
+        harness: open.harness,
+    };
+    keys_answered(plane, held.vault_refusals(), &asker, vault, refused)
+}
+
+/// [`keys_for_chat`] once the chat is found: noted for the Notice where refused, then the
+/// core's answer.
+fn keys_answered(
+    plane: &PlaneId,
+    refusals: &crate::vaultroute::Refusals,
+    asker: &purlis_core::secrets::brokered::Asker,
+    vault: &str,
+    refused: &(dyn Fn(crate::vaultroute::VaultRefused) + Send + Sync),
+) -> purlis_core::hookwire::Answer {
+    use purlis_core::hookwire::Answer;
+    crate::vaultroute::refused(plane, refusals, asker, vault, refused);
+    let ctx = Ctx::new(&asker.root, asker.env.clone());
+    match purlis_core::secrets::brokered::keys_for(&ctx, asker.persona.as_deref(), vault) {
+        Ok(keys) => Answer::Keys { keys },
+        Err(why) => {
+            tracing::info!(
+                "purlis: chat {} was refused the key names of vault '{vault}'",
+                asker.chat
+            );
+            Answer::No { why }
+        }
+    }
+}
+
 /// What a `plain-file` vault with no file said on this machine reads as in the list.
 const NOT_SET_UP_HERE: &str =
     "not set up on this machine: say where its file is, or remove the vault";
@@ -3570,5 +3631,64 @@ mod tests {
         let err = remove(&ctx, "nope").unwrap_err();
         assert!(err.contains("nope"), "{err}");
         assert_eq!(list(&ctx).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_chats_key_listing_raises_the_vault_notice_until_allowed_and_then_names_the_keys() {
+        // Screenshot 42: after an Allow, `secret list` from the chat must list the names, and
+        // before one it is refused with the Notice that Allow cures.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("vaults.json"),
+            serde_json::json!({ "vaults": {
+                "logs": {"provider": "plain-file", "config": {"file": "logs.json"}, "persona": "logs"},
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("logs.json"),
+            serde_json::json!({"kibana-username": "v4lue-one", "kibana-password": "v4lue-two"})
+                .to_string(),
+        )
+        .unwrap();
+        let plane = PlaneId::for_tests(root);
+        let refusals = crate::vaultroute::Refusals::default();
+        let asker = purlis_core::secrets::brokered::Asker {
+            root: root.to_path_buf(),
+            env: Env::of(&[]),
+            chat: 22,
+            persona: Some("steward".to_owned()),
+            folder: None,
+            confines: Some(purlis_core::sandbox::Confines::default()),
+            harness: None,
+        };
+        let told = std::sync::Mutex::new(Vec::new());
+        let tell = |one: crate::vaultroute::VaultRefused| told.lock().unwrap().push(one.vault);
+
+        let refused = keys_answered(&plane, &refusals, &asker, "logs", &tell);
+        let purlis_core::hookwire::Answer::No { why } = refused else {
+            panic!("refused: {refused:?}");
+        };
+        assert!(why.contains("press Allow"), "{why}");
+        assert_eq!(*told.lock().unwrap(), ["logs"], "the Notice is raised");
+        assert_eq!(refusals.of(22).len(), 1);
+
+        purlis_core::sandbox::local::grant_vault(root, "logs", "steward").unwrap();
+        let listed = keys_answered(&plane, &refusals, &asker, "logs", &tell);
+        assert_eq!(
+            listed,
+            purlis_core::hookwire::Answer::Keys {
+                keys: vec!["kibana-password".to_owned(), "kibana-username".to_owned()]
+            }
+        );
+        let wire = serde_json::to_string(&listed).unwrap();
+        assert!(!wire.contains("v4lue"), "never a value: {wire}");
+        assert_eq!(
+            told.lock().unwrap().len(),
+            1,
+            "no second Notice once allowed"
+        );
     }
 }

@@ -265,6 +265,7 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
         | Ask::Git(_)
         | Ask::Commit(_)
         | Ask::Vaults { .. }
+        | Ask::Keys { .. }
         | Ask::WhereWorking(_)
         | Ask::Dispatch(_)
         | Ask::Task(_)

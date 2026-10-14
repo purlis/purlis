@@ -1285,6 +1285,12 @@ pub enum Ask {
     /// the chat whose token the line carries. No ticket, for a record's reason: it changes
     /// nothing.
     Vaults { chat: u32 },
+    /// List the key names of one vault for this chat (qw385): `purlis secret list <vault>`
+    /// from a sandboxed chat, whose sandbox denies it the vault's storage. The app authorises
+    /// the vault as it does a brokered `secret exec` (the persona it recorded for the chat, and
+    /// your grant), then answers [`Answer::Keys`] with the names alone, or [`Answer::No`] with
+    /// the refusal. **Never a value.** No ticket, for [`Self::Vaults`]'s reason.
+    Keys { chat: u32, vault: String },
     /// Where this chat is working: who asked for it, its sibling tasks and the other chats
     /// running as its persona (#1450). The app answers [`Answer::Working`] from its own record
     /// of its open chats, or [`Answer::No`] with the refusal.
@@ -1675,6 +1681,8 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         allow_locked: bool,
     },
+    /// The key names of the vault a chat asked to list (qw385), sorted. No value.
+    Keys { keys: Vec<String> },
     /// Where the chat is working (#1450): names, tasks and states from the app's own record,
     /// and what changed since the chat was last told. Boxed: it is the largest answer.
     Working(Box<crate::awareness::Working>),
@@ -1897,7 +1905,7 @@ impl Line {
             Self::Ask(Ask::Write(write)) => write.chat,
             Self::Ask(Ask::Git(git)) => git.chat,
             Self::Ask(Ask::Commit(commit)) => commit.chat,
-            Self::Ask(Ask::Vaults { chat }) => *chat,
+            Self::Ask(Ask::Vaults { chat } | Ask::Keys { chat, .. }) => *chat,
             Self::Ask(Ask::WhereWorking(asks)) => asks.chat,
             Self::Ask(Ask::Dispatch(dispatch)) => dispatch.chat,
             Self::Ask(Ask::Task(asked)) => asked.chat,
@@ -6213,6 +6221,7 @@ mod tests {
                     | Ask::Git(_)
                     | Ask::Commit(_)
                     | Ask::Vaults { .. }
+                    | Ask::Keys { .. }
                     | Ask::WhereWorking(_)
                     | Ask::Dispatch(_)
                     | Ask::Task(_)

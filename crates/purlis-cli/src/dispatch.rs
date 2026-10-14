@@ -387,6 +387,7 @@ pub fn send(
             | Answer::Written { .. }
             | Answer::Said { .. }
             | Answer::Vaults { .. }
+            | Answer::Keys { .. }
             | Answer::Working(_)
             | Answer::Task(_),
         )
@@ -602,6 +603,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Written { .. }
             | Answer::Said { .. }
             | Answer::Vaults { .. }
+            | Answer::Keys { .. }
             | Answer::Working(_)
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }

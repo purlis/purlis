@@ -2317,7 +2317,20 @@ impl Planes {
             let plane = id.clone();
             let tickets = purlis_core::hookwire::Tickets::default();
             let arrivals = Arc::clone(&self.arrivals);
+            let refused = Arc::clone(&self.vault_refused);
             Arc::new(move |connection, ask| {
+                // A vault's key names (qw385): answered with the window's teller, so a refusal
+                // raises the vault's Notice on the chat's tab as a brokered run's does.
+                if let purlis_core::hookwire::Ask::Keys { chat, vault } = &ask {
+                    return match held.upgrade() {
+                        Some(held) => {
+                            crate::vaults::keys_for_chat(&held, &plane, &*refused, *chat, vault)
+                        }
+                        None => purlis_core::hookwire::Answer::No {
+                            why: "this project has been closed".to_owned(),
+                        },
+                    };
+                }
                 // A wait is the one ask that takes minutes: it holds the project weakly, so
                 // closing it is not held up by a chat waiting on a report (#1441).
                 if let purlis_core::hookwire::Ask::Task(asked) = &ask {

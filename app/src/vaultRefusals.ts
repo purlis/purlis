@@ -53,6 +53,18 @@ function read(plane: PlaneId, session: number) {
     .catch(() => {});
 }
 
+/**
+ * Reads again what every chat of `plane` that something here reads was refused (qw385). An
+ * Allow answers every chat of the same persona refused the same vault, and the core may have
+ * put a refusal away that a Notice still shows: after any press, every Notice of the project
+ * draws what the core holds now, so none offers a press that can only say "not refused".
+ */
+function readPlane(plane: PlaneId) {
+  const prefix = `${plane}\u0000`;
+  for (const key of held.keys())
+    if (key.startsWith(prefix)) read(plane, Number(key.slice(prefix.length)));
+}
+
 function subscribe(plane: PlaneId, session: number, changed: () => void): () => void {
   const key = keyOf(plane, session);
   let mine = held.get(key);
@@ -93,8 +105,8 @@ function subscribe(plane: PlaneId, session: number, changed: () => void): () => 
   };
 }
 
-/** What chat `session` was refused, how many times the core has said so, and a way to read it
- *  again after a press. */
+/** What chat `session` was refused, how many times the core has said so, and a way to read it,
+ *  and every other chat of the project, again after a press. */
 export function useVaultRefusals(
   plane: PlaneId,
   session: number,
@@ -107,7 +119,7 @@ export function useVaultRefusals(
     sub,
     () => held.get(keyOf(plane, session))?.snapshot ?? NOTHING,
   );
-  const again = useCallback(() => read(plane, session), [plane, session]);
+  const again = useCallback(() => readPlane(plane), [plane]);
   return { refused, heard, read: again };
 }
 
