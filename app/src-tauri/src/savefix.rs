@@ -254,7 +254,8 @@ mod tests {
             std::fs::write(
                 root.join(purlis_core::profiles::LOCAL_FILE),
                 format!(
-                    "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\n",
+                    "[harness]\ndefault = \"work\"\n\n[harness.work]\nkind = \"claude\"\n\
+                     command = [{:?}]\n",
                     program.display().to_string()
                 ),
             )
