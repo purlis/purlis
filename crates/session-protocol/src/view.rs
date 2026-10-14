@@ -12,13 +12,23 @@
 //!
 //! **The host never waits on a view.** [`Feed::push`] queues and returns. A task per view
 //! writes the queue to the stream.
+//!
+//! **A view is of a kind, and what a view does is written once for every kind** (ADR 0068,
+//! amended for #1994). A hosted program offers a [`Source`]: each attach hands its snapshot
+//! apart from the live bytes that follow it, as an asynchronous stream. [`Views`] holds one
+//! link's views of any kind: it numbers them, follows each source on a task (no thread per
+//! view), drops a view that falls behind and opens it again from a fresh snapshot, and closes
+//! every one at once when the link ends. A terminal's snapshot is its screen and scrollback; a
+//! browser's (spec 2) is its latest frame.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
@@ -91,6 +101,12 @@ pub enum Closed {
     /// The client acknowledged bytes it was never sent.
     #[error("the client acknowledged more than it was sent")]
     OverAcknowledged,
+    /// The host closed it: the client detached it, or the host let go of it.
+    #[error("the view was closed")]
+    Closed,
+    /// The link it was on ended, and every view on it with it.
+    #[error("the link the view was on ended")]
+    LinkEnded,
 }
 
 #[derive(Default)]
@@ -177,6 +193,15 @@ impl Feed {
     /// Why the host closed the view, once it has.
     pub fn closed(&self) -> Option<Closed> {
         self.shared.why.get().copied()
+    }
+
+    /// Close the view now, for `why`: its stream ends where it is, and what was queued is let go.
+    fn close(&self, why: Closed) {
+        let mut queue = self.shared.queue();
+        queue.chunks.clear();
+        queue.bytes = 0;
+        drop(queue);
+        self.shared.close(why);
     }
 }
 
@@ -344,6 +369,14 @@ impl Reader {
     /// back with the same number and a higher epoch, and the client resets its terminal.
     pub fn epoch(&self) -> Epoch {
         self.epoch
+    }
+
+    /// Whether the snapshot is whole: every byte of it has been handed over (at once, for an
+    /// empty one), so what comes next is live. A client tells it after each
+    /// [`Chunk::Snapshot`], and knows where the screen as it is now ends without waiting for
+    /// the program to write again.
+    pub fn snapshot_complete(&self) -> bool {
+        self.snapshot_left == 0
     }
 
     /// The next chunk, or `None` when the host has ended the view.
@@ -532,5 +565,177 @@ impl Viewer {
         }
         self.seen.insert(reader.view, reader.epoch);
         Ok(reader)
+    }
+}
+
+/// What one attach of a view hands over: the program as it is now, and what it does after.
+pub struct Attachment {
+    /// The bytes that draw the program as it is now into a blank view of its kind: a
+    /// terminal's scrollback, screen, cursor and modes, or a browser's latest frame.
+    pub snapshot: Bytes,
+    /// Every byte the program makes after the snapshot, in order, as it makes it. It ends when
+    /// the program does, and the view ends with it.
+    pub live: BoxStream<'static, Bytes>,
+}
+
+/// A hosted program as a view of one kind shows it: what [`Views::open`] attaches to.
+///
+/// Each [`Source::attach`] takes the snapshot and starts the live bytes after it together, so
+/// nothing the program writes is lost or doubled between the two. A view that falls behind is
+/// attached again the same way, so a kind brings its snapshot and nothing else.
+pub trait Source: Send + Sync + 'static {
+    fn attach(&self) -> Attachment;
+}
+
+/// The views open on one link, of whatever kind: what a host's views are, written once.
+///
+/// Each view follows its source on a task of the link's runtime. When the view falls behind,
+/// its live bytes are let go and it is attached again, at the next epoch, from a fresh
+/// [`Source::attach`], after [`Attacher`]'s pause when its client drew nothing. When the
+/// source's live bytes end, the view ends after what was queued. [`Views::end`], when the link
+/// ends, closes every view at once and opens no more.
+pub struct Views {
+    attacher: Arc<Attacher>,
+    next: AtomicU32,
+    open: Arc<Mutex<Open>>,
+}
+
+#[derive(Default)]
+struct Open {
+    /// The link has ended: nothing opens.
+    ended: bool,
+    /// Each open view, and what closes it.
+    views: HashMap<ViewId, CancellationToken>,
+}
+
+impl Views {
+    /// The views of the link whose streams `opener` opens, each held to `limits`.
+    pub fn new(opener: Opener, limits: Limits) -> Views {
+        Views {
+            attacher: Arc::new(Attacher::new(opener, limits)),
+            next: AtomicU32::new(1),
+            open: Arc::default(),
+        }
+    }
+
+    fn open_views_lock(&self) -> MutexGuard<'_, Open> {
+        self.open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Open a view of `source`: attach it, open its stream with the snapshot, and follow it.
+    /// Answers with the view's number on this link once its stream is open, so a client told
+    /// of the view already has its stream. Refused once the link has ended.
+    pub async fn open(&self, source: Arc<dyn Source>) -> Result<ViewId, LinkError> {
+        if self.open_views_lock().ended {
+            return Err(LinkError::Closed);
+        }
+        let view = ViewId(self.next.fetch_add(1, Ordering::Relaxed));
+        let attachment = source.attach();
+        let feed = self.attacher.attach(view, attachment.snapshot).await?;
+        let closing = CancellationToken::new();
+        {
+            let mut open = self.open_views_lock();
+            if open.ended {
+                feed.close(Closed::LinkEnded);
+                return Err(LinkError::Closed);
+            }
+            open.views.insert(view, closing.clone());
+        }
+        tokio::spawn(follow(
+            view,
+            source,
+            attachment.live,
+            feed,
+            Arc::clone(&self.attacher),
+            closing,
+            Arc::clone(&self.open),
+        ));
+        Ok(view)
+    }
+
+    /// Close `view`: its stream ends and its source is let go of; the program runs on.
+    /// Answers whether it was open.
+    pub fn close(&self, view: ViewId) -> bool {
+        match self.open_views_lock().views.remove(&view) {
+            Some(closing) => {
+                closing.cancel();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The link has ended: close every view on it at once, and open no more.
+    pub fn end(&self) {
+        let mut open = self.open_views_lock();
+        open.ended = true;
+        for (_, closing) in open.views.drain() {
+            closing.cancel();
+        }
+    }
+
+    /// The views open on this link.
+    pub fn open_views(&self) -> usize {
+        self.open_views_lock().views.len()
+    }
+}
+
+/// Follow one view's source until the view is closed, its client loses it, or the program's
+/// live bytes end; attach it again whenever it falls behind.
+async fn follow(
+    view: ViewId,
+    source: Arc<dyn Source>,
+    mut live: BoxStream<'static, Bytes>,
+    mut feed: Feed,
+    attacher: Arc<Attacher>,
+    closing: CancellationToken,
+    open: Arc<Mutex<Open>>,
+) {
+    loop {
+        let next = tokio::select! {
+            biased;
+            () = closing.cancelled() => break,
+            next = live.next() => next,
+        };
+        let Some(bytes) = next else {
+            // The program's live bytes ended: the view writes what it holds, then ends.
+            break;
+        };
+        match feed.push(bytes) {
+            Ok(()) => {}
+            Err(Closed::FellBehind) => {
+                // What the program wrote meanwhile is in the fresh snapshot.
+                let attachment = source.attach();
+                live = attachment.live;
+                let again = tokio::select! {
+                    biased;
+                    () = closing.cancelled() => break,
+                    again = attacher.attach(view, attachment.snapshot) => again,
+                };
+                match again {
+                    Ok(again) => feed = again,
+                    Err(_) => break,
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    if closing.is_cancelled() {
+        let ended = open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .ended;
+        feed.close(if ended {
+            Closed::LinkEnded
+        } else {
+            Closed::Closed
+        });
+    } else {
+        open.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .views
+            .remove(&view);
     }
 }
