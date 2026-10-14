@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791966937251,
+  "lastUpdate": 1791966958120,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3378,6 +3378,42 @@ window.BENCHMARK_DATA = {
             "value": 444.3,
             "unit": "MB",
             "extra": "median of 6 samples: 409.1, 426.1, 437.9, 450.7, 451, 528.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "9b7cc465b3e2833aacc57154b509a9b6e626ea1e",
+          "message": "docs(secrets): a tool's example reads its values itself; curl expands its own\n\nThe several-values example is now `aws`, which reads AWS_ACCESS_KEY_ID and\nAWS_SECRET_ACCESS_KEY from its environment. curl reads no credential from\na variable, and a chat's arguments reach a tool with no shell between, so\nthe secrets guide shows curl's own expansion instead (curl 8.3.0 or\nlater): both values as env, then\n`curl --variable %KIBANA_USER --variable %KIBANA_PASS\n--expand-user '{{KIBANA_USER}}:{{KIBANA_PASS}}' <url>`.\nThe guide's first `secret exec ... curl` line is written the same way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T11:57:23+04:00",
+          "tree_id": "f7f967a304bd3f18ca443a1ba94e078b0b124bd6",
+          "url": "https://github.com/purlis/purlis/commit/9b7cc465b3e2833aacc57154b509a9b6e626ea1e"
+        },
+        "date": 1791966956377,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1457.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1303.3, 1457.5, 1546.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 435.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 409.4, 420.3, 433, 438.7, 439.1, 531 MB"
           }
         ]
       }
