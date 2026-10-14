@@ -43,7 +43,7 @@ pub struct Spec {
     /// the session look like the process that launched charter.
     pub env_without: Vec<OsString>,
     /// Start from an empty environment, not the app's: the program gets `TERM` and [`Self::env`]
-    /// and nothing else. A chat is started this way, from what [`crate::chatenv`] keeps.
+    /// and nothing else. A chat is started this way, from what `purlis_core::chatenv` keeps.
     pub env_clear: bool,
     pub size: Size,
 }
@@ -267,12 +267,10 @@ impl Session {
         for (key, value) in &spec.env {
             command.env(key, value);
         }
-        start_fits(&command, &spec.env, crate::sandbox::seatbelt::Exec::HERE).map_err(
-            |too_long| {
-                let then = crate::sandbox::seatbelt::way_out(too_long, false).unwrap_or_default();
-                spawn_error(format!("{too_long}, so nothing was started. {then}"))
-            },
-        )?;
+        start_fits(&command, &spec.env, crate::exec::Exec::HERE).map_err(|too_long| {
+            let then = crate::exec::TOO_LONG_WAY_OUT;
+            spawn_error(format!("{too_long}, so nothing was started. {then}"))
+        })?;
 
         // Under the fork lock, because `openpty` hands back two descriptors that are not
         // close-on-exec yet and only makes them so afterwards: a program charter started in
@@ -1061,7 +1059,7 @@ fn pty_error(err: impl std::fmt::Display) -> SessionError {
 fn start_fits(
     command: &CommandBuilder,
     set: &[(OsString, OsString)],
-    exec: crate::sandbox::seatbelt::Exec,
+    exec: crate::exec::Exec,
 ) -> Result<(), &'static str> {
     let mut argv = command
         .get_argv()
@@ -1090,7 +1088,7 @@ fn start_fits(
             ));
         }
     }
-    crate::sandbox::seatbelt::fits_exec(&program, &args, &env, exec)
+    crate::exec::fits_exec(&program, &args, &env, exec)
 }
 
 fn pty_size(size: Size) -> PtySize {
@@ -1504,10 +1502,9 @@ mod tests {
         let result = Session::spawn(spec, Box::new(AlacrittyEngine::new(SIZE, 100)));
 
         match result {
-            Err(SessionError::Spawn { reason, .. }) => assert!(
-                reason.starts_with(crate::sandbox::seatbelt::TOO_LONG),
-                "{reason}"
-            ),
+            Err(SessionError::Spawn { reason, .. }) => {
+                assert!(reason.starts_with(crate::exec::TOO_LONG), "{reason}")
+            }
             other => panic!("got {:?}", other.err()),
         }
     }
@@ -1516,7 +1513,7 @@ mod tests {
     /// one included unless the start clears it.
     #[test]
     fn the_whole_environment_a_start_inherits_is_counted() {
-        use crate::sandbox::seatbelt::{Exec, TOO_LONG, exec_size};
+        use crate::exec::{Exec, TOO_LONG, exec_size};
         let mut cleared = CommandBuilder::new("/bin/sh");
         cleared.args(["-c", "true"]);
         cleared.env_clear();
@@ -1547,7 +1544,7 @@ mod tests {
     fn an_environment_entry_that_is_not_utf8_is_counted() {
         use std::os::unix::ffi::OsStringExt;
 
-        use crate::sandbox::seatbelt::{Exec, TOO_LONG};
+        use crate::exec::{Exec, TOO_LONG};
         let roomy = Exec {
             total: 64 * 1024,
             word: None,

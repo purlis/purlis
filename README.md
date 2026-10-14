@@ -80,6 +80,7 @@ Intel macOS build, no `.rpm`, and no Windows until the port lands.
 | Path | What |
 | --- | --- |
 | `crates/purlis-core` | The core: projects, workspaces, personas, memory, vaults, the forges, the harnesses and the sandbox chats run in. No UI, no Tauri |
+| `crates/terminal` | A program in its own pseudo-terminal, the headless engine that keeps its screen, and the fork lock every program is started under, with nothing of git, HTTP or the keyring: what a session host owns terminals with. The core re-exports it |
 | `crates/purlis-cli` | The `purlis` binary, with `charter` as an alias, called by hooks, scripts and agents |
 | `crates/stand-in` | Test-only: the one way a test writes a program it is about to run |
 | `crates/same-user` | Whether a socket's peer, a directory or a file is this user's alone: the one copy of the checks `charterd.sock`, the hook sockets and the client scopes' credentials rest on |

@@ -5249,7 +5249,6 @@ name = "purlis-core"
 version = "0.4.2"
 dependencies = [
  "agent-client-protocol",
- "alacritty_terminal",
  "base64 0.23.1",
  "blocking",
  "changelog",
@@ -5276,10 +5275,10 @@ dependencies = [
  "nix 0.31.3",
  "nucleo-matcher",
  "percent-encoding",
- "portable-pty",
  "proptest",
  "purlis-core",
  "purlis-same-user",
+ "purlis-terminal",
  "regex",
  "rustix",
  "secrecy",
@@ -5340,6 +5339,23 @@ dependencies = [
  "tokio",
  "tokio-util",
  "yamux",
+]
+
+[[package]]
+name = "purlis-terminal"
+version = "0.4.2"
+dependencies = [
+ "alacritty_terminal",
+ "libc",
+ "memchr",
+ "portable-pty",
+ "proptest",
+ "rustix",
+ "serde_json",
+ "stand-in",
+ "tempfile",
+ "thiserror 2.0.21",
+ "unicode-width",
 ]
 
 [[package]]
