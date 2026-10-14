@@ -1497,6 +1497,8 @@ same core code a terminal runs:
    fetches before it cuts, so the remote-tracking branches it reads are its own fetch's, and a
    cut that would write a file section 5 denies the chat, where the clone has that file
    otherwise or not at all, is refused and named; the person cuts it from their own terminal.
+   So is the worktree a dispatch cuts for a task from the asking chat's branch: the dispatch
+   is refused, and the asking chat is told which file.
 
 The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
 
