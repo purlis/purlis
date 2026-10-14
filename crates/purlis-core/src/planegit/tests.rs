@@ -2439,6 +2439,131 @@ fn a_push_that_conflicted_and_has_not_landed_since_is_blocked() {
     );
 }
 
+/// The remote-tracking branch at the commit the plane pushed, as a fetch of it would leave it.
+fn tracks_what_it_pushed(fixture: &Fixture) {
+    run(
+        &fixture.root,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+}
+
+/// A push record as a build before qw348 wrote every failed rebase: `conflict`, naming nothing.
+fn a_conflict_that_names_nothing(fixture: &Fixture) {
+    let head = ask(&fixture.root, &["rev-parse", "HEAD"]);
+    std::fs::create_dir_all(push_record_path(&fixture.root).parent().unwrap()).unwrap();
+    std::fs::write(
+        push_record_path(&fixture.root),
+        format!(
+            r#"{{"outcome": "conflict", "branch": "main", "head": "{}", "detail": ""}}"#,
+            head.trim()
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_conflict_record_that_names_nothing_is_no_block_and_asks_for_a_save() {
+    // qw382: the title bar read "Blocked: conflict" for good, and nothing was in conflict.
+    let fixture = Fixture::plane();
+    fixture.with_a_remote();
+    a_conflict_that_names_nothing(&fixture);
+
+    let got = standing(&fixture.root);
+
+    assert_ne!(got.stage, Stage::Blocked, "{got:?}");
+    assert_eq!(got.blocked, None);
+    assert_eq!(got.push_failed.as_deref(), Some(STOPPED_EARLIER));
+    assert!(!got.rebase_by_hand);
+}
+
+#[test]
+fn a_real_conflict_record_names_its_files_and_is_settled_by_hand() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote();
+    let head = ask(&fixture.root, &["rev-parse", "HEAD"]);
+    std::fs::create_dir_all(push_record_path(&fixture.root).parent().unwrap()).unwrap();
+    std::fs::write(
+        push_record_path(&fixture.root),
+        format!(
+            r#"{{"outcome": "conflict", "branch": "main", "head": "{}", "detail": "the remote changed the same lines in: a.md", "conflicts": ["a.md"]}}"#,
+            head.trim()
+        ),
+    )
+    .unwrap();
+
+    let got = standing(&fixture.root);
+
+    assert_eq!(got.stage, Stage::Blocked);
+    assert_eq!(
+        got.blocked.as_deref(),
+        Some("the remote changed the same lines in: a.md")
+    );
+    assert_eq!(got.conflicts, vec!["a.md".to_string()]);
+    assert!(got.rebase_by_hand);
+}
+
+#[test]
+fn save_on_a_clean_plane_whose_push_stopped_retries_it_and_clears_the_record() {
+    // qw382: a clean tree and no mode answered "Nothing to save", and the record held.
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    a_conflict_that_names_nothing(&fixture);
+
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!said.contains("Nothing to save"), "{said}");
+    assert!(push_record(&fixture.root).is_none(), "{said}");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "mine",
+        "{said}"
+    );
+    assert_eq!(standing(&fixture.root).stage, Stage::Saved);
+}
+
+#[test]
+fn save_on_a_clean_plane_whose_push_really_conflicts_records_the_files_today() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("theirs.md"), "mine, not theirs").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    a_conflict_that_names_nothing(&fixture);
+
+    let (_, said) = fixture.just_save();
+
+    let got = standing(&fixture.root);
+    assert_eq!(got.stage, Stage::Blocked, "{said}");
+    assert_eq!(
+        got.blocked.as_deref(),
+        Some("the remote changed the same lines in: theirs.md"),
+        "{said}"
+    );
+    assert_eq!(got.conflicts, vec!["theirs.md".to_string()]);
+    assert!(got.rebase_by_hand);
+}
+
+#[test]
+fn a_clean_plane_with_no_record_still_has_nothing_to_save() {
+    // The retry is for a push that stopped, never a new reason to push a mode-less plane.
+    let fixture = Fixture::plane();
+    fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+
+    let (_, said) = fixture.just_save();
+
+    assert!(said.contains("Nothing to save"), "{said}");
+}
+
 #[test]
 fn a_commit_waiting_on_its_pull_request_is_pushed_with_the_pr_open() {
     let fixture = Fixture::plane();

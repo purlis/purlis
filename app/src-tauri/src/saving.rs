@@ -162,6 +162,10 @@ pub struct PlaneSaving {
     /// none is open or the mode does not merge it.
     #[specta(optional)]
     pub merge: Option<SaveMerge>,
+    /// How the person settles the block in a terminal, when it is a save's replay onto the
+    /// remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
+    #[specta(optional)]
+    pub by_hand: Option<String>,
 }
 
 /// The plane's save standing.
@@ -279,6 +283,9 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .to_owned();
     PlaneSaving {
         remote,
+        by_hand: standing
+            .rebase_by_hand
+            .then(|| planegit::BY_HAND.to_owned()),
         merge: standing
             .merge
             .clone()

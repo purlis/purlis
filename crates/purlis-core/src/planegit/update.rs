@@ -232,7 +232,7 @@ impl Left {
             }
             Self::Conflict(files) => format!(
                 "Nothing was updated: this project's own commits and the incoming ones change \
-                 the same lines in {}. {AS_IT_WAS} Resolve it in a terminal.",
+                 the same lines in {}. {AS_IT_WAS} {BY_HAND}",
                 named(files)
             ),
             Self::Unsigned(signer) => format!(
@@ -321,6 +321,13 @@ fn capitalised(text: &str) -> String {
     }
 }
 
+/// How the person settles a conflict between the project's own commits and the remote's
+/// (qw382): a chat may not rebase the project's root, so the commands are named, for a
+/// terminal opened there. One sentence for the Update's answer and the Saving view's.
+pub const BY_HAND: &str = "To settle it, open a terminal here and run `git fetch`, then `git \
+     rebase @{u}`; edit each file git names, `git add` it and run `git rebase --continue`, then \
+     Save. `git rebase --abort` puts the project back as it was.";
+
 /// Up to five files in backticks, and how many more.
 fn named(files: &[String]) -> String {
     let shown: Vec<String> = files.iter().take(5).map(|f| format!("`{f}`")).collect();
@@ -406,7 +413,28 @@ fn waits_on_its_request(mode: Option<Mode>, knows_a_request: bool, mine: u32) ->
 /// The half of [`update`] after the fetch: move the clean tree at `root`, on `branch`, onto
 /// `refs/remotes/origin/<branch>` as it stands. `look` is whether the files are looked at
 /// before anything starts ([`look`]); a test turns it off to drive a move that fails part-way.
+///
+/// A move that replayed the project's own commits leaves no push record behind (qw382): the
+/// one there was is about a commit the replay rewrote, and the rebase it says stopped has gone
+/// through ([`super::forget_replayed_push`]).
 pub(super) fn bring_in(
+    root: &Path,
+    plane: &Plane,
+    branch: &str,
+    caller: &forge::Caller,
+    deadline: Duration,
+    look_first: bool,
+    say: Sink,
+) -> Updated {
+    let got = move_onto(root, plane, branch, caller, deadline, look_first, say);
+    if matches!(&got, Updated::Moved(moved) if !moved.by_request) {
+        super::forget_replayed_push(root);
+    }
+    got
+}
+
+/// [`bring_in`]'s move itself.
+fn move_onto(
     root: &Path,
     plane: &Plane,
     branch: &str,
