@@ -587,7 +587,7 @@ describe("Settings › Project › Sandbox", () => {
     );
   });
 
-  it("says beside a general-purpose tool's Allow that it can show its values, and nothing beside a narrow one's", async () => {
+  it("says beside a general-purpose tool's Allow that it can show its values, and nothing beside an unlisted one's", async () => {
     // T-4: the core's sentence, said beside the line allowed.
     const CURL = "curl with api-token from vault api as API_TOKEN env";
     const AWS = "aws with aws-token from vault cloud as AWS_TOKEN env";

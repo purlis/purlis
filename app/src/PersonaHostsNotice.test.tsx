@@ -247,7 +247,7 @@ describe("a persona's hosts Notice", () => {
     expect(notice).toHaveTextContent('"kibana-username" as KIBANA_USER env');
   });
 
-  it("says a general-purpose tool can show its values in the chat's output, and a narrow one says nothing", async () => {
+  it("says a general-purpose tool can show its values in the chat's output, and an unlisted one says nothing", async () => {
     // T-4: one sentence beside the Allow, from the core; never part of the line allowed.
     const CURL = "curl with api-token from vault api as API_TOKEN env";
     const AWS = "aws with aws-token from vault cloud as AWS_TOKEN env";
@@ -264,10 +264,11 @@ describe("a persona's hosts Notice", () => {
 
     const logs = await screen.findByRole("status", { name: "logs's tools wait for you" });
     expect(logs).toHaveTextContent(`let chats as logs run ${CURL}, through purlis`);
-    expect(logs).toHaveTextContent(SAID);
+    expect(logs.textContent).toContain(`from the vault. ${SAID} Anyone who can change`);
     const cloud = await screen.findByRole("status", { name: "cloud's tools wait for you" });
     expect(cloud).toHaveTextContent(`let chats as cloud run ${AWS}, through purlis`);
     expect(cloud).not.toHaveTextContent("can show the values");
+    expect(cloud.textContent).toContain("from the vault. Anyone who can change");
   });
 
   it("hides on Not now and keeps nothing", async () => {

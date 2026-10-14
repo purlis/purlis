@@ -130,8 +130,9 @@ export function PersonaHostsNotice({
                 {tools ? (
                   <>
                     The project's settings let {whoReaches(one)} {whatItLets(one, hostsLocked)},
-                    through purlis with a credential from the vault.
-                    {cautionsSaid(one) ? ` ${cautionsSaid(one)}` : ""} Anyone who can change those
+                    through purlis with a credential from the vault.{" "}
+                    {/* T-4: the core's sentence for each general-purpose tool, then a space. */}
+                    {cautionsSaid(one) ? `${cautionsSaid(one)} ` : ""}Anyone who can change those
                     settings can change this, so no chat here gets these {what} until you allow them
                     on this machine. A change asks again. {FROM_NEXT_START}
                   </>
