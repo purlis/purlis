@@ -1848,6 +1848,24 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             hookwire::CHAT_ENV
         );
     }
+    // What the turn ended saying (#1981), before the report, so the app has it as it hears the
+    // turn end: a task that ended its turns without a report is reported from it. The chat's
+    // own run alone, on a line of its own, sent once and never spooled.
+    if event == Event::Stop
+        && let Some(report) = &report
+        && report.agent.is_none()
+        && let Some(turn_output) = hookwire::Output::of_stop(&text)
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            hookwire::ChatToken::from_env().as_ref(),
+            &hookwire::TurnOutput {
+                chat: report.chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(&text, &purlis_core::envvar::var),
+            },
+        );
+    }
     if let Some(report) = &report
         && let Err(why) = hookwire::deliver_report(
             std::path::Path::new(&socket),

@@ -123,13 +123,14 @@ export function sameRead(one: AwayRead, other: AwayRead): boolean {
 
 /**
  * Whether `need`, a sentence a chat's needs-you item says, is the one a failure of task `task`
- * says (`taskFailedSaid`, in each of its three ways).
+ * says (`taskFailedSaid`, in each of its four ways).
  */
 function saysFailureOf(need: string, task: string): boolean {
   const said = [
     taskFailedSaid({ task, how: "failed", why: "" }),
     taskFailedSaid({ task, how: "unreported", why: "" }),
     taskFailedSaid({ task, how: "did_not_start", why: "" }),
+    taskFailedSaid({ task, how: "last_message", why: "" }),
   ];
   return said.some((one) => need === one || need.startsWith(`${one}: `));
 }

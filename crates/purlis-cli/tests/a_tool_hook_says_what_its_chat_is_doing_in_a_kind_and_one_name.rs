@@ -51,6 +51,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         blocked: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         doing: Box::new(move |doing| doings.lock().unwrap().send(doing).unwrap()),
+        output: Box::new(|_| {}),
         permission: Box::new(|_| None),
     });
     let mut child = support::purlis()

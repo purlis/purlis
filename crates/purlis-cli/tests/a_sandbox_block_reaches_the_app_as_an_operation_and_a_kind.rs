@@ -62,6 +62,7 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
             Ok(())
         }),
         doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         blocked: Box::new(move |blocked| blocks.lock().unwrap().send(blocked).unwrap()),
         permission: Box::new(|_| None),
