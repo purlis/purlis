@@ -159,7 +159,8 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
         }
     }
     // What the retired persona sub-agent left to say (#1451): the servers this chat's persona
-    // declares and the chat was not started with, and generated files still in the project.
+    // declares and the chat was not started with. Generated files still in the project are the
+    // window's Notice, not the chat's news (#1990).
     parts.extend(retired_notes(ask, selected.name.as_deref()));
     // The one route for work that reports back (#1515), for a chat that can take it.
     if let Some(route) = one_route_note(ask.env) {

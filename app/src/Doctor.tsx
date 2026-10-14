@@ -416,7 +416,9 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
  *
  * **The rule** (D-1301-1): a finding stands here only where, left alone, it silently loses work
  * or blocks every chat, and its fix is one press. Everything else is the dialog's, because a
- * band of rows on every open would be noise.
+ * band of rows on every open would be noise. One finding stands by ruling instead (Q67, #1990):
+ * `persona-agents` blocks nothing, and is here because removing the files is the person's chore,
+ * which a line in every chat's briefing used to carry.
  *
  * - `git-identity` (`git identity`): without it every commit purlis makes (memory, notes,
  *   tallies) silently never happens. Its fix is a form the Notice opens where it stands.
