@@ -391,6 +391,11 @@ pub struct PersonaHosts {
     /// Whether an Allow was kept here and the list, or its default-ness, has changed since: it
     /// grants nothing, and the Notice asks anew (D-1362-13).
     pub waiting: bool,
+    /// One sentence for each of its tools whose program is a general-purpose one (T-4,
+    /// [`sandbox::tools::caution`]), said beside the Allow and never part of what it is bound
+    /// to; `null` where none is.
+    #[specta(optional)]
+    pub cautions: Option<Vec<String>>,
 }
 
 /// Every preset as the project at `plane` would have it reach under `locks`: a forge's host a
@@ -424,9 +429,15 @@ fn persona_hosts_of(
             tools: one.tools.iter().map(sandbox::tools::Tool::whole).collect(),
             default: one.default,
             waiting: one.standing == sandbox::persona::Standing::Waiting,
+            cautions: cautions_of(&one.tools),
             digest: one.digest,
         })
         .collect()
+}
+
+/// [`sandbox::tools::cautions`] of `tools`, `None` where there is none.
+fn cautions_of(tools: &[sandbox::tools::Tool]) -> Option<Vec<String>> {
+    Some(sandbox::tools::cautions(tools)).filter(|said| !said.is_empty())
 }
 
 /// The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
@@ -1774,6 +1785,10 @@ pub struct SandboxGrant {
     /// For a socket or a service: the project's committed file declares it expects it
     /// (D-sock-4). Said beside the grant; the declaration itself grants nothing.
     pub expected: bool,
+    /// For a persona's hosts and tools: one sentence for each of its tools whose program is a
+    /// general-purpose one (T-4); `null` where none is.
+    #[specta(optional)]
+    pub cautions: Option<Vec<String>>,
 }
 
 /// Who last committed a line naming each of `hosts` in the project's committed file, and when:
@@ -1820,6 +1835,7 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         waiting: None,
         for_no_persona: false,
         expected: false,
+        cautions: None,
     };
     let mut out: Vec<SandboxGrant> = chats
         .chat_grants()
@@ -1939,6 +1955,7 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
                     .to_owned()
             }),
             for_no_persona: in_force && now.is_some_and(|one| one.default),
+            cautions: now.and_then(|one| cautions_of(&one.tools)),
             persona: Some(kept.persona),
             ..row(
                 GrantWhat::PersonaHosts,

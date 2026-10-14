@@ -300,6 +300,40 @@ describe("the Allowed list", () => {
     expect(await screen.findByText("Nothing is allowed beyond the Open hosts.")).toBeVisible();
   });
 
+  it("says beside a general-purpose tool's Allow that it can show its values (T-4)", async () => {
+    const SAID =
+      "curl can show the values it is handed in the chat's output; allow it only for a persona you trust with them.";
+    const row = (persona: string, target: string, cautions: string[] | null): SandboxGrant => ({
+      id: `you\u001fpersona-hosts\u001f${persona}`,
+      what: "persona-hosts",
+      target,
+      persona,
+      level: "you",
+      by: null,
+      at: null,
+      chat: null,
+      locked: null,
+      waiting: null,
+      for_no_persona: false,
+      expected: false,
+      cautions,
+    });
+    mockIPC((cmd) =>
+      cmd === "sandbox_grants"
+        ? [
+            row("logs", "curl with api-token from vault api as API_TOKEN env", [SAID]),
+            row("cloud", "aws with aws-token from vault cloud as AWS_TOKEN env", null),
+          ]
+        : null,
+    );
+    render(<Granted />);
+
+    const list = await screen.findByRole("list", { name: "Allowed" });
+    const [logs, cloud] = within(list).getAllByRole("listitem");
+    expect(logs).toHaveTextContent(SAID);
+    expect(cloud).not.toHaveTextContent("can show the values");
+  });
+
   it("lists a persona's hosts you allowed, credited to the persona, and removes them (#1362)", async () => {
     const DEVOPS: SandboxGrant = {
       id: "you\u001fpersona-hosts\u001fdevops",

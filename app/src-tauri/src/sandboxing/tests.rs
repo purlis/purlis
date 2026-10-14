@@ -902,6 +902,7 @@ fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once(
             waiting: None,
             for_no_persona: false,
             expected: false,
+            cautions: None,
         }]
     );
     // A block's Allow never grants one: only the refused vault's own Notice does.
@@ -1007,6 +1008,7 @@ fn a_persona_s_hosts_are_allowed_as_shown_listed_for_the_persona_and_revoked() {
             waiting: None,
             for_no_persona: false,
             expected: false,
+            cautions: None,
         }]
     );
     // A teammate changes the list: the Allow grants nothing, and is listed as waiting.
@@ -1274,6 +1276,7 @@ fn a_folder_you_were_granted_is_listed_and_revoke_takes_it_out_audited_once() {
             waiting: None,
             for_no_persona: false,
             expected: false,
+            cautions: None,
         }]
     );
     // Not audited, not revoked.
@@ -1518,6 +1521,7 @@ fn settings_is_handed_each_personas_own_hosts() {
         allowed,
         default: false,
         waiting: false,
+        cautions: None,
     };
     assert_eq!(
         persona_hosts_of(root.path(), &plane, &none),
@@ -1627,6 +1631,70 @@ fn a_tool_handed_several_values_is_shown_and_allowed_whole() {
         )
     );
     assert_eq!(hosts_and_tools(&[], &[]), "");
+}
+
+/// T-4: a tool whose program is a general-purpose one carries one sentence beside its Allow, a
+/// narrow one none, and the sentence is never part of what the Allow is bound to.
+#[test]
+fn a_general_purpose_tool_says_so_beside_its_allow_and_a_narrow_one_does_not() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[sandbox]\nmode = \"on\"\n\n[sandbox.personas.logs]\ntools = { curl = { \
+         vault = \"api\", as = \"API_TOKEN env\", key = \"api-token\" } }\n\n\
+         [sandbox.personas.cloud]\ntools = { aws = { vault = \"cloud\", as = \"AWS_TOKEN env\", \
+         key = \"aws-token\" } }\n",
+    )
+    .expect("toml");
+    let said = "curl can show the values it is handed in the chat's output; allow it only for a \
+                persona you trust with them.";
+    let shown = state_of(root).persona_hosts;
+    let of = |persona: &str| {
+        shown
+            .iter()
+            .find(|one| one.persona == persona)
+            .cloned()
+            .expect("shown")
+    };
+    let logs = of("logs");
+    assert_eq!(logs.cautions, Some(vec![said.to_owned()]));
+    assert_eq!(of("cloud").cautions, None);
+    // The line and its digest are the tool's alone, as before the sentence.
+    assert_eq!(
+        logs.tools,
+        ["curl with api-token from vault api as API_TOKEN env"]
+    );
+    assert_eq!(
+        logs.digest,
+        sandbox::persona::digest_of(
+            &[],
+            &[sandbox::tools::Tool::one(
+                "curl",
+                "api",
+                "API_TOKEN",
+                sandbox::tools::Handed::Env,
+                "api-token"
+            )],
+            false
+        )
+    );
+    // On the Granted row too, once allowed.
+    let chats = crate::chats::Chats::new();
+    sandbox::local::allow_persona_hosts(root, "logs", &logs.digest).expect("kept");
+    sandbox::local::allow_persona_hosts(root, "cloud", &of("cloud").digest).expect("kept");
+    let rows = grants_of(root, &chats);
+    let row = |persona: &str| {
+        rows.iter()
+            .find(|one| one.persona.as_deref() == Some(persona))
+            .expect("listed")
+    };
+    assert_eq!(row("logs").cautions, Some(vec![said.to_owned()]));
+    assert_eq!(
+        row("logs").target,
+        "curl with api-token from vault api as API_TOKEN env"
+    );
+    assert_eq!(row("cloud").cautions, None);
 }
 
 #[test]

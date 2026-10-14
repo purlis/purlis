@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use super::super::policy::Locks;
 use super::{
-    FIRST_ON_PATH, Handed, Ready, Tool, first_on_path, keyed, loads_code, refused_name,
-    resolve_beside, shim,
+    FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, keyed, loads_code,
+    refused_name, resolve_beside, shim,
 };
 
 const HERE: &str = "sandbox.personas.devops";
@@ -919,4 +919,88 @@ fn a_tool_handed_several_values_runs_only_with_exactly_its_declared_set() {
             "{why}"
         );
     }
+}
+
+/// A tool named `name` handed one token, as a declaration writes it.
+fn token_tool(name: &str) -> Tool {
+    Tool::one(name, "api", "API_TOKEN", Handed::Env, "api-token")
+}
+
+#[test]
+fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_case() {
+    for program in [
+        "curl",
+        "/usr/bin/curl",
+        "/opt/homebrew/bin/wget",
+        "CURL",
+        "/usr/local/bin/Http",
+        "xh",
+        "socat",
+        "rsync",
+        "ssh",
+        "curl.exe",
+        // So is a name no tool may take.
+        "/usr/bin/python3.12",
+        "/bin/bash",
+    ] {
+        assert!(general_purpose(Path::new(program)), "{program}");
+    }
+    for program in [
+        "kubectl",
+        "/usr/local/bin/aws",
+        "psql",
+        "/opt/homebrew/bin/gh",
+        "curlish",
+        "/usr/bin/curl/kubectl",
+        "",
+    ] {
+        assert!(!general_purpose(Path::new(program)), "{program}");
+    }
+}
+
+#[test]
+fn a_general_purpose_tool_says_so_in_one_sentence_and_a_narrow_one_says_nothing() {
+    let said = caution(&token_tool("curl"), &[]).expect("curl is general-purpose");
+    assert_eq!(
+        said,
+        "curl can show the values it is handed in the chat's output; allow it only for a \
+         persona you trust with them."
+    );
+    assert_eq!(
+        caution(&token_tool("Wget"), &[])
+            .as_deref()
+            .map(|s| s.starts_with("Wget ")),
+        Some(true)
+    );
+    assert_eq!(caution(&token_tool("aws"), &[]), None);
+    assert_eq!(caution(&kubectl(), &[]), None);
+}
+
+#[test]
+fn a_tool_whose_name_finds_a_general_purpose_program_says_so_too() {
+    let base = outside_temp("general");
+    let system = base.join("system");
+    let real = program(&base.join("cellar"), "curl");
+    std::fs::create_dir_all(&system).expect("dir");
+    std::os::unix::fs::symlink(&real, system.join("fetch")).expect("link");
+    program(&base.join("other"), "kubectl");
+    let search = vec![base.join("other"), system.clone()];
+    let said = caution(&token_tool("fetch"), &search).expect("fetch runs curl");
+    assert!(said.starts_with("fetch can show"), "{said}");
+    assert_eq!(caution(&kubectl(), &search), None);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn the_sentence_is_not_part_of_what_an_allow_is_bound_to() {
+    // An Allow made before the sentence existed still stands: the digest is of the tool's whole
+    // line, as it was.
+    assert_eq!(
+        super::super::persona::digest_of(&[], &[token_tool("curl")], false),
+        "2a4a76e02cadfb54839e461f5a7fa833809de99504ec817e9bdc382a318ff7c7"
+    );
+    assert_eq!(
+        token_tool("curl").whole(),
+        "curl with api-token from vault api as API_TOKEN env"
+    );
 }

@@ -164,6 +164,10 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
                   {`Show ${one.persona}`}
                 </OutLink>
               )}
+              {(one.cautions ?? []).length > 0 && (
+                // T-4: the core's sentence for a persona's general-purpose tool.
+                <span className="granted-note"> {(one.cautions ?? []).join(" ")}</span>
+              )}
               {one.level === "project" && (
                 <span className="granted-note">Removing it edits the committed {file}.</span>
               )}

@@ -6888,6 +6888,12 @@ export type PersonaHosts = {
 	 *  grants nothing, and the Notice asks anew (D-1362-13).
 	 */
 	waiting: boolean,
+	/**
+	 *  One sentence for each of its tools whose program is a general-purpose one (T-4,
+	 *  [`sandbox::tools::caution`]), said beside the Allow and never part of what it is bound
+	 *  to; `null` where none is.
+	 */
+	cautions?: string[] | null,
 };
 
 /**
@@ -8107,6 +8113,11 @@ export type SandboxGrant = {
 	 *  (D-sock-4). Said beside the grant; the declaration itself grants nothing.
 	 */
 	expected: boolean,
+	/**
+	 *  For a persona's hosts and tools: one sentence for each of its tools whose program is a
+	 *  general-purpose one (T-4); `null` where none is.
+	 */
+	cautions?: string[] | null,
 };
 
 /**

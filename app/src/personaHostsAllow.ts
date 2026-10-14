@@ -33,6 +33,15 @@ export function listedTools(tools: readonly string[]): string {
   return `${tools.slice(0, -1).join("; ")}; and ${tools[tools.length - 1]}`;
 }
 
+/**
+ * **What is said beside an Allow of `one`'s tools** (T-4): the core's one sentence for each tool
+ * whose program is a general-purpose one, joined; "" where none is. Said beside the tools'
+ * lines, never part of what the Allow is bound to.
+ */
+export function cautionsSaid(one: { cautions?: readonly string[] | null }): string {
+  return (one.cautions ?? []).join(" ");
+}
+
 /** What of `one` waits for an Allow, as a noun: its hosts, its tools, or both (D-PE-ruling-1). */
 export function whatWaits(one: PersonaHosts, hostsLocked = false): string {
   const hosts = !hostsLocked && one.reached.length > 0;

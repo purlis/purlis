@@ -587,6 +587,46 @@ describe("Settings › Project › Sandbox", () => {
     );
   });
 
+  it("says beside a general-purpose tool's Allow that it can show its values, and nothing beside a narrow one's", async () => {
+    // T-4: the core's sentence, said beside the line allowed.
+    const CURL = "curl with api-token from vault api as API_TOKEN env";
+    const AWS = "aws with aws-token from vault cloud as AWS_TOKEN env";
+    const SAID =
+      "curl can show the values it is handed in the chat's output; allow it only for a persona you trust with them.";
+    const waiting = (persona: string, tool: string, cautions: string[] | null) => ({
+      persona,
+      hosts: [],
+      reached: [],
+      tools: [tool],
+      digest: "d1",
+      allowed: false,
+      default: false,
+      waiting: false,
+      cautions,
+    });
+    core({
+      sandbox: state({
+        persona_hosts: [waiting("logs", CURL, [SAID]), waiting("cloud", AWS, null)],
+      }),
+      sharedName: "purlis.toml",
+      localName: "purlis.local.toml",
+    });
+    const page = await atSandbox();
+
+    await waitFor(() =>
+      expect(page).toHaveTextContent(
+        `A chat as logs may run ${CURL} only once you allow them on this machine, below. ${SAID}`,
+      ),
+    );
+    expect(page).toHaveTextContent(
+      `A chat as cloud may run ${AWS} only once you allow them on this machine, below.`,
+    );
+    expect(page).not.toHaveTextContent(
+      `A chat as cloud may run ${AWS} only once you allow them on this machine, below. curl`,
+    );
+    expect(page).not.toHaveTextContent("aws can show the values");
+  });
+
   it("names a persona's own hosts", async () => {
     const { allowed } = core({
       sandbox: state({
