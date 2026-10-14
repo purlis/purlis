@@ -88,6 +88,11 @@ struct Cli {
 enum Command {
     /// Print the plane root the current directory sits in.
     Root,
+    /// Run this user's session host on this device (`purlisd`) until it is ended: its socket
+    /// under the runtime directory, a fresh credential for each of its clients' scopes, and the
+    /// session protocol. The app starts its own; this is the same host for a machine with no
+    /// window, such as a runner.
+    Serve,
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
     /// Additive and idempotent — never touches existing content. A path purlis would write
@@ -757,6 +762,32 @@ fn emit(report: &purlis_core::news::Report) -> ExitCode {
     let _ = std::io::stdout().flush();
     say_lines(&report.said);
     ExitCode::from(report.code)
+}
+
+/// `purlis serve`: this user's session host, at the place the window's own host would take, so
+/// one finds the other serving and leaves it be.
+#[cfg(not(unix))]
+fn serve() -> ExitCode {
+    voice::err("the session host runs on macOS and Linux only");
+    ExitCode::FAILURE
+}
+
+/// `purlis serve`: this user's session host, at the place the window's own host would take, so
+/// one finds the other serving and leaves it be.
+#[cfg(unix)]
+fn serve() -> ExitCode {
+    let Some(config) = purlis_core::machine::config_root() else {
+        voice::err("there is no home folder to keep the session host's credentials in");
+        return ExitCode::FAILURE;
+    };
+    // The host keeps its credentials in the config home: it stays where it is while the host
+    // runs (`renamelocal::busy::LOCK`, D-RN5-11).
+    let _holds = purlis_core::renamelocal::busy::hold_shared(&config);
+    let place = purlis_host::Place::at(
+        purlis_core::hostsocket::here(),
+        purlis_core::machine::charterd(&config),
+    );
+    ExitCode::from(u8::try_from(purlis_host::serve_alone(&place)).unwrap_or(1))
 }
 
 /// What a command may do on a project that is read-only to this purlis (FR-24).
@@ -2888,6 +2919,7 @@ fn run(command: Command) -> Result<u8, String> {
         // Answered in `main`, before this: it is the one command whose exit code is not a
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
+        | Command::Serve
         | Command::Init(_)
         | Command::Reinit
         | Command::News(_)
@@ -3815,6 +3847,10 @@ fn main() -> ExitCode {
     // Needs no plane either: it scans the repository it stands in.
     if let Command::Scan { explain } = &cli.command {
         return scan::run(*explain);
+    }
+    // Needs no project: one host serves every project of this user on this device (ADR 0068).
+    if let Command::Serve = &cli.command {
+        return serve();
     }
     // Needs no project: the app that started the chat answers it, from its own record (#1450).
     if let Command::Persona(memory::PersonaCommand::Where { now }) = &cli.command {

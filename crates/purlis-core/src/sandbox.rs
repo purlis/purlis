@@ -1469,10 +1469,10 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         for home in crate::machine::dirs_spelled(&config_root) {
             deny(Class::HumanPowers, home.clone(), Access::Write);
             // The human client scopes' credentials (FD-27, V16a): a chat neither reads nor
-            // writes anything there, so it holds no person's credential. This does not stop
-            // a connect to `charterd.sock` beside them, which a sandbox judges as network:
-            // each compiler allows no unix socket but the hook socket for that. `charterd`
-            // also refuses those scopes to a chat's processes. Every spelling of the folder.
+            // writes anything there, so it holds no person's credential. The host's socket
+            // is in the runtime directory (below); a connect to it is network to a sandbox,
+            // and each compiler allows no unix socket but the hook socket. The host also
+            // refuses those scopes to a chat's processes. Every spelling of the folder.
             for daemon in crate::names::DAEMON_DIR.spellings() {
                 deny(Class::HumanPowers, home.join(daemon), Access::ReadWrite);
             }
@@ -1495,6 +1495,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::profilestore::DIR),
             Access::ReadWrite,
         );
+    }
+    // The session host's socket and its lock, in the folder it makes this user's alone under
+    // the runtime directory (#1997, `hostsocket`): a chat neither reads nor writes anything
+    // there.
+    #[cfg(unix)]
+    if let Some(folder) =
+        crate::hostsocket::socket_for(|name| machine.env.get(name).map(Into::into)).parent()
+    {
+        deny(Class::HumanPowers, folder.to_path_buf(), Access::ReadWrite);
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();

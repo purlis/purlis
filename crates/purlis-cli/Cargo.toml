@@ -24,6 +24,8 @@ path = "src/alias.rs"
 
 [dependencies]
 purlis-core.workspace = true
+# `purlis serve`: the session host, the same code the window's binary runs as its own (#1997).
+purlis-host.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap.workspace = true
 # charter's MCP server (HP-7): the official Rust SDK, Apache-2.0, serving stdio only. No HTTP
