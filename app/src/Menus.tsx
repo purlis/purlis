@@ -213,7 +213,8 @@ function Sub({ sub, onPress }: { sub: SubDrawn; onPress: (offer: Offer) => void 
  *
  * **Only when the trigger ITSELF has the keyboard.** The panes' menu is on the box the
  * terminals are in, and a program in a terminal may want Shift+F10; a key pressed inside a
- * trigger belongs to what it was pressed in.
+ * trigger belongs to what it was pressed in. A terminal answers the two keys itself, with its
+ * own menu (`SessionPane`, `terminalRows.asksForTheMenu`).
  */
 function openFromTheKeyboard(event: KeyboardEvent<HTMLElement>) {
   if (event.target !== event.currentTarget) return;

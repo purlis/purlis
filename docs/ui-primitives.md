@@ -823,7 +823,49 @@ details:
   macOS has no keyboard convention for a context menu and its WebView raises no `contextmenu`
   for either key, so `Menued` dispatches the one a right-click would — and only when the
   trigger itself has focus, never a terminal inside the panes' trigger, whose program may want
-  the key.
+  the key. A terminal answers the two keys itself, with its own menu (below).
+- **A terminal's menu leads with the terminal's own rows** (`app/src/TerminalMenu.tsx`,
+  `app/src/terminalRows.ts`): Copy, Paste and Select all, then under a line the rows the panes'
+  menu has there — a new tab, the splits, ending the chat — so a right-click on a pane strands
+  none of them. It is a menu of its own inside the panes' (Radix opens the innermost trigger's,
+  as on a pane's breadcrumb); the panes' menu is still what a pane's top line and a chat still
+  starting open. Its three rows are not catalogue rows: they are about what is selected in one
+  terminal when the pointer came down, which the palette cannot name. They are declared as
+  [Menus](#menus) says a menu outside the catalogue declares its rows (`terminalRows.terminalGroup`,
+  a `GroupDrawn` of `RowDrawn`s), and drawn by `Menus.tsx`'s `Groups` with the pane's own groups
+  from `menuOf` after them, so each is a short label, with why it cannot run under it and the
+  key that does the same at its end (`MenuKeys`) where the window has one — a Mac's `⌘C`, `⌘V`
+  and `⌘A`; off a Mac the window claims no key for them and draws none. The menu is named
+  *Terminal* (`aria-label`).
+  - **Copy** is off with nothing selected. It puts on the clipboard what the keyboard's copy
+    does, xterm's own selection text, and keeps the selection. The selection is read at the
+    press: if output cleared it while the menu was up, nothing is written and the pane says so. On a Mac a right-click on a word
+    selects it first, as Terminal and iTerm2 do (xterm's `rightClickSelectsWord`).
+  - **Paste is the person typing, by the path their keyboard's paste takes.** A menu row gets
+    no `paste` event and the page is given no way to read the clipboard, so the core reads it
+    on the press (`clipboard_text`, the window's alone, which no link is served; ADR 0052,
+    amended 2026-10-14) and the text goes to xterm's own `paste()`, once: bracketed when the
+    program asked, so several lines cannot run one by one, and handed on as everything typed
+    is. Nothing else is sent. The read takes no argument, happens on the press and at no other
+    time, and keeps and writes down nothing. A clipboard holding no text pastes nothing, and
+    the pane says so; so it says the core's sentence where the clipboard holds more than
+    1 MiB of text, or the read failed. **A menu opened from the keyboard never rests on
+    Paste**: the keyboard is on the menu itself until an arrow moves it, so Enter after the
+    menu key pastes nothing (with nothing selected Copy is off, and the first row that can
+    run is Paste).
+  - **No Clear, and no link rows.** xterm's `clear()` empties the screen as well as the
+    history, and the history is the core's, sent whole to a pane drawn again. A pane registers
+    no link provider, so there is no link the terminal knows it was clicked on.
+  - **A click the program asked for is the program's.** While the program has mouse reporting
+    on (`?1000h` and its kin) a plain right-click is reported to it, as before, and opens no
+    menu, purlis's or the engine's. **Shift+right-click always opens the menu**: the press is
+    stopped before xterm sees it, because on a Mac xterm reports a Shift+click too, and its
+    default is prevented as xterm's own listener would have, so the keyboard is not taken from
+    the terminal by a press xterm never saw. A Mac's Ctrl+click is the same gesture as the
+    right button, here as everywhere.
+  - **Closed on Escape or on one of its own three rows, the keyboard is the terminal's**, put
+    there outright and not left to where the engine thinks it was. A pane's row decides for
+    itself (a split's new pane takes it).
 
 And with them, **the WebView's own menu is taken away from the whole window**
 (`useNoBrowserMenu`), because a shipped app that answers a right-click with `Reload` and
@@ -836,8 +878,8 @@ listener are load-bearing:
   below `window`, so a capturing listener there would run first and silently stop every context
   menu in the app from ever opening.
 - **It leaves an `input`, a `textarea` and a contenteditable alone.** That menu is the platform's
-  Cut/Copy/Paste and it is the only pointer route to the clipboard this window has. The
-  inspector is off in a release build anyway.
+  Cut/Copy/Paste and it is the only pointer route to the clipboard a field has (a terminal has
+  its own menu's Copy). The inspector is off in a release build anyway.
 
 And the **delete-a-workspace dialog** (`app/src/DeleteWorkspace.tsx`):
 `@radix-ui/react-alert-dialog`, the first use of that primitive here. It is `Dialog`'s sibling
@@ -1691,6 +1733,21 @@ Konsole do for their own find, and a Mac's `Ctrl+F` stays the shell's as well. I
 pane's own terminal (`attachCustomKeyEventHandler`) rather than on the window, because find is
 over the pane that has the keyboard and nowhere else. Neither the palette (`⌘K`, `F2`) nor the
 native menu claims `F`: the macOS menu is purlis's, Edit's predefined items and nothing else.
+
+**A right-click in a terminal opens its menu, and Shift+right-click always does** (`SessionPane`,
+`terminalRows.ts`): Copy, Paste and Select all, then the pane's rows. A program that turned
+mouse reporting on gets a plain right-click, as it gets every other click, and draws what it
+likes; Shift held is the way past it, as in iTerm2, VS Code's terminal and Windows Terminal.
+**The menu key opens the same menu under the cursor and takes nothing**: xterm.js 6.0.0 sends no
+byte for it. **Shift+F10 opens it too, and is the one key here that is taken**: it is
+`CSI 21;2~` to a program, so it is the menu's only while no program has the mouse — a shell, or
+a harness at its prompt — and stays the program's in a full-screen program that asked for the
+mouse (Midnight Commander has a use for it). That much is a partition and not a hand-back: it
+says when the key is taken, not how the program gets it then. **The hand-back is a second
+Shift+F10**: with the menu the first one opened still up, it closes the menu and sends the
+program `CSI 21;2~`, through the terminal's own input, as a second `F2` sends `F2` from the
+palette. A Mac's keyboard has no menu key, which is why Shift+F10 is claimed at all. Both are caught by the pane's own terminal (`attachCustomKeyEventHandler`),
+as find is.
 
 **Find in a file is `⌘F` on a Mac and `Ctrl+F` elsewhere** (#946, #1088,
 `LightEditor.opensFindInAFile`). In a light editor tab, a file or what changed in it, the same

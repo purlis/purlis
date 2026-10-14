@@ -717,6 +717,7 @@ describe("every menu in the window", () => {
         "../settings/SettingsTab.tsx",
         "../StripMarks.tsx",
         "../TabChip.tsx",
+        "../TerminalMenu.tsx",
         "../VaultTab.tsx",
       ]),
     );

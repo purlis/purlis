@@ -105,6 +105,9 @@ mod tests {
                 // A forge token pasted for a sign-in (#1814): it takes a credential from the
                 // window, as the set-up does.
                 "forge_sign_in_with_token",
+                // The clipboard's text, for a Paste the person pressed in a terminal's menu
+                // (ADR 0052 amended 2026-10-14): it may be a vault's value.
+                "clipboard_text",
             ]
         );
     }

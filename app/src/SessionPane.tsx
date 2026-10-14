@@ -1,7 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -15,6 +22,18 @@ import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { moveAlong } from "./tabSequence";
+import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
+import {
+  asksByPointer,
+  asksForTheMenu,
+  programHasTheMouse,
+  runTerminalRow,
+  terminalRows,
+  SHIFT_F10,
+  underTheCursor,
+  type TerminalRow,
+  type TerminalRowId,
+} from "./terminalRows";
 import { onTextSizes, textSizes } from "./textSize";
 import { inForce, onDrawn, xtermTheme } from "./theme/theme";
 import { scrollByDistance } from "./wheel";
@@ -31,12 +50,19 @@ import { useProjectShown } from "./projectShown";
  * and its view stay open and go on taking what the program writes, so the project comes back
  * with its screen as it is now and nothing to start. It is not fitted and takes no keyboard
  * until then.
+ *
+ * **A right-click on it opens the terminal's menu** (`TerminalMenu.tsx`): Copy, Paste and
+ * Select all, then the pane's own rows. While the program has asked for the mouse a click is
+ * the program's, a right-click too, and Shift held is the way past it, as in every terminal.
+ * The menu key opens the menu under the cursor whichever it is, and Shift+F10 does while no
+ * program has the mouse.
  */
 export function SessionPane({
   plane,
   session,
   focused,
   onFocus,
+  menu,
 }: {
   /** The plane this session belongs to. A session number is only half of a chat's name —
    *  every plane numbers its own from one — so it travels with every call this pane makes. */
@@ -44,9 +70,20 @@ export function SessionPane({
   session: number;
   focused: boolean;
   onFocus: () => void;
+  /** The pane's own rows, listed in the terminal's menu under its own. None where the pane is
+   *  drawn without a catalogue: the menu is then the terminal's rows alone. */
+  menu?: PaneMenu;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
+  /** The terminal's rows as they stood when its menu opened: whether anything was selected is
+   *  read then, once, and not while the menu is up. */
+  const [rows, setRows] = useState<TerminalRow[]>([]);
+  /** While the menu is being asked for from the keyboard, which the program's hold on the
+   *  mouse does not stand in the way of. */
+  const fromKeys = useRef(false);
+  /** Says something in the pane, in the terminal's own hand, while it is up. */
+  const saying = useRef<(trouble: string) => void>(() => {});
   /** The find bar, while it is open: the terminal's search, and how many times it has been
    *  asked for — a second `⌘F` puts the keyboard back in the field of a bar already open. */
   const [finding, setFinding] = useState<{ search: SearchAddon; asked: number } | null>(null);
@@ -64,6 +101,50 @@ export function SessionPane({
     terminal.current?.focus();
     onFocus();
   }, [onFocus]);
+
+  /** The newest `take`, for the listener below, which is added once for the pane's life. */
+  const taking = useRef(take);
+  useEffect(() => {
+    taking.current = take;
+  }, [take]);
+
+  /** A menu about to open reads what is selected; one that closed leaves nothing behind. */
+  const menuOpens = useCallback((open: boolean) => {
+    if (open)
+      setRows(terminalRows({ selected: terminal.current?.hasSelection() ?? false, mac: onAMac() }));
+  }, []);
+
+  /** **A click the program asked for is the program's** (`programHasTheMouse`): xterm has
+   *  already reported the press, and preventing the default here opens no menu, this one or
+   *  the panes'. Shift held, or the keyboard, is past that. */
+  const asked = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    const pane = terminal.current;
+    if (!pane || fromKeys.current || event.shiftKey) return;
+    if (programHasTheMouse(pane)) event.preventDefault();
+  }, []);
+
+  /** Carries one of the terminal's rows out, and says in the pane what it has to say of it:
+   *  a clipboard that refused, a Copy with nothing left to copy, a Paste with nothing to
+   *  paste. **Paste's text is read by the core** (`commands.clipboardText`, the window's
+   *  alone) and typed by the terminal's own paste. */
+  const run = useCallback((id: TerminalRowId) => {
+    const pane = terminal.current;
+    if (!pane) return;
+    void runTerminalRow(id, pane, {
+      out: navigator.clipboard,
+      read: commands.clipboardText,
+    }).then((trouble) => {
+      if (trouble !== undefined) saying.current(trouble);
+    });
+  }, []);
+
+  /** The menu closed on a row of the terminal's own, or on Escape: the keyboard is the
+   *  terminal's again, said here and not left to where the engine thinks it was. */
+  const giveBack = useCallback(() => terminal.current?.focus(), []);
+
+  /** **A second Shift+F10, with the menu up, is the program's** (`SHIFT_F10`): through the
+   *  terminal's own input, the one path everything typed takes. */
+  const passTheKey = useCallback(() => terminal.current?.input(SHIFT_F10), []);
 
   // A pane that becomes the focused one — by a split, or by its tab coming back — takes the
   // keyboard without being clicked. **And so does the focused one of a project that comes back
@@ -123,6 +204,28 @@ export function SessionPane({
         }
         return false;
       }
+      // **The menu key and Shift+F10 open the terminal's menu, under its cursor**, with the
+      // event a right-click sends (`Menus.openFromTheKeyboard` has why the page sends it).
+      // Shift+F10 stays the program's while it has the mouse (`asksForTheMenu`).
+      if (asksForTheMenu(event, programHasTheMouse(pane))) {
+        // A key held down asks once: its repeats are swallowed with it.
+        if (event.type === "keydown" && !event.repeat) {
+          event.preventDefault();
+          fromKeys.current = true;
+          try {
+            where.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                ...underTheCursor(pane, where),
+              }),
+            );
+          } finally {
+            fromKeys.current = false;
+          }
+        }
+        return false;
+      }
       if (newline !== undefined && isShiftEnter(event)) {
         if (event.type === "keydown") {
           event.preventDefault();
@@ -135,6 +238,25 @@ export function SessionPane({
       return true;
     });
     pane.open(where);
+    // **Shift and a right-click are the menu's, whatever the program asked for.** On a Mac
+    // xterm reports a press to a program that has the mouse with Shift held too, Shift among
+    // the modifiers (elsewhere Shift is xterm's own way past the program), so the press is
+    // stopped on its way down, before xterm's listener on the element it drew. React's
+    // listeners are past that point too, so the pane takes the keyboard from here.
+    //
+    // **And its default is prevented, as xterm's own listener would have** (`preventDefault();
+    // focus()`): the engine's default for a press on what cannot take focus is to take the
+    // keyboard away from whatever has it, and the menu would then give it back to nothing
+    // when it closed. Preventing it does not stop the `contextmenu` that follows.
+    //
+    // A Mac's Ctrl+click is the same gesture as the right button (`asksByPointer`).
+    const pastTheProgram = (event: MouseEvent) => {
+      if (!asksByPointer(event, onAMac()) || !event.shiftKey || !programHasTheMouse(pane)) return;
+      event.stopPropagation();
+      event.preventDefault();
+      taking.current();
+    };
+    where.addEventListener("mousedown", pastTheProgram, true);
     // **The wheel scrolls by the distance moved** (SI-4), in the history and to a program that
     // tracks the mouse alike — not xterm's own answer, which is slow to start (`wheel.ts`).
     const wheeling = scrollByDistance(pane, where);
@@ -171,6 +293,7 @@ export function SessionPane({
     const say = (trouble: string) => {
       if (!gone) pane.write(`\r\n\x1b[31mcharter: ${trouble}\x1b[0m\r\n`);
     };
+    saying.current = say;
     // The renderer loads its own code, so a pane draws with the DOM until it is there.
     void draw(pane, say, () => !gone).then((drawing) => bench.paneDrawing(pane, drawing));
     // Input refused is worth seeing: the program has stopped reading it, or has ended.
@@ -245,6 +368,7 @@ export function SessionPane({
 
     return () => {
       gone = true;
+      where.removeEventListener("mousedown", pastTheProgram, true);
       undrawn();
       unfollow();
       unsize();
@@ -264,18 +388,28 @@ export function SessionPane({
 
   return (
     <>
-      <div
-        className={focused ? "pane focused" : "pane"}
-        data-testid="pane"
-        // Everything under here is a shell's keyboard, and the window's own bindings stand
-        // back from the chords a terminal encodes (`actions.CHAT_KEYBOARD`, charter-app#106).
-        {...{ [CHAT_KEYBOARD]: "" }}
-        data-session={session}
-        onKeyDownCapture={leavesTheChat}
-        onMouseDown={take}
-        onClick={take}
-        ref={holder}
-      />
+      <TerminalMenu
+        rows={rows}
+        onRun={run}
+        pane={menu}
+        onAsked={asked}
+        onOpenChange={menuOpens}
+        onGiveBack={giveBack}
+        onPassKey={passTheKey}
+      >
+        <div
+          className={focused ? "pane focused" : "pane"}
+          data-testid="pane"
+          // Everything under here is a shell's keyboard, and the window's own bindings stand
+          // back from the chords a terminal encodes (`actions.CHAT_KEYBOARD`, charter-app#106).
+          {...{ [CHAT_KEYBOARD]: "" }}
+          data-session={session}
+          onKeyDownCapture={leavesTheChat}
+          onMouseDown={take}
+          onClick={take}
+          ref={holder}
+        />
+      </TerminalMenu>
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
     </>
   );

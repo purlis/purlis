@@ -80,6 +80,7 @@ mod opener;
 mod overlimit;
 mod panels;
 mod panics;
+mod pasteread;
 mod personas;
 mod piecefiles;
 mod pin;

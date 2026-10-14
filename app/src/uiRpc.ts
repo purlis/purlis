@@ -1628,6 +1628,7 @@ export const commands = {
 	vaultSetupChange: __WINDOW_ONLY_RESULT,
 	vaultSetupCancel: __WINDOW_ONLY_RESULT,
 	forgeSignInWithToken: __WINDOW_ONLY_RESULT,
+	clipboardText: __WINDOW_ONLY_RESULT,
 };
 
 /* Constants */
