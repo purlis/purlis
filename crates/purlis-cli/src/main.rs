@@ -2916,9 +2916,13 @@ fn run(command: Command) -> Result<u8, String> {
             let set = profiles::with_ignore_check(profiles::current(&root), &check);
             let declared = purlis_core::harness_declaration::read(&root);
             let passed = purlis_core::chatenv::read(&root);
+            // This machine's own profiles, read and never written: the app adopts the
+            // machine's harness folders at its launch (#2033), from the environment its chats
+            // start in, which a terminal's may not be.
+            let machine = purlis_core::profilestore::listed_here();
             eprint!(
                 "{}",
-                harness_listing(&set, &check, Some((&declared, &passed)))
+                harness_listing(&set, &check, Some((&declared, &passed, &machine)))
             );
         }
         Command::Harness(HarnessCommand::Show { name }) => {
@@ -4146,7 +4150,8 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 /// The profile listing, as `purlis harness list` prints it on stderr, and with `declared`, as
 /// `purlis profile list` does: a SIGN-IN column, the kind of sign-in purlis can see a profile
 /// has, from its harness's declaration, its `env` and `[chat_env] pass` (`passed`), or
-/// `unknown` where it cannot tell (#2031).
+/// `unknown` where it cannot tell (#2031). A built-in this machine adopted (#2033) is FROM its
+/// title and its folder: `Claude Code (this Mac) at ~/.claude`.
 ///
 /// Built-ins first in registry order — a declared replacement keeps its kind's place — then
 /// declared profiles by name. **Every width is measured from the cells about to be printed**
@@ -4160,7 +4165,11 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 fn harness_listing(
     set: &ProfileSet,
     check: &profiles::IgnoreCheck,
-    declared: Option<(&purlis_core::harness_declaration::Declarations, &[String])>,
+    declared: Option<(
+        &purlis_core::harness_declaration::Declarations,
+        &[String],
+        &[purlis_core::profilestore::MachineProfile],
+    )>,
 ) -> String {
     let order: Vec<String> = profiles::builtins().into_iter().map(|p| p.name).collect();
     let mut rows: Vec<&purlis_core::profiles::Profile> = set.profiles().iter().collect();
@@ -4189,8 +4198,8 @@ fn harness_listing(
         .iter()
         .map(|p| {
             let mut row = vec![shown::short(&p.name), p.kind.clone()];
-            if let Some(declared) = declared {
-                row.push(sign_in(p, declared));
+            if let Some((declarations, passed, _)) = declared {
+                row.push(sign_in(p, (declarations, passed)));
             }
             row.push(profiles::display(p));
             row
@@ -4233,9 +4242,19 @@ fn harness_listing(
         } else {
             "  "
         };
-        let source = p.source.as_str();
+        let adopted = declared
+            .filter(|_| p.source == profiles::Source::BuiltIn)
+            .and_then(|(_, _, machine)| purlis_core::profilestore::adopted_as(machine, &p.name));
+        let source = match adopted {
+            Some(machine) => format!(
+                "{} at {}",
+                shown::short(&machine.title),
+                shown::short(&home_spelled(&machine.folders.config))
+            ),
+            None => p.source.as_str().to_owned(),
+        };
         let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
-        out.push_str(&line(mark, &cells, source));
+        out.push_str(&line(mark, &cells, &source));
     }
     if !set.refused.is_empty() {
         out.push_str("refused:\n");
@@ -4258,6 +4277,20 @@ fn harness_listing(
         ));
     }
     out
+}
+
+/// `folder` with the person's home written `~`, as a listing shows a path.
+fn home_spelled(folder: &std::path::Path) -> String {
+    match profiles::home().and_then(|home| {
+        folder
+            .strip_prefix(home)
+            .ok()
+            .map(std::path::Path::to_path_buf)
+    }) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => folder.display().to_string(),
+    }
 }
 
 #[cfg(test)]
