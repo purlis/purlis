@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791967643104,
+  "lastUpdate": 1791970636124,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10626,6 +10626,48 @@ window.BENCHMARK_DATA = {
             "value": 103.959295,
             "unit": "ms",
             "extra": "median of 5 runs: 103.455, 103.832, 103.959, 104.323, 106.742 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "981ba86a5bcab13d5c48ff3d7f0100230bd4c7a8",
+          "message": "review(qw382): a chat is offered by what git stopped in, not by unmerged files\n\nA rebase stopped with every file added has nothing unmerged, and the view\noffered a chat, which may not continue a rebase in the plane root. The core\nnow says what git is stopped in (`stopped_by`: merge, rebase, am,\ncherry-pick, revert, bisect, or conflicts), and the view offers a chat only\nfor a merge or bare unmerged files. `rebase_by_hand` is set only while the\nconflict record is why the save is blocked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T13:36:04+04:00",
+          "tree_id": "415440c68d4c873d8c13da9350ab8d406d0f674d",
+          "url": "https://github.com/purlis/purlis/commit/981ba86a5bcab13d5c48ff3d7f0100230bd4c7a8"
+        },
+        "date": 1791970634739,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.304761,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.282, 0.296, 0.305, 0.311, 0.330 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.725832500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.662, 16.718, 16.726, 16.730, 16.756 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.564769,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.153, 101.512, 101.565, 101.606, 101.913 ms"
           }
         ]
       }
