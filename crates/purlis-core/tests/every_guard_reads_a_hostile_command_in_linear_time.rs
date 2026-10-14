@@ -601,6 +601,7 @@ fn the_clone_update_guard_reads_a_repository_in_time_proportional_to_its_paths()
         root: "/project",
         chat_dir: None,
         alone: true,
+        sparse: true,
     };
     let words = |line: &str| -> (String, Vec<String>) {
         let mut words = line.split_whitespace().map(str::to_string);
