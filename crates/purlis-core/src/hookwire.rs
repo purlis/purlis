@@ -1891,6 +1891,9 @@ enum Line {
     /// After every other kind: it requires `secret_exec`, which none of them carries. Held on
     /// its connection for as long as the command runs (#1407).
     SecretExec(crate::secrets::brokered::Ask),
+    /// After every other kind: it requires `frames`, which none of them carries. The
+    /// connection carries frames from the app's acceptance on ([`framed`], #1996).
+    Frames(framed::Hello),
 }
 
 impl Line {
@@ -1919,6 +1922,7 @@ impl Line {
             Self::Blocked(blocked) => blocked.chat,
             Self::Doing(doing) => doing.chat,
             Self::SecretExec(ask) => ask.chat,
+            Self::Frames(hello) => hello.chat,
         }
     }
 }
@@ -2633,10 +2637,14 @@ mod off_unix;
 pub mod spool;
 
 pub mod permission;
+
+pub mod framed;
+#[cfg(unix)]
+pub use framed::Framed;
 #[cfg(not(unix))]
 pub use off_unix::{
-    Asking, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send, tell,
-    tell_saved,
+    Asking, Framed, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send,
+    tell, tell_saved,
 };
 pub use permission::{PermissionAsked, Permitting, ask_permission};
 
@@ -3395,6 +3403,12 @@ fn serve(
                 (hearing.secret_exec)(ask, Box::new(reader), Box::new(writer));
                 return;
             }
+            Line::Frames(hello) => {
+                // Held for as long as its asks take, as one ask is: the turn is let go first.
+                turn.finish();
+                frames(hello, this, tokens, hearing, reader, writer, &deadline);
+                return;
+            }
         }
         // Told as taken only once it is recorded durably: a line the hearer could not record
         // gets no answer, so its hook spools it (FD-30). An older hook has closed its end
@@ -3423,6 +3437,75 @@ fn serve(
             turn.finish();
         }
     }
+}
+
+/// How long one framed ask may take to arrive, from when it begins to be read: a frame at its
+/// bound crosses a local socket in well under a second, so this bounds only a sender dripping.
+#[cfg(unix)]
+const A_FRAMED_ASK_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// A connection whose hello was admitted (#1996): accepted on one line, then served as a framed
+/// stream for the hello's chat ([`framed::serve`]), each ask answered as a line's is, by
+/// `hearing.answer` told this connection's number.
+#[cfg(unix)]
+fn frames(
+    hello: framed::Hello,
+    this: u64,
+    tokens: &ChatTokens,
+    hearing: &Hearing,
+    mut reader: std::io::BufReader<Deadlined>,
+    mut writer: std::os::unix::net::UnixStream,
+    deadline: &std::sync::Mutex<Option<std::time::Instant>>,
+) {
+    use std::io::Write;
+
+    if hello.frames != framed::VERSION {
+        if let Ok(mut said) = serde_json::to_vec(&Answer::No {
+            why: format!(
+                "the app speaks frames version {}, and this asked for {}",
+                framed::VERSION,
+                hello.frames
+            ),
+        }) {
+            said.push(b'\n');
+            let _ = writer.write_all(&said);
+        }
+        return;
+    }
+    let Ok(mut said) = serde_json::to_vec(&framed::Accepted::now()) else {
+        return;
+    };
+    said.push(b'\n');
+    if writer.write_all(&said).is_err() {
+        return;
+    }
+    // An answer may be a frame at its bound, and an asker is given as long to take it as a
+    // brokered command's output is.
+    let _ = writer.set_write_timeout(Some(A_FRAME_WRITE_TAKES_AT_MOST));
+    let asker = writer.try_clone().ok();
+    let _ = framed::serve(
+        &mut reader,
+        &mut writer,
+        hello.chat,
+        A_CONNECTION_SAYS_AT_MOST,
+        &mut || {
+            *deadline
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(std::time::Instant::now() + A_FRAMED_ASK_TAKES_AT_MOST);
+        },
+        &mut |ask| {
+            *deadline
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            if let Some(asker) = asker.as_ref().and_then(|a| a.try_clone().ok()) {
+                tokens.answering(this, asker);
+            }
+            let answer = (hearing.answer)(this, ask);
+            tokens.answered(this);
+            framed::Reply::from(answer)
+        },
+    );
 }
 
 /// A connection read with one deadline for a whole line: each read is given what is left of it,
@@ -3476,7 +3559,7 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
             taken: false,
             refused: Some(why.to_owned()),
         }),
-        Line::Ask(_) => serde_json::to_vec(&Answer::No {
+        Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),
         Line::Permission(_) => serde_json::to_vec(&permission::Chosen { chosen: None }),
@@ -6124,6 +6207,60 @@ mod tests {
                 .is_err(),
             "an answer past the cap was read"
         );
+    }
+
+    #[test]
+    fn an_answer_past_a_line_comes_back_whole_on_the_framed_stream_and_lines_still_work() {
+        // #1996: a client that says hello gets frames; one that never does is unaffected.
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let cap = usize::try_from(A_REPORT_IS_AT_MOST).unwrap();
+        let large = Answer::No {
+            why: "w".repeat(3 * cap),
+        };
+        let path = dir.path().join("hooks.sock");
+        let (_reading, token) = an_app_answering(&path, dir.path(), large.clone());
+
+        let mut framed = Framed::on(&path, Some(&token), 3, within)
+            .expect("connected")
+            .expect("the app speaks frames");
+        let reply = framed
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect("a reply past a line");
+        assert_eq!(reply.answer, large);
+        // A second ask on the same stream.
+        let again = framed.ask(&Ask::Ticket { chat: 3 }, within).expect("again");
+        assert_eq!(again.answer, large);
+
+        // A line client of the same app still reads its answer in lines, capped as ever.
+        assert!(
+            Asking::on(&path, Some(token))
+                .expect("connected")
+                .ask(&Ask::Ticket { chat: 3 }, within)
+                .is_err(),
+            "a line client was handed a frame or an answer past a line"
+        );
+    }
+
+    #[test]
+    fn a_hello_without_its_chats_token_is_refused_and_never_accepted() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let (_reading, _token) = an_app_answering(
+            &path,
+            dir.path(),
+            Answer::Ticket {
+                ticket: "t".to_owned(),
+            },
+        );
+        for token in [None, Some(ChatToken::from("nope"))] {
+            let refused = Framed::on(&path, token.as_ref(), 3, within)
+                .err()
+                .expect("refused");
+            assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied, "{refused}");
+            assert!(refused.to_string().contains("token"), "{refused}");
+        }
     }
 
     #[test]

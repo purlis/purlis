@@ -38,8 +38,8 @@ pub enum Forwarded {
 pub enum NotTaken {
     /// This is no chat the app started: no chat number.
     NotAChat,
-    /// A chat the app started, whose harness gave this process no connection to the app: the
-    /// MCP server under Codex, which hands it only [`purlis_core::chattools::SCOPE_ENV`].
+    /// A chat the app started, whose harness gave this process no connection to the app: none
+    /// of [`purlis_core::chattools::CONNECTION_ENV`] reached it.
     NoConnection,
     /// The app's socket is not there, or nothing listens on it: the app has gone.
     AppGone,
@@ -149,6 +149,39 @@ pub fn asked(
             }
         })?;
     Ok(asking.ask(&make(chat), within))
+}
+
+/// The app's reply to the ask `make` builds for this chat's number, over the hook channel's
+/// framed stream where the app speaks it (#1996), so an answer larger than a line comes back
+/// whole with what the app attaches; in lines, as [`asked`], where the app is older. Said with
+/// the chat's own token, as every line of the chat's is.
+pub fn replied(
+    make: impl Fn(u32) -> Ask,
+    within: std::time::Duration,
+) -> Result<std::io::Result<hookwire::framed::Reply>, NotTaken> {
+    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
+    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
+        .filter(|s| !s.is_empty())
+        .ok_or(NotTaken::NoConnection)?;
+    let token = hookwire::ChatToken::from_env();
+    match hookwire::Framed::on(Path::new(&socket), token.as_ref(), chat, within) {
+        Ok(Some(mut framed)) => Ok(framed.ask(&make(chat), within)),
+        Ok(None) => asked(make, within).map(|answer| answer.map(Into::into)),
+        // The app read the hello and said no: its sentence, as a refused ask's.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            Ok(Ok(Answer::No { why: e.to_string() }.into()))
+        }
+        Err(e) => {
+            use std::io::ErrorKind;
+            Err(
+                if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
+                    NotTaken::AppGone
+                } else {
+                    NotTaken::Dropped
+                },
+            )
+        }
+    }
 }
 
 /// Whether asking failed the way an app that never took the ask fails: it ended the
