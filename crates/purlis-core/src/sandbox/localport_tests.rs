@@ -47,7 +47,7 @@ fn a_port_given_to_a_chat_is_never_taken_by_purlis_later() {
     // listeners never land on it.
     let probe = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port");
     let taken = probe.local_addr().expect("bound").port();
-    given(&[taken]);
+    assert_eq!(still_ports(&[taken]), vec![taken]);
     drop(probe);
     let mut ours = Vec::new();
     for _ in 0..8 {
@@ -57,6 +57,59 @@ fn a_port_given_to_a_chat_is_never_taken_by_purlis_later() {
     }
     for listener in ours {
         release(listener.local_addr().expect("bound").port());
+    }
+}
+
+/// A start and a new listener of purlis's judge and mark one table in one hold of its lock, so
+/// a port is either a chat's or purlis's, never both, whichever comes first.
+#[test]
+fn a_port_is_a_chats_or_purlis_s_never_both_whichever_comes_first() {
+    let mut first_a_chat = Ports::default();
+    assert_eq!(first_a_chat.admit(&[50795]), vec![50795]);
+    assert!(
+        !first_a_chat.claim(50795),
+        "purlis never takes a port a chat was given"
+    );
+
+    let mut first_purlis = Ports::default();
+    assert!(first_purlis.claim(50795));
+    assert_eq!(
+        first_purlis.admit(&[50795, 6443]),
+        vec![6443],
+        "a chat is never given a port purlis holds"
+    );
+
+    // Concurrently, through the one table: every port ends up with one side alone.
+    let shared = std::sync::Arc::new(Mutex::new(Ports::default()));
+    let mut handles = Vec::new();
+    for at in 0..8u16 {
+        let shared = std::sync::Arc::clone(&shared);
+        handles.push(std::thread::spawn(move || {
+            for port in 40000..40200u16 {
+                if (port + at) % 2 == 0 {
+                    shared.lock().unwrap().admit(&[port]);
+                } else {
+                    shared.lock().unwrap().claim(port);
+                }
+            }
+        }));
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    let table = shared.lock().unwrap();
+    assert!(table.own.is_disjoint(&table.given));
+}
+
+#[test]
+fn a_forge_sign_ins_redirect_ports_are_purlis_s_own_always() {
+    for redirect in crate::forge::registration::REDIRECT_PORTS {
+        assert!(is_own(redirect));
+        assert!(matches!(
+            port(&redirect.to_string()),
+            Err(Refused::Never(_))
+        ));
+        assert!(still_ports(&[redirect]).is_empty());
     }
 }
 
@@ -79,10 +132,12 @@ fn the_proxy_lists_this_machine_by_each_name_at_that_port_alone() {
 #[test]
 fn a_loopback_target_names_its_port_and_nothing_else_does() {
     assert_eq!(loopback_port("127.0.0.1:50795"), Some(50795));
-    assert_eq!(loopback_port("127.0.0.2:6443"), Some(6443));
     assert_eq!(loopback_port("[::1]:50795"), Some(50795));
     assert_eq!(loopback_port("localhost:3000"), Some(3000));
     for never in [
+        // Only the addresses the profile and the proxy carry.
+        "127.0.0.2:6443",
+        "[::ffff:127.0.0.1]:6443",
         "10.0.0.1:443",
         "169.254.169.254:80",
         "example.com:443",

@@ -451,7 +451,7 @@ describe("a service on this Mac in the Granted list (qw384)", () => {
       expected: false,
     };
     expect(grantSaid(PORT)).toBe(
-      "Connect to the service on this Mac at port 50795 · This project on this machine · allowed by you",
+      "Connect to the service on this Mac at port 50795 (Codex and opencode chats; Claude Code chats not yet) · This project on this machine · allowed by you",
     );
   });
 });

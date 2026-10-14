@@ -317,6 +317,10 @@ const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "machine", "projec
 
 const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
 
+/** What a port field pre-filled from the command's own output says (qw384): the sandbox did not
+ *  name it, so the person checks it before allowing. */
+const PORT_FROM_OUTPUT = "This port is from the command's output: check it.";
+
 /** What a block names, drawn apart from purlis's words and safely (`inertly`). */
 const Target = ({ of }: { of: string }) => (
   <code className="block-allow-target">{inertly(of)}</code>
@@ -377,7 +381,10 @@ function AllowNotice({
   onWay?: (words: string, ask: Shown) => void;
 }) {
   const id = useId();
-  const [typed, setTyped] = useState(block.target ?? "");
+  /** A port only the command's own output named (qw384): pre-filled for the person to check,
+   *  never taken as the refusal's own word. */
+  const suggested = block.target === null ? (block.suggested ?? undefined) : undefined;
+  const [typed, setTyped] = useState(block.target ?? suggested ?? "");
   const [alwaysOpen, setAlways] = useState(false);
   const [allowed, setAllowed] = useState<Allowed>();
   /** The hosts an Allow on this Notice allowed (#1637). */
@@ -804,7 +811,9 @@ function AllowNotice({
           what === "host"
             ? "An Allow lets the chat reach the host you type here."
             : what === "port"
-              ? "An Allow lets the chat connect to whatever listens on this Mac at the port you type here, as you."
+              ? suggested !== undefined && typed.trim() === suggested
+                ? `${PORT_FROM_OUTPUT} An Allow lets the chat connect to whatever listens on this Mac at that port, as you.`
+                : "An Allow lets the chat connect to whatever listens on this Mac at the port you type here, as you."
               : "An Allow lets the chat write in the folder you type here and everything in it."
         }
         control={(ids) => (

@@ -463,6 +463,12 @@ pub struct ChatBlocked {
     /// (`take_up_sandbox_block`). None for a block of a command the chat ran.
     #[specta(optional)]
     pub quiet: Option<String>,
+    /// **A port the command's own output names**, for a service on this Mac whose refusal named
+    /// none ([`BlockOffer::Port`] with no [`Self::target`], qw384): the Notice pre-fills its
+    /// port field with it and says it came from the command's output, for the person to check.
+    /// Judged as a port is before it is sent here, and again before anything is allowed.
+    #[specta(optional)]
+    pub suggested: Option<String>,
 }
 
 /// What a quiet line says of where its block came from ([`ChatBlocked::quiet`]).
@@ -582,18 +588,30 @@ pub fn blocked_holding(plane: &PlaneId, heard: &HeardBlock, has_check: bool) -> 
         .harness
         .as_deref()
         .and_then(purlis_core::harness::Harness::of_kind);
+    let told = blocked_on(
+        plane,
+        blocked.chat,
+        &blocked.sandbox_blocked,
+        harness,
+        blocked.target.as_deref(),
+        has_check,
+    );
     ChatBlocked {
         vault: heard.vault.as_deref().map(vault_said),
         quiet: blocked.read_back.then(|| READ_BACK_SAID.to_owned()),
-        ..blocked_on(
-            plane,
-            blocked.chat,
-            &blocked.sandbox_blocked,
-            harness,
-            blocked.target.as_deref(),
-            has_check,
-        )
+        suggested: suggested_port(&told, blocked.suggested.as_deref()),
+        ..told
     }
+}
+
+/// The port `suggested` by a command's output, for a Notice that asks the person to type one
+/// ([`ChatBlocked::suggested`], qw384): none for any other Notice, and none that is no port a
+/// grant could name.
+fn suggested_port(told: &ChatBlocked, suggested: Option<&str>) -> Option<String> {
+    (told.offer == BlockOffer::Port && told.target.is_none())
+        .then(|| purlis_core::sandbox::localport::port(suggested?).ok())
+        .flatten()
+        .map(|port| port.to_string())
 }
 
 /// [`blocked_holding`] for a chat that started without the certificate check.
@@ -652,6 +670,7 @@ pub(crate) fn blocked_on(
         harness: harness.map(|harness| harness.name().to_owned()),
         said: block.said(),
         vault: None,
+        suggested: None,
     }
 }
 
@@ -1088,6 +1107,21 @@ fn offered_to(
             match target.map(purlis_core::sandbox::localport::port) {
                 None => (BlockOffer::Port, None, Some(said)),
                 Some(Ok(port)) => (BlockOffer::Port, Some(port.to_string()), Some(said)),
+                // A port you allowed that purlis took for a chat of its own while your service
+                // was down: said as such, not as a port that is purlis's by nature.
+                Some(Err(grant::Refused::Never(_)))
+                    if target
+                        .and_then(|port| port.trim().parse::<u16>().ok())
+                        .is_some_and(|port| {
+                            purlis_core::sandbox::local::granted_ports(root).contains(&port)
+                        }) =>
+                {
+                    (
+                        BlockOffer::Brokered,
+                        None,
+                        Some(purlis_core::sandbox::localport::TAKEN_SAID.to_owned()),
+                    )
+                }
                 Some(Err(grant::Refused::Never(why))) => (BlockOffer::Brokered, None, Some(why)),
                 Some(Err(grant::Refused::Outside(why) | grant::Refused::Not(why))) => {
                     (BlockOffer::Port, None, Some(why))

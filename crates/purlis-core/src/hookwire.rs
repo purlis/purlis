@@ -2200,6 +2200,12 @@ pub struct SandboxBlocked {
     /// to answer. A chat can send either; what `true` buys is a quieter Notice on its own tab.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_back: bool,
+    /// **A port the command's own printed words name** for a refused service on this Mac whose
+    /// [`Self::target`] is none (qw384, [`crate::sandboxblock::printed_port`]): only ever
+    /// pre-filled in the Notice's port field, said to come from the command's output for the
+    /// person to check, and judged again as a grant before anything is allowed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested: Option<String>,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -7384,6 +7390,7 @@ mod tests {
             harness: Some("claude".to_owned()),
             target: None,
             read_back: false,
+            suggested: None,
         };
         let line = serde_json::to_string(&blocked).unwrap();
         assert_eq!(

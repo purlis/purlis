@@ -1612,12 +1612,20 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
+        // A refused service on this Mac whose port only printed words name: offered to the
+        // person to check, never as the target (qw384).
+        let suggested = (block.kind == purlis_core::sandboxblock::Kind::LocalService
+            && target.is_none())
+        .then(|| purlis_core::sandboxblock::printed_port(&data))
+        .flatten()
+        .map(|port| port.to_string());
         let blocked = hookwire::SandboxBlocked {
             chat,
             sandbox_blocked: block,
             harness: harness.clone(),
             target,
             read_back,
+            suggested,
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
             Ok(()) => taken.push(block),

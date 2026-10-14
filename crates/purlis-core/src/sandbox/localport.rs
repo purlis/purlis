@@ -16,7 +16,7 @@
 //! - **Never purlis's own** ([`own`]): a port one of purlis's proxies or tunnels listens on is
 //!   each chat's own way out, and no other chat's. Refused when it is allowed, and left out when
 //!   a chat starts. A proxy or tunnel purlis opens later never takes
-//!   a port a chat's sandbox was started with ([`given`], [`bind_loopback`]).
+//!   a port a chat's sandbox was started with ([`still_ports`], [`bind_loopback`]).
 //! - **This machine's alone**, as a socket is: kept for one chat in memory or in this machine's
 //!   local file (`super::local`), never in the committed one.
 //! - **What it reaches**: the chat's sandbox lets it connect to that port on the loopback
@@ -34,12 +34,60 @@ pub const RISK: &str = "lets this chat connect to whatever listens on that port 
                         you; a container engine's or a cluster's port can reach much of your \
                         machine";
 
-/// The ports purlis itself listens on in this process: each chat's proxy and each tunnel.
-static OWN: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
+/// **Which loopback ports are whose, in this process**, under one lock: the ports purlis itself
+/// listens on (each chat's proxy and each tunnel), and the ports a chat's sandbox was started
+/// with as a service on this Mac. A port is never in both: a start gives a chat only a port
+/// purlis does not hold ([`still_ports`]), and purlis takes only a port no chat was given
+/// ([`bind_loopback`]), each judged and marked in one hold of the lock.
+#[derive(Debug, Default)]
+pub(crate) struct Ports {
+    own: BTreeSet<u16>,
+    given: BTreeSet<u16>,
+}
 
-/// The ports a chat's sandbox was started with as a service on this Mac, in this process: no
-/// proxy or tunnel of purlis's takes one of them later.
-static GIVEN: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
+impl Ports {
+    const fn new() -> Self {
+        Self {
+            own: BTreeSet::new(),
+            given: BTreeSet::new(),
+        }
+    }
+
+    /// Whether `port` is purlis's own: one it listens on now, or a forge sign-in's redirect port,
+    /// which it listens on while a sign-in runs.
+    fn is_own(&self, port: u16) -> bool {
+        self.own.contains(&port) || crate::forge::registration::REDIRECT_PORTS.contains(&port)
+    }
+
+    /// `ports`, less each that is purlis's own, each once, in order, and each kept marked as
+    /// given: judged and marked together.
+    pub(crate) fn admit(&mut self, ports: &[u16]) -> Vec<u16> {
+        let mut out: Vec<u16> = Vec::new();
+        for port in ports {
+            if *port != 0 && !self.is_own(*port) && !out.contains(port) {
+                out.push(*port);
+            }
+        }
+        self.given.extend(out.iter().copied());
+        out
+    }
+
+    /// Takes `port` as purlis's own unless a chat was given it: judged and marked together.
+    pub(crate) fn claim(&mut self, port: u16) -> bool {
+        if self.given.contains(&port) {
+            return false;
+        }
+        self.own.insert(port);
+        true
+    }
+}
+
+/// This process's [`Ports`].
+static PORTS: Mutex<Ports> = Mutex::new(Ports::new());
+
+fn ports() -> std::sync::MutexGuard<'static, Ports> {
+    PORTS.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// **`typed` as the port of a service on this Mac**, or why not: one whole number from 1 to
 /// 65535, never purlis's own.
@@ -65,75 +113,43 @@ pub fn port(typed: &str) -> Result<u16, Refused> {
 }
 
 /// Why purlis's own port is never allowed.
-pub const OWN_SAID: &str = "That port is one purlis itself listens on for a chat, so no chat is \
-                            allowed it. A service of your own on this Mac listens on a port of \
-                            its own.";
+pub const OWN_SAID: &str = "That port is one purlis itself listens on, so no chat is allowed it. \
+                            A service of your own on this Mac listens on a port of its own.";
 
-/// Whether purlis listens on `port` in this process now.
+/// What a Notice says of a port you allowed that purlis itself listens on now: the service you
+/// allowed there is not running, and purlis took the free port for a chat of its own.
+pub const TAKEN_SAID: &str = "You allowed this port, but purlis itself listens on it now, for \
+                              another chat: the service you allowed there was not running when \
+                              purlis needed a port. No chat reaches it while purlis holds it. \
+                              Start your service again, then restart this chat.";
+
+/// Whether purlis listens on `port` now, or may while a forge sign-in runs.
 pub fn is_own(port: u16) -> bool {
-    OWN.lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .contains(&port)
-}
-
-/// The ports purlis listens on in this process now.
-pub fn own() -> Vec<u16> {
-    OWN.lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .copied()
-        .collect()
+    ports().is_own(port)
 }
 
 /// `ports`, less each that is purlis's own now, each once, in order: what a start compiles in.
-/// Each one kept is marked as given ([`given`]).
-pub fn still_ports(ports: &[u16]) -> Vec<u16> {
-    let mut out: Vec<u16> = Vec::new();
-    for port in ports {
-        if *port != 0 && !is_own(*port) && !out.contains(port) {
-            out.push(*port);
-        }
-    }
-    given(&out);
-    out
-}
-
-/// Marks `ports` as ports a chat's sandbox lets it reach: no proxy or tunnel purlis opens later
-/// in this process listens on one.
-pub fn given(ports: &[u16]) {
-    GIVEN
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .extend(ports.iter().copied());
-}
-
-/// Whether `port` was given to a chat's sandbox in this process.
-fn is_given(port: u16) -> bool {
-    GIVEN
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .contains(&port)
+/// Each one kept is marked as given in the same hold of the lock, so no listener of purlis's
+/// takes it in between.
+pub fn still_ports(ports_asked: &[u16]) -> Vec<u16> {
+    ports().admit(ports_asked)
 }
 
 /// How many times [`bind_loopback`] asks again for a port that was given to a chat.
 const BIND_TRIES: usize = 32;
 
 /// **A new port on the loopback interface for purlis's own listener**, never one a chat's
-/// sandbox was given ([`given`]), marked as purlis's own until [`release`].
+/// sandbox was given ([`still_ports`]), marked as purlis's own until [`release`].
 pub fn bind_loopback() -> std::io::Result<TcpListener> {
     let mut held = Vec::new();
     for _ in 0..BIND_TRIES {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         let port = listener.local_addr()?.port();
-        if is_given(port) {
-            // Kept bound until a fit is found, so the system hands out another.
-            held.push(listener);
-            continue;
+        if ports().claim(port) {
+            return Ok(listener);
         }
-        OWN.lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(port);
-        return Ok(listener);
+        // Kept bound until a fit is found, so the system hands out another.
+        held.push(listener);
     }
     Err(std::io::Error::other(
         "purlis found no loopback port free of the services chats may reach",
@@ -142,9 +158,7 @@ pub fn bind_loopback() -> std::io::Result<TcpListener> {
 
 /// `port` is no longer purlis's own: its listener closed.
 pub fn release(port: u16) {
-    OWN.lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(&port);
+    ports().own.remove(&port);
 }
 
 /// **The entries a chat's proxy lists for `port`**: this machine by each name a client says it
@@ -165,8 +179,8 @@ pub fn seatbelt_rule(port: u16) -> String {
 }
 
 /// **The port of a service on this Mac that `target` names**, where it names one on the
-/// loopback interface: `127.0.0.1:50795`, `[::1]:50795`, `localhost:50795`, any `127.x.y.z`.
-/// None for any other address, a name, or no port.
+/// loopback interface as the profile and the proxy carry it: `127.0.0.1:50795`, `[::1]:50795`,
+/// `localhost:50795`. None for any other address, a name, or no port.
 pub fn loopback_port(target: &str) -> Option<u16> {
     let target = target.trim().trim_end_matches(['.', ',', ';']);
     let (host, port) = if let Some(rest) = target.strip_prefix('[') {
@@ -176,12 +190,12 @@ pub fn loopback_port(target: &str) -> Option<u16> {
         target.rsplit_once(':')?
     };
     let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
+    // Exactly the names the profile and the proxy carry ([`reach_entries`]): never another
+    // address of the loopback block, which neither carries.
     let loopback = host.eq_ignore_ascii_case("localhost")
-        || host.parse::<IpAddr>().is_ok_and(|ip| match ip {
-            IpAddr::V4(v4) => v4.is_loopback(),
-            IpAddr::V6(v6) => {
-                v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
-            }
+        || host.parse::<IpAddr>().is_ok_and(|ip| {
+            ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
         });
     loopback.then_some(port)
 }

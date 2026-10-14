@@ -43,6 +43,7 @@ fn told(plane: &PlaneId, block: Block, read_back: bool) -> ChatBlocked {
             harness: Some("claude".to_owned()),
             target: None,
             read_back,
+            suggested: None,
         }),
     )
 }

@@ -524,7 +524,10 @@ pub fn detect_with_targets(
                         let kept = target.is_some()
                             && (own.contains(&(block, target.clone()))
                                 || (names_a_lookup(&block)
-                                    && block.kind != Kind::CertificateCheck));
+                                    && !matches!(
+                                        block.kind,
+                                        Kind::CertificateCheck | Kind::LocalService
+                                    )));
                         (block, if kept { target } else { None })
                     }));
                 } else {
@@ -1472,6 +1475,56 @@ pub fn the_hooks_own(
         .into_iter()
         .filter(|(block, _)| (block.operation, block.kind) != (Operation::Connect, Kind::Host))
         .collect()
+}
+
+/// **`payload` as a chat of `harness` reports a command** (qw384): a harness purlis wraps
+/// (Codex, opencode) runs in purlis's own sandbox, which appends no violation report, so a
+/// `<sandbox_violations>` block in its result is one the command printed. It is read there as
+/// any other printed text, never as the sandbox's own report. Any other harness's payload is
+/// as it came.
+pub fn as_its_harness_reports(
+    payload: &serde_json::Value,
+    harness: Option<&str>,
+) -> serde_json::Value {
+    const OPEN: &str = "<sandbox_violations>";
+    if !the_proxy_tells_hosts(harness) {
+        return payload.clone();
+    }
+    fn unreport(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) if text.contains(OPEN) => {
+                *text = text.replace(OPEN, "<sandbox_violations printed>");
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(unreport),
+            serde_json::Value::Object(fields) => fields.values_mut().for_each(unreport),
+            _ => {}
+        }
+    }
+    let mut out = payload.clone();
+    for field in ["tool_response", "error"] {
+        if let Some(value) = out.get_mut(field) {
+            unreport(value);
+        }
+    }
+    out
+}
+
+/// **The port a command's own printed words name** for a refused service on this Mac (qw384):
+/// Go's or Node's refusal of a loopback port, anywhere in what the command handed back. Never a
+/// target: the Notice pre-fills its port field with it, says it came from the command's output
+/// for the person to check, and a grant judges it again.
+pub fn printed_port(payload: &serde_json::Value) -> Option<u16> {
+    let response = &payload["tool_response"];
+    [
+        response.as_str(),
+        response["stderr"].as_str(),
+        response["stdout"].as_str(),
+        payload["error"].as_str(),
+    ]
+    .into_iter()
+    .flatten()
+    .flat_map(str::lines)
+    .find_map(crate::sandbox::localport::refused_in)
 }
 
 /// The kind of `path`, read against `place` and never kept.

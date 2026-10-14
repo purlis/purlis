@@ -3841,6 +3841,13 @@ export type ChatBlocked = {
 	 *  (`take_up_sandbox_block`). None for a block of a command the chat ran.
 	 */
 	quiet?: string | null,
+	/**
+	 *  **A port the command's own output names**, for a service on this Mac whose refusal named
+	 *  none ([`BlockOffer::Port`] with no [`Self::target`], qw384): the Notice pre-fills its
+	 *  port field with it and says it came from the command's output, for the person to check.
+	 *  Judged as a port is before it is sent here, and again before anything is allowed.
+	 */
+	suggested?: string | null,
 };
 
 /**
