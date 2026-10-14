@@ -129,25 +129,34 @@ pub fn forwarded(write: Write) -> Forwarded {
     }
 }
 
+/// This chat's number and its hook socket, or why it has no connection to the app.
+fn the_chat_s_connection() -> Result<(u32, std::ffi::OsString), NotTaken> {
+    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
+    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
+        .filter(|s| !s.is_empty())
+        .ok_or(NotTaken::NoConnection)?;
+    Ok((chat, socket))
+}
+
+/// Why connecting to the app failed, as a write that was not taken.
+fn not_connected(e: &std::io::Error) -> NotTaken {
+    use std::io::ErrorKind;
+    if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
+        NotTaken::AppGone
+    } else {
+        NotTaken::Dropped
+    }
+}
+
 /// The app's answer to the ask `make` builds for this chat's number, or why no app can be
 /// asked.
 pub fn asked(
     make: impl FnOnce(u32) -> Ask,
     within: std::time::Duration,
 ) -> Result<std::io::Result<Answer>, NotTaken> {
-    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
-    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
-        .filter(|s| !s.is_empty())
-        .ok_or(NotTaken::NoConnection)?;
+    let (chat, socket) = the_chat_s_connection()?;
     let mut asking = hookwire::Asking::on(Path::new(&socket), hookwire::ChatToken::from_env())
-        .map_err(|e| {
-            use std::io::ErrorKind;
-            if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
-                NotTaken::AppGone
-            } else {
-                NotTaken::Dropped
-            }
-        })?;
+        .map_err(|e| not_connected(&e))?;
     Ok(asking.ask(&make(chat), within))
 }
 
@@ -156,31 +165,18 @@ pub fn asked(
 /// whole with what the app attaches; in lines, as [`asked`], where the app is older. Said with
 /// the chat's own token, as every line of the chat's is.
 pub fn replied(
-    make: impl Fn(u32) -> Ask,
+    make: impl FnOnce(u32) -> Ask,
     within: std::time::Duration,
 ) -> Result<std::io::Result<hookwire::framed::Reply>, NotTaken> {
-    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
-    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
-        .filter(|s| !s.is_empty())
-        .ok_or(NotTaken::NoConnection)?;
+    use hookwire::framed::Greeted;
+    let (chat, socket) = the_chat_s_connection()?;
     let token = hookwire::ChatToken::from_env();
     match hookwire::Framed::on(Path::new(&socket), token.as_ref(), chat, within) {
-        Ok(Some(mut framed)) => Ok(framed.ask(&make(chat), within)),
-        Ok(None) => asked(make, within).map(|answer| answer.map(Into::into)),
+        Ok(Greeted::Framed(mut framed)) => Ok(framed.ask(&make(chat), within)),
+        Ok(Greeted::Older) => asked(make, within).map(|answer| answer.map(Into::into)),
         // The app read the hello and said no: its sentence, as a refused ask's.
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            Ok(Ok(Answer::No { why: e.to_string() }.into()))
-        }
-        Err(e) => {
-            use std::io::ErrorKind;
-            Err(
-                if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
-                    NotTaken::AppGone
-                } else {
-                    NotTaken::Dropped
-                },
-            )
-        }
+        Ok(Greeted::Refused(why)) => Ok(Ok(Answer::No { why }.into())),
+        Err(e) => Err(not_connected(&e)),
     }
 }
 

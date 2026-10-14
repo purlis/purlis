@@ -28,9 +28,32 @@ fn ticket(chat: u32) -> Ask {
 }
 
 /// Serves `wire` for chat 7 with `answer`, and what it wrote back.
+/// The bound an ask's frame is held to below: a line's, as the socket holds it.
+const AN_ASK: u32 = 6 * crate::handoff::FIRST_MESSAGE_MAX_BYTES as u32 + 4096;
+
 fn served(wire: Vec<u8>, answer: &mut dyn FnMut(Ask) -> Reply) -> (io::Result<()>, Vec<u8>) {
+    served_admitting(wire, &mut || Ok(()), answer)
+}
+
+/// Serves `wire` for chat 7, each ask admitted or not by `admit`.
+fn served_admitting(
+    wire: Vec<u8>,
+    admit: &mut dyn FnMut() -> Result<(), String>,
+    answer: &mut dyn FnMut(Ask) -> Reply,
+) -> (io::Result<()>, Vec<u8>) {
     let mut back = Vec::new();
-    let served = serve(&mut Cursor::new(wire), &mut back, 7, 4, &mut || {}, answer);
+    let served = serve(
+        &mut Cursor::new(wire),
+        &mut back,
+        Serving {
+            chat: 7,
+            asks: 4,
+            an_ask_is_at_most: AN_ASK,
+            arm: &mut || {},
+            admit,
+        },
+        answer,
+    );
     (served, back)
 }
 
@@ -273,7 +296,10 @@ fn an_app_that_speaks_frames_accepts_the_hello() {
         line,
         format!(r#"{{"frames":{VERSION},"most":{A_FRAME_IS_AT_MOST}}}"#)
     );
-    assert_eq!(accepted(&line).expect("read"), Some(Accepted::now()));
+    assert_eq!(
+        answered(&line).expect("read"),
+        Answered::Accepted(Accepted::now())
+    );
 }
 
 #[test]
@@ -283,7 +309,13 @@ fn an_app_from_before_frames_is_asked_again_in_lines() {
         why: UNKNOWN_LINE.to_owned(),
     })
     .unwrap();
-    assert_eq!(accepted(&line).expect("read"), None);
+    assert_eq!(answered(&line).expect("read"), Answered::Older);
+}
+
+#[test]
+fn an_app_that_ends_the_connection_at_the_hello_is_asked_again_in_lines() {
+    // An app from before #1333 closes a connection on a line it cannot read, saying nothing.
+    assert_eq!(answered("").expect("read"), Answered::Older);
 }
 
 #[test]
@@ -292,15 +324,15 @@ fn an_app_that_refuses_the_hello_is_an_error_with_its_sentence() {
         why: "this line does not carry chat 7's token, so nothing was done".to_owned(),
     })
     .unwrap();
-    let why = accepted(&line).expect_err("refused");
-    assert_eq!(why.kind(), io::ErrorKind::PermissionDenied);
-    assert!(why.to_string().contains("token"), "{why}");
+    assert!(
+        matches!(answered(&line).expect("read"), Answered::Refused(why) if why.contains("token"))
+    );
 }
 
 #[test]
 fn a_hello_at_another_version_is_not_spoken() {
     let line = format!(r#"{{"frames":{},"most":1}}"#, VERSION + 1);
-    assert!(accepted(&line).is_err());
+    assert!(answered(&line).is_err());
 }
 
 #[test]
@@ -322,4 +354,66 @@ fn the_hello_is_a_line_of_its_own_kind_carrying_its_chat_and_token() {
     );
     assert_eq!(read.chat(), 7);
     assert_eq!(token.as_deref(), Some("abc"));
+}
+
+#[test]
+fn an_ask_frame_at_the_line_bound_is_read_and_one_past_it_is_refused_from_its_length() {
+    // An ask is what a line carries, so its frame is held to a line's bound, not a reply's.
+    let at = AN_ASK as usize;
+    let mut wire = framed(&[Frame::Json(vec![b' '; at])]);
+    let read = read_at_most(&mut Cursor::new(wire.clone()), AN_ASK).expect("at the bound");
+    assert!(matches!(read, Some(Frame::Json(body)) if body.len() == at));
+
+    wire = header(AN_ASK + 1, 1);
+    let (served, back) = served(wire, &mut |_| panic!("acted on"));
+    let why = served.expect_err("refused");
+    assert_eq!(why.kind(), io::ErrorKind::InvalidData, "{why}");
+    assert!(back.is_empty(), "nothing is said to a frame past its bound");
+}
+
+#[test]
+fn every_ask_is_admitted_again_and_one_not_admitted_is_answered_no_and_never_acted_on() {
+    let mut wire = Vec::new();
+    write_ask(&mut wire, &ticket(7)).unwrap();
+    write_ask(&mut wire, &ticket(7)).unwrap();
+    let mut admitted = 0;
+    let mut answered = 0;
+    let (served, back) = served_admitting(
+        wire,
+        &mut || {
+            admitted += 1;
+            if admitted == 1 {
+                Ok(())
+            } else {
+                Err("from a process outside the chat".to_owned())
+            }
+        },
+        &mut |_| {
+            answered += 1;
+            Reply::from(Answer::Ticket { ticket: "t".into() })
+        },
+    );
+    assert_eq!(
+        served.expect_err("refused").kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    assert_eq!((admitted, answered), (2, 1));
+    let mut back = Cursor::new(back);
+    assert!(matches!(
+        read_reply(&mut back).unwrap().answer,
+        Answer::Ticket { .. }
+    ));
+    assert_eq!(
+        read_reply(&mut back).unwrap().answer,
+        Answer::No {
+            why: "from a process outside the chat".to_owned()
+        }
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_bound_held_here_is_the_line_bound_the_socket_holds_an_ask_to() {
+    assert_eq!(u64::from(AN_ASK), crate::hookwire::A_LINE_IS_AT_MOST);
+    const { assert!(AN_ASK < A_FRAME_IS_AT_MOST) };
 }

@@ -37,28 +37,27 @@ enum Asked {
     Unanswered(&'static str),
 }
 
+/// The ask for where this chat is working, said as `tell`.
+fn where_working(tell: Tell) -> impl FnOnce(u32) -> Ask {
+    move |chat| Ask::WhereWorking(hookwire::WhereWorking { chat, tell })
+}
+
 fn asked(tell: Tell, within: Duration) -> Asked {
-    read(crate::brokered::asked(
-        |chat| Ask::WhereWorking(hookwire::WhereWorking { chat, tell }),
-        within,
-    ))
+    what_the_app_said(crate::brokered::asked(where_working(tell), within))
 }
 
 /// [`asked`], over the framed stream where the app speaks it (#1996): the largest answer the
 /// app gives comes back whole however long it grows, with anything the app attaches to it.
 fn replied(tell: Tell, within: Duration) -> (Asked, Vec<hookwire::framed::Attached>) {
-    match crate::brokered::replied(
-        |chat| Ask::WhereWorking(hookwire::WhereWorking { chat, tell }),
-        within,
-    ) {
-        Ok(Ok(reply)) => (read(Ok(Ok(reply.answer))), reply.attached),
-        Ok(Err(e)) => (read(Ok(Err(e))), Vec::new()),
-        Err(not) => (read(Err(not)), Vec::new()),
+    match crate::brokered::replied(where_working(tell), within) {
+        Ok(Ok(reply)) => (what_the_app_said(Ok(Ok(reply.answer))), reply.attached),
+        Ok(Err(e)) => (what_the_app_said(Ok(Err(e))), Vec::new()),
+        Err(not) => (what_the_app_said(Err(not)), Vec::new()),
     }
 }
 
 /// What the app's answer, or the failure to get one, says.
-fn read(answer: Result<std::io::Result<Answer>, NotTaken>) -> Asked {
+fn what_the_app_said(answer: Result<std::io::Result<Answer>, NotTaken>) -> Asked {
     match answer {
         Ok(Ok(Answer::Working(working))) => Asked::Working(working),
         Ok(Ok(Answer::No { why })) if why == hookwire::NOTHING_ANSWERS => {

@@ -252,7 +252,7 @@ and none takes a workspace, a project or a path:
 | `session_record_list`, `session_record_read` | The session records where the chat works, by file name |
 | `workspace_vision`, `workspace_section` | For a write outside a smart close, which keeps its own way of writing `workspace.md`: the `## Vision` of the workspace's `workspace.md`, replaced, and one entry added to its `## Context & decisions` (`decisions`) or `## Glossary` (`glossary`), with what is there kept; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there (under Codex, run `purlis workspace vision` in the chat) |
 | `change_status` | The workspace's cross-repo changes, from their records; the forge is not asked |
-| `dispatch`, `dispatch_list`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does (under Codex, run `purlis dispatch` in the chat) |
+| `dispatch`, `dispatch_list`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does |
 | `ask_operator` | A question put to you through the harness's own prompt; the model never answers it |
 
 The server runs where each harness runs its MCP servers, which for Claude Code and Codex is
@@ -265,10 +265,15 @@ directory, so a link swapped in while a tool runs cannot carry a read or a write
 On a platform where purlis cannot do that yet (Windows), the tools refuse. A tool that writes
 re-reads `charter.toml` first, so a project that has become read-only to this purlis (FR-24)
 is not written by a server that started before it did. `ask_operator` shows your harness
-*This chat asks: …*, and its answer field says not to type a password or secret there. Codex hands a server only
-the variables it is told to, so it is told the ones that say where the chat works
+*This chat asks: …*, and its answer field says not to type a password or secret there. Under every harness the server
+is handed the chat's connection to the app, the hook socket, chat number, token and harness its
+hooks already carry (`PURLIS_HOOK_SOCKET`, `PURLIS_CHAT`, `PURLIS_CHAT_TOKEN`,
+`PURLIS_HARNESS`), and the app checks each of its asks as it checks a line of the chat's (#1996).
+Claude Code and opencode hand a server their whole environment. Codex hands a server only the
+variables it is told to, so it is told those four and the ones that say where the chat works
 (`PURLIS_ROOT`, `PURLIS_WORKSPACE`, `PURLIS_PLANE_ROOT_SESSION`, `PURLIS_PERSONA`,
-`PURLIS_SESSION_ID`) and not the chat's token. A Codex call may take an hour, because
+`PURLIS_SESSION_ID`), by name only: Codex reads each value from its own environment. An ACP
+agent is handed the same in `session/new`. A Codex call may take an hour, because
 `ask_operator` waits on a person.
 
 While `ask_operator` waits on you, the chat shows in needs you, waiting on a form, and leaves it
@@ -276,9 +281,9 @@ once you answer. Claude Code says so itself, as it does for any MCP server's for
 with no such notice the server says it on the chat's hook channel, only once the question has
 really gone to the harness to show, and says its end on every way out: answered, declined,
 dropped, or the session over. It says no word of the question, and the app takes it as it takes
-any hook of the chat's, so a server cannot make a chat look as if it waits on you. Today this
-moves no chat: Codex hands the server no hook channel, opencode (1.18.33) offers MCP servers no
-form to ask with, so `ask_operator` says it cannot ask there.
+any hook of the chat's, so a server cannot make a chat look as if it waits on you. Under Codex
+the server says it; opencode (1.18.33) offers MCP servers no form to ask with, so
+`ask_operator` says it cannot ask there.
 
 Every chat also carries `$PURLIS_HARNESS` (the registry's name for its kind, whatever the
 profile is called), `$PURLIS_HARNESS_PROFILE` and `$PURLIS_ROOT` in its environment, and a

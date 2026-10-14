@@ -38,7 +38,7 @@ impl Framed {
         _token: Option<&ChatToken>,
         _chat: u32,
         _within: std::time::Duration,
-    ) -> io::Result<Option<Self>> {
+    ) -> io::Result<super::framed::Greeted> {
         Err(no_channel())
     }
 

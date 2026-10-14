@@ -8,7 +8,7 @@
 
 ### Changed
 
-- **An answer from the app to a chat tool may be larger than one line, and may carry an image
-  or a file.** The chat's hook socket speaks a framed stream beside its lines, chosen by the
-  client at the start of a connection; hooks and commands that speak lines are unaffected
+- **`persona_where`'s answer may be larger than one line.** The chat's hook socket speaks a
+  framed stream beside its lines, chosen by the client at the start of a connection, which can
+  also carry bytes for tools that come later; hooks and commands that speak lines are unaffected
   (#1996).
