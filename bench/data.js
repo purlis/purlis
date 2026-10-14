@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791988905739,
+  "lastUpdate": 1792004472721,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10962,6 +10962,48 @@ window.BENCHMARK_DATA = {
             "value": 104.72968,
             "unit": "ms",
             "extra": "median of 5 runs: 103.434, 103.841, 104.730, 105.113, 106.632 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "68472aa3f7158ee6f4d9717dd2470946b0db1999",
+          "message": "review(qw387): the sparse allowlist is each subcommand's own, and an editor counts as configuration\n\nA flag harmless to one subcommand may be another's command to run\n(`cherry-pick -x` is `rebase --exec`), so each move's options are held\nto its own subcommand's list. An editor set on the line (GIT_EDITOR,\nGIT_SEQUENCE_EDITOR, EDITOR, VISUAL) turns the filter off, as\nconfiguration does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T22:59:40+04:00",
+          "tree_id": "41d069cacc129b118d1cbd182d8453a5e6aebab8",
+          "url": "https://github.com/purlis/purlis/commit/68472aa3f7158ee6f4d9717dd2470946b0db1999"
+        },
+        "date": 1792004471679,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.285295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.265, 0.271, 0.285, 0.286, 0.286 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.600793499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.530, 16.572, 16.601, 16.620, 16.664 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5766305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.112, 101.458, 101.577, 101.773, 101.999 ms"
           }
         ]
       }
