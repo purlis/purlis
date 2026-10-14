@@ -1212,3 +1212,17 @@ task never started, and the person relayed by hand.
     three messages and twenty commands); that they are kept after the task closes, for the
     chat that asked, until that chat closes; and that purlis's opencode plugin waits up to
     3 seconds for opencode's client before a turn's end is sent without its last message.
+- **Silence, not heartbeats** (D-6). The chat that asked never polls. purlis watches each
+  task's last activity: what its harness tells purlis's hooks (a turn beginning or ending, a
+  tool starting or coming back, a notification, a turn's last message), never its terminal's
+  bytes, which a spinner keeps redrawing. While a task's turn runs and shows the person no
+  prompt, a stretch with nothing heard for `quiet-note-minutes` (15 by default) is noted, and
+  one shell command that has not come back for `one-command-note-minutes` (30 by default) is
+  noted by its program where the hook named one from purlis's fixed list. One note a stretch:
+  any activity starts a new one. The note goes to the chat that asked, in purlis's own words on
+  its next turn and in the line purlis types where it may, and to the task's tab as a Notice
+  that comes down when the task is heard from again. It never ends the task. Both limits are
+  settings in the `[dispatch]` table, beside the dispatch limits, with the same levels: a
+  workspace's and a persona's override the project's, this machine's only lowers them, and a
+  policy is a ceiling. A task whose program exits, or whose chat is closed, is reported at once
+  as ended, as before (#1443).

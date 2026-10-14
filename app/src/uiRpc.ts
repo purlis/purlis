@@ -386,6 +386,9 @@ export const commands = {
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
+	/**  Task `session`'s quiet note for its tab, where it has one. */
+	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
+	putAwayTaskQuiet: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.

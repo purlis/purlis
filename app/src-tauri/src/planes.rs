@@ -252,6 +252,8 @@ pub struct Held {
     changes: crate::planewatch::Changed,
     /// The window, for each line of a dispatch as it is recorded (#1495).
     activity: crate::activity::Teller,
+    /// Told each task's quiet Notice as it comes or goes (#1981).
+    quiet: crate::silence::Teller,
     /// How many brokered writes each chat has made lately (#1333).
     brokered: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
@@ -569,6 +571,16 @@ impl Held {
         (self.activity)(crate::activity::ActivityHeard {
             plane: self.id.clone(),
             line,
+        });
+    }
+
+    /// Tells the window task `session`'s quiet note (#1981): `said`, or none where it came
+    /// down.
+    pub fn tell_task_quiet(&self, session: u32, said: Option<String>) {
+        (self.quiet)(crate::silence::TaskQuiet {
+            plane: self.id.clone(),
+            session,
+            said,
         });
     }
 
@@ -1844,6 +1856,8 @@ pub struct Planes {
     stops: crate::stopping::Teller,
     /// Told each line of a dispatch in any plane as it is recorded (#1495).
     activity: crate::activity::Teller,
+    /// Told each task's quiet Notice as it comes or goes (#1981).
+    quiet: crate::silence::Teller,
     /// Told a plane's permission asks each time they change (HP-6).
     asks: crate::asking::Teller,
     /// The launch's question and its answer — see [`Relaunching`].
@@ -2088,6 +2102,7 @@ impl Planes {
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
+            quiet: Arc::new(|_| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
             hosting: Arc::new(|reporting| Box::new(Sessions::reporting_to(reporting))),
@@ -2300,6 +2315,13 @@ impl Planes {
 
     /// Tells `activity` each line of a dispatch in a plane this registry holds as the app
     /// records it, so an open Activity tab follows the work (#1495).
+    pub fn telling_task_quiet(mut self, quiet: crate::silence::Teller) -> Self {
+        self.quiet = quiet;
+        self
+    }
+
+    /// Tells `activity` each line of a dispatch in a plane this registry holds as the app
+    /// records it (#1495).
     pub fn telling_activity(mut self, activity: crate::activity::Teller) -> Self {
         self.activity = activity;
         self
@@ -2580,6 +2602,16 @@ impl Planes {
             Arc::new(move |output| {
                 if let Some(held) = held.upgrade() {
                     crate::dispatched::said(&held, output);
+                }
+            })
+        });
+        // What a chat's own tool hook says it is doing (#1981): activity, which a task's quiet
+        // stretch is measured from. Weak for the handoff's reason.
+        held.hooks.when_doing({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, said| {
+                if let Some(held) = held.upgrade() {
+                    crate::silence::doing(&held, chat, &said);
                 }
             })
         });
@@ -3571,6 +3603,7 @@ impl Planes {
             stops: Arc::clone(&self.stops),
             changes: Arc::clone(&self.changes),
             activity: Arc::clone(&self.activity),
+            quiet: Arc::clone(&self.quiet),
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),

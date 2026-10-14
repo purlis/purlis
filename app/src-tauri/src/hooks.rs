@@ -315,6 +315,9 @@ pub struct Hooks {
     /// Told what a chat's turn put out (#1981), once the board has judged the line its own
     /// run's: a slot filled after the fact, as `touching` is. **In memory only.**
     output: Arc<Mutex<Option<Outputs>>>,
+    /// Told what a chat's own tool hook says it is doing (#1981), once the board has judged the
+    /// line its own run's. **In memory only.**
+    doing_heard: Arc<Mutex<Option<Doings>>>,
     /// What each working chat is doing, for the one line under its name (#1493). **In memory
     /// only**, as a touched path is: nothing here writes it, and the event log is not told.
     doings: Arc<crate::doing::Doings>,
@@ -1304,6 +1307,10 @@ fn without_the_sandbox(why: &str) -> (BlockOffer, Option<String>, Option<String>
 /// What is told each path a chat's file tool touched, unconfined.
 pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + 'static>;
 
+/// What hears what a chat's own tool hook says it is doing (#1981): the project's own handler,
+/// which measures a task's quiet stretch from it ([`Hooks::when_doing`]).
+pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'static>;
+
 /// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
 /// for a task alone ([`Hooks::when_output`]).
 pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
@@ -1487,6 +1494,7 @@ impl Hooks {
             doings,
             touching: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(None)),
+            doing_heard: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
             throttle: Arc::default(),
@@ -1521,6 +1529,7 @@ impl Hooks {
         let asks_told: crate::asking::Telling = Arc::new(Mutex::new(None));
         let touching: Arc<Mutex<Option<Touches>>> = Arc::new(Mutex::new(None));
         let output: Arc<Mutex<Option<Outputs>>> = Arc::new(Mutex::new(None));
+        let doing_heard: Arc<Mutex<Option<Doings>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
@@ -1588,7 +1597,20 @@ impl Hooks {
                 let board = Arc::clone(&board);
                 let moved = Arc::clone(&moved);
                 let plane = plane.clone();
+                let doing_heard = Arc::clone(&doing_heard);
                 Box::new(move |said| {
+                    // Activity of the chat's own run, for a task's quiet stretch (#1981).
+                    if said.agent.is_none()
+                        && held_board(&board).spoken_by(said.chat, &said.speaker)
+                    {
+                        let listener = doing_heard
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .clone();
+                        if let Some(listener) = listener {
+                            listener(said.chat, said.doing.clone());
+                        }
+                    }
                     let agent = said.agent.as_deref();
                     if let Some(what) = got_past_its_prompt(
                         &board,
@@ -1831,6 +1853,7 @@ impl Hooks {
             asks_told,
             touching,
             output,
+            doing_heard,
             doings,
             blocked,
             repeated,
@@ -2124,6 +2147,15 @@ impl Hooks {
     /// it: the plane confines it to the chat's folder before the window hears of it.
     pub fn when_touching(&self, touches: Touches) {
         *self.touching.lock().unwrap_or_else(PoisonError::into_inner) = Some(touches);
+    }
+
+    /// Who is told what a chat's own tool hook says it is doing (#1981), once the board has
+    /// judged the line its own run's.
+    pub fn when_doing(&self, doings: Doings) {
+        *self
+            .doing_heard
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(doings);
     }
 
     /// Who is told what a chat's turn put out (#1981), once the board has judged the line its

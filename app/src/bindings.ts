@@ -630,6 +630,10 @@ export const commands = {
 	 *  chat's restart: puts it away, and changes nothing else.
 	 */
 	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
+	/**  Task `session`'s quiet note for its tab, where it has one. */
+	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
+	/**  Puts task `session`'s quiet note away: the task goes on, and a later stretch is noted again. */
+	putAwayTaskQuiet: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_task_quiet", { plane, session })),
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.

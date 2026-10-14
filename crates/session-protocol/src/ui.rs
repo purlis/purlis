@@ -281,6 +281,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",
+    // Dismiss on a task's Notice that it has gone quiet (#1981): the person's answer.
+    "put_away_task_quiet",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",
@@ -787,6 +789,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "task_changes",
     "task_failure_seen",
     "task_folder_shared",
+    "task_quiet",
     "tasks_sharing_a_folder",
     "tasks_used",
     "template_that_fits",

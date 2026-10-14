@@ -188,6 +188,7 @@ pub mod shellseg;
 pub mod shellsubst;
 pub mod shellwrap;
 pub mod shown;
+pub mod silence;
 pub mod skills;
 pub mod skilluse;
 pub mod standings;

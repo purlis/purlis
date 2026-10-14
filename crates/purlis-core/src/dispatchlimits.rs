@@ -137,11 +137,16 @@ pub enum Limit {
     TokensPerSession,
     /// How many minutes one task may work, from its dispatch (#1512).
     MinutesPerTask,
+    /// How many minutes a task at work may go unheard before purlis notes it (#1981). A note,
+    /// never a limit on dispatch: it ends nothing.
+    QuietNoteMinutes,
+    /// How many minutes one command may run before purlis notes it (#1981). A note too.
+    OneCommandNoteMinutes,
 }
 
 impl Limit {
     /// Every limit, in the order a table draws them.
-    pub const ALL: [Limit; 8] = [
+    pub const ALL: [Limit; 10] = [
         Limit::RunningPerChat,
         Limit::LivePerLineage,
         Limit::Depth,
@@ -150,6 +155,8 @@ impl Limit {
         Limit::MayRunAtOnce,
         Limit::TokensPerSession,
         Limit::MinutesPerTask,
+        Limit::QuietNoteMinutes,
+        Limit::OneCommandNoteMinutes,
     ];
 
     /// The key a settings file and the policy file write it as.
@@ -163,6 +170,8 @@ impl Limit {
             Self::MayRunAtOnce => "may-run-at-once",
             Self::TokensPerSession => "tokens-per-session",
             Self::MinutesPerTask => "minutes-per-task",
+            Self::QuietNoteMinutes => "quiet-note-minutes",
+            Self::OneCommandNoteMinutes => "one-command-note-minutes",
         }
     }
 
@@ -182,6 +191,8 @@ impl Limit {
             Self::MayRunAtOnce => "May run at once",
             Self::TokensPerSession => "Tokens per session",
             Self::MinutesPerTask => "Minutes per task",
+            Self::QuietNoteMinutes => "Quiet note after",
+            Self::OneCommandNoteMinutes => "One command note after",
         }
     }
 
@@ -210,6 +221,14 @@ impl Limit {
                  own tasks, nor time purlis was closed. A task past it is asked for its report \
                  and ended, and its own tasks with it. Off until set."
             }
+            Self::QuietNoteMinutes => {
+                "Minutes a task at work may go without a word from its harness before purlis \
+                 says so to the chat that asked and on the task's tab. It never ends the task."
+            }
+            Self::OneCommandNoteMinutes => {
+                "Minutes one command of a task may run before purlis says so, naming its \
+                 program, to the chat that asked and on the task's tab. It never ends the task."
+            }
         }
     }
 
@@ -220,6 +239,8 @@ impl Limit {
             Self::LivePerLineage => Some(16),
             Self::Depth => Some(3),
             Self::MessagesPerMinute => Some(10),
+            Self::QuietNoteMinutes => Some(15),
+            Self::OneCommandNoteMinutes => Some(30),
             Self::MayDispatch
             | Self::MayRunAtOnce
             | Self::TokensPerSession
@@ -237,12 +258,18 @@ impl Limit {
     /// Whether a 0 of it switches dispatch off at the level that set it: every limit but the
     /// message rate, whose 0 stops messages only, and the two that are off until set.
     fn switches_off(self) -> bool {
-        self != Self::MessagesPerMinute && !self.off_until_set()
+        self != Self::MessagesPerMinute && !self.off_until_set() && !self.notes()
+    }
+
+    /// **Whether it says when purlis notes a quiet task** (#1981): it limits no dispatch, and
+    /// its 0 would be a note every look, so the least it is is a minute.
+    pub fn notes(self) -> bool {
+        matches!(self, Self::QuietNoteMinutes | Self::OneCommandNoteMinutes)
     }
 
     /// The least it may be set to.
     pub fn least(self) -> u32 {
-        u32::from(self.off_until_set())
+        u32::from(self.off_until_set() || self.notes())
     }
 
     /// The most it may be set to.
@@ -269,6 +296,8 @@ impl Limit {
             Self::MayRunAtOnce => 5,
             Self::TokensPerSession => 6,
             Self::MinutesPerTask => 7,
+            Self::QuietNoteMinutes => 8,
+            Self::OneCommandNoteMinutes => 9,
         }
     }
 }
@@ -395,6 +424,10 @@ pub struct Limits {
     pub tokens_per_session: Option<u32>,
     /// How many minutes one task may work; `None`, as it is until set, is no cap.
     pub minutes_per_task: Option<u32>,
+    /// After how many minutes unheard a task at work is noted (#1981).
+    pub quiet_note_minutes: u32,
+    /// After how many minutes one command of a task is noted (#1981).
+    pub one_command_note_minutes: u32,
     /// The persona the asking chat runs as, where it runs as one.
     pub asking: Option<String>,
     /// The persona dispatched to, where it is to one.
@@ -417,6 +450,8 @@ impl Limits {
             Limit::MayRunAtOnce => self.may_run_at_once,
             Limit::TokensPerSession => self.tokens_per_session,
             Limit::MinutesPerTask => self.minutes_per_task,
+            Limit::QuietNoteMinutes => Some(self.quiet_note_minutes),
+            Limit::OneCommandNoteMinutes => Some(self.one_command_note_minutes),
         }
     }
 
@@ -528,6 +563,8 @@ pub fn in_force(
         may_run_at_once: value(Limit::MayRunAtOnce),
         tokens_per_session: value(Limit::TokensPerSession),
         minutes_per_task: value(Limit::MinutesPerTask),
+        quiet_note_minutes: capped(Limit::QuietNoteMinutes).max(1),
+        one_command_note_minutes: capped(Limit::OneCommandNoteMinutes).max(1),
         asking: asking.map(str::to_owned),
         target: target.map(str::to_owned),
         set_by: resolved.map(|(_, from)| from),
@@ -987,6 +1024,13 @@ pub struct Read {
 /// One value as a limit, or why it is not one. `here` is its key, dotted.
 fn value_of(limit: Limit, value: &toml::Value, here: &str, file: &str) -> Result<u32, String> {
     let most = limit.most();
+    if limit.notes() && value.as_integer() == Some(0) {
+        return Err(format!(
+            "{here} in {file} is 0, and {} is a whole number of minutes, 1 or more, so it is \
+             not read and the level beneath it is in force",
+            limit.label().to_lowercase()
+        ));
+    }
     if limit.off_until_set() && value.as_integer() == Some(0) {
         return Err(format!(
             "{here} in {file} is 0, and {} is a whole number of 1 or more, so it is not read \
