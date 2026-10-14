@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791984661596,
+  "lastUpdate": 1791986785572,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1974,6 +1974,42 @@ window.BENCHMARK_DATA = {
             "value": 185.3,
             "unit": "MB",
             "extra": "median of 6 samples: 251.4, 210.1, 197.5, 172.3, 173.1, 119.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "7ddfb1719207004c4acfed4802355a6a210223c3",
+          "message": "review(qw382b): Skip checks for itself, the read-back follows git's filters, attributes are honoured\n\n- Skip drops a commit only while nothing is unmerged and nothing is left to\n  commit, whatever the window last drew.\n- What Continue staged is compared with the checked bytes as git stores them\n  for that path (`hash-object --path`), so line-ending and clean-filter\n  projects carry on.\n- At a stop, a markable file with no marker in it (a `.gitattributes`\n  `binary`, `-merge` or merge driver) is the person's to settle.\n- Where the window did not see the stop, its answer leads with carrying on\n  in a terminal, which keeps what is settled, and says Abort discards it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T17:22:41+04:00",
+          "tree_id": "f16d8babad54dc2befc7c5dea192d47551c63fca",
+          "url": "https://github.com/purlis/purlis/commit/7ddfb1719207004c4acfed4802355a6a210223c3"
+        },
+        "date": 1791986784440,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 908,
+            "unit": "MB",
+            "extra": "median of 3 samples: 725, 908, 1091 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 224.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 220, 237.8, 228.8, 224.1, 225, 150.3 MB"
           }
         ]
       }
