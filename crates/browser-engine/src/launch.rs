@@ -114,9 +114,14 @@ impl Launch {
         &self,
         host: impl IntoIterator<Item = (OsString, OsString)>,
     ) -> Vec<(OsString, OsString)> {
-        host.into_iter()
+        let mut env: Vec<(OsString, OsString)> = host
+            .into_iter()
             .filter(|(name, _)| ENVIRONMENT_KEPT.iter().any(|kept| name == kept))
-            .collect()
+            .collect();
+        // The person's desktop bus is none of the engine's business, and on a machine with no
+        // session bus the engine waits for one at every start.
+        env.push(("DBUS_SESSION_BUS_ADDRESS".into(), "disabled:".into()));
+        env
     }
 
     /// Makes the data folder (this user's alone) and writes the preferences that keep password

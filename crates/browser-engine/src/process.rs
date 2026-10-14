@@ -44,6 +44,9 @@ use crate::WebAddress;
 use crate::cdp::{CallError, Connection, Event};
 use crate::launch::Launch;
 
+/// How long a starting engine has to answer over its pipe: a cold start on a busy machine.
+pub const FIRST_ANSWER: Duration = Duration::from_secs(60);
+
 /// How the keeper is run: a program and the arguments that put it in its keeper's part.
 #[derive(Debug, Clone)]
 pub struct Keeper {
@@ -192,7 +195,7 @@ impl Engine {
         };
         engine
             .devtools()
-            .call("Browser.getVersion", json!({}), None)
+            .call_within("Browser.getVersion", json!({}), None, FIRST_ANSWER)
             .map_err(StartError::NoAnswer)?;
         Ok(engine)
     }

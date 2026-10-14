@@ -206,6 +206,11 @@ fn the_engine_gets_only_the_environment_it_needs() {
             "{kept} missing from {names:?}"
         );
     }
+    assert!(
+        env.iter()
+            .any(|(k, v)| k == "DBUS_SESSION_BUS_ADDRESS" && v == "disabled:"),
+        "{env:?}"
+    );
     for dropped in [
         "GITHUB_TOKEN",
         "PURLIS_ROOT",
