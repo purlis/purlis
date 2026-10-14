@@ -1237,6 +1237,26 @@ fn a_quiet_task_is_noted_after_fifteen_minutes_and_one_command_after_thirty_unle
         read.refused
     );
     assert_eq!(Limit::QuietNoteMinutes.least(), 1);
+    // A policy file nobody could read switches dispatch off, and leaves the notes as they are:
+    // never a note every look.
+    let refused = in_force(
+        &table("[dispatch]\nquiet-note-minutes = 20\n"),
+        Some("alpha"),
+        Some("steward"),
+        Some("devops"),
+        &nothing(),
+        &ceiling_when_refused(),
+    );
+    assert_eq!(refused.running, 0, "dispatch is off");
+    assert_eq!(
+        (refused.quiet_note_minutes, refused.one_command_note_minutes),
+        (20, 30)
+    );
+    assert_eq!(ceiling_when_refused().get(Limit::QuietNoteMinutes), None);
+    assert_eq!(
+        ceiling_when_refused().get(Limit::OneCommandNoteMinutes),
+        None
+    );
     assert!(!Limit::OneCommandNoteMinutes.persona_only());
 }
 

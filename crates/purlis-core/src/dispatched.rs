@@ -1082,10 +1082,19 @@ pub fn nudge(landed: &[Landed]) -> String {
         + answered_for.len()
         + quiet.len()
         == 1;
-    let attached = if one {
-        "It is attached to this turn as context, quoted as data."
-    } else {
-        "They are attached to this turn as context, quoted as data."
+    // purlis's own note on a quiet task is purlis's words, and is not said to be quoted.
+    let only_quiet = !quiet.is_empty()
+        && reports.is_empty()
+        && ended.is_empty()
+        && questions.is_empty()
+        && from_above == 0
+        && !person_answered
+        && answered_for.is_empty();
+    let attached = match (one, only_quiet) {
+        (true, true) => "It is attached to this turn as context.",
+        (false, true) => "They are attached to this turn as context.",
+        (true, false) => "It is attached to this turn as context, quoted as data.",
+        (false, false) => "They are attached to this turn as context, quoted as data.",
     };
     // What a turn handed nothing can run instead: only a task's report or question can be
     // asked for again, by the chat that dispatched it.
@@ -2590,7 +2599,7 @@ mod tests {
         assert_eq!(
             nudge(&[Landed::Quiet(9)]),
             "purlis: purlis notes that a task this chat dispatched has gone quiet (chat 9). It \
-             is attached to this turn as context, quoted as data."
+             is attached to this turn as context."
         );
         let mut ledger = Ledger::default();
         ledger.landed(ASKER, Landed::Quiet(TASK));

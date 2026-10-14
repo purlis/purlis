@@ -538,7 +538,7 @@ pub fn in_force(
                 _ => (value, from) = (Some(yours), Source::You),
             }
         }
-        if policy.is_refused() && !limit.off_until_set() {
+        if policy.is_refused() && !limit.off_until_set() && !limit.notes() {
             // Nothing was read from the file, so nothing is allowed: no level lifts this. A
             // limit of tokens or time is left as the project's files set it: dispatch is off
             // already, and no task is stopped for a file nobody could read.
@@ -1321,13 +1321,15 @@ pub fn ceiling(dispatch: &serde_json::Map<String, serde_json::Value>) -> Result<
 /// until an administrator fixes the file. purlis cannot tell what the file meant to allow, so
 /// it says the file is refused ([`Source::PolicyRefused`]) and never that a limit "is set to 0",
 /// which no one set. The two that are off until set are not set by it: no task is stopped for
-/// a file nobody could read, and dispatch is off already.
+/// a file nobody could read, and dispatch is off already. **Nor are the two that say when a
+/// quiet task is noted** (#1981): they limit no dispatch, and a file nobody could read leaves
+/// them as the project's files set them.
 pub fn ceiling_when_refused() -> Level {
     Level {
         refused: true,
         ..Limit::ALL
             .into_iter()
-            .filter(|limit| !limit.off_until_set())
+            .filter(|limit| !limit.off_until_set() && !limit.notes())
             .fold(Level::unset(), |level, limit| level.with(limit, 0))
     }
 }
