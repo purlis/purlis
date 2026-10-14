@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791941355479,
+  "lastUpdate": 1791942909974,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1544,6 +1544,42 @@ window.BENCHMARK_DATA = {
             "value": 187.9,
             "unit": "MB",
             "extra": "median of 6 samples: 250.5, 187.8, 188.8, 188.1, 182.8, 164.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "7aa486a43e5230e72a67d49894620f5077044676",
+          "message": "sandbox: a chat does not start when purlis cannot tell what to keep from it\n\nA chat's sandbox is compiled from the list of what purlis keeps from a chat.\nThat list is whole or it is nothing, for every reader of it.\n\nEvery entry of the vault registry, in the committed half and in this machine's,\nis judged under whatever name it is written. A vault of a kind purlis knows\nresolves to where it keeps its secrets, which is denied. A registry that does\nnot read, a `vaults` that is not an object, a plain-file vault whose file is\nsaid in a way purlis cannot use, and a vault's file with more names than the\nproject can be looked through for refuse the start. The refusal is one more\nreason a sandboxed chat does not start, given before any harness's compiler is\nasked, so it is the same for Claude Code, Codex and opencode on every system,\nand for a new, resumed, relaunched, restored or dispatched chat. A running chat\nis not stopped. The sentence says why, gives the path of the file to put right\nand names Doctor; the new-chat picker says it before anything starts.\n\nOrdinary states start: no registry, no state folder, an empty registry, vaults\nin the keyring, a plain-file vault this machine has not set up yet, an entry\nleft over on this machine, and a vault of a kind this purlis does not know,\nwhose named files are kept all the same. Doctor's\n`sandbox kept files` row says each of these, and says why the list is not whole\nwhenever it is not, sandbox on or off. The vault's view says the same of each\nentry.\n\nA vault's file is kept under the other names purlis finds for it.\n\nThe window reads by the same list: a branch's folder leaves out what the\nproject keeps, in its tree, opens, placed and named paths, folder watch, editor\nhand-off, search, file palette, comparisons and change marks. In a project that\nruns its chats sandboxed a branch is not read where the list is not whole; the\nplane root keeps its own rule, and the one file that still opens there is the\nregistry to put right. The offered list fails closed by itself. A link's folder\nwatch reaches the app only when every folder names a branch.\n\nADR 0067 and ADR 0038 each carry a dated section, to be confirmed.\n\nRefs #1916\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T05:12:56+04:00",
+          "tree_id": "dd5feb5184535d208ca2bf38952e2f1a2f95c70f",
+          "url": "https://github.com/purlis/purlis/commit/7aa486a43e5230e72a67d49894620f5077044676"
+        },
+        "date": 1791942909071,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 572,
+            "unit": "MB",
+            "extra": "median of 3 samples: 486, 572, 662 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 285.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 283.1, 283.8, 285.3, 286.1, 287, 379.5 MB"
           }
         ]
       }
