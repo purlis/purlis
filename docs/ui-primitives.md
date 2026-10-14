@@ -265,7 +265,9 @@ drawer listed are Notices here too (`InboxAlerts.tsx`), each with the way out th
 Outside a list, as the window's own lines under the title bar are, a Notice is drawn where it is
 written. A Dismiss of a
 cause the core answers for lasts until the cause changes, across relaunches
-(`app/src/dismissals.ts`).
+(`app/src/dismissals.ts`). A Dismiss of a line about something that still waits on the person (a
+chat stopped on a prompt, qw386) hides it for this run and that wait only (`hideForNow`), and says
+so as its tooltip (`dismissSays`): the needs-you list and the tab's hand still show the wait.
 
 In a pane (`at="pane"`), a Notice is one box: its line, and under it what a way out opened. A
 pane's Notices stand in **a row of their own at the top of the pane** (`NoticePaneRow`, #1647),
