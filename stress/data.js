@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791939159147,
+  "lastUpdate": 1791941342162,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1508,6 +1508,42 @@ window.BENCHMARK_DATA = {
             "value": 209.4,
             "unit": "MB",
             "extra": "median of 6 samples: 210.3, 217.1, 215.3, 208.3, 208.5, 120.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "10463db493a7ba5fc5a7a0b4dd0fc53319a56eab",
+          "message": "review(qw376): a git that never said what it started fails the profiles test\n\nThe pid marker is still waited for with a bound, but its absence is a\nfailure again: without the id, the assertion that the group was ended\ncould pass without holding anything.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T04:41:06+04:00",
+          "tree_id": "2f29e87d7873ff57e0a35bbb608215625b712663",
+          "url": "https://github.com/purlis/purlis/commit/10463db493a7ba5fc5a7a0b4dd0fc53319a56eab"
+        },
+        "date": 1791941341159,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 891,
+            "unit": "MB",
+            "extra": "median of 3 samples: 715, 891, 907 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 187.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 250.5, 187.8, 188.8, 188.1, 182.8, 164.3 MB"
           }
         ]
       }
