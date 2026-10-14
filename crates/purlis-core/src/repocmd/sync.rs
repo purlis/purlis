@@ -91,10 +91,14 @@ pub fn reach(
             crate::shown::short(remote)
         ));
     }
-    let url = git::run(clone, &["remote", "get-url", remote], git::READ)
+    // The address the clone records, as written: what it names is what the project manages
+    // and the chat's sandbox allows, whatever a rewrite in git's config makes of it.
+    let key = format!("remote.{remote}.url");
+    let url = git::run(clone, &["config", "--get", &key], git::READ)
         .ok()
         .filter(git::Run::ok)
         .map(|run| run.line().trim().to_owned())
+        .filter(|url| !url.is_empty())
         .ok_or_else(|| format!("the clone has no remote '{remote}'"))?;
     let managed = forge::resolve_host(&url, root);
     if managed.is_none() && is_ssh(&url) {

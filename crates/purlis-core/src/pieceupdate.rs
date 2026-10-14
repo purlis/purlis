@@ -72,7 +72,9 @@ const REBASE: [&str; 14] = [
 
 /// `purlis worktree update`: one step of it in `piece`, its exit status, its lines said.
 pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
-    let ran = Here::of(piece).and_then(|here| {
+    // A stopped rebase leaves the folder on no branch: going on or back needs none.
+    let on_a_branch = matches!(step, UpdateStep::Start { .. });
+    let ran = Here::of(piece, on_a_branch).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
@@ -91,7 +93,7 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
 
 /// `purlis worktree push [--force-with-lease]`: the branch of `piece` pushed to its remote.
 pub fn push(piece: &Piece, lease: bool, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
-    let ran = Here::of(piece).and_then(|here| {
+    let ran = Here::of(piece, true).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
@@ -113,7 +115,8 @@ struct Here {
 }
 
 impl Here {
-    fn of(piece: &Piece) -> Result<Self, String> {
+    /// The folder of `piece`, refused where it is on no branch and `on_a_branch` is asked.
+    fn of(piece: &Piece, on_a_branch: bool) -> Result<Self, String> {
         let Piece {
             root,
             ws,
@@ -132,7 +135,7 @@ impl Here {
         let clone = worktree::clone_dir(root, ws, repo).map_err(|e| e.to_string())?;
         let git_dir = ran(&folder, &["rev-parse", "--absolute-git-dir"])?;
         let branch = ran(&folder, &["branch", "--show-current"])?;
-        if branch.is_empty() {
+        if branch.is_empty() && on_a_branch {
             return Err(format!(
                 "{repo} · {piece} is on no branch (a detached HEAD), so there is no branch to \
                  update or push"
