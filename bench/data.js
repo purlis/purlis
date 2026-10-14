@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792009642015,
+  "lastUpdate": 1792010724614,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11172,6 +11172,48 @@ window.BENCHMARK_DATA = {
             "value": 104.4704435,
             "unit": "ms",
             "extra": "median of 5 runs: 102.687, 103.572, 104.470, 105.893, 106.004 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dbc9ce99421b092022848eae27fd11e1e5e9d8d8",
+          "message": "fix(e2e): every failure's evidence block is recorded, and what covered an element is said (#2080)\n\n* fix(e2e): every failure's evidence block is recorded, and what covered an element is said\n\n- A test's or hook's failure records its block even when it is empty, said as\n  \"no command was late; the core logged nothing\", so a quiet core reads apart\n  from a block never recorded.\n- The first five failures that carry a block show it. The left-chats guard\n  writes a record of its own with none, which used up a place: in run\n  115925513874 it pushed the first failure of the next spec past the three.\n- A failure that could not press or see an element (\"still not clickable\",\n  \"still not displayed\") records what lay over it: what is at the element's\n  centre, what has the keyboard, and every dialog, menu, listbox or popper\n  open (app/e2e/covers.ts), which a dialog sweep alone does not see.\n\nRefs #1949\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw389b): the log has the room the late commands and covers leave; covers are checked for secrets\n\nA long core log no longer pushes the window's late line and the log's header out of the\nannotation: the late commands and the covers are kept whole and the log is cut, newest lines\nkept, to the room they leave. The covers are read from the page, which the core's redaction\nnever saw, so a line that looks like it holds a secret is replaced whole, as the log does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T00:32:48+04:00",
+          "tree_id": "faf2ef6ddd4a4137a98b4e3bbcc7d908598406c7",
+          "url": "https://github.com/purlis/purlis/commit/dbc9ce99421b092022848eae27fd11e1e5e9d8d8"
+        },
+        "date": 1792010723310,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.30946700000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.294, 0.295, 0.309, 0.313, 0.320 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6951865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.540, 16.597, 16.695, 16.729, 16.767 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4577015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.761, 101.442, 101.458, 101.495, 101.768 ms"
           }
         ]
       }
