@@ -1205,3 +1205,10 @@ task never started, and the person relayed by hand.
   task alone. The full conversation stays the person's, in the task's tab. Claude Code still
   asks the person before `read` runs: it joins the pre-allowed dispatch words of ADR 0064 only
   when that is ruled.
+  - **An exception the operator ruled** (#1981, D-2) to the rule of ADR 0066 and ADR 0075 that
+    the app keeps a tool call's arguments only as a digest: for a task alone, a command line,
+    masked, is held in memory so the chat that asked can read it. Nothing of it is written.
+  - **Implementation choices, to be confirmed by the operator:** the counts kept (the last
+    three messages and twenty commands); that they are kept after the task closes, for the
+    chat that asked, until that chat closes; and that purlis's opencode plugin waits up to
+    3 seconds for opencode's client before a turn's end is sent without its last message.

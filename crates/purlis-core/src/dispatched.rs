@@ -494,7 +494,9 @@ impl Ran {
     /// shape and vault value masked as tool output is ([`crate::secrets::mcpstart::masked`]),
     /// each character purlis will not draw as U+FFFD, cut to [`Self::SHOWN_AT_MOST`] and marked.
     pub fn shown(command: &str, exit: Option<i32>, failed: bool) -> Self {
-        let line: String = command
+        // Masked as written first: a value that holds white space or a line break is found
+        // only in the command as it was. Then on one line, and drawable.
+        let line: String = crate::secrets::mcpstart::masked(command)
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")
@@ -2479,6 +2481,15 @@ mod tests {
             "{}",
             one.command
         );
+        // A vault value holding white space and a line break is masked before the line is made.
+        crate::secrets::seen::remember("open sesame\n   twice 6tw");
+        let one = Ran::shown(
+            "login --pass 'open sesame\n   twice 6tw' && ls",
+            Some(0),
+            false,
+        );
+        assert!(!one.command.contains("sesame"), "{}", one.command);
+        assert!(!one.command.contains("6tw"), "{}", one.command);
         let long = Ran::shown(&"x".repeat(1000), None, false);
         assert_eq!(long.command.chars().count(), Ran::SHOWN_AT_MOST);
         assert!(long.command.ends_with('…'));
