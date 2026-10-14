@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791970090580,
+  "lastUpdate": 1791972943644,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1794,6 +1794,42 @@ window.BENCHMARK_DATA = {
             "value": 218.6,
             "unit": "MB",
             "extra": "median of 6 samples: 213.8, 229.1, 230.4, 218.3, 219, 136.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "981ba86a5bcab13d5c48ff3d7f0100230bd4c7a8",
+          "message": "review(qw382): a chat is offered by what git stopped in, not by unmerged files\n\nA rebase stopped with every file added has nothing unmerged, and the view\noffered a chat, which may not continue a rebase in the plane root. The core\nnow says what git is stopped in (`stopped_by`: merge, rebase, am,\ncherry-pick, revert, bisect, or conflicts), and the view offers a chat only\nfor a merge or bare unmerged files. `rebase_by_hand` is set only while the\nconflict record is why the save is blocked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T13:36:04+04:00",
+          "tree_id": "415440c68d4c873d8c13da9350ab8d406d0f674d",
+          "url": "https://github.com/purlis/purlis/commit/981ba86a5bcab13d5c48ff3d7f0100230bd4c7a8"
+        },
+        "date": 1791972942407,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 877,
+            "unit": "MB",
+            "extra": "median of 3 samples: 809, 877, 1004 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 194.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 246.9, 248.9, 193.1, 193.8, 194.5, 134.7 MB"
           }
         ]
       }
