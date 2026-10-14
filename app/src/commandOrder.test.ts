@@ -4,7 +4,14 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { commands } from "./bindings";
-import { LANES, OUTSIDE_THE_LANES, WRITERS, inOrder, keepTheirOrder } from "./commandOrder";
+import {
+  LANES,
+  OUTSIDE_THE_LANES,
+  WRITERS,
+  WRITE_SITES,
+  inOrder,
+  keepTheirOrder,
+} from "./commandOrder";
 
 /**
  * **The core's answers that read and change the same files come back in the order asked, and
@@ -125,6 +132,18 @@ describe("the window's lanes", () => {
       for (const change of changes)
         expect(writers.has(change), `${change} writes none of ${lane}'s files`).toBe(true);
     }
+  });
+
+  it("name a lane for every file the table's writers write, and why for a write of none", () => {
+    for (const site of WRITE_SITES.sites) {
+      if (site.writes === null) expect(site.why, site.at).toBeTruthy();
+      else expect(LANES[WRITE_SITES.sections[site.writes]], site.writes).toBeDefined();
+    }
+    // The two writers found after the lanes were first audited (#1949).
+    expect(WRITERS.sandbox["the project's manifest and its local settings"]).toContain(
+      "choosePlaneMode",
+    );
+    expect(Object.values(WRITERS.dispatch).flat()).toContain("allowDispatchAway");
   });
 
   it("hold a host's removal behind a read of the sandbox already asked (Settings › Sandbox)", async () => {

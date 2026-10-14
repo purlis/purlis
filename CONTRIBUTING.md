@@ -203,7 +203,9 @@ window: while it works, nothing is drawn. So a command that touches a file, runs
 allowed only for what the app holds in memory, or where the window relies on the order its
 asks land in (a terminal's input, a tab moved); each is listed with its reason, and a test fails
 on a new one that is not. A command made `async` answers when it is done: where the window both
-reads and changes the same thing, put the commands in one lane of `app/src/commandOrder.ts`.
+reads and changes the same thing, put the commands in one lane of `app/src/commandOrder.ts`. A
+new call that writes a file a lane reads fails a test until `app/src/writeSites.json` names it,
+with the commands that reach it, which then go in that file's lane or out of it with a reason.
 
 ### AI-assisted contributions
 

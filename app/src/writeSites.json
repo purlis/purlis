@@ -1,0 +1,415 @@
+{
+  "sections": {
+    "the project's manifest and its local settings": "sandbox",
+    "this machine's answers about the project (sandbox-grants)": "sandbox",
+    "this machine's network record": "sandbox",
+    "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held": "dispatch",
+    "the project's work log": "workLink",
+    "this machine's store: the pins": "pins"
+  },
+  "sites": [
+    {
+      "at": "asking.rs forget_sandbox_block",
+      "writes": "this machine's network record",
+      "by": ["forgetSandboxBlock"]
+    },
+    {
+      "at": "dispatchaway.rs allow",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["allowDispatchAway"]
+    },
+    {
+      "at": "dispatchaway.rs dismiss",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["dismissDispatchAway"]
+    },
+    {
+      "at": "dispatchaway.rs forget",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["allowDispatchAway", "neverDispatchAway"]
+    },
+    {
+      "at": "dispatchaway.rs forget_in",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["allowDispatchAway", "neverDispatchAway"]
+    },
+    {
+      "at": "dispatchaway.rs never",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["neverDispatchAway"]
+    },
+    {
+      "at": "dispatchgrants.rs accept",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": [
+        "acceptProjectDispatch",
+        "answerDispatchArrival",
+        "addDispatchGrant",
+        "allowDispatch",
+        "allowDispatchAnywhere"
+      ]
+    },
+    {
+      "at": "dispatchgrants.rs accept_in",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["acceptProjectDispatchIn", "setDispatchWorkspace"]
+    },
+    {
+      "at": "dispatchgrants.rs acknowledge",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["acceptProjectDispatch"]
+    },
+    {
+      "at": "dispatchgrants.rs allow_any",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["allowDispatchToAny"]
+    },
+    {
+      "at": "dispatchgrants.rs bring_up_to_date",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["answerDispatchArrival"]
+    },
+    {
+      "at": "dispatchgrants.rs decline",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["declineProjectDispatch", "answerDispatchArrival"]
+    },
+    {
+      "at": "dispatchgrants.rs decline_in",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["declineProjectDispatchIn"]
+    },
+    {
+      "at": "dispatchgrants.rs dispatch_gone_told",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["dispatchGoneTold"]
+    },
+    {
+      "at": "dispatchgrants.rs give_back",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["giveBackDispatch"]
+    },
+    {
+      "at": "dispatchgrants.rs keep_standing",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["addDispatchGrant", "allowDispatch", "allowDispatchAnywhere"]
+    },
+    {
+      "at": "dispatchgrants.rs lift_never",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["liftDispatchNever"]
+    },
+    {
+      "at": "dispatchgrants.rs never",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["neverDispatch"]
+    },
+    {
+      "at": "dispatchgrants.rs remove_dormant_dispatch",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["removeDormantDispatch"]
+    },
+    {
+      "at": "dispatchgrants.rs revoke",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["revokeDispatchGrant"]
+    },
+    {
+      "at": "dispatchgrants.rs revoke_any",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["revokeDispatchToAny"]
+    },
+    {
+      "at": "dispatchgrants.rs set_workspace",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["setDispatchWorkspace"]
+    },
+    {
+      "at": "dispatchgrants.rs standing_read",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": [
+        "dispatchStanding",
+        "liftDispatchNever",
+        "revokeDispatchToAny",
+        "declineProjectDispatch",
+        "declineProjectDispatchIn",
+        "removeDormantDispatch",
+        "acceptProjectDispatch",
+        "acceptProjectDispatchIn",
+        "allowDispatchToAny",
+        "giveBackDispatch",
+        "setDispatchWorkspace"
+      ]
+    },
+    {
+      "at": "memory: the dispatches held for the person's answer",
+      "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
+      "by": ["keepDispatchBlocked", "neverDispatch", "allowDispatch", "allowDispatchAnywhere"]
+    },
+    {
+      "at": "network.rs allow_blocked_host",
+      "writes": "this machine's network record",
+      "by": ["allowBlockedHost"]
+    },
+    {
+      "at": "planes.rs arranging",
+      "writes": "this machine's store: the pins",
+      "by": ["pinProject", "pinWorkspace", "arrangeWorkspacePins", "pinOnThisMachine"]
+    },
+    {
+      "at": "planes.rs forget",
+      "writes": "this machine's store: the pins",
+      "by": ["forgetProject"]
+    },
+    {
+      "at": "planes.rs locate",
+      "writes": "this machine's store: the pins",
+      "by": ["locateProject"]
+    },
+    {
+      "at": "planes.rs open",
+      "writes": "this machine's network record",
+      "by": []
+    },
+    {
+      "at": "planes.rs record_approval",
+      "writes": null,
+      "why": "It writes this machine's approval of a project, which no lane's read draws."
+    },
+    {
+      "at": "planes.rs remember",
+      "writes": null,
+      "why": "It writes this machine's recent projects, which no lane's read draws."
+    },
+    {
+      "at": "planes.rs revoke",
+      "writes": null,
+      "why": "It takes back this machine's approval of a project, which no lane's read draws."
+    },
+    {
+      "at": "planes.rs vouch",
+      "writes": null,
+      "why": "It refreshes the fingerprint of a project's reopen record, which no lane's read draws."
+    },
+    {
+      "at": "planes.rs write_arrangement",
+      "writes": null,
+      "why": "It writes the window's tabs, which no lane's read draws."
+    },
+    {
+      "at": "sandboxing.rs acknowledge",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["acknowledgeProjectHosts"]
+    },
+    {
+      "at": "sandboxing.rs acknowledge_presets",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["acknowledgeProjectPresets"]
+    },
+    {
+      "at": "sandboxing.rs allow_awaited",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["allowProjectExpects"]
+    },
+    {
+      "at": "sandboxing.rs allow_persona",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["allowPersonaHosts"]
+    },
+    {
+      "at": "sandboxing.rs allow_persona_grants",
+      "writes": "this machine's network record",
+      "by": ["allowPersonaGrants"]
+    },
+    {
+      "at": "sandboxing.rs allow_persona_hosts",
+      "writes": "this machine's network record",
+      "by": ["allowPersonaHosts"]
+    },
+    {
+      "at": "sandboxing.rs allow_project_expects",
+      "writes": "this machine's network record",
+      "by": ["allowProjectExpects"]
+    },
+    {
+      "at": "sandboxing.rs allow_sandbox_block",
+      "writes": "this machine's network record",
+      "by": ["allowSandboxBlock"]
+    },
+    {
+      "at": "sandboxing.rs answer",
+      "writes": "the project's manifest and its local settings",
+      "by": ["answerSandboxOffer"]
+    },
+    {
+      "at": "sandboxing.rs decline_expects",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["declineProjectExpects"]
+    },
+    {
+      "at": "sandboxing.rs keep_sandbox_block",
+      "writes": "this machine's network record",
+      "by": ["keepSandboxBlock"]
+    },
+    {
+      "at": "sandboxing.rs kept_for",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": [
+        "allowSandboxBlock",
+        "allowSandboxBlockForTasks",
+        "allowBlockedHost",
+        "allowProjectExpects"
+      ]
+    },
+    {
+      "at": "sandboxing.rs list_folder",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["listGrantableFolder"]
+    },
+    {
+      "at": "sandboxing.rs listed_and_pruned",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["grantableFolders"]
+    },
+    {
+      "at": "sandboxing.rs revoke",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["revokeSandboxGrant"]
+    },
+    {
+      "at": "sandboxing.rs revoke_persona",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["revokeSandboxGrant"]
+    },
+    {
+      "at": "sandboxing.rs revoke_sandbox_grant",
+      "writes": "this machine's network record",
+      "by": ["revokeSandboxGrant"]
+    },
+    {
+      "at": "sandboxing.rs revoke_vault",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["revokeSandboxGrant"]
+    },
+    {
+      "at": "sandboxing.rs unlist_grantable_folder",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["unlistGrantableFolder"]
+    },
+    {
+      "at": "saving.rs choose_mode",
+      "writes": "the project's manifest and its local settings",
+      "by": ["choosePlaneMode"]
+    },
+    {
+      "at": "settings.rs add_forge",
+      "writes": "the project's manifest and its local settings",
+      "by": ["addProjectForge"]
+    },
+    {
+      "at": "settings.rs add_host",
+      "writes": "the project's manifest and its local settings",
+      "by": ["addSandboxHost"]
+    },
+    {
+      "at": "settings.rs add_profile",
+      "writes": "the project's manifest and its local settings",
+      "by": ["addProjectProfile"]
+    },
+    {
+      "at": "settings.rs add_sandbox_host",
+      "writes": "this machine's network record",
+      "by": ["addSandboxHost"]
+    },
+    {
+      "at": "settings.rs confirm_host",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["confirmSandboxHost"]
+    },
+    {
+      "at": "settings.rs confirm_sandbox_host",
+      "writes": "this machine's network record",
+      "by": ["confirmSandboxHost"]
+    },
+    {
+      "at": "settings.rs file_of",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["projectSettings"]
+    },
+    {
+      "at": "settings.rs move_keys",
+      "writes": "the project's manifest and its local settings",
+      "by": ["moveProjectSettings"]
+    },
+    {
+      "at": "settings.rs remove_forge",
+      "writes": "the project's manifest and its local settings",
+      "by": ["removeProjectForge"]
+    },
+    {
+      "at": "settings.rs remove_host",
+      "writes": "the project's manifest and its local settings",
+      "by": ["removeSandboxHost"]
+    },
+    {
+      "at": "settings.rs remove_profile",
+      "writes": "the project's manifest and its local settings",
+      "by": ["removeProjectProfile"]
+    },
+    {
+      "at": "settings.rs remove_sandbox_host",
+      "writes": "this machine's network record",
+      "by": ["removeSandboxHost"]
+    },
+    {
+      "at": "settings.rs rename_profile",
+      "writes": "the project's manifest and its local settings",
+      "by": ["renameProjectProfile"]
+    },
+    {
+      "at": "settings.rs save",
+      "writes": "the project's manifest and its local settings",
+      "by": ["saveProjectSettings"]
+    },
+    {
+      "at": "taskblocks.rs allow_sandbox_block_for_tasks",
+      "writes": "this machine's network record",
+      "by": ["allowSandboxBlockForTasks"]
+    },
+    {
+      "at": "updates.rs give_back",
+      "writes": null,
+      "why": "It writes the updater's own record, which no lane's read draws."
+    },
+    {
+      "at": "updates.rs set_channel",
+      "writes": null,
+      "why": "It writes the update channel, which no lane's read draws."
+    },
+    {
+      "at": "updates.rs take",
+      "writes": null,
+      "why": "It writes the updater's own record, which no lane's read draws."
+    },
+    {
+      "at": "vaultroute.rs allow",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["allowRefusedVault"]
+    },
+    {
+      "at": "vaultroute.rs allow_refused_vault",
+      "writes": "this machine's network record",
+      "by": ["allowRefusedVault"]
+    },
+    {
+      "at": "worklinks.rs link",
+      "writes": "the project's work log",
+      "by": ["chatWorkLink"]
+    },
+    {
+      "at": "worklinks.rs unlink",
+      "writes": "the project's work log",
+      "by": ["chatWorkUnlink"]
+    }
+  ]
+}
