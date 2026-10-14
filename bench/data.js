@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791978652996,
+  "lastUpdate": 1791982318627,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10836,6 +10836,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6161135,
             "unit": "ms",
             "extra": "median of 5 runs: 100.704, 101.337, 101.616, 101.642, 103.456 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "4189c5cb7f3c45c0e1bb23699e6aa504b2f7463c",
+          "message": "review(qw385): the key-listing test lives in a file of its own\n\nThe lane-writes guard (#1949) reads vaults.rs's code and closed its test\nmodule early, so the test's grant read as a write the window's table must\nlist. A `_tests.rs` file is skipped whole.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T16:50:50+04:00",
+          "tree_id": "aed7353074b7cb62ecb0a9ceff2950e457629030",
+          "url": "https://github.com/purlis/purlis/commit/4189c5cb7f3c45c0e1bb23699e6aa504b2f7463c"
+        },
+        "date": 1791982317929,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.540405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.520, 0.525, 0.540, 0.556, 0.574 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1570205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.131, 16.154, 16.157, 16.236, 16.286 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7695645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.999, 102.339, 102.770, 102.836, 104.659 ms"
           }
         ]
       }
