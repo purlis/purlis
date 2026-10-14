@@ -532,3 +532,37 @@ fn the_floor_keeps_the_projects_certificate_checks() {
             .trust
     );
 }
+
+/// qw384's services on this Mac reach a chat at the floor as at the full sandbox: the one port
+/// a person allowed, through the proxy and in the wrap's profile, and no other.
+#[test]
+fn a_service_on_this_mac_a_person_allowed_is_reached_at_the_floor() {
+    let (_dir, root) = project();
+    let machine = machine_with(Path::new("/opt/none"));
+    let chat = grant::Grants {
+        ports: vec![5432],
+        ..grant::Grants::default()
+    };
+    let compiled = Compiled::floor(&root, &machine, &chat);
+    assert_eq!(compiled.widened.ports, [5432]);
+    assert!(compiled.reach.decide("127.0.0.1", 5432, &[443], &[]).carries());
+    assert!(!compiled.reach.decide("127.0.0.1", 6379, &[443], &[]).carries());
+    assert!(compiled.reach.decide("example.org", 443, &[443], &[]).carries());
+    let profile = wrapped_floor_of(Harness::Codex, &compiled, &[4040]);
+    let allowed = profile.find(&localport::seatbelt_rule(5432)).expect("the port");
+    let held = profile
+        .find("(deny network-outbound (remote ip \"localhost:*\"))")
+        .expect("the loopback held");
+    assert!(held < allowed, "given back after the hold");
+}
+
+/// The floor profile of a wrapped harness compiled from `compiled`.
+fn wrapped_floor_of(harness: Harness, compiled: &Compiled, ports: &[u16]) -> String {
+    let compile = compiler(harness).expect("a compiler");
+    match compile(compiled).expect("compiled") {
+        Form::Codex(wrap) => codex::floor_profile(&wrap, ports, None),
+        Form::Opencode(wrap) => opencode::floor_profile(&wrap, ports, None),
+        Form::ClaudeCode(_) => unreachable!(),
+    }
+    .expect("a profile")
+}

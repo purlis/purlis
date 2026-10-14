@@ -2627,30 +2627,62 @@ impl Compiled {
         sockets.extend(kept_sockets);
         services.extend(kept_services);
         let writable = granted_folders(root, machine, chat, &locks);
+        // Services on this Mac (qw384), as the full sandbox grants them.
+        let mut ports: Vec<(u16, reach::By)> = chat
+            .ports
+            .iter()
+            .filter(|port| in_scope(grant::What::Port(**port)))
+            .map(|port| (*port, reach::By::Chat))
+            .collect();
+        if locks.keeps_scope(grant::Level::You) {
+            ports.extend(
+                local::granted_ports(root)
+                    .into_iter()
+                    .map(|port| (port, reach::By::You)),
+            );
+        }
+        // The certificate check as the project's file says it (R1), and as policy leaves it
+        // ([`Widened::and_granted`]).
+        let widened = Widened {
+            trust: Plane::read(root)
+                .said()
+                .unset
+                .unwrap_or_else(Policy::defaults)
+                .certificate_checks,
+            ..Widened::default()
+        }
+        .and_granted(
+            &sockets,
+            &services,
+            &services::SocketGround::of(root, machine, &chat.writes),
+            &locks,
+        )
+        .and_ports(
+            &ports.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
+            &locks,
+        );
+        let mut layered: Vec<(String, reach::By)> = Vec::new();
+        for (port, by) in &ports {
+            if widened.ports.contains(port) {
+                layered.extend(
+                    localport::reach_entries(*port)
+                        .into_iter()
+                        .map(|entry| (entry, *by)),
+                );
+            }
+        }
         Self {
             level: Level::Floor,
             held: floor_held(root, machine, &writable),
-            // The certificate check as the project's file says it (R1), and as policy leaves
-            // it ([`Widened::and_granted`]).
-            widened: Widened {
-                trust: Plane::read(root)
-                    .said()
-                    .unset
-                    .unwrap_or_else(Policy::defaults)
-                    .certificate_checks,
-                ..Widened::default()
-            }
-            .and_granted(
-                &sockets,
-                &services,
-                &services::SocketGround::of(root, machine, &chat.writes),
-                &locks,
-            ),
+            widened,
             denied,
             hosts: Vec::new(),
             // Every host, through the chat's own proxy, which keeps this machine's own
-            // addresses out of reach as at the full sandbox, and asks about none (#2071).
-            reach: reach::Reach::anything().never(locks.never_hosts().to_vec()),
+            // addresses out of reach as at the full sandbox but a service a person allowed, and
+            // asks about none (#2071).
+            reach: reach::Reach::anything()
+                .and(layered)
+                .never(locks.never_hosts().to_vec()),
             writable,
             os: machine.os,
             homes: Homes {
