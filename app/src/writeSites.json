@@ -31,7 +31,7 @@
     {
       "at": "dispatchaway.rs forget_in",
       "writes": "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held",
-      "by": ["allowDispatchAway", "neverDispatchAway"]
+      "by": ["allowDispatchAway", "dismissDispatchAway", "neverDispatchAway"]
     },
     {
       "at": "dispatchaway.rs never",
@@ -162,6 +162,12 @@
       "by": ["forgetProject"]
     },
     {
+      "at": "planes.rs hold",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": [],
+      "why": "The tally of chats started with and without the sandbox, counted as each chat's start is decided; a look at the sandbox's state a start late is right again at the next look."
+    },
+    {
       "at": "planes.rs locate",
       "writes": "this machine's store: the pins",
       "by": ["locateProject"]
@@ -169,7 +175,8 @@
     {
       "at": "planes.rs open",
       "writes": "this machine's network record",
-      "by": []
+      "by": [],
+      "why": "A chat's hook reports its blocks and connections into the network record as they happen; no window command writes them."
     },
     {
       "at": "planes.rs record_approval",
@@ -334,7 +341,19 @@
     {
       "at": "settings.rs file_of",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["projectSettings"]
+      "by": [
+        "addProjectForge",
+        "addProjectProfile",
+        "addSandboxHost",
+        "confirmSandboxHost",
+        "moveProjectSettings",
+        "projectSettings",
+        "removeProjectForge",
+        "removeProjectProfile",
+        "removeSandboxHost",
+        "renameProjectProfile",
+        "saveProjectSettings"
+      ]
     },
     {
       "at": "settings.rs move_keys",
@@ -369,7 +388,7 @@
     {
       "at": "settings.rs save",
       "writes": "the project's manifest and its local settings",
-      "by": ["saveProjectSettings"]
+      "by": ["choosePlaneMode", "saveProjectSettings"]
     },
     {
       "at": "taskblocks.rs allow_sandbox_block_for_tasks",
