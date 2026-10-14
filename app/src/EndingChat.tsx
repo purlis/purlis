@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef, useState } from "react";
-import * as Alert from "@radix-ui/react-alert-dialog";
+import * as Alert from "./overlays/alert-dialog";
 import { ENDS_IT, type Offer } from "./actions";
 import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";

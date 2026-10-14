@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as AlertDialog from "./overlays/alert-dialog";
 import type { ReactNode } from "react";
 import { AnswerBar } from "./AnswerBar";
 

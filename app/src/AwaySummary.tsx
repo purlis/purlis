@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as Menu from "@radix-ui/react-dropdown-menu";
+import * as Menu from "./overlays/dropdown-menu";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AwayRefusal, FinishedTask } from "./bindings";
 import { useChatsSelect, type Chats } from "./chatState";

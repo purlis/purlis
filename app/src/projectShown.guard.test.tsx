@@ -3,16 +3,17 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
-import { isView, sourceFiles, SRC, withoutComments } from "./guards.testkit";
-import { drawnOverTheWindow } from "./projectShown";
+import { isView, RADIX_FROM, sourceFiles, SRC, withoutComments } from "./guards.testkit";
+import { drawnOverTheWindow, InTheWindow, useProjectHost } from "./projectShown";
 
 /**
  * **Nothing a project's view opens over the window can stay up over another project**
@@ -60,22 +61,72 @@ const sources = sourceFiles(isView).map((file) => ({
   text: withoutComments(readFileSync(join(SRC, file), "utf8"), "ts"),
 }));
 
+/** The packages whose parts are drawn over the window, by the name after `react-`. */
+const OVER = Object.entries(KINDS)
+  .filter(([, what]) => what !== "in place")
+  .map(([kind]) => kind.slice("@radix-ui/react-".length));
+
 describe("every way the window draws something over itself", () => {
   it("is a kind the rule was written for", () => {
     const used = new Set<string>();
     for (const { text } of sources)
-      for (const found of text.matchAll(/from "(@radix-ui\/[a-z-]+)"/g)) used.add(found[1]);
+      for (const found of text.matchAll(new RegExp(`from "${RADIX_FROM}([a-z-]+)"`, "g")))
+        used.add(`@radix-ui/react-${found[1]}`);
     // A package not listed is a kind nobody has decided about: say what it draws in `KINDS`,
-    // and where it is drawn over the window, teach `drawnOverTheWindow` its role below.
+    // give it a file in `overlays/`, and where it is drawn over the window, teach
+    // `drawnOverTheWindow` its role below.
     expect([...used].filter((kind) => !(kind in KINDS))).toEqual([]);
+  });
+
+  it("is written through `overlays/`, where its portal asks whether its project is shown", () => {
+    // From the package itself, an overlay's portal is Radix's own, and a project kept behind
+    // another could open it over the one in front.
+    const direct = sources
+      .filter(({ file }) => !file.startsWith("overlays/"))
+      .filter(({ text }) => new RegExp(`from "@radix-ui/react-(?:${OVER.join("|")})"`).test(text))
+      .map(({ file }) => file);
+    expect(direct).toEqual([]);
+  });
+
+  it("has a file there for each kind, which holds back every part that draws", () => {
+    for (const kind of OVER) {
+      const text = readFileSync(join(SRC, "overlays", `${kind}.tsx`), "utf8");
+      expect(text).toContain(`export * from "@radix-ui/react-${kind}";`);
+      const held = [
+        ...text.matchAll(
+          /export const (\w+) = (?:holdingOnlyWhileShown|onlyWhileShown)\(Radix\.\1\);/g,
+        ),
+      ].map(([, part]) => part);
+      // The portal everywhere; the content too, for an overlay written without its portal.
+      expect(held).toEqual(expect.arrayContaining(["Portal", "Content"]));
+    }
+  });
+
+  it("opens each one through its portal", () => {
+    // `<Dialog.Content>` with no `<Dialog.Portal>` around it is drawn in place; held back all
+    // the same (above), and never seen here, so the rule stays one sentence.
+    const without = sources
+      .filter(({ file }) => !file.startsWith("overlays/"))
+      .flatMap(({ file, text }) =>
+        [
+          ...text.matchAll(
+            new RegExp(`import \\* as (\\w+) from "${RADIX_FROM}(?:${OVER.join("|")})"`, "g"),
+          ),
+        ]
+          .filter(
+            ([, name]) => text.includes(`<${name}.Content`) && !text.includes(`<${name}.Portal`),
+          )
+          .map(([, name]) => `${file}: ${name}`),
+      );
+    expect(without).toEqual([]);
   });
 
   it("is drawn by one of those, and by no portal of the window's own", () => {
     const portals = sources
       .filter(({ text }) => /\bcreatePortal\(/.test(text))
       .map(({ file }) => file);
-    // A new portal puts something outside its project's element: into the project (list it), or
-    // over the window, where it must be found by `drawnOverTheWindow` as these are.
+    // A new portal puts something outside where it is drawn: into its own project's element
+    // (list it), or over the window, where it must go through `overlays/` as these do.
     expect(portals).toEqual(PORTALS);
   });
 });
@@ -165,5 +216,45 @@ describe("each kind drawn over the window is found as its project leaves the fro
     expect(over.sort()).toEqual(
       [...kinds.map(([kind]) => kind), "@radix-ui/react-context-menu"].sort(),
     );
+  });
+});
+
+describe("a switch made from a row of a menu", () => {
+  /** A project's place in the window, leaving the front when the menu's row is pressed. */
+  function Switching({ slot, onLeftCovered }: { slot: HTMLElement; onLeftCovered: () => void }) {
+    const [shown, setShown] = useState(true);
+    const host = useProjectHost();
+    return (
+      <>
+        <InTheWindow host={host} slot={slot} shown={shown} onLeftCovered={onLeftCovered} />
+        <DropdownMenu.Root defaultOpen>
+          <DropdownMenu.Trigger>More projects</DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content>
+              <DropdownMenu.Item onSelect={() => setShown(false)}>
+                Switch to project two
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </>
+    );
+  }
+
+  it("leaves no menu over the window as the project goes, so the project is kept", () => {
+    // The window's own menus are over the window too (the strip's show-more lists projects). A
+    // menu that outlived the press of its row would cost every project left from one its view,
+    // and nobody would see why: Radix closes it in the render the row's press makes, and no
+    // menu here is kept for a closing animation.
+    const own = document.body.appendChild(document.createElement("main"));
+    const slot = own.appendChild(document.createElement("div"));
+    const covered = vi.fn();
+    render(<Switching slot={slot} onLeftCovered={covered} />);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Switch to project two" }));
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(covered).not.toHaveBeenCalled();
+    own.remove();
   });
 });

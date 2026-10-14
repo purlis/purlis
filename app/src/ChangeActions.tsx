@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as AlertDialog from "./overlays/alert-dialog";
 import { LoaderCircle } from "lucide-react";
 import { commands, type LandQuestion, type PlaneId, type PushQuestion } from "./bindings";
 import { Choice, SettingRow } from "./settings/components";

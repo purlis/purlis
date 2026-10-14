@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { AnswerBar } from "./AnswerBar";
 import { ChatsToPick, type ChatHere, type Referenced } from "./references";
 import { picksSaid } from "./referencesMany";

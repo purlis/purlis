@@ -23,6 +23,7 @@
  */
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
+import { RADIX_FROM } from "../guards.testkit";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1201,12 +1202,15 @@ const openDialogs = () =>
  * Every source file that draws a dialog: one that uses Radix's dialog, alert dialog or popover,
  * or writes the role itself. Read from the files, so a dialog added tomorrow is held here.
  */
-const FILES_WITH_DIALOGS = Object.keys(import.meta.glob(["../**/*.tsx", "!../**/*.test.tsx"]))
+const FILES_WITH_DIALOGS = Object.keys(
+  // Not `overlays/`, which draws none: it is Radix's packages under the window's own name.
+  import.meta.glob(["../**/*.tsx", "!../**/*.test.tsx", "!../overlays/**"]),
+)
   .map((path) => path.slice("../".length))
   .filter((path) =>
-    /from "@radix-ui\/react-(?:alert-dialog|dialog|popover)"|role="(?:alert)?dialog"/.test(
-      readFileSync(join(process.cwd(), "src", path), "utf8"),
-    ),
+    new RegExp(
+      String.raw`from "${RADIX_FROM}(?:alert-dialog|dialog|popover)"|role="(?:alert)?dialog"`,
+    ).test(readFileSync(join(process.cwd(), "src", path), "utf8")),
   )
   .sort();
 

@@ -3,12 +3,15 @@
 
 import {
   createContext,
+  createElement,
   memo,
   useContext,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentPropsWithRef,
+  type ElementType,
   type ReactNode,
 } from "react";
 
@@ -108,20 +111,24 @@ export function keptOf(
  * a menu and a select's list, each by the role Radix gives it. A tooltip is not one: it asks
  * nothing. `projectShown.guard.test.ts` holds this to every kind of overlay the window uses.
  */
-const OVER_THE_WINDOW = ["dialog", "alertdialog", "menu", "listbox"]
-  .map((role) => `[role="${role}"]`)
-  .join(", ");
+const OVER_THE_WINDOW = [
+  ...["dialog", "alertdialog", "menu", "listbox"].map((role) => `[role="${role}"]`),
+  // The engine's own dialog element, should one ever be written.
+  "dialog[open]",
+].join(", ");
 
 /**
  * Whether something is drawn over the window that `slot` is in: outside the window's own
  * element, where a portal puts it, and not the window's palette, which is how a project is
  * switched to and closes with the switch.
  *
- * **A project that leaves the front with something over the window is not kept** (`PlaneView`).
- * A dialog a part of its view opened is drawn outside the project's element, so it would stay
- * up over the project that came forward: "Delete persona steward?" asked in one project,
- * answered over another, and done in the first. Whose it is cannot be read off the document, so
- * anything there counts, and the project's view is taken down as every project's used to be:
+ * **A project that leaves the front with something over the window is not kept** (`PlaneView`):
+ * the backstop behind {@link onlyWhileShown}, which is what keeps a project's overlays off the
+ * window while it is behind. A dialog a part of its view opened is drawn outside the project's
+ * element, so it would stay up over the project that came forward: "Delete persona steward?"
+ * asked in one project, answered over another, and done in the first. Should one ever be drawn
+ * that does not ask whether its project is shown, whose it is cannot be read off the document,
+ * so anything there counts, and the project's view is taken down as every project's used to be:
  * what opened the dialog goes with it.
  */
 export function drawnOverTheWindow(slot: Element): boolean {
@@ -149,6 +156,9 @@ export function useProjectHost(): HTMLElement {
 
 /** Where each scrolled element under a host is scrolled to. */
 type Scrolled = Map<Element, { top: number; left: number }>;
+
+/** How many scrolled elements a view's places hold before the ones that have gone are let go. */
+const SCROLLED_MOST = 64;
 
 /** What is scrolled under each host, kept with the host and gone with it. */
 const scrolledUnder = new WeakMap<HTMLElement, Scrolled>();
@@ -207,7 +217,18 @@ export function InTheWindow({
   useLayoutEffect(() => {
     const before = was.current;
     was.current = shown;
-    if (before && !shown && slot !== null && drawnOverTheWindow(slot)) onLeftCovered();
+    if (!before || shown || slot === null) return;
+    // **Looked at once the press that made the switch is over**, and not in the middle of it: a
+    // menu's row switches projects and then closes its menu, in that order and in one press, so
+    // the menu is still over the window as the project leaves and gone a moment later. Looked
+    // at then, a project left from a menu would lose its view every time.
+    let gone = false;
+    queueMicrotask(() => {
+      if (!gone && drawnOverTheWindow(slot)) onLeftCovered();
+    });
+    return () => {
+      gone = true;
+    };
   }, [shown, slot, onLeftCovered]);
   useEffect(() => {
     const places = scrolledIn(host);
@@ -218,6 +239,10 @@ export function InTheWindow({
       const { scrollTop: top, scrollLeft: left } = element;
       if (top === 0 && left === 0) places.delete(element);
       else places.set(element, { top, left });
+      // A view in front for hours scrolls many things that have since gone: past so many, the
+      // ones no longer in it are let go here, and not only as it leaves the window.
+      if (places.size > SCROLLED_MOST)
+        for (const one of places.keys()) if (!host.contains(one)) places.delete(one);
     };
     host.addEventListener("scroll", moved, { capture: true, passive: true });
     return () => host.removeEventListener("scroll", moved, { capture: true });
@@ -260,6 +285,41 @@ const LastShown = memo(
   // "Equal", so not drawn again, whenever the project is not shown.
   (_, next) => !next.shown,
 );
+
+/**
+ * `Part`, **drawn only while the project it is under is in front**: for each part of an overlay
+ * that puts something over the whole window (`overlays/`). Its props are its own, a `ref`
+ * among them, so it stands in for `Part` wherever `Part` was written.
+ *
+ * This is what makes it impossible for a project kept behind another to draw over the window,
+ * whenever the overlay was opened. A kept view is not drawn again by its parent, but a part of it
+ * can still set its own state: the answer to a question it asked the core arrives, and it opens
+ * its confirm. The overlay's own portal is what asks whether the project is shown, so that
+ * confirm is drawn when the person is back in the project it is about, and until then nothing of
+ * it is mounted: no dialog, and none of what a dialog does to the document as it mounts (the
+ * focus held in it, the rest of the window made unpressable).
+ */
+export function onlyWhileShown<T extends ElementType>(Part: T): T {
+  function WhileShown(props: ComponentPropsWithRef<T>) {
+    return useProjectShown() ? createElement(Part, props) : null;
+  }
+  return WhileShown as unknown as T;
+}
+
+/**
+ * {@link onlyWhileShown} for an overlay's portal, **which stays and holds nothing** while its
+ * project is behind, where a part that draws would go altogether. A portal is written around
+ * every menu and dialog whether or not it is open, a tab's own menu among them, so taking each
+ * one out and putting it back would be a hundred parts mounted on every switch for nothing
+ * that is drawn. With nothing in it, it draws nothing, and what it holds is drawn only while
+ * the project is in front, which is the point.
+ */
+export function holdingOnlyWhileShown<T extends ElementType>(Portal: T): T {
+  function WhileShown(props: ComponentPropsWithRef<T>) {
+    return createElement(Portal, useProjectShown() ? props : { ...props, children: null });
+  }
+  return WhileShown as unknown as T;
+}
 
 /**
  * Draws its children only while the project is in front: what is asked over the whole window,

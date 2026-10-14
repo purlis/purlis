@@ -1531,14 +1531,19 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   `react-resizable-panels` asks about every handle on every press on the document, and throws
   for one that is in no document. The handle is disabled while its project is behind, which the
   library changes in place; disabling the `Group` registers it again and lays it out again.
-- **What is drawn over the whole window**, a dialog, a menu or a select's list, is drawn through
-  a portal outside the project's element, so it would stay up over another project: a delete
-  asked in one, answered over another. The dialogs `PlaneView` opens are inside `OnlyInFront`,
-  which puts them away with the project. For anything a part opens for itself there is one rule
-  and no list of sites: a project that leaves the front with anything drawn over the window
-  (`drawnOverTheWindow`) is not kept, and its view is taken down as every project's used to be.
-  The rule finds each kind by its role; `projectShown.guard.test.tsx` fails for a kind it does
-  not know, and for a new portal.
+- **What is drawn over the whole window**, a dialog, a menu, a popover, a select's list or a
+  tooltip, is drawn through a portal outside the project's element, so one of a project behind
+  would stand over the project in front: a delete asked in one, answered over another. And it
+  need not be open as the project leaves: a part still sets its own state while its project is
+  behind, so the answer to something it asked the core can open its confirm then. So **every
+  overlay is written through `overlays/`**, never from the Radix package: the same parts, with
+  the portal, the content and the scrim drawn only while their project is in front
+  (`onlyWhileShown`). Nothing of a project behind is ever mounted over the window, so nothing a
+  dialog does to the document as it mounts happens either, and what opened it is there when
+  the person is back. `projectShown.guard.test.tsx` fails for an overlay imported from the
+  package, for a kind with no file in `overlays/`, and for a new `createPortal`. Behind that
+  stands one backstop: a project that leaves the front with anything still over the window once
+  the press is over (`drawnOverTheWindow`) is not kept.
 - **A prop that says the project is in front** is the last one the part was drawn with while
   its project is behind. A part that acts on one outside its own drawing, such as a key held on
   the window, reads `useProjectShown()` for itself, as `RegionFrame` does for F6.

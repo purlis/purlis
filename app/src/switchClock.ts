@@ -22,7 +22,7 @@ import { commands } from "./bindings";
  *   settings file.
  *
  * Each is also a `performance.measure` (`purlis:switch:…`, `purlis:command:…`), for an inspector
- * where there is one. Kept for this window only, the last {@link KEPT} switches, in memory:
+ * where there is one; a command asked outside a switch is not measured at all. Kept for this window only, the last {@link KEPT} switches, in memory:
  * nothing is written anywhere and nothing is sent.
  */
 
@@ -75,6 +75,9 @@ function changed(): void {
 
 function measure(name: string, start: number, end: number): void {
   try {
+    // The latest of each alone: the engine keeps every measure it is given until it is told
+    // otherwise, for as long as the window is up.
+    performance.clearMeasures(name);
     performance.measure(name, { start, end });
   } catch {
     // An engine without it, or a start it will not take: the list above has the number.
@@ -128,9 +131,12 @@ function timed<A extends unknown[], R>(command: string, ask: (...args: A) => Pro
     const mine = latest;
     const afterPaint = mine?.painted ?? false;
     const answered = () => {
+      // Only what was asked for a switch is written down, here and in the engine's own list of
+      // measures: a chat's gauge asks every three seconds for as long as the window is up, and
+      // that list is never emptied.
+      if (mine === undefined || from - mine.since > AFTER_MS) return;
       const now = performance.now();
       measure(`purlis:command:${command}`, from, now);
-      if (mine === undefined || from - mine.since > AFTER_MS) return;
       mine.switched.asked.push({ command, ms: now - from, afterPaint });
       changed();
     };

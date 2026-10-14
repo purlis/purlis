@@ -3,10 +3,11 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ViewPane } from "./Views";
+import { ProjectShownProvider } from "./projectShown";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { MemoryStores } from "./MemoryEdits";
 import { memoryKey, type MemoryRef } from "./memories";
@@ -957,6 +958,68 @@ describe("a change's Push and Land (#474)", () => {
     // Closed after it ran, the view is read again.
     await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(called("open_view")).toHaveLength(2));
+  });
+
+  it("does not ask over another project when its answer comes after the person has left this one", async () => {
+    // The review's case (#1940). Land… asks the core first and opens its question on the answer.
+    // Nothing is over the window while it waits, so the person can go to another project; a
+    // view that is kept is still mounted, and the answer opened "Land widget's pull request
+    // #7?" over the other project, naming none, where Land would have merged in this one.
+    let answer: (said: typeof QUESTION) => void = () => {};
+    const { called } = forge({
+      change_land_question: () => new Promise((said) => (answer = said)),
+      change_land: () => ["✓ merged #7"],
+    });
+    const view = (shown: boolean) => (
+      <ProjectShownProvider value={shown}>
+        <ViewPane
+          plane={PLANE}
+          view={{ from: null, view: "changes", key: "land-late" }}
+          title="Changes · land-late"
+          workspace="land-late"
+          waits={false}
+          offered={[]}
+          onOpenView={() => {}}
+          onAsk={() => {}}
+          onVaultChanged={() => {}}
+        />
+      </ProjectShownProvider>
+    );
+    const { rerender } = render(view(true));
+    const widget = (await screen.findByText("widget · change/api-2")).closest("li");
+    if (widget === null) throw new Error("no widget row");
+    await userEvent.click(within(widget).getByRole("button", { name: "Land…" }));
+    await waitFor(() => expect(called("change_land_question")).toHaveLength(1));
+
+    // The person goes to another project; then the core answers.
+    rerender(view(false));
+    await act(async () => {
+      answer(QUESTION);
+      await Promise.resolve();
+    });
+    await act(async () => {});
+
+    // Nothing over the window, nothing to press, and nothing done to the document for it: a
+    // dialog that mounts makes everything outside it unpressable and holds the focus.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Land" })).toBeNull();
+    expect(document.body.style.pointerEvents).not.toBe("none");
+    expect(
+      document.querySelector("[data-aria-hidden], [aria-hidden=true][data-radix-focus-guard]"),
+    ).toBeNull();
+    expect(called("change_land")).toHaveLength(0);
+
+    // Back in the project it was asked in, its question is there, naming its request.
+    rerender(view(true));
+    const asking = await screen.findByRole("alertdialog");
+    expect(within(asking).getByText("Land widget's pull request #7?")).toBeInTheDocument();
+    await userEvent.click(within(asking).getByRole("button", { name: "Land" }));
+    await waitFor(() => expect(called("change_land")).toHaveLength(1));
+    expect(called("change_land")[0].args).toMatchObject({
+      plane: PLANE,
+      workspace: "land-late",
+      change: "api-2",
+    });
   });
 
   it("says a branch with a merge queue goes into it, and offers no squash it cannot do", async () => {

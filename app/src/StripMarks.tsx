@@ -3,7 +3,7 @@
 
 import { useState, type ReactNode } from "react";
 import clsx from "clsx";
-import * as Menu from "@radix-ui/react-dropdown-menu";
+import * as Menu from "./overlays/dropdown-menu";
 import {
   ArrowLeftRight,
   ChevronDown,

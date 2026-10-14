@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PersonaMark } from "./PersonaMark";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { HarnessSummary } from "./HarnessCard";
 import { FirstOnHarness, noteHarness } from "./cardLink";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";

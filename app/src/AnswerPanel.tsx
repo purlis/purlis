@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createContext, useContext, useRef, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { AnswerQuestion } from "./AnswerQuestion";
 import { useKeyboardBack } from "./Brief";
 import type { PlaneId } from "./bindings";

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import type { SetupDone } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { VaultSignIn } from "./VaultSignIn";

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Dialog from "@radix-ui/react-dialog";
-import * as Menu from "@radix-ui/react-dropdown-menu";
+import * as AlertDialog from "./overlays/alert-dialog";
+import * as Dialog from "./overlays/dialog";
+import * as Menu from "./overlays/dropdown-menu";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
 import { EmptyState } from "./EmptyState";

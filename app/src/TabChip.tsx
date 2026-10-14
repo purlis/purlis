@@ -12,7 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import * as Menu from "@radix-ui/react-dropdown-menu";
+import * as Menu from "./overlays/dropdown-menu";
 import { MenuTip, useRested } from "./primitives/MenuRow";
 import {
   Check,

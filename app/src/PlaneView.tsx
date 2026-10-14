@@ -489,9 +489,10 @@ type Typed =
  * **While it is off the window it is not drawn again** (`AsLastShown`): what it hears about its
  * chats is kept as state here and reported to the window, and its view takes it all at once as
  * it comes back. Its terminals are not React's to draw: they go on taking what their programs
- * write. What it asks over the whole window, a dialog, is put away with it (`OnlyInFront`);
- * and where a part of the view has something of its own drawn over the window as the project
- * leaves the front, the view is not kept at all (`drawnOverTheWindow`).
+ * write. What any part of it draws over the whole window, a dialog or a menu, is drawn only
+ * while the project is in front, whenever it was opened (`overlays/`); and should anything
+ * still be over the window once the project has left, the view is not kept at all
+ * (`drawnOverTheWindow`).
  *
  * A project the person has not been in lately draws nothing, as every project behind the front
  * one used to, and is drawn again when they come back to it. Only coming to the front draws a
