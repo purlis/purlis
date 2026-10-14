@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792020911503,
+  "lastUpdate": 1792020926510,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4382,6 +4382,42 @@ window.BENCHMARK_DATA = {
             "value": 439.9,
             "unit": "MB",
             "extra": "median of 6 samples: 403.8, 421.8, 438.2, 441.5, 442.1, 529.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "279dcfa723287464c747f6af22b61f625785a469",
+          "message": "fix(qw387d): git's own variables count as configuration, and a selection says what landed (#2099)\n\n* fix(qw387d): git's own variables count as configuration, and a selection says what landed\n\n- Any `GIT_*` assignment or export on the line turns the clone guard's\n  sparse filter off, as `GIT_CONFIG*` and the editors did.\n- `select::set_active` answers what it wrote: a pointer the state folder\n  refused is `Scope::Unwritten`, and `workspace use` / `create --use`\n  fail saying nothing was selected.\n- A `cd` whose `&&` chain ends before a branch move in the plane root\n  gets the hint to join it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw387d): the loose-cd hint stays out: it changes recorded plane-root answers\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T02:29:33+04:00",
+          "tree_id": "76fca178735b60cc85c4c0a72530125140d9c6ea",
+          "url": "https://github.com/purlis/purlis/commit/279dcfa723287464c747f6af22b61f625785a469"
+        },
+        "date": 1792020924875,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1429.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1323.3, 1429.9, 1498 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 439.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 411.6, 419.9, 429.5, 449, 449.2, 554.1 MB"
           }
         ]
       }
