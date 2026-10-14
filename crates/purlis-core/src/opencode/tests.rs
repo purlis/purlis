@@ -353,3 +353,10 @@ fn a_turn_s_end_carries_its_last_message_in_the_field_claude_code_s_stop_does() 
     let installed = shim(Arming::GuardOnly(Path::new("/bin/purlis")));
     assert!(!installed.contains("lastSaid"));
 }
+
+#[test]
+fn a_shell_command_s_end_carries_its_status() {
+    // #1981: what the app lists of a task's commands.
+    let text = shim(Arming::Session);
+    assert!(text.contains("? { exit_code: output.metadata.exit }"));
+}

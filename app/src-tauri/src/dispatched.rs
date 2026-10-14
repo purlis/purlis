@@ -400,6 +400,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             rows: list(held, asker),
         }),
         What::Cancel { of } => cancel(held, asker, *of).unwrap_or_else(no),
+        What::Output { of } => output(held, asker, *of).unwrap_or_else(no),
         What::Tell { to, text } => tell(held, asker, *to, text).unwrap_or_else(no),
         What::Note { text } => send_up(held, asker, Kind::Note, text).unwrap_or_else(no),
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
@@ -1575,7 +1576,36 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
             let kept = purlis_core::handback::last_message_summary(Some(&text));
             held.tasks().ledger().said_last(output.chat, kept);
         }
+        purlis_core::hookwire::Output::Ran {
+            command,
+            exit,
+            failed,
+        } => {
+            let ran = dispatched::Ran::shown(&command, exit, failed);
+            held.tasks().ledger().ran(output.chat, ran);
+        }
     }
+}
+
+/// **`purlis dispatch read <chat>`** (#1981): what task `of` said last and the commands it ran,
+/// for the chat that dispatched it and no other. The app's record of that chat decides whose
+/// task it is ([`owned`]), and a task that has closed is read from the app's memory of it,
+/// keyed by the chat that asked: every other chat is refused in the one sentence a wait is.
+fn output(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
+    let name = match owned(held, asker, of) {
+        Ok((_, name)) => name,
+        Err(why) => match held.tasks().ledger().gone(asker, of) {
+            Some(gone) => gone.name.clone(),
+            None => return Err(why),
+        },
+    };
+    let heard = held.tasks().ledger().heard(asker, of).unwrap_or_default();
+    Ok(task(Answered::Output {
+        of,
+        name,
+        finals: heard.finals.into(),
+        ran: heard.ran.into(),
+    }))
 }
 
 /// **Task `task`'s turn ended** (#1981): where it still owes its report, it is asked for it

@@ -412,6 +412,10 @@ const SESSION_HOOKS: &str = r#"    // purlis's skills, beside every skills path 
         tool_name: route(tool, "name") ?? tool,
         tool_input: input?.args ?? {},
         tool_response: response(tool, output),
+        // A shell command's status, for what the app lists of a task's commands (#1981).
+        ...(tool === "bash" && typeof output?.metadata?.exit === "number"
+          ? { exit_code: output.metadata.exit }
+          : {}),
       }, input?.sessionID)
       const note = context(said)
       if (!note || !EFFECTFUL.includes(tool) || !output) return
