@@ -810,16 +810,21 @@ fn with_ground<T>(held: &crate::planes::Held, with: impl FnOnce(&On<'_>) -> T) -
     )
 }
 
+/// What the needs-you list's dispatch commands name their work, off the window's thread (#1949):
+/// each reads the project's grants and the administrator's policy, and an answer is audited
+/// and kept on disk.
+const AWAY: &str = "reading what was refused while you were away";
+
 /// What was refused in this project while nobody was there, for the needs-you list: in the
 /// order pairs were first refused, which no later refusal moves.
 #[tauri::command]
 #[specta::specta]
-pub fn dispatch_away(
+pub async fn dispatch_away(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<AwayRefusal>, String> {
     let held = planes.held(&plane)?;
-    Ok(with_ground(&held, listed))
+    crate::off_the_window(AWAY, move || Ok(with_ground(&held, listed))).await
 }
 
 /// **Allow from now on** on a needs-you item: chats running as `asking` may dispatch to
@@ -830,7 +835,7 @@ pub fn dispatch_away(
 /// nothing. Answers the sentence to say and the list as it is now.
 #[tauri::command]
 #[specta::specta]
-pub fn allow_dispatch_away(
+pub async fn allow_dispatch_away(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
@@ -839,13 +844,16 @@ pub fn allow_dispatch_away(
     shown: String,
 ) -> Result<AwayAnswered, String> {
     let held = planes.held(&plane)?;
-    with_ground(&held, |on| {
-        let said = allow(on, &asking, &target, workspace.as_deref(), Some(&shown))?;
-        Ok(AwayAnswered {
-            said,
-            refused: listed(on),
+    crate::off_the_window(AWAY, move || {
+        with_ground(&held, |on| {
+            let said = allow(on, &asking, &target, workspace.as_deref(), Some(&shown))?;
+            Ok(AwayAnswered {
+                said,
+                refused: listed(on),
+            })
         })
     })
+    .await
 }
 
 /// **Never for this pair** on a needs-you item: no chat running as `asking` is asked or
@@ -854,7 +862,7 @@ pub fn allow_dispatch_away(
 /// say and the list as it is now.
 #[tauri::command]
 #[specta::specta]
-pub fn never_dispatch_away(
+pub async fn never_dispatch_away(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
@@ -862,13 +870,16 @@ pub fn never_dispatch_away(
     workspace: Option<String>,
 ) -> Result<AwayAnswered, String> {
     let held = planes.held(&plane)?;
-    with_ground(&held, |on| {
-        let said = never(on, &asking, &target, workspace.as_deref())?;
-        Ok(AwayAnswered {
-            said,
-            refused: listed(on),
+    crate::off_the_window(AWAY, move || {
+        with_ground(&held, |on| {
+            let said = never(on, &asking, &target, workspace.as_deref())?;
+            Ok(AwayAnswered {
+                said,
+                refused: listed(on),
+            })
         })
     })
+    .await
 }
 
 /// **Dismiss** on a needs-you item: it is put away and nothing is granted. Further refusals
@@ -876,7 +887,7 @@ pub fn never_dispatch_away(
 /// as it is now.
 #[tauri::command]
 #[specta::specta]
-pub fn dismiss_dispatch_away(
+pub async fn dismiss_dispatch_away(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
@@ -884,10 +895,13 @@ pub fn dismiss_dispatch_away(
     workspace: Option<String>,
 ) -> Result<Vec<AwayRefusal>, String> {
     let held = planes.held(&plane)?;
-    with_ground(&held, |on| {
-        dismiss(on, &asking, &target, workspace.as_deref())?;
-        Ok(listed(on))
+    crate::off_the_window(AWAY, move || {
+        with_ground(&held, |on| {
+            dismiss(on, &asking, &target, workspace.as_deref())?;
+            Ok(listed(on))
+        })
     })
+    .await
 }
 
 #[cfg(test)]

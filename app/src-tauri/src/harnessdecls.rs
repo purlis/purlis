@@ -79,12 +79,16 @@ fn listed(read: &Declarations) -> ProjectHarnesses {
 /// The project's harness declarations, read-only, for Settings (#1389).
 #[tauri::command]
 #[specta::specta]
-pub fn project_harness_declarations(
+pub async fn project_harness_declarations(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<ProjectHarnesses, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    Ok(listed(&harness_declaration::read(&root)))
+    // Off the window's thread (#1949): the project's declarations are read from the disk.
+    crate::off_the_window("reading the project's harnesses", move || {
+        Ok(listed(&harness_declaration::read(&root)))
+    })
+    .await
 }
 
 /// The file `file` names in the project at `root`, when it is one [`listed`] names and it is a

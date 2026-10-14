@@ -194,6 +194,17 @@ We value maintainable solutions over unnecessary complexity. Please aim for:
 - Minimal dependencies; discuss significant new dependencies before introducing them.
 - Respect for user privacy and secure defaults.
 
+### Commands never block the window
+
+A Tauri command declared as a plain `fn` runs on the app's main thread, the one that draws the
+window: while it works, nothing is drawn. So a command that touches a file, runs a process
+(`git` included) or waits on a lock another purlis may hold is `async` and does its work in
+`crate::off_the_window` (`app/src-tauri/src/off_the_main_thread.rs`). A synchronous command is
+allowed only for what the app holds in memory, or where the window relies on the order its
+asks land in (a terminal's input, a tab moved); each is listed with its reason, and a test fails
+on a new one that is not. A command made `async` answers when it is done: where the window both
+reads and changes the same thing, put the commands in one lane of `app/src/commandOrder.ts`.
+
 ### AI-assisted contributions
 
 Using AI coding tools is welcome, but **you remain responsible** for everything you submit. Review and test AI-generated changes, check for insecure behavior or leaked secrets, and ensure you have the rights to contribute all included code and materials. Mention substantial AI assistance in the pull-request description when it is relevant to review.

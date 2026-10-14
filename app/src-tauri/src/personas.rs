@@ -232,7 +232,7 @@ pub async fn persona_mark_set(
 /// never a file, so no path it sends can be opened.
 #[tauri::command]
 #[specta::specta]
-pub fn persona_edit(
+pub async fn persona_edit(
     app: tauri::AppHandle,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
@@ -240,10 +240,15 @@ pub fn persona_edit(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
     let root = planes.held(&plane)?.root().to_path_buf();
-    let file = definition_of(&root, &name)?;
-    app.opener()
-        .open_path(file.to_string_lossy(), None::<&str>)
-        .map_err(|e| format!("the system did not open {}: {e}", file.display()))
+    // Off the window's thread (#1949): the definition is found on the disk and handed to the
+    // system's opener, which starts a program.
+    crate::off_the_window("opening the persona's definition", move || {
+        let file = definition_of(&root, &name)?;
+        app.opener()
+            .open_path(file.to_string_lossy(), None::<&str>)
+            .map_err(|e| format!("the system did not open {}: {e}", file.display()))
+    })
+    .await
 }
 
 /// A persona's profile, as the persona view's control draws it (#1445).

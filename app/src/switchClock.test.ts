@@ -130,6 +130,24 @@ describe("a switch, as the doctor's dialog says it", () => {
     );
   });
 
+  it("says the reads the core answers off the window's thread apart, where there were any (#1949)", () => {
+    const line = said({
+      to: "p",
+      at: 0,
+      drawnMs: 20,
+      paintedMs: 40,
+      asked: [
+        { command: "inbox_shown", ms: 1, afterPaint: false },
+        { command: "sandbox_state", ms: 30, afterPaint: true, offTheWindow: true },
+        { command: "chat_usage", ms: 2, afterPaint: true, offTheWindow: true },
+      ],
+    });
+    expect(line).toContain("before the paint: inbox_shown ×1 1 ms; after it: none");
+    expect(line).toContain(
+      "; answered off the window's thread: sandbox_state ×1 30 ms, chat_usage ×1 2 ms",
+    );
+  });
+
   it("says so where a time was not taken and nothing was asked", () => {
     const line = said({ to: "p", at: 0, drawnMs: undefined, paintedMs: undefined, asked: [] });
     expect(line).toContain("drawn not timed, painted not timed");

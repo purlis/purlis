@@ -26,49 +26,62 @@ use purlis_core::work::log::{self, Place};
 use crate::chats::Chats;
 use crate::planes::{PlaneId, Planes};
 
+/// What this module's commands name their work, off the window's thread (#1949): each reads the
+/// project's work log, which only grows, and a link or unlink appends to it.
+const WORK_LINK: &str = "reading the chat's work item";
+
 /// Link the chat in `session` to `item`, and answer the item it now works on, read through its
 /// aliases.
 #[tauri::command]
 #[specta::specta]
-pub fn chat_work_link(
+pub async fn chat_work_link(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
     item: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
-    link(
-        held.root(),
-        held.chats(),
-        session,
-        &item,
-        chrono::Utc::now(),
-    )
+    crate::off_the_window(WORK_LINK, move || {
+        link(
+            held.root(),
+            held.chats(),
+            session,
+            &item,
+            chrono::Utc::now(),
+        )
+    })
+    .await
 }
 
 /// End the work link of the chat in `session`, and answer the item it worked on, or `null` when
 /// it had none and nothing was written.
 #[tauri::command]
 #[specta::specta]
-pub fn chat_work_unlink(
+pub async fn chat_work_unlink(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    unlink(held.root(), held.chats(), session, chrono::Utc::now())
+    crate::off_the_window(WORK_LINK, move || {
+        unlink(held.root(), held.chats(), session, chrono::Utc::now())
+    })
+    .await
 }
 
 /// The work item the chat in `session` works on, read through its aliases, or `null`.
 #[tauri::command]
 #[specta::specta]
-pub fn chat_work_item(
+pub async fn chat_work_item(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    item_of(held.root(), held.chats(), session)
+    crate::off_the_window(WORK_LINK, move || {
+        item_of(held.root(), held.chats(), session)
+    })
+    .await
 }
 
 /// The chat a work link is about: its ULID and where the window files it.

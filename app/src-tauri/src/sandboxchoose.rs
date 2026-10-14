@@ -215,7 +215,7 @@ pub(crate) fn chosen(
 /// window's alone: it lists what runs on the person's machine.
 #[tauri::command]
 #[specta::specta]
-pub fn sandbox_block_choices(
+pub async fn sandbox_block_choices(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
@@ -223,12 +223,16 @@ pub fn sandbox_block_choices(
 ) -> Result<BlockChoices, String> {
     let held = planes.held(&plane)?;
     unnamed(held.chats().blocks(), session, &shown)?;
-    Ok(choices_of(
-        held.root(),
-        &sandbox::Machine::this(),
-        &|key| std::env::var_os(key),
-        shown.what,
-    ))
+    // Off the window's thread (#1949): finding the sockets on this machine walks its folders.
+    crate::off_the_window("finding what the block may be on", move || {
+        Ok(choices_of(
+            held.root(),
+            &sandbox::Machine::this(),
+            &|key| std::env::var_os(key),
+            shown.what,
+        ))
+    })
+    .await
 }
 
 /// **The person's choice of what an unnamed block is on** (#1884): `target`, a socket's path

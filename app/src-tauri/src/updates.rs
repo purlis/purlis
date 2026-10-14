@@ -421,10 +421,11 @@ pub fn update_channel() -> String {
 /// Put this machine on a channel. A word charter does not know is refused, not guessed at.
 #[tauri::command]
 #[specta::specta]
-pub fn set_update_channel(channel: String) -> Result<(), String> {
+pub async fn set_update_channel(channel: String) -> Result<(), String> {
     let chosen = Channel::named(&channel)
         .ok_or_else(|| format!("{channel:?} is not an update channel (stable, dev)"))?;
-    set_channel(chosen)
+    // Off the window's thread (#1949): this machine's store is written, under its lock.
+    crate::off_the_window("changing the update channel", move || set_channel(chosen)).await
 }
 
 /// Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`].

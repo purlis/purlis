@@ -519,27 +519,39 @@ fn never_here(os: sandbox::Os) -> Vec<String> {
         .collect()
 }
 
+/// What the commands that read the project's sandbox name their work, off the window's thread.
+pub(crate) const READING_SANDBOX: &str = "reading the project's sandbox";
+
+/// What the commands that change this machine's answers about the project's sandbox name their
+/// work, off the window's thread.
+const ANSWERING_SANDBOX: &str = "keeping your answer about the project's sandbox";
+
 /// The project's sandbox, for the offer notice and Settings.
+///
+/// Off the window's thread (#1949): it reads the project's manifests and the administrator's
+/// policy, and where the project has a local settings file it asks git whether that file is
+/// ignored, so it can take as long as git does.
 #[tauri::command]
 #[specta::specta]
-pub fn sandbox_state(
+pub async fn sandbox_state(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<SandboxState, String> {
-    Ok(state_of(planes.held(&plane)?.root()))
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(READING_SANDBOX, move || Ok(state_of(&root))).await
 }
 
 /// The person's answer to the one-time offer: `turn_on` writes `[sandbox] mode = "on"` into
 /// the project's `charter.toml`; either answer is the last time it is asked on this machine.
 #[tauri::command]
 #[specta::specta]
-pub fn answer_sandbox_offer(
+pub async fn answer_sandbox_offer(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     turn_on: bool,
 ) -> Result<SandboxState, String> {
-    let held = planes.held(&plane)?;
-    answer(held.root(), turn_on)
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || answer(&root, turn_on)).await
 }
 
 fn answer(root: &std::path::Path, turn_on: bool) -> Result<SandboxState, String> {
@@ -593,44 +605,54 @@ pub(crate) fn persona_hosts_locked(root: &std::path::Path) -> Option<String> {
 
 /// Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 /// (#1362): `null` for a chat that holds its own.
+///
+/// Off the window's thread (#1949): every pane asks it, and it reads the administrator's policy
+/// and every persona's hosts.
 #[tauri::command]
 #[specta::specta]
-pub fn persona_grants_held(
+pub async fn persona_grants_held(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<Option<GrantsHeld>, String> {
     let held = planes.held(&plane)?;
-    let locked = persona_hosts_locked(held.root());
-    Ok(held
-        .chats()
-        .grants_held(session)
-        .map(|(from, persona)| GrantsHeld {
+    crate::off_the_window(READING_SANDBOX, move || {
+        // The chat's hold first, under the chats' lock alone; the files after, under none.
+        let Some((from, persona)) = held.chats().grants_held(session) else {
+            return Ok(None);
+        };
+        Ok(Some(GrantsHeld {
             waits_here: persona_hosts_wait(held.root(), persona.as_deref()),
+            locked: persona_hosts_locked(held.root()),
             from,
             persona,
-            locked,
         }))
+    })
+    .await
 }
 
 /// The person allowed chat `session` its own persona's grants from its tab's Notice (#1362):
 /// they apply from its next start, since a chat's sandbox is compiled as it starts.
 #[tauri::command]
 #[specta::specta]
-pub fn allow_persona_grants(
+pub async fn allow_persona_grants(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
-    own_grants(
-        session,
-        held.chats()
-            .grants_held(session)
-            .map(|(_, persona)| persona),
-        &held.audit_then_record(planes.network()),
-        || held.chats().allow_own_grants(session),
-    )
+    let network = planes.network().cloned();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        own_grants(
+            session,
+            held.chats()
+                .grants_held(session)
+                .map(|(_, persona)| persona),
+            &held.audit_then_record(network.as_ref()),
+            || held.chats().allow_own_grants(session),
+        )
+    })
+    .await
 }
 
 /// [`allow_persona_grants`] for chat `session`, which holds another's grants as `holding` says
@@ -662,26 +684,29 @@ fn own_grants(
 /// not shown again until they change from that.
 #[tauri::command]
 #[specta::specta]
-pub fn acknowledge_project_hosts(
+pub async fn acknowledge_project_hosts(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     shown: Vec<String>,
 ) -> Result<SandboxState, String> {
-    let held = planes.held(&plane)?;
-    acknowledge(held.root(), &shown)
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || acknowledge(&root, &shown)).await
 }
 
 /// The person read the Notice of the project's Internet access presets as it showed them,
 /// `shown` (#1385): it is not shown again until they change from that.
 #[tauri::command]
 #[specta::specta]
-pub fn acknowledge_project_presets(
+pub async fn acknowledge_project_presets(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     shown: Vec<String>,
 ) -> Result<SandboxState, String> {
-    let held = planes.held(&plane)?;
-    acknowledge_presets(held.root(), &shown)
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        acknowledge_presets(&root, &shown)
+    })
+    .await
 }
 
 fn acknowledge_presets(root: &std::path::Path, shown: &[String]) -> Result<SandboxState, String> {
@@ -703,21 +728,25 @@ fn acknowledge(root: &std::path::Path, shown: &[String]) -> Result<SandboxState,
 /// no chat makes it, so a chat can neither ask for it nor answer it.
 #[tauri::command]
 #[specta::specta]
-pub fn allow_project_expects(
+pub async fn allow_project_expects(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     shown: Vec<ExpectedShown>,
 ) -> Result<SandboxState, String> {
     let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
-    allow_expects(
-        &root,
-        held.chats(),
-        &shown,
-        &held.audit_then_record(planes.network()),
-        now_secs(),
-    )?;
-    Ok(state_of(&root))
+    let network = planes.network().cloned();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        let root = held.root().to_path_buf();
+        allow_expects(
+            &root,
+            held.chats(),
+            &shown,
+            &held.audit_then_record(network.as_ref()),
+            now_secs(),
+        )?;
+        Ok(state_of(&root))
+    })
+    .await
 }
 
 /// [`allow_project_expects`] in the project at `root`: only what is declared **and** was
@@ -815,13 +844,13 @@ fn allow_awaited(
 /// question for the person.
 #[tauri::command]
 #[specta::specta]
-pub fn decline_project_expects(
+pub async fn decline_project_expects(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     shown: Vec<ExpectedShown>,
 ) -> Result<SandboxState, String> {
-    let held = planes.held(&plane)?;
-    decline_expects(held.root(), &shown)
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || decline_expects(&root, &shown)).await
 }
 
 /// The longest name an answer records: far past any path or service name.
@@ -857,22 +886,26 @@ fn decline_expects(
 /// alone (`WINDOW_ONLY`): no link and no chat makes it.
 #[tauri::command]
 #[specta::specta]
-pub fn allow_persona_hosts(
+pub async fn allow_persona_hosts(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     persona: String,
     digest: String,
 ) -> Result<SandboxState, String> {
     let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
-    allow_persona(
-        &root,
-        &persona,
-        &digest,
-        &held.audit_then_record(planes.network()),
-        now_secs(),
-    )?;
-    Ok(state_of(&root))
+    let network = planes.network().cloned();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        let root = held.root().to_path_buf();
+        allow_persona(
+            &root,
+            &persona,
+            &digest,
+            &held.audit_then_record(network.as_ref()),
+            now_secs(),
+        )?;
+        Ok(state_of(&root))
+    })
+    .await
 }
 
 /// **A persona's hosts and tools on one line**, as its Allow is audited and its Granted row
@@ -1614,9 +1647,12 @@ pub(crate) fn allowed_said(session: u32, level: sandbox::grant::Level, kept: &Ke
 /// Notice showed whole (or the host the person typed, where the block named none). Refused
 /// whole unless the chat is held on that block now (#1538, [`crate::taskblocks::shown_one`]). The window then restarts the chat once its turn has ended
 /// (`restart_chat`).
+///
+/// Off the window's thread (#1949): judging a grant reads the project's files and this
+/// machine's, and an Allow is audited and kept on disk before it is answered.
 #[tauri::command]
 #[specta::specta]
-pub fn allow_sandbox_block(
+pub async fn allow_sandbox_block(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
@@ -1624,32 +1660,37 @@ pub fn allow_sandbox_block(
     level: GrantLevel,
 ) -> Result<Allowed, String> {
     let held = planes.held(&plane)?;
-    let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
-    let (what, target) = (shown.what, shown.target);
-    let root = held.root().to_path_buf();
-    let allowed = match allow(
-        &root,
-        &sandbox::Machine::this(),
-        held.chats(),
-        session,
-        (what, &target, level),
-        &held.audit_then_record(planes.network()),
-        now_secs(),
-    ) {
-        // Its socket is not the one the Notice drew any more (#1927): nothing was kept, and
-        // the Notice is told the block again as it stands, so what is read next is what an
-        // answer would keep.
-        Err(NotJudged::SocketChanged) => {
-            if let Some(told) = shown_again(&plane, held.chats(), session, &block) {
-                planes.tell_block(told);
+    let network = planes.network().cloned();
+    let tell = planes.block_teller();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
+        let (what, target) = (shown.what, shown.target);
+        let root = held.root().to_path_buf();
+        let allowed = match allow(
+            &root,
+            &sandbox::Machine::this(),
+            held.chats(),
+            session,
+            (what, &target, level),
+            &held.audit_then_record(network.as_ref()),
+            now_secs(),
+        ) {
+            // Its socket is not the one the Notice drew any more (#1927): nothing was kept,
+            // and the Notice is told the block again as it stands, so what is read next is what
+            // an answer would keep.
+            Err(NotJudged::SocketChanged) => {
+                if let Some(told) = shown_again(&plane, held.chats(), session, &block) {
+                    tell(told);
+                }
+                return Err(SOCKET_CHANGED.to_owned());
             }
-            return Err(SOCKET_CHANGED.to_owned());
-        }
-        answered => answered?,
-    };
-    // Answered: neither this Notice nor a question for several tasks answers it again.
-    held.chats().blocks().answered(session, &block);
-    Ok(allowed)
+            answered => answered?,
+        };
+        // Answered: neither this Notice nor a question for several tasks answers it again.
+        held.chats().blocks().answered(session, &block);
+        Ok(allowed)
+    })
+    .await
 }
 
 /// **Keep blocked** on a block's Notice (#1666, taking over #1411's line): `shown` is the block
@@ -2184,12 +2225,13 @@ pub(crate) const READS_HISTORY: [&str; 2] = ["sandbox_grants", "revoke_sandbox_g
 /// (it, or a folder above it, was swapped for a link since: R8), for Settings to say.
 #[tauri::command]
 #[specta::specta]
-pub fn grantable_folders(
+pub async fn grantable_folders(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<GrantableFolders, String> {
-    let held = planes.held(&plane)?;
-    Ok(listed_and_pruned(held.root()))
+    let root = planes.held(&plane)?.root().to_path_buf();
+    // Off the window's thread (#1949): each listed folder is resolved on the disk again.
+    crate::off_the_window(READING_SANDBOX, move || Ok(listed_and_pruned(&root))).await
 }
 
 /// The folders chats may be granted, and those just dropped from the list.
@@ -2229,13 +2271,16 @@ fn listed_folders(root: &std::path::Path) -> Vec<String> {
 /// the folder holds that later code is loaded from, for the warning Settings shows.
 #[tauri::command]
 #[specta::specta]
-pub fn list_grantable_folder(
+pub async fn list_grantable_folder(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     folder: String,
 ) -> Result<GrantableListed, String> {
-    let held = planes.held(&plane)?;
-    list_folder(held.root(), &sandbox::Machine::this(), &folder)
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        list_folder(&root, &sandbox::Machine::this(), &folder)
+    })
+    .await
 }
 
 fn list_folder(
@@ -2270,15 +2315,18 @@ pub struct GrantableListed {
 /// Takes `folder` off the folders chats here may be granted. Answers the list as it is now.
 #[tauri::command]
 #[specta::specta]
-pub fn unlist_grantable_folder(
+pub async fn unlist_grantable_folder(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     folder: String,
 ) -> Result<Vec<String>, String> {
-    let held = planes.held(&plane)?;
-    sandbox::local::unlist_grantable(held.root(), std::path::Path::new(&folder))
-        .map_err(|why| format!("purlis could not take {folder} off the list: {why}"))?;
-    Ok(listed_folders(held.root()))
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        sandbox::local::unlist_grantable(&root, std::path::Path::new(&folder))
+            .map_err(|why| format!("purlis could not take {folder} off the list: {why}"))?;
+        Ok(listed_folders(&root))
+    })
+    .await
 }
 
 /// **The event every window is sent when this machine's sandbox policy changes** (#1431): the

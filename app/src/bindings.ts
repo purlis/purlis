@@ -344,6 +344,9 @@ export const commands = {
 	 *  **The forge is `charter init`'s rule** (#839): read from the remote of the repo the project
 	 *  is made for, else asked. `forge` is the operator's answer (`github`, `gitlab`) on the call
 	 *  after a question.
+	 * 
+	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
+	 *  writes its files and runs git.
 	 */
 	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge })),
 	/**
@@ -397,7 +400,13 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("onboarding_progress")),
 	/**  Keeps where the person is in the guided steps, for the next launch. The window's alone. */
 	keepOnboardingProgress: (progress: OnboardingProgress) => typedError<null, string>(__TAURI_INVOKE("keep_onboarding_progress", { progress })),
-	/**  The project's sandbox, for the offer notice and Settings. */
+	/**
+	 *  The project's sandbox, for the offer notice and Settings.
+	 * 
+	 *  Off the window's thread (#1949): it reads the project's manifests and the administrator's
+	 *  policy, and where the project has a local settings file it asks git whether that file is
+	 *  ignored, so it can take as long as git does.
+	 */
 	sandboxState: (plane: PlaneId) => typedError<SandboxState, string>(__TAURI_INVOKE("sandbox_state", { plane })),
 	/**
 	 *  The person's answer to the one-time offer: `turn_on` writes `[sandbox] mode = "on"` into
@@ -443,6 +452,9 @@ export const commands = {
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
+	 * 
+	 *  Off the window's thread (#1949): every pane asks it, and it reads the administrator's policy
+	 *  and every persona's hosts.
 	 */
 	personaGrantsHeld: (plane: PlaneId, session: number) => typedError<{
 	/**
@@ -496,6 +508,9 @@ export const commands = {
 	 *  Notice showed whole (or the host the person typed, where the block named none). Refused
 	 *  whole unless the chat is held on that block now (#1538, [`crate::taskblocks::shown_one`]). The window then restarts the chat once its turn has ended
 	 *  (`restart_chat`).
+	 * 
+	 *  Off the window's thread (#1949): judging a grant reads the project's files and this
+	 *  machine's, and an Allow is audited and kept on disk before it is answered.
 	 */
 	allowSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_sandbox_block", { plane, session, shown, level })),
 	/**
@@ -559,7 +574,12 @@ export const commands = {
 	 *  (it, or a folder above it, was swapped for a link since: R8), for Settings to say.
 	 */
 	grantableFolders: (plane: PlaneId) => typedError<GrantableFolders, string>(__TAURI_INVOKE("grantable_folders", { plane })),
-	/**  **Open hosts and Blocked lately** for Settings' Network page (#1662). */
+	/**
+	 *  **Open hosts and Blocked lately** for Settings' Network page (#1662).
+	 * 
+	 *  Off the window's thread (#1949): it reads the project's manifest, the administrator's policy
+	 *  and this machine's network record.
+	 */
 	sandboxNetwork: (plane: PlaneId) => typedError<SandboxNetwork, string>(__TAURI_INVOKE("sandbox_network", { plane })),
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
 	chatNetwork: (plane: PlaneId, session: number) => typedError<ChatNetwork, string>(__TAURI_INVOKE("chat_network", { plane, session })),
@@ -610,7 +630,12 @@ export const commands = {
 	 *  On a blocking thread: the Local file's check asks git whether it is ignored.
 	 */
 	dispatchLimits: (plane: PlaneId) => typedError<DispatchLimits, string>(__TAURI_INVOKE("dispatch_limits", { plane })),
-	/**  The dispatches of chat `session` waiting on the person, for the Notice on its tab. */
+	/**
+	 *  The dispatches of chat `session` waiting on the person, for the Notice on its tab.
+	 * 
+	 *  Off the window's thread (#1949): it reads the administrator's policy, and each dispatch is
+	 *  told against the project's grants on disk.
+	 */
 	dispatchGrantsNeeded: (plane: PlaneId, session: number) => typedError<DispatchPending[], string>(__TAURI_INVOKE("dispatch_grants_needed", { plane, session })),
 	/**
 	 *  **Allow** on a dispatch's Notice, at `level`: the pair is the app's record of the held
@@ -2725,7 +2750,9 @@ export const commands = {
 	 *  record charter would not read. `frame/slots.py`'s rule, which `recorded_context_gauge`
 	 *  keeps: a gauge silently reading zero is worse than no gauge.
 	 * 
-	 *  Not on a blocking thread: it is one bounded read of a sixteen-line file.
+	 *  On a blocking thread (#1949): it is one bounded read of a sixteen-line file, but every pane
+	 *  on screen asks it as its project comes to the front and every few seconds while its chat
+	 *  works, and a read of the disk is not the window's to wait for.
 	 */
 	chatUsage: (plane: PlaneId, session: number) => typedError<{
 	/**  `ctx NN%`: how full the context window was at the last turn that said. */

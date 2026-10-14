@@ -16,53 +16,59 @@ use purlis_core::clipath::{self, Linked};
 /// Answers the sentence to say.
 #[tauri::command]
 #[specta::specta]
-pub fn install_cli_on_path() -> Result<String, String> {
-    if !cfg!(target_os = "macos") {
-        return Err(
-            "purlis puts itself on PATH from here on macOS only. On Linux the .deb \
-                    installs /usr/bin/purlis and /usr/bin/charter; with the AppImage, run the \
-                    purlis inside it by its path."
-                .to_owned(),
-        );
-    }
-    let binary = crate::charter_binary()
-        .ok_or("this build has no `purlis` beside the app, so there is nothing to put on PATH.")?;
-    let dir = std::path::Path::new(clipath::MACOS_DIR);
-    let mut said = Vec::new();
-    let mut refused = Vec::new();
-    let mut for_admin = Vec::new();
-    for (link, answer) in clipath::link_all(dir, &binary) {
-        match answer {
-            Linked::Done(done) => said.push((link, done)),
-            Linked::Refused(why) => refused.push(why),
-            Linked::NeedsAdmin => for_admin.push(link),
+pub async fn install_cli_on_path() -> Result<String, String> {
+    // Off the window's thread (#1949): it may wait on macOS's password dialog for as long as the
+    // person takes to answer it.
+    crate::off_the_window("putting purlis on PATH", || {
+        if !cfg!(target_os = "macos") {
+            return Err(
+                "purlis puts itself on PATH from here on macOS only. On Linux the .deb \
+                        installs /usr/bin/purlis and /usr/bin/charter; with the AppImage, run the \
+                        purlis inside it by its path."
+                    .to_owned(),
+            );
         }
-    }
-    if !for_admin.is_empty() {
-        match as_administrator(&for_admin, &binary) {
-            Ok(done) => said.extend(done),
-            Err(why) => refused.push(why),
+        let binary = crate::charter_binary().ok_or(
+            "this build has no `purlis` beside the app, so there is nothing to put on PATH.",
+        )?;
+        let dir = std::path::Path::new(clipath::MACOS_DIR);
+        let mut said = Vec::new();
+        let mut refused = Vec::new();
+        let mut for_admin = Vec::new();
+        for (link, answer) in clipath::link_all(dir, &binary) {
+            match answer {
+                Linked::Done(done) => said.push((link, done)),
+                Linked::Refused(why) => refused.push(why),
+                Linked::NeedsAdmin => for_admin.push(link),
+            }
         }
-    }
-    if said.is_empty() {
-        return Err(refused.join(" "));
-    }
-    let home = purlis_core::profiles::home();
-    let mut sentences = Vec::new();
-    for (link, done) in said {
-        sentences.push(done);
-        let others = clipath::others(home.as_deref(), &link);
-        if !others.is_empty() {
-            let named: Vec<String> = others.iter().map(|p| p.display().to_string()).collect();
-            sentences.push(format!(
-                "Another one is at {} — a terminal whose PATH lists that directory first \
-                 still finds that one.",
-                named.join(", ")
-            ));
+        if !for_admin.is_empty() {
+            match as_administrator(&for_admin, &binary) {
+                Ok(done) => said.extend(done),
+                Err(why) => refused.push(why),
+            }
         }
-    }
-    sentences.extend(refused);
-    Ok(sentences.join(" "))
+        if said.is_empty() {
+            return Err(refused.join(" "));
+        }
+        let home = purlis_core::profiles::home();
+        let mut sentences = Vec::new();
+        for (link, done) in said {
+            sentences.push(done);
+            let others = clipath::others(home.as_deref(), &link);
+            if !others.is_empty() {
+                let named: Vec<String> = others.iter().map(|p| p.display().to_string()).collect();
+                sentences.push(format!(
+                    "Another one is at {} — a terminal whose PATH lists that directory first \
+                     still finds that one.",
+                    named.join(", ")
+                ));
+            }
+        }
+        sentences.extend(refused);
+        Ok(sentences.join(" "))
+    })
+    .await
 }
 
 /// The one privileged step, through macOS's own password dialog: the same thing VS Code's

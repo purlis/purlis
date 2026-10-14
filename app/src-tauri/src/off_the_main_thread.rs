@@ -26,9 +26,23 @@
 //! here", which finds its branch's folder through the bounded reader: a busy reader gate holds
 //! that ask for its deadline, twice over.
 //!
-//! `chat_usage` stays synchronous too: it reads one file of sixteen rows, about 30 µs, and walks
-//! nothing. So does `workspace_focused`, which checks a name and hands the extensions' report
-//! to a thread of its own.
+//! **And every command that touches a file, a process or a lock another purlis may hold**
+//! (#1949), whatever it measures here: a project switch asks the sandbox's state of five notices
+//! and two reads of every pane on screen, and forty fast reads in a row are still the window
+//! waiting. That is the sandbox's state and every answer that changes it, a pane's usage gauge
+//! and persona grants, the network record's reads and Allows, the dispatch grants' reads and
+//! answers, a session record, the pins and this machine's store, a chat's start, a project's
+//! close and making one. The window's tabs, reported at every switch, are written to this
+//! machine's store by a writer of their own (`planes::ArrangedBehind`), newest last.
+//!
+//! **What stays synchronous is listed, each with its reason** (`SYNCHRONOUS` in this module's
+//! costs tests, which fail on a synchronous command not on it): what the app holds in memory,
+//! and what the window relies on the order of, below. `workspace_focused` checks a name and
+//! hands the extensions' report to a thread of its own.
+//!
+//! **A command made `async` answers when its work is done, not in the order it was asked.**
+//! Where the window asks a read and a change of the same thing, `app/src/commandOrder.ts` sends
+//! each in its lane only once the one before has answered, per project.
 //!
 //! Smart close's offer, its start and its cancel stay synchronous, for a terminal's reason. They
 //! run no git, and the offer and the cancel read only what the app holds in memory, well under
@@ -43,8 +57,88 @@
 //! window relies on their order: a pane's resize must land before the watch that follows it
 //! (#891). Nothing in this module runs in the app; it is the tests that hold both halves.
 
+/// A test's hold on the work a command hands off the window (#1949): while a gate named for the
+/// work is closed, that work waits at its start on its blocking thread, so a test can see what
+/// the window does in the meantime without a race against how fast the work is.
 #[cfg(test)]
-mod tests {
+pub(crate) mod gate {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Condvar, Mutex};
+
+    /// One closed gate: open until [`Gate::open`] says so.
+    #[derive(Default)]
+    pub(crate) struct Gate {
+        open: Mutex<bool>,
+        opened: Condvar,
+    }
+
+    impl Gate {
+        /// Waits until the gate is opened.
+        pub(crate) fn wait(&self) {
+            let mut open = self.open.lock().unwrap_or_else(|e| e.into_inner());
+            while !*open {
+                open = self.opened.wait(open).unwrap_or_else(|e| e.into_inner());
+            }
+        }
+
+        /// Lets every work held at it go, and every one after it.
+        pub(crate) fn open(&self) {
+            *self.open.lock().unwrap_or_else(|e| e.into_inner()) = true;
+            self.opened.notify_all();
+        }
+    }
+
+    fn closed() -> &'static Mutex<HashMap<String, Arc<Gate>>> {
+        static CLOSED: std::sync::OnceLock<Mutex<HashMap<String, Arc<Gate>>>> =
+            std::sync::OnceLock::new();
+        CLOSED.get_or_init(Mutex::default)
+    }
+
+    /// Closes the gate for the work named `what` until the answer is dropped, which opens it.
+    pub(crate) fn close(what: &str) -> Closed {
+        let gate = Arc::new(Gate::default());
+        closed()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(what.to_owned(), Arc::clone(&gate));
+        Closed {
+            what: what.to_owned(),
+            gate,
+        }
+    }
+
+    /// The gate the work named `what` waits at, where one is closed.
+    pub(crate) fn of(what: &str) -> Option<Arc<Gate>> {
+        closed()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(what)
+            .cloned()
+    }
+
+    /// A gate a test closed: opened, and forgotten, when dropped.
+    pub(crate) struct Closed {
+        what: String,
+        gate: Arc<Gate>,
+    }
+
+    impl Drop for Closed {
+        fn drop(&mut self) {
+            closed()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&self.what);
+            self.gate.open();
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "off_the_main_thread_costs_tests.rs"]
+mod costs;
+
+#[cfg(test)]
+pub(crate) mod tests {
     use std::path::Path;
     use std::sync::mpsc;
     use std::thread::ThreadId;
@@ -97,15 +191,15 @@ mod tests {
 
     /// What one invoke came to: the thread its answer was given on, how long the asking
     /// thread was held before it could go back to the window, and the answer.
-    struct Asked {
-        answered_on: ThreadId,
-        held_for: Duration,
-        answer: Result<Value, Value>,
+    pub(crate) struct Asked {
+        pub(crate) answered_on: ThreadId,
+        pub(crate) held_for: Duration,
+        pub(crate) answer: Result<Value, Value>,
     }
 
     /// Invokes `command` with `args` from the main window, as the app's page would, and waits
     /// for its answer.
-    fn ask(app: &tauri::App<MockRuntime>, command: &str, args: Value) -> Asked {
+    pub(crate) fn ask(app: &tauri::App<MockRuntime>, command: &str, args: Value) -> Asked {
         let window = app
             .get_webview_window(WINDOW)
             .expect("the main window is open");

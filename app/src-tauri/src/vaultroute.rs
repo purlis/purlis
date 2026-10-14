@@ -463,49 +463,54 @@ pub fn vault_refusals(
 /// ends, or leaves that to the person ([`tell`]). No restart.
 #[tauri::command]
 #[specta::specta]
-pub fn allow_refused_vault(
+pub async fn allow_refused_vault(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
     vault: String,
 ) -> Result<VaultAnswered, String> {
     let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
-    let open = held
-        .chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == session)
-        .ok_or_else(|| format!("purlis allowed nothing for chat {session}: it is not open."))?;
-    let grant = allow(
-        &root,
-        held.vault_refusals(),
-        &Chat {
+    let network = planes.network().cloned();
+    // Off the window's thread (#1949): the grant is audited and kept on disk.
+    crate::off_the_window("keeping your Allow", move || {
+        let root = held.root().to_path_buf();
+        let open = held
+            .chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == session)
+            .ok_or_else(|| format!("purlis allowed nothing for chat {session}: it is not open."))?;
+        let grant = allow(
+            &root,
+            held.vault_refusals(),
+            &Chat {
+                session,
+                persona: open.persona.as_deref(),
+                name: held.chats().shown_name(session),
+            },
+            &vault,
+            &held.audit_then_record(network.as_ref()),
+            now_secs(),
+        )?;
+        let told = tell(
+            held.vault_refusals(),
             session,
-            persona: open.persona.as_deref(),
-            name: held.chats().shown_name(session),
-        },
-        &vault,
-        &held.audit_then_record(planes.network()),
-        now_secs(),
-    )?;
-    let told = tell(
-        held.vault_refusals(),
-        session,
-        || {
-            let glance = held.board().glance(session);
-            (glance.state, glance.asking)
-        },
-        told_allowed(&grant),
-        |chat, text| {
-            held.chats()
-                .sessions()
-                .input(chat, sent_as(text).as_bytes())
-        },
-    );
-    Ok(VaultAnswered {
-        said: allowed_said(&grant, told),
+            || {
+                let glance = held.board().glance(session);
+                (glance.state, glance.asking)
+            },
+            told_allowed(&grant),
+            |chat, text| {
+                held.chats()
+                    .sessions()
+                    .input(chat, sent_as(text).as_bytes())
+            },
+        );
+        Ok(VaultAnswered {
+            said: allowed_said(&grant, told),
+        })
     })
+    .await
 }
 
 /// **Keep blocked** on a refused vault's Notice: puts it away, and changes nothing. The chat's

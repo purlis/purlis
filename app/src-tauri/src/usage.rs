@@ -99,10 +99,12 @@ pub struct UsageTurn {
 /// record charter would not read. `frame/slots.py`'s rule, which `recorded_context_gauge`
 /// keeps: a gauge silently reading zero is worse than no gauge.
 ///
-/// Not on a blocking thread: it is one bounded read of a sixteen-line file.
+/// On a blocking thread (#1949): it is one bounded read of a sixteen-line file, but every pane
+/// on screen asks it as its project comes to the front and every few seconds while its chat
+/// works, and a read of the disk is not the window's to wait for.
 #[tauri::command]
 #[specta::specta]
-pub fn chat_usage(
+pub async fn chat_usage(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
@@ -112,7 +114,11 @@ pub fn chat_usage(
     let Some(conversation) = held.board().conversation(session) else {
         return Ok(None);
     };
-    Ok(of(held.root(), &conversation))
+    let root = held.root().to_path_buf();
+    crate::off_the_window("reading a chat's usage", move || {
+        Ok(of(&root, &conversation))
+    })
+    .await
 }
 
 /// The gauge for Claude Code's session `conversation` on `plane`. The command is this after

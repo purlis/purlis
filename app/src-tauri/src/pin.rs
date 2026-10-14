@@ -39,8 +39,13 @@ pub struct PinReport {
 /// The pin report for this plane.
 #[tauri::command]
 #[specta::specta]
-pub fn plane_pin(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<PinReport, String> {
-    Ok(report(planes.held(&plane)?.root()))
+pub async fn plane_pin(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<PinReport, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    // Off the window's thread (#1949): the project's manifest is read from the disk.
+    crate::off_the_window("reading the project's pin", move || Ok(report(&root))).await
 }
 
 pub(crate) fn report(root: &std::path::Path) -> PinReport {

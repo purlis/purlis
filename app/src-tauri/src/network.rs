@@ -497,21 +497,31 @@ fn network_of(
 }
 
 /// **Open hosts and Blocked lately** for Settings' Network page (#1662).
+///
+/// Off the window's thread (#1949): it reads the project's manifest, the administrator's policy
+/// and this machine's network record.
 #[tauri::command]
 #[specta::specta]
-pub fn sandbox_network(
+pub async fn sandbox_network(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<SandboxNetwork, String> {
-    let held = planes.held(&plane)?;
-    let root = held.root();
-    Ok(network_of(
-        root,
-        &sandbox::Plane::read(root),
-        planes.network(),
-        now_secs(),
-    ))
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let network = planes.network().cloned();
+    crate::off_the_window(READING_NETWORK, move || {
+        Ok(network_of(
+            &root,
+            &sandbox::Plane::read(&root),
+            network.as_ref(),
+            now_secs(),
+        ))
+    })
+    .await
 }
+
+/// What the commands that read this machine's network record name their work, off the
+/// window's thread.
+const READING_NETWORK: &str = "reading the network record";
 
 /// [`ChatNetwork`] for chat `session` of the project at `root`.
 fn chat_network_of(
@@ -624,19 +634,24 @@ fn refused_of(
 /// **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused.
 #[tauri::command]
 #[specta::specta]
-pub fn chat_network(
+pub async fn chat_network(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<ChatNetwork, String> {
     let held = planes.held(&plane)?;
-    Ok(chat_network_of(
-        held.root(),
-        held.chats(),
-        session,
-        planes.network(),
-        now_secs(),
-    ))
+    let network = planes.network().cloned();
+    // Off the window's thread (#1949): the chat's part of the network record is read whole.
+    crate::off_the_window(READING_NETWORK, move || {
+        Ok(chat_network_of(
+            held.root(),
+            held.chats(),
+            session,
+            network.as_ref(),
+            now_secs(),
+        ))
+    })
+    .await
 }
 
 /// One **Keep blocked** a person answered here (#1700): what the Inbox's look back lists beside
@@ -672,16 +687,20 @@ fn kept_blocked_of(entries: &[Entry]) -> Vec<KeptBlocked> {
 /// first: the window's alone (`WINDOW_ONLY`).
 #[tauri::command]
 #[specta::specta]
-pub fn sandbox_kept_blocked(
+pub async fn sandbox_kept_blocked(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<KeptBlocked>, String> {
-    let held = planes.held(&plane)?;
-    let entries = planes
-        .network()
-        .map(|record| record.read(held.root(), now_secs()))
-        .unwrap_or_default();
-    Ok(kept_blocked_of(&entries))
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let network = planes.network().cloned();
+    // Off the window's thread (#1949): the record is read whole.
+    crate::off_the_window(READING_NETWORK, move || {
+        let entries = network
+            .map(|record| record.read(&root, now_secs()))
+            .unwrap_or_default();
+        Ok(kept_blocked_of(&entries))
+    })
+    .await
 }
 
 /// **Allow on Blocked lately** in the project at `root` (#1662): `host`, judged by the core as a
@@ -747,21 +766,26 @@ fn allow_blocked(
 /// **Allow** on a row of Blocked lately (#1662): the window's alone (`WINDOW_ONLY`).
 #[tauri::command]
 #[specta::specta]
-pub fn allow_blocked_host(
+pub async fn allow_blocked_host(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     host: String,
     level: GrantLevel,
 ) -> Result<Allowed, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    let at = now_secs();
-    let lately = planes
-        .network()
-        .map(|record| record.read(root, at))
-        .unwrap_or_default();
-    let audit = held.audit_then_record(planes.network());
-    allow_blocked(root, held.chats(), &lately, &host, level, &audit, at)
+    let network = planes.network().cloned();
+    // Off the window's thread (#1949): the record is read, the grant judged, audited and kept.
+    crate::off_the_window("keeping your Allow", move || {
+        let root = held.root();
+        let at = now_secs();
+        let lately = network
+            .as_ref()
+            .map(|record| record.read(root, at))
+            .unwrap_or_default();
+        let audit = held.audit_then_record(network.as_ref());
+        allow_blocked(root, held.chats(), &lately, &host, level, &audit, at)
+    })
+    .await
 }
 
 #[cfg(test)]

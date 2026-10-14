@@ -146,7 +146,7 @@ pub async fn curation_offers(
 /// directory are the core's answer. A refusal comes back before anything starts.
 #[tauri::command]
 #[specta::specta]
-pub fn curate(
+pub async fn curate(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     subject: String,
@@ -155,7 +155,10 @@ pub fn curate(
     rows: u16,
 ) -> Result<Curating, String> {
     let held = planes.held(&plane)?;
-    open(&held, &subject, &action, Size { columns, rows })
+    crate::off_the_window("starting the curation chat", move || {
+        open(&held, &subject, &action, Size { columns, rows })
+    })
+    .await
 }
 
 /// Every subject's list, against a root the registry has already vouched for.
