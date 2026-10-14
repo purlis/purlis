@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791980953643,
+  "lastUpdate": 1791984643532,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1938,6 +1938,42 @@ window.BENCHMARK_DATA = {
             "value": 241.7,
             "unit": "MB",
             "extra": "median of 6 samples: 237.1, 244.4, 246, 241.3, 242.1, 128.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "4189c5cb7f3c45c0e1bb23699e6aa504b2f7463c",
+          "message": "review(qw385): the key-listing test lives in a file of its own\n\nThe lane-writes guard (#1949) reads vaults.rs's code and closed its test\nmodule early, so the test's grant read as a write the window's table must\nlist. A `_tests.rs` file is skipped whole.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T16:50:50+04:00",
+          "tree_id": "aed7353074b7cb62ecb0a9ceff2950e457629030",
+          "url": "https://github.com/purlis/purlis/commit/4189c5cb7f3c45c0e1bb23699e6aa504b2f7463c"
+        },
+        "date": 1791984641998,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 896,
+            "unit": "MB",
+            "extra": "median of 3 samples: 755, 896, 997 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 185.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 251.4, 210.1, 197.5, 172.3, 173.1, 119.2 MB"
           }
         ]
       }
