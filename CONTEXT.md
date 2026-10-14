@@ -304,11 +304,13 @@ _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 
 **Harness declaration**:
 Data that says how to start one harness, how to name and resume its sessions, which levels it
-offers and what it can do. The ones for Claude Code, Codex and opencode ship with purlis; a
-project may declare more, which each machine approves before they run, and never replaces a
-built-in's (ADR 0073).
-_Avoid_: harness definition, harness config (that is the harness's own), profile (that is which
-program runs on this machine)
+offers, what it can do, and what its profiles are: the **sign-in kinds** they support, the
+folder variables, whether their credentials can be kept from the harness's commands, and how a
+conversation moves. The ones for Claude Code, Codex and opencode ship with purlis; a project may
+declare more, which each machine approves before they run, and never replaces a built-in's
+(ADR 0073).
+_Avoid_: harness definition, harness config (that is the harness's own), profile (that is one
+identity of the harness the declaration describes)
 
 **Harness level**:
 How much purlis learns from a chat's harness, set when a run starts and fixed for it: **1**,
@@ -347,6 +349,14 @@ _Avoid_: browser profile, kept profile (both are the profile), harness folder (t
 profile is kept), harness login, login (for its sign-in: a login is a browser's, or a **browser
 login**), account (that is who a model is billed to), credentials (that is what a
 sign-in leaves in its folder), user data, persistent browser
+
+**Sign-in kind**:
+How a **Profile** signs in to its model: a **subscription** through the harness's own flow,
+which the harness keeps and purlis never holds; an **API key** or **cloud** credentials from
+the person's vault; or a **local** model, with nothing to sign in. A harness declaration lists
+the kinds it supports (ADR 0073). Not a forge's sign-in, which is a **Forge account** and never
+reaches a chat.
+_Avoid_: login (unqualified), auth method, account (that is who a model is billed to)
 
 **Session host** (`purlisd`):
 The process that owns every **hosted program** on a device, every chat's terminal and every

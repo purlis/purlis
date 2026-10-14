@@ -36,6 +36,21 @@ refused:
 A `purlis <profile>` command that starts a chat from a terminal is not in this version yet
 (#1608).
 
+`purlis profile list` is the same listing with a **SIGN-IN** column: the sign-in purlis can
+see a profile has. A subscription is signed in through the harness's own flow and purlis never
+looks at it, so a profile shows `unknown` unless purlis can tell: `local` (or another kind) for a
+harness that supports that kind alone, `cloud` where the profile's `env` or `[chat_env] pass`
+switches the harness to a cloud (`CLAUDE_CODE_USE_BEDROCK=1`), and `api-key` where they pass a
+provider's key (`ANTHROPIC_API_KEY`):
+
+```
+  NAME         KIND      SIGN-IN  COMMAND                           FROM
+  claude       claude    unknown  claude                            built-in
+  opencode     opencode  unknown  opencode                          built-in
+  codex        codex     unknown  codex                             built-in
+  claude-aws   claude    cloud    CLAUDE_CODE_USE_BEDROCK=1 claude  charter.local.toml
+```
+
 ## Two accounts of one harness, or one version pinned
 
 A harness profile is a named way to launch one harness: its kind, its command, its

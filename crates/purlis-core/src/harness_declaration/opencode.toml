@@ -32,6 +32,24 @@ hooks = true
 # and a session that runs with `fs` and `terminal` both off, measured on 1.18.33.
 acp = ["opencode", "acp"]
 
+[sign_in]
+# A ChatGPT or Copilot plan through `opencode auth login`, never a Claude plan (#2039); a
+# provider's key; Bedrock, Vertex or Azure; a local model.
+kinds = ["subscription", "api-key", "cloud", "local"]
+kept_from_commands = "no: opencode and the commands it runs are wrapped in one sandbox"
+
+[folders]
+# Its settings under `$XDG_CONFIG_HOME/opencode`, and its data, credentials and sessions under
+# `$XDG_DATA_HOME/opencode` (`packages/util/src/global-roots.ts`); `OPENCODE_CONFIG_DIR` only
+# adds a folder it searches. Both XDG variables reach the commands a chat runs too.
+config_env = "XDG_CONFIG_HOME"
+data_env = "XDG_DATA_HOME"
+
+[conversation]
+# Its own `opencode export <id>` and `opencode import <file>`.
+export = ["export", "{id}"]
+import = ["import"]
+
 [capabilities]
 reports_its_process = "no: opencode names no variable for the process its plugin runs under"
 reports_its_start_before_the_first_prompt = "no: opencode reports its start at the first prompt"
