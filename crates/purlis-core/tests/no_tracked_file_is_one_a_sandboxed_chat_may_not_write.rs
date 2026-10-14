@@ -40,6 +40,9 @@ impl Asks for Fresh {
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         Asked.replayed(top, onto)
     }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        Asked.replayed_from(top, onto, head)
+    }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         Asked.tracked(top, commit)
     }
