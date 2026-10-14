@@ -87,6 +87,7 @@ const LOCAL_READS: &[&str] = &[
     "confirmed_hosts",
     "dispatch_mine_in",
     "grantable_folders",
+    "granted_ports",
     "granted_services",
     "granted_sockets",
     "granted_vaults",
