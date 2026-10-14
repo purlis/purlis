@@ -158,7 +158,12 @@ export function useProjectHost(): HTMLElement {
 type Scrolled = Map<Element, { top: number; left: number }>;
 
 /** How many scrolled elements a view's places hold before the ones that have gone are let go. */
-const SCROLLED_MOST = 64;
+export const SCROLLED_MOST = 64;
+
+/** How many places are held for the view drawn in `host`: for the test of what is let go. */
+export function scrolledPlacesHeld(host: HTMLElement): number {
+  return scrolledUnder.get(host)?.size ?? 0;
+}
 
 /** What is scrolled under each host, kept with the host and gone with it. */
 const scrolledUnder = new WeakMap<HTMLElement, Scrolled>();

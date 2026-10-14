@@ -42,6 +42,9 @@ export type Shape = {
   workspaces: number;
   /** Overrides `chats` for one project, by its place: for telling whose chats a switch costs. */
   chatsIn?: Record<number, number>;
+  /** How many panes the tab in front holds in each project switched between: the first chat's
+   *  pane, split until there are this many. One, unless said. */
+  panes?: number;
 };
 
 export const rootOf = (n: number) => `/home/dev/project-${n}`;
@@ -68,6 +71,26 @@ function chatsOf(root: string, shape: Shape, count: number): OpenChat[] {
   }));
 }
 
+/** What the picker offers a new chat: one profile, as a machine with one harness has. */
+const START_OPTIONS = {
+  profiles: [
+    {
+      name: "claude",
+      kind: "claude",
+      shown: "claude",
+      source: "built-in",
+      is_default: true,
+      approval: null,
+    },
+  ],
+  refused: [],
+  personas: ["steward"],
+  persona: "steward",
+  persona_profiles: {},
+  ignore_fix: null,
+  declares_none: true,
+};
+
 /** What the window sent the core, in order. */
 export type Asked = { cmd: string; plane: string | undefined };
 
@@ -78,6 +101,8 @@ function core(shape: Shape): Asked[] {
   const chats = new Map(
     roots.map((root, n) => [root, chatsOf(root, shape, shape.chatsIn?.[n] ?? shape.chats)]),
   );
+  // Past every session a project was given: a chat a split starts is a new one.
+  let started = 1_000;
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     const plane = given.plane as string | undefined;
@@ -105,6 +130,9 @@ function core(shape: Shape): Asked[] {
         unfiled: [],
       };
     if (cmd === "opened_chats") return open;
+    // A split starts a chat, on the profile its picker offers.
+    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_chat") return { session: (started += 1) };
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
@@ -179,6 +207,8 @@ export type Switch = {
   invoked: number;
   /** How many of them were sent before the press returned: before the project was painted. */
   invokedAtOnce: number;
+  /** How many panes were on screen once the project was in front. */
+  panes: number;
   /** Whether the project's chat strip and its pane were on screen when the press returned,
    *  before any command it sent had been answered. */
   paintedAtOnce: boolean;
@@ -254,6 +284,13 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
   for (const n of [...new Set(visits), 0]) {
     fireEvent.click(projectTab(nameOf(n)));
     await settled(asked);
+    // The tab in front, split until it holds as many panes as the shape says.
+    for (let held = screen.getAllByTestId("pane").length; held < (shape.panes ?? 1); held++) {
+      fireEvent.click(screen.getAllByRole("button", { name: "Split right" })[0]);
+      fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+      await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(held + 1));
+      await settled(asked);
+    }
   }
 
   const out: Switch[] = [];
@@ -308,6 +345,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       invokes,
       invoked: asked.length - from,
       invokedAtOnce,
+      panes: screen.getAllByTestId("pane").length,
       paintedAtOnce,
     });
   }

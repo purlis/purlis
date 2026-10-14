@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
-import { useProjectShown } from "./projectShown";
+import { useEffect, useRef, useState } from "react";
+import { useOnShownAgain, useProjectShown } from "./projectShown";
 import { commands, type ChatUsage, type GaugeTone, type PlaneId, type UsageTurn } from "./bindings";
 import { everyWhileShown } from "./whileShown";
 
@@ -78,11 +78,24 @@ export function useChatUsage(
   const [usage, setUsage] = useState<{ session: number; usage: ChatUsage | null }>();
   // **Nothing is read for a chat of a project that is not in front** (`projectShown.tsx`): its
   // pane is kept and not drawn again, so `running` here is what it was as the project left, and
-  // a beat on it would read every three seconds for a number nobody sees. Read at once as the
-  // project comes back, as at any other move.
+  // a beat on it would read every three seconds for a number nobody sees.
+  //
+  // **As the project comes back it is read after the project is painted, not before.** The
+  // command is one the core answers on the window's own thread, and every pane of the tab in
+  // front has a gauge: read in the switch, that is one such command per pane ahead of the
+  // paint, which is the very thing a switch is meant not to wait on. The gauge shows what it
+  // held, and the read behind it corrects it.
   const shown = useProjectShown();
 
+  /** The read in force, for the one made as the project comes back. */
+  const reading = useRef<() => void>(undefined);
+  /** Whether the project was behind when this last ran: coming back is not a move. */
+  const wasBehind = useRef(!shown);
+  useOnShownAgain(() => reading.current?.());
+
   useEffect(() => {
+    const back = wasBehind.current;
+    wasBehind.current = !shown;
     if (!shown) return;
     let gone = false;
     const read = () => {
@@ -100,13 +113,17 @@ export function useChatUsage(
           // a read succeeds, and an unknown is never drawn as a zero.
         });
     };
-    read();
-    const again = setTimeout(read, AFTER_A_MOVE_MS);
+    reading.current = read;
+    // At a move, and when the pane opens: at once, and again a moment later. Not as the
+    // project comes back, which reads once, after the paint (above).
+    if (!back) read();
+    const again = back ? undefined : setTimeout(read, AFTER_A_MOVE_MS);
     // Mid-turn, on the window's one beat: nothing while the window is hidden, one read the
     // moment it is shown again (`whileShown.ts`).
     const ticking = running ? everyWhileShown(WHILE_RUNNING_MS, read) : undefined;
     return () => {
       gone = true;
+      reading.current = undefined;
       clearTimeout(again);
       ticking?.();
     };
