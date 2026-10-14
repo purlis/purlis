@@ -1900,6 +1900,29 @@ enum Line {
     /// After every other kind: it requires `secret_exec`, which none of them carries. Held on
     /// its connection for as long as the command runs (#1407).
     SecretExec(crate::secrets::brokered::Ask),
+    /// After every other kind: it requires `frames`, which none of them carries. The
+    /// connection carries frames from the app's acceptance on ([`framed`], #1996).
+    Frames(framed::Hello),
+}
+
+impl Ask {
+    /// The chat this ask says it comes from, which its token has to be the token of.
+    pub fn chat(&self) -> u32 {
+        match self {
+            Self::Ticket { chat } => *chat,
+            Self::Open(open) => open.chat,
+            Self::Report(back) => back.chat,
+            Self::SessionRecord(record) => record.chat,
+            Self::Write(write) => write.chat,
+            Self::Git(git) => git.chat,
+            Self::Commit(commit) => commit.chat,
+            Self::Vaults { chat } | Self::Keys { chat, .. } => *chat,
+            Self::WhereWorking(asks) => asks.chat,
+            Self::Dispatch(dispatch) => dispatch.chat,
+            Self::Task(asked) => asked.chat,
+            Self::Removal(removal) => removal.chat,
+        }
+    }
 }
 
 impl Line {
@@ -1907,18 +1930,7 @@ impl Line {
     fn chat(&self) -> u32 {
         match self {
             Self::Report(report) => report.chat,
-            Self::Ask(Ask::Ticket { chat }) => *chat,
-            Self::Ask(Ask::Open(open)) => open.chat,
-            Self::Ask(Ask::Report(back)) => back.chat,
-            Self::Ask(Ask::SessionRecord(record)) => record.chat,
-            Self::Ask(Ask::Write(write)) => write.chat,
-            Self::Ask(Ask::Git(git)) => git.chat,
-            Self::Ask(Ask::Commit(commit)) => commit.chat,
-            Self::Ask(Ask::Vaults { chat } | Ask::Keys { chat, .. }) => *chat,
-            Self::Ask(Ask::WhereWorking(asks)) => asks.chat,
-            Self::Ask(Ask::Dispatch(dispatch)) => dispatch.chat,
-            Self::Ask(Ask::Task(asked)) => asked.chat,
-            Self::Ask(Ask::Removal(removal)) => removal.chat,
+            Self::Ask(ask) => ask.chat(),
             Self::ByHand(notice) => notice.chat,
             Self::Saved(saved) => saved.chat,
             Self::Refused(refused) => refused.chat,
@@ -1928,6 +1940,7 @@ impl Line {
             Self::Blocked(blocked) => blocked.chat,
             Self::Doing(doing) => doing.chat,
             Self::SecretExec(ask) => ask.chat,
+            Self::Frames(hello) => hello.chat,
         }
     }
 }
@@ -2642,10 +2655,14 @@ mod off_unix;
 pub mod spool;
 
 pub mod permission;
+
+pub mod framed;
+#[cfg(unix)]
+pub use framed::Framed;
 #[cfg(not(unix))]
 pub use off_unix::{
-    Asking, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send, tell,
-    tell_saved,
+    Asking, Framed, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send,
+    tell, tell_saved,
 };
 pub use permission::{PermissionAsked, Permitting, ask_permission};
 
@@ -3277,29 +3294,7 @@ fn serve(
         // carry it ends the connection unread, said so and never acted on. The chat's number
         // is said in the app's log (#647); the token is not.
         let chat = line.chat();
-        // The peer as the socket names it now, and as it named it at the accept: both must be
-        // inside the chat, so a line finished by a process the first one handed the connection
-        // to is judged by that process too.
-        let now = purlis_same_user::peer_process_of(&writer)
-            .ok()
-            .map(|(_, pid)| pid);
-        // The process that connected and the one the socket names now (a connection handed on
-        // mid-line names its new holder on macOS): each must run inside the chat, read from
-        // the kernel only once the line's token has checked (D-1407-10).
-        let senders: Vec<u32> = match (peer, now) {
-            (Some(peer), Some(now)) if peer != now => vec![peer, now],
-            (Some(pid), _) | (None, Some(pid)) => vec![pid],
-            (None, None) => Vec::new(),
-        };
-        let admission = tokens.admission_by(
-            chat,
-            token.as_deref(),
-            (!senders.is_empty()).then_some(senders),
-            &|senders, program| {
-                Seen::all(senders).is_some_and(|seen| seen.iter().all(|one| one.inside(program)))
-            },
-        );
-        match admission {
+        match admission_of(tokens, chat, token.as_deref(), peer, &writer) {
             // A chat heard from is running: a key of its, or another's, that a busy lock kept
             // out as its token was issued is recorded now, if the lock is free (#1426).
             Admission::Admitted => tokens.record_unrecorded(),
@@ -3404,6 +3399,24 @@ fn serve(
                 (hearing.secret_exec)(ask, Box::new(reader), Box::new(writer));
                 return;
             }
+            Line::Frames(hello) => {
+                // Held for as long as its asks take, as one ask is: the turn is let go first.
+                turn.finish();
+                serve_frames(
+                    Greeting {
+                        hello,
+                        token: token.as_deref(),
+                        peer,
+                        this,
+                    },
+                    tokens,
+                    hearing,
+                    reader,
+                    writer,
+                    &deadline,
+                );
+                return;
+            }
         }
         // Told as taken only once it is recorded durably: a line the hearer could not record
         // gets no answer, so its hook spools it (FD-30). An older hook has closed its end
@@ -3432,6 +3445,152 @@ fn serve(
             turn.finish();
         }
     }
+}
+
+/// Whether a line or a framed ask naming `chat` and carrying `token` is admitted
+/// (D-1407-6, D-1407-10): the token must be the chat's, and the process that connected (`peer`)
+/// and the one the socket names now must each run inside the chat, so one finished by a process
+/// the first handed the connection to is judged by that process too. The processes are read
+/// from the kernel only once the token has checked. The chat's number is said in the app's log
+/// (#647); the token is not.
+#[cfg(unix)]
+fn admission_of(
+    tokens: &ChatTokens,
+    chat: u32,
+    token: Option<&str>,
+    peer: Option<u32>,
+    connection: &std::os::unix::net::UnixStream,
+) -> Admission {
+    let now = purlis_same_user::peer_process_of(connection)
+        .ok()
+        .map(|(_, pid)| pid);
+    // A connection handed on mid-line names its new holder on macOS.
+    let senders: Vec<u32> = match (peer, now) {
+        (Some(peer), Some(now)) if peer != now => vec![peer, now],
+        (Some(pid), _) | (None, Some(pid)) => vec![pid],
+        (None, None) => Vec::new(),
+    };
+    tokens.admission_by(
+        chat,
+        token,
+        (!senders.is_empty()).then_some(senders),
+        &|senders, program| {
+            Seen::all(senders).is_some_and(|seen| seen.iter().all(|one| one.inside(program)))
+        },
+    )
+}
+
+/// How long one framed ask may take to arrive, from when it begins to be read: an ask is at
+/// most a line, so this bounds only a sender dripping.
+#[cfg(unix)]
+const A_FRAMED_ASK_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The hello a framed connection was admitted on: its chat and token, the process that
+/// connected, and the connection's number.
+#[cfg(unix)]
+struct Greeting<'a> {
+    hello: framed::Hello,
+    token: Option<&'a str>,
+    peer: Option<u32>,
+    this: u64,
+}
+
+/// A connection whose hello was admitted (#1996): accepted on one line, then served as a framed
+/// stream for the hello's chat ([`framed::serve`]). Each ask is admitted again as a line is
+/// ([`admission_of`], with the hello's token and the process the socket names then), and
+/// answered as a line's is, by `hearing.answer` told this connection's number.
+#[cfg(unix)]
+fn serve_frames(
+    greeting: Greeting<'_>,
+    tokens: &ChatTokens,
+    hearing: &Hearing,
+    mut reader: std::io::BufReader<Deadlined>,
+    mut writer: std::os::unix::net::UnixStream,
+    deadline: &std::sync::Mutex<Option<std::time::Instant>>,
+) {
+    use std::io::Write;
+
+    let Greeting {
+        hello,
+        token,
+        peer,
+        this,
+    } = greeting;
+    fn say(writer: &mut std::os::unix::net::UnixStream, line: &impl serde::Serialize) -> bool {
+        serde_json::to_vec(line).is_ok_and(|mut said| {
+            said.push(b'\n');
+            writer.write_all(&said).is_ok()
+        })
+    }
+    if hello.frames != framed::VERSION {
+        say(
+            &mut writer,
+            &Answer::No {
+                why: format!(
+                    "the app speaks frames version {}, and this asked for {}",
+                    framed::VERSION,
+                    hello.frames
+                ),
+            },
+        );
+        return;
+    }
+    if !say(&mut writer, &framed::Accepted::now()) {
+        return;
+    }
+    // An answer may be a frame at its bound, and an asker is given as long to take it as a
+    // brokered command's output is.
+    let _ = writer.set_write_timeout(Some(A_FRAME_WRITE_TAKES_AT_MOST));
+    let Ok(connection) = writer.try_clone() else {
+        return;
+    };
+    let chat = hello.chat;
+    let mut arm = || {
+        *deadline
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(std::time::Instant::now() + A_FRAMED_ASK_TAKES_AT_MOST);
+    };
+    let mut admit = || {
+        *deadline
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        match admission_of(tokens, chat, token, peer, &connection) {
+            Admission::Admitted => Ok(()),
+            Admission::NoToken => Err(format!(
+                "this ask does not carry chat {chat}'s token, so nothing was done"
+            )),
+            refused => {
+                tracing::warn!(
+                    "purlis: a framed ask for chat {chat} carried its token and was refused \
+                     ({refused:?})"
+                );
+                Err(refused
+                    .refusal()
+                    .unwrap_or("this ask was refused, so nothing was done")
+                    .to_owned())
+            }
+        }
+    };
+    let _ = framed::serve(
+        &mut reader,
+        &mut writer,
+        framed::Serving {
+            chat,
+            asks: A_CONNECTION_SAYS_AT_MOST,
+            an_ask_is_at_most: u32::try_from(A_LINE_IS_AT_MOST).unwrap_or(u32::MAX),
+            arm: &mut arm,
+            admit: &mut admit,
+        },
+        &mut |ask| {
+            if let Ok(asker) = connection.try_clone() {
+                tokens.answering(this, asker);
+            }
+            let answer = (hearing.answer)(this, ask);
+            tokens.answered(this);
+            framed::Reply::from(answer)
+        },
+    );
 }
 
 /// A connection read with one deadline for a whole line: each read is given what is left of it,
@@ -3485,7 +3644,7 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
             taken: false,
             refused: Some(why.to_owned()),
         }),
-        Line::Ask(_) => serde_json::to_vec(&Answer::No {
+        Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),
         Line::Permission(_) => serde_json::to_vec(&permission::Chosen { chosen: None }),
@@ -6137,6 +6296,174 @@ mod tests {
                 .is_err(),
             "an answer past the cap was read"
         );
+    }
+
+    /// A framed conversation for chat 3 with the app at `path`, which must speak frames.
+    fn framed_on(path: &std::path::Path, token: &ChatToken) -> Framed {
+        match Framed::on(path, Some(token), 3, std::time::Duration::from_secs(5))
+            .expect("connected")
+        {
+            framed::Greeted::Framed(framed) => framed,
+            framed::Greeted::Older => panic!("the app did not speak frames"),
+            framed::Greeted::Refused(why) => panic!("refused: {why}"),
+        }
+    }
+
+    #[test]
+    fn an_answer_past_a_line_comes_back_whole_on_the_framed_stream_and_lines_still_work() {
+        // #1996: a client that says hello gets frames; one that never does is unaffected.
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let cap = usize::try_from(A_REPORT_IS_AT_MOST).unwrap();
+        let large = Answer::No {
+            why: "w".repeat(3 * cap),
+        };
+        let path = dir.path().join("hooks.sock");
+        let (_reading, token) = an_app_answering(&path, dir.path(), large.clone());
+
+        let mut framed = framed_on(&path, &token);
+        let reply = framed
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect("a reply past a line");
+        assert_eq!(reply.answer, large);
+        // A second ask on the same stream.
+        let again = framed.ask(&Ask::Ticket { chat: 3 }, within).expect("again");
+        assert_eq!(again.answer, large);
+
+        // A line client of the same app is still answered in lines, and its reader stops at
+        // its cap: what it read is the answer's first line cut short, never a frame.
+        let in_lines = Asking::on(&path, Some(token))
+            .expect("connected")
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect_err("an answer past the line cap is not read");
+        assert!(
+            in_lines.to_string().contains("EOF while parsing"),
+            "{in_lines}"
+        );
+    }
+
+    #[test]
+    fn a_hello_without_its_chats_token_is_refused_and_never_accepted() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let (_reading, _token) = an_app_answering(
+            &path,
+            dir.path(),
+            Answer::Ticket {
+                ticket: "t".to_owned(),
+            },
+        );
+        for token in [None, Some(ChatToken::from("nope"))] {
+            match Framed::on(&path, token.as_ref(), 3, within).expect("connected") {
+                framed::Greeted::Refused(why) => assert!(why.contains("token"), "{why}"),
+                framed::Greeted::Framed(_) => panic!("accepted"),
+                framed::Greeted::Older => panic!("read as an older app"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_hello_at_another_version_is_answered_no_and_never_accepted() {
+        use std::io::{BufRead, Write};
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let (_reading, token) = an_app_answering(
+            &path,
+            dir.path(),
+            Answer::Ticket {
+                ticket: "t".to_owned(),
+            },
+        );
+        let hello = framed::Hello {
+            frames: framed::VERSION + 1,
+            chat: 3,
+        };
+        let mut socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        socket
+            .write_all(&line_with(Some(&token), &hello).unwrap())
+            .unwrap();
+        let mut said = String::new();
+        std::io::BufReader::new(&socket)
+            .read_line(&mut said)
+            .unwrap();
+        assert!(
+            matches!(
+                serde_json::from_str::<Answer>(&said),
+                Ok(Answer::No { why }) if why.contains("version")
+            ),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_framed_ask_for_another_chat_is_answered_no_and_never_reaches_the_app() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let token = listener.tokens().issue_to_this_process(3).expect("a token");
+        let _four = listener.tokens().issue_to_this_process(4).expect("a token");
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&asked);
+        let _reading = listener.each_answering(
+            Box::new(|_| {}),
+            Box::new(move |_, _| {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Answer::Ticket {
+                    ticket: "t".to_owned(),
+                }
+            }),
+        );
+        let reply = framed_on(&path, &token)
+            .ask(&Ask::Ticket { chat: 4 }, within)
+            .expect("a refusal");
+        assert!(
+            matches!(&reply.answer, Answer::No { why } if why.contains("chat 4")),
+            "{reply:?}"
+        );
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn every_framed_ask_is_checked_against_the_chat_s_token_as_it_stands_then() {
+        // The hello's token is checked again at each ask: one the chat no longer holds (it was
+        // started again, and given a new one) speaks for nothing on a stream opened with it.
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let tokens = listener.tokens();
+        let token = tokens.issue_to_this_process(3).expect("a token");
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&asked);
+        let _reading = listener.each_answering(
+            Box::new(|_| {}),
+            Box::new(move |_, _| {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Answer::Ticket {
+                    ticket: "t".to_owned(),
+                }
+            }),
+        );
+        let mut framed = framed_on(&path, &token);
+        assert!(matches!(
+            framed.ask(&Ask::Ticket { chat: 3 }, within).unwrap().answer,
+            Answer::Ticket { .. }
+        ));
+
+        let _anew = tokens.issue_to_this_process(3).expect("a new token");
+        let reply = framed
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect("a refusal");
+        assert!(
+            matches!(&reply.answer, Answer::No { why } if why.contains("token")),
+            "{reply:?}"
+        );
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[test]

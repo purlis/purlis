@@ -6072,6 +6072,30 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   Code, before `Bash`, `Read`, `Grep`, `Write`, `Edit`, `MultiEdit`, `Task`, `Agent` and
   purlis's dispatch tools, and after `Bash`, `Write`, `Edit`, `MultiEdit`, `Task`, `Agent`
   and `Skill`; every opencode tool before it runs; Codex's shell alone.
+- **Framed stream** (#1996): a connection may carry frames instead of lines, chosen by the
+  client at its start. Nothing changes for a connection that never asks for it.
+  - **The hello** is the connection's first line: `{"frames": 1, "chat": <n>, "token": "<the
+    chat's token>"}`, admitted as any line is (the chat's token, then the process that sent it).
+  - **Its acceptance** is one line from the app, `{"frames": 1, "most": 16777216}`: the version
+    it speaks and the most one frame of a reply may hold. Frames follow from the next byte, both
+    ways. A hello at a version the app does not speak, or one not admitted, is answered with one
+    `no` line and the connection ends.
+  - **A frame** is a four-byte big-endian length, one kind byte (`1` JSON, `2` bytes) and that
+    many bytes. A request is one JSON frame holding an ask for the hello's chat, at most as long
+    as a line may be (77,824 bytes). A reply is one JSON frame, `{"answer": <the answer a line would
+    carry>, "attached": [{"media_type": "<type/subtype>"}]}` (`attached` absent when empty), then
+    one bytes frame per attachment in that order: at most 16 attachments, each frame at most
+    16 MiB.
+  - **Every ask is admitted again** before it is acted on, against the hello's token and the
+    process the socket names then. An ask for another chat, one not admitted, a frame of an
+    unknown kind, one past its bound (refused from its length, before any of it is read), one cut
+    short, and JSON that does not read each end the connection, with one `no` reply where the
+    frame could be read. One connection carries at most 4 asks, and each must arrive within
+    10 seconds of the app starting to read it.
+  - **An app from before the stream** answers the hello as a line of a kind it does not know (the
+    `no` sentence an unknown line gets, or the connection closed unanswered), and the client asks
+    again in lines on a new connection.
+  - Used by the `persona_where` chat tool. **It is never stored**, as no line is.
 - **Connections:** served from a bounded pool (#991): at most 32 at once from one process (by
   the pid the socket reports; processes it cannot name share one count) and 128 from all
   processes together. A connection past either is answered at once with one `no` line saying

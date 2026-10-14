@@ -29,6 +29,28 @@ impl Asking {
     }
 }
 
+/// [`Asking`]'s framed counterpart where there is no unix socket: it refuses too.
+pub enum Framed {}
+
+impl Framed {
+    pub fn on(
+        _path: &std::path::Path,
+        _token: Option<&ChatToken>,
+        _chat: u32,
+        _within: std::time::Duration,
+    ) -> io::Result<super::framed::Greeted> {
+        Err(no_channel())
+    }
+
+    pub fn ask(
+        &mut self,
+        _ask: &Ask,
+        _within: std::time::Duration,
+    ) -> io::Result<super::framed::Reply> {
+        match *self {}
+    }
+}
+
 /// Nothing is listening where there is no unix socket (#95): the status line then renders, as
 /// it does for every way of not being in the app. The day the channel is a named pipe this
 /// asks the same question of it.

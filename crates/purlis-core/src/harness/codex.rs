@@ -486,16 +486,31 @@ mod tests {
             .clone();
         assert_eq!(server["command"].as_str(), Some("/bin/charter"));
         assert_eq!(server["args"].as_array().unwrap()[0].as_str(), Some("mcp"));
-        // Codex hands an MCP server only the variables it is told to: the chat's place, and
-        // never its token.
+        // Codex hands an MCP server only the variables it is told to: the chat's place, and its
+        // connection to the app, the socket and token its hooks carry (#1996). Named, never
+        // valued: Codex reads each from its own environment, so no token is on its command line.
         let passed: Vec<&str> = server["env_vars"]
             .as_array()
             .unwrap()
             .iter()
             .filter_map(toml::Value::as_str)
             .collect();
-        assert!(passed.contains(&"PURLIS_WORKSPACE"), "{passed:?}");
-        assert!(!passed.contains(&"PURLIS_CHAT_TOKEN"), "{passed:?}");
+        for wanted in [
+            "PURLIS_WORKSPACE",
+            crate::hookwire::SOCKET_ENV,
+            crate::hookwire::CHAT_ENV,
+            crate::hookwire::TOKEN_ENV,
+            crate::hookwire::HARNESS_ENV,
+        ] {
+            assert!(
+                passed.contains(&wanted),
+                "{wanted} is not handed on: {passed:?}"
+            );
+        }
+        assert!(
+            server.get("env").is_none(),
+            "no value is written into the flag"
+        );
     }
 
     #[test]
