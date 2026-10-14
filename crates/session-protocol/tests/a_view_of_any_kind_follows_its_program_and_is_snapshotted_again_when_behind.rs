@@ -190,3 +190,50 @@ async fn once_its_link_has_ended_every_view_is_closed_and_none_opens() {
         "a view refused leaves nothing behind"
     );
 }
+
+/// A view whose client drew nothing is attached again only after a pause, and its fresh
+/// snapshot is taken after that pause, not before it: so the client gets the program as it is
+/// when the view comes back, and nothing piles up for it while it waits.
+#[tokio::test]
+async fn the_fresh_snapshot_is_taken_after_the_pause_before_a_reattach() {
+    for kind in [Snapshot::Transcript, Snapshot::Frame] {
+        let (mut client, host) = linked().await;
+        let program = Program::new(kind);
+        let limits = Limits {
+            most_queued_bytes: 32 * 1024,
+            high_watermark: 8 * 1024,
+            low_watermark: 2 * 1024,
+        };
+        let views = Views::new(host.opener(), limits);
+        views.open(Arc::new(program.clone())).await.unwrap();
+        let mut viewer = Viewer::default();
+        let _stale = viewer.accept(client.accept().await.unwrap()).await.unwrap();
+        for n in 0..64 {
+            program.write(&[b'0' + (n % 10) as u8; 1024]);
+        }
+
+        // While the view waits out its pause, nothing holds the program's live bytes.
+        timeout(Duration::from_secs(5), async {
+            while program.watched_by() > 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{kind:?}: the dropped view still holds the program"));
+        program.write(b"during the pause");
+
+        let again = timeout(Duration::from_secs(10), client.accept())
+            .await
+            .expect("the view is attached again")
+            .unwrap();
+        let mut reader = viewer.accept(again).await.unwrap();
+        assert_eq!(reader.epoch(), Epoch(2));
+        let fresh = program.snapshot_now();
+        let (snapshot, _) = snapshot_then(&mut reader, 0).await;
+        assert_eq!(
+            snapshot, fresh,
+            "{kind:?}: the snapshot is the program after the pause"
+        );
+        assert!(snapshot.ends_with(b"during the pause"), "{kind:?}");
+    }
+}

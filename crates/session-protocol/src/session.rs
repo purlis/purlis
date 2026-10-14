@@ -439,6 +439,11 @@ impl Peer {
 
     /// What opens a stream on the link, for a host that holds its views itself
     /// ([`crate::view::Attacher::new`]).
+    ///
+    /// **One numberer of views per link.** A view's number is what a client tells its views
+    /// apart by, so a link's views are numbered by [`Peer::views`] or by the host's own
+    /// [`crate::view::Attacher`], never by both: a host that opens views itself on a link opens
+    /// none through [`Peer::views`] on it.
     pub fn opener(&self) -> &Opener {
         &self.opener
     }
@@ -463,8 +468,9 @@ pub trait Host: Send + Sync + 'static {
         async { true }
     }
 
-    /// The link `peer` came on has ended (the client closed it, or died). By now every view on
-    /// it is closed; what the link started runs on. Calls it sent may still be carried out
+    /// The link `peer` came on has ended (the client closed it, or died). By now every view
+    /// [`Peer::views`] holds on it has been cancelled, and its stream ends where it is, whatever
+    /// it had queued; what the link started runs on. Calls it sent may still be carried out
     /// after this ([`serve`]).
     fn link_ended(&self, peer: &Peer) -> impl Future<Output = ()> + Send {
         let _ = peer;

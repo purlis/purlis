@@ -336,12 +336,14 @@ or relays a harness's login (ADR 0087).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
 
 **Profile**:
-Which harness program a chat runs on this machine, under a name, and the browser logins kept
-under it. It is the person's: a persona names one, and it lives on its device and is never
-committed. One browser writes its kept logins at a time, and a second chat that wants them is
-offered a copy.
-_Avoid_: browser profile, kept profile (both are the profile), user data, persistent browser,
-account (that is who a model is billed to)
+A harness as the person runs it on a device, under a name: the harness, its settings, its
+sign-in, its conversations and the browser logins kept under it. It is the person's: a persona
+names one, a chat runs on one, and it lives on its device and is never committed. A
+subscription is signed in once per device through the harness's own flow, and purlis never
+holds it. One browser writes a profile's kept logins at a time, and a second chat that wants
+them is offered a copy.
+_Avoid_: browser profile, kept profile (both are the profile), harness folder (that is where a
+profile is kept), user data, persistent browser, account (that is who a model is billed to)
 
 **Session host** (`purlisd`):
 The process that owns every **hosted program** on a device, every chat's terminal and every
@@ -415,10 +417,11 @@ were pinned)
 **Label** (of a runner):
 What a runner not marked owned is for: exactly one of `harness` (runs chats), `app` (serves one
 version of a workspace repo) or `browser` (runs browsers only purlis drives). purlis enforces it
-at both ends of the link: only a `harness` runner starts chats, and such a runner never receives
-a vault value. A runner marked owned may run chats and browsers in one session host, and may
-receive a vault value with a **grant**. Tags, any words the operator picks, sit beside it and are enforced by nothing. A
-part of **Runner**, so it belongs to **Project** (ADR 0089).
+at both ends of the link: only a `harness` runner starts chats. A runner not marked owned keeps
+its one label and never receives a vault value; a device the person owns may run chats and
+browsers in one session host, and receives a value only with a **grant**. Tags, any words the
+operator picks, sit beside it and are enforced by nothing. A part of **Runner**, so it belongs
+to **Project** (ADR 0089, amended 2026-10-14).
 _Avoid_: role (unqualified), type, capability (that is an extension's), tag (for the role label)
 
 **Runner provider**:
@@ -546,12 +549,14 @@ The person's act of becoming a browser's driver. **Hand back** ends it.
 _Avoid_: control, grab, interrupt
 
 **Pin** (of a browser):
-A person's act that gives a chat's browser to its workspace: it outlives the chat and ends by a
-person, the kill switch, or the app quitting. Not a tab's pin.
+A person's act that gives a chat's browser to its workspace: it outlives the chat but not the
+app. It ends by a person, the kill switch, or the app quitting, and reopening it is offered at
+the next start (ADR 0068 §2). A pinned runner, unlike it, stops only by a person or the kill
+switch. Not a tab's pin.
 _Avoid_: keep, hold, save (that is the plane's)
 
 **Browser view**:
-A browser's **view**: the stream of its frames, drawn in a view tab, a tile of the Browsers grid
+A browser's **view**: its frames as they come, drawn in a view tab, a tile of the Browsers grid
 or a chat tab's thumbnail. Its snapshot is the latest frame. The same on this device and on a
 runner.
 _Avoid_: screen share, preview (that is a tab's), remote desktop, video
@@ -562,9 +567,12 @@ declared address, fills and submits. The value reaches the browser and never the
 _Avoid_: autofill, credential tool, password tool
 
 **Reach** (of a browser):
-The sites and local ports a browser may open and the ones its agent may write to. A browser's
-reach is its own, apart from its chat's sandbox.
-_Avoid_: egress (that is the chat's sandbox's), allowlist (in UI text), network access
+The sites and local ports a browser may open and the ones its agent may write to: its chat's
+**allowed hosts**, in a lane of their own for the browser, shown with the chat's in the one
+Granted list. A site new to the project that the agent itself writes an address for asks once;
+a link the page offered does not.
+_Avoid_: allowlist (in UI text), network access, browser allowlist (it is the same allowed
+hosts)
 
 ### Chats working together
 
@@ -778,7 +786,8 @@ runner) or **Pin** (of a browser))
 A human's act that gives an agent-started runner to its workspace: the runner is then owned by
 the workspace instead of the chat, outlives the chat, and stops only by a human or the kill
 switch. Kept in the runner's record on this machine. A part of **Runner**, so it belongs to
-**Project** (ADR 0089). A browser is pinned the same way (see **Pin** (of a browser)).
+**Project** (ADR 0089). A browser is pinned to its workspace too, but a pinned browser ends
+when the app quits (see **Pin** (of a browser)).
 _Avoid_: keep, hold, pin (unqualified, which is the strip's mark)
 
 **Show-more**:

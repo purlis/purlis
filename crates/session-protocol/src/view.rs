@@ -484,7 +484,29 @@ impl Attacher {
     /// Attach `view`, new or again, with `snapshot`: open its stream, at the next epoch, after
     /// the pause its record calls for.
     pub async fn attach(&self, view: ViewId, snapshot: Bytes) -> Result<Feed, LinkError> {
-        let (epoch, pause) = {
+        let (epoch, pause) = self.next_epoch(view)?;
+        tokio::time::sleep(pause).await;
+        self.open_at(view, epoch, snapshot).await
+    }
+
+    /// Attach `view`, new or again, from `source`: wait out the pause its record calls for
+    /// first, then take the source's snapshot and live bytes, so the snapshot is the program as
+    /// it is when the view comes back and nothing is held for the view while it waits.
+    pub async fn attach_from(
+        &self,
+        view: ViewId,
+        source: &dyn Source,
+    ) -> Result<(Feed, BoxStream<'static, Bytes>), LinkError> {
+        let (epoch, pause) = self.next_epoch(view)?;
+        tokio::time::sleep(pause).await;
+        let Attachment { snapshot, live } = source.attach();
+        let feed = self.open_at(view, epoch, snapshot).await?;
+        Ok((feed, live))
+    }
+
+    /// The epoch `view`'s next attachment is, and the pause before it, kept in its record.
+    fn next_epoch(&self, view: ViewId) -> Result<(Epoch, Duration), LinkError> {
+        {
             let mut views = self
                 .views
                 .lock()
@@ -523,9 +545,17 @@ impl Attacher {
             };
             let epoch = next.epoch;
             views.insert(view, next);
-            (epoch, pause)
-        };
-        tokio::time::sleep(pause).await;
+            Ok((epoch, pause))
+        }
+    }
+
+    /// Open `view`'s stream at `epoch` with `snapshot`, and keep the attachment in its record.
+    async fn open_at(
+        &self,
+        view: ViewId,
+        epoch: Epoch,
+        snapshot: Bytes,
+    ) -> Result<Feed, LinkError> {
         let stream = self.opener.open().await?;
         let (feed, shared) = start(stream, view, epoch, snapshot, self.limits);
         if let Some(attached) = self
@@ -590,8 +620,11 @@ pub trait Source: Send + Sync + 'static {
 /// The views open on one link, of whatever kind: what a host's views are, written once.
 ///
 /// Each view follows its source on a task of the link's runtime. When the view falls behind,
-/// its live bytes are let go and it is attached again, at the next epoch, from a fresh
-/// [`Source::attach`], after [`Attacher`]'s pause when its client drew nothing. When the
+/// its live bytes are let go, it waits out [`Attacher`]'s pause when its client drew nothing,
+/// and then it is attached again, at the next epoch, from a fresh [`Source::attach`] taken
+/// after the pause ([`Attacher::attach_from`]). It numbers its views itself, so a link's views
+/// are numbered by one `Views` or by the host's own [`Attacher`], never by both
+/// ([`crate::session::Peer::opener`]). When the
 /// source's live bytes end, the view ends after what was queued. [`Views::end`], when the link
 /// ends, closes every view at once and opens no more.
 pub struct Views {
@@ -632,8 +665,7 @@ impl Views {
             return Err(LinkError::Closed);
         }
         let view = ViewId(self.next.fetch_add(1, Ordering::Relaxed));
-        let attachment = source.attach();
-        let feed = self.attacher.attach(view, attachment.snapshot).await?;
+        let (feed, live) = self.attacher.attach_from(view, &*source).await?;
         let closing = CancellationToken::new();
         {
             let mut open = self.open_views_lock();
@@ -646,7 +678,7 @@ impl Views {
         tokio::spawn(follow(
             view,
             source,
-            attachment.live,
+            live,
             feed,
             Arc::clone(&self.attacher),
             closing,
@@ -706,16 +738,22 @@ async fn follow(
         match feed.push(bytes) {
             Ok(()) => {}
             Err(Closed::FellBehind) => {
-                // What the program wrote meanwhile is in the fresh snapshot.
-                let attachment = source.attach();
-                live = attachment.live;
+                // Let go of the program while the view waits out its pause: what it writes
+                // meanwhile is in the fresh snapshot, taken after the pause.
+                drop(std::mem::replace(
+                    &mut live,
+                    futures::stream::empty().boxed(),
+                ));
                 let again = tokio::select! {
                     biased;
                     () = closing.cancelled() => break,
-                    again = attacher.attach(view, attachment.snapshot) => again,
+                    again = attacher.attach_from(view, &*source) => again,
                 };
                 match again {
-                    Ok(again) => feed = again,
+                    Ok((again, follows)) => {
+                        feed = again;
+                        live = follows;
+                    }
                     Err(_) => break,
                 }
             }
