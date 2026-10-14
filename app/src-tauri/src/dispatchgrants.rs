@@ -2121,23 +2121,35 @@ pub fn requested_as(
 }
 
 /// The dispatches of chat `session` waiting on the person, for the Notice on its tab.
+///
+/// Off the window's thread (#1949): it reads the administrator's policy, and each dispatch is
+/// told against the project's grants on disk.
 #[tauri::command]
 #[specta::specta]
-pub fn dispatch_grants_needed(
+pub async fn dispatch_grants_needed(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<Vec<DispatchPending>, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    let locks = sandbox::policy::Locks::of(root);
-    let store = held.dispatch_grants();
-    Ok(store
-        .waiting(session)
-        .iter()
-        .map(|one| store.told(&plane, root, &locks, one))
-        .collect())
+    crate::off_the_window(READING_GRANTS, move || {
+        let root = held.root();
+        let locks = sandbox::policy::Locks::of(root);
+        let store = held.dispatch_grants();
+        Ok(store
+            .waiting(session)
+            .iter()
+            .map(|one| store.told(&plane, root, &locks, one))
+            .collect())
+    })
+    .await
 }
+
+/// What the dispatch grants' reads name their work, off the window's thread (#1949).
+const READING_GRANTS: &str = "reading the dispatch grants";
+
+/// What the person's answers about dispatch grants name their work, off the window's thread.
+const ANSWERING_GRANTS: &str = "keeping your answer about the dispatch grant";
 
 /// What allowing a dispatch answered: the sentence the Notice says.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -2206,14 +2218,17 @@ pub fn keep_dispatch_blocked(
 /// again until it is lifted ([`lift_dispatch_never`]).
 #[tauri::command]
 #[specta::specta]
-pub fn never_dispatch(
+pub async fn never_dispatch(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     id: u32,
 ) -> Result<DispatchAllowed, String> {
     let held = planes.held(&plane)?;
-    with_ground(&held, |ground| held.dispatch_grants().never(ground, id))
-        .map(|said| DispatchAllowed { said })
+    crate::off_the_window(ANSWERING_GRANTS, move || {
+        with_ground(&held, |ground| held.dispatch_grants().never(ground, id))
+            .map(|said| DispatchAllowed { said })
+    })
+    .await
 }
 
 /// **The window commands that may settle this machine's acceptances against git's history**
@@ -2790,12 +2805,15 @@ fn revoke_any(root: &Path, asking: &str, level: Level, audit: Audit<'_>) -> Resu
 /// personas whose chats may dispatch to any persona. For Settings' list.
 #[tauri::command]
 #[specta::specta]
-pub fn dispatch_standing(
+pub async fn dispatch_standing(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
-    Ok(standing_read(held.root(), held.dispatch_grants()))
+    crate::off_the_window(READING_GRANTS, move || {
+        Ok(standing_read(held.root(), held.dispatch_grants()))
+    })
+    .await
 }
 
 /// **Lift** on Settings' list of the pairs you said never to: audited, then taken out, so the
@@ -2803,18 +2821,21 @@ pub fn dispatch_standing(
 /// stands now.
 #[tauri::command]
 #[specta::specta]
-pub fn lift_dispatch_never(
+pub async fn lift_dispatch_never(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
     target: String,
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    lift_never(root, &asking, &target, &|number, audited| {
-        held.hooks().record_dispatch_grant(root, number, audited)
-    })?;
-    Ok(standing_read(root, held.dispatch_grants()))
+    crate::off_the_window(ANSWERING_GRANTS, move || {
+        let root = held.root();
+        lift_never(root, &asking, &target, &|number, audited| {
+            held.hooks().record_dispatch_grant(root, number, audited)
+        })?;
+        Ok(standing_read(root, held.dispatch_grants()))
+    })
+    .await
 }
 
 /// **Any persona**, from Settings: chats running as `asking` may dispatch to every persona of
@@ -2858,20 +2879,23 @@ pub async fn allow_dispatch_to_any(
 /// stands now.
 #[tauri::command]
 #[specta::specta]
-pub fn revoke_dispatch_to_any(
+pub async fn revoke_dispatch_to_any(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
     level: GrantLevel,
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    revoke_any(root, &asking, dispatch_level(level)?, &|number, audited| {
-        held.hooks().record_dispatch_grant(root, number, audited)
-    })?;
-    held.dispatch_grants().drop_once(Some(&asking), None);
-    arrival_moved(&plane);
-    Ok(standing_read(root, held.dispatch_grants()))
+    crate::off_the_window(ANSWERING_GRANTS, move || {
+        let root = held.root();
+        revoke_any(root, &asking, dispatch_level(level)?, &|number, audited| {
+            held.hooks().record_dispatch_grant(root, number, audited)
+        })?;
+        held.dispatch_grants().drop_once(Some(&asking), None);
+        arrival_moved(&plane);
+        Ok(standing_read(root, held.dispatch_grants()))
+    })
+    .await
 }
 
 /// **Not on my machine** on Settings' table (#1504): this machine stops following one grant of
@@ -2879,23 +2903,26 @@ pub fn revoke_dispatch_to_any(
 /// so teammates keep it. Audited first. Answers what stands now.
 #[tauri::command]
 #[specta::specta]
-pub fn decline_project_dispatch(
+pub async fn decline_project_dispatch(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
     target: String,
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    decline(root, &asking, &target, &|number, audited| {
-        held.hooks().record_dispatch_grant(root, number, audited)
-    })?;
-    held.dispatch_grants().drop_once(
-        Some(&asking),
-        (target != dispatchgrant::ANY).then_some(target.as_str()),
-    );
-    arrival_moved(&plane);
-    Ok(standing_read(root, held.dispatch_grants()))
+    crate::off_the_window(ANSWERING_GRANTS, move || {
+        let root = held.root();
+        decline(root, &asking, &target, &|number, audited| {
+            held.hooks().record_dispatch_grant(root, number, audited)
+        })?;
+        held.dispatch_grants().drop_once(
+            Some(&asking),
+            (target != dispatchgrant::ANY).then_some(target.as_str()),
+        );
+        arrival_moved(&plane);
+        Ok(standing_read(root, held.dispatch_grants()))
+    })
+    .await
 }
 
 /// **Accept** on Settings' table (#1504): this machine follows one grant of the project's from
@@ -2961,7 +2988,7 @@ pub async fn give_back_dispatch(
 /// no chat, so nothing changes for any. Answers what stands now.
 #[tauri::command]
 #[specta::specta]
-pub fn remove_dormant_dispatch(
+pub async fn remove_dormant_dispatch(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
@@ -2969,11 +2996,14 @@ pub fn remove_dormant_dispatch(
     any: bool,
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    if !purlis_core::dispatchdormant::remove(root, &asking, &target, any)? {
-        return Err("purlis removed nothing: that grant is no longer there.".to_owned());
-    }
-    Ok(standing_read(root, held.dispatch_grants()))
+    crate::off_the_window(ANSWERING_GRANTS, move || {
+        let root = held.root();
+        if !purlis_core::dispatchdormant::remove(root, &asking, &target, any)? {
+            return Err("purlis removed nothing: that grant is no longer there.".to_owned());
+        }
+        Ok(standing_read(root, held.dispatch_grants()))
+    })
+    .await
 }
 
 // ---- a grant limited to one workspace (#1505) ------------------------------------------------
@@ -3326,7 +3356,7 @@ pub async fn accept_project_dispatch_in(
 /// now.
 #[tauri::command]
 #[specta::specta]
-pub fn decline_project_dispatch_in(
+pub async fn decline_project_dispatch_in(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     asking: String,
@@ -3334,16 +3364,19 @@ pub fn decline_project_dispatch_in(
     workspace: String,
 ) -> Result<DispatchStanding, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    let one = dispatchwithin::Limited::new(&asking, &target, &workspace)?;
-    decline_in(root, &one, &|number, audited| {
-        held.hooks().record_dispatch_grant(root, number, audited)
-    })?;
-    held.dispatch_grants().drop_once(
-        Some(&one.asking),
-        (!one.any()).then_some(one.target.as_str()),
-    );
-    Ok(standing_read(root, held.dispatch_grants()))
+    crate::off_the_window(ANSWERING_GRANTS, move || {
+        let root = held.root();
+        let one = dispatchwithin::Limited::new(&asking, &target, &workspace)?;
+        decline_in(root, &one, &|number, audited| {
+            held.hooks().record_dispatch_grant(root, number, audited)
+        })?;
+        held.dispatch_grants().drop_once(
+            Some(&one.asking),
+            (!one.any()).then_some(one.target.as_str()),
+        );
+        Ok(standing_read(root, held.dispatch_grants()))
+    })
+    .await
 }
 
 // ---- a standing grant kept, from a Notice or from Settings (#1465) ------------------------------

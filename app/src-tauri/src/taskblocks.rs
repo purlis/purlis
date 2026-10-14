@@ -840,7 +840,7 @@ fn let_go(chats: &crate::chats::Chats, seen: &[SeenBlock], answered: &[u32]) {
 /// ended (`restart_chat`).
 #[tauri::command]
 #[specta::specta]
-pub fn allow_sandbox_block_for_tasks(
+pub async fn allow_sandbox_block_for_tasks(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
@@ -848,16 +848,20 @@ pub fn allow_sandbox_block_for_tasks(
     level: GrantLevel,
 ) -> Result<TasksAnswered, String> {
     let held = planes.held(&plane)?;
-    allow_for_tasks(
-        &plane,
-        &purlis_core::sandbox::Machine::this(),
-        held.chats(),
-        (session, &seen, level),
-        &held.audit_then_record(planes.network()),
-        (crate::sandboxing::now_secs(), &|told| {
-            planes.tell_block(told)
-        }),
-    )
+    let network = planes.network().cloned();
+    let tell = planes.block_teller();
+    // Off the window's thread (#1949): each task's grant is judged, audited and kept on disk.
+    crate::off_the_window("keeping your Allow", move || {
+        allow_for_tasks(
+            &plane,
+            &purlis_core::sandbox::Machine::this(),
+            held.chats(),
+            (session, &seen, level),
+            &held.audit_then_record(network.as_ref()),
+            (crate::sandboxing::now_secs(), &|told| tell(told)),
+        )
+    })
+    .await
 }
 
 /// **Keep blocked on the one question for several tasks of chat `session`** (#1508): checked

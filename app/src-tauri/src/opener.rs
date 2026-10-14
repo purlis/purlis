@@ -723,7 +723,8 @@ pub fn window_holds_planes(
     }
     // Every window's, not this one's: the store holds the arrangement of the whole app, and
     // writing one window's tabs over it would forget the others.
-    planes.remember_arrangement(&showing.arrangement());
+    // Behind the window (#1949): this is asked at every switch, and the store is synced.
+    planes.remember_arrangement_behind(&showing.arrangement());
 }
 
 /// Makes a NEW project — scaffolds a plane in a directory — **and opens it through the gate**.
@@ -776,30 +777,40 @@ pub fn window_holds_planes(
 /// after a question.
 #[tauri::command]
 #[specta::specta]
-pub fn create_project(
-    planes: tauri::State<'_, Planes>,
+///
+/// On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
+/// writes its files and runs git.
+pub async fn create_project(
+    app: tauri::AppHandle,
     path: String,
     plane_is_this_repo: bool,
     adopt: Option<String>,
     forge: Option<crate::firstrun::ForgeWord>,
 ) -> Result<ProjectAnswer, String> {
     let forge = forge.map(purlis_core::forge::Kind::from);
-    match scaffold_at(
-        std::path::Path::new(&path),
-        plane_is_this_repo,
-        adopt,
-        forge,
-    ) {
-        Ok(root) => Ok(ProjectAnswer {
-            opened: Some(planes.open_if_approved(&root).map(Opened::from)?),
-            asks_forge: None,
-        }),
-        Err(NotMade::AsksForForge(why)) => Ok(ProjectAnswer {
-            opened: None,
-            asks_forge: Some(why),
-        }),
-        Err(NotMade::Refused(why)) => Err(why),
-    }
+    crate::off_the_window("making the project", move || {
+        match scaffold_at(
+            std::path::Path::new(&path),
+            plane_is_this_repo,
+            adopt,
+            forge,
+        ) {
+            Ok(root) => Ok(ProjectAnswer {
+                opened: Some(
+                    app.state::<Planes>()
+                        .open_if_approved(&root)
+                        .map(Opened::from)?,
+                ),
+                asks_forge: None,
+            }),
+            Err(NotMade::AsksForForge(why)) => Ok(ProjectAnswer {
+                opened: None,
+                asks_forge: Some(why),
+            }),
+            Err(NotMade::Refused(why)) => Err(why),
+        }
+    })
+    .await
 }
 
 /// What came of making a project: made and opened (or asked about), or a question about the

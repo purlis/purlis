@@ -528,8 +528,15 @@ fn open_planes(planes: tauri::State<'_, Planes>) -> Vec<PlaneId> {
 /// only ever does less.
 #[tauri::command]
 #[specta::specta]
-fn close_plane(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), String> {
-    planes.close(&plane)
+async fn close_plane(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), String> {
+    // Off the window's thread (#1949): its record is written and its chats are ended. It is out
+    // of the registry before that, as it was, so nothing asks it again meanwhile.
+    let closing = planes.closing(&plane)?;
+    off_the_window("letting go of the project", move || {
+        closing.finish();
+        Ok(())
+    })
+    .await
 }
 
 /// One chat the app has open, as the UI draws it and as the quit warning lists it.
@@ -791,9 +798,18 @@ async fn off_the_window<T: Send + 'static>(
     what: &str,
     read: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(read)
-        .await
-        .map_err(|err| format!("{what} did not finish: {err}"))?
+    #[cfg(test)]
+    let gate = off_the_main_thread::gate::of(what);
+    tauri::async_runtime::spawn_blocking(move || {
+        // A test holds the work here to see what the window can do while it runs (#1949).
+        #[cfg(test)]
+        if let Some(gate) = gate {
+            gate.wait();
+        }
+        read()
+    })
+    .await
+    .map_err(|err| format!("{what} did not finish: {err}"))?
 }
 
 /// The sidebar of the plane `held`, from its model ([`planes::Held::sidebar_model`]) and the
@@ -910,19 +926,22 @@ async fn plane_root_panels(
 /// is a record that is not there any more.
 #[tauri::command]
 #[specta::specta]
-fn session_record(
+async fn session_record(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     path: String,
 ) -> Result<Option<panels::SessionRecordView>, String> {
     let held = planes.held(&plane)?;
-    let mut view = panels::session_record(held.root(), &path)?;
-    // A dispatch that has not ended is running only where its chat is open, which the project
-    // this app holds knows and the files do not (#1457).
-    if let Some(view) = view.as_mut() {
-        view.dispatches = dispatches::made_by(&held, &path);
-    }
-    Ok(view)
+    off_the_window("reading the session record", move || {
+        let mut view = panels::session_record(held.root(), &path)?;
+        // A dispatch that has not ended is running only where its chat is open, which the project
+        // this app holds knows and the files do not (#1457).
+        if let Some(view) = view.as_mut() {
+            view.dispatches = dispatches::made_by(&held, &path);
+        }
+        Ok(view)
+    })
+    .await
 }
 
 /// Resumes a session from its record (SI-8d): a NEW chat in the record's place, on its harness,
@@ -937,7 +956,7 @@ fn session_record(
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
-fn resume_session(
+async fn resume_session(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     path: String,
@@ -947,42 +966,45 @@ fn resume_session(
     rows: u16,
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
-    let resumed =
-        purlis_core::sessionresume::ready(held.root(), &path, &name, instead_of.is_some())?;
-    // A new chat, as having resumed the chat the record is of (ADR 0066, #871).
-    let chat = resumed.chat(&name);
-    let size = Size { columns, rows };
-    let session = match instead_of {
-        Some(instead_of) => {
-            let started =
-                held.chats()
-                    .start_ready_instead_of(instead_of, &chat, &resumed.ready, size)?;
-            // The same chat under a new number: its tasks and its waiting reports follow it.
-            held.followed(instead_of, started);
-            started
+    off_the_window(STARTING_A_CHAT, move || {
+        let resumed =
+            purlis_core::sessionresume::ready(held.root(), &path, &name, instead_of.is_some())?;
+        // A new chat, as having resumed the chat the record is of (ADR 0066, #871).
+        let chat = resumed.chat(&name);
+        let size = Size { columns, rows };
+        let session = match instead_of {
+            Some(instead_of) => {
+                let started =
+                    held.chats()
+                        .start_ready_instead_of(instead_of, &chat, &resumed.ready, size)?;
+                // The same chat under a new number: its tasks and its waiting reports follow it.
+                held.followed(instead_of, started);
+                started
+            }
+            // The reports of the tasks the chat this record is of asked for, kept because it had
+            // closed, are handed to the chat that resumes it (#1513, V100-64). Not on a start
+            // again after a failed resume: that chat was handed them already.
+            None => restored::resuming(&held, &path, chat, |chat| {
+                held.chats().start_ready(chat, &resumed.ready, size)
+            })?,
+        };
+        let open = held
+            .chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == session)
+            .ok_or_else(|| format!("chat {session} ended as it started"))?;
+        let mut drawn = drawn_of(&held, open);
+        // Which happened, in the words the window's note says after "came back as a new chat:".
+        if let Some(why) = &resumed.fresh {
+            drawn.resumed = None;
+            drawn.fresh = Some(why.said());
         }
-        // The reports of the tasks the chat this record is of asked for, kept because it had
-        // closed, are handed to the chat that resumes it (#1513, V100-64). Not on a start
-        // again after a failed resume: that chat was handed them already.
-        None => restored::resuming(&held, &path, chat, |chat| {
-            held.chats().start_ready(chat, &resumed.ready, size)
-        })?,
-    };
-    let open = held
-        .chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == session)
-        .ok_or_else(|| format!("chat {session} ended as it started"))?;
-    let mut drawn = drawn_of(&held, open);
-    // Which happened, in the words the window's note says after "came back as a new chat:".
-    if let Some(why) = &resumed.fresh {
-        drawn.resumed = None;
-        drawn.fresh = Some(why.said());
-    }
-    // And what was guessed on the way, said beside it.
-    drawn.guessed = (!resumed.notes.is_empty()).then(|| resumed.notes.join("; "));
-    Ok(drawn)
+        // And what was guessed on the way, said beside it.
+        drawn.guessed = (!resumed.notes.is_empty()).then(|| resumed.notes.join("; "));
+        Ok(drawn)
+    })
+    .await
 }
 
 /// **Reopen** on a finished task's row (#1485): a NEW chat on the conversation the task ended
@@ -991,7 +1013,7 @@ fn resume_session(
 /// window draws it. The task's row goes; its dispatch record stays.
 #[tauri::command]
 #[specta::specta]
-fn reopen_finished_task(
+async fn reopen_finished_task(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     id: String,
@@ -999,13 +1021,16 @@ fn reopen_finished_task(
     rows: u16,
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
-    let session = finished::reopen(&held, &id, Size { columns, rows })?;
-    held.chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == session)
-        .map(|open| drawn_of(&held, open))
-        .ok_or_else(|| format!("chat {session} ended as it started"))
+    off_the_window(STARTING_A_CHAT, move || {
+        let session = finished::reopen(&held, &id, Size { columns, rows })?;
+        held.chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == session)
+            .map(|open| drawn_of(&held, open))
+            .ok_or_else(|| format!("chat {session} ended as it started"))
+    })
+    .await
 }
 
 /// What git says about each of the focused workspace's clones, and what the forge cache
@@ -1299,25 +1324,28 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
 /// approval, and a command that both asked and ran would be asking nothing.
 #[tauri::command]
 #[specta::specta]
-fn approve_profile(
+async fn approve_profile(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     name: String,
     shown: String,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    // Read through the LAUNCH read, so a profile in a file git would carry cannot be
-    // approved into existence — the approval would be recorded and the launch would still
-    // refuse, which is a yes that buys nothing.
-    let (set, _check) = purlis_core::profiles::for_launch(root);
-    let profile = set.get(&name).ok_or_else(|| {
-        format!(
-            "no profile '{}' to approve",
-            purlis_core::shown::short(&name)
-        )
-    })?;
-    purlis_core::profiletrust::approve(root, profile, &shown)
+    off_the_window("approving the profile", move || {
+        let root = held.root();
+        // Read through the LAUNCH read, so a profile in a file git would carry cannot be
+        // approved into existence — the approval would be recorded and the launch would still
+        // refuse, which is a yes that buys nothing.
+        let (set, _check) = purlis_core::profiles::for_launch(root);
+        let profile = set.get(&name).ok_or_else(|| {
+            format!(
+                "no profile '{}' to approve",
+                purlis_core::shown::short(&name)
+            )
+        })?;
+        purlis_core::profiletrust::approve(root, profile, &shown)
+    })
+    .await
 }
 
 /// Starts a chat on a harness profile, with a persona.
@@ -1547,7 +1575,7 @@ impl From<purlis_core::start::TheirAgentsMd> for TheirAgentsMd {
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
-fn open_session(
+async fn open_session(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     program: Option<String>,
@@ -1563,15 +1591,22 @@ fn open_session(
     // so its very first hook lands somewhere. Registering it here would be too late.
     let chats = planes.held(&plane)?;
     let size = Size { columns, rows };
-    // **The operator's own shell — no program named — is the one start the kill switch lets
-    // through** (OV-1, ADR 0071). A program named here is anything at all, a harness included,
-    // so it is refused while agents are stopped like every other chat.
-    if program_named {
-        chats.chats().start(&chat, size)
-    } else {
-        chats.chats().start_operator_shell(&chat, size)
-    }
+    off_the_window(STARTING_A_CHAT, move || {
+        // **The operator's own shell — no program named — is the one start the kill switch
+        // lets through** (OV-1, ADR 0071). A program named here is anything at all, a harness
+        // included, so it is refused while agents are stopped like every other chat.
+        if program_named {
+            chats.chats().start(&chat, size)
+        } else {
+            chats.chats().start_operator_shell(&chat, size)
+        }
+    })
+    .await
 }
+
+/// What a command that starts a chat names its work, off the window's thread (#1949): a start
+/// reads the project's profile and sandbox, and starts a program.
+const STARTING_A_CHAT: &str = "starting the chat";
 
 /// A shell tab in one folder of a branch (FM-10): the operator's own shell, as `open_session`
 /// with no program starts it, in a folder the core resolved. `""` is the branch's own folder.
@@ -1579,7 +1614,7 @@ fn open_session(
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
-fn open_shell_in_branch(
+async fn open_shell_in_branch(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspace: String,
@@ -1591,14 +1626,17 @@ fn open_shell_in_branch(
     rows: u16,
 ) -> Result<u32, String> {
     let held = planes.held(&plane)?;
-    let cwd = piecefiles::shell_folder(
-        held.root(),
-        piecefiles::branch(&workspace, &repo, &piece),
-        &folder,
-    )?;
-    let chat = unprofiled(None, Vec::new(), Some(cwd), name);
-    held.chats()
-        .start_operator_shell(&chat, Size { columns, rows })
+    off_the_window(STARTING_A_CHAT, move || {
+        let cwd = piecefiles::shell_folder(
+            held.root(),
+            piecefiles::branch(&workspace, &repo, &piece),
+            &folder,
+        )?;
+        let chat = unprofiled(None, Vec::new(), Some(cwd), name);
+        held.chats()
+            .start_operator_shell(&chat, Size { columns, rows })
+    })
+    .await
 }
 
 /// A chat on no profile: a program the window named, or the operator's shell when it named
@@ -1999,9 +2037,15 @@ struct Pins {
 /// What this operator has pinned in this project.
 #[tauri::command]
 #[specta::specta]
-fn plane_pins(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Pins, String> {
+async fn plane_pins(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Pins, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    Ok(pins_in(&planes.remembered().store, &root))
+    let remembered = planes.remembered_later();
+    // Off the window's thread (#1949): this machine's store and the project's workspaces are
+    // read from the disk.
+    off_the_window("reading your pins", move || {
+        Ok(pins_in(&remembered().store, &root))
+    })
+    .await
 }
 
 /// [`plane_pins`]'s answer for the plane at `root`, given the machine store.
@@ -2053,26 +2097,35 @@ fn pins_in(store: &purlis_core::machine::Store, root: &std::path::Path) -> Pins 
 /// Pins or unpins the project itself.
 #[tauri::command]
 #[specta::specta]
-fn pin_project(
+async fn pin_project(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     pinned: bool,
 ) -> Result<(), String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    planes.pin(&root, None, pinned)
+    let store = planes.machine_store();
+    off_the_window(WRITING_PINS, move || store.pin(&root, None, pinned)).await
 }
+
+/// What the commands that write this machine's store name their work, off the window's thread
+/// (#1949): the store is one file under a lock another purlis may be holding.
+const WRITING_PINS: &str = "writing your pins down";
 
 /// Pins or unpins one workspace inside a project.
 #[tauri::command]
 #[specta::specta]
-fn pin_workspace(
+async fn pin_workspace(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspace: String,
     pinned: bool,
 ) -> Result<(), String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    planes.pin(&root, Some(&workspace), pinned)
+    let store = planes.machine_store();
+    off_the_window(WRITING_PINS, move || {
+        store.pin(&root, Some(&workspace), pinned)
+    })
+    .await
 }
 
 /// Puts a project's pinned workspaces in the order the operator dragged them into on the
@@ -2080,13 +2133,17 @@ fn pin_workspace(
 /// pinning stays [`pin_workspace`]'s.
 #[tauri::command]
 #[specta::specta]
-fn arrange_workspace_pins(
+async fn arrange_workspace_pins(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspaces: Vec<String>,
 ) -> Result<(), String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    planes.arrange_workspaces(&root, &workspaces)
+    let store = planes.machine_store();
+    off_the_window(WRITING_PINS, move || {
+        store.arrange_workspaces(&root, &workspaces)
+    })
+    .await
 }
 
 /// Pins or unpins one chat.

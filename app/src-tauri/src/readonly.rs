@@ -53,12 +53,16 @@ fn read_only(compat: Compat) -> Option<ReadOnlyProject> {
 /// project read-only from that moment, and the window asks again when the project changes.
 #[tauri::command]
 #[specta::specta]
-pub fn project_read_only(
+pub async fn project_read_only(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Option<ReadOnlyProject>, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    Ok(read_only(compat::read(&root)))
+    // Off the window's thread (#1949): the project's manifest is read from the disk.
+    crate::off_the_window("reading the project's version", move || {
+        Ok(read_only(compat::read(&root)))
+    })
+    .await
 }
 
 #[cfg(test)]

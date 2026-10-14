@@ -6,6 +6,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { attach } from "./bench";
 import { settleLayout } from "./regions";
+import { keepTheirOrder } from "./commandOrder";
 import { startTheSwitchClock } from "./switchClock";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import { DEFAULT_THEME, drawIn } from "./theme/theme";
@@ -33,6 +34,10 @@ if (import.meta.env.VITE_E2E) void import("@wdio/tauri-plugin");
 
 // The seam `tools/bench.mjs` measures the window through, in that same build and no other.
 attach();
+
+// The core's answers that read and change the same thing, in the order they were asked
+// (`commandOrder.ts`): the core answers them off the window's thread.
+keepTheirOrder();
 
 // What each project switch took in this window, for the doctor's dialog (`switchClock.ts`).
 startTheSwitchClock();

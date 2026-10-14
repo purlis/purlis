@@ -1418,6 +1418,229 @@ pub(crate) fn workspace_working_in(
 /// teller serves them all.
 pub type Teller = Arc<dyn Fn(Moved) + Send + Sync + 'static>;
 
+/// This machine's store, where the operator's pins and remembered projects are kept: the part
+/// of [`Planes`] a command can carry off the window's thread (#1949).
+pub(crate) struct MachineStore {
+    config: Option<PathBuf>,
+}
+
+impl MachineStore {
+    /// Pins or unpins a project, or one of its workspaces, in the machine store.
+    ///
+    /// **This one refuses rather than shrugging**, unlike [`Planes`]' `remember` and
+    /// `record_approval`, and the difference is who is waiting. Those two are charter's own bookkeeping
+    /// on a path the operator is already walking; this is a button they just pressed, and a
+    /// pin that silently did not happen is a control that does not work. So the store's own
+    /// sentence travels back — including the one a machine with no store gives
+    /// (`Unsupported`, which on Windows is ADR 0031's refusal and is the honest answer to
+    /// "pin this": charter cannot, here, and says so).
+    pub fn pin(&self, root: &Path, workspace: Option<&str>, pinned: bool) -> Result<(), String> {
+        let plane = root.to_path_buf();
+        self.arranging(|store| match workspace {
+            Some(name) => store.pin_workspace(&plane, name, pinned).map(drop),
+            None => store.pin(&plane, pinned).map(drop),
+        })
+    }
+
+    /// Puts a project's pinned workspaces in the order the operator dragged them into (SI-6),
+    /// in the machine store beside the pins themselves — refusing as [`MachineStore::pin`] does, for
+    /// the same reason: it is a drag the operator just finished.
+    pub fn arrange_workspaces(&self, root: &Path, order: &[String]) -> Result<(), String> {
+        let plane = root.to_path_buf();
+        let order: Vec<&str> = order.iter().map(String::as_str).collect();
+        self.arranging(|store| store.arrange_workspaces(&plane, &order).map(drop))
+    }
+
+    /// Pins a workspace back at the place it had among the project's workspace pins: the Undo
+    /// of an unpin made in Settings › You › This machine (ST-2), refusing as [`MachineStore::pin`]
+    /// does.
+    pub fn pin_workspace_at(&self, root: &Path, workspace: &str, at: usize) -> Result<(), String> {
+        let plane = root.to_path_buf();
+        self.arranging(|store| store.pin_workspace_at(&plane, workspace, at).map(drop))
+    }
+
+    /// Re-points a remembered project that is gone at the folder the operator picked (NO-5),
+    /// once the core has checked a project is there, and answers the project found.
+    pub fn locate(&self, gone: &Path, picked: &Path) -> Result<PathBuf, String> {
+        let config = self.store_home("re-point a project")?;
+        machine::locate_project(config, gone, picked)
+    }
+
+    /// Forgets a project on this machine (ST-2): its recent, approval, pins and tabs. A
+    /// project that is gone from the disk is forgotten the same way.
+    pub fn forget(&self, root: &Path) -> Result<(), String> {
+        let config = self.store_home("forget a project")?;
+        match machine::forget_project(config, root) {
+            Ok(true) => Ok(()),
+            // Said, never dropped (#1240 F3): a row whose path the store does not hold, as
+            // one that is not UTF-8 comes back from the window, would otherwise read as done.
+            Ok(false) => Err(
+                "Nothing changed: purlis does not remember that project on this machine."
+                    .to_owned(),
+            ),
+            Err(why) => Err(format!("purlis could not forget that project: {why}")),
+        }
+    }
+
+    /// Revokes this machine's approval of a project (ST-2): the next open asks again.
+    pub fn revoke(&self, root: &Path) -> Result<(), String> {
+        let config = self.store_home("revoke an approval")?;
+        match machine::revoke_approval(config, root) {
+            Ok(true) => Ok(()),
+            // Said, never dropped (#1240 F3), as a forget that changed nothing is.
+            Ok(false) => {
+                Err("Nothing changed: this machine holds no approval of that project.".to_owned())
+            }
+            Err(why) => Err(format!("purlis could not revoke that approval: {why}")),
+        }
+    }
+
+    /// The config home the machine store is in, or why there is none to `act` in.
+    fn store_home(&self, act: &str) -> Result<&Path, String> {
+        self.config.as_deref().ok_or_else(|| {
+            format!("purlis has no config home on this machine, so it cannot {act}.")
+        })
+    }
+
+    /// Changes how the operator arranged things in the machine store, and hands back the
+    /// store's own refusal whole: the one path [`MachineStore::pin`] and [`MachineStore::arrange_workspaces`]
+    /// both take, so a store that cannot be written says the same sentence for either.
+    fn arranging(
+        &self,
+        act: impl FnOnce(&mut machine::Store) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let Some(config) = self.config.as_deref() else {
+            return Err(
+                "purlis has no config home on this machine, so it cannot remember a pin."
+                    .to_owned(),
+            );
+        };
+        // The store's own refusal, out of the closure: `update` answers an `io::Error`, and
+        // wrapping a bound the operator can act on ("unpin one first") in one would turn a
+        // sentence they can follow into a sentence about a file.
+        let mut refused = None;
+        machine::update(config, |store| refused = act(store).err())
+            .map_err(|why| format!("purlis could not write the pin down: {why}"))?;
+        match refused {
+            Some(why) => Err(why),
+            None => Ok(()),
+        }
+    }
+}
+
+/// **The window's tabs, written to this machine's store behind the window** (#1949): one writer,
+/// which always writes the newest arrangement it was handed, so a switch hands its tabs over
+/// and goes on drawing, and an older arrangement never lands after a newer one.
+#[derive(Default)]
+pub(crate) struct ArrangedBehind {
+    slot: Mutex<Arranging>,
+    moved: Condvar,
+}
+
+/// What the writer has to do: the newest arrangement not yet written, and whether a write is
+/// under way or the writer has started.
+#[derive(Default)]
+struct Arranging {
+    newest: Option<(PathBuf, Vec<machine::Window>)>,
+    writing: bool,
+    started: bool,
+}
+
+impl ArrangedBehind {
+    fn slot(&self) -> MutexGuard<'_, Arranging> {
+        self.slot.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Hands `windows` over to be written into the store under `config`, in place of any
+    /// arrangement still waiting.
+    fn hand(self: &Arc<Self>, config: PathBuf, windows: Vec<machine::Window>) {
+        let mut slot = self.slot();
+        slot.newest = Some((config, windows));
+        if !slot.started {
+            let writer = Arc::clone(self);
+            slot.started = std::thread::Builder::new()
+                .name("purlis-arrangement".to_owned())
+                .spawn(move || writer.write_each())
+                .is_ok();
+        }
+        let started = slot.started;
+        drop(slot);
+        self.moved.notify_all();
+        // No thread to write it: written here, as it always was.
+        if !started {
+            self.flush();
+        }
+    }
+
+    /// The writer: each newest arrangement, as it comes.
+    fn write_each(&self) {
+        loop {
+            let (config, windows) = {
+                let mut slot = self.slot();
+                loop {
+                    if let Some(newest) = slot.newest.take() {
+                        slot.writing = true;
+                        break newest;
+                    }
+                    slot = self
+                        .moved
+                        .wait(slot)
+                        .unwrap_or_else(PoisonError::into_inner);
+                }
+            };
+            write_arrangement(&config, windows);
+            self.slot().writing = false;
+            self.moved.notify_all();
+        }
+    }
+
+    /// Writes what is waiting now and answers once it is on disk, after any write under way.
+    fn flush(&self) {
+        let mut slot = self.slot();
+        while slot.writing {
+            slot = self
+                .moved
+                .wait(slot)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        // Under the lock, so the writer takes nothing older after it.
+        if let Some((config, windows)) = slot.newest.take() {
+            write_arrangement(&config, windows);
+        }
+    }
+}
+
+/// Writes `windows` into the store under `config`. Never worth refusing anything over: an
+/// arrangement that could not be filed costs the next launch its tabs.
+fn write_arrangement(config: &Path, windows: Vec<machine::Window>) {
+    if let Err(why) = machine::update(config, move |store| store.windows = windows)
+        && why.kind() != std::io::ErrorKind::Unsupported
+    {
+        tracing::warn!(
+            "purlis: the projects this window holds were not written down ({why}); the next \
+             launch will not put them back"
+        );
+    }
+}
+
+/// A plane [`Planes::closing`] took out of the registry, still to be let go of.
+pub(crate) struct Closing {
+    plane: PlaneId,
+    held: Arc<Held>,
+    released: Released,
+    closed: Closed,
+}
+
+impl Closing {
+    /// Lets go of the plane: its record is written, its chats ended, its hook socket released,
+    /// and every window drawing it told.
+    pub(crate) fn finish(self) {
+        self.held.let_go(false);
+        (self.released)(&self.held.root);
+        (self.closed)(&self.plane);
+    }
+}
+
 /// The planes this process holds, by root.
 pub struct Planes {
     tell: Teller,
@@ -1452,6 +1675,8 @@ pub struct Planes {
     /// Told each sandbox block a chat's hook found, once kept in the network record (#1338,
     /// #1662).
     blocks: hooks::BlockTeller,
+    /// The window's tabs on their way to this machine's store (#1949).
+    arranged: Arc<ArrangedBehind>,
     /// Told how many hosts a chat's proxy refused past the ones it names (#1353).
     refused_more: hooks::RefusedMoreTeller,
     /// Told each vault a chat was refused for its persona (#1430).
@@ -1597,6 +1822,7 @@ impl Planes {
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
             blocks: Arc::new(|_| {}),
+            arranged: Arc::default(),
             refused_more: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
@@ -1751,6 +1977,12 @@ impl Planes {
     /// of, in place of the one that named none (#1884).
     pub(crate) fn tell_block(&self, told: hooks::ChatBlocked) {
         (self.blocks)(told);
+    }
+
+    /// [`Self::tell_block`] as a handle of its own, for a command whose work runs off the
+    /// window's thread and outlives the registry's borrow (#1949).
+    pub(crate) fn block_teller(&self) -> hooks::BlockTeller {
+        Arc::clone(&self.blocks)
     }
 
     /// Tells `more` how many hosts a chat's proxy refused past the ones it names, in a plane this
@@ -2637,9 +2869,22 @@ impl Planes {
     /// next launch its tabs, and there is nothing the operator could do about it here.
     /// `Unsupported` is silent, because it is Windows having no store at all (ADR 0031) rather
     /// than a fault.
+    ///
+    /// Written by the one writer [`ArrangedBehind`] keeps, as every arrangement is, and waited
+    /// for here: what this answers after is on disk.
     pub fn remember_arrangement(&self, windows: &[Holding]) {
+        if self.remember_arrangement_behind(windows) {
+            self.arranged.flush();
+        }
+    }
+
+    /// [`Self::remember_arrangement`] without the wait, for a window's report of its tabs,
+    /// which it makes at every project switch (#1949): the store is one file written whole and
+    /// synced, a write the window is not to wait for. Answers whether there was anything to
+    /// write.
+    pub(crate) fn remember_arrangement_behind(&self, windows: &[Holding]) -> bool {
         let Some(config) = self.config.as_deref() else {
-            return;
+            return false;
         };
         let arranged: Vec<machine::Window> = {
             let open = self.map();
@@ -2669,14 +2914,8 @@ impl Planes {
                 })
                 .collect()
         };
-        if let Err(why) = machine::update(config, move |store| store.windows = arranged)
-            && why.kind() != std::io::ErrorKind::Unsupported
-        {
-            tracing::warn!(
-                "purlis: the projects this window holds were not written down ({why}); the \
-                 next launch will not put them back"
-            );
-        }
+        self.arranged.hand(config.to_path_buf(), arranged);
+        true
     }
 
     /// Where this machine's store is — the pins a workspace rename moves — or `None` on a
@@ -2685,105 +2924,33 @@ impl Planes {
         self.config.as_deref()
     }
 
-    /// Pins or unpins a project, or one of its workspaces, in the machine store.
-    ///
-    /// **This one refuses rather than shrugging**, unlike `remember` and `record_approval`
-    /// above, and the difference is who is waiting. Those two are charter's own bookkeeping
-    /// on a path the operator is already walking; this is a button they just pressed, and a
-    /// pin that silently did not happen is a control that does not work. So the store's own
-    /// sentence travels back — including the one a machine with no store gives
-    /// (`Unsupported`, which on Windows is ADR 0031's refusal and is the honest answer to
-    /// "pin this": charter cannot, here, and says so).
-    pub fn pin(&self, root: &Path, workspace: Option<&str>, pinned: bool) -> Result<(), String> {
-        let plane = root.to_path_buf();
-        self.arranging(|store| match workspace {
-            Some(name) => store.pin_workspace(&plane, name, pinned).map(drop),
-            None => store.pin(&plane, pinned).map(drop),
-        })
+    /// This machine's store, as a handle of its own: for a command that writes it off the
+    /// window's thread (#1949), where the registry cannot go.
+    pub(crate) fn machine_store(&self) -> MachineStore {
+        MachineStore {
+            config: self.config.clone(),
+        }
     }
 
-    /// Puts a project's pinned workspaces in the order the operator dragged them into (SI-6),
-    /// in the machine store beside the pins themselves — refusing as [`Self::pin`] does, for
-    /// the same reason: it is a drag the operator just finished.
-    pub fn arrange_workspaces(&self, root: &Path, order: &[String]) -> Result<(), String> {
-        let plane = root.to_path_buf();
-        let order: Vec<&str> = order.iter().map(String::as_str).collect();
-        self.arranging(|store| store.arrange_workspaces(&plane, &order).map(drop))
-    }
-
-    /// Pins a workspace back at the place it had among the project's workspace pins: the Undo
-    /// of an unpin made in Settings › You › This machine (ST-2), refusing as [`Self::pin`]
-    /// does.
-    pub fn pin_workspace_at(&self, root: &Path, workspace: &str, at: usize) -> Result<(), String> {
-        let plane = root.to_path_buf();
-        self.arranging(|store| store.pin_workspace_at(&plane, workspace, at).map(drop))
-    }
-
-    /// Re-points a remembered project that is gone at the folder the operator picked (NO-5),
-    /// once the core has checked a project is there, and answers the project found.
-    pub fn locate(&self, gone: &Path, picked: &Path) -> Result<PathBuf, String> {
-        let config = self.store_home("re-point a project")?;
-        machine::locate_project(config, gone, picked)
-    }
-
-    /// Forgets a project on this machine (ST-2): its recent, approval, pins and tabs. A
-    /// project that is gone from the disk is forgotten the same way.
+    /// [`MachineStore::forget`].
+    #[cfg(test)]
     pub fn forget(&self, root: &Path) -> Result<(), String> {
-        let config = self.store_home("forget a project")?;
-        match machine::forget_project(config, root) {
-            Ok(true) => Ok(()),
-            // Said, never dropped (#1240 F3): a row whose path the store does not hold, as
-            // one that is not UTF-8 comes back from the window, would otherwise read as done.
-            Ok(false) => Err(
-                "Nothing changed: purlis does not remember that project on this machine."
-                    .to_owned(),
-            ),
-            Err(why) => Err(format!("purlis could not forget that project: {why}")),
-        }
+        self.machine_store().forget(root)
     }
 
-    /// Revokes this machine's approval of a project (ST-2): the next open asks again.
+    /// [`MachineStore::revoke`].
+    #[cfg(test)]
     pub fn revoke(&self, root: &Path) -> Result<(), String> {
-        let config = self.store_home("revoke an approval")?;
-        match machine::revoke_approval(config, root) {
-            Ok(true) => Ok(()),
-            // Said, never dropped (#1240 F3), as a forget that changed nothing is.
-            Ok(false) => {
-                Err("Nothing changed: this machine holds no approval of that project.".to_owned())
-            }
-            Err(why) => Err(format!("purlis could not revoke that approval: {why}")),
-        }
+        self.machine_store().revoke(root)
     }
 
-    /// The config home the machine store is in, or why there is none to `act` in.
-    fn store_home(&self, act: &str) -> Result<&Path, String> {
-        self.config.as_deref().ok_or_else(|| {
-            format!("purlis has no config home on this machine, so it cannot {act}.")
-        })
-    }
-
-    /// Changes how the operator arranged things in the machine store, and hands back the
-    /// store's own refusal whole: the one path [`Self::pin`] and [`Self::arrange_workspaces`]
-    /// both take, so a store that cannot be written says the same sentence for either.
-    fn arranging(
-        &self,
-        act: impl FnOnce(&mut machine::Store) -> Result<(), String>,
-    ) -> Result<(), String> {
-        let Some(config) = self.config.as_deref() else {
-            return Err(
-                "purlis has no config home on this machine, so it cannot remember a pin."
-                    .to_owned(),
-            );
-        };
-        // The store's own refusal, out of the closure: `update` answers an `io::Error`, and
-        // wrapping a bound the operator can act on ("unpin one first") in one would turn a
-        // sentence they can follow into a sentence about a file.
-        let mut refused = None;
-        machine::update(config, |store| refused = act(store).err())
-            .map_err(|why| format!("purlis could not write the pin down: {why}"))?;
-        match refused {
-            Some(why) => Err(why),
-            None => Ok(()),
+    /// [`Self::remembered`] to be read later, wherever: for a command that reads it off the
+    /// window's thread (#1949).
+    pub(crate) fn remembered_later(&self) -> impl FnOnce() -> machine::Loaded + Send + 'static {
+        let config = self.config.clone();
+        move || match config.as_deref() {
+            Some(config) => machine::read(config),
+            None => machine::Loaded::default(),
         }
     }
 
@@ -3090,15 +3257,26 @@ impl Planes {
     ///
     /// **Nothing of the plane on disk is touched** beyond the record the app already keeps
     /// there. Closing a project is the app letting go of it, never the plane going away.
+    #[cfg(test)]
     pub fn close(&self, plane: &PlaneId) -> Result<(), String> {
+        self.closing(plane)?.finish();
+        Ok(())
+    }
+
+    /// [`Self::close`] in two halves (#1949): the plane is taken out of the registry now, so
+    /// nothing asks it again, and the [`Closing`] answered lets go of it, which writes its
+    /// record and ends its chats, wherever that may take its time.
+    pub(crate) fn closing(&self, plane: &PlaneId) -> Result<Closing, String> {
         let held = self
             .map()
             .remove(plane)
             .ok_or_else(|| no_such(plane, "close"))?;
-        held.let_go(false);
-        (self.released)(&held.root);
-        (self.closed)(plane);
-        Ok(())
+        Ok(Closing {
+            plane: plane.clone(),
+            held,
+            released: Arc::clone(&self.released),
+            closed: Arc::clone(&self.closed),
+        })
     }
 
     /// The kill switch (OV-1, ADR 0071): interrupts and ends every chat and shell in every
@@ -3208,6 +3386,8 @@ impl Planes {
 
     /// Empties the registry, then lets go of each plane it held. See [`Self::let_go_of_all`].
     fn let_go_of_every_plane(&self, to_update: bool) {
+        // The window's tabs as last handed over, on disk before anything ends (#1949).
+        self.arranged.flush();
         let all: Vec<_> = self.map().drain().map(|(_, held)| held).collect();
         // Every command purlis is running with a vault for a chat ends here, with everything it
         // started that stayed in its process group (#1407).
@@ -6067,6 +6247,42 @@ mod tests {
             "the tab that was in front is not"
         );
         assert!(back.dropped.is_empty(), "{:?}", back.dropped);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_switch_hands_its_tabs_over_and_the_newest_is_what_lands() {
+        // #1949: a window reports its tabs at every switch, and the store is a synced file the
+        // window does not wait for. Many reports in a row, then the way out: the last one is
+        // on disk, never one before it.
+        let dir = tempfile::tempdir().expect("a directory");
+        let config = dir.path().join("config");
+        let one = a_plane(&dir.path().join("one"));
+        let two = a_plane(&dir.path().join("two"));
+        let planes = planes_keeping(&config);
+        let first = planes.open(&one);
+        let second = planes.open(&two);
+
+        for n in 0..20 {
+            assert!(planes.remember_arrangement_behind(&[Holding {
+                planes: vec![first.clone(), second.clone()],
+                active: Some(n % 2),
+            }]));
+        }
+        assert!(planes.remember_arrangement_behind(&[Holding {
+            planes: vec![second.clone()],
+            active: Some(0),
+        }]));
+        planes.let_go_of_all();
+
+        let back = machine::read(&config).store.windows;
+        assert_eq!(
+            back,
+            vec![machine::Window {
+                planes: vec![two.canonicalize().expect("two resolves")],
+                active: 0,
+            }]
+        );
     }
 
     #[cfg(unix)]

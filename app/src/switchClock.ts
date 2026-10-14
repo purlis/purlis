@@ -18,8 +18,10 @@ import { commands } from "./bindings";
  * - **each synchronous command the core ran for it**, from the ask to the answer. A synchronous
  *   command is answered on the window's own thread in the core (`off_the_main_thread.rs`), which
  *   pumps the window's events: while one runs, the window does nothing else, a paint included.
- *   `sandbox_state` is the one worth watching: it starts `git` where the project has a local
- *   settings file.
+ * - **and each read a switch makes that the core answers off the window's thread** (#1949), apart:
+ *   the window draws on while those work, so their time is how long a notice or a gauge waits,
+ *   not how long the window does. `sandbox_state` is the one worth watching: it starts `git`
+ *   where the project has a local settings file.
  *
  * Each is also a `performance.measure` (`purlis:switch:…`, `purlis:command:…`), for an inspector
  * where there is one; a command asked outside a switch is not measured at all. Kept for this window only, the last {@link KEPT} switches, in memory:
@@ -33,7 +35,7 @@ export const KEPT = 20;
 export const AFTER_MS = 2_000;
 
 /** One command the core was asked while a switch was being drawn, or just after. */
-export type Asked = { command: string; ms: number; afterPaint: boolean };
+export type Asked = { command: string; ms: number; afterPaint: boolean; offTheWindow?: boolean };
 
 /** One switch. */
 export type Switched = {
@@ -54,11 +56,15 @@ export type Switched = {
  * window, asks as a project comes to the front.
  */
 const SYNCHRONOUS = {
-  sandbox_state: "sandboxState",
-  sandbox_kept_blocked: "sandboxKeptBlocked",
   inbox_shown: "inboxShown",
   window_holds_planes: "windowHoldsPlanes",
   tasks_sharing_a_folder: "tasksSharingAFolder",
+} as const satisfies Record<string, keyof typeof commands>;
+
+/** The ones a switch makes that the core answers off the window's thread (#1949). */
+const OFF_THE_WINDOW = {
+  sandbox_state: "sandboxState",
+  sandbox_kept_blocked: "sandboxKeptBlocked",
   persona_grants_held: "personaGrantsHeld",
   chat_usage: "chatUsage",
 } as const satisfies Record<string, keyof typeof commands>;
@@ -125,7 +131,11 @@ export function switched(to: string, by: Event | undefined = globalThis.event): 
 }
 
 /** Times `ask`, and counts it for the switch it was made in. */
-function timed<A extends unknown[], R>(command: string, ask: (...args: A) => Promise<R>) {
+function timed<A extends unknown[], R>(
+  command: string,
+  ask: (...args: A) => Promise<R>,
+  offTheWindow: boolean,
+) {
   return (...args: A): Promise<R> => {
     const from = performance.now();
     const mine = latest;
@@ -137,7 +147,12 @@ function timed<A extends unknown[], R>(command: string, ask: (...args: A) => Pro
       if (mine === undefined || from - mine.since > AFTER_MS) return;
       const now = performance.now();
       measure(`purlis:command:${command}`, from, now);
-      mine.switched.asked.push({ command, ms: now - from, afterPaint });
+      mine.switched.asked.push({
+        command,
+        ms: now - from,
+        afterPaint,
+        ...(offTheWindow ? { offTheWindow } : {}),
+      });
       changed();
     };
     return ask(...args).finally(answered);
@@ -155,7 +170,9 @@ export function startTheSwitchClock(): void {
   started = true;
   const asks = commands as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
   for (const [command, name] of Object.entries(SYNCHRONOUS))
-    asks[name] = timed(command, asks[name].bind(commands));
+    asks[name] = timed(command, asks[name].bind(commands), false);
+  for (const [command, name] of Object.entries(OFF_THE_WINDOW))
+    asks[name] = timed(command, asks[name].bind(commands), true);
 }
 
 /** Forgets every switch: a test's window is a new one. */
@@ -203,11 +220,14 @@ export function said(one: Switched, nameOf: (plane: string) => string = (plane) 
       )
       .join(", ");
   };
-  const before = sum(one.asked.filter((asked) => !asked.afterPaint));
-  const after = sum(one.asked.filter((asked) => asked.afterPaint));
+  const onTheWindow = one.asked.filter((asked) => asked.offTheWindow !== true);
+  const before = sum(onTheWindow.filter((asked) => !asked.afterPaint));
+  const after = sum(onTheWindow.filter((asked) => asked.afterPaint));
+  const off = sum(one.asked.filter((asked) => asked.offTheWindow === true));
   return (
     `${when} to ${nameOf(one.to)}: drawn ${ms(one.drawnMs)}, painted ${ms(one.paintedMs)}` +
     `; the core's synchronous commands before the paint: ${before || "none"}` +
-    `; after it: ${after || "none"}`
+    `; after it: ${after || "none"}` +
+    (off === "" ? "" : `; answered off the window's thread: ${off}`)
   );
 }

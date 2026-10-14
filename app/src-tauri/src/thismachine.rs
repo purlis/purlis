@@ -122,31 +122,41 @@ fn listed(loaded: machine::Loaded) -> ThisMachine {
 /// would put back. A project that is gone from the disk is forgotten the same way.
 #[tauri::command]
 #[specta::specta]
-pub fn forget_project(planes: tauri::State<'_, Planes>, path: String) -> Result<(), String> {
-    planes.forget(Path::new(&path))
+pub async fn forget_project(planes: tauri::State<'_, Planes>, path: String) -> Result<(), String> {
+    let store = planes.machine_store();
+    crate::off_the_window(WRITING, move || store.forget(Path::new(&path))).await
 }
+
+/// What this page's commands name their work, off the window's thread (#1949): each writes this
+/// machine's store, one file under a lock another purlis may be holding.
+const WRITING: &str = "writing this machine's store";
 
 /// Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
 /// folder the operator picked, and answers the project found there (NO-5). The folder is
 /// checked first, as an open checks it, and the approval does not travel: the next open asks.
 #[tauri::command]
 #[specta::specta]
-pub fn locate_project(
+pub async fn locate_project(
     planes: tauri::State<'_, Planes>,
     gone: String,
     picked: String,
 ) -> Result<String, String> {
-    planes
-        .locate(Path::new(&gone), Path::new(&picked))
-        .map(|found| found.display().to_string())
+    let store = planes.machine_store();
+    crate::off_the_window(WRITING, move || {
+        store
+            .locate(Path::new(&gone), Path::new(&picked))
+            .map(|found| found.display().to_string())
+    })
+    .await
 }
 
 /// Revokes this machine's approval of a project. It stays remembered and pinned; the next open
 /// asks again, as a first open does.
 #[tauri::command]
 #[specta::specta]
-pub fn revoke_approval(planes: tauri::State<'_, Planes>, path: String) -> Result<(), String> {
-    planes.revoke(Path::new(&path))
+pub async fn revoke_approval(planes: tauri::State<'_, Planes>, path: String) -> Result<(), String> {
+    let store = planes.machine_store();
+    crate::off_the_window(WRITING, move || store.revoke(Path::new(&path))).await
 }
 
 /// Pins or unpins a project, or one workspace in it, by the path the store holds it under —
@@ -154,20 +164,24 @@ pub fn revoke_approval(planes: tauri::State<'_, Planes>, path: String) -> Result
 /// workspace pins (the Undo of an unpin); without it a pin goes last.
 #[tauri::command]
 #[specta::specta]
-pub fn pin_on_this_machine(
+pub async fn pin_on_this_machine(
     planes: tauri::State<'_, Planes>,
     path: String,
     workspace: Option<String>,
     pinned: bool,
     at: Option<u32>,
 ) -> Result<(), String> {
-    let root = Path::new(&path);
-    match (workspace, at) {
-        (Some(name), Some(at)) if pinned => {
-            planes.pin_workspace_at(root, &name, usize::try_from(at).unwrap_or(usize::MAX))
+    let store = planes.machine_store();
+    crate::off_the_window(WRITING, move || {
+        let root = Path::new(&path);
+        match (workspace, at) {
+            (Some(name), Some(at)) if pinned => {
+                store.pin_workspace_at(root, &name, usize::try_from(at).unwrap_or(usize::MAX))
+            }
+            (workspace, _) => store.pin(root, workspace.as_deref(), pinned),
         }
-        (workspace, _) => planes.pin(root, workspace.as_deref(), pinned),
-    }
+    })
+    .await
 }
 
 #[cfg(test)]
