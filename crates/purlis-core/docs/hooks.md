@@ -342,6 +342,9 @@ rule while one who reads a bare refusal files an issue.
   asked about the branch of a name before a tag of it, and about the one remote branch of a
   name nothing else has, as git reads it there.
 
+  A redirection on the line (`2>&1`, `> /dev/null`, a pipe into `tail`) is the shell's, not
+  git's: `git rebase <upstream> 2>&1 | tail -5` is judged as `git rebase <upstream>`.
+
   A path a sparse checkout leaves out of the folder is one git does not write, and is not
   counted: where `core.sparseCheckout` is on there, git's own `sparse-checkout check-rules`
   says which those are. A sparse clone that leaves the denied files out moves freely. Where

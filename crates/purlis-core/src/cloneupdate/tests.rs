@@ -900,6 +900,54 @@ impl Folders {
 }
 
 #[test]
+fn a_plain_rebase_onto_an_upstream_is_judged_by_what_it_writes_however_it_is_spelled() {
+    // qw387: a lane's `git rebase origin/main`, with its output piped or redirected, was
+    // refused as a commit the guard could not name, though neither the upstream's commit nor
+    // the commits it replays touch a denied file.
+    let f = folders();
+    let clone = a_clone();
+    let parent = Path::new(&f.clone).parent().unwrap().display().to_string();
+    for line in [
+        "git rebase origin/plain".to_owned(),
+        "git -c commit.gpgsign=false rebase origin/plain".to_owned(),
+        "git rebase origin/plain 2>&1".to_owned(),
+        "git rebase origin/plain 2>&1 | tail -5".to_owned(),
+        "git rebase origin/plain > /dev/null 2>&1".to_owned(),
+        "git rebase -q origin/plain 2>/dev/null".to_owned(),
+        format!("git -C {} rebase origin/plain", f.clone),
+        format!("cd {} && git rebase origin/plain 2>&1 | tail -3", f.clone),
+    ] {
+        assert_eq!(
+            f.asked_in(&line, &parent_or(&line, &parent, &f.clone), &clone),
+            None,
+            "{line}"
+        );
+    }
+    // And one that does touch a denied file is still told so, by name, however spelled.
+    for line in [
+        "git rebase origin/tasks 2>&1 | tail -5",
+        "git rebase origin/tasks > /dev/null 2>&1",
+    ] {
+        let (_, said) = f
+            .asked(line, &clone)
+            .unwrap_or_else(|| panic!("{line}: allowed"));
+        assert!(
+            said.contains("would write `app/.vscode/tasks.json`"),
+            "{line}: {said}"
+        );
+    }
+}
+
+/// Where a test line runs: from the clone's parent where it names the clone itself.
+fn parent_or(line: &str, parent: &str, clone: &str) -> String {
+    if line.contains(clone) {
+        parent.to_owned()
+    } else {
+        clone.to_owned()
+    }
+}
+
+#[test]
 fn a_move_in_a_clone_is_judged_however_the_line_reaches_it() {
     let f = folders();
     let (clone, ws, scratch) = (&f.clone, &f.workspace, &f.scratch);
