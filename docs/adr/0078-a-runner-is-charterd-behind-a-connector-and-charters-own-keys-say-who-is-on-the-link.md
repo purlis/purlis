@@ -363,7 +363,8 @@ chat's sandbox always denies.
   (V24b), so a runner approves it once too, from the desktop's window over the link.
 - **Harness logins stay in the harness's flow** (RR-20). A login happens in a shell tab on the
   runner, through the harness's own device or paste-code flow. purlis never reads, copies,
-  stores, vaults or relays a harness credential.
+  stores, vaults or relays a harness credential. *(Amended by [ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md): a profile is
+  signed in on the runner through the harness's own flow, shown in the window.)*
 - **Needs-you with the desktop closed** goes through notifiers the user owns (IB-12) and
   `purlis inbox` over any SSH client on the runner (IB-13), which answers asks through the
   runner's own `approval` scope. A secret approval is never answered there: it happens where the

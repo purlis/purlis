@@ -417,6 +417,9 @@ pub enum HowFailed {
     Unreported,
     /// It was asked for and never started.
     DidNotStart,
+    /// Its turns ended without a report, and purlis sent its last message in its place
+    /// (#1981): the person reads what it said, since the task did not send it as its report.
+    LastMessage,
 }
 
 impl HowFailed {
@@ -426,6 +429,7 @@ impl HowFailed {
             Self::Failed => "failed",
             Self::Unreported => "unreported",
             Self::DidNotStart => "did_not_start",
+            Self::LastMessage => "last_message",
         }
     }
 }
@@ -1650,6 +1654,16 @@ impl Board {
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.answered_by(asker));
         self.stamp(number, changed)
+    }
+
+    /// **Whether `speaker` is the harness run chat `number` adopted** (#1601, #1981): what a
+    /// line that is not a report is judged by before the app keeps anything it says of the
+    /// chat. A harness nested in the chat, or a job it started, holds the chat's token and sits
+    /// in its process tree, and speaks for nobody.
+    pub fn spoken_by(&self, number: u32, speaker: &crate::hookwire::Speaker) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.spoke(speaker))
     }
 
     /// A tool hook of chat `number`'s own said `said` ([`Chat::tool_said`], #1601): it may have

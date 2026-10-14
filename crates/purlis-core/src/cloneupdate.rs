@@ -459,6 +459,9 @@ pub trait Asks {
     /// Every path changed by a commit the current branch has and `onto` lacks: what a rebase
     /// onto it replays. `None` where git could not say.
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>>;
+    /// [`Asks::replayed`], for the commits `head` has and `onto` lacks, whatever HEAD is:
+    /// what a rebase of exactly `head` replays.
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>>;
     /// Every path `commit` tracks, or `None` where git could not say.
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>>;
     /// Which of `paths`, each tracked by the current commit, are not in the folder as that
@@ -477,9 +480,16 @@ pub trait Asks {
 pub struct Asked;
 
 impl Asked {
+    /// The isolation each question is asked under: the one the thread holds where purlis runs
+    /// git for a chat (pinned to the repository it checked), and otherwise none of the global
+    /// or system configuration.
+    fn held() -> git::Isolated {
+        git::isolation().unwrap_or_default()
+    }
+
     /// One question's answer, where git answered it.
     fn git(dir: &str, args: &[&str]) -> Option<String> {
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run(Path::new(dir), args, crate::doctor::CHECK_TIMEOUT)
         })
         .ok()?;
@@ -581,7 +591,14 @@ impl Asks for Asked {
     }
 
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
-        let range = format!("{onto}..HEAD");
+        self.replayed_from(top, onto, "HEAD")
+    }
+
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        if onto.starts_with('-') || head.starts_with('-') {
+            return None;
+        }
+        let range = format!("{onto}..{head}");
         let commits = Self::git(top, &["rev-list", &range, "--"])?;
         if commits.trim().is_empty() {
             return Some(Vec::new());
@@ -599,7 +616,7 @@ impl Asks for Asked {
             "--no-renames",
             "-z",
         ];
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &args,
@@ -666,7 +683,7 @@ impl Asks for Asked {
             input.push('\n');
         }
         let args = ["hash-object", "--no-filters", "--stdin-paths"];
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &args,
@@ -712,7 +729,7 @@ impl Asks for Asked {
             input.extend_from_slice(path.as_bytes());
             input.push(0);
         }
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &["sparse-checkout", "check-rules", "-z"],
@@ -936,6 +953,143 @@ pub fn said_clone(denied: &[String]) -> String {
          own terminal, where no sandbox stops the checkout.",
         listed(denied)
     )
+}
+
+/// The refusal a rebase of exactly `head` onto exactly `onto`, both commit ids, earns in the
+/// working tree at `top` (qw387), or `None`: what it writes is what differs between the two
+/// and what each commit `head` has and `onto` lacks changed, read for those ids and never for
+/// whatever HEAD names by then. What purlis runs for a chat is judged as it will run.
+pub fn judged_rebase(
+    top: &str,
+    onto: &str,
+    head: &str,
+    place: &Place<'_>,
+    asks: &dyn Asks,
+) -> Option<String> {
+    let (Some(mut paths), Some(replayed)) = (
+        asks.differ(top, head, onto),
+        asks.replayed_from(top, onto, head),
+    ) else {
+        return Some(said_unread("rebase", NO_ANSWER));
+    };
+    paths.extend(replayed);
+    let denies = Denies::of(top, place.root, place.chat_dir);
+    let mut denied = each_once(paths, &|path: &str| denies.path(path, asks));
+    if place.sparse
+        && let Some(out) = asks.left_out(top, &denied)
+        && !out.is_empty()
+    {
+        let out: std::collections::HashSet<String> = out.into_iter().collect();
+        denied.retain(|path| !out.contains(path));
+    }
+    (!denied.is_empty()).then(|| said_writes("rebase", &denied, top))
+}
+
+/// The refusal an app-run cut earns for a sandboxed chat (qw387), or `None`: a new branch
+/// folder at `folder` checked out from `start` in the clone at `clone`, judged as the chat's
+/// own checkout of it would be. Every file of `start` is written there, so a denied path it
+/// tracks is refused where its content is not what the clone already has checked out at that
+/// path, or where the clone has nothing there. `root` and `chat_dir` say which manifests the
+/// chat's sandbox holds. Fails closed: where git does not answer, the cut is refused.
+pub fn judged_cut(
+    clone: &Path,
+    start: &str,
+    folder: &Path,
+    root: &Path,
+    chat_dir: Option<&Path>,
+) -> Option<String> {
+    let unread = || {
+        Some(format!(
+            "purlis could not read what the new branch folder would hold ({}), so the app did \
+             not cut it for this chat. Ask the person to run the command in their own terminal",
+            crate::shown::short(start)
+        ))
+    };
+    if start.is_empty() || start.starts_with('-') {
+        return unread();
+    }
+    let clone_s = clone.to_string_lossy();
+    let Some(listing) = Asked::git(
+        &clone_s,
+        &["ls-tree", "-r", "-z", "--full-tree", start, "--"],
+    ) else {
+        return unread();
+    };
+    let denies = Denies::of(&folder.to_string_lossy(), &root.to_string_lossy(), chat_dir);
+    let nothing_there = NothingThere(&Asked);
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
+        let Some((meta, path)) = entry.split_once('\t') else {
+            return unread();
+        };
+        if !denies.path(path, &nothing_there) {
+            continue;
+        }
+        let mut meta = meta.split(' ');
+        let (mode, oid) = (meta.next().unwrap_or(""), meta.nth(1).unwrap_or(""));
+        wanted.push((path.to_owned(), format!("{mode} {oid}")));
+    }
+    if wanted.is_empty() {
+        return None;
+    }
+    // What the clone holds at each path now: a plain file's bytes as git would store them,
+    // through no filter; anything else (gone, a folder, a link) is not the same.
+    let mut differ: Vec<String> = Vec::new();
+    let mut plain: Vec<&(String, String)> = Vec::new();
+    for want in &wanted {
+        let file = clone.join(&want.0);
+        let is_file = std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file());
+        if is_file && want.1.starts_with("100") && !want.0.contains(['\n', '\r']) {
+            plain.push(want);
+        } else {
+            differ.push(want.0.clone());
+        }
+    }
+    if !plain.is_empty() {
+        let mut input = String::new();
+        for (path, _) in &plain {
+            input.push_str(path);
+            input.push('\n');
+        }
+        let asked = git::isolated(&Asked::held(), || {
+            git::run_with_input(
+                clone,
+                &["hash-object", "--no-filters", "--stdin-paths"],
+                input.into_bytes(),
+                crate::doctor::CHECK_TIMEOUT,
+            )
+        });
+        let Ok(asked) = asked else {
+            return unread();
+        };
+        let now = String::from_utf8_lossy(&asked.out).into_owned();
+        let now: Vec<&str> = now.lines().collect();
+        if asked.code != Some(0) || now.len() != plain.len() {
+            return unread();
+        }
+        for ((path, meta), oid) in plain.into_iter().zip(now) {
+            // The mode as git would record the file there: executable or not.
+            let mode = {
+                use std::os::unix::fs::PermissionsExt as _;
+                let exec = std::fs::metadata(clone.join(path))
+                    .is_ok_and(|found| found.permissions().mode() & 0o111 != 0);
+                if exec { "100755" } else { "100644" }
+            };
+            if *meta != format!("{mode} {}", oid.trim()) {
+                differ.push(path.clone());
+            }
+        }
+    }
+    (!differ.is_empty()).then(|| {
+        format!(
+            "the new branch folder would be checked out from {} with {}, which differ from what \
+             the clone has checked out, and {WHY} The app checks a folder out for this chat as \
+             the chat's own checkout would be judged, so nothing was cut. Ask the person to run \
+             the command in their own terminal",
+            crate::shown::short(start),
+            listed(&differ)
+        )
+    })
 }
 
 /// What the chat is told of a command that would write the files of a folder that has none
@@ -1422,6 +1576,9 @@ impl Asks for NothingThere<'_> {
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         self.0.replayed(top, onto)
     }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        self.0.replayed_from(top, onto, head)
+    }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         self.0.tracked(top, commit)
     }
@@ -1533,6 +1690,9 @@ impl Asks for Once<'_> {
     }
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         self.asks.replayed(top, onto)
+    }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        self.asks.replayed_from(top, onto, head)
     }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         self.asks.tracked(top, commit)

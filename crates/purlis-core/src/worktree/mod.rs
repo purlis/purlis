@@ -12,6 +12,7 @@
 //! lives in git too, as `branch.<branch>.charterBase` in the clone's config.
 
 pub mod confine;
+pub mod fresh;
 pub mod git;
 pub mod link;
 pub mod listing;
@@ -681,7 +682,37 @@ pub struct Start {
     /// The branch the piece is cut from, and recorded as its base: what `merge` lands it into.
     pub branch: String,
     /// The worktree that branch is checked out in: what the dirty-tree note is read from.
-    pub tree: PathBuf,
+    /// `None` where no worktree has it checked out, and there is no tree to read.
+    pub tree: Option<PathBuf>,
+    /// The remote-tracking branch to cut from in the branch's place, where the branch is behind
+    /// it and could not be brought up ([`fresh::Fresh::instead`]); `None`, the branch itself.
+    pub at: Option<String>,
+}
+
+/// [`add`], cut from branch `base` of the clone by name (`purlis worktree add --base`, qw387):
+/// the branch is brought up to its remote first where it may be ([`fresh::bring_up`]), the
+/// piece is cut from it, and it is recorded as the piece's base. Answers what bringing it up
+/// did, for the command to say.
+pub fn add_based(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    branch: Option<&str>,
+    base: &str,
+    vet: Option<Vet<'_>>,
+) -> Result<(Added, fresh::Fresh), Refusal> {
+    relocation_refusal(plane)?;
+    path_for(plane, ws, repo, piece)?;
+    let clone = clone_dir(plane, ws, repo)?;
+    let fresh = fresh::bring_up(&clone, base)?;
+    let start = Start {
+        branch: base.to_owned(),
+        tree: fresh::checked_out_in(&clone, base)?,
+        at: fresh.instead.clone(),
+    };
+    let added = add_vetted(plane, ws, repo, piece, branch, Some(&start), vet)?;
+    Ok((added, fresh))
 }
 
 /// [`add`], cut from `from` where one is given, and from the clone's HEAD otherwise.
@@ -697,6 +728,24 @@ pub fn add_from(
     piece: &str,
     branch: Option<&str>,
     from: Option<&Start>,
+) -> Result<Added, Refusal> {
+    add_vetted(plane, ws, repo, piece, branch, from, None)
+}
+
+/// What judges a cut before git makes it: the clone, the start as git is handed it (`None`,
+/// the clone's HEAD), and the folder it will be checked out into; a sentence refuses it.
+pub type Vet<'a> = &'a dyn Fn(&Path, &str, &Path) -> Result<(), String>;
+
+/// [`add_from`], with `vet` asked about the start just before git cuts from it (qw387): an
+/// app-run cut for a sandboxed chat is judged as the chat's own checkout would be.
+pub fn add_vetted(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    branch: Option<&str>,
+    from: Option<&Start>,
+    vet: Option<Vet<'_>>,
 ) -> Result<Added, Refusal> {
     relocation_refusal(plane)?;
     let path = path_for(plane, ws, repo, piece)?;
@@ -741,17 +790,17 @@ pub fn add_from(
             }
             (Base::Branch(start.branch.clone()), start.tree.clone())
         }
-        None => (head_of(&clone)?, clone.clone()),
+        None => (head_of(&clone)?, Some(clone.clone())),
     };
     let mut warnings = Vec::new();
-    match dirt(&dirt_of) {
-        Dirt::Dirty => warnings.push(Note::Dirty {
+    match dirt_of.as_deref().map(dirt) {
+        Some(Dirt::Dirty) => warnings.push(Note::Dirty {
             repo: repo.to_string(),
         }),
-        Dirt::Unknown => warnings.push(Note::DirtUnknown {
+        Some(Dirt::Unknown) => warnings.push(Note::DirtUnknown {
             repo: repo.to_string(),
         }),
-        Dirt::Clean => {}
+        Some(Dirt::Clean) | None => {}
     }
 
     // The confinement checks sit HERE, immediately before the write, and not at the top of
@@ -780,11 +829,39 @@ pub fn add_from(
     // The path is absolute and the piece name cannot start with `-`, so neither argument can
     // be read as an option.
     let shown_path = path.display().to_string();
-    let start_ref = from.map(|start| name::as_ref(&start.branch));
-    let mut args = vec!["worktree", "add", "-b", &branch, &shown_path];
-    if let Some(start_ref) = start_ref.as_deref() {
-        args.push(start_ref);
+    // A remote-tracking branch is cut from only as `fresh` named it, by its full name.
+    let start_ref = from.map(|start| match &start.at {
+        Some(at) if at.starts_with("refs/remotes/") => at.clone(),
+        _ => name::as_ref(&start.branch),
+    });
+    // The start, read once as a commit id: what is judged is what is checked out, whatever a
+    // ref names by the time git runs (qw387). The base is recorded by its name below.
+    let named = start_ref.as_deref().unwrap_or("HEAD");
+    let at = git::run(
+        &clone,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{named}^{{commit}}"),
+        ],
+        git::READ,
+    )?;
+    let start = at.line().trim().to_owned();
+    if !at.ok() || start.is_empty() || start.starts_with('-') {
+        return Err(Refusal::Unreadable {
+            what: format!("'{named}'"),
+            why: format!("{repo} has no commit there, so nothing was cut from it"),
+        });
     }
+    if let Some(vet) = vet {
+        vet(&clone, &start, &path).map_err(|why| Refusal::Stuck {
+            what: "worktree add".to_owned(),
+            terminal: why.clone(),
+            window: why,
+        })?;
+    }
+    let args = ["worktree", "add", "-b", &branch, &shown_path, &start];
     let created = git::run_untimed(&clone, &args)?;
     if !created.ok() {
         return Err(Refusal::GitRefused {

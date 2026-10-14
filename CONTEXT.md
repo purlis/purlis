@@ -304,11 +304,13 @@ _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 
 **Harness declaration**:
 Data that says how to start one harness, how to name and resume its sessions, which levels it
-offers and what it can do. The ones for Claude Code, Codex and opencode ship with purlis; a
-project may declare more, which each machine approves before they run, and never replaces a
-built-in's (ADR 0073).
-_Avoid_: harness definition, harness config (that is the harness's own), profile (that is which
-program runs on this machine)
+offers, what it can do, and what its profiles are: the **sign-in kinds** they support, the
+folder variables, whether their credentials can be kept from the harness's commands, and how a
+conversation moves. The ones for Claude Code, Codex and opencode ship with purlis; a project may
+declare more, which each machine approves before they run, and never replaces a built-in's
+(ADR 0073).
+_Avoid_: harness definition, harness config (that is the harness's own), profile (that is one
+identity of the harness the declaration describes)
 
 **Harness level**:
 How much purlis learns from a chat's harness, set when a run starts and fixed for it: **1**,
@@ -330,19 +332,58 @@ fixed for a run. It is always shown with the account it is billed to (ADR 0087).
 _Avoid_: model config, model settings
 
 **Model source**:
-How a chat reaches its model: the harness's own **login**, a **key** the user keeps in a vault,
-or a **local** model. None of them passes through purlis's servers. purlis never reads, stores
-or relays a harness's login (ADR 0087).
+How a chat reaches its model: the harness's own sign-in (the `login` source), a **key** the user
+keeps in a vault, or a **local** model. None of them passes through purlis's servers. A
+subscription's sign-in is the harness's, kept in the chat's **profile**, and purlis never reads,
+copies, stores or relays it (ADR 0087, ADR 0095).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
 
+**Profile**:
+A harness as the person runs it on a device, under a name: the harness, its settings, its
+sign-in, its conversations and the browser logins kept under it. It is the person's: a persona
+names one, a chat runs on one, and it lives on its device and is never committed. A
+subscription is signed in once per device through the harness's own flow, and purlis never
+holds it. Every sign-in a chat uses is a profile's (ADR 0095). One browser writes a profile's
+kept logins at a time, and a second chat that wants them is offered a copy.
+_Avoid_: browser profile, kept profile (both are the profile), harness folder (that is where a
+profile is kept), harness login, login (for its sign-in: a login is a browser's, or a **browser
+login**), account (that is who a model is billed to), credentials (that is what a
+sign-in leaves in its folder), user data, persistent browser
+
+**Sign-in kind**:
+How a **Profile** signs in to its model: a **subscription** through the harness's own flow,
+which the harness keeps and purlis never holds; an **API key** or **cloud** credentials from
+the person's vault; or a **local** model, with nothing to sign in. A harness declaration lists
+the kinds it supports (ADR 0073). Not a forge's sign-in, which is a **Forge account** and never
+reaches a chat.
+_Avoid_: login (unqualified), auth method, account (that is who a model is billed to)
+
 **Session host** (`purlisd`):
-The process that owns every chat's terminal on a device, one per OS user per device: the
-`purlis` binary run as `purlis serve`. The app is its client (ADR 0068).
+The process that owns every **hosted program** on a device, every chat's terminal and every
+browser, one per OS user per device: the `purlis` binary run as `purlis serve`. The app is its
+client (ADR 0068).
 _Avoid_: daemon, server (in UI text), backend
+
+**Hosted program**:
+A program a session host runs and owns: a chat's harness, a shell, or a browser. Each has an
+owner and a process of its own, may be pinned, outlives the client that watches it, and is
+watched through **views**. Starting, attaching, stopping, reattaching and the kill switch work
+the same for every kind (ADR 0068, amended for #1994).
+_Avoid_: process (that is the OS's), session (that is the host), job, task (that is a
+dispatch's)
+
+**View** (of a hosted program):
+One client's live look at a hosted program, of a kind: a terminal view, or a **browser view**.
+It opens with a snapshot of the program as it is now and then follows it. One that falls behind
+is dropped and opened again from a fresh snapshot, and a client that goes away loses its views
+at once while the programs run on (ADR 0068, amended for #1994).
+_Avoid_: stream (that is the link's), pane (that is the window's), view tab (that is a tab of the
+window), subscription (that is events), viewer
 
 **Session protocol**:
 The small, public, versioned set of commands and events a session host answers on its control
-lane: list, attach and detach, write, resize, answer, stop, start, and subscribe from a cursor.
+lane: list, start a hosted program, attach and detach a view of a kind, write, resize, answer,
+stop, and subscribe from a cursor.
 It carries the compatibility promise, so a client and a host one version apart always talk.
 It names a project by its stable id (`[project] id` in `charter.toml`), never by a path, and
 every word it says is snake_case (ADR 0068 §4 and *Amended by FD-26*).
@@ -356,7 +397,8 @@ _Avoid_: session protocol (for any of it), public API
 
 **Runner**:
 A device, other than the one the window is on, whose own session host runs a workspace's chats,
-serves a version of one of its repos, or runs browsers, as its **label** says. A long-lived runner
+serves a version of one of its repos, or runs browsers, as its **label** says; one marked owned
+may run chats and browsers in one session host. A long-lived runner
 is a machine the operator adds; a short-lived one is made by a **runner provider** for a human or
 a chat, for minutes or hours. Either way the desktop's session host reaches it through a
 **connector** and talks to it over a **link**, and its shell, logs, ports and browser views come
@@ -386,11 +428,13 @@ _Avoid_: connection (unqualified), session (that is the process), pairing (that 
 were pinned)
 
 **Label** (of a runner):
-What a runner is for: exactly one of `harness` (runs chats), `app` (serves one version of a
-workspace repo) or `browser` (runs browsers only purlis drives). purlis enforces it at both
-ends of the link: only a `harness` runner starts chats, and a `browser` runner never receives a
-vault value. Tags, any words the operator picks, sit beside it and are enforced by nothing. A
-part of **Runner**, so it belongs to **Project** (ADR 0089).
+What a runner not marked owned is for: exactly one of `harness` (runs chats), `app` (serves one
+version of a workspace repo) or `browser` (runs browsers only purlis drives). purlis enforces it
+at both ends of the link: only a `harness` runner starts chats. A runner not marked owned keeps
+its one label and never receives a vault value; a device the person owns may run chats and
+browsers in one session host, and receives a value only with a **grant**. Tags, any words the
+operator picks, sit beside it and are enforced by nothing. A part of **Runner**, so it belongs
+to **Project** (ADR 0089, amended 2026-10-14).
 _Avoid_: role (unqualified), type, capability (that is an extension's), tag (for the role label)
 
 **Runner provider**:
@@ -401,14 +445,34 @@ user's own is the operator's setting for it, never its own claim, and starts as 
 part of **Project**, beside the extensions it is one of (ADR 0078 §6, ADR 0089).
 _Avoid_: provider (unqualified: a vault's provider is where a vault keeps its values, ADR 0047,
 and a model's is who serves the model, ADR 0087), backend (in UI text), executor, cloud,
-connector (that only reaches a runner)
+connector (that only reaches a runner), pool (that is what the person picks; a runner provider
+is the code behind one)
+
+**Pool**:
+A named place runners come from, with its limits and what its runners may hold: Docker on this
+machine, or a cluster that makes them on demand. A cluster's is defined once for a team. A
+**runner provider** is the code behind one. It belongs to **Project**.
+_Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
+setting of it), runner provider (that is the code)
+
+**Claim**:
+One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
+storage of its own and survives its runner; a **fresh** one is given a ready runner and keeps
+nothing.
+_Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation, sandbox
+
+**Cluster operator**:
+purlis's controller inside a cluster: it turns claims into runners, counts them per person,
+starts and stops pools, and says which runner a claim was given. In a sentence the app shows,
+"purlis in your cluster".
+_Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 
 **Grant** (to a runner):
 A human's approval, once per workspace on this machine, of one vault entry an app runner's spec
 declares it needs. purlis injects the value when that runner starts and only when it builds a
 ref a human chose, never an agent's own unreviewed branch, and never into its image or logs. An
-agent may start a runner with the grants it has and never adds one; a `browser` runner, and a
-runner of a provider not marked as owned, never gets one. A setting of **Workspace** (ADR 0089).
+agent may start a runner with the grants it has and never adds one; a runner not marked owned
+never gets one. A setting of **Workspace** (ADR 0089).
 _Avoid_: permission, secret (for the approval), capability (that is an extension's)
 
 **Editor protocol**:
@@ -472,6 +536,57 @@ never answers a reader with anything the files would not (ADR 0079).
 _Avoid_: index (unqualified: `memory/index.md` and `sessions/index.md` are lists for people),
 cache, database
 
+### Browsers
+
+**Browser**:
+One isolated world of cookies, storage and logins that a session host runs as a **hosted
+program** for a chat, a task or the person, and that only purlis drives. It starts **fresh**,
+keeping nothing, or from the logins kept in a **profile**. A chat has one by default and may ask
+for another; a task gets its own. It is watched in a **browser view** and never as a window of
+its own. It belongs to **Chat**, or to **Workspace** once pinned.
+_Avoid_: browser session (session is the host), instance, window, context, headless browser,
+browser profile (that is the **profile**)
+
+**Page**:
+One of a browser's open documents. Pages of one browser share its cookies and logins.
+_Avoid_: tab (that is the window's), frame, document
+
+**Driver**:
+Who may act on a browser now: the chat's agent, the person, or purlis itself while it performs a
+login. Exactly one at a time. While the person drives, the agent's browser tools are refused in
+words, and the browser returns to the agent only when the person says so.
+_Avoid_: controller, owner (that is whose the browser is), focus
+
+**Take over**:
+The person's act of becoming a browser's driver. **Hand back** ends it.
+_Avoid_: control, grab, interrupt
+
+**Pin** (of a browser):
+A person's act that gives a chat's browser to its workspace: it outlives the chat but not the
+app. It ends by a person, the kill switch, or the app quitting, and reopening it is offered at
+the next start (ADR 0068 §2). A pinned runner, unlike it, stops only by a person or the kill
+switch. Not a tab's pin.
+_Avoid_: keep, hold, save (that is the plane's)
+
+**Browser view**:
+A browser's **view**: its frames as they come, drawn in a view tab, a tile of the Browsers grid
+or a chat tab's thumbnail. Its snapshot is the latest frame. The same on this device and on a
+runner.
+_Avoid_: screen share, preview (that is a tab's), remote desktop, video
+
+**Browser login**:
+A persona's declared tool that signs a browser in from a vault: purlis drives the browser to the
+declared address, fills and submits. The value reaches the browser and never the chat.
+_Avoid_: autofill, credential tool, password tool
+
+**Reach** (of a browser):
+The sites and local ports a browser may open and the ones its agent may write to: its chat's
+**allowed hosts**, in a lane of their own for the browser, shown with the chat's in the one
+Granted list. A site new to the project that the agent itself writes an address for asks once;
+a link the page offered does not.
+_Avoid_: allowlist (in UI text), network access, browser allowlist (it is the same allowed
+hosts)
+
 ### Chats working together
 
 Every agent another agent starts is a chat, so each word here is a part of **Chat** (ADR 0090).
@@ -513,12 +628,15 @@ session's or a handoff's)
 
 **Outcome** (of a task the asking chat is told of):
 How a task ended, in purlis's own words to the chat that asked. Beside a report's own outcome
-(done, blocked, failed, cancelled) there are three that are never a task's to say: **stopped by
+(done, blocked, failed, cancelled) there are four that are never a task's to say: **stopped by
 the person** (with the task's short report, quoted as data), **closed by the person** (no
-report), and **ended without a report** (its program ended by itself). The first two carry one
-fixed sentence telling the asking chat not to dispatch the task again unless the person asks.
-The window says the same two ends to the person as "stopped by you" and "closed by you". In
-counts they are done with, never failed.
+report), **ended without a report** (its program ended by itself), and **a report purlis made
+from its last message** (its turns ended without a report after it was asked once: what it
+last said, quoted as data; a report of its own later still reaches the chat that asked). The
+first two carry one fixed sentence telling the asking chat not to dispatch the task again
+unless the person asks. The window says the same two ends to the person as "stopped by you"
+and "closed by you". In counts they are done with, never failed; a report purlis made from its
+last message counts with failed, for the person to read.
 _Avoid_: killed, aborted, cancelled (for a stop by the person: a cancel is the asking chat's)
 
 **Helper** (of a chat):
@@ -677,13 +795,15 @@ _Avoid_: bottom icons, panel tabs
 One operator's mark that a project, workspace or chat matters to them. It is kept on this
 machine and never in the plane. A pinned item is drawn first, and the workspace strip draws
 only pinned workspaces plus the one you are in.
-_Avoid_: favourite, star, bookmark, pin (for a runner: that is **Pin** (of a runner))
+_Avoid_: favourite, star, bookmark, pin (for a runner or a browser: that is **Pin** (of a
+runner) or **Pin** (of a browser))
 
 **Pin** (of a runner):
 A human's act that gives an agent-started runner to its workspace: the runner is then owned by
 the workspace instead of the chat, outlives the chat, and stops only by a human or the kill
 switch. Kept in the runner's record on this machine. A part of **Runner**, so it belongs to
-**Project** (ADR 0089).
+**Project** (ADR 0089). A browser is pinned to its workspace too, but a pinned browser ends
+when the app quits (see **Pin** (of a browser)).
 _Avoid_: keep, hold, pin (unqualified, which is the strip's mark)
 
 **Show-more**:

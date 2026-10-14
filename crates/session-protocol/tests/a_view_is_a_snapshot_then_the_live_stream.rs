@@ -112,3 +112,51 @@ async fn many_views_share_one_link_and_each_keeps_its_own_order() {
         assert_eq!(read_live(&mut reader, want.len()).await, want.as_bytes());
     }
 }
+
+#[tokio::test]
+async fn the_reader_is_told_the_snapshot_is_complete_with_its_last_byte() {
+    let (mut client, host) = linked().await;
+    let snapshot = Bytes::from(vec![b's'; 40 * 1024]);
+    let feed = Attacher::new(host.opener(), Limits::default())
+        .attach(ViewId(2), snapshot.clone())
+        .await
+        .unwrap();
+    feed.push(Bytes::from_static(b"!")).unwrap();
+    let mut reader = Viewer::default()
+        .accept(client.accept().await.unwrap())
+        .await
+        .unwrap();
+    assert!(!reader.snapshot_complete(), "nothing of it has been read");
+
+    let mut got = 0;
+    while !reader.snapshot_complete() {
+        let Chunk::Snapshot(bytes) = reader.next().await.unwrap().unwrap() else {
+            panic!("live bytes before the snapshot was complete");
+        };
+        reader.ack(bytes.len()).await.unwrap();
+        got += bytes.len();
+    }
+    assert_eq!(
+        got,
+        snapshot.len(),
+        "complete with its last byte, not before"
+    );
+    assert_eq!(
+        reader.next().await.unwrap().unwrap(),
+        Chunk::Live(Bytes::from_static(b"!"))
+    );
+}
+
+#[tokio::test]
+async fn an_empty_snapshot_is_complete_before_anything_is_read() {
+    let (mut client, host) = linked().await;
+    let _feed = Attacher::new(host.opener(), Limits::default())
+        .attach(ViewId(1), Bytes::new())
+        .await
+        .unwrap();
+    let reader = Viewer::default()
+        .accept(client.accept().await.unwrap())
+        .await
+        .unwrap();
+    assert!(reader.snapshot_complete());
+}

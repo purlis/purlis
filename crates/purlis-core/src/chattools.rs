@@ -9,7 +9,9 @@
 //! and [`call`] does it. `charter mcp` (the CLI) serves them over stdio with `rmcp`, and each
 //! harness adapter hands a chat that server for the chat alone ([`crate::harness::HarnessAdapter`],
 //! FD-13): Claude Code on `--mcp-config`, Codex on `-c mcp_servers.charter=…`, opencode in the
-//! config its shim already rides in.
+//! config its shim already rides in, an ACP agent in `session/new`. Under every one the server
+//! is handed the chat's hook socket and token, as the chat's hooks are ([`CONNECTION_ENV`]), so
+//! a tool the app answers works the same under each.
 //!
 //! **The boundary is the tool set, because the server runs where the harness runs its MCP
 //! servers.** Codex and Claude Code start an MCP server outside the sandbox they put a command
@@ -103,8 +105,8 @@ pub const PRE_ALLOWED: [&str; 7] = [
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
-/// reads them. A harness that hands an MCP server only the variables it is told to (Codex) is
-/// told these, and nothing else of charter's: not the chat's token, not its hook socket.
+/// reads them. A harness that hands an MCP server only the variables it is told to (Codex, an
+/// ACP agent) is told these, and [`CONNECTION_ENV`].
 ///
 /// Under their purlis names only: the server is this product's own binary, which reads either.
 pub const SCOPE_ENV: [&str; 5] = [
@@ -114,6 +116,28 @@ pub const SCOPE_ENV: [&str; 5] = [
     crate::active::PERSONA_ENV,
     crate::active::SESSION_ID_ENV,
 ];
+
+/// The variables that connect the server to the app that started the chat, exactly as they
+/// connect the chat's hooks (#1996): the hook socket, the chat's number, the chat's own token
+/// and its harness. The token is the one the hooks carry, minted at the chat's `exec`; nothing
+/// is minted for the server, and it is checked as every line of the chat's is.
+///
+/// **They reach the server the way they reach the hooks: in its environment, inherited from the
+/// harness.** Claude Code and opencode hand a stdio server their whole environment; Codex hands
+/// on the variables named in `env_vars` ([`codex_flag`]), which names them and holds no value;
+/// an ACP agent is handed them in `session/new` over its own stdio ([`acp_server`]), in an
+/// environment it already holds them in. None of them is on a command line or in a file.
+pub const CONNECTION_ENV: [&str; 4] = [
+    crate::hookwire::SOCKET_ENV,
+    crate::hookwire::CHAT_ENV,
+    crate::hookwire::TOKEN_ENV,
+    crate::hookwire::HARNESS_ENV,
+];
+
+/// Every variable the server is handed by a harness that hands it only those it is told to.
+fn handed_env() -> impl Iterator<Item = &'static str> {
+    SCOPE_ENV.into_iter().chain(CONNECTION_ENV)
+}
 
 /// How long Codex waits on one of these tools, in seconds. Its own default is 60, and
 /// `ask_operator` waits on a person; an hour is a question left for lunch, not one forgotten.
@@ -138,7 +162,8 @@ pub fn claude_code_config(binary: &Path) -> String {
 /// The server as Codex's `-c` takes it: `mcp_servers.charter=<inline table>`, beside the
 /// operator's own servers (measured on codex-cli 0.147.0 with `codex mcp get`). Codex hands a
 /// stdio server only a few variables of its own, so the ones that say where the chat works
-/// are named in `env_vars` ([`SCOPE_ENV`]).
+/// and how it reaches the app are named in `env_vars` ([`SCOPE_ENV`], [`CONNECTION_ENV`]), by
+/// name only: Codex reads each value from its own environment.
 pub fn codex_flag(binary: &Path) -> String {
     let table: toml::Table = [
         (
@@ -151,12 +176,7 @@ pub fn codex_flag(binary: &Path) -> String {
         ),
         (
             "env_vars".to_owned(),
-            toml::Value::Array(
-                SCOPE_ENV
-                    .iter()
-                    .map(|name| toml::Value::from(*name))
-                    .collect(),
-            ),
+            toml::Value::Array(handed_env().map(toml::Value::from).collect()),
         ),
         (
             "tool_timeout_sec".to_owned(),
@@ -169,18 +189,18 @@ pub fn codex_flag(binary: &Path) -> String {
 }
 
 /// The server as ACP's `session/new` takes it in `mcpServers` (ADR 0080 §1): a stdio server, run
-/// by the agent, handed the [`SCOPE_ENV`] variables `chat_env` sets, each once with its last value,
-/// and nothing else of charter's: never the chat's token or its socket.
+/// by the agent, handed the [`SCOPE_ENV`] and [`CONNECTION_ENV`] variables `chat_env` sets, each
+/// once with its last value, and nothing else of the chat's environment.
 pub fn acp_server(
     binary: &Path,
     chat_env: &[(std::ffi::OsString, std::ffi::OsString)],
 ) -> agent_client_protocol::schema::v1::McpServer {
     use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
-    // Each scope name once, in `SCOPE_ENV`'s order, with its last value: the chat's own comes
-    // after what the app passed on, and an agent may read a repeated name either way. A value
-    // that is not UTF-8 cannot be said in JSON, and is left out rather than mangled.
-    let env = SCOPE_ENV
-        .iter()
+    // Each name once, in `SCOPE_ENV`'s then `CONNECTION_ENV`'s order, with its last value: the
+    // chat's own comes after what the app passed on, and an agent may read a repeated name
+    // either way. A value that is not UTF-8 cannot be said in JSON, and is left out rather than
+    // mangled.
+    let env = handed_env()
         .filter_map(|wanted| {
             let value = chat_env
                 .iter()
@@ -192,7 +212,7 @@ pub fn acp_server(
                 })?
                 .1
                 .to_str()?;
-            Some(EnvVariable::new(*wanted, value))
+            Some(EnvVariable::new(wanted, value))
         })
         .collect();
     McpServer::Stdio(

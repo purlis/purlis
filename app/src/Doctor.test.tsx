@@ -768,25 +768,29 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
   it("leaves every other finding in the dialog, so opening a project is no band of rows", () => {
     draw(Object.values(findings));
 
-    expect(causes()).toEqual(["doctor-finding:git-identity", "doctor-finding:memory-optimize"]);
+    expect(causes()).toEqual([
+      "doctor-finding:git-identity",
+      "doctor-finding:memory-optimize",
+      "doctor-finding:persona-agents",
+    ]);
   });
 
-  it("never stands a fix that runs only by its name as a Notice", () => {
+  it("stands no other fix that runs only by its name as a Notice", () => {
     // `by_name_only` in core doctor/fix.rs: the network, this machine's folders, or committed
-    // files every teammate pulls. One press in the Inbox is not how those are asked for.
-    const byNameOnly = [
-      "discover",
-      "rename-plane",
-      "rename-local",
-      "persona-agents",
-      "handoff-rule",
-    ];
+    // files every teammate pulls. One press in the Inbox is not how those are asked for. The
+    // one exception is `persona-agents` (#1990, Q67): the person is the one who removes the
+    // files, and the Notice's Fix names it as the dialog's does.
+    const byNameOnly = ["discover", "rename-plane", "rename-local", "handoff-rule"];
     expect([...FINDINGS_AS_NOTICES.keys()].filter((id) => byNameOnly.includes(id))).toEqual([]);
   });
 
   it("names each finding by its row, so a clean row lets its dismissal go", () => {
     const { settle } = draw(
-      [findings["git-identity"], row("memory indexes", "ok", { detail: "3 indexes, all linked" })],
+      [
+        findings["git-identity"],
+        row("memory indexes", "ok", { detail: "3 indexes, all linked" }),
+        row("personas", "ok"),
+      ],
       {},
       ["doctor-finding:memory-optimize"],
     );
@@ -795,11 +799,24 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
   });
 
   it("keeps the dismissal of a finding that still stands", () => {
-    const { settle } = draw([row("git identity", "ok"), findings["memory-optimize"]], {}, [
-      "doctor-finding:memory-optimize",
-    ]);
+    const { settle } = draw(
+      [row("git identity", "ok"), findings["memory-optimize"], row("personas", "ok")],
+      {},
+      ["doctor-finding:memory-optimize"],
+    );
 
     expect(settle).toHaveBeenLastCalledWith("doctor-finding", ["doctor-finding:memory-optimize"]);
     expect(causes()).toEqual([]);
+  });
+
+  it("stands no Notice for a personas row that warns of something else", () => {
+    // #1990: only the generated sub-agent files are the Notice's; a persona lint warning
+    // carries no fix and stays in the dialog, and lets a dismissed Notice go.
+    const { settle } = draw([row("personas", "warn", { detail: "1 draft: devops" })], {}, [
+      "doctor-finding:persona-agents",
+    ]);
+
+    expect(causes()).toEqual([]);
+    expect(settle.mock.lastCall?.[1]).not.toContain("doctor-finding:persona-agents");
   });
 });

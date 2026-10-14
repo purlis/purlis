@@ -9,7 +9,8 @@
 # would escape it are disallowed here rather than left to a reviewer to notice.
 #
 # `forklock::spawn`, `forklock::output` and `forklock::status` are the way through, and
-# `forklock` itself is the one place the disallowed methods are called.
+# `purlis_terminal::forklock`, which holds the lock, is the one place the disallowed methods are
+# called (#1995).
 #
 # Tests are in too, deliberately: purlis-core's own test binary opens terminals and shells
 # out to git in the same process, under `--test-threads`, which is exactly the shape of the

@@ -366,10 +366,11 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
     };
     assert_eq!(
         git.work,
-        GitWork::WorktreeAdd {
+        GitWork::WorktreeCut {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
             branch: None,
+            base: None,
         }
     );
     let piece = brokered.join("workspaces/alpha/.worktrees/widget/p1");
@@ -493,6 +494,95 @@ fn a_sandboxed_chats_create_with_repos_is_made_by_the_app_whole_and_only_there()
     }
     assert!(asked.try_recv().is_err(), "the app was asked");
     assert!(!root.join("workspaces/gamma").exists());
+}
+
+const UPDATING: &str = "a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app";
+
+#[test]
+fn a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app() {
+    // qw387: a chat may not write a branch folder's git directory, so its own fetch and rebase
+    // fail there; `purlis worktree update` and `push` hand the work to the app.
+    purlis_core::unsteered!();
+    let Some(base) = std::env::var_os(IN_THE_CHILD) else {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(tmp.path()).unwrap().join("home");
+        purlis_core::testrun::rerun(
+            &[UPDATING],
+            &[
+                (IN_THE_CHILD, tmp.path().as_os_str()),
+                ("HOME", home.as_os_str()),
+            ],
+        );
+        return;
+    };
+    let world = World::at(Path::new(&base));
+    world.widget();
+    let root = world.plane("updating", "[\"forge\"]");
+    for args in [
+        &["clone", "widget", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "p1", "-w", "alpha"][..],
+    ] {
+        let made = world.purlis(&root, args, &[]);
+        assert!(made.status.success(), "{args:?}: {}", err(&made));
+    }
+    let piece = root.join("workspaces/alpha/.worktrees/widget/p1");
+    let (_reading, token, socket, asked) = an_app(
+        &world.base,
+        the_broker_at(root.clone(), root.join("workspaces/alpha"), &world.forge),
+    );
+    let run = |args: &[&str]| {
+        support::purlis()
+            .args(args)
+            .current_dir(&piece)
+            .env_clear()
+            .env("CHARTER_ROOT", &root)
+            .env("HOME", &world.home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("USER", "tester")
+            .env(SANDBOXED_ENV, "1")
+            .envs(chat_3(&socket, &token))
+            .output()
+            .expect("the binary runs")
+    };
+
+    let ran = run(&["worktree", "update"]);
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to update: {}", err(&ran));
+    };
+    assert_eq!(git.workspace, "alpha");
+    assert_eq!(
+        git.work,
+        GitWork::WorktreeUpdate {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            step: hookwire::UpdateStep::Start { base: None },
+        }
+    );
+    assert!(err(&ran).contains("already on main"), "{}", err(&ran));
+
+    let ran = run(&["worktree", "push"]);
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to push: {}", err(&ran));
+    };
+    assert_eq!(
+        git.work,
+        GitWork::WorktreePush {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            lease: false,
+        }
+    );
+    assert_eq!(
+        git_said(
+            &world.forge.join("acme/widget.git"),
+            &["rev-parse", "refs/heads/p1"]
+        ),
+        git_said(&piece, &["rev-parse", "HEAD"]),
+        "{}",
+        err(&ran)
+    );
 }
 
 #[test]

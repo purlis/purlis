@@ -124,11 +124,12 @@ its own plane:
 - what a chat's harness said its session cost, `.charter/app/spend/<chat>.json`, last written
   30 days or more before, unless the chat, by its id, is one the reopen record will bring back
   (#1457).
-- a commit gate cooldown, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
+- a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
-  begins with, then `-`). Losing one costs a returning session one more question or one more
-  reminder, never its work (#1004).
+  begins with, then `-`). Losing a gate record makes a returning session's next prompt count as
+  its first, so it may be read for a fork once more; losing a nudge marker costs one more
+  reminder; neither costs its work (#1004, #1988).
 - a saved-record line a chat in a workspace left for a `Stop` that never ran,
   `workspaces/<ws>/.charter/sessions/<chat>.saved`, last written 30 days or more before, unless
   the chat is one the reopen record will bring back. The plane root's are markers in
@@ -888,7 +889,7 @@ key refuses.
 | `[plane].<key>`, `[repos.<name>].<key>` | as in `charter.toml` | optional | **purlis only.** This machine's value, over `charter.toml`'s, key by key. Same shapes and refusals. | stable | ADR 0051; `crates/purlis-core/src/planesave.rs` `Settings::from_text` |
 | `[sandbox].hosts` | list[str] | optional, default `[]` | **purlis only** (#1341, ADR 0067 §1 as amended: the **You** level). Hosts this machine's chats in this project reach besides the project's, written and checked as `charter.toml`'s `[sandbox].hosts` are. Read only while git leaves this file alone and never through a link, and **each host grants only once you confirmed it in Settings on this machine** (`app/sandbox.json` `hosts_mine`): adding it there confirms it, and a host the file holds that you did not add there (a chat's edit, a file from elsewhere) is listed "not yet confirmed", with Confirm. A sandboxed chat can write all of a clone's git state, so no check of git can tell your host from another's; the record is in the integrity class, which no sandboxed chat writes. Any other key of `[sandbox]` here (`mode`, `egress`) is refused with a sentence and read as absent: whether chats run sandboxed, and the presets, are the project's. Changed in Settings › Sandbox › Your hosts. | stable | `crates/purlis-core/src/sandbox/hosts.rs` `personal`; `crates/purlis-core/src/sandbox.rs` `refusals` |
 | `[dispatch]`, `[dispatch.workspaces.<workspace>]`, `[dispatch.personas.<persona>]` | as in `charter.toml` | optional | **purlis only** (#1440: the **You** level). Your own dispatch limits on this machine, in the same shape and with the same refusals as `charter.toml`'s, **and never a dispatch grant**: `[dispatch.grants]` here is refused with a sentence and read as absent, since a grant of your own is kept by the app in `app/sandbox.json` `dispatch_mine` and the project's are in the committed file (#1437). **They only ever lower a limit**: a value above what the project's files give is ignored, and Settings › Project › Dispatch says so on its "Me on this machine" row. **Read even where git would carry this file**, which leaves every other table of it out: a lowering can only lower, so honouring it is the strict reading. An administrator's policy caps the result. | stable | `crates/purlis-core/src/dispatchlimits.rs` `Files::read`, `in_force` |
-| `[harnesses.<name>]` | table | optional | **purlis only** (#968, ADR 0073 §5). A harness declaration of this machine's own, in the schema of [`harnesses/<name>.toml`](#harnessesnametoml--a-harness-declaration); `name` may be left out and is the table's, and a different `name` is refused. A name of its own declares a harness for this machine alone: it gives a profile from this file, asked about once like any profile here; the one question shows the words its declaration adds, and is asked again when they change. It may not take a project declaration's name, nor a name purlis gives a harness it ships. The name of a harness purlis ships (`claude`, `codex`, `opencode`) replaces that harness's measured facts on this machine (`[terminal]`, `title`, `tested`, and the capabilities on its card) and never how it is run or armed: `program`, `[levels]`, `[session]` and `env` are the built-in's, left out or restated word for word; otherwise the table is refused and the built-in stands. A word is added to a built-in's command by a profile, which asks first, and to its environment by `[chat_env]`. In a harness of this machine's own a bare `{id}` word is allowed, a bare `{name}` is not. A prompt is typed into either on one line only. | stable | `crates/purlis-core/src/harness_declaration.rs` `read`, `with_local`, `parse`, `replacement_session` |
+| `[harnesses.<name>]` | table | optional | **purlis only** (#968, ADR 0073 §5). A harness declaration of this machine's own, in the schema of [`harnesses/<name>.toml`](#harnessesnametoml--a-harness-declaration); `name` may be left out and is the table's, and a different `name` is refused. A name of its own declares a harness for this machine alone: it gives a profile from this file, asked about once like any profile here; the one question shows the words its declaration adds, and is asked again when they change. It may not take a project declaration's name, nor a name purlis gives a harness it ships. The name of a harness purlis ships (`claude`, `codex`, `opencode`) replaces that harness's measured facts on this machine (`[terminal]`, `title`, `tested`, and the capabilities on its card) and never how it is run or armed: `program`, `[levels]`, `[session]`, `env`, `[sign_in]`, `[folders]` and `[conversation]` are the built-in's, left out or restated word for word; otherwise the table is refused and the built-in stands. A word is added to a built-in's command by a profile, which asks first, and to its environment by `[chat_env]`. In a harness of this machine's own a bare `{id}` word is allowed, a bare `{name}` is not. A prompt is typed into either on one line only. | stable | `crates/purlis-core/src/harness_declaration.rs` `read`, `with_local`, `parse`, `replacement_session` |
 | `[chat_env].pass` | list[str] | optional, default `[]` | **purlis only** (ADR 0047, amendment of 2026-09-29). More of this machine's own environment every chat started in this plane is given, beyond the built-in keep-list and what the chat's harness declares (`crates/purlis-core/src/chatenv.rs` `PASSED`, `Harness::env_passed`). Each entry is a variable's name (letters, digits and `_`, not starting with a digit), or such a name ending in `*` for a prefix. A credential-class name (forge, cloud, model-provider or registry credential, or a name holding `KEY`/`TOKEN`/`SECRET`/`PASSWORD`) passes only by its exact name, never by a prefix. `OP_*`, a vault's declared identity variables, a harness's identity, `CHARTER_WORKSPACE`, `CHARTER_PLANE_ROOT_SESSION` and `TERM` are never passed, whatever is listed. An entry of another shape, a `pass` that is not a list, or another key in the table is refused with a sentence and passes nothing. No counterpart in `charter.toml`. | stable | `crates/purlis-core/src/chatenv.rs` `from_text`, `refusals`, `inherited` |
 
 ---
@@ -995,6 +996,13 @@ key refuses.
 | `[levels].terminal` | bool | default `true` | Level 1. Every declaration offers it; `false` is refused. | stable | same |
 | `[levels].hooks` | bool | default `false` | Level 2. `true` only in a built-in: a project declaration that says it is refused (V24c). | stable | same |
 | `[levels].acp` | list[str] | optional | Level 3 over ACP: the argv that starts the harness's ACP agent. Its first word follows `program`'s rules and the rest `new`'s shapes. The built-in opencode declaration names `["opencode", "acp"]`, which HP-2's client (`purlis_core::acp`) runs; a chat starts at level 3 from a declaration once #1076 wires it in. | stable | same |
+| `[sign_in].kinds` | list[str] | default `[]` | The kinds of sign-in a profile of this harness may have (#2031, spec #2030): `"subscription"` (a plan signed in through the harness's own flow, kept by the harness in its own folder; purlis never reads, copies, stores or relays it), `"api-key"`, `"cloud"` and `"local"`, each once. None listed: none is offered. `purlis profile list` shows the sign-in purlis can see a profile has, never a subscription: the one kind of a harness that supports one alone; for a harness purlis ships, `cloud` or `api-key` where a cloud switch or a provider's key variable is set in the profile's `env` or passed by `[chat_env] pass` and not both; otherwise `unknown`. Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). Which variables are read is to be confirmed. | stable | same, `sign_in`, `Declaration::profile_sign_in`, `sign_in_variables` |
+| `[sign_in].kept_from_commands` | str | default `"unknown"` | Whether the harness's credential files can be kept from the commands it runs: `"yes"`, `"no: <the reason>"` or `"unknown"`, read as a capability is (its reason the same one line of at most 200 characters). Unknown reads as no. Claude Code's built-in answer is unknown until #2037 measures it. Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). | stable | same, `answer` |
+| `[folders].config_env` | str | optional | The variable purlis sets to a profile's folder: where the harness keeps its settings and its sign-in, and its data unless `data_env` is given (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, opencode's `XDG_CONFIG_HOME`). One variable's whole name, never a prefix; in a declaration of a harness purlis does not ship, under `env`'s refusals and a name its own `env` namespace reaches. None declared: purlis sets none. A harness may keep its files in the folder the variable names (Claude Code, Codex) or in a folder of its own name under it (opencode: `$XDG_CONFIG_HOME/opencode`); a variable set on the harness reaches the commands a chat runs too. Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). | stable | same, `folders` |
+| `[folders].data_env` | str | optional | Where it keeps its data, where that is a variable of its own (opencode's `XDG_DATA_HOME`, under which it keeps `opencode/`, its credentials and sessions among it). Needs `config_env`, and is not the same variable. Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). | stable | same |
+| `[conversation].file` | str | optional | How a conversation leaves a device and comes back, for a chat that moves (spec 3), as a file: where session `{id}` lives, `{config}/` or `{data}/` (the folder a `[folders]` variable names), then parts of letters, digits, `.`, `_`, `-` and `{id}`; a part that is `*`, or a `*` inside a part, is kept as it was found (Codex's `{config}/sessions/*/*/*/rollout-*-{id}.jsonl`); a part that is `{cwd_key}` is the folder named after the chat's working directory, made again where it comes back: the absolute path with every character other than an ASCII letter or digit written as `-` (Claude Code's `{config}/projects/{cwd_key}/{id}.jsonl`; the encoding is to be confirmed). No other glob (`**`, `?`, `[`), and never an empty part, `.` or `..`; at most 200 characters. Given with `export` or `import`, refused. Neither: the conversation does not move. The session then resumes by `[session].resume`. Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). | stable | same, `conversation`, `file_refusal`, `cwd_key` |
+| `[conversation].with_forked_from` | bool | default `false`, with `file` only | The session it was forked from comes with it (Codex). Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). | stable | same |
+| `[conversation].export`, `.import` | list[str] | both, or neither | The harness's own words that print session `{id}` (must name `{id}`), and the words the printed file is named after (no `{id}`); the shapes of `[session].new`. Key name confirmed by the operator on 2026-10-14 (ADR 0073, amended 2026-10-14). | stable | same |
 | `[capabilities].<name>` | str | optional | A harness capability (ADR 0073 §6): `"yes"`, `"no: <the reason>"` or `"unknown"`; the reason is drawn on the harness card, so it is **one line of at most 200 characters with no control, bidi or zero-width character**. One left out is unknown, which purlis treats as no. The names: `reports_its_process`, `reports_its_start_before_the_first_prompt`, `keeps_conversations_by_directory`, `reports_waiting`, `resumes_by_id` (`"yes"` needs `[session].resume`), `per_chat_plugins`. A ticket that reads a new one adds it here. A built-in's chat says what it cannot tell purlis in one sentence made from its card's *no* to `reports_its_process`, `reports_its_start_before_the_first_prompt` and `reports_waiting` (and to its hooks), so the two never disagree (ADR 0073 §3, #1134). | stable | same, `CAPABILITIES` |
 
 ---
@@ -6073,6 +6081,30 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   Code, before `Bash`, `Read`, `Grep`, `Write`, `Edit`, `MultiEdit`, `Task`, `Agent` and
   purlis's dispatch tools, and after `Bash`, `Write`, `Edit`, `MultiEdit`, `Task`, `Agent`
   and `Skill`; every opencode tool before it runs; Codex's shell alone.
+- **Framed stream** (#1996): a connection may carry frames instead of lines, chosen by the
+  client at its start. Nothing changes for a connection that never asks for it.
+  - **The hello** is the connection's first line: `{"frames": 1, "chat": <n>, "token": "<the
+    chat's token>"}`, admitted as any line is (the chat's token, then the process that sent it).
+  - **Its acceptance** is one line from the app, `{"frames": 1, "most": 16777216}`: the version
+    it speaks and the most one frame of a reply may hold. Frames follow from the next byte, both
+    ways. A hello at a version the app does not speak, or one not admitted, is answered with one
+    `no` line and the connection ends.
+  - **A frame** is a four-byte big-endian length, one kind byte (`1` JSON, `2` bytes) and that
+    many bytes. A request is one JSON frame holding an ask for the hello's chat, at most as long
+    as a line may be (77,824 bytes). A reply is one JSON frame, `{"answer": <the answer a line would
+    carry>, "attached": [{"media_type": "<type/subtype>"}]}` (`attached` absent when empty), then
+    one bytes frame per attachment in that order: at most 16 attachments, each frame at most
+    16 MiB.
+  - **Every ask is admitted again** before it is acted on, against the hello's token and the
+    process the socket names then. An ask for another chat, one not admitted, a frame of an
+    unknown kind, one past its bound (refused from its length, before any of it is read), one cut
+    short, and JSON that does not read each end the connection, with one `no` reply where the
+    frame could be read. One connection carries at most 4 asks, and each must arrive within
+    10 seconds of the app starting to read it.
+  - **An app from before the stream** answers the hello as a line of a kind it does not know (the
+    `no` sentence an unknown line gets, or the connection closed unanswered), and the client asks
+    again in lines on a new connection.
+  - Used by the `persona_where` chat tool. **It is never stored**, as no line is.
 - **Connections:** served from a bounded pool (#991): at most 32 at once from one process (by
   the pid the socket reports; processes it cannot name share one count) and 128 from all
   processes together. A connection past either is answered at once with one `no` line saying
@@ -6323,16 +6355,22 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 
 ### `commit-gate/<sid>`
 - **Format:** plain text, a small decimal integer (countdown), no newline
-- **Status:** **internal** — a per-session cooldown counter for one nudge, written and read
-  only by `hooks`. Deleted ⇒ the next prompt may nudge once more.
+- **Status:** **internal** — the commit gate's record of one harness session, written and read
+  only by `hooks`. Its number is the prompts left to stay quiet for after the gate fired. Its
+  presence (purlis, #1988) says the session has prompted before: it is written, `0`, on the
+  session's first attended prompt when the gate does not fire, and a session with no file has
+  not prompted yet. The gate reads every prompt of a session without one for a fork, and of a
+  session with one only an ask for a code change. Deleted ⇒ the session's next prompt counts
+  as its first, and its cooldown, if any, is over.
 - **Tier:** Clone state, transient — a gate file.
 - **Written by:** `charter/hooks.py:8322` / `charter/hooks.py:8324` (reset to
   `_COMMIT_COOLDOWN` = 3, `charter/hooks.py:8262`)
 - **Read by:** `charter/hooks.py:8320`
 - **Git:** gitignored; filename is the sanitised session id (`charter/hooks.py:8319`)
-- **Collected (purlis):** when the app opens the plane, a cooldown last written 30 days or more
-  before is removed, unless its session is one the reopen record brings back. Losing one costs
-  that session one more nudge (`retention::on_open`, #1004).
+- **Collected (purlis):** when the app opens the plane, a record last written 30 days or more
+  before is removed, unless its session is one the reopen record brings back. A session whose
+  record was collected has its next prompt count as its first, so it may be read for a fork
+  once more, never lose its work (`retention::on_open`, #1004, #1988).
 
 ### `dispatch-commit.lock`
 - **Format:** empty file, used with `flock(LOCK_EX)`

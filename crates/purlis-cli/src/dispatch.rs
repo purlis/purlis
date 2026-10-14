@@ -43,6 +43,11 @@
 //! for it. Whether that chat is this chat's task is the app's record, never anything said here
 //! ([`purlis_core::dispatched`]).
 //!
+//! **A task always reports back** (#1981): a task whose turn ends without its report is asked
+//! for it once, in purlis's own line, and a turn that then ends without one too gets **a report
+//! purlis made from its last message**, sent by the app in its place. A `tell` to a task at rest
+//! starts its turn at once. Both are the app's ([`purlis_core::dispatched::Ledger`]).
+//!
 //! **Messages** (#1442): `tell` and `answer` go down, to a task this chat dispatched; `note`
 //! and `ask` go up, and name nobody, because the chat they go to is the one the app recorded as
 //! this chat's asker. Each is one ask with no ticket. Who may send to whom, the limit a minute
@@ -83,7 +88,9 @@ const HEREDOC: &str = "Pass the brief as a quoted heredoc in the same call:\n  p
 pub enum DispatchCommand {
     /// Send this task's one report back to the chat that dispatched it: how it ended, what
     /// you did and found, and what changed. Write your session record first; purlis adds its
-    /// path. The chat that asked reads the report on its next turn.
+    /// path. The chat that asked reads the report on its next turn. A turn that ends without
+    /// one is asked for it once; if the next turn ends without one too, purlis sends your last
+    /// message in its place, marked as a report purlis made from its last message.
     Report {
         /// What you did and what you found, in a few lines.
         text: String,
@@ -115,9 +122,9 @@ pub enum DispatchCommand {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
     },
-    /// Send a follow-up to a task this chat dispatched that is still working. It reaches that
-    /// chat's next turn, quoted as data from this chat. Refused, with the task's state, once
-    /// the task has finished.
+    /// Send a follow-up to a task this chat dispatched that is still working, quoted as data
+    /// from this chat. A task at rest is started on it at once; one mid-turn reads it when that
+    /// turn ends. Refused, with the task's state, once the task has finished.
     Tell {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
@@ -677,8 +684,9 @@ pub fn tell(to: u32, text: &str) -> Result<String, String> {
     let text = message(text)?;
     let (_, name) = sent(What::Tell { to, text })?;
     Ok(format!(
-        "{SAYS} follow-up sent to '{name}' (chat {to}). It reaches that chat's next turn, \
-         quoted as data from this chat."
+        "{SAYS} follow-up sent to '{name}' (chat {to}), quoted as data from this chat. If it is \
+         at rest, purlis starts its turn on it now; if it is mid-turn, it reads it when that \
+         turn ends."
     ))
 }
 

@@ -1,5 +1,11 @@
 # A level-3 chat is an ACP client session, and its ACP adapter program is the user's
 
+**Amended by [ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md) (2026-10-14):** V9's rule on harness logins, which this record
+applies to local chats, is replaced: every sign-in purlis uses belongs to a profile, and a
+subscription is signed in through the harness's own flow per device, shown in the window, and
+never held by purlis. purlis still supplies nothing to `authenticate`. What follows is the record
+as it was decided.
+
 **Accepted 2026-10-01** by the operator (ruling V28), drafted for program-map ticket HP-1 (#668). It follows these of the
 operator's rulings:
 
@@ -108,7 +114,8 @@ waits in needs you until a human scope answers it through ACP.**
   - it gets the chat's environment, including the chat's number, token and hook socket, so a
     `purlis` command it runs and ADR 0074's git hooks work as in any chat;
   - `session/new` gets the chat's worktree as `cwd`, and **purlis's MCP server** in
-    `mcpServers` once HP-7 builds it. Nothing else is injected.
+    `mcpServers` once HP-7 builds it, handed the chat's place and its connection to the app
+    (*Amended 2026-10-14*, below). Nothing else is injected.
 - **Its sandbox is the chat's**, compiled for the program that actually runs at level 3. See
   *ADR 0067, amended*.
 
@@ -182,6 +189,8 @@ absence lowers the offer, never the product.
   because that passes nothing through purlis. A method that asks the client for a value is never
   used. When no usable method remains, purlis tells the operator to log in through the harness's
   own flow in a shell tab (the declaration's `login`), and the chat starts at its next level.
+  *(Amended by [ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md): the chat's profile is signed in through the harness's own flow,
+  shown in the window.)*
 - **Agent capabilities become harness capabilities for the run.** What the agent reports at
   `initialize` (loading a session, the prompt content it takes, and each optional method it
   advertises) is mapped onto ADR 0073 §6's harness capabilities for that run: `loadSession` is
@@ -401,3 +410,28 @@ host: the app leaves its controlling terminal as it starts (`charter_core::noter
    a controlling terminal.** `process_group(0)` stays; no new `unsafe`. The app and `purlisd`
    leave their terminal as they start, with a test that a host started in a terminal has none
    afterwards, and none after it opens a terminal pair. §1 is amended to say so.
+
+## Amended 2026-10-14: every harness's tool server reaches the app on the chat's own socket and token (#1996)
+
+Ruled 2026-10-14 (round 2 of the browser-flow grill): *"Every harness's tool server gets the
+chat's socket and token; browser tools ride the hook socket on a framed byte stream."*
+
+- **The chat's existing token and hook socket reach every harness's tool server**, the ACP
+  agent's included. The server is handed the four variables that connect the chat's hooks to the
+  app (`PURLIS_HOOK_SOCKET`, `PURLIS_CHAT`, `PURLIS_CHAT_TOKEN`, `PURLIS_HARNESS`;
+  `chattools::CONNECTION_ENV`) beside the chat's place. It is the token minted at the chat's
+  `exec` for its hooks: nothing is minted for the server, no scope is widened, and no value is
+  written to a file or a command line. Claude Code and opencode hand it on in the environment
+  they give a stdio server; Codex by the names in `env_vars`; an ACP agent in `session/new`'s
+  `mcpServers[].env`, over its own stdio, from the environment it already runs in.
+- **The hook socket carries a framed byte stream beside its lines**, chosen by the client with a
+  hello line and accepted by the app on one line; an app from before it is asked again in lines.
+  Every framed ask is admitted as a line is (the token, then the sending process), so an answer
+  may be larger than a line and may carry bytes without a second way in. The wire is recorded in
+  `docs/plane-format.md` (`app/hooks.sock`).
+- **To be confirmed** (D-1996, the implementation's choices, recorded in PR #2067): the hello as a
+  line of its own kind rather than a preamble or a second socket; a frame as a four-byte
+  big-endian length and a kind byte (JSON or bytes), a reply as a JSON head and one bytes frame
+  per attachment; Codex given names, never values; an ask's frame held to a line's bound and a
+  reply's frames to 16 MiB; an attachment that is not an image passed to MCP as an embedded blob
+  resource; `persona_where` the first tool to ask over frames.

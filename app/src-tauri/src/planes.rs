@@ -1697,6 +1697,8 @@ pub(crate) struct Closing {
     held: Arc<Held>,
     released: Released,
     closed: Closed,
+    /// Taken while the plane is let go of: one close at a time, a while ([`LettingGo`]).
+    one_at_a_time: Arc<LettingGo>,
     /// The project's turn, let go of last, when everything above is done.
     _turn: OpenTurn,
 }
@@ -1705,9 +1707,88 @@ impl Closing {
     /// Lets go of the plane: its record is written, its chats ended, its hook socket released,
     /// and every window drawing it told. Only then may it be opened again.
     pub(crate) fn finish(self) {
+        let _one_at_a_time = self.one_at_a_time.enter(LETTING_GO_WAITS);
         self.held.let_go(false);
         (self.released)(&self.held.root);
         (self.closed)(&self.plane);
+    }
+}
+
+/// **Closes let go of their projects one at a time, a while** (#1949, #2029's review): as they did
+/// on the window's thread, rather than all ending their chats at once on a machine already busy.
+/// A close waits for the one before it at most [`LETTING_GO_WAITS`], then goes on beside it and
+/// says so: one close stuck for good never holds every later one. Once the quit has begun none
+/// waits, so every close gets its share of the quit's own wait.
+#[derive(Default)]
+pub(crate) struct LettingGo {
+    /// How many closes are letting go now.
+    under_way: Mutex<usize>,
+    /// Told each time one is done.
+    done: Condvar,
+    /// Set as the quit begins: closes stop waiting for each other, and an open that ends after
+    /// it lets go of the project it built instead of holding it.
+    quitting: AtomicBool,
+}
+
+impl LettingGo {
+    /// This close's turn: once none is under way, or `within` has passed, or the quit began.
+    fn enter(self: &Arc<Self>, within: std::time::Duration) -> LettingGoTurn {
+        let until = std::time::Instant::now() + within;
+        let mut under_way = self
+            .under_way
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        while *under_way > 0 && !self.quitting.load(Ordering::SeqCst) {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                tracing::warn!(
+                    "purlis: a project's close has not let go of it within {}s; the next close \
+                     goes on beside it",
+                    within.as_secs()
+                );
+                break;
+            }
+            under_way = self
+                .done
+                .wait_timeout(under_way, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        *under_way += 1;
+        LettingGoTurn {
+            of: Arc::clone(self),
+        }
+    }
+
+    /// The quit has begun: every close waiting for another goes on now.
+    fn quit(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
+        let _under_way = self
+            .under_way
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.done.notify_all();
+    }
+
+    fn quitting(&self) -> bool {
+        self.quitting.load(Ordering::SeqCst)
+    }
+}
+
+/// One close's turn at letting go ([`LettingGo::enter`]); dropped, it lets the next one go on.
+pub(crate) struct LettingGoTurn {
+    of: Arc<LettingGo>,
+}
+
+impl Drop for LettingGoTurn {
+    fn drop(&mut self) {
+        let mut under_way = self
+            .of
+            .under_way
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *under_way = under_way.saturating_sub(1);
+        self.of.done.notify_all();
     }
 }
 
@@ -1783,11 +1864,12 @@ pub struct Planes {
     /// taking them out and having let go of them (#1949), so an open of one waits for it: see
     /// [`Planes::opening`].
     turns: Arc<Turns>,
+    /// Held by a close while it lets go of its project, so closes do so one at a time, as they
+    /// did on the window's thread: nine closes at once end every chat of nine projects at once
+    /// on a machine that is busy already, for nothing a person would see sooner.
+    letting_go: Arc<LettingGo>,
     /// How long the quit waits for the opens and closes under way ([`QUIT_WAITS_FOR_TURNS`]).
     quit_waits: std::time::Duration,
-    /// Set as the quit begins (#1949): an open that ends after it lets go of the project it
-    /// built instead of holding it, since the quit has let go of every project already.
-    quitting: AtomicBool,
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
@@ -1897,6 +1979,10 @@ const STILL_CLOSING: &str =
 /// has not finished within [`CLOSE_WAIT`].
 const STILL_OPENING: &str =
     "purlis is still opening this project for another window. Open it again in a moment.";
+
+/// How long a close waits for the one before it to let go of its project, before it lets go of
+/// its own beside it (#2029's review): one close stuck for good holds the next only this long.
+const LETTING_GO_WAITS: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// How long the quit waits for the opens and closes still under way (#1949). A close writes its
 /// project's last record and ends its chats, and the process ending under it would cut both off;
@@ -2010,8 +2096,8 @@ impl Planes {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
             }),
             turns: Arc::default(),
+            letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
-            quitting: AtomicBool::new(false),
             network: None,
         }
     }
@@ -2487,6 +2573,16 @@ impl Planes {
                 }
             })
         });
+        // What a chat's turn ended saying (#1981): kept for a task alone, in memory. Weak for
+        // the handoff's reason.
+        held.hooks.when_output({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |output| {
+                if let Some(held) = held.upgrade() {
+                    crate::dispatched::said(&held, output);
+                }
+            })
+        });
         held.hooks.when_saved({
             let held = Arc::downgrade(&held);
             Arc::new(move |saved| {
@@ -2693,7 +2789,7 @@ impl Planes {
         }
         // A quit that began while this opened has let go of every project already, and nothing
         // after it lets go of one (#1949): the project is let go of here, not held.
-        if self.quitting.load(Ordering::SeqCst) {
+        if self.letting_go.quitting() {
             drop(open);
             held.let_go(false);
             (self.released)(&held.root);
@@ -3520,6 +3616,7 @@ impl Planes {
             held,
             released: Arc::clone(&self.released),
             closed: Arc::clone(&self.closed),
+            one_at_a_time: Arc::clone(&self.letting_go),
             _turn: turn,
         })
     }
@@ -3632,8 +3729,9 @@ impl Planes {
     /// Empties the registry, then lets go of each plane it held. See [`Self::let_go_of_all`].
     fn let_go_of_every_plane(&self, to_update: bool) {
         // From here an open that ends lets go of its project instead of holding it (#1949): the
-        // flag is read under the registry's lock, which the drain below takes too.
-        self.quitting.store(true, Ordering::SeqCst);
+        // flag is read under the registry's lock, which the drain below takes too. And every close
+        // waiting its turn goes on now, so each gets its share of the wait below.
+        self.letting_go.quit();
         // Every open and close still under way first (#1949): a close is out of the registry
         // already, so nothing below reaches it, and its last record and its chats' end are its
         // own; an open holds its project in the registry once it is done, and is let go of below.
@@ -10044,6 +10142,191 @@ mod tests {
         let host = host.clone();
         let planes = planes.running_sessions_on(Arc::new(move |_| Box::new(host.clone())));
         (planes, told)
+    }
+
+    #[test]
+    fn a_close_whose_chats_are_slow_to_end_holds_up_no_other_project() {
+        // The scenario run's stall (#1949's follow-up): a close lets go of its project off the
+        // window's thread, and its chats can take long to end. Nothing of another project waits
+        // for it: an open, a chat's start, a second open of an open project. Only an open of the
+        // project being closed waits, at most its bound, and then says why.
+        let dir = tempfile::tempdir().expect("a directory");
+        let host = Pretend::default();
+        let (planes, _told) = planes_on(&host);
+        let one = a_plane(&dir.path().join("one"));
+        let two = a_plane(&dir.path().join("two"));
+        let three = a_plane(&dir.path().join("three"));
+        let first = planes.open(&one);
+        let second = planes.open(&two);
+        planes
+            .held(&first)
+            .expect("held")
+            .chats()
+            .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+            .expect("it starts");
+
+        host.holds_its_end();
+        let closing = planes.closing(&first).expect("it closes");
+        std::thread::scope(|scope| {
+            let letting_go = scope.spawn(move || closing.finish());
+            // The close is in its chats' end now, and stays there.
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let waited_for_its_chats = !letting_go.is_finished();
+
+            let asked = std::time::Instant::now();
+            let third = planes.open(&three);
+            let started = planes
+                .held(&second)
+                .expect("held")
+                .chats()
+                .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING);
+            let reopened = planes.open_if_approved(&two);
+            let third_held = planes.held(&third).is_ok();
+            let took = asked.elapsed();
+            // The project being closed: a bounded wait, and the sentence.
+            let canon = one.canonicalize().expect("it resolves");
+            let refused = planes.not_closing_within(&canon, std::time::Duration::from_millis(50));
+            // Let go before anything is asserted: a held end left behind holds the test.
+            host.lets_its_end_go();
+            letting_go.join().expect("the close ends");
+
+            assert!(waited_for_its_chats, "the close did not wait for its chats");
+            assert!(
+                started.is_ok(),
+                "a chat of another project did not start: {started:?}"
+            );
+            assert!(matches!(reopened, Ok(Opening::Open(ref id)) if *id == second));
+            assert!(third_held);
+            assert!(
+                took < std::time::Duration::from_secs(2),
+                "another project waited {took:?} for a close"
+            );
+            assert_eq!(refused, Err(STILL_CLOSING.to_owned()));
+        });
+        assert!(planes.held(&first).is_err());
+    }
+
+    #[test]
+    fn a_close_stuck_in_its_chats_end_holds_up_the_next_close_only_a_while() {
+        // #2029's review: one close that never ends (a host wedged in its end, a store held)
+        // must not hold every later close, and every reopen of their projects, for good. The
+        // next close waits its turn a while, then lets go of its project beside the stuck one.
+        let dir = tempfile::tempdir().expect("a directory");
+        let stuck = Pretend::default();
+        let well = Pretend::default();
+        let made = std::sync::atomic::AtomicUsize::new(0);
+        let (planes, _told) = planes_telling();
+        let planes = planes.running_sessions_on(Arc::new({
+            let (stuck, well) = (stuck.clone(), well.clone());
+            move |_| {
+                let host = if made.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                    stuck.clone()
+                } else {
+                    well.clone()
+                };
+                Box::new(host) as Box<dyn crate::host::SessionHost>
+            }
+        }));
+        let one = a_plane(&dir.path().join("one"));
+        let two = a_plane(&dir.path().join("two"));
+        let first = planes.open(&one);
+        let second = planes.open(&two);
+        stuck.holds_its_end();
+        std::thread::scope(|scope| {
+            let first_closing = planes.closing(&first).expect("it closes");
+            let first_letting_go = scope.spawn(move || first_closing.finish());
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let second_closing = planes.closing(&second).expect("it closes");
+            let asked = std::time::Instant::now();
+            let second_letting_go = scope.spawn(move || second_closing.finish());
+            let until = asked + LETTING_GO_WAITS + std::time::Duration::from_secs(5);
+            while !second_letting_go.is_finished() && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let second_done = second_letting_go.is_finished();
+            let reopened = second_done.then(|| planes.open(&two));
+            // Let go before anything is asserted: a held end left behind holds the test.
+            stuck.lets_its_end_go();
+            first_letting_go.join().expect("the first close ends");
+            second_letting_go.join().expect("the second close ends");
+            assert!(
+                second_done,
+                "the second close waited for the stuck one past its bound"
+            );
+            assert_eq!(reopened, Some(second.clone()));
+        });
+    }
+
+    #[test]
+    fn once_the_quit_begins_closes_waiting_their_turn_let_go_at_once() {
+        // #2029's review: each close waiting its turn gets its share of the quit's own wait,
+        // rather than waiting out the one before it while the quit's wait runs down.
+        let dir = tempfile::tempdir().expect("a directory");
+        let host = Pretend::default();
+        let (planes, _told) = planes_on(&host);
+        let planes = planes.quitting_within(std::time::Duration::from_millis(300));
+        let ids: Vec<PlaneId> = (0..3)
+            .map(|n| planes.open(&a_plane(&dir.path().join(format!("p{n}")))))
+            .collect();
+        host.holds_its_end();
+        std::thread::scope(|scope| {
+            let closing: Vec<_> = ids
+                .iter()
+                .map(|id| {
+                    let closing = planes.closing(id).expect("it closes");
+                    scope.spawn(move || closing.finish())
+                })
+                .collect();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let before = host.most_ending_at_once();
+            let quitting = scope.spawn(|| planes.let_go_of_all());
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let after = host.most_ending_at_once();
+            // Let go before anything is asserted: a held end left behind holds the test.
+            host.lets_its_end_go();
+            for one in closing {
+                one.join().expect("the close ends");
+            }
+            quitting.join().expect("it quits");
+            assert_eq!(before, 1, "closes let go at once before the quit");
+            assert_eq!(
+                after, 3,
+                "closes still waited their turn once the quit began"
+            );
+        });
+    }
+
+    #[test]
+    fn closes_let_go_of_their_projects_one_at_a_time() {
+        // #1949's follow-up: nine projects closed at once each end their chats and run their
+        // let-go off the window's thread. They do so one after another, as they did when a close
+        // ran on the window's thread, rather than nine at once on a runner already loaded.
+        let dir = tempfile::tempdir().expect("a directory");
+        let host = Pretend::default();
+        let (planes, _told) = planes_on(&host);
+        let ids: Vec<PlaneId> = (0..3)
+            .map(|n| planes.open(&a_plane(&dir.path().join(format!("p{n}")))))
+            .collect();
+        host.holds_its_end();
+        std::thread::scope(|scope| {
+            let closing: Vec<_> = ids
+                .iter()
+                .map(|id| {
+                    let closing = planes.closing(id).expect("it closes");
+                    scope.spawn(move || closing.finish())
+                })
+                .collect();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let at_once = host.most_ending_at_once();
+            // Let go before anything is asserted: a held end left behind holds the test.
+            host.lets_its_end_go();
+            for one in closing {
+                one.join().expect("the close ends");
+            }
+            assert_eq!(at_once, 1, "closes let go of their projects at once");
+        });
+        assert_eq!(host.most_ending_at_once(), 1);
+        assert!(planes.open_now().is_empty());
     }
 
     #[test]

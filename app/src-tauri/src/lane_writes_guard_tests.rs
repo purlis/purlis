@@ -93,12 +93,10 @@ const LOCAL_READS: &[&str] = &[
     "granted_vaults",
     "granted_writes",
     "hosts_changed",
-    "hosts_seen_by_you",
     "made",
     "made_everywhere",
     "offer_due",
     "presets_changed",
-    "presets_seen_by_you",
     "services_everywhere",
     "sockets_everywhere",
     "tally",
@@ -220,6 +218,127 @@ fn code_of(line: &str) -> String {
     out
 }
 
+/// `text` with what is inside its block comments (`/* … */`, nested) and its raw strings
+/// (`r"…"`, `r#"…"#`) blanked, lines kept where they were: what spans lines, which a reading a
+/// line at a time cannot tell from code. Ordinary strings and line comments are passed over, so a
+/// `/*` or an `r"` inside one starts nothing.
+fn without_block_comments_and_raw_strings(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let blank = |c: char| if c == '\n' { '\n' } else { ' ' };
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        // A line comment: passed over to its end, as it is.
+        if c == '/' && next == Some('/') {
+            while i < chars.len() && chars[i] != '\n' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+        // A block comment, nested as Rust nests them.
+        if c == '/' && next == Some('*') {
+            let mut depth = 0;
+            while i < chars.len() {
+                if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+                    depth += 1;
+                    out.push_str("  ");
+                    i += 2;
+                } else if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    depth -= 1;
+                    out.push_str("  ");
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    out.push(blank(chars[i]));
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        // A raw string: `r`, any `#`s, a quote, not part of a longer name.
+        let starts_raw = c == 'r'
+            && !(i > 0 && (chars[i - 1].is_ascii_alphanumeric() || chars[i - 1] == '_'))
+            && {
+                let mut j = i + 1;
+                while chars.get(j) == Some(&'#') {
+                    j += 1;
+                }
+                chars.get(j) == Some(&'"')
+            };
+        if starts_raw {
+            let mut hashes = 0;
+            out.push('r');
+            i += 1;
+            while chars.get(i) == Some(&'#') {
+                hashes += 1;
+                out.push('#');
+                i += 1;
+            }
+            out.push('"');
+            i += 1;
+            while i < chars.len() {
+                let closes =
+                    chars[i] == '"' && (1..=hashes).all(|n| chars.get(i + n) == Some(&'#'));
+                if closes {
+                    out.push('"');
+                    i += 1;
+                    for _ in 0..hashes {
+                        out.push('#');
+                        i += 1;
+                    }
+                    break;
+                }
+                out.push(blank(chars[i]));
+                i += 1;
+            }
+            continue;
+        }
+        // A character literal (`'"'`, `'\''`): passed over, so its quote starts no string. A
+        // lifetime (`'a`) has no closing quote this close, and is left as it is.
+        if c == '\'' {
+            let closing = if next == Some('\\') {
+                (i + 3..(i + 12).min(chars.len())).find(|&j| chars[j] == '\'')
+            } else if chars.get(i + 2) == Some(&'\'') {
+                Some(i + 2)
+            } else {
+                None
+            };
+            if let Some(end) = closing {
+                out.extend(&chars[i..=end]);
+                i = end + 1;
+                continue;
+            }
+        }
+        // An ordinary string: passed over whole, escapes and all.
+        if c == '"' {
+            out.push(c);
+            i += 1;
+            while i < chars.len() {
+                let d = chars[i];
+                out.push(d);
+                i += 1;
+                if d == '\\' {
+                    if let Some(&e) = chars.get(i) {
+                        out.push(e);
+                        i += 1;
+                    }
+                } else if d == '"' {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
 /// One function of a file: its name, whether it is a window command, and its lines.
 struct Function {
     name: String,
@@ -231,6 +350,7 @@ struct Function {
 /// A file's code lines (literals and comments out) with its test modules blanked, brace by
 /// brace, and its functions.
 fn read_file(text: &str) -> (Vec<String>, Vec<Function>) {
+    let text = without_block_comments_and_raw_strings(text);
     let mut lines: Vec<String> = text.lines().map(code_of).collect();
     // A module under `#[cfg(test)]` is blanked to its closing brace, and only it: what follows
     // it in the file is the crate's own code again.
@@ -632,5 +752,43 @@ fn a_row_no_command_writes_says_why() {
             "planes.rs open: written by no window command, or into no lane's file, and no `why` \
           says so"
         ]
+    );
+}
+
+#[test]
+fn what_the_sandboxs_local_file_records_as_seen_is_a_write() {
+    // `hosts_seen_by_you` and `presets_seen_by_you` acknowledge what the window wrote, which
+    // writes this machine's sandbox file: a lane's read of it waits for them.
+    assert!(writes_a_lane_file(
+        "        purlis_core::sandbox::local::hosts_seen_by_you(root, self.hosts, written);"
+    ));
+    assert!(writes_a_lane_file(
+        "        purlis_core::sandbox::local::presets_seen_by_you(root, self.presets, written);"
+    ));
+}
+
+#[test]
+fn a_call_inside_a_block_comment_or_a_raw_string_is_not_read() {
+    let files = [a_file(
+        "notes.rs",
+        r###"
+pub fn nothing_here() {
+    /* an old way, kept for the record:
+       machine::update(config, |store| store.windows.clear());
+    */
+    let example = r#"
+        machine::update(config, |_| {});
+    "#;
+    let _ = example;
+}
+
+pub fn this_one(config: &Path) {
+    let _ = machine::update(config, |store| store.windows.clear());
+}
+"###,
+    )];
+    assert_eq!(
+        read_crate(&files).sites.into_iter().collect::<Vec<_>>(),
+        ["notes.rs this_one"]
     );
 }

@@ -659,7 +659,7 @@ jobs:
         run: |
           runuser -u ci -- env HOME=/home/ci PATH="/home/ci/.cargo/bin:$PATH" \
             tools/no-orphans.sh --reap -- \
-            cargo test --locked -p purlis-core -p purlis-cli --no-fail-fast
+            cargo test --locked -p purlis-core -p purlis-terminal -p purlis-cli --no-fail-fast
       - name: The app starts and draws a window
         run: |
           runuser -u ci -- env HOME=/home/ci PATH="/home/ci/.cargo/bin:$PATH" \
@@ -699,9 +699,9 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Build the tests
-        run: cargo nextest run --locked -p purlis-core -p purlis-app --no-run
+        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-app --profile ci
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app --profile ci
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build

@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
   useEffect,
@@ -208,8 +209,31 @@ function App() {
   const [openTrouble, setOpenTrouble] = useState<string>();
   /** The projects this window asked the core to let go of, until it has (#1949). */
   const closingNow = useRef(new Map<string, Promise<unknown>>());
+  /** How many of them are still letting go: on the project strip, for whoever waits on it. */
+  const [lettingGo, setLettingGo] = useState(0);
   /** What a window-level action answered, when it had something to say. */
   const [report, setReport] = useState<Said>();
+  // A command the core has not answered for a while is said on the window's line (#1949): a
+  // dialog waiting on it would otherwise wait in silence (`answerWatch.ts`).
+  // Said once per command while it is late, however often it is asked meanwhile, and taken
+  // away once its answer comes (#2029's review).
+  const lateAnswers = useLateAnswers();
+  const saidLate = useRef(new Set<string>());
+  useEffect(() => {
+    const waiting = new Set(
+      lateAnswers.filter((one) => one.ms === undefined).map((one) => one.command),
+    );
+    for (const command of [...saidLate.current])
+      if (!waiting.has(command)) {
+        saidLate.current.delete(command);
+        setReport((now) => (now?.from === `answer.late.${command}` ? undefined : now));
+      }
+    for (const one of lateAnswers) {
+      if (one.ms !== undefined || saidLate.current.has(one.command)) continue;
+      saidLate.current.add(one.command);
+      setReport({ from: `answer.late.${one.command}`, refused: true, words: saidOfLate(one) });
+    }
+  }, [lateAnswers]);
   /** Whether the palette is up, so what an action answered is said in one place rather than
    *  two: the palette is modal and draws over the line below it. */
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -647,8 +671,10 @@ function App() {
         .closePlane(plane)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       closingNow.current.set(plane, asked);
+      setLettingGo((now) => now + 1);
       void asked.finally(() => {
         if (closingNow.current.get(plane) === asked) closingNow.current.delete(plane);
+        setLettingGo((now) => now - 1);
       });
       takeOut(plane);
       const answer = await asked;
@@ -2008,6 +2034,9 @@ function App() {
                   <div
                     className="projects"
                     data-strip="Projects"
+                    // The closes this window asked that have not let go of their project yet
+                    // (#1949): a scenario spec waits for none before the next one runs.
+                    data-letting-go={lettingGo}
                     ref={projectStrip}
                     style={{ "--least": `${projectLeast}px` } as CSSProperties}
                   >

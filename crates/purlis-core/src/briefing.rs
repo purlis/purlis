@@ -159,7 +159,8 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
         }
     }
     // What the retired persona sub-agent left to say (#1451): the servers this chat's persona
-    // declares and the chat was not started with, and generated files still in the project.
+    // declares and the chat was not started with. Generated files still in the project are the
+    // window's Notice, not the chat's news (#1990).
     parts.extend(retired_notes(ask, selected.name.as_deref()));
     // The one route for work that reports back (#1515), for a chat that can take it.
     if let Some(route) = one_route_note(ask.env) {
@@ -565,9 +566,10 @@ fn resuming_note(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<St
 /// - the MCP servers the chat's persona declares that it was **not** started with, and why
 ///   ([`crate::personaverbs::chatstart::told`]): withheld until a person approves them, or on
 ///   a harness purlis cannot hand servers to. The harness is the one the app started the chat
-///   on ([`crate::hookwire::HARNESS_ENV`]);
-/// - the sub-agent files purlis generated that are still in the project, which the harness may
-///   still list as agent types and a call to which is refused.
+///   on ([`crate::hookwire::HARNESS_ENV`]).
+///
+/// The sub-agent files purlis generated that are still in the project are not told here: removing
+/// them is the operator's chore, and the window stands it as one Notice with a Fix (#1990, Q67).
 fn retired_notes(ask: &Ask, persona: Option<&str>) -> Vec<String> {
     let mut notes = Vec::new();
     if let Some(name) = persona.filter(|name| exists(ask.root, name)) {
@@ -584,28 +586,6 @@ fn retired_notes(ask: &Ask, persona: Option<&str>) -> Vec<String> {
                 .into_iter()
                 .map(|line| format!("⬡ {line}")),
         );
-    }
-    let left = crate::personaverbs::retired::generated(ask.root);
-    if !left.is_empty() {
-        let names = left
-            .iter()
-            .filter_map(|file| std::path::Path::new(file).file_stem())
-            .map(|stem| {
-                format!(
-                    "`{}`",
-                    one_line(&stem.to_string_lossy(), COMMITTED_LINE_CAP)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        notes.push(format!(
-            "⬡ This project still holds {} sub-agent file(s) purlis generated for a persona \
-             ({names}). Your harness may offer each as an agent type, and a call to one is \
-             refused: a persona runs as its own chat. Give a persona work with `purlis \
-             dispatch --to <persona>`. The operator removes the files with `purlis doctor \
-             --fix persona-agents`.",
-            left.len()
-        ));
     }
     notes
 }

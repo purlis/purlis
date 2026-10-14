@@ -14,9 +14,11 @@ use crate::Here;
 
 #[derive(Subcommand)]
 pub enum WorktreeCommand {
-    /// Cut a piece: a worktree of <repo> on a new branch off the clone's HEAD, with the
-    /// plane's layer wired into it and its claim recorded. Exit 2 when the piece is already
-    /// claimed, so a worker that lost a race knows to take the next name.
+    /// Cut a piece: a worktree of <repo> on a new branch off its base, with the plane's layer
+    /// wired into it and its claim recorded. The base is the branch the remote names its
+    /// default (`main`, most often), brought up to the remote where nothing has it checked out.
+    /// Exit 2 when the piece is already claimed, so a worker that lost a race knows to take the
+    /// next name.
     Add {
         /// A repo cloned into the workspace.
         repo: String,
@@ -25,6 +27,10 @@ pub enum WorktreeCommand {
         /// Name the new branch something other than the piece.
         #[arg(long)]
         branch: Option<String>,
+        /// The branch of the clone to cut from, recorded as the piece's base; `HEAD` for
+        /// whatever the clone is on (default: the remote's default branch, else HEAD).
+        #[arg(long, value_name = "BRANCH")]
+        base: Option<String>,
         /// The workspace (default: the active one).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
@@ -46,6 +52,29 @@ pub enum WorktreeCommand {
         /// Paths to stage, relative to where you stand, inside this folder.
         #[arg(value_name = "PATH")]
         paths: Vec<String>,
+    },
+    /// Bring the branch folder you stand in up to its base: fetch, bring the base up to its
+    /// remote, and rebase onto it. Stops on a conflict and names the files: resolve them, then
+    /// `--continue`, or `--abort` to put the branch back. Refused with uncommitted changes.
+    /// In a chat the app runs it.
+    Update {
+        /// The branch to rebase onto (default: the one the piece was cut from).
+        #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
+        base: Option<String>,
+        /// Stage the files the stopped rebase named, once resolved, and go on.
+        #[arg(long = "continue", conflicts_with = "abort")]
+        go_on: bool,
+        /// Put the branch back where it was before the rebase.
+        #[arg(long)]
+        abort: bool,
+    },
+    /// Push the branch of the folder you stand in to its remote, under its own name, after
+    /// purlis's scan of what it would publish. In a chat the app runs it.
+    Push {
+        /// Push over the remote's copy of the branch, only right after `update` rewrote it, and
+        /// only if the remote still has what was last fetched.
+        #[arg(long)]
+        force_with_lease: bool,
     },
     /// Declare the piece you are standing in finished. Run from inside it.
     Done,
@@ -107,6 +136,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             repo,
             piece,
             branch,
+            base,
             workspace,
         } => {
             let ws = here.active_workspace(workspace.as_deref())?;
@@ -115,10 +145,11 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             let asked = crate::gitask::told(
                 crate::gitask::forwarded(
                     &ws,
-                    purlis_core::hookwire::GitWork::WorktreeAdd {
+                    purlis_core::hookwire::GitWork::WorktreeCut {
                         repo: repo.clone(),
                         piece: piece.clone(),
                         branch: branch.clone(),
+                        base: base.clone(),
                     },
                     crate::gitask::A_WORKTREE_TAKES_AT_MOST,
                 ),
@@ -132,6 +163,9 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                     &repo,
                     &piece,
                     branch.as_deref(),
+                    base.as_deref(),
+                    None,
+                    None,
                     &who,
                     now,
                     &mut say,
@@ -144,6 +178,43 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             amend,
             paths,
         } => crate::gitask::commit(message, all, amend, paths, &mut say),
+        WorktreeCommand::Update { base, go_on, abort } => {
+            let step = match (go_on, abort) {
+                (true, _) => purlis_core::hookwire::UpdateStep::Continue,
+                (_, true) => purlis_core::hookwire::UpdateStep::Abort,
+                _ => purlis_core::hookwire::UpdateStep::Start { base },
+            };
+            standing_in(here, &mut say, |at, say| {
+                let work = purlis_core::hookwire::GitWork::WorktreeUpdate {
+                    repo: at.repo.clone(),
+                    piece: at.piece.clone(),
+                    step: step.clone(),
+                };
+                ran_by_the_app(at, work, say).unwrap_or_else(|| {
+                    purlis_core::pieceupdate::update(
+                        &piece_of(&root, at),
+                        &step,
+                        &purlis_core::pieceupdate::Reach::default(),
+                        say,
+                    )
+                })
+            })
+        }
+        WorktreeCommand::Push { force_with_lease } => standing_in(here, &mut say, |at, say| {
+            let work = purlis_core::hookwire::GitWork::WorktreePush {
+                repo: at.repo.clone(),
+                piece: at.piece.clone(),
+                lease: force_with_lease,
+            };
+            ran_by_the_app(at, work, say).unwrap_or_else(|| {
+                purlis_core::pieceupdate::push(
+                    &piece_of(&root, at),
+                    force_with_lease,
+                    &purlis_core::pieceupdate::Reach::default(),
+                    say,
+                )
+            })
+        }),
         WorktreeCommand::Done => {
             piececmd::declare(&root, &here.cwd, Declaration::Done, &who, now, &mut say)
         }
@@ -199,4 +270,53 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
         }
     };
     Ok(code)
+}
+
+/// Runs `then` for the branch folder this command stands in, or says there is none.
+fn standing_in(
+    here: &Here,
+    say: &mut dyn FnMut(purlis_core::repocmd::Say),
+    then: impl FnOnce(&purlis_core::worktree::Located, &mut dyn FnMut(purlis_core::repocmd::Say)) -> u8,
+) -> u8 {
+    match purlis_core::worktree::locate(here.plane.root(), &here.cwd) {
+        Some(at) => then(&at, say),
+        None => {
+            say(purlis_core::repocmd::Say::Fail(
+                "not inside a branch folder: run it from inside the piece (`purlis worktree list` \
+                 shows where they are)"
+                    .to_owned(),
+            ));
+            1
+        }
+    }
+}
+
+/// The piece `at` names, in the project at `root`.
+fn piece_of<'a>(
+    root: &'a std::path::Path,
+    at: &'a purlis_core::worktree::Located,
+) -> purlis_core::pieceupdate::Piece<'a> {
+    purlis_core::pieceupdate::Piece {
+        root,
+        ws: &at.workspace,
+        repo: &at.repo,
+        piece: &at.piece,
+    }
+}
+
+/// In a chat the app started, `work` handed to the app and its answer printed; `None` where no
+/// app took it, so it runs here.
+fn ran_by_the_app(
+    at: &purlis_core::worktree::Located,
+    work: purlis_core::hookwire::GitWork,
+    say: &mut dyn FnMut(purlis_core::repocmd::Say),
+) -> Option<u8> {
+    crate::gitask::told(
+        crate::gitask::forwarded(
+            &at.workspace,
+            work,
+            crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST,
+        ),
+        say,
+    )
 }

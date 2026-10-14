@@ -471,3 +471,25 @@ fn a_clone_replaced_after_its_check_runs_no_git() {
     assert!(!answered.ok(), "{answered:?}");
     assert!(answered.err.contains("was replaced"), "{answered:?}");
 }
+
+#[test]
+fn a_branch_folders_own_git_is_run_for_a_chat_in_it_or_above_it_and_no_other() {
+    // qw387: `purlis worktree update` and `push` name a folder; the chat must stand in it, or
+    // above branch folders, as the brokered commit holds it.
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let pieces = root.join("workspaces/alpha/.worktrees/widget");
+    for piece in ["p1", "p2"] {
+        std::fs::create_dir_all(pieces.join(piece)).unwrap();
+    }
+    let ws = root.join("workspaces/alpha");
+    assert_eq!(at_or_above(&root, Some(&ws), "widget", "p1"), Ok(()));
+    assert_eq!(at_or_above(&root, Some(&root), "widget", "p1"), Ok(()));
+    assert_eq!(
+        at_or_above(&root, Some(&pieces.join("p1")), "widget", "p1"),
+        Ok(())
+    );
+    let refused = at_or_above(&root, Some(&pieces.join("p2")), "widget", "p1").unwrap_err();
+    assert!(refused.contains("widget · p2"), "{refused}");
+    assert!(at_or_above(&root, None, "widget", "p1").is_err());
+}

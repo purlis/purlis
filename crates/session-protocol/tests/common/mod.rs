@@ -37,3 +37,4 @@ pub async fn read_frame(io: &mut (impl AsyncRead + Unpin)) -> serde_json::Value 
 }
 
 pub mod netsim;
+pub mod programs;

@@ -3,7 +3,7 @@
 
 //! What ConPTY does that a unix pty does not, measured on a real Windows runner.
 //!
-//! `crates/purlis-core/src/session.rs` is written against three properties of a unix pty,
+//! `crates/terminal/src/session.rs` is written against three properties of a unix pty,
 //! and none of them is stated anywhere as a property of `portable-pty`'s *interface* — they
 //! are properties of its unix *implementation*. A read of `portable-pty` 0.9's `src/win`
 //! says all three are different on Windows. A read is not a measurement, so this asks:

@@ -11,9 +11,21 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIMIT, MESSAGE_CHARS, annotations, lineOf, readRecords } from "./e2e-annotations.mjs";
+import {
+  EVIDENCE_CHARS,
+  EVIDENCE_FOR,
+  LIMIT,
+  MESSAGE_CHARS,
+  annotations,
+  evidenceOf,
+  lineOf,
+  readRecords,
+} from "./e2e-annotations.mjs";
 
-const script = join(dirname(fileURLToPath(import.meta.url)), "e2e-annotations.mjs");
+const script = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "e2e-annotations.mjs",
+);
 const root = "/work/purlis";
 const spec = `${root}/app/e2e/specs/tabs.e2e.ts`;
 const noSource = () => "";
@@ -42,9 +54,11 @@ test("the line comes from a file:// frame too", () => {
 
 test("with no frame in the spec, the line that names the test is used, else 1", () => {
   const timeout = failure({
-    stack: "Error: Timeout of 180000ms exceeded\n    at listOnTimeout (node:internal/timers:1:1)",
+    stack:
+      "Error: Timeout of 180000ms exceeded\n    at listOnTimeout (node:internal/timers:1:1)",
   });
-  const source = 'describe("tabs", () => {\n  it("a closed tab is gone", async () => {\n';
+  const source =
+    'describe("tabs", () => {\n  it("a closed tab is gone", async () => {\n';
   assert.equal(
     lineOf(timeout, root, () => source),
     2,
@@ -54,10 +68,13 @@ test("with no frame in the spec, the line that names the test is used, else 1", 
 
 test("colour codes go, a long message is cut, and newlines, % and the property separators are escaped", () => {
   const long = "x".repeat(MESSAGE_CHARS * 2);
-  const [cut] = annotations([failure({ message: `\u001b[31m${long}\u001b[39m` })], {
-    root,
-    read: noSource,
-  });
+  const [cut] = annotations(
+    [failure({ message: `\u001b[31m${long}\u001b[39m` })],
+    {
+      root,
+      read: noSource,
+    },
+  );
   const message = cut.slice(cut.indexOf("::", 2) + 2);
   assert.equal(message.length, MESSAGE_CHARS);
   assert.ok(message.endsWith("…"));
@@ -76,7 +93,9 @@ test("colour codes go, a long message is cut, and newlines, % and the property s
 });
 
 test("a mass failure is ten errors, ten warnings and a notice counting the rest", () => {
-  const records = Array.from({ length: 35 }, (_, i) => failure({ title: `test ${i}` }));
+  const records = Array.from({ length: 35 }, (_, i) =>
+    failure({ title: `test ${i}` }),
+  );
   const lines = annotations(records, { root, read: noSource });
   assert.equal(lines.length, LIMIT + 1);
   assert.equal(lines.filter((l) => l.startsWith("::error ")).length, 10);
@@ -91,13 +110,17 @@ test("a mass failure is ten errors, ten warnings and a notice counting the rest"
 test("a job that failed with no test recorded still says so", () => {
   const lines = annotations([], { root, read: noSource });
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /^::error title=scenario tests failed with no test recorded::/);
+  assert.match(
+    lines[0],
+    /^::error title=scenario tests failed with no test recorded::/,
+  );
 });
 
 test("a record without a file or a message still annotates", () => {
-  assert.deepEqual(annotations([{ title: '"before all" hook' }], { root, read: noSource }), [
-    '::error title="before all" hook::failed with no message',
-  ]);
+  assert.deepEqual(
+    annotations([{ title: '"before all" hook' }], { root, read: noSource }),
+    ['::error title="before all" hook::failed with no message'],
+  );
 });
 
 test("a half-written line is skipped and the rest are read", () => {
@@ -122,9 +145,163 @@ test("run as a script, it prints the annotations for a failures file, or the no-
     /^::error file=app\/e2e\/specs\/tabs\.e2e\.ts,line=\d+,title=tabs › a closed tab is gone::/,
   );
 
-  const none = spawnSync(process.execPath, [script, join(dir, "missing.jsonl")], {
-    encoding: "utf8",
-  });
+  const none = spawnSync(
+    process.execPath,
+    [script, join(dir, "missing.jsonl")],
+    {
+      encoding: "utf8",
+    },
+  );
   assert.equal(none.status, 0, none.stderr);
   assert.match(none.stdout, /no test recorded/);
+});
+
+test("the first failures carry what the window was still waiting for and the core's last log lines", () => {
+  // #1949's scenario stall: the job's log and artifact are not what a reader of the checks has,
+  // so the failure itself says which command never answered and what the core said last.
+  const record = failure({
+    late: [
+      { command: "createProject", ms: null },
+      { command: "openPlane", ms: 41000 },
+    ],
+    coreLog: ["purlis: one line", "\u001b[31mpurlis: a red line\u001b[0m"],
+  });
+  const [line] = annotations([record], { root, read: noSource });
+  const message = line.slice(line.indexOf("::", 2) + 2);
+  assert.ok(message.startsWith("Expected 2 tabs, received 3%0A%0A"), message);
+  assert.ok(
+    message.includes(
+      "the window waited for: createProject (never answered), openPlane (answered after 41 s)",
+    ),
+    message,
+  );
+  assert.ok(
+    message.includes(
+      "the core's last log lines:%0Apurlis: one line%0Apurlis: a red line",
+    ),
+    message,
+  );
+});
+
+test("only the first few failures carry the evidence, each held to its own size", () => {
+  const long = Array.from(
+    { length: 400 },
+    (_, n) => `purlis: line ${n} ${"x".repeat(60)}`,
+  );
+  const records = Array.from({ length: EVIDENCE_FOR + 2 }, (_, n) =>
+    failure({ title: `test ${n}`, coreLog: long }),
+  );
+  const lines = annotations(records, { root, read: noSource });
+  for (const [n, line] of lines.entries()) {
+    const has = line.includes("the core's last log lines");
+    assert.equal(has, n < EVIDENCE_FOR, `annotation ${n}`);
+    assert.ok(
+      line.length < MESSAGE_CHARS + EVIDENCE_CHARS + 400,
+      `annotation ${n} is too long`,
+    );
+  }
+});
+
+test("a failure that carried an empty block says so, and one that carried none says nothing", () => {
+  // A quiet core and a block that was never recorded read differently (#2029's review).
+  const [quiet] = annotations([failure({ late: [], coreLog: [] })], {
+    root,
+    read: noSource,
+  });
+  assert.ok(
+    quiet.includes("no command was late; the core logged nothing"),
+    quiet,
+  );
+  const [none] = annotations([failure()], { root, read: noSource });
+  assert.ok(!none.includes("%0A%0A"), none);
+});
+
+test("only failures that carried a block count towards the first few that show it", () => {
+  // The left-chats guard writes a record of its own, with no block: it does not use up a place.
+  const records = [
+    failure({ title: "first", late: [], coreLog: ["purlis: one"] }),
+    failure({ title: "the guard's own record" }),
+    ...Array.from({ length: EVIDENCE_FOR }, (_, n) =>
+      failure({ title: `after ${n}`, late: [], coreLog: ["purlis: one"] }),
+    ),
+  ];
+  const lines = annotations(records, { root, read: noSource });
+  const shown = lines.filter((line) =>
+    line.includes("the core's last log lines"),
+  ).length;
+  assert.equal(shown, EVIDENCE_FOR);
+  assert.ok(EVIDENCE_FOR >= 5);
+});
+
+test("what covered the element a test could not press is said", () => {
+  const record = failure({
+    message: 'element ("button=New tab") still not clickable after 20000ms',
+    late: [],
+    coreLog: [],
+    covers: [
+      "at its centre: div.palette-backdrop",
+      "focused: input#palette",
+      "open: [role=dialog] Switch project",
+    ],
+  });
+  const [line] = annotations([record], { root, read: noSource });
+  assert.ok(
+    line.includes(
+      "what covered it:%0Aat its centre: div.palette-backdrop%0Afocused: input#palette%0Aopen: [role=dialog] Switch project",
+    ),
+    line,
+  );
+});
+
+test("a long log is cut to the room the late commands and the covers leave, which stay whole", () => {
+  const coreLog = Array.from(
+    { length: 400 },
+    (_, n) =>
+      `2026-10-15T00:00:${String(n).padStart(3, "0")} INFO purlis: line ${n}`,
+  );
+  const covers = [
+    "at its centre: div.palette-backdrop",
+    "focused: input#palette",
+  ];
+  const text = evidenceOf({
+    late: [{ command: "close_plane", ms: null }],
+    coreLog,
+    covers,
+  });
+  assert.ok(text.length <= EVIDENCE_CHARS, `${text.length}`);
+  assert.ok(
+    text.startsWith("the window waited for: close_plane (never answered)\n"),
+    text.slice(0, 200),
+  );
+  assert.ok(
+    text.includes("\nthe core's last log lines:\n"),
+    "the log's header",
+  );
+  assert.ok(
+    text.endsWith(`what covered it:\n${covers.join("\n")}`),
+    "the covers whole",
+  );
+  // The newest line is kept, the oldest cut.
+  assert.ok(text.includes("purlis: line 399\n"));
+  assert.ok(!text.includes("purlis: line 0\n"));
+});
+
+test("a cover that looks like it holds a secret is said redacted, as the core's log is", () => {
+  // Made up, and built here so the repository holds no token-shaped text.
+  const token = ["ghp", "_", "0123456789abcdefghij", "ABCDEFGHIJ012345"].join(
+    "",
+  );
+  const text = evidenceOf({
+    late: [],
+    coreLog: [],
+    covers: [
+      `at its centre: div.toast “${token}”`,
+      "focused: input#token “access_token=s3cr3tvalue1234”",
+      "open: [role=dialog] Switch project",
+    ],
+  });
+  assert.ok(!text.includes(token.slice(0, 14)), text);
+  assert.ok(!text.includes("s3cr3tvalue1234"), text);
+  assert.ok(text.includes("[redacted: a line that looks like it holds"), text);
+  assert.ok(text.includes("open: [role=dialog] Switch project"), text);
 });

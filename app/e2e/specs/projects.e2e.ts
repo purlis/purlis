@@ -5,7 +5,7 @@ import { existsSync, realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { THE_RUNS_TREE, anEmptyRecord, copyFixturePlane } from "../harness.js";
-import { answerTheAsk, closeProject, pressAndStart } from "../opening.js";
+import { answerTheAsk, closeProject, noDialogIsLeftUp, pressAndStart } from "../opening.js";
 import { attributesOfEach } from "../reading.js";
 
 /**
@@ -303,41 +303,63 @@ describe("a window holding more than one project", function () {
    * #132). A plane made anywhere else would kill the app, in this job, naming it.
    */
   it("makes a project from the strip's other button, and opens it through the same gate", async () => {
-    await $(`${PROJECTS} button[aria-label="New project…"]`).click();
+    // Whatever happens below, the window is left as this file found it: a miss here used to leave
+    // a dialog, or a half-made project, in front of every spec after it (#1949's scenario stall).
+    // The test's own failure is the one reported: a cleanup that fails after it is only said.
+    let failed: unknown;
+    try {
+      await $(`${PROJECTS} button[aria-label="New project…"]`).click();
 
-    const dialog = await $('[role="dialog"]');
-    await dialog.waitForDisplayed({ timeout: 20_000 });
-    await expect(dialog).toHaveText("New project", { containing: true });
-    // The folder is under Advanced since FR-4: the dialog's default asks for a repo, and the
-    // two-directory form is a closed `<details>`, opened by its summary.
-    await $('[role="dialog"] details.advanced > summary').click();
-    // Typed rather than picked: Browse… opens the system's own folder dialog, which is not a
-    // thing a driver inside the webview can answer. The first box under Advanced is the folder
-    // — React owns the id, so the element is taken by position, as `workspace-lifecycle.e2e.ts`
-    // takes the workspace name out of its sibling dialog.
-    await $('[role="dialog"] details.advanced input').setValue(made);
-    await $("button=Create project").click();
-    // An empty folder has no repo whose remote could say which forge (#839): the dialog asks,
-    // and the answer makes the project.
-    await $("button=GitHub").click();
+      const dialog = await $('[role="dialog"]');
+      await dialog.waitForDisplayed({ timeout: 20_000 });
+      await expect(dialog).toHaveText("New project", { containing: true });
+      // The folder is under Advanced since FR-4: the dialog's default asks for a repo, and the
+      // two-directory form is a closed `<details>`, opened by its summary.
+      await $('[role="dialog"] details.advanced > summary').click();
+      // Typed rather than picked: Browse… opens the system's own folder dialog, which is not a
+      // thing a driver inside the webview can answer. The first box under Advanced is the folder
+      // — React owns the id, so the element is taken by position, as `workspace-lifecycle.e2e.ts`
+      // takes the workspace name out of its sibling dialog.
+      await $('[role="dialog"] details.advanced input').setValue(made);
+      await $("button=Create project").click();
+      // An empty folder has no repo whose remote could say which forge (#839): the dialog asks,
+      // and the answer makes the project.
+      await $("button=GitHub").click();
 
-    // **A plane charter made a second ago is still one this machine has approved nothing
-    // about** (ADR 0035). There is no shortcut past the ask, and this is the assertion that
-    // says so from the outside.
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await expect(question).toHaveText("Open this project?", { containing: true });
-    await $('[role="dialog"]').$("button=Open project").click();
+      // **A plane charter made a second ago is still one this machine has approved nothing
+      // about** (ADR 0035). There is no shortcut past the ask, and this is the assertion that
+      // says so from the outside.
+      const question = await $('[role="dialog"]');
+      await question.waitForDisplayed({ timeout: 30_000 });
+      await expect(question).toHaveText("Open this project?", { containing: true });
+      await $('[role="dialog"]').$("button=Open project").click();
 
-    // The operator's second ruling on #178: it opens in THIS window, selected. Pressing create
-    // was the asking; a second dialog would be a third confirmation of something asked twice.
-    await stripBecomes([
-      { path: first, front: false },
-      { path: realpathSync(made), front: true },
-    ]);
-    expect(existsSync(join(made, "charter.toml"))).toBe(true);
+      // The operator's second ruling on #178: it opens in THIS window, selected. Pressing create
+      // was the asking; a second dialog would be a third confirmation of something asked twice.
+      await stripBecomes([
+        { path: first, front: false },
+        { path: realpathSync(made), front: true },
+      ]);
+      expect(existsSync(join(made, "charter.toml"))).toBe(true);
 
-    await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(made)}"]`);
-    await stripBecomes([{ path: first, front: true }]);
+      await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(made)}"]`);
+      await stripBecomes([{ path: first, front: true }]);
+    } catch (error) {
+      failed = error;
+    }
+    let cleanupFailed: unknown;
+    try {
+      await noDialogIsLeftUp();
+      const left = `${PROJECTS} button[aria-label="Close project ${basename(made)}"]`;
+      if (await $(left).isExisting()) await closeProject(left);
+    } catch (cleanup) {
+      cleanupFailed = cleanup;
+    }
+    if (failed !== undefined) {
+      if (cleanupFailed !== undefined)
+        console.error("charter-e2e: the cleanup after this failure failed too:", cleanupFailed);
+      throw failed;
+    }
+    if (cleanupFailed !== undefined) throw cleanupFailed;
   });
 });

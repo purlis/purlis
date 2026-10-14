@@ -127,6 +127,10 @@ enum Command {
     #[command(subcommand)]
     Harness(HarnessCommand),
 
+    /// Profiles: one identity of a harness each, and how it signs in.
+    #[command(subcommand)]
+    Profile(ProfileCommand),
+
     /// purlis's plugin for a `claude` or `codex` started outside the app: its hooks, the Bash
     /// guard and its skills. The app arms its own chats; this is for the others.
     #[command(subcommand)]
@@ -901,6 +905,13 @@ enum HarnessCommand {
         /// The harness's declared name, as a profile's `kind` names it.
         name: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ProfileCommand {
+    /// Every profile purlis read, how each signs in, the file it came from, and why any was
+    /// refused.
+    List,
 }
 
 /// The two `version` verbs that move a PUBLISHED `charter-cp` release.
@@ -1835,6 +1846,24 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             "purlis: this {} names no chat (`${}` is not a chat number), so the app was not told",
             event.word(),
             hookwire::CHAT_ENV
+        );
+    }
+    // What the turn ended saying (#1981), before the report, so the app has it as it hears the
+    // turn end: a task that ended its turns without a report is reported from it. The chat's
+    // own run alone, on a line of its own, sent once and never spooled.
+    if event == Event::Stop
+        && let Some(report) = &report
+        && report.agent.is_none()
+        && let Some(turn_output) = hookwire::Output::of_stop(&text)
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            hookwire::ChatToken::from_env().as_ref(),
+            &hookwire::TurnOutput {
+                chat: report.chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(&text, &purlis_core::envvar::var),
+            },
         );
     }
     if let Some(report) = &report
@@ -2904,7 +2933,19 @@ fn run(command: Command) -> Result<u8, String> {
             // a config read, so no hook pays a git call per tool call.
             let check = profiles::ignore_check(&root);
             let set = profiles::with_ignore_check(profiles::current(&root), &check);
-            eprint!("{}", harness_listing(&set, &check));
+            eprint!("{}", harness_listing(&set, &check, None));
+        }
+        Command::Profile(ProfileCommand::List) => {
+            let root = here.plane.root().to_path_buf();
+            // As `harness list`: a person typed this, so the git check runs here.
+            let check = profiles::ignore_check(&root);
+            let set = profiles::with_ignore_check(profiles::current(&root), &check);
+            let declared = purlis_core::harness_declaration::read(&root);
+            let passed = purlis_core::chatenv::read(&root);
+            eprint!(
+                "{}",
+                harness_listing(&set, &check, Some((&declared, &passed)))
+            );
         }
         Command::Harness(HarnessCommand::Show { name }) => {
             return Ok(harness_show(here.plane.root(), &name));
@@ -4128,7 +4169,10 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
     0
 }
 
-/// The profile listing, as `purlis harness list` prints it on stderr.
+/// The profile listing, as `purlis harness list` prints it on stderr, and with `declared`, as
+/// `purlis profile list` does: a SIGN-IN column, the kind of sign-in purlis can see a profile
+/// has, from its harness's declaration, its `env` and `[chat_env] pass` (`passed`), or
+/// `unknown` where it cannot tell (#2031).
 ///
 /// Built-ins first in registry order — a declared replacement keeps its kind's place — then
 /// declared profiles by name. **Every width is measured from the cells about to be printed**
@@ -4139,7 +4183,11 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 /// Every cell that came out of the file has already been contained by the time it arrives
 /// here (`profiles::display`, `shown::readable`): a command is text a chat can write, and a
 /// carriage return in one would otherwise redraw this line.
-fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
+fn harness_listing(
+    set: &ProfileSet,
+    check: &profiles::IgnoreCheck,
+    declared: Option<(&purlis_core::harness_declaration::Declarations, &[String])>,
+) -> String {
     let order: Vec<String> = profiles::builtins().into_iter().map(|p| p.name).collect();
     let mut rows: Vec<&purlis_core::profiles::Profile> = set.profiles().iter().collect();
     rows.sort_by_key(|p| {
@@ -4147,10 +4195,32 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
         (place.is_none(), place.unwrap_or(0), p.name.clone())
     });
 
-    let heads = ["NAME", "KIND", "COMMAND"];
-    let body: Vec<[String; 3]> = rows
+    let sign_in =
+        |p: &purlis_core::profiles::Profile,
+         (declared, passed): (&purlis_core::harness_declaration::Declarations, &[String])| {
+            declared
+                .get(&p.kind)
+                .and_then(|declaration| declaration.profile_sign_in(&p.env, passed))
+                // Through the closure, and never by the kind's type name: this binary names no
+                // forge sign-in, and `a_forge_token_never_reaches_a_chat.rs` holds its sources to
+                // that by the type's word.
+                .map_or("unknown", |kind| kind.word())
+                .to_owned()
+        };
+    let heads: Vec<&str> = match declared {
+        Some(_) => vec!["NAME", "KIND", "SIGN-IN", "COMMAND"],
+        None => vec!["NAME", "KIND", "COMMAND"],
+    };
+    let body: Vec<Vec<String>> = rows
         .iter()
-        .map(|p| [shown::short(&p.name), p.kind.clone(), profiles::display(p)])
+        .map(|p| {
+            let mut row = vec![shown::short(&p.name), p.kind.clone()];
+            if let Some(declared) = declared {
+                row.push(sign_in(p, declared));
+            }
+            row.push(profiles::display(p));
+            row
+        })
         .collect();
     // Each column is its header, its widest cell, and the gap to the next one — counted
     // inside the width so a caller pads once rather than padding and then adding spaces.
@@ -4168,7 +4238,7 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
         })
         .collect();
 
-    let line = |mark: &str, cells: [&str; 3], last: &str| {
+    let line = |mark: &str, cells: &[&str], last: &str| {
         let mut out = mark.to_owned();
         for (cell, width) in cells.iter().zip(&widths) {
             out.push_str(cell);
@@ -4181,7 +4251,7 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
         format!("{}\n", out.trim_end())
     };
 
-    let mut out = line("  ", heads, "FROM");
+    let mut out = line("  ", &heads, "FROM");
     for (p, cells) in rows.iter().zip(&body) {
         // The row the selector starts on, marked. It launches nothing by itself.
         let mark = if set.default.as_deref() == Some(p.name.as_str()) {
@@ -4190,7 +4260,8 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
             "  "
         };
         let source = p.source.as_str();
-        out.push_str(&line(mark, [&cells[0], &cells[1], &cells[2]], source));
+        let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
+        out.push_str(&line(mark, &cells, source));
     }
     if !set.refused.is_empty() {
         out.push_str("refused:\n");

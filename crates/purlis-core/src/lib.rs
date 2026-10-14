@@ -57,7 +57,8 @@ pub mod dispatchwithin;
 pub mod docsrc;
 pub mod doctor;
 pub mod doing;
-pub mod engine;
+/// The terminal engine, from the crate that holds it without the rest of the core (#1995).
+pub use purlis_terminal::engine;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;
@@ -133,6 +134,7 @@ pub mod personas;
 pub mod personaverbs;
 pub mod piececmd;
 pub mod pieces;
+pub mod pieceupdate;
 pub mod plane;
 pub mod planechange;
 pub mod planegit;
@@ -175,7 +177,9 @@ pub mod scaffold;
 pub mod scanallow;
 pub mod secrets;
 pub mod secretshape;
-pub mod session;
+/// A program in its own pseudo-terminal, from the crate that holds it without the rest of the
+/// core (#1995).
+pub use purlis_terminal::session;
 pub mod sessionrecord;
 pub mod sessionresume;
 pub mod settings;
