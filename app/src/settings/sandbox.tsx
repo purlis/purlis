@@ -15,6 +15,7 @@ import {
 import {
   allowLabel,
   allowPersonaHosts,
+  cautionsSaid,
   FROM_NEXT_START,
   mayAllowPersonaHosts,
   whatItLets,
@@ -400,10 +401,12 @@ export function personaSaid(one: PersonaHosts): string {
   // Its tools wait for the same Allow (D-PE-ruling-1).
   if (one.tools.length > 0) {
     const lets = whatItLets(one);
-    if (one.allowed) return `A chat as ${one.persona} may ${lets}${noPersona}.`;
+    // T-4: the core's sentence for a general-purpose tool, beside what is allowed.
+    const cautions = cautionsSaid(one) ? ` ${cautionsSaid(one)}` : "";
+    if (one.allowed) return `A chat as ${one.persona} may ${lets}${noPersona}.${cautions}`;
     if (one.waiting)
-      return `A chat as ${one.persona} gets none of its own ${whatWaits(one)}: they changed after you allowed them on this machine. Allow them again below.`;
-    return `A chat as ${one.persona} may ${lets} only once you allow them on this machine, below.`;
+      return `A chat as ${one.persona} gets none of its own ${whatWaits(one)}: they changed after you allowed them on this machine. Allow them again below.${cautions}`;
+    return `A chat as ${one.persona} may ${lets} only once you allow them on this machine, below.${cautions}`;
   }
   if (one.allowed)
     return `A chat as ${one.persona} also reaches ${listed(one.reached)}${noPersona}.`;

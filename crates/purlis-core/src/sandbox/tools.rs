@@ -63,6 +63,11 @@
 //! ([`refused_var`]); a tool policy forbids ([`super::policy::Locks::refuses_tool`]); and one
 //! whose program is not found where no chat writes.
 //!
+//! **A general-purpose program stays a tool, and its Allow says so** (T-4, the operator's ruling
+//! of 2026-10-14): curl, wget and the like can show the values they receive in the chat's
+//! output, so the person reads one sentence beside such a tool's line ([`caution`]). The
+//! sentence is never part of the line an Allow is bound to.
+//!
 //! **A browser login** is a tool of its own kind ([`login`], D-PE-browser-1): `browser = "<login
 //! page>"` in place of `as`, and purlis, not the chat, opens that page and fills the login on
 //! its origin alone.
@@ -377,18 +382,80 @@ pub fn refused_name(name: &str) -> Option<String> {
                 .to_owned(),
         );
     }
-    let lower = name.to_ascii_lowercase();
-    if REFUSED_NAMES
-        .iter()
-        .any(|one| one.eq_ignore_ascii_case(name))
-        || REFUSED_PREFIXES.iter().any(|one| lower.starts_with(one))
-    {
+    if runs_what_it_is_told(name) {
         return Some(format!(
             "{name} runs whatever it is told, so it would hand the vault's credential to anything \
              — a tool is the one program that needs it"
         ));
     }
     None
+}
+
+/// Whether `name` is one of [`REFUSED_NAMES`], or starts with one of [`REFUSED_PREFIXES`],
+/// whatever its case.
+fn runs_what_it_is_told(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    REFUSED_NAMES
+        .iter()
+        .any(|one| one.eq_ignore_ascii_case(name))
+        || REFUSED_PREFIXES.iter().any(|one| lower.starts_with(one))
+}
+
+/// **General-purpose programs** (T-4, the operator's ruling of 2026-10-14): each fetches,
+/// sends, writes or rewrites content as its arguments say, so what it does with the values it
+/// is handed is the chat's to decide, not the declaration's. Such a program stays a tool; its
+/// Allow says so in one sentence ([`caution`]). A short list, reviewed with each addition.
+const GENERAL_PURPOSE: &[&str] = &[
+    // fetch and send over the network
+    "curl", "wget", "wget2", "http", "https", "httpie", "xh", "xhs", "aria2c", "nc", "ncat",
+    "netcat", "socat", "ssh", "scp", "sftp", "rsync",
+];
+
+/// **Whether the program at `program` is a general-purpose one**, by its file name, whatever
+/// its folder and case (a `.exe` aside): one of [`GENERAL_PURPOSE`], or of the names no tool may
+/// take ([`refused_name`]).
+pub fn general_purpose(program: &Path) -> bool {
+    let Some(name) = program.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+    let name = lower.strip_suffix(".exe").unwrap_or(&lower);
+    !name.is_empty() && (GENERAL_PURPOSE.contains(&name) || runs_what_it_is_told(name))
+}
+
+/// **The sentence a person reads beside `tool`'s Allow** where its program is a general-purpose
+/// one (T-4): by the tool's name, and by each program that name finds on `search`, as found and
+/// as its links resolve. None for a narrow program, and none for a browser login, whose program
+/// purlis picks. The sentence is said beside the tool's line, never part of it, so an Allow
+/// stays bound to the line alone ([`super::persona::digest_of`]).
+pub fn caution(tool: &Tool, search: &[PathBuf]) -> Option<String> {
+    if tool.login.is_some() {
+        return None;
+    }
+    let found = search.iter().filter_map(|dir| {
+        crate::programs::find(&tool.name, std::slice::from_ref(dir))
+            .map(|program| (program.canonicalize().ok(), program))
+    });
+    let general = general_purpose(Path::new(&tool.name))
+        || found
+            .flat_map(|(real, program)| real.into_iter().chain([program]))
+            .any(|program| general_purpose(&program));
+    general.then(|| {
+        format!(
+            "{} can show the values it is handed in the chat's output; allow it only for a \
+             persona you trust with them.",
+            tool.name
+        )
+    })
+}
+
+/// [`caution`] for each of `tools`, in order, on the app's own search path.
+pub fn cautions(tools: &[Tool]) -> Vec<String> {
+    let search = crate::programs::search_dirs();
+    tools
+        .iter()
+        .filter_map(|tool| caution(tool, &search))
+        .collect()
 }
 
 /// Variables no tool's value is handed in: those that steer which program runs or what it

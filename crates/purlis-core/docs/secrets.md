@@ -170,8 +170,8 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   variable of its own.
 
   **curl reads no credential from a variable by itself**, and a chat's `$VAR` on the command
-  line is expanded by the chat's own shell, where it is unset. With curl 8.3.0 or later (macOS
-  ships 8.7), hand the values as `env` and have curl expand them itself:
+  line is expanded by the chat's own shell, where it is unset. Check `curl --version`; with
+  8.3.0 or later, hand the values as `env` and have curl expand them itself:
 
   ```toml
   [sandbox.personas.logs]
@@ -186,7 +186,19 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   ```
 
   The single quotes keep `{{…}}` away from the chat's shell; curl fills them from its own
-  environment, and stops with an error where a variable is not set. As a
+  environment, and stops with an error where a variable is not set.
+
+  **A general-purpose program can show the values it receives in the chat's output** (T-4,
+  ruled by the operator on 2026-10-14). curl, wget, httpie and the like fetch, send or write
+  content as their arguments say, and the chat writes the arguments. purlis still runs such a
+  program as a tool, and its Allow says so: the Notice, Settings › Sandbox and the Granted list
+  add one sentence beside its line, "curl can show the values it is handed in the chat's
+  output; allow it only for a persona you trust with them." Allow one only for a persona you
+  trust with its values. The sentence follows a short, reviewed list of program names, matched
+  on the tool's name and on the file name of the program it finds; it is not part of what the
+  Allow is bound to, so an Allow you made before it stands.
+
+  As a
   sandboxed chat running as `devops` starts, the app writes one small script per tool under
   `.purlis/app/tools/devops/bin/`, which no chat may write, and puts that folder first on the
   chat's `PATH`. A Claude Code chat is also handed `CLAUDE_ENV_FILE`, which puts it first again

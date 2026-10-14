@@ -9,6 +9,7 @@ import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import {
   allowLabel,
   allowPersonaHosts,
+  cautionsSaid,
   FROM_NEXT_START,
   listedHosts,
   mayAllowPersonaHosts,
@@ -129,7 +130,8 @@ export function PersonaHostsNotice({
                 {tools ? (
                   <>
                     The project's settings let {whoReaches(one)} {whatItLets(one, hostsLocked)},
-                    through purlis with a credential from the vault. Anyone who can change those
+                    through purlis with a credential from the vault.
+                    {cautionsSaid(one) ? ` ${cautionsSaid(one)}` : ""} Anyone who can change those
                     settings can change this, so no chat here gets these {what} until you allow them
                     on this machine. A change asks again. {FROM_NEXT_START}
                   </>
