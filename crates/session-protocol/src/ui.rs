@@ -278,6 +278,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.
     "keep_asked_workspace",
+    // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
+    // person's answer, which no chat gives for them.
+    "put_away_mcp_failure",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",
@@ -691,6 +694,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "inbox_shown",
     "installed_extensions",
     "locate_project",
+    "mcp_failures",
     "memory_archive",
     "memory_archived",
     "memory_create",

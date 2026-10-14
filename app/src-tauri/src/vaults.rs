@@ -130,28 +130,41 @@ fn count(ctx: &Ctx, v: &Vault) -> Option<u32> {
 /// the sandbox the command runs under is the one the chat's own was compiled to as it started.
 /// A chat this app does not have open is refused.
 ///
+/// **A chat that is still starting is waited for** (qw381): its harness can start a persona's
+/// MCP server, which asks for its run at once, before the start has recorded the chat as open.
+/// The line carried the chat's current token from inside its program, so it is that chat, and
+/// its record is waited for up to [`purlis_core::secrets::brokered::A_START_IS_WAITED_FOR`].
+///
 /// A vault the chat's persona is not tagged for is refused by the core, and noted here first
 /// for the Notice on the chat's tab (#1430, `crate::vaultroute`): from the same record of the
 /// chat, never from the line.
 ///
 /// Each host the run's sandbox refuses is told to `blocked` as the asking chat's block, so its
 /// tab's Notice offers Allow as for a block of the chat's own command.
+///
+/// The last try of a persona's MCP server's start (qw381) is watched: one that ends before the
+/// server spoke is told to `failed` and to the chat (`crate::mcpfailed`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_brokered(
     held: &crate::planes::Held,
     plane: &PlaneId,
     refused: &(dyn Fn(crate::vaultroute::VaultRefused) + Send + Sync),
+    failed: &(dyn Fn(crate::mcpfailed::McpFailed) + Send + Sync),
     ask: purlis_core::secrets::brokered::Ask,
     reader: Box<dyn std::io::BufRead + Send>,
     writer: Box<dyn std::io::Write + Send>,
     blocked: purlis_core::secrets::brokered::Told,
 ) {
     use purlis_core::secrets::brokered;
-    let Some(open) = held
-        .chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == ask.chat)
-    else {
+    let Some(open) = brokered::once_recorded(
+        || {
+            held.chats()
+                .open_now()
+                .into_iter()
+                .find(|open| open.session == ask.chat)
+        },
+        brokered::A_START_IS_WAITED_FOR,
+    ) else {
         tracing::warn!(
             "purlis: chat {} asked for `secret exec` and is not one this app has open",
             ask.chat
@@ -183,7 +196,33 @@ pub(crate) fn run_brokered(
     );
     // Each connection the run makes is the chat's, in the network record (#1667).
     let reached = held.chats().reached_for(ask.chat, asker.persona.clone());
+    // The last try of a persona's MCP server's start, watched for how it ends (qw381).
+    let last_try = ask
+        .secret_exec
+        .mcp
+        .clone()
+        .filter(|start| start.last)
+        .zip(asker.persona.clone());
+    let (writer, seen) = match &last_try {
+        Some(_) => {
+            let (watch, seen) = purlis_core::secrets::mcpstart::Watch::new(writer);
+            (
+                Box::new(watch) as Box<dyn std::io::Write + Send>,
+                Some(seen),
+            )
+        }
+        None => (writer, None),
+    };
     brokered::serve_recording(&asker, ask.secret_exec, reader, writer, blocked, reached);
+    if let (Some((start, persona)), Some(seen)) = (last_try, seen) {
+        let failure = seen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .failure();
+        if let Some(why) = failure {
+            crate::mcpfailed::failed(held, plane, failed, ask.chat, &persona, &start.server, &why);
+        }
+    }
 }
 
 /// Answers `purlis vault list` for chat `chat` of `held` (#1430): every vault the project

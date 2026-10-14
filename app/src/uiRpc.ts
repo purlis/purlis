@@ -383,6 +383,9 @@ export const commands = {
 	allowRefusedVault: __WINDOW_ONLY_RESULT,
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
+	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
+	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -4822,6 +4825,18 @@ export type MachineWorkspacePin = {
 	 *  the project itself cannot be read, since then nothing is known about its workspaces.
 	 */
 	gone: boolean,
+};
+
+/**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
+export type McpFailed = {
+	plane: PlaneId,
+	session: number,
+	/**  The server's name, as the persona declares it. */
+	server: string,
+	/**  The persona the app started the chat as. */
+	persona: string,
+	/**  The server's own error: its last words, bounded and masked. */
+	error: string,
 };
 
 /**  What a Delete did, and what its Undo hands back. */

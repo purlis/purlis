@@ -258,6 +258,8 @@ pub struct Held {
     vault_refusals: crate::vaultroute::Refusals,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
+    /// The persona MCP servers each chat could not start, until the person answers (qw381).
+    mcp_failures: crate::mcpfailed::Failures,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -505,6 +507,11 @@ impl Held {
     /// (qw356).
     pub fn removal_asks(&self) -> &crate::removalasks::Asked {
         &self.removal_asks
+    }
+
+    /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
+    pub fn mcp_failures(&self) -> &crate::mcpfailed::Failures {
+        &self.mcp_failures
     }
 
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
@@ -952,6 +959,7 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
+        self.mcp_failures.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
         let id = self
@@ -1747,6 +1755,8 @@ pub struct Planes {
     refused_more: hooks::RefusedMoreTeller,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
+    /// Told each persona MCP server a chat could not start (qw381).
+    mcp_failed: crate::mcpfailed::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -1981,6 +1991,7 @@ impl Planes {
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
+            mcp_failed: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2160,6 +2171,13 @@ impl Planes {
     /// holds, so the window can show the ways forward on the chat's tab (#1430).
     pub fn telling_vault_refusals(mut self, refused: crate::vaultroute::Teller) -> Self {
         self.vault_refused = refused;
+        self
+    }
+
+    /// Tells `failed` each persona MCP server a chat could not start after its second try, in
+    /// a plane this registry holds, so the window can say so on the chat's tab (qw381).
+    pub fn telling_mcp_failures(mut self, failed: crate::mcpfailed::Teller) -> Self {
+        self.mcp_failed = failed;
         self
     }
 
@@ -2366,10 +2384,11 @@ impl Planes {
             let held = Arc::downgrade(&held);
             let plane = id.clone();
             let refused = Arc::clone(&self.vault_refused);
+            let failed = Arc::clone(&self.mcp_failed);
             Arc::new(move |ask, reader, writer, blocked| match held.upgrade() {
                 Some(held) => {
                     crate::vaults::run_brokered(
-                        &held, &plane, &*refused, ask, reader, writer, blocked,
+                        &held, &plane, &*refused, &*failed, ask, reader, writer, blocked,
                     );
                 }
                 None => purlis_core::secrets::brokered::not_answered(writer),
@@ -3415,6 +3434,7 @@ impl Planes {
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
+            mcp_failures: crate::mcpfailed::Failures::default(),
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),

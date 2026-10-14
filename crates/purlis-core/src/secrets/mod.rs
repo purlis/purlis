@@ -35,6 +35,7 @@ pub mod fingerprint;
 pub mod identity;
 pub mod keyhold;
 pub mod keyring;
+pub mod mcpstart;
 pub mod onepassword;
 pub mod plain_file;
 pub mod program;

@@ -60,8 +60,15 @@ fn an_approval_recorded_for_the_sub_agent_carries_and_the_credential_goes_throug
             "command": BINARY,
             "args": ["secret", "exec", "ops", "--env", "GRAFANA_TOKEN=grafana-token",
                      "--exec", "--", "npx", "-y", "grafana-mcp@1.2.0"],
-            "env": {"GRAFANA_URL": "https://grafana.example.com"},
+            "env": {"GRAFANA_URL": "https://grafana.example.com",
+                    "PURLIS_MCP_SERVER": "grafana"},
         })
+    );
+    // qw381: each wrapped start is marked with its server's name, so its `secret exec` tries
+    // once more where the first run fails; one with no `env` of its own is given one.
+    assert_eq!(
+        got.started["gsc"]["env"],
+        json!({"PURLIS_MCP_SERVER": "gsc"})
     );
     assert_eq!(
         got.started["gsc"]["args"],

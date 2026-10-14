@@ -71,6 +71,7 @@ mod ipc;
 mod killswitch;
 mod lifecycle;
 mod live;
+mod mcpfailed;
 mod memories;
 mod navguard;
 mod network;
@@ -3338,6 +3339,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             vaultroute::REFUSED,
+                            &told,
+                        );
+                    })
+                })
+                // A persona's MCP server that could not start after its second try: the
+                // window says so on the chat's tab, with Retry (qw381).
+                .telling_mcp_failures({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: mcpfailed::McpFailed| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            mcpfailed::FAILED,
                             &told,
                         );
                     })

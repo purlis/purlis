@@ -338,6 +338,16 @@ server nobody approved is **withheld**, never started without its credential, an
 told at its start which servers it did not get and how they are approved. No credential is
 ever written into the chat's configuration: the server asks the vault when it starts.
 
+**A credentialed server that fails as the chat starts is tried once more.** Its `purlis secret
+exec` asks the app for the server's run again, after two seconds, when the first run was
+refused or ended before the server answered; the second run is handed what Claude Code had
+already sent the first. When the second fails too, the chat's tab shows a Notice naming the
+server, with its own error (its last words, bounded, every vault value masked) and **Retry**,
+which restarts the chat on its conversation once its turn has ended, since Claude Code takes no
+outside word to reconnect one server. The chat is told at its next turn, in purlis's words,
+that the server could not start and why, so it does not guess. A server that answered is never
+started a second time.
+
 On Codex and opencode purlis has no way to hand one chat a server, so a persona's servers are
 **not started** there. The chat is told so at its start, and `persona lint` says it.
 
