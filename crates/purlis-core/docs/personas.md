@@ -369,8 +369,9 @@ Nothing asks before two chats write in one tree any more. To keep a persona from
 ### After updating: `purlis doctor --fix persona-agents`
 
 A project that used `sync-agents` still has the files it wrote, and Claude Code still offers
-each as a sub-agent type. `purlis persona lint`, the doctor's `personas` row and each chat's
-briefing say so. Remove them with:
+each as a sub-agent type. `purlis persona lint` and the doctor's `personas` row say so, and the
+app stands it as one Notice in the Inbox whose Fix runs the same fix. A chat's briefing does not
+mention it: removing the files is the operator's chore. Remove them with:
 
 ```
 purlis doctor --fix persona-agents
