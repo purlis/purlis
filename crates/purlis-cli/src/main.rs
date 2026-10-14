@@ -331,6 +331,20 @@ enum Command {
         now: Option<String>,
     },
 
+    /// Propose a change to one of purlis's own configuration files, for the person to apply.
+    ///
+    /// In a chat the app started: `file` is the project's manifest, a persona's `mcp.json` or
+    /// `persona.md`, or a `.claude/skills` file; `--from` is the whole new content, written in
+    /// this chat's own folder. The window shows the person the change whole, and only they
+    /// apply it. Nothing is written here (#1975).
+    Propose {
+        /// The configuration file to change.
+        file: std::path::PathBuf,
+        /// The file in this chat's own folder that holds its whole new content.
+        #[arg(long, value_name = "DRAFT")]
+        from: std::path::PathBuf,
+    },
+
     /// Claude Code's footer, from the per-turn JSON on stdin.
     ///
     /// Inside the app it prints an empty line and still records the turn's token usage, which
@@ -2880,6 +2894,9 @@ fn run(command: Command) -> Result<u8, String> {
         }
         Command::Root => {
             println!("{}", here.plane.root().display());
+        }
+        Command::Propose { file, from } => {
+            return brokered::propose(here.plane.root(), &file, &from);
         }
         Command::Workspace(WorkspaceCommand::Current) => {
             // The name alone on stdout, for a script; the rung that decided it on stderr, for

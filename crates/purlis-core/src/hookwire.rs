@@ -1309,6 +1309,31 @@ pub enum Ask {
     /// answers [`Answer::No`] with the sentence that says the person has been asked, or why
     /// they were not. No ticket, for a record's reason: nothing is made or removed by the ask.
     Removal(RemovalAsk),
+    /// Show the person a change to one of purlis's own configuration files, which only they
+    /// apply, in the window (#1975, [`crate::proposed`]): what a Claude Code chat's edit of such
+    /// a file and `purlis propose` hand over. **The app writes nothing for it**: it holds the
+    /// proposal for the person and answers [`Answer::No`] with the sentence that says they have
+    /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
+    /// file's whole new content.
+    Propose(Box<ProposeAsk>),
+}
+
+/// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
+/// in the project, the base the change was worked out against, and the file's whole new
+/// content. Nothing else travels: whose it is is the app's record of the chat whose token the
+/// line carries, and what the person sees as the file now is the app's own read of it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The file, relative to the project root, as [`crate::proposed::proposable`] took it.
+    pub path: String,
+    /// The SHA-256 of the file as the change was worked out against it, in hex; none where it
+    /// was not there. Checked at Apply; never trusted to show what the file holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// The file's whole new content.
+    pub content: String,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -1966,6 +1991,7 @@ impl Ask {
             Self::Dispatch(dispatch) => dispatch.chat,
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
+            Self::Propose(proposed) => proposed.chat,
         }
     }
 }
@@ -6801,7 +6827,8 @@ mod tests {
                     | Ask::WhereWorking(_)
                     | Ask::Dispatch(_)
                     | Ask::Task(_)
-                    | Ask::Removal(_) => Answer::No {
+                    | Ask::Removal(_)
+                    | Ask::Propose(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }

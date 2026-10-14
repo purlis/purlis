@@ -898,7 +898,7 @@ pub fn chat_is_sandboxed_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
 /// The harness [`crate::hookwire::HARNESS_ENV`] names: the profile's registry name
 /// (`claude-code`, `codex`, `opencode`; [`crate::profiles::KINDS`]), which is what a chat's start
 /// puts there, and not the kind word a profile is written with.
-fn harness_of_registry(registry: &str) -> Option<Harness> {
+pub fn harness_of_registry(registry: &str) -> Option<Harness> {
     crate::profiles::KINDS
         .iter()
         .find(|kind| kind.registry == registry)

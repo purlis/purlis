@@ -373,6 +373,61 @@ pub fn pretooluse_edit(hook: &Hook) -> Answer {
     Answer::Nothing
 }
 
+/// **`pretooluse_edit`, where a chat's edit of purlis's own configuration is a proposed
+/// change** (#1975, PC-2): in a sandboxed Claude Code chat, a `Write`, `Edit` or `MultiEdit` of
+/// a proposable file ([`crate::proposed::proposable`]) is worked out against the file as it is
+/// now and handed to the app by `hand`, and the tool is refused with
+/// [`crate::proposed::PROPOSED_SAID`]: the harness never writes the file, and the person applies
+/// it, in the window. Where the change cannot be made as the tool would make it, the tool is
+/// refused with why. Where the app does not take it (`hand` answers `false`: no app, an older
+/// one, or one that refused it), or where policy turns proposed changes off (PC-14), the edit is
+/// [`pretooluse_edit`]'s, and the chat's own sandbox refuses it as before.
+///
+/// **What `hand` is given is only a proposal**: the app reads the file itself to show it and
+/// checks the base again at Apply, so nothing here is trusted to say what the file holds.
+pub fn pretooluse_edit_proposing(
+    hook: &Hook,
+    hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool,
+) -> Answer {
+    proposing(hook, hand).unwrap_or_else(|| pretooluse_edit(hook))
+}
+
+/// The answer to a proposable edit, or none where the edit is not one.
+fn proposing(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> Option<Answer> {
+    if !hook.in_plane || !crate::sandbox::chat_is_sandboxed_in(hook.env) {
+        return None;
+    }
+    let harness = (hook.env)(crate::hookwire::HARNESS_ENV);
+    if harness
+        .as_deref()
+        .and_then(crate::sandbox::harness_of_registry)
+        != Some(crate::harness::Harness::ClaudeCode)
+    {
+        return None;
+    }
+    let chat: u32 = (hook.env)(crate::hookwire::CHAT_ENV)?.parse().ok()?;
+    if crate::sandbox::policy::Locks::of(hook.root)
+        .proposed_changes_refused()
+        .is_some()
+    {
+        return None;
+    }
+    let cwd = match hook.text("cwd") {
+        "" => hook.cwd.to_path_buf(),
+        given => PathBuf::from(given),
+    };
+    match crate::proposed::from_edit(hook.root, hook.payload, &cwd)? {
+        Err(why) => Some(deny(why)),
+        Ok(proposed) => hand(crate::hookwire::ProposeAsk {
+            chat,
+            path: proposed.path.display().to_string(),
+            base: proposed.base,
+            content: proposed.content,
+        })
+        .then(|| deny(crate::proposed::PROPOSED_SAID.to_owned())),
+    }
+}
+
 /// `pretooluse_dispatch`: refuse a sub-agent call whose type is a persona, and name the
 /// dispatch route (#1451). A persona runs as its own chat, with its own vault and hosts; a
 /// sub-agent runs inside this chat's process and has this chat's.
