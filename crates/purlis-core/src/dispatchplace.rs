@@ -526,6 +526,7 @@ fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
     Some(worktree::Start {
         branch: found.branch?,
         tree: Some(found.path),
+        at: None,
     })
 }
 

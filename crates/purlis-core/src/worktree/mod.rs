@@ -684,6 +684,9 @@ pub struct Start {
     /// The worktree that branch is checked out in: what the dirty-tree note is read from.
     /// `None` where no worktree has it checked out, and there is no tree to read.
     pub tree: Option<PathBuf>,
+    /// The remote-tracking branch to cut from in the branch's place, where the branch is behind
+    /// it and could not be brought up ([`fresh::Fresh::instead`]); `None`, the branch itself.
+    pub at: Option<String>,
 }
 
 /// [`add`], cut from branch `base` of the clone by name (`purlis worktree add --base`, qw387):
@@ -705,6 +708,7 @@ pub fn add_based(
     let start = Start {
         branch: base.to_owned(),
         tree: fresh::checked_out_in(&clone, base)?,
+        at: fresh.instead.clone(),
     };
     let added = add_from(plane, ws, repo, piece, branch, Some(&start))?;
     Ok((added, fresh))
@@ -806,7 +810,11 @@ pub fn add_from(
     // The path is absolute and the piece name cannot start with `-`, so neither argument can
     // be read as an option.
     let shown_path = path.display().to_string();
-    let start_ref = from.map(|start| name::as_ref(&start.branch));
+    // A remote-tracking branch is cut from only as `fresh` named it, by its full name.
+    let start_ref = from.map(|start| match &start.at {
+        Some(at) if at.starts_with("refs/remotes/") => at.clone(),
+        _ => name::as_ref(&start.branch),
+    });
     let mut args = vec!["worktree", "add", "-b", &branch, &shown_path];
     if let Some(start_ref) = start_ref.as_deref() {
         args.push(start_ref);

@@ -247,7 +247,8 @@ fn start(
     for note in fresh.notes {
         say(Say::Warn(note));
     }
-    let onto = name::as_ref(&base);
+    // The base, or its remote-tracking branch where the base is behind it and checked out.
+    let onto = fresh.instead.clone().unwrap_or_else(|| name::as_ref(&base));
     let there = git::run(
         &here.folder,
         &["merge-base", "--is-ancestor", &onto, "HEAD"],
@@ -283,10 +284,11 @@ fn start(
     if !rebased.ok() {
         return Ok(stopped_said(piece, here, &rebased.err, say));
     }
-    let moved = fresh
-        .moved_to
-        .map(|up| format!(" ({base} brought up to {up})"))
-        .unwrap_or_default();
+    let moved = match (&fresh.moved_to, onto.strip_prefix("refs/remotes/")) {
+        (Some(up), _) => format!(" ({base} brought up to {up})"),
+        (None, Some(up)) => format!(" (as {up} has it)"),
+        (None, None) => String::new(),
+    };
     say(Say::Done(format!(
         "{repo} · {name_} is rebased onto {base}{moved}"
     )));

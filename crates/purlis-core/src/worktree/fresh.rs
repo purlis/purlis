@@ -26,6 +26,10 @@ pub struct Fresh {
     /// The remote-tracking branch the base was moved up to, as git names it short
     /// (`origin/main`), where it was moved.
     pub moved_to: Option<String>,
+    /// The remote-tracking branch to start from in its place (`refs/remotes/origin/main`),
+    /// where the base is behind it and could not be moved: checked out in a worktree, whose
+    /// files would be left behind its commit.
+    pub instead: Option<String>,
     /// What the person should know: the base is behind its remote and was left where it is.
     pub notes: Vec<String>,
 }
@@ -74,6 +78,7 @@ pub fn bring_up(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
             if ahead.code != Some(0) {
                 return Ok(Fresh {
                     moved_to: None,
+                    instead: None,
                     notes: vec![format!(
                         "{branch} and {short} have each moved on, so {branch} is used as the \
                          clone has it"
@@ -95,9 +100,11 @@ pub fn bring_up(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
     if let Some(tree) = checked_out_in(clone, branch)? {
         return Ok(Fresh {
             moved_to: None,
+            instead: Some(upstream.clone()),
             notes: vec![format!(
-                "{branch} is behind {short} and checked out in {}, so purlis left it where it \
-                 is and used it as the clone has it. `purlis sync` brings the clone up to date",
+                "{branch} is checked out in {} and behind {short}, so purlis left it where it \
+                 is and used {short}. Until the clone is brought up (`purlis sync`), the \
+                 piece's Changes count {short}'s newer commits too",
                 tree.display()
             )],
         });
@@ -118,6 +125,7 @@ pub fn bring_up(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
     if !moved.ok() {
         return Ok(Fresh {
             moved_to: None,
+            instead: None,
             notes: vec![format!(
                 "{branch} is behind {short} and git did not move it ({}), so it is used as the \
                  clone has it",
@@ -127,6 +135,7 @@ pub fn bring_up(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
     }
     Ok(Fresh {
         moved_to: Some(short),
+        instead: None,
         notes: Vec::new(),
     })
 }
