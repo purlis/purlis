@@ -1452,6 +1452,9 @@ fn walk_line(
     let mut exports_taken = 0usize;
     // Where the shell stays if a `cd … &&` failed: back in play once the `&&` chain ends.
     let mut left_behind = Whereabouts::default();
+    // A certain `cd` joined by `&&` left the start behind; where its chain ends without the
+    // line ending, the start is in play again, and the denial says how to keep it out.
+    let mut behind = false;
     // A certain `cd` not joined by `&&` came before: what the denial's hint is for (#1326).
     let mut loose_cd = outer.loose_cd;
     let context = CdContext::of(cmd).with(outer.context.as_ref());
@@ -1519,6 +1522,7 @@ fn walk_line(
             let piped = matches!(seg.before.as_deref(), Some("|" | "|&"));
             if cd.certain && !context.redefined && !piped && seg.after.as_deref() == Some("&&") {
                 left_behind.merge(std::mem::replace(&mut here, moved));
+                behind = true;
             } else {
                 // Only a `cd` that `&&` would have made certain gets the hint: one the line
                 // redefined, or one in a pipeline, stays uncertain whatever joins it.
@@ -1757,6 +1761,7 @@ fn walk_line(
         }
         if !matches!(seg.after.as_deref(), Some("&&" | "|" | "|&")) {
             here.merge(std::mem::take(&mut left_behind));
+            loose_cd |= std::mem::take(&mut behind) && seg.after.is_some();
         }
         if !seg.argv.is_empty() && seg.argv.iter().all(|t| shellwrap::is_env_assignment(t)) {
             for assign in &seg.argv {
