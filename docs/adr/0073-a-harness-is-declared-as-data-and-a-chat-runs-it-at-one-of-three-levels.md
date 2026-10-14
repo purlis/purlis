@@ -389,6 +389,48 @@ The code does not change with this record.
 - **Shipping the ACP adapter programs with purlis.** X34 rules it out, and they are Node or Rust
   programs that trail their harnesses.
 
+## Amended 2026-10-14: a declaration describes the profiles of its harness (#2031)
+
+The profiles spec (#2030), from the operator's rulings of 2026-10-14, makes a profile one
+identity of a harness: its settings, its sign-in and its conversations. Each declaration, built-in
+or a project's, now says four facts about the profiles of its harness, in the same file and under
+the same refusals:
+
+- **`[sign_in] kinds`**: the kinds of sign-in it supports, from `subscription` (a plan signed in
+  through the harness's own flow, which the harness keeps and purlis never reads, copies, stores
+  or relays), `api-key`, `cloud` and `local`. None listed: none is offered.
+- **`[sign_in] kept_from_commands`**: whether its credential files can be kept from the commands
+  it runs. It is answered as a capability is (§6): `"yes"`, `"no: <the reason>"` or `"unknown"`,
+  and silence is unknown, which reads as no.
+- **`[folders] config`** and **`[folders] data`**: the variables purlis sets to a profile's folder,
+  each one variable's whole name under §5's refusals, and for a harness purlis does not ship one in
+  its own `env` namespace. None declared: purlis sets none.
+- **`[conversation]`**: how a conversation leaves a device and comes back, for a chat that moves.
+  `moved_by = "file"` copies `file`, a path under `{config}/` or `{data}/` with `*` for a part that
+  varies and `{id}` for the session, and `with_forked_from` brings the session it was forked from
+  too. `moved_by = "export"` runs the harness's own `export` words, which print session `{id}`,
+  and its `import` words, which take that file. Their words take §5's shapes. The session then
+  resumes by `[session] resume`. Absent: the conversation does not move.
+
+The built-ins declare all four. Claude Code supports `subscription`, `api-key` and `cloud`, keeps
+its credentials from its commands (its commands run in a sandbox of its own, which purlis compiles,
+ADR 0067), sets `CLAUDE_CONFIG_DIR`, and moves a transcript by its path. Codex supports all four
+kinds, sets `CODEX_HOME`, and moves its session file and the one it was forked from. opencode
+supports all four kinds (a Claude plan never, #2039), sets `OPENCODE_CONFIG_DIR` and
+`XDG_DATA_HOME`, and moves a conversation by its own export and import. Codex and opencode answer
+`kept_from_commands` no: purlis wraps each with its commands in one sandbox.
+
+A local replacement of a built-in's facts (#968) keeps these four as the built-in's: they are how
+purlis runs a harness it ships. `purlis profile list` shows each profile's sign-in kind: every chat
+today signs in through its harness's own flow, so it is `subscription` where the harness supports
+one, the one kind where it supports one alone, and `unknown` otherwise.
+
+**To be confirmed.** The rulings and the spec name the four facts and the four sign-in kinds; the
+key names (`[sign_in] kinds`, `kept_from_commands`, `[folders] config` and `data`,
+`[conversation] moved_by`, `file`, `with_forked_from`, `export`, `import`) and the words
+`api-key` and `moved_by` were chosen in implementation (D-2031-1 to D-2031-4) and wait for the
+operator's confirmation.
+
 ## Ruled (V24, 2026-09-30)
 
 1. **A chat in a tab starts in its terminal**: level 2, or level 1 without an adapter, even when

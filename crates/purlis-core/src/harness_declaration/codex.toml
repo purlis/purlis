@@ -29,6 +29,21 @@ terminal = true
 # charter's hooks on its own `-c hooks.<Event>=` session flags.
 hooks = true
 
+[sign_in]
+# A ChatGPT plan through `codex login`; an OpenAI key; Azure; a local model with `--oss`.
+kinds = ["subscription", "api-key", "cloud", "local"]
+kept_from_commands = "no: purlis wraps Codex and the commands it runs in one sandbox"
+
+[folders]
+# `CODEX_HOME`: its settings, its sign-in and its sessions.
+config = "CODEX_HOME"
+
+[conversation]
+# One session file per session, by date; a forked session needs the file it was forked from.
+moved_by = "file"
+file = "{config}/sessions/*/*/*/rollout-*-{id}.jsonl"
+with_forked_from = true
+
 [capabilities]
 reports_its_process = "no: Codex names no variable for the process a hook runs under"
 reports_its_start_before_the_first_prompt = "no: Codex reports its start inside the first turn"
