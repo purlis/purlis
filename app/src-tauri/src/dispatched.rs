@@ -1546,10 +1546,61 @@ pub fn heard(held: &Held, report: &Report) {
     reopen_settled(held, report.chat, false);
     match report.event {
         Event::UserPromptSubmit => held.tasks().ledger().turn_began(report.chat),
-        Event::Stop => held.tasks().ledger().turn_ended(report.chat),
+        Event::Stop => {
+            held.tasks().ledger().turn_ended(report.chat);
+            // The chat's own turn, and not one its helpers keep going (#1981).
+            if report.agent.is_none() && !report.detail.helpers_at_work {
+                owing(held, report.chat);
+            }
+        }
         _ => {}
     }
     moved(held, report.chat);
+}
+
+/// **What chat `output.chat`'s turn put out** (#1981), heard on its own line before the turn's
+/// end: kept, masked and made a report's text (`handback::last_message_summary`), for a task
+/// alone, in memory, until its next turn begins. The chat is the one the line's token is
+/// for, and the board has judged the line its adopted run's.
+pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
+    let task = held
+        .chats()
+        .handed_from(output.chat)
+        .is_some_and(|from| from.mode == Mode::Task);
+    if !task {
+        return;
+    }
+    match output.turn_output {
+        purlis_core::hookwire::Output::Final { text } => {
+            let kept = purlis_core::handback::last_message_summary(Some(&text));
+            held.tasks().ledger().said_last(output.chat, kept);
+        }
+    }
+}
+
+/// **Task `task`'s turn ended** (#1981): where it still owes its report, it is asked for it
+/// once in purlis's line, which [`moved`] types where it may; where the turn that line started
+/// ended owing too, purlis sends **a report purlis made from its last message**
+/// (`crate::handoff::made_from_last_message`). Not while its turn's end is not the end of its
+/// work: a task of its own still owes a report, it is paused on a question to the chat that
+/// asked, or a stop or a cancel of it is under way, which asks for its report itself.
+fn owing(held: &Held, task: u32) {
+    let Some(from) = held.chats().handed_from(task) else {
+        return;
+    };
+    if from.mode != Mode::Task {
+        return;
+    }
+    let owes = from.report == Owed::Due;
+    let waits = owes
+        && (held.stopping().is_stopping(task)
+            || held.stopping().is_cancelling(task)
+            || asks_its_asker(held, task)
+            || !crate::handoff::owing_below(held, task).is_empty());
+    let owing = held.tasks().ledger().turn_ended_owing(task, owes, waits);
+    if let dispatched::Owing::Make { last } = owing {
+        crate::handoff::made_from_last_message(held, task, last.as_deref());
+    }
 }
 
 /// Chat `chat` moved: its turn ended, a prompt of its was answered, or its program ended.

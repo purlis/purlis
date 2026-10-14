@@ -173,6 +173,9 @@ pub enum HowFailed {
     Unreported,
     /// It was asked for and never started.
     DidNotStart,
+    /// Its turns ended without a report, and purlis sent its last message in its place
+    /// (#1981).
+    LastMessage,
 }
 
 impl From<purlis_core::state::FailedTask> for Need {
@@ -186,6 +189,7 @@ impl From<purlis_core::state::FailedTask> for Need {
                 How::Failed => HowFailed::Failed,
                 How::Unreported => HowFailed::Unreported,
                 How::DidNotStart => HowFailed::DidNotStart,
+                How::LastMessage => HowFailed::LastMessage,
             },
             why: failed.why,
         }
@@ -308,6 +312,9 @@ pub struct Hooks {
     /// after the fact, for `answering`'s reason: confining it needs the chat's folder.
     /// **Never recorded**: nothing here writes it, and the event log is not told (D-86a).
     touching: Arc<Mutex<Option<Touches>>>,
+    /// Told what a chat's turn put out (#1981), once the board has judged the line its own
+    /// run's: a slot filled after the fact, as `touching` is. **In memory only.**
+    output: Arc<Mutex<Option<Outputs>>>,
     /// What each working chat is doing, for the one line under its name (#1493). **In memory
     /// only**, as a touched path is: nothing here writes it, and the event log is not told.
     doings: Arc<crate::doing::Doings>,
@@ -1199,6 +1206,10 @@ fn without_the_sandbox(why: &str) -> (BlockOffer, Option<String>, Option<String>
 /// What is told each path a chat's file tool touched, unconfined.
 pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + 'static>;
 
+/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
+/// for a task alone ([`Hooks::when_output`]).
+pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
+
 /// The event the window is sent when a chat's file tool touches a file (FM-6).
 pub const TOUCHING: &str = "chat-touching";
 
@@ -1377,6 +1388,7 @@ impl Hooks {
             asks_told: Arc::new(Mutex::new(None)),
             doings,
             touching: Arc::new(Mutex::new(None)),
+            output: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
             throttle: Arc::default(),
@@ -1410,6 +1422,7 @@ impl Hooks {
         let asks = Arc::new(HookAsks::new(Arc::new(Asks::new())));
         let asks_told: crate::asking::Telling = Arc::new(Mutex::new(None));
         let touching: Arc<Mutex<Option<Touches>>> = Arc::new(Mutex::new(None));
+        let output: Arc<Mutex<Option<Outputs>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
@@ -1493,6 +1506,24 @@ impl Hooks {
                     }
                     if agent.is_none() {
                         doings.heard(&board, said.chat, said.doing);
+                    }
+                })
+            },
+            // What a chat's turn ended saying (#1981): handed on only where it is the run the
+            // chat adopted, and never recorded. Taken out of the lock before it runs.
+            output: {
+                let output = Arc::clone(&output);
+                let board = Arc::clone(&board);
+                Box::new(move |said| {
+                    if !held_board(&board).spoken_by(said.chat, &said.speaker) {
+                        return;
+                    }
+                    let listener = output
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .clone();
+                    if let Some(listener) = listener {
+                        listener(said);
                     }
                 })
             },
@@ -1701,6 +1732,7 @@ impl Hooks {
             asks,
             asks_told,
             touching,
+            output,
             doings,
             blocked,
             repeated,
@@ -1994,6 +2026,12 @@ impl Hooks {
     /// it: the plane confines it to the chat's folder before the window hears of it.
     pub fn when_touching(&self, touches: Touches) {
         *self.touching.lock().unwrap_or_else(PoisonError::into_inner) = Some(touches);
+    }
+
+    /// Who is told what a chat's turn put out (#1981), once the board has judged the line its
+    /// own run's.
+    pub fn when_output(&self, outputs: Outputs) {
+        *self.output.lock().unwrap_or_else(PoisonError::into_inner) = Some(outputs);
     }
 
     /// What this project's working chats are doing (#1493).

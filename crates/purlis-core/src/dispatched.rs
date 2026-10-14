@@ -482,6 +482,22 @@ pub enum Landed {
     PersonAnswered,
     /// The person answered the question this task asked the chat, which dispatched it (#1496).
     PersonAnsweredFor(u32),
+    /// This task's turn ended without its report (#1981): it is asked for it, once.
+    ReportOwed,
+}
+
+/// What the app does as a task's turn ends while it still owes its report (#1981,
+/// [`Ledger::turn_ended_owing`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Owing {
+    /// Nothing: it owes none, or its turn's end is not the end of its work.
+    Nothing,
+    /// Its turn ended owing: it is typed purlis's line asking for its report
+    /// ([`Landed::ReportOwed`]), which starts one more turn.
+    Ask,
+    /// The turn that line started ended owing too: purlis sends the chat that asked **a report
+    /// purlis made from its last message**, `last` (none where its harness said none).
+    Make { last: Option<String> },
 }
 
 #[derive(Debug, Default)]
@@ -503,6 +519,11 @@ struct Task {
     /// held, or it was showing the person a prompt), with that turn not known to be over: it
     /// is set again once that has gone.
     bound_owed: bool,
+    /// The last message its harness said a turn of its ended on (#1981), masked by the app
+    /// before it is kept. **In memory only.**
+    last: Option<String>,
+    /// It was typed purlis's line asking for its report, and has not reported since (#1981).
+    report_asked: bool,
 }
 
 /// A report the app delivered, kept so a wait can answer with it.
@@ -516,14 +537,14 @@ pub struct Kept {
 /// **Which reports end their task's program** (#1485): a task's report, of a task a chat asked
 /// for, that did not come out blocked. **A task the person started from a tab is their
 /// conversation**: it stays open until they close it. **A blocked task is waiting on
-/// something**, and its conversation is what the next step needs. And purlis's own word that
-/// the person stopped a chat is no report: the stop ends it.
+/// something**, and its conversation is what the next step needs. **Nor does a report purlis
+/// made from its last message** (#1981): the task may still send its own. And purlis's own word
+/// that the person stopped a chat is no report: the stop ends it.
 fn ends_its_task(report: &Handback) -> bool {
     report.stopped.is_none()
-        && report
-            .task
-            .as_ref()
-            .is_some_and(|said| !said.by_person && said.outcome != Outcome::Blocked)
+        && report.task.as_ref().is_some_and(|said| {
+            !said.by_person && !matches!(said.outcome, Outcome::Blocked | Outcome::LastMessage)
+        })
 }
 
 /// How far ending a task that has reported has got.
@@ -818,6 +839,10 @@ pub const A_LINE_IS_TAKEN_WITHIN: Duration = Duration::from_secs(60);
 /// The most closed tasks remembered, so a wait on one says how it ended.
 const MOST_GONE: usize = 512;
 
+/// What an outcome purlis alone says (#1981) from a chat is told.
+pub const NOT_LAST_MESSAGE: &str = "a report made from a task's last message is purlis's to \
+    send, and no task reports that outcome. Use done, blocked or failed";
+
 /// What an outcome of `cancelled` from a chat nobody cancelled is told.
 pub const NOT_CANCELLED: &str = "this task was not cancelled, and only a task its asking chat \
     cancelled reports that outcome. Use done, blocked or failed";
@@ -854,6 +879,9 @@ pub fn nudge(landed: &[Landed]) -> String {
         Landed::PersonAnsweredFor(chat) => Some(*chat),
         _ => None,
     });
+    // A task asked for its report (#1981): said after anything attached, in a sentence of its
+    // own, since nothing is attached for it.
+    let report_owed = landed.contains(&Landed::ReportOwed).then_some(REPORT_OWED);
     let mut said = Vec::new();
     match reports.as_slice() {
         [] => {}
@@ -927,8 +955,22 @@ pub fn nudge(landed: &[Landed]) -> String {
         [chat] if one => format!(" If it is not there, run `purlis dispatch wait {chat}`."),
         _ => " If one is not there, run `purlis dispatch wait <chat>` for it.".to_owned(),
     };
-    format!("purlis: {}. {attached}{otherwise}", said.join(", and "))
+    match (said.is_empty(), report_owed) {
+        (true, Some(owed)) => format!("purlis: {owed}"),
+        (false, Some(owed)) => format!(
+            "purlis: {}. {attached}{otherwise} {owed}",
+            said.join(", and ")
+        ),
+        (_, None) => format!("purlis: {}. {attached}{otherwise}", said.join(", and ")),
+    }
 }
+
+/// What a task is told as its turn ends without its report (#1981): the command, and what
+/// purlis does if the turn this starts ends without one too.
+pub const REPORT_OWED: &str = "this task's turn ended without its report. Send it now with \
+    `purlis dispatch report --outcome done|blocked|failed \"<what you did and found>\"`. If \
+    this turn ends without one too, purlis sends the chat that asked your last message as a \
+    report purlis made from your last message.";
 
 /// Whether `harness` is one purlis types a line of its own into (D-1441-13, #1981): the
 /// harnesses purlis arms a prompt hook on that hands the turn the line starts its context,
@@ -1011,7 +1053,8 @@ impl Ledger {
                 Landed::FollowUp
                 | Landed::Answer
                 | Landed::PersonAnswered
-                | Landed::PersonAnsweredFor(_) => true,
+                | Landed::PersonAnsweredFor(_)
+                | Landed::ReportOwed => true,
             });
         }
         self.gone.retain(|(_, gone)| gone.asker != chat);
@@ -1088,6 +1131,51 @@ impl Ledger {
         }
     }
 
+    /// Task `task`'s harness said its turn ended on `text` (#1981), masked by the app already.
+    /// Kept for a task alone, the latest only: a chat that is no task here keeps nothing.
+    pub fn said_last(&mut self, task: u32, text: String) {
+        if let Some(entry) = self.tasks.get_mut(&task) {
+            entry.last = Some(text);
+        }
+    }
+
+    /// The last message task `task`'s turn ended on, as kept ([`Self::said_last`]).
+    pub fn last_said(&self, task: u32) -> Option<&str> {
+        self.tasks
+            .get(&task)
+            .and_then(|entry| entry.last.as_deref())
+    }
+
+    /// **Task `task`'s turn ended** (#1981), and what is done about its report: `owes` says it
+    /// still owes it (the app's record, `Owed::Due`), and `waits` that its turn's end is not
+    /// the end of its work (a task of its own at work, a question to the chat that asked, a
+    /// stop or a cancel under way, helpers of its own still working).
+    ///
+    /// **Asked once, then made.** A turn that ends owing is asked for the report in purlis's
+    /// line ([`Landed::ReportOwed`]), which starts one more turn. Once that line was typed, the
+    /// next turn that ends owing gets **a report purlis made from its last message**. A line
+    /// that was never typed (the person's keys in its pane) is no ask: it is asked again.
+    pub fn turn_ended_owing(&mut self, task: u32, owes: bool, waits: bool) -> Owing {
+        let Some(entry) = self.tasks.get_mut(&task) else {
+            return Owing::Nothing;
+        };
+        if !owes {
+            entry.report_asked = false;
+            return Owing::Nothing;
+        }
+        if waits {
+            return Owing::Nothing;
+        }
+        if entry.report_asked {
+            entry.report_asked = false;
+            return Owing::Make {
+                last: entry.last.clone(),
+            };
+        }
+        self.landed(task, Landed::ReportOwed);
+        Owing::Ask
+    }
+
     /// The person typed in task `task`'s pane while it worked.
     pub fn person_typed(&mut self, task: u32) {
         self.tasks.entry(task).or_default().stepped_in = true;
@@ -1118,6 +1206,8 @@ impl Ledger {
         match (cancelled, said) {
             (true, _) => Ok(Outcome::Cancelled),
             (false, Outcome::Cancelled) => Err(NOT_CANCELLED.to_owned()),
+            // purlis's word alone (#1981): no line a chat sends can say it of itself.
+            (false, Outcome::LastMessage) => Err(NOT_LAST_MESSAGE.to_owned()),
             (false, said) => Ok(said),
         }
     }
@@ -1374,7 +1464,8 @@ impl Ledger {
                 Landed::FollowUp
                 | Landed::Answer
                 | Landed::PersonAnswered
-                | Landed::PersonAnsweredFor(_) => true,
+                | Landed::PersonAnsweredFor(_)
+                | Landed::ReportOwed => true,
             });
         }
         report.into_iter().chain(question).collect()
@@ -1530,6 +1621,10 @@ impl Ledger {
                 entry.end = Some(End::Reported);
             }
         }
+        // What the last turn ended saying is not this turn's (#1981).
+        if let Some(entry) = self.tasks.get_mut(&chat) {
+            entry.last = None;
+        }
         self.landed.remove(&chat);
         self.typed.remove(&chat);
         self.keyed.remove(&chat);
@@ -1576,7 +1671,14 @@ impl Ledger {
         if !seen.takes_a_line() || self.keyed.contains(&chat) {
             return Vec::new();
         }
-        self.landed.remove(&chat).unwrap_or_default()
+        let landed = self.landed.remove(&chat).unwrap_or_default();
+        // The line asks a task for its report (#1981): the turn it starts is its last chance.
+        if landed.contains(&Landed::ReportOwed)
+            && let Some(entry) = self.tasks.get_mut(&chat)
+        {
+            entry.report_asked = true;
+        }
+        landed
     }
 }
 
@@ -2160,6 +2262,92 @@ mod tests {
             "purlis: a task this chat dispatched has reported (chat 9), and the chat that asked \
              for this task has sent it messages. They are attached to this turn as context, \
              quoted as data. If one is not there, run `purlis dispatch wait <chat>` for it."
+        );
+    }
+
+    // ----- a turn that ends without a report (#1981) -----------------------------------------
+
+    #[test]
+    fn a_task_s_turn_that_ends_owing_its_report_asks_for_it_once_then_makes_it() {
+        let mut ledger = Ledger::default();
+        ledger.started(TASK, SystemTime::now());
+        ledger.said_last(TASK, "First turn.".to_owned());
+        // Its first turn ends owing: it is asked, in purlis's line, at its next chance.
+        assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+        assert_eq!(ledger.nudge_step(TASK, WAITING), vec![Landed::ReportOwed]);
+        // The turn that line started ends owing too: its last message is its report.
+        ledger.said_last(TASK, "All three checks pass.".to_owned());
+        assert_eq!(
+            ledger.turn_ended_owing(TASK, true, false),
+            Owing::Make {
+                last: Some("All three checks pass.".to_owned())
+            }
+        );
+        // Made once: the next turn is asked again, from the start.
+        assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+    }
+
+    #[test]
+    fn no_task_can_say_its_report_was_made_from_its_last_message() {
+        let mut ledger = Ledger::default();
+        ledger.started(TASK, SystemTime::now());
+        assert_eq!(
+            ledger.outcome_for(TASK, Outcome::LastMessage),
+            Err(NOT_LAST_MESSAGE.to_owned())
+        );
+    }
+
+    #[test]
+    fn a_task_that_reported_or_waits_on_something_is_not_asked() {
+        let mut ledger = Ledger::default();
+        ledger.started(TASK, SystemTime::now());
+        // It reported: nothing is owed.
+        assert_eq!(ledger.turn_ended_owing(TASK, false, false), Owing::Nothing);
+        // It waits on a task of its own, on an answer from the chat that asked, on a stop or a
+        // cancel, or on helpers still at work: its turn's end is not the end of its work.
+        assert_eq!(ledger.turn_ended_owing(TASK, true, true), Owing::Nothing);
+        assert_eq!(ledger.nudge_step(TASK, WAITING), Vec::new());
+        // A line that was never typed is no ask: the next end asks again, and makes nothing.
+        assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+        assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+        // A chat that is no task of the ledger's keeps no message at all.
+        ledger.said_last(42, "Not a task.".to_owned());
+        assert_eq!(ledger.last_said(42), None);
+    }
+
+    #[test]
+    fn a_report_that_lands_after_the_ask_clears_it() {
+        let mut ledger = Ledger::default();
+        ledger.started(TASK, SystemTime::now());
+        assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+        assert_eq!(ledger.nudge_step(TASK, WAITING), vec![Landed::ReportOwed]);
+        // It reported in the turn the line started.
+        assert_eq!(ledger.turn_ended_owing(TASK, false, false), Owing::Nothing);
+        // Taken up again and owing once more, it is asked before anything is made.
+        assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+    }
+
+    #[test]
+    fn the_line_that_asks_for_a_report_says_the_command_and_what_follows() {
+        assert_eq!(
+            nudge(&[Landed::ReportOwed]),
+            "purlis: this task's turn ended without its report. Send it now with `purlis \
+             dispatch report --outcome done|blocked|failed \"<what you did and found>\"`. If \
+             this turn ends without one too, purlis sends the chat that asked your last message \
+             as a report purlis made from your last message."
+        );
+        // Beside a message from the chat that asked, both are said, the message first.
+        let both = nudge(&[Landed::FollowUp, Landed::ReportOwed]);
+        assert!(
+            both.starts_with(
+                "purlis: the chat that asked for this task has sent it a message. It is \
+                 attached to this turn as context, quoted as data."
+            ),
+            "{both}"
+        );
+        assert!(
+            both.ends_with("as a report purlis made from your last message."),
+            "{both}"
         );
     }
 

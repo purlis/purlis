@@ -4525,7 +4525,12 @@ export type How = "done" | "cancelled" | "blocked" | "failed" |
 /**  purlis stopped it with the task above it, at that task's time limit (#1512). */
 "stopped_with_above" | 
 /**  purlis stopped it because its session reached its token limit (#1512, #1457). */
-"stopped_at_token_limit";
+"stopped_at_token_limit" | 
+/**
+ *  Its turns ended without a report, and purlis sent its last message in its place
+ *  (#1981).
+ */
+"last_message";
 
 /**  How a task came to nothing (`purlis_core::state::HowFailed`), as the window is sent it. */
 export type HowFailed = 
@@ -4534,7 +4539,12 @@ export type HowFailed =
 /**  Its program ended while it still owed its report. */
 "unreported" | 
 /**  It was asked for and never started. */
-"did_not_start";
+"did_not_start" | 
+/**
+ *  Its turns ended without a report, and purlis sent its last message in its place
+ *  (#1981).
+ */
+"last_message";
 
 /**  Where one of a vault's identity variables is read from now (#237). */
 export type IdentityHeld = 

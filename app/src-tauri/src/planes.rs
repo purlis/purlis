@@ -2573,6 +2573,16 @@ impl Planes {
                 }
             })
         });
+        // What a chat's turn ended saying (#1981): kept for a task alone, in memory. Weak for
+        // the handoff's reason.
+        held.hooks.when_output({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |output| {
+                if let Some(held) = held.upgrade() {
+                    crate::dispatched::said(&held, output);
+                }
+            })
+        });
         held.hooks.when_saved({
             let held = Arc::downgrade(&held);
             Arc::new(move |saved| {

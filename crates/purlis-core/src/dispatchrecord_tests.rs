@@ -1756,6 +1756,19 @@ fn a_task_the_person_ended_says_which_way_in_words_of_its_own_and_never_folds() 
         )
     );
 
+    // #1981: a report purlis made from its last message says so, and stays a row of its own.
+    let (made, record) = ended_as(Outcome::LastMessage, "All pass.", None, None);
+    assert_eq!(
+        (made.word(), made.key(), made.folds()),
+        (
+            "a report purlis made from its last message",
+            "last_message",
+            false
+        )
+    );
+    let text = serde_json::to_string(&record).unwrap();
+    assert!(text.contains(r#""outcome":"last_message""#), "{text}");
+
     // A cancel its asking chat asked for stays a cancel, and folds.
     let (cancelled, _) = ended_as(Outcome::Cancelled, "Stopped half way.", None, None);
     assert_eq!((cancelled.word(), cancelled.folds()), ("cancelled", true));

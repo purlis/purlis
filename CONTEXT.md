@@ -615,12 +615,15 @@ session's or a handoff's)
 
 **Outcome** (of a task the asking chat is told of):
 How a task ended, in purlis's own words to the chat that asked. Beside a report's own outcome
-(done, blocked, failed, cancelled) there are three that are never a task's to say: **stopped by
+(done, blocked, failed, cancelled) there are four that are never a task's to say: **stopped by
 the person** (with the task's short report, quoted as data), **closed by the person** (no
-report), and **ended without a report** (its program ended by itself). The first two carry one
-fixed sentence telling the asking chat not to dispatch the task again unless the person asks.
-The window says the same two ends to the person as "stopped by you" and "closed by you". In
-counts they are done with, never failed.
+report), **ended without a report** (its program ended by itself), and **a report purlis made
+from its last message** (its turns ended without a report after it was asked once: what it
+last said, quoted as data; a report of its own later still reaches the chat that asked). The
+first two carry one fixed sentence telling the asking chat not to dispatch the task again
+unless the person asks. The window says the same two ends to the person as "stopped by you"
+and "closed by you". In counts they are done with, never failed; a report purlis made from its
+last message counts with failed, for the person to read.
 _Avoid_: killed, aborted, cancelled (for a stop by the person: a cancel is the asking chat's)
 
 **Helper** (of a chat):

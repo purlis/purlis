@@ -76,7 +76,8 @@ shows who exists.
   person's work moves to a chat they will read themselves. So "dispatch to
   devops" is `purlis dispatch --to devops`, never `purlis handoff --persona devops`.
   `purlis dispatch list` shows this chat's tasks, and `wait`, `tell`, `answer` and `cancel`
-  work on one.
+  work on one. A `tell` to a task at rest starts its turn at once; one mid-turn reads it when
+  that turn ends.
 
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works:
@@ -89,7 +90,9 @@ shows who exists.
 
   Ask only what the brief cannot answer, and never guess past a question you asked: if the
   wait runs out, end the turn, and the answer is handed to the next one. The report ends the
-  task.
+  task. A turn that ends without one is asked for it once; if the next turn ends without one
+  too, purlis sends your last message in its place, marked as **a report purlis made from its
+  last message**. Send the report yourself.
 
 - **Partial or ambiguous match:** name the persona you would use and ask before dispatching.
 - **No persona fits:** say so. Offer to create one only when the domain is large enough to

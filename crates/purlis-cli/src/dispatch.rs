@@ -43,6 +43,11 @@
 //! for it. Whether that chat is this chat's task is the app's record, never anything said here
 //! ([`purlis_core::dispatched`]).
 //!
+//! **A task always reports back** (#1981): a task whose turn ends without its report is asked
+//! for it once, in purlis's own line, and a turn that then ends without one too gets **a report
+//! purlis made from its last message**, sent by the app in its place. A `tell` to a task at rest
+//! starts its turn at once. Both are the app's ([`purlis_core::dispatched::Ledger`]).
+//!
 //! **Messages** (#1442): `tell` and `answer` go down, to a task this chat dispatched; `note`
 //! and `ask` go up, and name nobody, because the chat they go to is the one the app recorded as
 //! this chat's asker. Each is one ask with no ticket. Who may send to whom, the limit a minute
@@ -83,7 +88,9 @@ const HEREDOC: &str = "Pass the brief as a quoted heredoc in the same call:\n  p
 pub enum DispatchCommand {
     /// Send this task's one report back to the chat that dispatched it: how it ended, what
     /// you did and found, and what changed. Write your session record first; purlis adds its
-    /// path. The chat that asked reads the report on its next turn.
+    /// path. The chat that asked reads the report on its next turn. A turn that ends without
+    /// one is asked for it once; if the next turn ends without one too, purlis sends your last
+    /// message in its place, marked as a report purlis made from its last message.
     Report {
         /// What you did and what you found, in a few lines.
         text: String,

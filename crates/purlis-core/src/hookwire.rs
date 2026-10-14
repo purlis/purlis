@@ -1897,6 +1897,8 @@ enum Line {
     Blocked(SandboxBlocked),
     /// After every other kind: it requires `doing`, which none of them carries.
     Doing(Doing),
+    /// After every other kind: it requires `turn_output`, which none of them carries.
+    Output(TurnOutput),
     /// After every other kind: it requires `secret_exec`, which none of them carries. Held on
     /// its connection for as long as the command runs (#1407).
     SecretExec(crate::secrets::brokered::Ask),
@@ -1939,6 +1941,7 @@ impl Line {
             Self::Touching(touching) => touching.chat,
             Self::Blocked(blocked) => blocked.chat,
             Self::Doing(doing) => doing.chat,
+            Self::Output(output) => output.chat,
             Self::SecretExec(ask) => ask.chat,
             Self::Frames(hello) => hello.chat,
         }
@@ -2164,6 +2167,69 @@ pub struct Doing {
 /// What hears a [`Doing`]. Nothing is answered: the hook does not wait for it.
 pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 
+/// What a chat's turn ended saying (#1981): the harness's own last message of the turn, as its
+/// `Stop` hook is handed it. What a task that ended its turns without a report is reported
+/// from, as **a report purlis made from its last message**.
+///
+/// **Never recorded, anywhere**, as a [`Doing`] is not: a line of its own, sent once and never
+/// spooled ([`tell_turn_output`]), which the host keeps in memory, for a task alone, until its
+/// report is settled or its chat closes. The text is the chat's own words: the host masks what
+/// looks like a credential before it keeps any of it, and hands it on only quoted as data.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TurnOutput {
+    /// The app's number for the chat the hook ran in, from [`CHAT_ENV`].
+    pub chat: u32,
+    /// What it said.
+    pub turn_output: Output,
+    /// The harness run the hook ran under (#1601), judged against the run the chat adopted: a
+    /// harness nested in the chat says nothing for it.
+    #[serde(default, skip_serializing_if = "Speaker::is_no_one")]
+    pub speaker: Speaker,
+}
+
+/// One thing a chat's turn put out ([`TurnOutput`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "is", rename_all = "snake_case")]
+pub enum Output {
+    /// The last message of a turn that has ended.
+    Final {
+        /// The message, cut to [`Output::MOST_BYTES`] by the hook.
+        text: String,
+    },
+}
+
+impl Output {
+    /// The most bytes of a message the hook sends: a report's text is far shorter, and what is
+    /// kept is cut again to it.
+    pub const MOST_BYTES: usize = 16 * 1024;
+
+    /// The last message `text` of a turn, cut on a character to [`Self::MOST_BYTES`], or none
+    /// for one with nothing in it.
+    pub fn last_message(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let mut end = text.len().min(Self::MOST_BYTES);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        Some(Self::Final {
+            text: text[..end].to_owned(),
+        })
+    }
+
+    /// The last message a `Stop` hook's `payload` hands it, where the harness hands one: Claude
+    /// Code's and Codex's `last_assistant_message`, which purlis's opencode plugin sends too.
+    pub fn of_stop(payload: &str) -> Option<Self> {
+        let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
+        Self::last_message(read.get("last_assistant_message")?.as_str()?)
+    }
+}
+
+/// What hears a [`TurnOutput`]. Nothing is answered: the hook does not wait for it.
+pub type OutputHeard = Box<dyn Fn(TurnOutput) + Send + Sync + 'static>;
+
 /// A chat's sandbox blocked an operation (#1338): what the window shows as a notice on the
 /// chat's tab, and what `purlis doctor` counts.
 ///
@@ -2244,6 +2310,8 @@ pub struct Hearing {
     pub blocked: Blocked,
     /// Every [`Doing`].
     pub doing: DoingHeard,
+    /// Every [`TurnOutput`].
+    pub output: OutputHeard,
     /// Every brokered `secret exec`: held on its connection while the command runs.
     pub secret_exec: SecretExecuting,
 }
@@ -2315,6 +2383,19 @@ pub fn tell_doing(
     doing: &Doing,
 ) -> io::Result<()> {
     one_line_with_a_deadline(path, token, doing)
+}
+
+/// Tells the app at `path` what its chat's turn put out (#1981). Answers whether it was written.
+///
+/// [`tell`]'s shape and deadline, and **never spooled**, as a [`Doing`] is not: a spool is a
+/// file the chat's words would then be in.
+#[cfg(unix)]
+pub fn tell_turn_output(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    output: &TurnOutput,
+) -> io::Result<()> {
+    one_line_with_a_deadline(path, token, output)
 }
 
 /// Tells the app at `path` its chat's sandbox blocked an operation (#1338). Answers whether it
@@ -2866,6 +2947,7 @@ impl Listener {
             permission: Box::new(|_| None),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             secret_exec: Box::new(|_, _, writer| {
                 crate::secrets::brokered::not_answered(writer);
@@ -3389,6 +3471,7 @@ fn serve(
             Line::Touching(touching) => (hearing.touching)(touching),
             Line::Blocked(blocked) => (hearing.blocked)(blocked),
             Line::Doing(doing) => (hearing.doing)(doing),
+            Line::Output(output) => (hearing.output)(output),
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -3656,7 +3739,8 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
         | Line::Saved(_)
         | Line::Touching(_)
         | Line::Blocked(_)
-        | Line::Doing(_) => return,
+        | Line::Doing(_)
+        | Line::Output(_) => return,
     };
     if let Ok(mut said) = said {
         said.push(b'\n');
@@ -7179,6 +7263,7 @@ mod tests {
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             each: Box::new(|_| panic!("no report was sent")),
             answer: Box::new(|_, _| panic!("no ask was sent")),
@@ -7240,6 +7325,7 @@ mod tests {
             tool: Box::new(|_| panic!("no tool call was sent")),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(move |touching| tx.lock().unwrap().send(touching).unwrap()),
             permission: Box::new(|_| None),
         });
@@ -7254,6 +7340,66 @@ mod tests {
                 .is_err(),
             "the line without the chat's token was dropped"
         );
+    }
+
+    #[test]
+    fn what_a_turn_ended_saying_is_its_own_line_and_no_other_line_reads_as_it() {
+        // #1981: the last message a task's turn ended on, for a report purlis makes from it.
+        let output = TurnOutput {
+            chat: 4,
+            turn_output: Output::last_message("  Done: 3 files.\n").expect("a message"),
+            speaker: Speaker::default(),
+        };
+        let line = serde_json::to_string(&output).unwrap();
+        assert_eq!(
+            line,
+            r#"{"chat":4,"turn_output":{"is":"final","text":"Done: 3 files."}}"#
+        );
+        assert!(
+            matches!(serde_json::from_str::<Line>(&line), Ok(Line::Output(read)) if read == output),
+            "{line}"
+        );
+        for other in [
+            r#"{"chat":4,"event":"stop"}"#.to_owned(),
+            r#"{"chat":4,"doing":{"is":"began","kind":"command","name":"cargo"}}"#.to_owned(),
+            // A kind this build does not know is no line at all.
+            r#"{"chat":4,"turn_output":{"is":"screen","text":"x"}}"#.to_owned(),
+            r#"{"chat":4,"turn_output":"x"}"#.to_owned(),
+        ] {
+            assert!(
+                !matches!(serde_json::from_str::<Line>(&other), Ok(Line::Output(_))),
+                "no other line reads as this one: {other}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stop_s_last_message_is_read_from_the_payload_the_harness_hands_its_hook() {
+        assert_eq!(
+            Output::of_stop(CLAUDE_STOP),
+            Some(Output::Final {
+                text: "pong".to_owned()
+            })
+        );
+        for none in [
+            r#"{"hook_event_name":"Stop"}"#,
+            r#"{"last_assistant_message":null}"#,
+            r#"{"last_assistant_message":"   "}"#,
+            "not json",
+        ] {
+            assert_eq!(Output::of_stop(none), None, "{none}");
+        }
+    }
+
+    #[test]
+    fn a_turn_s_last_message_is_cut_on_a_character_and_an_empty_one_is_none() {
+        assert_eq!(Output::last_message(" \n\t"), None);
+        let long = "é".repeat(Output::MOST_BYTES);
+        let Some(Output::Final { text }) = Output::last_message(&long) else {
+            panic!("a message");
+        };
+        assert!(text.len() <= Output::MOST_BYTES);
+        assert!(text.chars().all(|c| c == 'é'));
     }
 
     #[test]
@@ -7323,6 +7469,7 @@ mod tests {
             touching: Box::new(|_| panic!("no file was touched")),
             blocked: Box::new(|_| panic!("nothing was blocked")),
             doing: Box::new(move |doing| tx.lock().unwrap().send(doing).unwrap()),
+            output: Box::new(|_| panic!("no turn's output was sent")),
             permission: Box::new(|_| None),
         });
         // Forged, with every field set: no token, a token nobody was issued, another chat's
@@ -7421,6 +7568,7 @@ mod tests {
             refused: Box::new(|_| panic!("no commit was refused")),
             tool: Box::new(|_| panic!("no tool call was sent")),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| panic!("no file was touched")),
             blocked: Box::new(move |blocked| tx.lock().unwrap().send(blocked).unwrap()),
             permission: Box::new(|_| None),
@@ -7501,6 +7649,7 @@ mod tests {
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             each: Box::new(|_| panic!("no report was sent")),
             answer: Box::new(|_, _| panic!("no ask was sent")),

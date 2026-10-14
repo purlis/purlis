@@ -70,6 +70,7 @@ fn host() -> Host {
         tool: Box::new(|_| Ok(())),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         permission: held_in(Arc::clone(&hooks), Arc::new(|| {})),
     });

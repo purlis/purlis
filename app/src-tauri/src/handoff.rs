@@ -606,6 +606,8 @@ fn report_under(
         handback::Outcome::Cancelled | handback::Outcome::Done => {
             purlis_core::dispatchrecord::Outcome::Done
         }
+        // purlis's word alone (#1981), refused from a chat by `outcome_for` before here.
+        handback::Outcome::LastMessage => purlis_core::dispatchrecord::Outcome::LastMessage,
     };
     // What it says changed is kept on the record with the report's text (#1452).
     let changed = task.as_ref().and_then(|task| task.changed.clone());
@@ -854,6 +856,9 @@ fn came_to_nothing(
     let task = task?;
     let (how, why) = if task.unreported {
         (HowFailed::Unreported, "")
+    } else if task.outcome == Outcome::LastMessage {
+        // The person reads what it said: purlis sent it, and the task did not (#1981).
+        (HowFailed::LastMessage, "")
     } else if matches!(task.outcome, Outcome::Failed | Outcome::Blocked) {
         (HowFailed::Failed, summary)
     } else {
@@ -938,6 +943,79 @@ pub fn unreported(held: &Held, chat: u32, _deciding: &Deciding<'_>) {
             "purlis: chat {chat} {text}, and its asking chat could not be told yet ({why})"
         ),
     }
+}
+
+/// **A report purlis made from its last message** (#1981): task `chat` ended a turn without its
+/// report, was asked for it once in purlis's line, and ended the turn that line started without
+/// one too. What it last said, `last` (masked and made a report's text already,
+/// `handback::last_message_summary`), goes to the chat that asked in its place, under purlis's
+/// heading that names it as that and quotes it as data, and the person is shown it on the chat
+/// that asked.
+///
+/// **It settles nothing for good.** The task is left owing one more report (`Owed::Again`,
+/// #1768): a report of its own later reaches the chat that asked too, and takes this one's
+/// place on its record. Nor is its program ended: a task purlis reported for in its place is
+/// not one to end (`dispatched::ends_its_task`).
+///
+/// Under the lock a report is taken under, so the task's own report and this are one or the
+/// other: one that landed first leaves nothing owed here. Not while the person is stopping it
+/// or its asking chat is cancelling it: each asks for its report itself.
+pub fn made_from_last_message(held: &Held, chat: u32, last: Option<&str>) {
+    use purlis_core::handback;
+
+    let deciding = held.chats().deciding();
+    let Some(from) = held.chats().owed_task_report(chat) else {
+        return;
+    };
+    if held.stopping().is_stopping(chat) || held.stopping().is_cancelling(chat) {
+        return;
+    }
+    let text = last.map_or_else(|| handback::NOTHING_SAID.to_owned(), str::to_owned);
+    let record = crate::restored::its_session_record(held, chat)
+        .and_then(|path| handback::record_path(&path));
+    let task = handback::Task::from_last_message(
+        record,
+        from.by_person,
+        crate::dispatched::stepped_in(held, chat),
+    )
+    .on_branch(crate::dispatches::branch_of(held, chat));
+    match deliver(held, chat, &from, text.clone(), Some(task), None) {
+        Ok(delivered) => {
+            held.chats().owes(chat, Owed::Again);
+            crate::dispatches::reported(
+                held,
+                chat,
+                purlis_core::dispatchrecord::Outcome::LastMessage,
+                &text,
+                None,
+                None,
+                None,
+            );
+            if delivered.kept_for.is_none() {
+                held.board().reported_to_its_asker(chat);
+            } else {
+                held.needs_the_person(
+                    chat,
+                    purlis_core::state::Need::ReportUndelivered {
+                        asker: delivered.to.clone(),
+                    },
+                );
+            }
+            tracing::info!(
+                "purlis: chat {chat} ended its turns without a report, so '{}' is sent {}",
+                delivered.to,
+                handback::LAST_MESSAGE
+            );
+        }
+        Err(why) => tracing::warn!(
+            "purlis: chat {chat} ended its turns without a report, and {} could not be sent \
+             yet ({why})",
+            handback::LAST_MESSAGE
+        ),
+    }
+    // Typed only once the lock is let go, as a chat's own report is (#1441).
+    drop(deciding);
+    crate::dispatched::told_or_settled(held, from.chat);
 }
 
 /// **The operator stopped chat `chat`**: the one word for it, to the chat that asked, and the
@@ -15079,6 +15157,10 @@ mod tests {
 
     /// The chat that dispatched a task cancels it, on the person's stop machine (#1459).
     mod cancels;
+
+    /// A task whose turns end without a report is asked once, then reported for from its last
+    /// message (#1981).
+    mod reports_from_last_message;
 
     /// Limits are shown where they bind, and a session's tasks can all be stopped at once
     /// (#1498).

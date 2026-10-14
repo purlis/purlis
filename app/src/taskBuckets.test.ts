@@ -33,6 +33,7 @@ const KINDS: (ShownKind | undefined)[] = [
   "failed",
   "cancelled",
   "unreported",
+  "last-message",
   "reported",
   "idle",
   "unheard",
@@ -53,6 +54,7 @@ describe("the count of an open task", () => {
       undefined: "waiting",
       failed: "failed",
       unreported: "failed",
+      "last-message": "failed",
       done: "done",
       cancelled: "done",
       reported: "done",
@@ -67,7 +69,7 @@ describe("the count of an open task", () => {
 
 describe("the count of a finished row", () => {
   it("is failed where the task came to nothing, by the core's word for how it ended", () => {
-    for (const how of ["failed", "blocked", "unreported", "did_not_start"])
+    for (const how of ["failed", "blocked", "unreported", "did_not_start", "last_message"])
       expect(finishedBucketOf(how), how).toBe("failed");
   });
 
