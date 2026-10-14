@@ -52,11 +52,20 @@ impl HostPart {
             .env(PART, part)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::piped());
         for (name, value) in env {
             command.env(name, value);
         }
         let mut child = command.spawn().unwrap();
+        // What the host's part says on stderr, kept to say why it ended if it does.
+        let said = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let mut stderr = child.stderr.take().unwrap();
+        let keeping = said.clone();
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = stderr.read_to_string(&mut text);
+            keeping.lock().unwrap().push_str(&text);
+        });
         let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
         let started = Instant::now();
         let announcement = loop {
@@ -65,8 +74,12 @@ impl HostPart {
                 Some(Ok(line)) if line.contains("host-part ") => break line,
                 Some(Ok(_)) => {}
                 other => {
-                    let _ = child.kill();
-                    panic!("the host's part ended before it said what it started: {other:?}");
+                    let _ = child.wait();
+                    std::thread::sleep(Duration::from_millis(200));
+                    panic!(
+                        "the host's part ended before it said what it started: {other:?}\n{}",
+                        said.lock().unwrap()
+                    );
                 }
             }
             assert!(

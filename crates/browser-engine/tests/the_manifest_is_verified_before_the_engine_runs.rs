@@ -50,11 +50,7 @@ fn the_first_use_downloads_the_pinned_engine_checks_its_digest_and_runs_it_from_
         .prepare(&EngineSettings::default(), &served, at(NOW))
         .unwrap();
     assert_eq!(ready.version(), Some(VERSION));
-    assert!(
-        ready.program().starts_with(root.path()),
-        "{}",
-        ready.program().display()
-    );
+    assert!(ready.program().starts_with(root.path()));
     assert!(ready.program().ends_with("chrome-linux64/chrome"));
     let script = std::fs::read_to_string(ready.program()).unwrap();
     assert!(script.contains("pinned"));
