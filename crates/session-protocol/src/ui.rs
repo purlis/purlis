@@ -455,6 +455,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // operator's ruling P1, 2026-10-13): the person's own, explicit press and nothing else's.
     // A save and the app's own look never merge past a red check, and no link or chat may.
     "merge_save_request",
+    // The fresh look the merge's question is drawn from: it asks the forge with the person's
+    // sign-in, and merges a request whose checks all passed, as every look does.
+    "look_at_save_request",
     // Fix on a save's red pull request (the operator's ruling P2, 2026-10-13): it starts a
     // chat at once on a message purlis wrote, which nothing else in purlis does for a press.
     // The person's own press in the window, and no link's or chat's.

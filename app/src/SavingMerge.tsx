@@ -28,7 +28,13 @@ export type RequestOf = {
   /** The branch it goes into, where purlis can tell. */
   target: string | null;
   merge: SaveMerge;
+  /** A workspace repo that purlis does not save by itself: its fix reaches the request only
+   *  when the person saves the repo, and the red Notice says so. */
+  needsSave?: boolean;
 };
+
+/** What the question shows: the commit and the standing a fresh look found. */
+type Looked = { head: string; merge: SaveMerge };
 
 /** The request as a sentence names it: `pull request #12`, or the noun alone. */
 function numbered(of: RequestOf): string {
@@ -51,9 +57,13 @@ function numbered(of: RequestOf): string {
  *   button: the person's merge passes over checks and nothing else.
  * - Anything else is a note: nothing is wrong, and purlis looks again by itself.
  *
- * **Merge as it stands asks first**, naming the request, the branch it goes into and, for a
- * red one, the checks that failed, and saying purlis merges without waiting for checks. What
- * the forge or purlis then refuses is said here in their words, beside the link to the request.
+ * **Merge as it stands looks, then asks.** The press reads the request afresh
+ * (`look_at_save_request`), and the question is drawn from that look: the request, the branch
+ * it goes into and, for a red one, the checks that failed, and that purlis merges without
+ * waiting for checks. The answer hands back the commit and the standing the question showed,
+ * and the core merges only those: if the request changed meanwhile it says so, and the
+ * standing is read again. A look that finds nothing left to merge past asks nothing. What the
+ * forge or purlis refuses is said here in their words, beside the link to the request.
  *
  * A check's name and link came from whoever wrote the check. The core cuts the name, makes it
  * printable and keeps a link only when it is a plain `https://` address
@@ -61,10 +71,10 @@ function numbered(of: RequestOf): string {
  */
 export function RequestMerge(of: RequestOf) {
   const { plane, workspace, repo, name, request, pr, merge } = of;
-  /** The confirmation, while it is open. */
-  const [confirming, setConfirming] = useState(false);
+  /** The confirmation, while it is open, with what the fresh look it is drawn from found. */
+  const [confirming, setConfirming] = useState<Looked>();
   /** Which press is on its way: one at a time, and a second press sends nothing. */
-  const [busy, setBusy] = useState<"merge" | "fix">();
+  const [busy, setBusy] = useState<"look" | "merge" | "fix">();
   const sending = useRef(false);
   /** What the last press came to, when it is worth saying: a refusal, or what happened. */
   const [said, setSaid] = useState<string>();
@@ -74,20 +84,55 @@ export function RequestMerge(of: RequestOf) {
     onPress: () => void openUrl(pr).catch(() => undefined),
   };
 
-  const mergeIt = () => {
-    setConfirming(false);
+  /** Every reader of the save standing reads again. */
+  const readAgain = () => window.dispatchEvent(new CustomEvent(PLANE_SAVED));
+
+  /** The press that asks: a fresh look first, and the question only for what that look says
+   *  can still be merged past. */
+  const lookThenAsk = () => {
+    if (sending.current) return;
+    sending.current = true;
+    setBusy("look");
+    setSaid(undefined);
+    void commands
+      .lookAtSaveRequest(plane, workspace, repo)
+      .then((answer) => {
+        if (answer.status !== "ok") {
+          setSaid(`purlis could not look at the ${numbered(of)}: ${answer.error}`);
+          return;
+        }
+        const { head, merge: now } = answer.data;
+        readAgain();
+        if (head === null || now == null || now.state === "merged" || now.state === "queued")
+          setSaid(
+            `The ${numbered(of)} is no longer open for purlis to merge: it merged or was closed.`,
+          );
+        else if (now.state === "red" || (now.state === "waiting" && now.needs === "person"))
+          setConfirming({ head, merge: now });
+        else setSaid(`The ${numbered(of)} changed since purlis last looked: ${now.why}.`);
+      })
+      .catch((err: unknown) =>
+        setSaid(`purlis could not look at the ${numbered(of)}: ${String(err)}`),
+      )
+      .finally(() => {
+        sending.current = false;
+        setBusy(undefined);
+      });
+  };
+
+  const mergeIt = (shown: Looked) => {
+    setConfirming(undefined);
     if (sending.current) return;
     sending.current = true;
     setBusy("merge");
     setSaid(undefined);
     void commands
-      .mergeSaveRequest(plane, workspace, repo)
+      .mergeSaveRequest(plane, workspace, repo, shown.head, shown.merge.shown)
       .then((answer) => {
-        if (answer.status === "ok") {
-          setSaid(answer.data);
-          // Every reader of the save standing reads again: the request is gone, or queued.
-          window.dispatchEvent(new CustomEvent(PLANE_SAVED));
-        } else setSaid(`purlis did not merge the ${numbered(of)}: ${answer.error}`);
+        if (answer.status === "ok") setSaid(answer.data);
+        else setSaid(`purlis did not merge the ${numbered(of)}: ${answer.error}`);
+        // The request is gone or queued, or it changed and the core kept what it found.
+        readAgain();
       })
       .catch((err: unknown) => setSaid(`purlis did not merge the ${numbered(of)}: ${String(err)}`))
       .finally(() => {
@@ -116,14 +161,24 @@ export function RequestMerge(of: RequestOf) {
 
   const merges: NoticeAction = {
     label: "Merge as it stands…",
-    onPress: () => setConfirming(true),
-    busy: busy === "merge",
+    onPress: lookThenAsk,
+    busy: busy === "look" || busy === "merge",
   };
   const fixes: NoticeAction = { label: "Fix in a chat", onPress: fixIt, busy: busy === "fix" };
   const outcome = said !== undefined && <span className="alert-said">{said}</span>;
-  const confirm = confirming && (
-    <ConfirmMerge of={of} onMerge={mergeIt} onCancel={() => setConfirming(false)} />
+  const confirm = confirming !== undefined && (
+    <ConfirmMerge
+      of={{ ...of, merge: confirming.merge }}
+      onMerge={() => mergeIt(confirming)}
+      onCancel={() => setConfirming(undefined)}
+    />
   );
+  const nextSave =
+    repo === null
+      ? "It stays open, and the next save goes onto it."
+      : of.needsSave === true
+        ? `It stays open, and the next save of ${name} goes onto it: a fix made in its clone reaches the ${request} when you save the repo.`
+        : `It stays open, and the next save of ${name} goes onto it.`;
 
   if (merge.state === "red")
     return (
@@ -134,7 +189,7 @@ export function RequestMerge(of: RequestOf) {
           fixes={[fixes, merges]}
           link={open}
         >
-          {`The ${numbered(of)} of ${name} is red, so purlis did not merge it: ${merge.why}. It stays open, and the next save goes onto it.`}
+          {`The ${numbered(of)} of ${name} is red, so purlis did not merge it: ${merge.why}. ${nextSave}`}
           {merge.checks.length > 0 && <FailedChecks merge={merge} />}
           {outcome}
         </Notice>

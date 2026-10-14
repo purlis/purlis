@@ -241,6 +241,7 @@ macro_rules! app_commands {
                 blockedsave::open_blocked_file,
                 saving::update_project,
                 saving::merge_save_request,
+                saving::look_at_save_request,
                 savefix::fix_save_request,
                 saving::workspace_saving,
                 saving::save_repo,

@@ -85,6 +85,18 @@ const RED: SaveMerge = {
   ],
   needs: null,
   number: "#12",
+  shown: "red - e2e\u001flint",
+};
+
+/** The commit the request is at when the window looks. */
+const HEAD = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+
+/** What a fresh look finds when a third check has failed since the last one. */
+const RED_NOW: SaveMerge = {
+  ...RED,
+  why: "3 checks failed: lint, e2e, build",
+  checks: [...RED.checks, { name: "build", url: null }],
+  shown: "red - build\u001fe2e\u001flint",
 };
 
 function merge(
@@ -92,7 +104,7 @@ function merge(
   why = "its checks are still running",
   needs: string | null = null,
 ): SaveMerge {
-  return { state, why, checks: [], needs, number: "#12" };
+  return { state, why, checks: [], needs, number: "#12", shown: `${state} ${needs ?? "-"} ` };
 }
 
 describe("what a pushed save waits on (ADR 0051, amended 2026-10-13)", () => {
@@ -223,53 +235,114 @@ describe("RequestMerge", () => {
     for (const state of ["waiting", "queued", "merged"]) expect(offered(merge(state))).toEqual([]);
   });
 
-  it("asks before it merges, naming the request, its target and the failed checks, and sends the merge once", async () => {
-    const sent = commandsSent({ merge_save_request: "Merged as it stands." });
+  it("looks afresh before it asks, and the question shows what the look found, not what was kept", async () => {
+    const sent = commandsSent({
+      look_at_save_request: { head: HEAD, merge: RED_NOW },
+      merge_save_request: "Merged as it stands.",
+    });
     const saved = vi.fn();
     window.addEventListener(PLANE_SAVED, saved);
     render(request(RED));
 
     await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
-    // Nothing is sent by the press that asks.
-    expect(sent.filter((one) => one.cmd === "merge_save_request")).toEqual([]);
-    const asking = screen.getByRole("alertdialog");
+    // The press that asks looks, and merges nothing.
+    const asking = await screen.findByRole("alertdialog");
+    expect(sent).toEqual([
+      { cmd: "look_at_save_request", args: { plane: PLANE, workspace: null, repo: null } },
+    ]);
     expect(asking.textContent).toContain(
       "Merge the pull request #12 of this project as it stands?",
     );
     expect(asking.textContent).toContain(
-      "purlis merges it into main now, without waiting for its checks. 2 checks failed: lint, e2e.",
+      "purlis merges it into main now, without waiting for its checks. 3 checks failed: lint, e2e, build.",
     );
     expect(asking.textContent).toContain("There is no undo.");
     expect(
       within(within(asking).getByRole("list", { name: "Checks that failed" }))
         .getAllByRole("listitem")
         .map((li) => li.textContent),
-    ).toEqual(["lint", "e2e"]);
+    ).toEqual(["lint", "e2e", "build"]);
     // Focus starts on the way back.
     expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus();
 
     await userEvent.click(within(asking).getByRole("button", { name: "Merge as it stands" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    // The merge carries the commit and the standing the question showed, once.
     expect(sent.filter((one) => one.cmd === "merge_save_request")).toEqual([
-      { cmd: "merge_save_request", args: { plane: PLANE, workspace: null, repo: null } },
+      {
+        cmd: "merge_save_request",
+        args: { plane: PLANE, workspace: null, repo: null, head: HEAD, shown: RED_NOW.shown },
+      },
     ]);
     expect(await screen.findByText("Merged as it stands.")).toBeTruthy();
-    expect(saved).toHaveBeenCalledTimes(1);
+    expect(saved).toHaveBeenCalled();
     window.removeEventListener(PLANE_SAVED, saved);
   });
 
-  it("merges nothing when the question is cancelled", async () => {
-    const sent = commandsSent();
+  it("asks nothing when the fresh look finds nothing left to merge past", async () => {
+    // It merged by itself, or closed: no question, and the standing is read again.
+    const sent = commandsSent({ look_at_save_request: { head: null, merge: null } });
+    const saved = vi.fn();
+    window.addEventListener(PLANE_SAVED, saved);
+    const { unmount } = render(request(RED));
+    await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
+    expect(
+      await screen.findByText(
+        "The pull request #12 is no longer open for purlis to merge: it merged or was closed.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(sent.map((one) => one.cmd)).toEqual(["look_at_save_request"]);
+    expect(saved).toHaveBeenCalled();
+    unmount();
+
+    // Its checks are running again: a wait that ends by itself is not asked about.
+    commandsSent({
+      look_at_save_request: { head: HEAD, merge: merge("waiting", "its checks are still running") },
+    });
     render(request(RED));
     await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
-    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      await screen.findByText(
+        "The pull request #12 changed since purlis last looked: its checks are still running.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(sent).toEqual([]);
+    window.removeEventListener(PLANE_SAVED, saved);
   });
 
-  it("says a refusal in the forge's words, beside the link to the request", async () => {
-    const refusal = "pull request #12 was not merged: #12 conflicts with its base branch";
-    const sent = commandsSent({ merge_save_request: new Error(refusal) });
+  it("says why it could not look, and asks nothing", async () => {
+    const sent = commandsSent({ look_at_save_request: new Error("the forge did not answer") });
+    render(request(RED));
+    await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
+    expect(
+      await screen.findByText(
+        "purlis could not look at the pull request #12: the forge did not answer",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(sent.map((one) => one.cmd)).toEqual(["look_at_save_request"]);
+  });
+
+  it("merges nothing when the question is cancelled", async () => {
+    const sent = commandsSent({ look_at_save_request: { head: HEAD, merge: RED } });
+    render(request(RED));
+    await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(sent.map((one) => one.cmd)).toEqual(["look_at_save_request"]);
+  });
+
+  it("says a refusal in the core's words beside the link, and has the standing read again", async () => {
+    const refusal =
+      "The request changed since you looked (1 check failed: lint), so purlis did not merge it. Look at it again";
+    const waits = merge("waiting", "purlis could not read its checks: HTTP 502", "person");
+    const sent = commandsSent({
+      look_at_save_request: { head: HEAD, merge: waits },
+      merge_save_request: new Error(refusal),
+    });
+    const saved = vi.fn();
+    window.addEventListener(PLANE_SAVED, saved);
     render(
       request(merge("waiting", "no check has started on it", "person"), {
         workspace: "alpha",
@@ -280,21 +353,36 @@ describe("RequestMerge", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
-    const asking = screen.getByRole("alertdialog");
-    // A wait has no failed check to name, and a repo whose target purlis cannot tell says so.
+    const asking = await screen.findByRole("alertdialog");
+    // A wait has no failed check to name; the question says what the fresh look could not
+    // read, and a repo whose target purlis cannot tell says so.
     expect(asking.textContent).toContain(
-      "purlis merges it into its target branch now, without waiting for its checks. No check has passed on it: no check has started on it.",
+      "purlis merges it into its target branch now, without waiting for its checks. No check has passed on it: purlis could not read its checks: HTTP 502.",
     );
     expect(within(asking).queryByRole("list")).toBeNull();
     await userEvent.click(within(asking).getByRole("button", { name: "Merge as it stands" }));
 
-    expect(sent).toEqual([
-      { cmd: "merge_save_request", args: { plane: PLANE, workspace: "alpha", repo: "widget" } },
-    ]);
+    expect(sent.at(-1)).toEqual({
+      cmd: "merge_save_request",
+      args: { plane: PLANE, workspace: "alpha", repo: "widget", head: HEAD, shown: waits.shown },
+    });
     const line = await screen.findByRole("status");
     expect(line).toHaveAttribute("data-cause", "save-request-waits:widget");
     expect(line.textContent).toContain(`purlis did not merge the pull request #12: ${refusal}`);
     expect(screen.getByRole("button", { name: "Open the pull request" })).toBeTruthy();
+    expect(saved).toHaveBeenCalled();
+    window.removeEventListener(PLANE_SAVED, saved);
+  });
+
+  it("says a repo's fix needs a save where the repo is not saved by itself", () => {
+    const repos = { workspace: "alpha", repo: "widget", name: "widget" };
+    render(request(RED, { ...repos, needsSave: true }));
+    expect(screen.getByRole("status").textContent).toContain(
+      "It stays open, and the next save of widget goes onto it: a fix made in its clone reaches the pull request when you save the repo.",
+    );
+    cleanup();
+    render(request(RED, repos));
+    expect(screen.getByRole("status").textContent).not.toContain("when you save the repo");
   });
 
   it("starts one Fix chat for a press, and tells the project's window which", async () => {

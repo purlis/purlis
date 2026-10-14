@@ -727,6 +727,45 @@ pub fn look_caller(from: Looker) -> forge::Caller {
     }
 }
 
+/// The commit the project's open request is at and where it stands, as the clone keeps
+/// them: what a confirmation of the person's merge shows, and hands back ([`merge_as_seen`]).
+pub fn seen(root: &Path) -> Option<Seen> {
+    let (head, merge) = prsave::kept_seen(root)?;
+    Some(Seen {
+        head,
+        shown: merge?.shown(),
+    })
+}
+
+/// **The person's merge, of what they were shown** (the operator's ruling P1): the request is
+/// looked at afresh first, with every check read, and merged as it stands only when it is at
+/// the commit and in the standing the confirmation showed ([`changed_since`]). A check that
+/// failed since, or a commit pushed since, is never merged past: the refusal says it changed,
+/// and what the look found is kept for the window to draw. A request the look itself merged,
+/// because every check on it passed, is merged and nothing more is asked.
+pub fn merge_as_seen(
+    root: &Path,
+    caller: &forge::Caller,
+    seen: &Seen,
+    say: Sink,
+) -> Result<MergedAsItStands, String> {
+    let looked = look(root, caller, say)?;
+    touch(root);
+    let Some((head, now)) = prsave::kept_seen(root) else {
+        return Ok(if looked.moved {
+            MergedAsItStands::Moved
+        } else {
+            MergedAsItStands::Later(
+                "Every check on it passed, and purlis merged it as its checks stand.".into(),
+            )
+        });
+    };
+    if let Some(changed) = changed_since(seen, &head, now.as_ref()) {
+        return Err(changed);
+    }
+    merge_as_it_stands(root, caller, say)
+}
+
 /// **What the window's Fix hands a chat about the project's red pull request** (the operator's
 /// ruling P2, 2026-10-13): the request's number, and what failed on it with what each failed
 /// check found, asked of the forge as `caller`. Refused unless the last look found it red.
@@ -3168,7 +3207,7 @@ mod blockedby;
 pub mod merging;
 mod prsave;
 mod update;
-pub use merging::{MergeState, Merging};
+pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
 pub use update::{Left, Moved, Updated, update};
 

@@ -1632,7 +1632,18 @@ export const commands = {
 	 * 
 	 *  On a blocking thread: it asks the forge, and may fetch and move the project's tree.
 	 */
-	mergeSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string, string>(__TAURI_INVOKE("merge_save_request", { plane, workspace, repo })),
+	mergeSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null, head: string, shown: string) => typedError<string, string>(__TAURI_INVOKE("merge_save_request", { plane, workspace, repo, head, shown })),
+	/**
+	 *  **Look at a save's request now**, before the person is asked whether to merge it as it
+	 *  stands: every check is read afresh, so the question shows what is there and not what the
+	 *  last look kept. As every look does, it merges a request whose checks all passed.
+	 * 
+	 *  The window's alone (`WINDOW_ONLY`): it asks the forge with the person's sign-in, and may
+	 *  merge and move the project's tree.
+	 * 
+	 *  On a blocking thread: it asks the forge.
+	 */
+	lookAtSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<SaveLook, string>(__TAURI_INVOKE("look_at_save_request", { plane, workspace, repo })),
 	/**
 	 *  **Fix a save's red pull request**: the project's own, or the one of `repo` in `workspace`
 	 *  when both are named. Starts a chat on what failed, or answers the one already open for the
@@ -3089,7 +3100,12 @@ request: string;
 /**  The request's page. */
 pr: string; 
 /**  The branch it goes into, where purlis can tell. */
-target: string | null; merge: SaveMerge };
+target: string | null; 
+/**
+ *  Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
+ *  next save, so where this is off the Notice says a save is needed.
+ */
+autosave: boolean; merge: SaveMerge };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before
@@ -8197,6 +8213,18 @@ export type SaveEntry = {
 };
 
 /**
+ *  What a fresh look at a save's request found, for the question **Merge as it stands…**
+ *  asks: the commit it is at and where it stands now. The press hands `head` and
+ *  `merge.shown` back, and the merge is made only of them.
+ */
+export type SaveLook = {
+	/**  The commit the request is at; `null` when no request is open any more. */
+	head: string | null,
+	/**  Where it stands now; `null` when no request is open any more (it merged, or closed). */
+	merge: SaveMerge | null,
+};
+
+/**
  *  Where a `pr-merge` save's pull request stands with merging, as the last look at the forge
  *  found it (ADR 0051, amended 2026-10-13). Never a block: a red request stays open, and a
  *  later save pushes onto it.
@@ -8228,6 +8256,12 @@ export type SaveMerge = {
 	 *  in a number.
 	 */
 	number: string | null,
+	/**
+	 *  Where it stands, as one line that is the same for the same standing
+	 *  (`Merging::shown`): what **Merge as it stands** hands back with the commit, so that
+	 *  the merge is made only of what its question showed.
+	 */
+	shown: string,
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */

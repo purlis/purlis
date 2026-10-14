@@ -888,12 +888,14 @@ pub fn trouble(
         &open.head,
         open.pr.number,
         &open.merge.checks,
-    );
+    )
+    .map_err(|not| not.said(&request))?;
     Ok((
         open.pr.number,
         crate::savefix::red_request(
             &request,
             &open.pr.url,
+            &on_forge,
             crate::savefix::Whose::Repo {
                 workspace,
                 name: &repo.name,
@@ -901,6 +903,45 @@ pub fn trouble(
             failed,
         ),
     ))
+}
+
+/// The commit a repo's open request is at and where it stands, as its journal keeps them:
+/// the repo's half of [`planegit::seen`].
+pub fn seen(plane: &Path, workspace: &str, repo: &repos::Repo) -> Option<planegit::Seen> {
+    let open = open_request(plane, workspace, repo)?;
+    Some(planegit::Seen {
+        shown: open.merge.shown(),
+        head: open.head,
+    })
+}
+
+/// **The person's merge of a repo's request, of what they were shown**: the repo's half of
+/// [`planegit::merge_as_seen`]. A fresh look first; merged as it stands only at the commit
+/// and in the standing the confirmation showed.
+pub fn merge_as_seen(
+    plane: &Path,
+    workspace: &str,
+    repo: &repos::Repo,
+    caller: &forge::Caller,
+    seen: &planegit::Seen,
+) -> Result<MergedAsItStands, String> {
+    look(plane, workspace, repo, caller)?;
+    let Some(open) = open_request(plane, workspace, repo) else {
+        return Err(planegit::changed_since(seen, "", None).unwrap_or_default());
+    };
+    match open.merge.state {
+        MergeState::Merged => {
+            return Ok(MergedAsItStands::Later(
+                "Every check on it passed, and purlis merged it as its checks stand.".into(),
+            ));
+        }
+        MergeState::Queued => return Ok(MergedAsItStands::Later(open.merge.why)),
+        _ => {}
+    }
+    if let Some(changed) = planegit::changed_since(seen, &open.head, Some(&open.merge)) {
+        return Err(changed);
+    }
+    merge_as_it_stands(plane, workspace, repo, caller)
 }
 
 /// **Merge a repo's open save request as it stands**, its failed and missing checks included:

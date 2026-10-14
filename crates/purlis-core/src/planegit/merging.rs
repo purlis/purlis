@@ -272,6 +272,60 @@ impl Merging {
     }
 }
 
+/// **What the person was shown when they said to merge a request as it stands**: the commit
+/// it was at, and where it stood ([`Merging::shown`]). The window hands both back with the
+/// press, and the merge is made only of what was shown ([`changed_since`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seen {
+    /// The commit the request was at.
+    pub head: String,
+    /// Where it stood, as [`Merging::shown`] says it.
+    pub shown: String,
+}
+
+impl Merging {
+    /// Where the request stands, as one line that is the same for the same standing: its
+    /// state, what its wait needs, and the checks that failed, by name. What a confirmation
+    /// showed is compared with what a fresh look finds by this, and by nothing looser.
+    pub fn shown(&self) -> String {
+        let mut names: Vec<&str> = self.checks.iter().map(|c| c.name.as_str()).collect();
+        names.sort_unstable();
+        format!(
+            "{} {} {}",
+            self.state.word(),
+            self.needs.map_or("-", Needs::word),
+            names.join("\u{1f}")
+        )
+    }
+}
+
+/// Why a request is not the one the person confirmed, or `None` when it is: `head` is the
+/// commit it is at now and `now` where a fresh look finds it. A new commit, a check that
+/// failed or passed since, or a wait that became something else each refuse the merge; the
+/// person looks again and decides on what is there.
+pub fn changed_since(seen: &Seen, head: &str, now: Option<&Merging>) -> Option<String> {
+    if head != seen.head {
+        return Some(
+            "The request changed since you looked: a new commit was pushed onto it, so purlis \
+             did not merge it. Look at it again"
+                .to_string(),
+        );
+    }
+    match now {
+        Some(now) if now.shown() == seen.shown => None,
+        Some(now) => Some(format!(
+            "The request changed since you looked ({}), so purlis did not merge it. Look at \
+             it again",
+            now.why
+        )),
+        None => Some(
+            "The request changed since you looked: purlis keeps nothing of it any more, so \
+             it did not merge it"
+                .to_string(),
+        ),
+    }
+}
+
 /// `2 checks failed: lint, build` — the first [`SAID`] by name, the rest counted.
 fn failed_said(failed: &[FailedCheck]) -> String {
     let named: Vec<&str> = failed
@@ -425,6 +479,48 @@ mod tests {
             Merging::of_a_look(&red, &forge, no_login),
             Merging::of(&red)
         );
+    }
+
+    #[test]
+    fn a_merge_is_made_only_of_the_commit_and_the_standing_the_person_was_shown() {
+        let head = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+        let waits = Merging::of(&Ok(Ready::Stalled("no check has started on it".into())));
+        let seen = Seen {
+            head: head.to_string(),
+            shown: waits.shown(),
+        };
+        // The same commit, standing as it was shown: it is the one confirmed.
+        assert_eq!(changed_since(&seen, head, Some(&waits)), None);
+        // The words of a wait may differ between two looks; what it is does not.
+        let reworded = Merging::of(&Ok(Ready::Stalled("no check has started on it yet".into())));
+        assert_eq!(changed_since(&seen, head, Some(&reworded)), None);
+
+        // A check failed since the person looked: not merged past.
+        let red = Merging::of(&Ok(Ready::Red(vec![lint()])));
+        let why = changed_since(&seen, head, Some(&red)).expect("it changed");
+        assert!(why.contains("changed since you looked"), "{why}");
+        assert!(why.contains("1 check failed: lint"), "{why}");
+        // Another check failed beside the one that was shown.
+        let shown_red = Seen {
+            head: head.to_string(),
+            shown: red.shown(),
+        };
+        let more = Merging::of(&Ok(Ready::Red(vec![
+            lint(),
+            FailedCheck::of(Some("build"), None),
+        ])));
+        assert!(changed_since(&shown_red, head, Some(&more)).is_some());
+        assert_eq!(changed_since(&shown_red, head, Some(&red)), None);
+        // A wait that ends by itself is not the wait that was confirmed.
+        let running = Merging::of(&Ok(Ready::Waiting("its checks are still running".into())));
+        assert!(changed_since(&seen, head, Some(&running)).is_some());
+
+        // A commit pushed while the question was open: not merged.
+        let pushed = "1111111111111111111111111111111111111111";
+        let why = changed_since(&seen, pushed, Some(&waits)).expect("it moved");
+        assert!(why.contains("a new commit was pushed"), "{why}");
+        // Nothing kept of it any more.
+        assert!(changed_since(&seen, head, None).is_some());
     }
 
     #[test]

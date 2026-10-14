@@ -685,8 +685,11 @@ would, with nobody waiting on it (`planegit::look_caller`, the one place the loo
 chosen): the person's sign-in where the account has one and the CLI transport is not chosen
 for it, and the forge's own CLI otherwise. The look is admitted as background work.
 
-Nothing else that runs with nobody at the keyboard asks as the window: an automatic save's own
-calls stay a trigger's. A look made anywhere but the app is a trigger's too.
+Two things ask as the window with nobody waiting on them: this look, and the refresh of a
+workspace's request states when the person brings it forward (`panels.rs`, from before this
+amendment). A test names both and fails on a third. Every other call that runs with nobody at
+the keyboard is a trigger's: an automatic save's own calls, and a look made anywhere but the
+app.
 
 With no sign-in at all, the look merges nothing: the request waits, says a sign-in is needed,
 and the window offers one (`forge::signin::ready` is asked when the look got no answer).
