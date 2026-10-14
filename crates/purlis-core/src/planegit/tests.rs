@@ -2606,6 +2606,8 @@ fn quitting_commits_at_once_and_gives_a_push_that_never_answers_only_its_bound()
             "the test left its own hook running"
         );
     }
+    #[cfg(not(unix))]
+    let _ = hook;
 }
 
 #[test]
