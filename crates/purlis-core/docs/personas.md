@@ -339,9 +339,10 @@ told at its start which servers it did not get and how they are approved. No cre
 ever written into the chat's configuration: the server asks the vault when it starts.
 
 **A credentialed server that fails as the chat starts is tried once more.** Its `purlis secret
-exec` asks the app for the server's run again, after two seconds, when the first run was
-refused or ended before the server answered; the second run is handed what Claude Code had
-already sent the first. When the second fails too, the chat's tab shows a Notice naming the
+exec` asks the app for the server's run again, after two seconds, when the first run ended
+before the server answered or the chat was not yet open; the second run is handed what Claude
+Code had already sent the first. A refusal that would be the same every time (the vault, the
+command) is not asked again. When the second fails too, the chat's tab shows a Notice naming the
 server, with its own error (its last words, bounded, every vault value masked) and **Retry**,
 which restarts the chat on its conversation once its turn has ended, since Claude Code takes no
 outside word to reconnect one server. The chat is told at its next turn, in purlis's words,

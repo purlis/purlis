@@ -259,7 +259,7 @@ pub struct Held {
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
-    mcp_failures: crate::mcpfailed::Failures,
+    mcp_failures: Arc<crate::mcpfailed::Failures>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -3262,13 +3262,17 @@ impl Planes {
         // What the chat will read of the plane's instructions is taken here too, before its
         // program can read them (charter#369).
         let started_on: StartedOn = Arc::default();
+        // When each chat began to start, for its MCP servers' starts (qw381).
+        let mcp_failures: Arc<crate::mcpfailed::Failures> = Arc::default();
         {
             let board = hooks.shared_board();
             chats.when_one_starts(Box::new({
                 let board = Arc::clone(&board);
                 let started_on = Arc::clone(&started_on);
+                let mcp_failures = Arc::clone(&mcp_failures);
                 let root = root.clone();
                 move |session, harness, conversation| {
+                    mcp_failures.began(session, std::time::Instant::now());
                     hooks::held_board(&board).opened(session, harness, conversation);
                     // Read before the lock is taken: a stamp is a read of several files.
                     let stamp = Stamp::of(&root);
@@ -3278,9 +3282,11 @@ impl Planes {
             // And taken back if the program then fails to start: the announcement has to come
             // first, so it can be about a chat that never happens.
             let started_on = Arc::clone(&started_on);
+            let mcp_failures = Arc::clone(&mcp_failures);
             chats.when_one_does_not_start(Box::new(move |session| {
                 hooks::held_board(&board).closed(session);
                 lock_started(&started_on).remove(&session);
+                mcp_failures.did_not_start(session);
             }));
         }
         // Read once here, and from then on only as far as each change the watch and auto-save
@@ -3434,7 +3440,7 @@ impl Planes {
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
-            mcp_failures: crate::mcpfailed::Failures::default(),
+            mcp_failures,
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
@@ -8527,6 +8533,57 @@ mod tests {
                 std::time::Duration::from_secs(10),
             )
             .unwrap_or_else(|e| purlis_core::hookwire::Answer::No { why: e.to_string() })
+    }
+
+    /// qw381: a brokered run from a chat the app is still starting waits for the chat's record,
+    /// through the app's own lookup (`vaults::the_askers_record`, which `run_brokered` asks). A
+    /// chat the app is not starting is answered at once, and a record found after the chat's
+    /// program changed is not used.
+    #[cfg(unix)]
+    #[test]
+    fn a_brokered_run_waits_for_a_chat_still_starting_and_for_no_other() {
+        use crate::vaults::the_askers_record;
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("plane"));
+        let (planes, _told) = planes_telling();
+        let held = planes.held(&planes.open(&root)).expect("it is held");
+        let chat = 42;
+
+        // Not one the app is starting: looked for once, and not waited for.
+        let looks = std::cell::Cell::new(0);
+        let none = the_askers_record(&held, chat, || {
+            looks.set(looks.get() + 1);
+            None::<u32>
+        });
+        assert_eq!((none, looks.get()), (None, 1));
+
+        // One it is starting, its program recorded: waited for until its record is there.
+        held.mcp_failures().began(chat, std::time::Instant::now());
+        let _token = held.hooks().token_for(chat);
+        looks.set(0);
+        let found = the_askers_record(&held, chat, || {
+            looks.set(looks.get() + 1);
+            (looks.get() >= 3).then_some(chat)
+        });
+        assert_eq!((found, looks.get()), (Some(chat), 3));
+
+        // Its program changed while the app waited: the chat found is not the one that asked.
+        let tokens = held.hooks().reporting().expect("listening").tokens;
+        looks.set(0);
+        let changed = the_askers_record(&held, chat, || {
+            looks.set(looks.get() + 1);
+            if looks.get() == 2 {
+                tokens.bind(
+                    chat,
+                    purlis_core::hookwire::Program {
+                        pid: 1,
+                        started: "another".to_owned(),
+                    },
+                );
+            }
+            (looks.get() >= 3).then_some(chat)
+        });
+        assert_eq!(changed, None);
     }
 
     #[cfg(unix)]

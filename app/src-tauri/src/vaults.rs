@@ -130,10 +130,7 @@ fn count(ctx: &Ctx, v: &Vault) -> Option<u32> {
 /// the sandbox the command runs under is the one the chat's own was compiled to as it started.
 /// A chat this app does not have open is refused.
 ///
-/// **A chat that is still starting is waited for** (qw381): its harness can start a persona's
-/// MCP server, which asks for its run at once, before the start has recorded the chat as open.
-/// The line carried the chat's current token from inside its program, so it is that chat, and
-/// its record is waited for up to [`purlis_core::secrets::brokered::A_START_IS_WAITED_FOR`].
+/// **A chat that is still starting is waited for** ([`the_askers_record`], qw381).
 ///
 /// A vault the chat's persona is not tagged for is refused by the core, and noted here first
 /// for the Notice on the chat's tab (#1430, `crate::vaultroute`): from the same record of the
@@ -142,8 +139,8 @@ fn count(ctx: &Ctx, v: &Vault) -> Option<u32> {
 /// Each host the run's sandbox refuses is told to `blocked` as the asking chat's block, so its
 /// tab's Notice offers Allow as for a block of the chat's own command.
 ///
-/// The last try of a persona's MCP server's start (qw381) is watched: one that ends before the
-/// server spoke is told to `failed` and to the chat (`crate::mcpfailed`).
+/// A persona's MCP server's start (qw381), heard only within the chat's start window, is
+/// watched: one that fails for good is told to `failed` and to the chat (`crate::mcpfailed`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_brokered(
     held: &crate::planes::Held,
@@ -156,23 +153,32 @@ pub(crate) fn run_brokered(
     blocked: purlis_core::secrets::brokered::Told,
 ) {
     use purlis_core::secrets::brokered;
-    let Some(open) = brokered::once_recorded(
-        || {
-            held.chats()
-                .open_now()
-                .into_iter()
-                .find(|open| open.session == ask.chat)
-        },
-        brokered::A_START_IS_WAITED_FOR,
-    ) else {
+    // A server's start, as the line says, heard only while the chat is starting.
+    let start = ask.secret_exec.mcp.clone().filter(|_| {
+        held.mcp_failures()
+            .in_start_window(ask.chat, std::time::Instant::now())
+    });
+    let Some(open) = the_askers_record(held, ask.chat, || {
+        held.chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == ask.chat)
+    }) else {
         tracing::warn!(
             "purlis: chat {} asked for `secret exec` and is not one this app has open",
             ask.chat
         );
-        return brokered::refused(
-            writer,
-            format!("chat {} is not one this app has open", ask.chat),
-        );
+        let why = format!("chat {} is not one this app has open", ask.chat);
+        // The last try of a server's start of a chat whose start outlasted the wait: still
+        // said, on the tab it will have and at its first turn.
+        if let Some(start) = start.as_ref().filter(|start| start.last) {
+            crate::mcpfailed::failed(held, plane, failed, ask.chat, None, &start.server, &why);
+        }
+        return if held.mcp_failures().starting(ask.chat) {
+            brokered::refused_for_now(writer, why)
+        } else {
+            brokered::refused(writer, why)
+        };
     };
     let asker = brokered::Asker {
         root: held.root().to_path_buf(),
@@ -196,14 +202,8 @@ pub(crate) fn run_brokered(
     );
     // Each connection the run makes is the chat's, in the network record (#1667).
     let reached = held.chats().reached_for(ask.chat, asker.persona.clone());
-    // The last try of a persona's MCP server's start, watched for how it ends (qw381).
-    let last_try = ask
-        .secret_exec
-        .mcp
-        .clone()
-        .filter(|start| start.last)
-        .zip(asker.persona.clone());
-    let (writer, seen) = match &last_try {
+    let vault = ask.secret_exec.vault.clone();
+    let (writer, seen) = match &start {
         Some(_) => {
             let (watch, seen) = purlis_core::secrets::mcpstart::Watch::new(writer);
             (
@@ -214,15 +214,56 @@ pub(crate) fn run_brokered(
         None => (writer, None),
     };
     brokered::serve_recording(&asker, ask.secret_exec, reader, writer, blocked, reached);
-    if let (Some((start, persona)), Some(seen)) = (last_try, seen) {
-        let failure = seen
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .failure();
-        if let Some(why) = failure {
-            crate::mcpfailed::failed(held, plane, failed, ask.chat, &persona, &start.server, &why);
-        }
+    let (Some(start), Some(seen), Some(persona)) = (start, seen, asker.persona) else {
+        return;
+    };
+    let seen = seen
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // For good: the last try, or a refusal the start is not tried again for. A vault refused
+    // for the persona has its own Notice already, which says what to do: one cause, one Notice.
+    if let Some(why) = seen.failure()
+        && (start.last || seen.refused())
+        && !held.vault_refusals().holds(ask.chat, &vault)
+    {
+        crate::mcpfailed::failed(
+            held,
+            plane,
+            failed,
+            ask.chat,
+            Some(&persona),
+            &start.server,
+            &why,
+        );
     }
+}
+
+/// **The asking chat's record, once the app has it** (qw381): `look` now; and where the chat is
+/// one the app is starting, again until it answers or
+/// [`purlis_core::secrets::brokered::A_START_IS_WAITED_FOR`] has passed.
+///
+/// A harness can start a persona's MCP server, which asks for its run at once, before the start
+/// has recorded the chat as open. The line carried the chat's token from inside its program.
+/// Only a chat the app began to start is waited for, and the record found after a wait is used
+/// only while the chat's program is still the one recorded when the wait began: a chat closed
+/// and started again under its number in the meantime is not the one that asked.
+pub(crate) fn the_askers_record<T>(
+    held: &crate::planes::Held,
+    chat: u32,
+    mut look: impl FnMut() -> Option<T>,
+) -> Option<T> {
+    if let Some(found) = look() {
+        return Some(found);
+    }
+    if !held.mcp_failures().starting(chat) {
+        return None;
+    }
+    let asked_from = held.hooks().program_of(chat)?;
+    let found = purlis_core::secrets::brokered::once_recorded(
+        look,
+        purlis_core::secrets::brokered::A_START_IS_WAITED_FOR,
+    )?;
+    (held.hooks().program_of(chat).as_ref() == Some(&asked_from)).then_some(found)
 }
 
 /// Answers `purlis vault list` for chat `chat` of `held` (#1430): every vault the project

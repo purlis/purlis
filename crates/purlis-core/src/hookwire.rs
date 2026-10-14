@@ -754,6 +754,13 @@ impl ChatTokens {
         self.rooted().insert(chat, program);
     }
 
+    /// The program chat `chat`'s lines are read from now, where one is recorded: what a caller
+    /// that waited compares with what it read before, to know the chat it serves is still the
+    /// one that asked (qw381).
+    pub fn program_of(&self, chat: u32) -> Option<Program> {
+        self.rooted().get(&chat).cloned()
+    }
+
     /// Chat `chat`'s program `pid` has ended: its token and its program are forgotten, so a
     /// later process given the same number speaks for nothing. A program that is not the one
     /// recorded (an end heard after the chat started again) changes nothing.

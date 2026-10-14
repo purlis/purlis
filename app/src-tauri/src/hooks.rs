@@ -2068,6 +2068,11 @@ impl Hooks {
             .is_some_and(|tokens| tokens.asker_gone(connection))
     }
 
+    /// The program chat `chat`'s lines are read from now, where one is recorded (qw381).
+    pub fn program_of(&self, chat: u32) -> Option<purlis_core::hookwire::Program> {
+        self.tokens.as_ref()?.program_of(chat)
+    }
+
     /// What a chat started in this plane is told to report to: the socket and the tokens it
     /// checks, or nothing when this is not listening.
     pub fn reporting(&self) -> Option<crate::sessions::Reporting> {
