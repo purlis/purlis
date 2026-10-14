@@ -166,6 +166,10 @@ pub struct PlaneSaving {
     /// remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
     #[specta(optional)]
     pub by_hand: Option<String>,
+    /// What git is stopped part-way in, by kind: `merge`, `rebase`, `am`, `cherry-pick`,
+    /// `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
+    #[specta(optional)]
+    pub stopped_by: Option<String>,
 }
 
 /// The plane's save standing.
@@ -286,6 +290,7 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         by_hand: standing
             .rebase_by_hand
             .then(|| planegit::BY_HAND.to_owned()),
+        stopped_by: standing.stopped_by.map(str::to_owned),
         merge: standing
             .merge
             .clone()

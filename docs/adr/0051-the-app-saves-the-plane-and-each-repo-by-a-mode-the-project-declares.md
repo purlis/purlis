@@ -388,6 +388,10 @@ Decided under delegation, and recorded for the operator's ruling.
   offers no chat. Its Notice gives the git commands (`git fetch`, `git rebase @{u}`, `git add`,
   `git rebase --continue`, `git rebase --abort`) and *Open terminal here*. Update's own
   conflict answer gives the same commands.
+- **A chat is offered by what git stopped in.** Where git is stopped part-way in a rebase,
+  `git am`, a cherry-pick, a revert or a bisect, finishing it is git's in a terminal, so no chat
+  is offered, whether or not files are still unmerged. A stopped merge, or unmerged files with
+  no operation, still offer one.
 
 ## Amended 2026-10-14 (the operator's rulings P1 and P2 of 2026-10-13, and of 2026-10-14): the window's side of a save's request
 
