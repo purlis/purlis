@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792013741847,
+  "lastUpdate": 1792013757308,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4166,6 +4166,42 @@ window.BENCHMARK_DATA = {
             "value": 452.9,
             "unit": "MB",
             "extra": "median of 6 samples: 408.1, 440, 448.5, 457.2, 457.8, 552.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "736ffff653e2f9b1c621a84d1d70d5c69ebe8f1a",
+          "message": "feat(qw387c): a branch folder is cut from the default branch, kept current and pushed (#1983)\n\n* feat(qw387c): a branch folder is cut from the default branch, kept current and pushed\n\n`purlis worktree add` cuts from the branch the remote names its default\n(origin/HEAD), or `--base <branch>`, brought up to its remote-tracking\nbranch where that is a fast-forward nothing has checked out; `--base\nHEAD` keeps the clone's HEAD. The base stays recorded as before.\n\n`purlis worktree update [--base] [--continue | --abort]` fetches,\nbrings the base up, and rebases the folder onto it, stopping on a\nconflict with the files named; `--continue` stages exactly those files.\nFor a sandboxed chat, a move that would write a file its sandbox denies\ndoes not start. `purlis worktree push [--force-with-lease]` pushes the\nfolder's own branch after purlis's scan, with a lease only right after\nan update. In a chat the app runs both, for a chat standing in the\nfolder or above it, as it runs `purlis worktree commit`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw387c): a base checked out and behind its remote is built on as the remote has it\n\nThe clone usually has its default branch checked out, so `update` could\nnever bring it up and rebased onto the stale branch. Where the base is\nbehind its remote-tracking branch and checked out in a worktree, `add`\ncuts from and `update` rebases onto the remote-tracking branch, the\nbase stays recorded, and the note says Changes count the remote's newer\ncommits until the clone is brought up.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* docs(qw387c): a checked-out base behind its remote is built on as the remote has it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw387c): an app-run cut is judged as the chat's own checkout would be\n\nFor a sandboxed chat the app fetches the base's remote before it cuts,\nso the remote-tracking branches it reads are its own fetch's, and a cut\nthat would write a file the chat's sandbox denies, where the clone has\nthat file otherwise or not at all, is refused, naming it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw387c): a task's worktree cut on a chat's behalf is judged too\n\nA dispatch cuts a task's worktree from the asking chat's branch, or the\nclone's HEAD, which a chat can move; the cut is judged as that chat's\nown checkout would be, and a refusal names the file to the asking chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw387c): a stopped update goes on or back on no branch, and a remote is judged as recorded\n\n`--continue` and `--abort` run in a folder a stopped rebase leaves on\nno branch. A remote's host is read from the address the clone records,\nnot from what a rewrite in git's config makes of it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw387c): a rebase is under way only while git's own folder for it is there\n\nA finished rebase can leave a marker behind; `update`, `--continue`,\n`--abort` and `push` read a rebase as stopped only while `rebase-merge`\nor `rebase-apply` is in the folder's git directory, and take git's own\n\"no rebase in progress\" as the answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw387c): app-run checkouts run on the commit ids they judged\n\nA cut, a dispatch's cut and an update read each commit once, judge the\nids and run git on them; the update moves the branch only from the\ncommit it judged, and puts the folder back on it. A lease is given only\non purlis's own record of its last update, kept in the folder's git\ndirectory. The remote's default branch is asked of the remote. A cut is\njudged by mode as well as content, and a remote by every address git\ndials.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw387c): an update is judged for the two ids the rebase is handed\n\nThe rebase's judgement reads what differs between the head and onto\nids it is given, and what the commits that head has and onto lacks\nchanged, never what HEAD names by then.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>",
+          "timestamp": "2026-10-15T00:46:09+04:00",
+          "tree_id": "1aee1c83849c89599575e580141682a59b626257",
+          "url": "https://github.com/purlis/purlis/commit/736ffff653e2f9b1c621a84d1d70d5c69ebe8f1a"
+        },
+        "date": 1792013756287,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1492.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1279.5, 1492.1, 1618 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 437.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 411.4, 427.4, 434.8, 441, 441.3, 531.9 MB"
           }
         ]
       }
