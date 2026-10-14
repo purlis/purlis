@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791936711019,
+  "lastUpdate": 1791938546159,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10248,6 +10248,48 @@ window.BENCHMARK_DATA = {
             "value": 101.150842,
             "unit": "ms",
             "extra": "median of 5 runs: 100.854, 101.075, 101.151, 101.250, 101.511 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "10463db493a7ba5fc5a7a0b4dd0fc53319a56eab",
+          "message": "review(qw376): a git that never said what it started fails the profiles test\n\nThe pid marker is still waited for with a bound, but its absence is a\nfailure again: without the id, the assertion that the group was ended\ncould pass without holding anything.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T04:41:06+04:00",
+          "tree_id": "2f29e87d7873ff57e0a35bbb608215625b712663",
+          "url": "https://github.com/purlis/purlis/commit/10463db493a7ba5fc5a7a0b4dd0fc53319a56eab"
+        },
+        "date": 1791938545336,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5173845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.514, 0.516, 0.517, 0.529, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.969526000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.484, 16.763, 16.970, 17.118, 17.133 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.19409099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.489, 104.125, 104.194, 104.303, 104.809 ms"
           }
         ]
       }
