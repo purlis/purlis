@@ -218,9 +218,11 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   A tool named after a shell, an interpreter, `env`, `sudo`, `xargs` or another program that
   runs what it is told, or after purlis itself, is refused with a sentence, and so is a
   variable that steers how programs are found or loaded (`PATH`, `LD_*`, `DYLD_*`). A tool is
-  judged by the program it runs, not only the name it is declared under: one whose program, as
-  found and as its links resolve, is such a program is refused with the same sentence, on the
-  Notice and Settings › Sandbox and as a chat starts, and no Allow is of it. An
+  refused where the program it runs, as found and as its links resolve, is a shell, an
+  interpreter or another program that runs what it is told, with the same sentence, on the
+  Notice and Settings › Sandbox and as a chat starts, and no Allow is of it. A tool runs the
+  program its links resolve to, and every link on the way to it is in a folder no chat writes.
+  An
   administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
   gets the scripts, and a save that adds one is refused.
 - **A browser login: a persona's tool that logs a browser in to one page** (D-PE-browser-1,

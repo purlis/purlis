@@ -1324,19 +1324,21 @@ are added to that start.
 
 Only Claude Code is started with a persona's servers, so only there does any of this apply.
 
-## Amended (2026-10-14, qw383b): a tool is judged by the program it runs
+## Amended (2026-10-14, qw383b): a tool is refused by the program it runs — to be confirmed
 
-Decided in implementation, flagged to the operator; it extends the refused-name rule of the
-paragraphs of section 1 on a persona's tools, and is not a new kind of refusal.
+Decided under delegation and flagged to the operator, to be confirmed; it extends the
+refused-name rule of the paragraphs of section 1 on a persona's tools.
 
-- **A tool is judged by the program it runs, not only the name it is declared under.** The
-  rule that refuses a tool named after a shell, an interpreter or another program that runs what
-  it is told also holds for the program the tool's name finds: by its file name as found and as
-  its links resolve, in any case. Such a tool is refused with the same sentence.
-- **Both where it is allowed and where it runs.** The Notice and Settings › Sandbox judge the
-  program the app's search path finds outside the project and the temporary folders: the tool
-  is left out of what the Allow is of (so it is part of no digest), and Settings › Sandbox and
-  the Notice say why. A chat's start judges the program its shim would run again, with every
-  folder the chat may write left out of the search, and writes no shim for a refused one; a
-  brokered run runs only what the start armed.
-- A browser login's program is purlis's own pick and is not judged by this rule.
+- **A tool is refused where the program it runs, as found and as its links resolve, is a
+  shell, an interpreter or another program that runs what it is told**, by its file name, in
+  any case, with the same sentence as a tool named after one.
+- **Where it is allowed and where it runs.** The Notice and Settings › Sandbox look for the
+  program as a chat's start does: on the search path, leaving out the project, the temporary
+  folders and every folder a chat there may write (its grantable folders and its cache home).
+  A refused tool is left out of what the Allow is of, so it is part of no digest, and the
+  Notice and Settings › Sandbox say why. A chat's start looks again, also leaving out what
+  that chat alone may write, and writes no shim for a refused one.
+- **A tool runs the program its links resolve to.** Every link on the way to the program,
+  including a folder's, is in a folder no chat writes, and so is the program; the shim and a
+  brokered run name the program by that resolved path.
+- A browser login's program is purlis's own pick and is not refused by this rule.

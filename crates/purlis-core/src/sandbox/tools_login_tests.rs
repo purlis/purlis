@@ -260,7 +260,7 @@ fn a_login_runs_playwright_s_program_found_where_no_chat_writes_never_one_its_na
         resolved.ready,
         [Ready {
             tool: shop_login(),
-            program: real,
+            program: real.canonicalize().expect("real"),
         }]
     );
     let _ = std::fs::remove_dir_all(&base);

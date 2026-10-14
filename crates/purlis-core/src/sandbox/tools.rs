@@ -60,8 +60,7 @@
 //! **Refused**, with a sentence, and given no shim: a name that is a shell, an interpreter,
 //! `env`, `sudo`, `xargs` or another program that runs what it is told, or purlis itself
 //! ([`refused_name`]), and one whose program, as found and as its links resolve, is one of
-//! those, since a tool is judged by the program it runs, not only the name it is declared under
-//! ([`refused_program`]); a variable that steers how programs are found or loaded
+//! those ([`refused_program`]); a variable that steers how programs are found or loaded
 //! ([`refused_var`]); a tool policy forbids ([`super::policy::Locks::refuses_tool`]); and one
 //! whose program is not found where no chat writes.
 //!
@@ -404,20 +403,109 @@ fn file_name_of(program: &Path) -> String {
     lower.strip_suffix(".exe").unwrap_or(&lower).to_owned()
 }
 
-/// **Why `program`, found for `tool`, may not run as it**, if it may not: **a tool is judged by
-/// the program it runs, not only the name it is declared under.** One whose file name, as found
-/// or as its links resolve, is one no tool may take ([`refused_name`]) is refused with the same
-/// sentence. A browser login's program is purlis's own pick, and is not judged here.
+/// **Why `program`, found for `tool`, may not run as it**, if it may not: a tool is refused
+/// where the program it runs, as found and as its links resolve, is one no tool may take
+/// ([`refused_name`]), with the same sentence. A browser login's program is purlis's own pick,
+/// and is not judged here.
 pub fn refused_program(tool: &Tool, program: &Path) -> Option<String> {
+    let real = program.canonicalize().ok();
+    refused_at(tool, program, real.as_deref().unwrap_or(program))
+}
+
+/// [`refused_program`], for `found` as found and `real` as its links resolve.
+fn refused_at(tool: &Tool, found: &Path, real: &Path) -> Option<String> {
     if tool.login.is_some() {
         return None;
     }
-    let real = program.canonicalize().ok();
-    std::iter::once(program)
-        .chain(real.as_deref())
+    [found, real]
+        .into_iter()
         .map(file_name_of)
         .any(|name| !name.is_empty() && runs_what_it_is_told(&name))
         .then(|| runs_anything(&tool.name))
+}
+
+/// The most links followed on the way to one program, as the kernel's own bound on a path.
+const MOST_LINKS: usize = 40;
+
+/// **`program` as it runs, where nothing on the way to it is a chat's**: the path with every
+/// link resolved, one link at a time, where each link, folders' links too, sits in a folder
+/// outside `written`, and so does the program it ends at. `None` otherwise, or where a link
+/// cannot be read or there are more than [`MOST_LINKS`].
+///
+/// A run is of this path, so no link a chat could change later is on the way to what runs.
+pub(crate) fn held_outside(program: &Path, written: &[PathBuf]) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut done = PathBuf::new();
+    let mut rest: std::collections::VecDeque<std::ffi::OsString> = Default::default();
+    let start = |path: &Path, done: &mut PathBuf, rest: &mut std::collections::VecDeque<_>| {
+        let mut parts = Vec::new();
+        for part in path.components() {
+            match part {
+                Component::Prefix(_) | Component::RootDir => {
+                    done.clear();
+                    done.push(part.as_os_str());
+                }
+                Component::CurDir => {}
+                Component::ParentDir | Component::Normal(_) => {
+                    parts.push(part.as_os_str().to_owned());
+                }
+            }
+        }
+        for part in parts.into_iter().rev() {
+            rest.push_front(part);
+        }
+    };
+    if !program.is_absolute() {
+        return None;
+    }
+    start(program, &mut done, &mut rest);
+    let mut links = 0;
+    while let Some(part) = rest.pop_front() {
+        if part == ".." {
+            done.pop();
+            continue;
+        }
+        let next = done.join(&part);
+        let meta = std::fs::symlink_metadata(&next).ok()?;
+        if !meta.file_type().is_symlink() {
+            done = next;
+            continue;
+        }
+        links += 1;
+        // The folder that holds the link, as it is with every link before it resolved.
+        if links > MOST_LINKS || inside_any(&done, written) {
+            return None;
+        }
+        let target = std::fs::read_link(&next).ok()?;
+        start(&target, &mut done, &mut rest);
+    }
+    (!inside_any(&done, written)).then_some(done)
+}
+
+/// **Every folder a chat in the project at `root` may write, whatever the chat**: every folder
+/// listed as one chats may be granted, and the project's cache home. Left out of the search
+/// for a tool's program as the Notice shows it and as a chat starts, so both find the same one.
+fn any_chat_writes(root: &Path) -> Vec<PathBuf> {
+    #[cfg(test)]
+    if SEARCH_HERE.with(|dirs| dirs.borrow().is_some()) {
+        return Vec::new();
+    }
+    super::local::grantable_folders(root)
+        .into_iter()
+        .chain(super::caches::root_of(&super::Machine::this(), root))
+        .collect()
+}
+
+/// The first of `dirs` that holds `wanted`, as found, with its path as it runs
+/// ([`held_outside`]): one with anything on the way to it in `written` is passed over.
+fn found_in(wanted: &str, dirs: &[PathBuf], written: &[PathBuf]) -> Option<(PathBuf, PathBuf)> {
+    dirs.iter()
+        .filter(|dir| dir.is_absolute() && !inside_any(dir, written))
+        .find_map(|dir| {
+            let program = crate::programs::find(wanted, std::slice::from_ref(dir))?;
+            let real = held_outside(&program, written)?;
+            Some((program, real))
+        })
 }
 
 #[cfg(test)]
@@ -438,24 +526,19 @@ fn search_dirs() -> Vec<PathBuf> {
 
 /// **Why `tool` runs nothing in the project at `root`, judged by its program on this machine**
 /// ([`refused_program`]), as the Notice shows it and an Allow is of it: its program found on
-/// the app's search path as [`resolve`] finds it, outside the project and the temporary
-/// folders. None where it runs or is not found; a chat's own start judges again, with every
-/// folder it may write left out of the search.
+/// this process's search path as a chat's start finds it, with the project, the temporary
+/// folders and every folder any chat there may write left out ([`any_chat_writes`]). None
+/// where it runs or is not found. A chat's start judges again, also leaving out what that chat
+/// alone may write.
 pub fn refused_here(root: &Path, tool: &Tool) -> Option<String> {
     if tool.login.is_some() {
         return None;
     }
     let mut written = vec![root.to_path_buf()];
     written.extend(temp_folders());
-    search_dirs()
-        .iter()
-        .filter(|dir| dir.is_absolute() && !inside_any(dir, &written))
-        .find_map(|dir| {
-            let program = crate::programs::find(&tool.name, std::slice::from_ref(dir))?;
-            let real = program.canonicalize().ok()?;
-            (!inside_any(&real, &written)).then_some(program)
-        })
-        .and_then(|program| refused_program(tool, &program))
+    written.extend(any_chat_writes(root));
+    let (found, real) = found_in(&tool.name, &search_dirs(), &written)?;
+    refused_at(tool, &found, &real)
 }
 
 /// Whether `name` is one of [`REFUSED_NAMES`], or starts with one of [`REFUSED_PREFIXES`],
@@ -971,11 +1054,7 @@ pub(crate) fn resolve_beside(
     let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
     written.extend(writable.iter().cloned());
     written.extend(temps.iter().cloned());
-    let dirs: Vec<PathBuf> = search
-        .iter()
-        .filter(|dir| dir.is_absolute() && !inside_any(dir, &written))
-        .cloned()
-        .collect();
+    written.extend(any_chat_writes(root));
     let mut ready = Vec::new();
     let mut left = Vec::new();
     for tool in tools {
@@ -989,15 +1068,12 @@ pub(crate) fn resolve_beside(
         } else {
             tool.name.as_str()
         };
-        let found = dirs.iter().find_map(|dir| {
-            let program = crate::programs::find(wanted, std::slice::from_ref(dir))?;
-            let real = program.canonicalize().ok()?;
-            (!inside_any(&real, &written)).then_some(program)
-        });
-        // A tool is judged by the program it runs, not only the name it is declared under.
+        // What runs is the program as its links resolve, judged here: nothing a chat could
+        // change later is on the way to it.
+        let found = found_in(wanted, search, &written);
         if let Some(why) = found
-            .as_deref()
-            .and_then(|program| refused_program(tool, program))
+            .as_ref()
+            .and_then(|(found, real)| refused_at(tool, found, real))
         {
             left.push(format!(
                 "{persona}'s tool {} runs nothing: {why}",
@@ -1006,7 +1082,7 @@ pub(crate) fn resolve_beside(
             continue;
         }
         match found {
-            Some(program) => ready.push(Ready {
+            Some((_, program)) => ready.push(Ready {
                 tool: tool.clone(),
                 program,
             }),

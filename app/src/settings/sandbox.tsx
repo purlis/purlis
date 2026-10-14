@@ -895,8 +895,7 @@ export function personaHostsNotes(sandbox: SandboxState | undefined): string[] {
         : [
             `${one.persona} lists ${listed(kept)}, which policy on this machine keeps every chat from. ${sandbox?.policy?.locked_by ?? ""}`.trim(),
           ];
-    // A tool is judged by the program it runs, not only the name it is declared under: the
-    // core's sentence for each that runs nothing for it.
+    // The core's sentence for each tool refused for the program it runs here.
     return [...locked, ...(one.refused ?? []).map((why) => `${why}.`)];
   });
 }

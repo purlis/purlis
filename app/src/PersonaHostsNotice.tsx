@@ -145,8 +145,8 @@ export function PersonaHostsNotice({
                   </>
                 )}
                 {canAllow ? "" : " Allow them from purlis's own window on this machine."}
-                {/* A tool is judged by the program it runs: the core's sentence for each that
-                    runs nothing here, and is not among what this Allow is of. */}
+                {/* The core's sentence for each tool refused for the program it runs here,
+                    which is not among what this Allow is of. */}
                 {(one.refused ?? []).map((why) => ` ${why}.`).join("")}
                 {said[one.persona] ? <> {said[one.persona]}</> : null}
               </p>
