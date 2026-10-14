@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791950084336,
+  "lastUpdate": 1791950100134,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3306,6 +3306,42 @@ window.BENCHMARK_DATA = {
             "value": 435.9,
             "unit": "MB",
             "extra": "median of 6 samples: 409.3, 425.3, 432.1, 439.7, 440.1, 508.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "14a4e8dabf956a25788d5a3babeab83b9b1cd38d",
+          "message": "fix(app): a pane's gauge is read after a switch is painted, and an overlay has one name\n\nTwo things left by the review of the pull request that kept a project's view\nbehind another.\n\nA chat's gauge was read at once as its project came back. Its command is one\nthe core answers on the window's own thread, and every pane of the tab in front\nhas a gauge, so that was one such command per pane ahead of the paint: the cost\nthat grows with a window, on the path that is meant to wait on nothing. It is\nread once the project has been painted, as every other read made again is. The\ncost test's budgets are drawn in to just above what a switch does now, and a\nnew case holds the commands sent before the paint to the same number with one,\ntwenty and forty panes in the tab in front.\n\nRadix exports each part twice, `Content` and `DialogContent`. The window's\noverlay files handed the package on whole, so the long name was the same part\nwith nothing asked of it. They hand on the parts by their short names alone,\nand the guard fails for a part that draws handed on as it is under any name.\n\nThe test of the scrolled places being let go as they pile up, which the review\nnoted missing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T07:07:12+04:00",
+          "tree_id": "d86424612700612b624d36180e71d1f6809d12cd",
+          "url": "https://github.com/purlis/purlis/commit/14a4e8dabf956a25788d5a3babeab83b9b1cd38d"
+        },
+        "date": 1791950098990,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1515.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1337.8, 1515.4, 1517.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 444.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 409.1, 426.1, 437.9, 450.7, 451, 528.4 MB"
           }
         ]
       }
