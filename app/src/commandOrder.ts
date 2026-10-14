@@ -44,6 +44,11 @@ export const LANES = {
     ],
     changes: [
       "answerSandboxOffer",
+      "addSandboxHost",
+      "removeSandboxHost",
+      "confirmSandboxHost",
+      "saveProjectSettings",
+      "moveProjectSettings",
       "acknowledgeProjectHosts",
       "acknowledgeProjectPresets",
       "allowProjectExpects",
@@ -56,11 +61,10 @@ export const LANES = {
       "unlistGrantableFolder",
       "allowBlockedHost",
       "allowSandboxBlock",
-      "keepSandboxBlock",
       "forgetSandboxBlock",
       "allowSandboxBlockForTasks",
-      "keepSandboxBlockForTasks",
       "revokeSandboxGrant",
+      "allowRefusedVault",
     ],
   },
   /**
@@ -111,6 +115,122 @@ export const LANES = {
   string,
   { reads: readonly (keyof typeof commands)[]; changes: readonly (keyof typeof commands)[] }
 >;
+
+/**
+ * **What each lane's files are, and every command of the window that writes one** (#1949): the
+ * audit the lanes are held to (`commandOrder.test.ts`). Each writer is a change of the file's
+ * lane, or is in {@link OUTSIDE_THE_LANES} with why. A command added that writes one of these
+ * files goes here, and so into its lane or out of it with a reason.
+ */
+export const WRITERS = {
+  sandbox: {
+    "the project's manifest and local settings (charter.toml, charter.local.toml)": [
+      "answerSandboxOffer",
+      "addSandboxHost",
+      "removeSandboxHost",
+      "saveProjectSettings",
+      "moveProjectSettings",
+      "addProjectForge",
+      "removeProjectForge",
+      "addProjectProfile",
+      "removeProjectProfile",
+      "renameProjectProfile",
+    ],
+    "this machine's answers about the project (sandbox-grants)": [
+      "confirmSandboxHost",
+      "acknowledgeProjectHosts",
+      "acknowledgeProjectPresets",
+      "allowProjectExpects",
+      "declineProjectExpects",
+      "allowPersonaHosts",
+      "grantableFolders",
+      "listGrantableFolder",
+      "unlistGrantableFolder",
+      "allowBlockedHost",
+      "allowSandboxBlock",
+      "allowSandboxBlockForTasks",
+      "revokeSandboxGrant",
+      "allowRefusedVault",
+    ],
+    "this machine's network record": [
+      "allowBlockedHost",
+      "allowSandboxBlock",
+      "allowSandboxBlockForTasks",
+      "allowProjectExpects",
+      "allowPersonaHosts",
+      "allowPersonaGrants",
+      "forgetSandboxBlock",
+      "keepSandboxBlock",
+      "keepSandboxBlockForTasks",
+    ],
+    "a chat's grants, held in memory": ["allowPersonaGrants"],
+  },
+  dispatch: {
+    "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held":
+      [
+        "allowDispatch",
+        "allowDispatchAnywhere",
+        "neverDispatch",
+        "keepDispatchBlocked",
+        "liftDispatchNever",
+        "revokeDispatchToAny",
+        "declineProjectDispatch",
+        "declineProjectDispatchIn",
+        "removeDormantDispatch",
+        "allowDispatchAway",
+        "neverDispatchAway",
+        "dismissDispatchAway",
+        "revokeDispatchGrant",
+        "addDispatchGrant",
+        "acceptProjectDispatch",
+        "acceptProjectDispatchIn",
+        "allowDispatchToAny",
+        "setDispatchWorkspace",
+        "giveBackDispatch",
+        "answerDispatchArrival",
+        "dispatchGoneTold",
+      ],
+  },
+  workLink: { "the project's work log": ["chatWorkLink", "chatWorkUnlink"] },
+  pins: {
+    "this machine's store": [
+      "pinProject",
+      "pinWorkspace",
+      "arrangeWorkspacePins",
+      "pinOnThisMachine",
+      "forgetProject",
+      "revokeApproval",
+      "locateProject",
+      "windowHoldsPlanes",
+    ],
+  },
+} as const satisfies Record<keyof typeof LANES, Record<string, readonly (keyof typeof commands)[]>>;
+
+/** The writers of a lane's files that stay out of it, each with why. */
+export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> = {
+  keepSandboxBlock:
+    "It tells the chat, in fixed words typed into its pane, not to try again: that lands in the " +
+    "order of the person's own typing, which a lane behind a slow read would break. Its line in " +
+    "the network record is a look back, read again at the next look.",
+  keepSandboxBlockForTasks: "As keepSandboxBlock, for each task it tells.",
+  addProjectForge:
+    "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
+    "the file again after it.",
+  removeProjectForge: "As addProjectForge.",
+  addProjectProfile:
+    "It writes the manifest's profiles, which no read of the sandbox's lane draws; Settings reads " +
+    "the file again after it.",
+  removeProjectProfile: "As addProjectProfile.",
+  renameProjectProfile: "As addProjectProfile.",
+  forgetProject:
+    "Settings › This machine names a project by its path, not as the window holds it, waits for " +
+    "the answer and reads the store again.",
+  revokeApproval: "As forgetProject.",
+  locateProject: "As forgetProject.",
+  windowHoldsPlanes:
+    "It writes the window's tabs, which no read of the pins' lane draws, and it is synchronous for " +
+    "its order with the window's other reports.",
+};
 
 type Ask = (...args: unknown[]) => Promise<unknown>;
 

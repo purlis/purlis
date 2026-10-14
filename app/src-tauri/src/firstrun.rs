@@ -466,7 +466,7 @@ fn forge_said(taken: &firstrun::ForgeTaken) -> Option<String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn open_repo(
-    planes: tauri::State<'_, Planes>,
+    app: tauri::AppHandle,
     path: String,
     template: TemplateChoice,
     forge: Option<ForgeWord>,
@@ -496,7 +496,7 @@ pub async fn open_repo(
             });
         }
     };
-    let opened = planes.open_if_approved(&root).map(Opened::from)?;
+    let opened = opened_off_the_runtime(app, root.clone()).await?;
     Ok(RepoAnswer {
         opened: Some(OpenedRepo {
             opened,
@@ -650,10 +650,7 @@ fn imported(
 /// that press is the operator's answer to which forge a new project tracks (#839).
 #[tauri::command]
 #[specta::specta]
-pub async fn open_local_project(
-    planes: tauri::State<'_, Planes>,
-    forge: ForgeWord,
-) -> Result<Opened, String> {
+pub async fn open_local_project(app: tauri::AppHandle, forge: ForgeWord) -> Result<Opened, String> {
     let data = data_home()?;
     let kind = Kind::from(forge);
     let root = tauri::async_runtime::spawn_blocking(move || {
@@ -662,7 +659,20 @@ pub async fn open_local_project(
     })
     .await
     .map_err(|err| format!("purlis could not open its project: {err}"))??;
-    planes.open_if_approved(&root).map(Opened::from)
+    opened_off_the_runtime(app, root).await
+}
+
+/// [`Planes::open_if_approved`] on a blocking thread (#1949): an open sweeps the project's old
+/// files and may wait for a close of it still letting go, which is no work for one of the async
+/// runtime's few threads.
+async fn opened_off_the_runtime(app: tauri::AppHandle, root: PathBuf) -> Result<Opened, String> {
+    crate::off_the_window("opening the project", move || {
+        use tauri::Manager as _;
+        app.state::<Planes>()
+            .open_if_approved(&root)
+            .map(Opened::from)
+    })
+    .await
 }
 
 /// Where the local project goes: purlis's data home, never the config home a chat's sandbox

@@ -1781,41 +1781,75 @@ pub struct Planes {
 /// The projects an open or a close is under way for, one at a time each ([`OpenTurn`]).
 #[derive(Default)]
 struct Turns {
-    ids: Mutex<HashSet<PlaneId>>,
+    /// Each project with a turn held, and whether an open or a close holds it.
+    held: Mutex<HashMap<PlaneId, Turn>>,
     /// Told each time a turn ends, for one of the same project waiting on it.
     moved: Condvar,
 }
 
+/// What holds a project's turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Turn {
+    Open,
+    Close,
+}
+
 impl Turns {
-    /// The turn at project `id`, once nothing else holds it.
-    fn take(self: &Arc<Self>, id: &PlaneId) -> OpenTurn {
-        let mut ids = self.ids.lock().unwrap_or_else(PoisonError::into_inner);
-        while ids.contains(id) {
-            ids = self.moved.wait(ids).unwrap_or_else(PoisonError::into_inner);
+    fn held(&self) -> MutexGuard<'_, HashMap<PlaneId, Turn>> {
+        self.held.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The turn at project `id`, for `turn`, once nothing else holds it.
+    fn take(self: &Arc<Self>, id: &PlaneId, turn: Turn) -> OpenTurn {
+        let mut held = self.held();
+        while held.contains_key(id) {
+            held = self
+                .moved
+                .wait(held)
+                .unwrap_or_else(PoisonError::into_inner);
         }
-        ids.insert(id.clone());
+        held.insert(id.clone(), turn);
         OpenTurn {
             turns: Arc::clone(self),
             id: id.clone(),
         }
     }
 
-    /// Whether nothing holds the turn at `id` within `within`, waiting for it until then.
-    fn free_within(&self, id: &PlaneId, within: std::time::Duration) -> bool {
+    /// Nothing, once nothing holds the turn at `id` within `within`, waiting for it until then;
+    /// or what still holds it.
+    fn free_within(&self, id: &PlaneId, within: std::time::Duration) -> Option<Turn> {
         let until = std::time::Instant::now() + within;
-        let mut ids = self.ids.lock().unwrap_or_else(PoisonError::into_inner);
-        while ids.contains(id) {
+        let mut held = self.held();
+        while let Some(turn) = held.get(id).copied() {
             let left = until.saturating_duration_since(std::time::Instant::now());
             if left.is_zero() {
-                return false;
+                return Some(turn);
             }
-            ids = self
+            held = self
                 .moved
-                .wait_timeout(ids, left)
+                .wait_timeout(held, left)
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
-        true
+        None
+    }
+
+    /// Waits until no close holds a turn, or `within` has passed: how many still do then.
+    fn closes_done_within(&self, within: std::time::Duration) -> usize {
+        let until = std::time::Instant::now() + within;
+        let mut held = self.held();
+        loop {
+            let closing = held.values().filter(|turn| **turn == Turn::Close).count();
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if closing == 0 || left.is_zero() {
+                return closing;
+            }
+            held = self
+                .moved
+                .wait_timeout(held, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
     }
 }
 
@@ -1829,24 +1863,29 @@ struct OpenTurn {
 
 impl Drop for OpenTurn {
     fn drop(&mut self) {
-        let mut ids = self
-            .turns
-            .ids
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        ids.remove(&self.id);
+        self.turns.held().remove(&self.id);
         self.turns.moved.notify_all();
     }
 }
 
-/// How long an open the window asks for waits for a close of the same project still letting go
-/// of it, before it says so instead (#1949).
+/// How long an open the window asks for waits for a close or another open of the same project,
+/// before it says so instead (#1949).
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// What an open says when a close of the same project has not let go of it within
 /// [`CLOSE_WAIT`].
 const STILL_CLOSING: &str =
     "purlis is still letting go of this project, ending its chats. Open it again in a moment.";
+
+/// What an open says when another open of the same project, from another window or a link,
+/// has not finished within [`CLOSE_WAIT`].
+const STILL_OPENING: &str =
+    "purlis is still opening this project for another window. Open it again in a moment.";
+
+/// How long the quit waits for the closes still letting go of their projects (#1949): each
+/// writes its project's last record and ends its chats, and the process ending under it would
+/// cut both off.
+const QUIT_WAITS_FOR_CLOSES: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// What collects a plane's month-old per-session files as [`Planes::open`] opens it.
 type Sweep = Arc<dyn Fn(&Path) + Send + Sync>;
@@ -3407,7 +3446,7 @@ impl Planes {
     /// of a project whose old chats are still ending, and the windows are told it closed before
     /// it can be open again.
     pub(crate) fn closing(&self, plane: &PlaneId) -> Result<Closing, String> {
-        let turn = self.turns.take(plane);
+        let turn = self.turns.take(plane, Turn::Close);
         let held = self
             .map()
             .remove(plane)
@@ -3530,6 +3569,15 @@ impl Planes {
     fn let_go_of_every_plane(&self, to_update: bool) {
         // The window's tabs as last handed over, on disk before anything ends (#1949).
         self.arranged.flush();
+        // And every close still letting go of its project: it is out of the registry already, so
+        // nothing below reaches it, and its last record and its chats' end are its own (#1949).
+        let still = self.turns.closes_done_within(QUIT_WAITS_FOR_CLOSES);
+        if still > 0 {
+            tracing::warn!(
+                "purlis: {still} project(s) were still being let go of as purlis quit; their last \
+                 record may not be written"
+            );
+        }
         let all: Vec<_> = self.map().drain().map(|(_, held)| held).collect();
         // Every command purlis is running with a vault for a chat ends here, with everything it
         // started that stayed in its process group (#1407).
@@ -3555,18 +3603,23 @@ impl Planes {
     /// This open's turn at project `id` (#1027): it waits while another open of the same project
     /// is between its sweep and holding it, and an open of any other project waits for nothing.
     fn opening(&self, id: &PlaneId) -> OpenTurn {
-        self.turns.take(id)
+        self.turns.take(id, Turn::Open)
     }
 
     /// Refuses, with why, an open of `root` while a close of it is still letting go of it after
     /// [`CLOSE_WAIT`] (#1949); waits for it until then. An open of a project being closed would
     /// otherwise bind its socket and start its chats while the close still ends the old ones.
     fn not_closing(&self, root: &Path) -> Result<(), String> {
+        self.not_closing_within(root, CLOSE_WAIT)
+    }
+
+    /// [`Self::not_closing`], waiting at most `within`.
+    fn not_closing_within(&self, root: &Path, within: std::time::Duration) -> Result<(), String> {
         let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        if self.turns.free_within(&PlaneId::of(&root), CLOSE_WAIT) {
-            Ok(())
-        } else {
-            Err(STILL_CLOSING.to_owned())
+        match self.turns.free_within(&PlaneId::of(&root), within) {
+            None => Ok(()),
+            Some(Turn::Close) => Err(STILL_CLOSING.to_owned()),
+            Some(Turn::Open) => Err(STILL_OPENING.to_owned()),
         }
     }
 
@@ -5088,18 +5141,49 @@ mod tests {
 
     #[test]
     fn an_open_the_window_asks_for_says_so_when_a_close_does_not_let_go_in_time() {
-        // #1949: the wait is bounded, and the open says why rather than hanging.
+        // #1949: the wait is bounded, and the open says why rather than hanging: a close of the
+        // project, or another open of it, each in its own words.
         let dir = tempfile::tempdir().expect("a directory");
         let root = a_plane(&dir.path().join("one"));
         let planes = planes();
         let id = planes.open(&root);
-        let _closing = planes.closing(&id).expect("it closes");
         let canon = root.canonicalize().expect("it resolves");
-        assert!(
-            !planes
-                .turns
-                .free_within(&PlaneId::of(&canon), std::time::Duration::from_millis(50))
+        let soon = std::time::Duration::from_millis(50);
+        let closing = planes.closing(&id).expect("it closes");
+        assert_eq!(
+            planes.not_closing_within(&canon, soon),
+            Err(STILL_CLOSING.to_owned())
         );
+        drop(closing);
+        let opening = planes.opening(&id);
+        assert_eq!(
+            planes.not_closing_within(&canon, soon),
+            Err(STILL_OPENING.to_owned())
+        );
+        drop(opening);
+        assert_eq!(planes.not_closing_within(&canon, soon), Ok(()));
+    }
+
+    #[test]
+    fn the_quit_waits_for_a_close_still_letting_go_of_its_project() {
+        // #1949: a close took the project out of the registry and is still ending its chats
+        // and writing its last record when the quit comes. The quit lets go of what the
+        // registry holds, and waits for that close too, so the process does not end under it.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("one"));
+        let planes = planes();
+        let id = planes.open(&root);
+        let closing = planes.closing(&id).expect("it closes");
+        std::thread::scope(|scope| {
+            let quitting = scope.spawn(|| planes.let_go_of_all());
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            assert!(
+                !quitting.is_finished(),
+                "the quit ended with a close still letting go"
+            );
+            closing.finish();
+            quitting.join().expect("it quits");
+        });
     }
 
     #[test]

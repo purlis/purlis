@@ -4,7 +4,7 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { commands } from "./bindings";
-import { LANES, inOrder, keepTheirOrder } from "./commandOrder";
+import { LANES, OUTSIDE_THE_LANES, WRITERS, inOrder, keepTheirOrder } from "./commandOrder";
 
 /**
  * **The core's answers that read and change the same files come back in the order asked, and
@@ -100,6 +100,59 @@ describe("the window's lanes", () => {
         expect(seen.get(name), `${name} is in ${seen.get(name)} and in ${lane}`).toBeUndefined();
         seen.set(name, lane);
       }
+  });
+
+  it("hold every writer of a lane's files in that lane, or out of it with a reason", () => {
+    const asks = commands as unknown as Record<string, unknown>;
+    const inALane = new Set(
+      Object.values(LANES).flatMap(({ reads, changes }) => [...reads, ...changes] as string[]),
+    );
+    for (const [lane, files] of Object.entries(WRITERS)) {
+      const changes = LANES[lane as keyof typeof LANES].changes as readonly string[];
+      const writers = new Set<string>();
+      for (const [file, named] of Object.entries(files))
+        for (const writer of named as readonly string[]) {
+          expect(typeof asks[writer], writer).toBe("function");
+          writers.add(writer);
+          const outside = (OUTSIDE_THE_LANES as Record<string, string | undefined>)[writer];
+          if (outside === undefined)
+            expect(changes, `${writer} writes ${file} and is not a change of ${lane}`).toContain(
+              writer,
+            );
+          else expect(inALane.has(writer), `${writer} is out of the lanes and in one`).toBe(false);
+        }
+      // And a change of the lane writes one of its files.
+      for (const change of changes)
+        expect(writers.has(change), `${change} writes none of ${lane}'s files`).toBe(true);
+    }
+  });
+
+  it("hold a host's removal behind a read of the sandbox already asked (Settings › Sandbox)", async () => {
+    // The page reads the state as it is focused again, git makes that read slow, and the
+    // person removes a host meanwhile: the read must not land after the removal and draw the
+    // host back.
+    const core = aCoreAnsweringWhenTold();
+    void commands.sandboxState("/h");
+    void commands.removeSandboxHost("/h", "local", null, "example.com");
+    await tick();
+    expect(core.sent).toEqual(["sandbox_state"]);
+    core.release("sandbox_state");
+    await tick();
+    await tick();
+    expect(core.sent).toEqual(["sandbox_state", "remove_sandbox_host"]);
+    core.release("remove_sandbox_host");
+  });
+
+  it("send a Keep blocked at once, whatever the sandbox's lane is waiting on: it types into the chat", () => {
+    const core = aCoreAnsweringWhenTold();
+    void commands.sandboxState("/k");
+    void commands.keepSandboxBlock("/k", 1, {
+      operation: "network-outbound",
+      kind: "host",
+      what: "host",
+      target: "example.com",
+    });
+    expect(core.sent).toEqual(["sandbox_state", "keep_sandbox_block"]);
   });
 
   it("send the reads a switch makes all at once: five notices and forty panes", async () => {
