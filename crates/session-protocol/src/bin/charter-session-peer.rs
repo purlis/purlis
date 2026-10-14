@@ -23,6 +23,11 @@
 //!   when not, once the host has closed the link. With `--when-orphaned-from`, it first waits (up to 20 s) until its parent is no
 //!   longer `<pid>`, so it connects as an orphan. The tests run it inside a "chat" to show
 //!   such a client is refused whatever credential it holds (FD-27).
+//! - `--watch <socket> <program>` (unix): a `terminal` client, with the credential in
+//!   `$CHARTER_SESSION_PEER_CREDENTIAL`, that attaches a terminal view of `<program>` and
+//!   prints it on stdout, a line each: `snapshot <bytes>` once the snapshot is complete, then
+//!   `live <bytes>` for each live chunk, the bytes escaped so each fits on its line. It runs
+//!   until the view ends or it is killed: the tests kill it outright, as a crashed window is.
 //! - `--remote-link <chat> <build>` (only with the `any-stream` feature, as the crate's tests
 //!   build it): a stub `remote-link` client on stdio, as a device whose link a handshake has
 //!   already proved (V7, FD-27). It lists, attaches `<chat>` and reads its snapshot and first
@@ -55,7 +60,7 @@ fn speaks(arg: &str) -> Option<Speaks> {
 const CREDENTIAL_ENV: &str = "CHARTER_SESSION_PEER_CREDENTIAL";
 
 const USAGE: &str = "usage: charter-session-peer --speaks <major>.<minor>[,…] | --flood <streams> \
-     <bytes> | --present <scope> <socket> [--when-orphaned-from <pid>]";
+     <bytes> | --present <scope> <socket> [--when-orphaned-from <pid>] | --watch <socket> <program>";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -85,6 +90,8 @@ async fn main() -> ExitCode {
                 None => usage(),
             }
         }
+        #[cfg(unix)]
+        [flag, socket, program] if flag == "--watch" => watch(socket, program).await,
         #[cfg(feature = "any-stream")]
         [flag, chat, build] if flag == "--remote-link" => remote_link(stdio, chat, build).await,
         _ => usage(),
@@ -224,6 +231,92 @@ async fn present(scope: Scope, socket: &str, orphaned_from: Option<u32>) -> Exit
             ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(unix)]
+async fn watch(socket: &str, program: &str) -> ExitCode {
+    use std::io::Write;
+
+    use purlis_session_protocol::session::{self, Client, ViewKind};
+    use purlis_session_protocol::view::{Chunk, Viewer};
+
+    let Some(credential) = std::env::var(CREDENTIAL_ENV)
+        .ok()
+        .and_then(|text| text.parse::<Credential>().ok())
+    else {
+        eprintln!("no credential in ${CREDENTIAL_ENV}");
+        return ExitCode::FAILURE;
+    };
+    let stream = match tokio::net::UnixStream::connect(socket).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            eprintln!("could not connect: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let link = match purlis_session_protocol::link::connect(
+        stream,
+        session::speaks(),
+        Scope::Terminal,
+        &credential,
+    )
+    .await
+    {
+        Ok(link) => link,
+        Err(e) => {
+            eprintln!("refused: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (client, mut views, _events) = Client::new(link);
+    if let Err(e) = client.attach_view(program, ViewKind::Terminal).await {
+        eprintln!("attach refused: {e}");
+        return ExitCode::FAILURE;
+    }
+    let mut reader = match views.accept().await {
+        Ok(stream) => match Viewer::default().accept(stream).await {
+            Ok(reader) => reader,
+            Err(e) => {
+                eprintln!("no view: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
+        Err(e) => {
+            eprintln!("no view: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let say = |line: String| {
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{line}");
+        let _ = out.flush();
+    };
+    let escaped = |bytes: &[u8]| String::from_utf8_lossy(bytes).escape_debug().to_string();
+    let mut snapshot = Vec::new();
+    if reader.snapshot_complete() {
+        say("snapshot ".to_owned());
+    }
+    while let Some(chunk) = reader.next().await {
+        match chunk {
+            Ok(Chunk::Snapshot(bytes)) => {
+                let _ = reader.ack(bytes.len()).await;
+                snapshot.extend_from_slice(&bytes);
+                if reader.snapshot_complete() {
+                    say(format!("snapshot {}", escaped(&snapshot)));
+                }
+            }
+            Ok(Chunk::Live(bytes)) => {
+                let _ = reader.ack(bytes.len()).await;
+                say(format!("live {}", escaped(&bytes)));
+            }
+            Err(e) => {
+                eprintln!("the view failed: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    eprintln!("the view ended");
+    ExitCode::SUCCESS
 }
 
 fn usage() -> ExitCode {
