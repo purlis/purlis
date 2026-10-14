@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791937208555,
+  "lastUpdate": 1791937222646,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2874,6 +2874,42 @@ window.BENCHMARK_DATA = {
             "value": 437.6,
             "unit": "MB",
             "extra": "median of 6 samples: 399.8, 415, 432.9, 442.3, 442.7, 532.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "eb9629c4f09a933dd0686e939bf168ef5fd7792e",
+          "message": "guard: the leak guard follows a long run of cds in linear time\n\nThe leak guard follows every cd on a line, since what a later command reads is read from\nwhere the shell then stands. For each one it built the directory again from the start and\nnormalised the whole of it again, so a run of them cost the square of its length: 184 ms at\n16 KB and 2.8 s at 64 KB in a test build. The family test's two sizes sat just inside its\nallowance on most runs and just outside it on a slow runner, which is how main went red.\n\nThe normalised place is now carried from one cd to the next (pypath::Normalised, held equal\nto normpath of the whole by a property test), noted only when the shell has moved, and the\ndirectory is appended to in place and borrowed for a segment. What the guard answers is\nunchanged, and the recorded answers replay as they were.\n\nOne test is added, at 16 KB against 64 KB on three runs of relocations, so the step cannot\nhide inside the family test's allowance again. No bound is raised and no shape exempted.\n\nRefs: lane qw377.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T03:32:15+04:00",
+          "tree_id": "4abede45c4d25378076d0908c9d11ab82c786861",
+          "url": "https://github.com/purlis/purlis/commit/eb9629c4f09a933dd0686e939bf168ef5fd7792e"
+        },
+        "date": 1791937221676,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1456.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1354.7, 1456.7, 1663.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 440.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 396.1, 421.6, 445.2, 440.1, 440.4, 543 MB"
           }
         ]
       }
