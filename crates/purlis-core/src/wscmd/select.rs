@@ -58,6 +58,9 @@ pub enum Scope {
     /// The session is locked to a different workspace and `force` was not passed. **Nothing
     /// was written.**
     Locked,
+    /// There was a pointer to write and none could be: the state folder refused it (a
+    /// sandboxed chat, a read-only plane). **Nothing was selected.**
+    Unwritten,
 }
 
 /// The plane's machine-local state directory, **as [`crate::active`] reads it**.
@@ -129,48 +132,52 @@ pub fn set_active(root: &Path, name: &str, ids: &Ids, force: bool) -> Scope {
     {
         return Scope::Locked;
     }
+    // Each pointer counts only where it was written: the answer is what landed (qw387).
     let _ = crate::plane::private_dir(root, &state_dir(root));
     let line = format!("{name}\n");
     let tid = ids
         .terminal
         .as_deref()
         .filter(|id| !id.is_empty() && crate::contain::segment_ok(id));
-    if let Some(tid) = tid {
+    let terminal_landed = tid.is_some_and(|tid| {
         let dir = terminals_dir(root);
-        if crate::plane::private_dir(root, &dir).is_ok() {
-            let _ = crate::plane::write_private(
+        crate::plane::private_dir(root, &dir).is_ok()
+            && crate::plane::write_private(
                 root,
                 &dir.join(format!("{tid}.workspace")),
                 line.as_bytes(),
-            );
-        }
-    }
+            )
+            .is_ok()
+    });
     let sid = ids
         .session
         .as_deref()
         .filter(|id| crate::contain::segment_ok(id));
-    if let Some(sid) = sid {
+    let session_landed = sid.is_some_and(|sid| {
         let dir = sessions_dir(root);
-        if crate::plane::private_dir(root, &dir).is_ok() {
-            let _ = crate::plane::write_private(
+        crate::plane::private_dir(root, &dir).is_ok()
+            && crate::plane::write_private(
                 root,
                 &dir.join(format!("{sid}.workspace")),
                 line.as_bytes(),
-            );
+            )
+            .is_ok()
             // Confirming IS locking.
-            let _ = crate::plane::write_private(
+            && crate::plane::write_private(
                 root,
                 &dir.join(format!("{sid}.lock")),
                 line.as_bytes(),
-            );
-        }
-    }
+            )
+            .is_ok()
+    });
     prune(root);
     // The longest-lived pointer that actually landed — see the module header.
-    if tid.is_some() {
+    if terminal_landed {
         Scope::Terminal
-    } else if sid.is_some() {
+    } else if session_landed {
         Scope::Session
+    } else if tid.is_some() || sid.is_some() {
+        Scope::Unwritten
     } else {
         Scope::None
     }
@@ -282,6 +289,10 @@ pub fn use_workspace(
             say(Say::Fail(locked_msg(name, &held)));
             2
         }
+        Scope::Unwritten => {
+            say(Say::Fail(unwritten_msg(name)));
+            1
+        }
         scope => {
             announce(root, name, scope, before.as_deref(), ids, say);
             warn_env_override(name, say);
@@ -311,6 +322,10 @@ pub(crate) fn announce(
     ids: &Ids,
     say: Sink,
 ) {
+    if scope == Scope::Unwritten {
+        say(Say::Fail(unwritten_msg(name)));
+        return;
+    }
     if scope == Scope::None {
         say(Say::Warn(format!(
             "Nothing was persisted: this process has no session id and no pane id, so there is \
@@ -329,6 +344,15 @@ pub(crate) fn announce(
         scope_note(root, scope),
         lock_words(name, locked.as_deref())
     )));
+}
+
+/// What a selection whose pointer could not be written says.
+pub fn unwritten_msg(name: &str) -> String {
+    format!(
+        "purlis could not write where '{name}' is selected (the plane's state folder refused \
+         it), so nothing was selected. Pass `--workspace {name}` per command, or start a chat in \
+         it"
+    )
 }
 
 /// How far the selection reaches, in the words the reader needs —
@@ -356,7 +380,7 @@ fn scope_note(root: &Path, scope: Scope) -> String {
                  starts at '{starts}')"
             )
         }
-        Scope::None | Scope::Locked => String::new(),
+        Scope::None | Scope::Locked | Scope::Unwritten => String::new(),
     }
 }
 
@@ -594,6 +618,37 @@ mod tests {
             .permissions()
             .mode()
             & 0o777
+    }
+
+    #[test]
+    fn a_pointer_that_could_not_be_written_selects_nothing_and_says_so() {
+        // qw387: the selection is what landed. A state folder that refuses the write (here a
+        // file where the folder should be) is never reported as a selection.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("charter.toml"), "").unwrap();
+        let state = state_dir(dir.path());
+        std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+        std::fs::write(&state, "not a folder\n").unwrap();
+        let ids = Ids {
+            session: Some("s1".to_owned()),
+            terminal: Some("t1".to_owned()),
+        };
+        assert_eq!(
+            set_active(dir.path(), "beta", &ids, false),
+            Scope::Unwritten
+        );
+        let mut said = Vec::new();
+        announce(
+            dir.path(),
+            "beta",
+            Scope::Unwritten,
+            None,
+            &ids,
+            &mut |line| {
+                said.push(line.to_string());
+            },
+        );
+        assert!(said[0].contains("nothing was selected"), "{said:?}");
     }
 
     #[test]
