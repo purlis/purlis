@@ -6,7 +6,9 @@
 //!
 //! A sandboxed chat may not write a clone's `.git/config`, its hooks, or the editor settings a
 //! checkout carries (`.vscode/`, `.idea/`, `.claude/settings.json`), and `git clone` and
-//! `git worktree add` write all of them. So `purlis clone` and `purlis worktree add`, run in a
+//! `git worktree add` write all of them. A branch folder's own git directory is in its clone's
+//! `.git` too, so `purlis worktree update` and `push` are handed over the same way
+//! ([`crate::pieceupdate`], qw387), for a chat standing in that folder or above it. So `purlis clone` and `purlis worktree add`, run in a
 //! chat the app started, hand the work to the app over the chat's hook socket
 //! ([`crate::hookwire::Ask::Git`]), and the app runs **the same core functions** the terminal's
 //! commands run — [`crate::repocmd::clone::clone`] and [`crate::piececmd::add`] — so git is
@@ -77,6 +79,11 @@ fn isolated_answer(
     // project. Every other ask writes a workspace the chat already writes.
     let placed = match &ask.work {
         GitWork::Create { .. } => in_the_project(root, asker.cwd.as_deref()),
+        // A branch folder's own git: the chat stands in it, or above it in its workspace.
+        GitWork::WorktreeUpdate { repo, piece, .. } | GitWork::WorktreePush { repo, piece, .. } => {
+            bound(root, asker.cwd.as_deref(), &ask.workspace)
+                .and_then(|()| at_or_above(root, asker.cwd.as_deref(), repo, piece))
+        }
         _ => bound(root, asker.cwd.as_deref(), &ask.workspace),
     };
     if let Err(why) = placed {
@@ -119,11 +126,76 @@ fn isolated_answer(
             },
             &mut say,
         ),
+        GitWork::WorktreeUpdate { repo, piece, .. } | GitWork::WorktreePush { repo, piece, .. } => {
+            let sandboxed = match commit::sandboxed(root, asker) {
+                Ok(sandboxed) => sandboxed,
+                Err(why) => return no(why),
+            };
+            let reach = crate::pieceupdate::Reach {
+                hosts: hosts.as_deref(),
+                sandboxed_at: asker.cwd.as_deref().filter(|_| sandboxed),
+            };
+            let at = crate::pieceupdate::Piece {
+                root,
+                ws: &ask.workspace,
+                repo,
+                piece,
+            };
+            let held = git::isolation().unwrap_or_default();
+            let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || match &ask
+                .work
+            {
+                GitWork::WorktreeUpdate { step, .. } => {
+                    crate::pieceupdate::update(&at, step, &reach, &mut say)
+                }
+                GitWork::WorktreePush { lease, .. } => {
+                    crate::pieceupdate::push(&at, *lease, &reach, &mut say)
+                }
+                _ => 1,
+            });
+            match ran {
+                Ok(code) => code,
+                Err(NotRun::Repo(why)) => return no(why),
+                Err(NotRun::Folder(why)) => return no(why.to_string()),
+            }
+        }
         GitWork::WorktreeAdd {
             repo,
             piece,
             branch,
+        }
+        | GitWork::WorktreeCut {
+            repo,
+            piece,
+            branch,
+            ..
         } => {
+            // An ask with no base word is an older command's, which cut from the clone's HEAD.
+            let base = match &ask.work {
+                GitWork::WorktreeCut { base, .. } => base.as_deref(),
+                _ => Some(crate::piececmd::HEAD),
+            };
+            // For a sandboxed chat (qw387): the remote-tracking branches a cut may start from
+            // are the app's own fetch's, and the cut is judged as the chat's own checkout of
+            // its start would be.
+            let sandboxed = match commit::sandboxed(root, asker) {
+                Ok(sandboxed) => sandboxed,
+                Err(why) => return no(why),
+            };
+            if sandboxed
+                && base != Some(crate::piececmd::HEAD)
+                && let Ok(clone) = crate::worktree::clone_dir(root, &ask.workspace, repo)
+                && let Some(remote) = crate::pieceupdate::remote_of(&clone, base.unwrap_or("HEAD"))
+                && let Err(why) =
+                    crate::repocmd::sync::fetch_remote(root, &clone, &remote, hosts.as_deref())
+            {
+                return no(format!("{why}. Nothing was cut"));
+            }
+            let judged = |clone: &Path, start: &str, folder: &Path| {
+                crate::cloneupdate::judged_cut(clone, start, folder, root, asker.cwd.as_deref())
+                    .map_or(Ok(()), Err)
+            };
+            let vet: Option<crate::worktree::Vet<'_>> = sandboxed.then_some(&judged);
             let add = |say: &mut dyn FnMut(Say)| {
                 crate::piececmd::add(
                     root,
@@ -131,6 +203,9 @@ fn isolated_answer(
                     repo,
                     piece,
                     branch.as_deref(),
+                    base,
+                    vet,
+                    hosts.as_deref(),
                     &who(asker),
                     now,
                     say,
@@ -275,6 +350,27 @@ pub fn bound(root: &Path, cwd: Option<&Path>, workspace: &str) -> Result<(), Str
     }
 }
 
+/// Whether a chat standing at `cwd` may ask for the branch folder `<repo>/<piece>`'s own git
+/// (qw387): it stands in that folder, or above branch folders in their workspace or the
+/// project; never in another branch folder. As the brokered commit holds a chat to the folder
+/// it stands in, or one below it.
+pub fn at_or_above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> Result<(), String> {
+    let Some(cwd) = cwd else {
+        return Err(
+            "the app has no record of where this chat stands, so it will not run git for it"
+                .to_owned(),
+        );
+    };
+    match crate::worktree::locate(root, cwd) {
+        Some(here) if here.repo != repo || here.piece != piece => Err(format!(
+            "this chat stands in branch folder {} · {}, so the app will not run git in {repo} · \
+             {piece} for it",
+            here.repo, here.piece
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Whether a chat standing at `cwd` stands in the project at `root`: at its root, or in one of
 /// its workspaces. Where a chat may ask for a workspace to be made (qw387).
 pub fn in_the_project(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
@@ -383,7 +479,10 @@ fn shortened(line: Say) -> Say {
 /// writes its config.
 fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
     match work {
-        GitWork::WorktreeAdd { repo, .. } => {
+        GitWork::WorktreeAdd { repo, .. }
+        | GitWork::WorktreeCut { repo, .. }
+        | GitWork::WorktreeUpdate { repo, .. }
+        | GitWork::WorktreePush { repo, .. } => {
             if crate::contain::repo_name_ok(repo) && crate::contain::workspace_name_ok(ws) {
                 vec![root.join("workspaces").join(ws).join(repo)]
             } else {
