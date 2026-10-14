@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791975461215,
+  "lastUpdate": 1791975478166,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3626,6 +3626,42 @@ window.BENCHMARK_DATA = {
             "value": 459.1,
             "unit": "MB",
             "extra": "median of 6 samples: 417.7, 440.1, 455.7, 462.4, 462.7, 535.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "73f710c974e64e5ffd6de179f8cdb3b482a4e6ee",
+          "message": "review(qw383): the list takes programs that copy or encode, and says it is not exhaustive\n\n- GENERAL_PURPOSE adds the programs that copy, encode or rewrite what\n  they are given (cat, cp, tee, dd, sed, base64, xxd, od, hexdump,\n  openssl, gzip, tar, zip), beside the network ones; a core test covers\n  them.\n- secrets.md, the plane-format tools row, ADR 0067's T-4 section and the\n  changes fragment say the list is not exhaustive: a tool without the\n  sentence is not thereby a safe one, since any program can show what it\n  is handed if its arguments ask it to. Tests name such tools \"unlisted\".\n- The Notice keeps one space between the vault sentence and what follows,\n  with or without the sentence; secrets.md's paragraph joins again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T13:59:51+04:00",
+          "tree_id": "a59ba7e2caa6b943beab0985d52f6d378ed55e86",
+          "url": "https://github.com/purlis/purlis/commit/73f710c974e64e5ffd6de179f8cdb3b482a4e6ee"
+        },
+        "date": 1791975476907,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1466.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1264.5, 1466.7, 1561.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 446.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 406.9, 430.2, 439.7, 453.9, 454.5, 536.9 MB"
           }
         ]
       }
