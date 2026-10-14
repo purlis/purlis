@@ -2596,8 +2596,106 @@ fn save_on_a_clean_plane_whose_push_really_conflicts_records_the_files_today() {
 }
 
 #[test]
+fn the_windows_save_pushes_a_mode_less_planes_commits_the_remote_lacks() {
+    // The dispatcher's ruling on qw382: Save in the window never says "nothing to save" while
+    // the plane has commits its upstream lacks, whatever the mode.
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+
+    let (code, said) = pressed_save(&fixture);
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!said.contains("Nothing to save"), "{said}");
+    assert!(said.contains("carrying on 1 commit(s)"), "{said}");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "mine",
+        "{said}"
+    );
+}
+
+/// The window's Save, as the button presses it.
+fn pressed_save(fixture: &Fixture) -> (u8, String) {
+    let mut said = String::new();
+    let code = save_as(
+        &Request {
+            root: &fixture.root,
+            message: None,
+            sign: false,
+            no_push: false,
+            cwd: &fixture.root,
+            provenance: None,
+        },
+        Trigger::Manual,
+        &mut |line: Say| {
+            said.push_str(&line.to_string());
+            said.push('\n');
+        },
+    );
+    (code, said)
+}
+
+#[test]
+fn after_an_update_clears_the_record_the_windows_save_pushes_what_it_replayed() {
+    // Review of qw382: an Update on a mode-less plane deleted the record, and Save then said
+    // "Nothing to save" with the replayed commit unpushed.
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    let head = ask(&fixture.root, &["rev-parse", "HEAD"]);
+    std::fs::create_dir_all(push_record_path(&fixture.root).parent().unwrap()).unwrap();
+    std::fs::write(
+        push_record_path(&fixture.root),
+        format!(
+            r#"{{"outcome": "conflict", "branch": "main", "head": "{}", "detail": "the remote changed the same lines in: mine.md", "conflicts": ["mine.md"]}}"#,
+            head.trim()
+        ),
+    )
+    .unwrap();
+    run(
+        &fixture.root,
+        &[
+            "fetch",
+            "-q",
+            &bare.display().to_string(),
+            "+refs/heads/main:refs/remotes/origin/main",
+        ],
+    );
+    let plane = crate::planesave::Settings::read(&fixture.root).plane;
+    let moved = update::bring_in(
+        &fixture.root,
+        &plane,
+        "main",
+        &forge::Caller::window(),
+        WRITE,
+        true,
+        &mut |_: Say| {},
+    );
+    assert!(matches!(moved, Updated::Moved(_)), "{moved:?}");
+    assert!(push_record(&fixture.root).is_none(), "the Update forgot it");
+
+    let (code, said) = pressed_save(&fixture);
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!said.contains("Nothing to save"), "{said}");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "mine",
+        "{said}"
+    );
+}
+
+#[test]
 fn a_clean_plane_with_no_record_still_has_nothing_to_save() {
-    // The retry is for a push that stopped, never a new reason to push a mode-less plane.
+    // `purlis save` keeps its recorded answer for a mode-less plane: the retry is for a push
+    // that stopped, and the window's own press is the other reason to push.
     let fixture = Fixture::plane();
     fixture.with_a_remote_that_moved();
     tracks_what_it_pushed(&fixture);

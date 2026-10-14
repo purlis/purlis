@@ -2864,7 +2864,9 @@ fn commit_push(
                 .value
                 .is_some_and(crate::planesave::Mode::opens_a_pr)
                 && prsave::knows_a_pr(root);
-            let unpushed = unpushed(root, plane);
+            // The person's own press in the window carries a mode-less plane's commits too.
+            let pressed = caller.surface() == forge::backend::Surface::Window;
+            let unpushed = unpushed(root, plane, pressed);
             if !request.no_push && (unpushed.is_some() || pr_known) {
                 say(Say::Info(match unpushed {
                     Some(n) => format!(
@@ -3146,13 +3148,14 @@ fn commit_push(
 /// How many commits a clean plane has that its mode would still push: `None` unless the plane
 /// names a mode past `commit` and the target branch on the remote lacks commits HEAD has —
 /// and, in a request mode, the pull request does not already carry HEAD. A plane that names no
-/// mode counts too while its last push stopped and has not landed ([`retries_its_push`]), so a
-/// Save pressed on it tries again rather than answering "nothing to save" (qw382).
-fn unpushed(root: &Path, plane: &crate::planesave::Plane) -> Option<u32> {
+/// mode counts too when the window's Save was `pressed`, or while its last push stopped and
+/// has not landed ([`retries_its_push`]): the window never answers "nothing to save" while the
+/// remote lacks commits HEAD has (qw382).
+fn unpushed(root: &Path, plane: &crate::planesave::Plane, pressed: bool) -> Option<u32> {
     use crate::planesave::Mode;
     let mode = match plane.mode.value {
         Some(mode @ (Mode::Push | Mode::Pr | Mode::PrMerge)) => mode,
-        None if retries_its_push(root) => Mode::Push,
+        None if pressed || retries_its_push(root) => Mode::Push,
         _ => return None,
     };
     let branch = match &plane.branch.value {
