@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792013757308,
+  "lastUpdate": 1792016111236,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2154,6 +2154,42 @@ window.BENCHMARK_DATA = {
             "value": 186.7,
             "unit": "MB",
             "extra": "median of 6 samples: 206.1, 226.8, 190.6, 182.7, 177.4, 134.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b724a0d3da5e865eb4747fe4738c03bf7d163ea2",
+          "message": "A waiting chat's pane Notice can be dismissed (qw386) (#2090)\n\n* feat(sandbox): a service on this Mac is allowed by its one port (qw384)\n\nA sandboxed chat that reaches a service listening on this machine (kubectl\nagainst a local cluster at 127.0.0.1:<port>, a database in a container, a\ndev server) now gets a Block naming the port, and its Notice offers Allow\nfor this chat or for this project on this machine.\n\n- core: sandbox/localport.rs judges one port (1-65535, never purlis's own),\n  reads Go's and Node's refusal words, and binds purlis's own proxy and\n  tunnel ports away from any port a chat was started with.\n- grant::What::Port, kept for one chat in memory or in this machine's\n  sandbox file (ports_mine); policy's socket-grants lock holds it too.\n- a start compiles each allowed port into the chat's Seatbelt profile\n  (Codex, opencode) and its proxy's reach, as exactly 127.0.0.1, ::1 and\n  localhost at that port.\n- sandboxblock::Kind::LocalService: Go/Node words, the sandbox's own\n  network-outbound line for a loopback address, and the proxy's refusal of\n  a loopback address each name the port.\n- app: BlockOffer::Port, GrantWhat::Port, the asks adapter, the Granted\n  list and Remove; a port the refusal did not name is typed.\n- Claude Code's sandbox takes no single loopback port, so its Notice says so\n  and offers Start without the sandbox (follow-up).\n- ADR 0067 section (to be confirmed), CONTEXT term, plane-format, changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(sandbox): review of a service on this Mac (qw384)\n\n- One lock over purlis's own ports and the ports chats were given:\n  a start and a new listener each judge and mark in one step.\n- A forge sign-in's redirect ports are purlis's own.\n- Loopback is exactly 127.0.0.1, ::1 and localhost, as the profile and\n  the proxy carry it.\n- In a Codex or opencode chat a violation block is printed text, and\n  printed words never name a port: they pre-fill the Notice's port\n  field, said to come from the command's output, for the person to check.\n- A port you allowed that purlis holds after a restart has its own sentence.\n- The Granted list says where a port applies.\n- Docs say exactly when the port is named and when it is pre-filled.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw384): the lane-writes guard knows granted_ports only reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw384): a port purlis holds is freed before the service starts again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* style(qw384): fmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(notices): a waiting chat's pane Notice can be dismissed (qw386)\n\nThe pane Notice that another chat waits on you for a permission, or is\nstopped on a prompt, gets the Notice's own Dismiss. It hides the line in\nmemory for this run and that wait only, answers nothing, and says so as\nits tooltip (new optional Notice prop dismissSays): the tab's hand and the\nneeds-you list still show the wait. A new prompt shows again by its own\ncause; the stopped line shows again at the chat's next wait.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(notices): a dismissed wait is keyed by the wait, not by a pane being drawn (qw386)\n\nThe stopped line is keyed by the moment the core says the chat last moved,\nso a new wait is a new line whether or not the pane was drawn while the\nold one ended; no release effect is needed. A prompt put away while purlis\nheld it carries to the stopped line of the same wait within the pane that\nsaw the hold end.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T01:28:30+04:00",
+          "tree_id": "488d67bc624a07da1519b4d0b359b3aa736de293",
+          "url": "https://github.com/purlis/purlis/commit/b724a0d3da5e865eb4747fe4738c03bf7d163ea2"
+        },
+        "date": 1792016110194,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 850,
+            "unit": "MB",
+            "extra": "median of 3 samples: 730, 850, 1032 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 212.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 203.8, 228.5, 225.3, 212.4, 213.1, 135.4 MB"
           }
         ]
       }
