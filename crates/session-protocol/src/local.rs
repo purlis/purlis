@@ -58,6 +58,15 @@ pub trait Chats: Send + Sync + 'static {
     /// - a program's pid is in the set from the moment the program can run, before its first
     ///   instruction, never only once the start has returned.
     fn programs(&self) -> Vec<u32>;
+
+    /// The process every chat runs below when the chats are not this host's own: the window,
+    /// while chats run in its process (spec #1974's start-time switch, in-app by default). A
+    /// peer below it is inside a chat as surely as one below a chat's program, and is refused
+    /// the same way; the window itself is not inside one. `None`, the default, is a host whose
+    /// chats are all its own.
+    fn holder(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// A host that holds no chats: no process is inside one.
@@ -69,27 +78,51 @@ impl Chats for NoChats {
     }
 }
 
-/// Which of `chats`' programs process `pid` runs inside, if any, read from the kernel off the
-/// async runtime (`purlis_same_user::inside_a_chat`). An error is a doubt, and the caller
-/// refuses.
+/// Which of `chats`' programs process `pid` runs inside, if any, or the window that holds them
+/// ([`Chats::holder`]), read from the kernel off the async runtime ([`inside_of`]). An error is
+/// a doubt, and the caller refuses.
 pub(crate) async fn inside_a_chat<C: Chats>(
     pid: u32,
     chats: std::sync::Arc<C>,
 ) -> std::io::Result<Option<u32>> {
     let programs = chats.programs();
-    if programs.is_empty() {
+    let holder = chats.holder();
+    if programs.is_empty() && holder.is_none() {
         return Ok(None);
     }
     tokio::task::spawn_blocking(move || {
-        purlis_same_user::inside_a_chat(
+        inside_of(
             pid,
             &programs,
+            holder,
             purlis_same_user::Parents::of,
             purlis_same_user::session_of,
         )
     })
     .await
     .map_err(std::io::Error::other)?
+}
+
+/// Which chat process `peer` runs inside: below the window that holds the chats (`holder`),
+/// when it is not the window itself, or inside one of the host's own `programs`. Both are
+/// `purlis_same_user::inside_a_chat`'s one check: the window is taken as one more chat's
+/// program, its session included, for every peer but the window. Every doubt is an error.
+pub(crate) fn inside_of(
+    peer: u32,
+    programs: &[u32],
+    holder: Option<u32>,
+    parent: impl Fn(u32) -> Option<u32>,
+    session: impl Fn(u32) -> std::io::Result<u32>,
+) -> std::io::Result<Option<u32>> {
+    if let Some(window) = holder.filter(|window| *window != peer)
+        && let Some(found) = purlis_same_user::inside_a_chat(peer, &[window], &parent, &session)?
+    {
+        return Ok(Some(found));
+    }
+    if programs.is_empty() {
+        return Ok(None);
+    }
+    purlis_same_user::inside_a_chat(peer, programs, parent, session)
 }
 
 /// How a listener learns who the peer is. A function, so a test can stand in for a socket
