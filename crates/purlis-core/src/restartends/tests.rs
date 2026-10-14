@@ -75,3 +75,49 @@ fn a_line_that_is_not_a_process_is_passed_over() {
         }]
     );
 }
+
+#[test]
+fn what_lsof_printed_is_read_even_where_it_answered_one() {
+    // One of the processes asked about ended meanwhile: lsof lists the others and answers 1.
+    assert_eq!(
+        lsof_answer(Some(1), "p103\nf21\nn*:5173\n"),
+        Some(vec![(103, 5173)])
+    );
+    assert_eq!(lsof_answer(Some(1), ""), Some(vec![]), "nothing to list");
+    assert_eq!(lsof_answer(Some(0), LSOF).map(|all| all.len()), Some(3));
+}
+
+#[test]
+fn lsof_that_failed_and_printed_nothing_cannot_tell() {
+    assert_eq!(lsof_answer(Some(2), ""), None);
+    assert_eq!(lsof_answer(None, ""), None, "ended by a signal");
+}
+
+#[test]
+fn a_reader_past_its_deadline_is_ended_and_cannot_tell() {
+    let started = Instant::now();
+    let read = within(
+        Command::new("/bin/sleep").arg("5"),
+        Duration::from_millis(100),
+    );
+    assert_eq!(read, None);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "it did not wait for the program"
+    );
+}
+
+#[test]
+fn a_reader_within_its_deadline_hands_back_its_status_and_all_it_printed() {
+    // More than a pipe holds: read while it runs, so it is never stopped on a full pipe.
+    let read = within(
+        Command::new("/bin/sh").args([
+            "-c",
+            "i=0; while [ $i -lt 20000 ]; do echo line$i; i=$((i+1)); done",
+        ]),
+        Duration::from_secs(20),
+    )
+    .expect("it ends in time");
+    assert_eq!(read.0, Some(0));
+    assert_eq!(read.1.lines().count(), 20000);
+}

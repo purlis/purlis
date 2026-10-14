@@ -15,7 +15,9 @@
 //! that listens on a port is named, whoever started it.
 
 use std::collections::BTreeSet;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 #[cfg(test)]
 mod tests;
@@ -140,9 +142,15 @@ pub fn ends_of(below: &[Below], listening: &[(u32, u16)]) -> Ends {
 }
 
 /// **What restarting the chat whose program is `pid` ends now**, or `None` where purlis cannot
-/// tell: the process table or the listening sockets could not be read.
+/// tell: the process table or the listening sockets could not be read within [`DEADLINE`].
 pub fn of(pid: u32) -> Option<Ends> {
-    let listing = run(Command::new("/bin/ps").args(["-A", "-o", "pid=,ppid=,comm="]))?;
+    let (status, listing) = within(
+        Command::new("/bin/ps").args(["-A", "-o", "pid=,ppid=,comm="]),
+        DEADLINE,
+    )?;
+    if status != Some(0) {
+        return None;
+    }
     let below = below(&listing, pid);
     if below.is_empty() {
         return Some(Ends::default());
@@ -151,37 +159,74 @@ pub fn of(pid: u32) -> Option<Ends> {
     let lsof = ["/usr/sbin/lsof", "/usr/bin/lsof"]
         .into_iter()
         .find(|path| std::path::Path::new(path).exists())?;
-    let mut ask = Command::new(lsof);
-    ask.args([
-        "-nP",
-        "-a",
-        "-iTCP",
-        "-sTCP:LISTEN",
-        "-p",
-        &pids.join(","),
-        "-F",
-        "pn",
-    ]);
-    let output = crate::forklock::output(quiet(&mut ask)).ok()?;
-    // lsof answers 1 when it found nothing to list; anything else that is not 0 is a failure.
-    let listed = match output.status.code() {
-        Some(0) => String::from_utf8_lossy(&output.stdout).into_owned(),
-        Some(1) if output.stdout.is_empty() => String::new(),
-        _ => return None,
-    };
-    Some(ends_of(&below, &listening_in(&listed)))
+    // `-b` and `-w`: no kernel call that can block, and no warnings on its output.
+    let (status, listed) = within(
+        Command::new(lsof).args([
+            "-b",
+            "-w",
+            "-nP",
+            "-a",
+            "-iTCP",
+            "-sTCP:LISTEN",
+            "-p",
+            &pids.join(","),
+            "-F",
+            "pn",
+        ]),
+        DEADLINE,
+    )?;
+    Some(ends_of(&below, &lsof_answer(status, &listed)?))
 }
 
-/// `command`'s standard output where it succeeded.
-fn run(command: &mut Command) -> Option<String> {
-    let output = crate::forklock::output(quiet(command)).ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+/// How long `ps` and `lsof` may each take: the Ask is drawn while they run, and says purlis
+/// cannot tell when either takes longer.
+pub const DEADLINE: Duration = Duration::from_secs(2);
+
+/// The listening sockets `lsof` answered with exit status `status` and `listed` on its standard
+/// output, or `None` where it failed. What it printed is read whatever its status: it answers 1
+/// when it found nothing to list, and also when one of the processes it was asked about ended
+/// meanwhile, after listing the others. Nothing printed and a status past 1 is a failure.
+pub fn lsof_answer(status: Option<i32>, listed: &str) -> Option<Vec<(u32, u16)>> {
+    if !listed.is_empty() || matches!(status, Some(0 | 1)) {
+        Some(listening_in(listed))
+    } else {
+        None
+    }
+}
+
+/// `command`'s exit status and standard output, where it ends within `deadline`; `None`
+/// otherwise, and a command still running at the deadline is killed. Its output is read while
+/// it runs, so a long one cannot fill the pipe and stop it.
+pub fn within(command: &mut Command, deadline: Duration) -> Option<(Option<i32>, String)> {
+    let mut child = crate::forklock::spawn(
+        no_env(command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null()),
+    )
+    .ok()?;
+    let mut out = child.stdout.take()?;
+    let reading = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        out.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    let until = Instant::now() + deadline;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    let bytes = reading.join().ok()?.ok()?;
+    Some((status.code(), String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 /// `command` with no environment: what it reads is the operating system's, never purlis's own.
-fn quiet(command: &mut Command) -> &mut Command {
+fn no_env(command: &mut Command) -> &mut Command {
     command.env_clear()
 }

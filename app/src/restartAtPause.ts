@@ -10,8 +10,9 @@ import type { State } from "./chatState";
  * A pause is what the chat's harness already tells purlis: its turn ended or it handed control
  * back (`waiting`, from its Stop and Notification hooks). Nothing new is read to learn it. While
  * it is mid-turn the restart waits; a harness that says nothing of its turns is never restarted
- * behind the person's back. A chat whose program ended first (`done`, `failed`) is restarted
- * by nothing: what was allowed reaches it at its next start, and it is owed nothing now.
+ * behind the person's back. A chat that reads as ended (`done`, `failed`) is restarted by
+ * nothing: what was allowed reaches it at its next start, and once its program has ended it is
+ * owed nothing ({@link owedAfterEnded}).
  *
  * **Restart now** is the person's own: it restarts the chat at once, mid-turn or not, unless
  * its program has ended.
@@ -38,4 +39,18 @@ export function restartsDue(
 /** `owed` with chat `session` owed its restart: once, however many grants owe it. */
 export function withRestartOwed(owed: readonly number[], session: number): readonly number[] {
   return owed.includes(session) ? owed : [...owed, session];
+}
+
+/**
+ * **What is owed once chats in `ended` read as ended** (#1986): a chat's hooks can say its
+ * session ended while its program still runs, so the window drops a restart only where the core,
+ * which hears the program itself end (`its_program_ended`), owes it no more (`coreOwes`, read
+ * again from `owed_restarts`). Every other chat keeps what it is owed.
+ */
+export function owedAfterEnded(
+  owed: readonly number[],
+  ended: readonly number[],
+  coreOwes: readonly number[],
+): readonly number[] {
+  return owed.filter((session) => !ended.includes(session) || coreOwes.includes(session));
 }

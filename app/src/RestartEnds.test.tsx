@@ -64,4 +64,25 @@ describe("what an Allow that restarts the chat says beforehand (#1986)", () => {
     const name = container.querySelector("code");
     expect(name?.textContent).toBe("dev\\u202eserver");
   });
+
+  it("names the chat where it is read away from the chat's own pane", () => {
+    expect(
+      render(
+        <RestartEndsSaid
+          ends={{ listening: [{ program: "node", port: 5173 }], others: 0 }}
+          chat="steward 3"
+        />,
+      ).container.textContent,
+    ).toBe(
+      "Allowing restarts steward 3 on its conversation at its next pause between turns; its node on port 5173 will stop.",
+    );
+  });
+
+  it("says it restarts now where the chat is between turns already", () => {
+    expect(
+      render(<RestartEndsSaid ends={{ listening: [], others: 1 }} now />).container.textContent,
+    ).toBe(
+      "Allowing restarts this chat on its conversation now, as it is between turns; 1 program it started will stop.",
+    );
+  });
 });

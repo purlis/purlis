@@ -2,20 +2,33 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useEffect, useState } from "react";
+import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { commands, type PlaneId, type RestartEnds } from "./bindings";
 import { inertly } from "./sandboxBlocks";
 
 /**
- * **What an Allow that restarts the chat says beforehand** (#1986, ruling Q63): that it restarts
- * at the chat's next pause between turns, and what the restart will end, as the core read it
- * from the operating system (`what_a_restart_ends`): each program its commands started that
- * listens on a port, by name and port, and how many others are running. Where purlis cannot
- * tell, it says so, and never guesses. `undefined` while it is still being read.
+ * **What an Allow that restarts the chat says beforehand** (#1986, ruling Q63): when it restarts
+ * — now, where the chat is between turns already (`now`), else at its next pause between turns —
+ * and what the restart will end, as the core read it from the operating system
+ * (`what_a_restart_ends`): each program its commands started that listens on a port, by name and
+ * port, and how many others are running. Where purlis cannot tell, it says so, and never
+ * guesses. `undefined` while it is still being read. `chat` names the chat where the words are
+ * read away from its own pane (the Inbox); on its pane it is "this chat".
  *
  * A program's name is the chat's to choose, so it is drawn apart from purlis's words, inertly.
  */
-export function RestartEndsSaid({ ends }: { ends: RestartEnds | null | undefined }) {
-  const when = "Allowing restarts this chat on its conversation at its next pause between turns";
+export function RestartEndsSaid({
+  ends,
+  chat,
+  now = false,
+}: {
+  ends: RestartEnds | null | undefined;
+  chat?: string;
+  now?: boolean;
+}) {
+  const when = `Allowing restarts ${chat ?? "this chat"} on its conversation ${
+    now ? "now, as it is between turns" : "at its next pause between turns"
+  }`;
   if (ends === undefined) return <>{when}.</>;
   if (ends === null)
     return <>{when}. purlis cannot tell what it has running, so anything it started may stop.</>;
@@ -70,4 +83,23 @@ export function useRestartEnds(plane: PlaneId, session: number, asked: boolean) 
     };
   }, [plane, session, asked]);
   return ends;
+}
+
+/**
+ * **The restart's sentence for chat `session`'s Ask** ({@link RestartEndsSaid}), with what it
+ * ends read once as the Ask is drawn, and whether it restarts now: the chat's harness says it is
+ * between turns (`waiting`), so the restart an Allow owes is made at once.
+ */
+export function RestartEndsLine({
+  plane,
+  session,
+  chat,
+}: {
+  plane: PlaneId;
+  session: number;
+  chat?: string;
+}) {
+  const ends = useRestartEnds(plane, session, true);
+  const now = useChatsSelect(useChatsHere(), (states) => stateOf(states, session) === "waiting");
+  return <RestartEndsSaid ends={ends} chat={chat} now={now} />;
 }

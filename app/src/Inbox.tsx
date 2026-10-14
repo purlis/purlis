@@ -13,6 +13,7 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { useTabStop } from "./roving";
+import { RestartEndsLine } from "./RestartEnds";
 import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -768,6 +769,19 @@ function Ask({
             <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
           </span>
         </p>
+        {/* A folder or something on this machine reaches the chat only by its restart (#1986):
+            what that ends is said before an Allow here, naming the chat. */}
+        {(ask.source === "sandbox-write" || ask.source === "sandbox-local") &&
+          shape.answers &&
+          shape.offers.some((one) => one.allows) && (
+            <p className="inbox-restart ui-text-secondary">
+              <RestartEndsLine
+                plane={plane}
+                session={ask.session}
+                chat={ask.chain[ask.chain.length - 1]}
+              />
+            </p>
+          )}
         {body}
         {said !== undefined && (
           <p className="inbox-refused" role="status">

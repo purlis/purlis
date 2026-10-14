@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { State } from "./chatState";
-import { restartsDue, withRestartOwed } from "./restartAtPause";
+import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
 
 const states = (bySession: Record<number, State>) => (session: number) =>
   bySession[session] ?? "unknown";
@@ -57,5 +57,21 @@ describe("Restart now (#1986)", () => {
       restart: [],
       ended: [3],
     });
+  });
+});
+
+describe("a chat reported ended (#1986)", () => {
+  it("keeps its restart owed while the core still owes it: its hooks said the session ended, and its program runs on", () => {
+    // A SessionEnd hook moves the chat to done before, or without, its program's exit; only the
+    // program's end, which the core hears, drops what it is owed.
+    expect(owedAfterEnded([3, 4], [3], [3, 4])).toEqual([3, 4]);
+  });
+
+  it("is owed nothing once the core, which heard its program end, owes it nothing", () => {
+    expect(owedAfterEnded([3, 4], [3], [4])).toEqual([4]);
+  });
+
+  it("leaves every other chat's restart owed whatever the core lists", () => {
+    expect(owedAfterEnded([3, 4], [3], [])).toEqual([4]);
   });
 });

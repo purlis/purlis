@@ -367,7 +367,7 @@ import { hueOf } from "./theme/tint";
 import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
-import { restartsDue, withRestartOwed } from "./restartAtPause";
+import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
 import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
@@ -5033,12 +5033,25 @@ export const PlaneView = memo(function PlaneView({
       const states = chats.store.statesFor(chats.plane);
       const due = restartsDue(owedRestarts, (session) => stateOf(states, session));
       for (const session of due.restart) restartOwed(session);
+      // Dropped only once the core, which hears the program itself end, owes it nothing: a
+      // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
       if (due.ended.length > 0)
-        setOwedRestarts((owed) => owed.filter((one) => !due.ended.includes(one)));
+        void commands
+          .owedRestarts(plane)
+          .then((read) => {
+            if (read.status === "ok" && Array.isArray(read.data)) {
+              const coreOwes = read.data;
+              setOwedRestarts((owed) => {
+                const kept = owedAfterEnded(owed, due.ended, coreOwes);
+                return kept.length === owed.length ? owed : kept;
+              });
+            }
+          })
+          .catch(() => undefined);
     };
     drive();
     return chats.store.subscribe(drive);
-  }, [owedRestarts, chats, restartOwed]);
+  }, [owedRestarts, chats, plane, restartOwed]);
   /**
    * What each chat's pane says of its restart ({@link RestartSaid}): under way, not yet, owed by
    * hand, or why it failed.
