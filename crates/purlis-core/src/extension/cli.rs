@@ -64,6 +64,7 @@ pub const CORE_WORDS: [&str; 44] = [
     "save",
     "scan",
     "secret",
+    "serve",
     "session",
     "shell-guard",
     "status",
