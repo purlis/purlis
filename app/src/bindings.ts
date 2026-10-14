@@ -6913,6 +6913,13 @@ export type PersonaHosts = {
 	 *  to; `null` where none is.
 	 */
 	cautions?: string[] | null,
+	/**
+	 *  One sentence for each of its tools that runs nothing because the program it runs here is
+	 *  one no tool may be: a tool is judged by the program it runs, not only the name it is
+	 *  declared under. Such a tool is not among `tools`, and no Allow is of it; `null` where
+	 *  none is.
+	 */
+	refused?: string[] | null,
 };
 
 /**

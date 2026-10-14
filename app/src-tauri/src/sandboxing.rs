@@ -396,6 +396,12 @@ pub struct PersonaHosts {
     /// to; `null` where none is.
     #[specta(optional)]
     pub cautions: Option<Vec<String>>,
+    /// One sentence for each of its tools that runs nothing because the program it runs here is
+    /// one no tool may be: a tool is judged by the program it runs, not only the name it is
+    /// declared under. Such a tool is not among `tools`, and no Allow is of it; `null` where
+    /// none is.
+    #[specta(optional)]
+    pub refused: Option<Vec<String>>,
 }
 
 /// Every preset as the project at `plane` would have it reach under `locks`: a forge's host a
@@ -430,6 +436,7 @@ fn persona_hosts_of(
             default: one.default,
             waiting: one.standing == sandbox::persona::Standing::Waiting,
             cautions: cautions_of(&one.tools),
+            refused: Some(one.refused).filter(|refused| !refused.is_empty()),
             digest: one.digest,
         })
         .collect()

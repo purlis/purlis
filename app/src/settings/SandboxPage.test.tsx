@@ -9,7 +9,7 @@ import { SettingsTab } from "./SettingsTab";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
-import { whatAChatCanDo } from "./sandbox";
+import { personaHostsNotes, whatAChatCanDo } from "./sandbox";
 import { namedIn } from "./project";
 import type {
   SandboxPolicy,
@@ -625,6 +625,24 @@ describe("Settings › Project › Sandbox", () => {
       `A chat as cloud may run ${AWS} only once you allow them on this machine, below. curl`,
     );
     expect(page).not.toHaveTextContent("aws can show the values");
+  });
+
+  it("says why a tool runs nothing where the program it runs is one no tool may be", () => {
+    const REFUSED =
+      "devops's tool fetch runs nothing: fetch runs whatever it is told, so it would hand the vault's credential to anything — a tool is the one program that needs it";
+    const devops = {
+      persona: "devops",
+      hosts: [],
+      reached: [],
+      tools: [],
+      digest: "d1",
+      allowed: false,
+      default: false,
+      waiting: false,
+      refused: [REFUSED],
+    };
+    expect(personaHostsNotes(state({ persona_hosts: [devops] }))).toEqual([`${REFUSED}.`]);
+    expect(personaHostsNotes(state({ persona_hosts: [{ ...devops, refused: null }] }))).toEqual([]);
   });
 
   it("names a persona's own hosts", async () => {

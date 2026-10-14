@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use super::super::policy::Locks;
 use super::{
     FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, keyed, loads_code,
-    refused_name, resolve_beside, shim,
+    refused_name, refused_program, resolve_beside, shim,
 };
 
 const HERE: &str = "sandbox.personas.devops";
@@ -1009,4 +1009,51 @@ fn the_sentence_is_not_part_of_what_an_allow_is_bound_to() {
         token_tool("curl").whole(),
         "curl with api-token from vault api as API_TOKEN env"
     );
+}
+
+#[test]
+fn a_tool_is_judged_by_the_program_it_runs_not_only_the_name_it_is_declared_under() {
+    for target in ["bash", "Python3.12", "env"] {
+        let base = outside_temp("judged");
+        let system = base.join("system");
+        let real = program(&base.join("elsewhere"), target);
+        std::fs::create_dir_all(&system).expect("dir");
+        std::os::unix::fs::symlink(&real, system.join("fetch")).expect("link");
+        let resolved = resolve(
+            &base.join("project"),
+            "devops",
+            &[token_tool("fetch")],
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+        )
+        .expect("tools");
+        assert_eq!(resolved.ready, Vec::<Ready>::new(), "{target}");
+        assert_eq!(resolved.left.len(), 1, "{target}: {:?}", resolved.left);
+        assert!(
+            resolved.left[0].starts_with("devops's tool fetch runs nothing: fetch runs whatever"),
+            "{target}: {:?}",
+            resolved.left
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+    // A program that runs only itself, under a link of another name, is the tool's.
+    let base = outside_temp("judged-fine");
+    let system = base.join("system");
+    let real = program(&base.join("elsewhere"), "kubectl-1.31");
+    std::fs::create_dir_all(&system).expect("dir");
+    std::os::unix::fs::symlink(&real, system.join("kubectl")).expect("link");
+    let resolved = resolve(
+        &base.join("project"),
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        &[],
+    )
+    .expect("tools");
+    assert_eq!(resolved.ready.len(), 1, "{:?}", resolved.left);
+    assert_eq!(refused_program(&kubectl(), &system.join("kubectl")), None);
+    assert!(refused_program(&token_tool("fetch"), Path::new("/bin/SH")).is_some());
+    let _ = std::fs::remove_dir_all(&base);
 }

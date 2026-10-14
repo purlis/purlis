@@ -1522,6 +1522,7 @@ fn settings_is_handed_each_personas_own_hosts() {
         default: false,
         waiting: false,
         cautions: None,
+        refused: None,
     };
     assert_eq!(
         persona_hosts_of(root.path(), &plane, &none),
