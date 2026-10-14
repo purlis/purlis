@@ -9,9 +9,10 @@
 //! showed `⚠ reinit` on every turn — phrased as post-upgrade drift, for a workspace that had
 //! just been created correctly.
 //!
-//! **Best effort below the directory.** A workspace you can use beats one that failed to
-//! exist, and every path the scaffold could not write is reported by `charter workspace
-//! reinit`, which is the repair.
+//! **The directory, or an error.** A directory that could not be made is an error, and nothing
+//! below it is tried. **Below the directory, every write is tried**, and what could not be
+//! written comes back in the rows ([`wslayer::Did::Blocked`], named by [`blocked`]): a maker that
+//! reports a workspace ready reads them first, and `purlis workspace reinit` is the repair.
 
 use std::path::Path;
 
@@ -78,9 +79,43 @@ pub fn ensure(
         crate::dispatchwithin::noticed(root);
     }
     // `create_dir_all`, so an existing directory is not an error: `ensure` is idempotent and
-    // is reached from a launch path where raising would cost the operator their tab.
-    let _ = std::fs::create_dir_all(workspace.dir());
-    Ok(wslayer::scaffold(&plane, name, now, author))
+    // is reached from a launch path. A directory that is not there afterwards is: nothing is
+    // a workspace without it.
+    if let Err(why) = std::fs::create_dir_all(workspace.dir()) {
+        return Err(format!(
+            "purlis could not make workspaces/{}: {why}. Nothing was created",
+            crate::personas::one_line(name)
+        ));
+    }
+    let mut rows = wslayer::scaffold(&plane, name, now, author);
+    // What the baseline could not write is read back, not trusted: the scaffold tries each
+    // path and goes on past a refusal. A path still certainly missing, or a stamp still behind,
+    // is a write that failed.
+    let status = wslayer::structure_status(workspace.dir());
+    let stamp = (!status.stamp_unread && status.version < status.target)
+        .then(|| wslayer::STRUCTURE_MARKER.to_owned());
+    for rel in status
+        .missing
+        .iter()
+        .map(|rel| (*rel).to_owned())
+        .chain(stamp)
+    {
+        if !rows.iter().any(|row| row.rel == rel) {
+            rows.push(wslayer::Row {
+                rel,
+                did: wslayer::Did::Blocked,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+/// The paths of `rows` the scaffold tried to write and could not, as the workspace names them.
+pub fn blocked(rows: &[wslayer::Row]) -> Vec<String> {
+    rows.iter()
+        .filter(|row| row.did == wslayer::Did::Blocked)
+        .map(|row| row.rel.clone())
+        .collect()
 }
 
 /// Who charter records as having last touched a manifest, WITHOUT a subprocess.
@@ -151,6 +186,35 @@ mod tests {
         assert!(refused.starts_with("nothing was written: "), "{refused}");
         assert!(refused.contains("from-the-future"), "{refused}");
         assert!(!dir.path().join("workspaces").join("gamma").exists());
+    }
+
+    #[test]
+    fn a_directory_that_cannot_be_made_is_an_error_and_not_a_workspace() {
+        // A file where the workspaces folder should be: the directory cannot be made under it.
+        let dir = plane();
+        std::fs::remove_dir(dir.path().join("workspaces")).unwrap();
+        std::fs::write(dir.path().join("workspaces"), "not a folder\n").unwrap();
+        let refused = ensure(dir.path(), "gamma", now(), "fixture").expect_err("refused");
+        assert!(
+            refused.starts_with("purlis could not make workspaces/gamma: "),
+            "{refused}"
+        );
+        assert!(refused.ends_with("Nothing was created"), "{refused}");
+    }
+
+    #[test]
+    fn the_rows_a_scaffold_could_not_write_are_named() {
+        let rows = vec![
+            wslayer::Row {
+                rel: "workspace.md".to_owned(),
+                did: wslayer::Did::Created,
+            },
+            wslayer::Row {
+                rel: ".claude/settings.json".to_owned(),
+                did: wslayer::Did::Blocked,
+            },
+        ];
+        assert_eq!(blocked(&rows), vec![".claude/settings.json".to_owned()]);
     }
 
     #[test]

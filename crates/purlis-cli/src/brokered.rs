@@ -279,13 +279,39 @@ pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {
 /// started under the sandbox (#1408): the folder's files go before git's record of it, which a
 /// sandboxed chat cannot finish.
 pub fn no_piece_removal_in_a_sandbox(repo: &str, piece: &str) -> String {
-    format!(
-        "a sandboxed chat does not remove a branch folder: removing '{} · {}' deletes its files \
-         and git's record of it, which a sandboxed chat cannot finish, so nothing was removed. \
-         Ask the person to remove it from the window",
+    let (repo, piece) = (
         purlis_core::shown::short(repo),
-        purlis_core::shown::short(piece)
+        purlis_core::shown::short(piece),
+    );
+    format!(
+        "a sandboxed chat does not remove a branch folder: removing '{repo} · {piece}' deletes \
+         its files and git's record of it, which a sandboxed chat cannot finish, so nothing was \
+         removed. Ask the person to remove it from the window: Remove folder {piece} in {repo}, \
+         in the palette"
     )
+}
+
+/// Why `purlis workspace create <name>` is refused whole in a sandboxed chat, before anything is
+/// made, or `None` (qw387). The app makes the workspace and clones into it for the chat, but
+/// `--live` writes the project's ignore file, which no chat writes, and `--use` (with its
+/// `--force`) moves the chat into another workspace, which a sandboxed chat does not do.
+pub fn create_refused(name: &str, live: bool, uses: bool) -> Option<String> {
+    let name = purlis_core::shown::short(name);
+    if live {
+        return Some(format!(
+            "--live changes the project's ignore file, which the app does not write for a \
+             chat, so nothing was created. Create '{name}' without --live, then ask the person \
+             to run `purlis workspace live {name}` in their own terminal"
+        ));
+    }
+    uses.then(|| {
+        format!(
+            "--use would move this chat into '{name}', and a sandboxed chat stays in the place it \
+             was started in, so nothing was created. Create it without --use, then name it with \
+             -w {name} on each command, or hand the work to a chat there with `purlis handoff \
+             {name} \"<brief>\"`"
+        )
+    })
 }
 
 /// Whether a command that deletes `target`, a folder of the project at `root`, is held in this
@@ -377,6 +403,28 @@ mod tests {
         assert!(removal_held_by(true, || true));
         // Neither: a terminal, or a chat the app started without the sandbox.
         assert!(!removal_held_by(false, || false));
+    }
+
+    #[test]
+    fn a_create_the_app_cannot_finish_for_a_chat_is_refused_naming_the_way() {
+        assert_eq!(create_refused("beta", false, false), None);
+        let live = create_refused("beta", true, false).expect("refused");
+        assert!(live.contains("nothing was created"), "{live}");
+        assert!(live.contains("purlis workspace live beta"), "{live}");
+        let uses = create_refused("beta", false, true).expect("refused");
+        assert!(uses.contains("nothing was created"), "{uses}");
+        assert!(uses.contains("-w beta"), "{uses}");
+        assert!(uses.contains("purlis handoff beta"), "{uses}");
+    }
+
+    #[test]
+    fn a_branch_folder_a_chat_cannot_remove_is_named_by_its_palette_row() {
+        let said = no_piece_removal_in_a_sandbox("charter", "probe");
+        assert!(said.contains("nothing was removed"), "{said}");
+        assert!(
+            said.ends_with("Remove folder probe in charter, in the palette"),
+            "{said}"
+        );
     }
 
     #[test]

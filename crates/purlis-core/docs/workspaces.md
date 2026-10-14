@@ -211,9 +211,14 @@ vision go to the app over the chat's own connection, and the app writes them in 
 own workspace. `--workspace` naming that same workspace is taken as no `--workspace`.
 Naming another one is refused with a sentence, since a sandboxed chat changes only its own
 workspace; reading another workspace still works.
-`purlis workspace create <name> [--vision "…"]` is made by the app too, as `handoff --create`
-makes one: only a workspace that is not there yet, never one a chat already has.
-`--live`, `--use` and repos to clone run in the chat itself, as before.
+`purlis workspace create <name> [<repo>…] [--vision "…"]` is made by the app too, as
+`handoff --create` makes one: only a workspace that is not there yet, never one a chat already
+has. Repos named on the same command are cloned into it by the app in the same ask, with the
+chat's internet access, as `purlis clone` is; a later `purlis clone -w <name>` from a chat in
+another workspace is refused, as it is for any workspace the chat does not work in.
+`--live` (the project's ignore file) and `--use` (moving the chat) are refused in a sandboxed
+chat before anything is made, each with the way to get it. A workspace whose folder or baseline
+could not be written is never called ready: the command fails and names what is missing.
 `workspace remove` is not made for a chat. Ask the person to remove it from the window or a
 terminal.
 

@@ -1467,12 +1467,21 @@ pub enum Stage {
     Paths(Vec<String>),
 }
 
-/// What a [`GitAsk`] asks for: one of the two commands, with its arguments.
+/// What a [`GitAsk`] asks for: one of the commands, with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitWork {
     /// `purlis clone <repo>…`.
     Clone { repos: Vec<String> },
+    /// `purlis workspace create <name> <repo>… [--vision]`: the workspace the ask names, which
+    /// must not be there yet, made as a chat's plain create makes one, and the repos cloned
+    /// into it (qw387). The one git ask that names a workspace the chat does not work in, and
+    /// only one this ask makes.
+    Create {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vision: Option<String>,
+        repos: Vec<String>,
+    },
     /// `purlis worktree add <repo> <piece> [--branch]`.
     WorktreeAdd {
         repo: String,
@@ -4293,6 +4302,10 @@ mod tests {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
                 branch: Some("feature/p1".to_owned()),
+            },
+            GitWork::Create {
+                vision: Some("Ship the importer".to_owned()),
+                repos: vec!["widget".to_owned()],
             },
         ] {
             let ask = Ask::Git(Box::new(GitAsk {

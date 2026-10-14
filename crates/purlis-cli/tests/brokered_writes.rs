@@ -559,8 +559,9 @@ fn workspace_create_in_a_chat_is_made_by_the_app_and_says_what_a_terminal_says()
 
 #[test]
 fn workspace_create_with_what_the_app_does_not_make_runs_here_as_before() {
-    // `--use` selects it for this session, which is the chat's own to do; the app is not
-    // asked, and the create runs where the chat's sandbox decides.
+    // `--use` selects it for this session, which a chat started without the sandbox does
+    // itself; the app is not asked. A sandboxed chat is refused it before anything is made
+    // (qw387, `brokered_git.rs`).
     let tmp = a_project();
     let app = an_app(&tmp, None);
 

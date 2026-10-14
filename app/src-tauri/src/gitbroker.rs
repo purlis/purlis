@@ -101,7 +101,14 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         Ok(asker) => asker,
         Err(no) => return no,
     };
+    // A workspace made for a chat is held to the pace its other writes are (#1408).
+    if matches!(ask.work, GitWork::Create { .. })
+        && let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now())
+    {
+        return Answer::No { why };
+    }
     let what = match &ask.work {
+        GitWork::Create { repos, .. } => format!("workspace create with {}", repos.join(" ")),
         GitWork::Clone { repos } => format!("clone {}", repos.join(" ")),
         GitWork::WorktreeAdd { repo, piece, .. } => format!("worktree add {repo} {piece}"),
     };

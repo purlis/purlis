@@ -1094,7 +1094,9 @@ enum WorkspaceCommand {
         #[arg(long)]
         off: bool,
     },
-    /// Create a workspace: its directory, its baseline files and purlis's harness layer.
+    /// Create a workspace: its directory, its baseline files and purlis's harness layer. In a
+    /// chat the app started, the app makes it, and clones the repos named into it; a sandboxed
+    /// chat is refused `--live` and `--use`.
     Create {
         name: String,
         /// Repos to clone into it immediately, by inventory name. POSITIONAL, as purlis's
@@ -2518,26 +2520,45 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             repos,
             now,
         } => 'create: {
-            // In a chat the app started, the app makes a plain create (ADR 0067 §2, #1408), as
-            // it makes `handoff --create`'s: a new workspace and its vision. `--live` (the
-            // ignore file), `--use`, repos to clone and a pinned clock run here, as they did.
-            if repos.is_empty()
-                && !*live
-                && !*use_it
-                && !*force
-                && now.is_none()
-                && let Some(code) =
+            // In a chat the app started, the app makes the workspace (ADR 0067 §2, #1408), as
+            // it makes `handoff --create`'s: a new workspace and its vision, and with repos the
+            // clones too, in one ask (qw387). What the app does not do for a sandboxed chat is
+            // refused before anything is made; a pinned clock is a test's, and runs here.
+            if now.is_none() {
+                if brokered::sandboxed()
+                    && let Some(why) = brokered::create_refused(name, *live, *use_it || *force)
+                {
+                    return Some(refused(&why));
+                }
+                let asked = if *live || *use_it || *force {
+                    // Not sandboxed: the chat writes these itself, as a terminal does.
+                    None
+                } else if repos.is_empty() {
                     brokered::said_by_the_app(purlis_core::brokered::Write::WorkspaceCreate {
                         name: name.clone(),
                         vision: vision.clone(),
                     })
-            {
-                if code == 0 {
-                    heard.push(ExtensionEvent::WorkspaceCreated {
-                        workspace: name.clone(),
-                    });
+                } else {
+                    gitask::told(
+                        gitask::forwarded(
+                            name,
+                            purlis_core::hookwire::GitWork::Create {
+                                vision: vision.clone(),
+                                repos: repos.clone(),
+                            },
+                            gitask::a_clone_takes_at_most(repos.len()),
+                        ),
+                        say,
+                    )
+                };
+                if let Some(code) = asked {
+                    if code == 0 {
+                        heard.push(ExtensionEvent::WorkspaceCreated {
+                            workspace: name.clone(),
+                        });
+                    }
+                    break 'create code;
                 }
-                break 'create code;
             }
             let Some(now) = pinned(now) else {
                 return Some(ExitCode::FAILURE);
@@ -2558,6 +2579,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                     use_it: *use_it,
                     force: *force,
                     repos,
+                    hosts: None,
                     now,
                     ids: &here.ids,
                 },
