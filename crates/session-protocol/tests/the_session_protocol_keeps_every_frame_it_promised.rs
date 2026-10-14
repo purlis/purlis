@@ -3,7 +3,8 @@
 
 //! The session protocol's compatibility promise (E5, ADR 0068 §4), held in CI.
 //!
-//! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says. Each must read
+//! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says, 1.1's hosted
+//! programs and views of a kind (#1994) beside 1.0's. Each must read
 //! back as it was recorded, by this build and so by every later one, which is what lets a
 //! client and a host one version apart talk. A frame kind added without being recorded fails
 //! here, so the promise grows on purpose. The UI RPC is not in it: it is private to one build
@@ -108,7 +109,10 @@ fn every_kind_of_frame_this_build_says_is_recorded() {
     for named in [
         "call.list",
         "call.subscribe",
+        "call.start_program",
+        "call.attach_view",
         "reply.ok.chats",
+        "reply.ok.program_started",
         "pushed.missed",
     ] {
         assert!(kinds.contains(named), "{named}");

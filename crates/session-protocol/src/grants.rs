@@ -12,13 +12,13 @@
 //! | Power | `local-ui` | `terminal` | `fleet-mcp` | `approval` | `editor` | `remote-link` |
 //! |---|---|---|---|---|---|---|
 //! | `list` | yes | yes | yes | yes | | yes |
-//! | `attach`, `detach` (a view of a terminal) | yes | yes | | | | yes |
+//! | `attach_view`, `detach_view` (a view of a hosted program), and 1.0's `attach`, `detach` | yes | yes | | | | yes |
 //! | `write` | yes | yes | | | | yes |
 //! | `resize` | yes | yes | | | | yes |
 //! | `answer` an ask | yes | | | yes | | |
 //! | `answer` an ask that elicits a secret | yes | | | | | |
 //! | `stop` | yes | yes | yes | yes | | yes |
-//! | `start` | yes | yes | | | | yes |
+//! | `start_program`, and 1.0's `start` | yes | yes | | | | yes |
 //! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
@@ -52,7 +52,8 @@ use crate::auth::Scope;
 pub enum Power {
     /// `list`.
     List,
-    /// `attach` and `detach`: a view of a chat's terminal.
+    /// `attach_view` and `detach_view` (and 1.0's `attach` and `detach`): a view of a hosted
+    /// program, of any kind.
     View,
     /// `write`: bytes typed into a chat.
     Write,
@@ -64,7 +65,7 @@ pub enum Power {
     AnswerASecret,
     /// `stop`.
     Stop,
-    /// `start`.
+    /// `start_program` (and 1.0's `start`): a hosted program of any kind.
     Start,
     /// `subscribe` and `unsubscribe`.
     Subscribe,

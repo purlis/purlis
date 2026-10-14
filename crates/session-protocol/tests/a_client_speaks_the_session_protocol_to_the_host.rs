@@ -33,12 +33,12 @@ impl Host for Board {
                 title: Some("fix the login".into()),
                 state: "working".into(),
             }])),
-            Command::Start(start) if start.project.is_empty() => Err(Refusal {
+            Command::StartProgram(start) if start.project.is_empty() => Err(Refusal {
                 code: session::NO_SUCH_PROJECT.into(),
                 why: "no project was named".into(),
             }),
-            Command::Start(_) => Ok(Answer::Started {
-                chat: "01J9ZQ5000000000000000000A".into(),
+            Command::StartProgram(_) => Ok(Answer::ProgramStarted {
+                program: "01J9ZQ5000000000000000000A".into(),
             }),
             Command::Stop { chat } if chat == "nobody" => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
@@ -106,8 +106,9 @@ async fn every_command_reaches_the_host_as_it_was_sent() {
                 rows: 40,
             },
             Command::Stop { chat: chat.into() },
-            Command::Start(Start {
+            Command::StartProgram(session::StartProgram {
                 project: "01J9PRJCT00000000000000000".into(),
+                kind: session::ProgramKind::Harness,
                 workspace: Some("login".into()),
                 harness: Some("claude".into()),
             }),

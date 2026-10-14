@@ -52,11 +52,14 @@ impl Host for Board {
                 title: None,
                 state: "needs_you".into(),
             }]),
-            Command::Start(_) => Answer::Started { chat: CHAT.into() },
-            Command::Attach { .. } => Answer::Attached(session::Attached {
+            Command::StartProgram(_) => Answer::ProgramStarted {
+                program: CHAT.into(),
+            },
+            Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,
                 cols: 80,
                 rows: 24,
+                kind: Some(kind),
             }),
             _ => Answer::Done,
         })
@@ -127,6 +130,20 @@ fn every_command() -> Vec<Command> {
             workspace: None,
             harness: None,
         }),
+        Command::StartProgram(session::StartProgram {
+            project: "01J9PRJCT00000000000000000".into(),
+            kind: session::ProgramKind::Shell,
+            workspace: None,
+            harness: None,
+        }),
+        Command::AttachView {
+            program: CHAT.into(),
+            kind: session::ViewKind::Terminal,
+        },
+        Command::DetachView {
+            program: CHAT.into(),
+            view: 1,
+        },
         Command::Subscribe {
             since: session::Since::new(),
         },
@@ -147,6 +164,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "answer",
             "stop",
             "start",
+            "start_program",
+            "attach_view",
+            "detach_view",
             "subscribe",
             "unsubscribe",
         ],
@@ -158,6 +178,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "resize",
             "stop",
             "start",
+            "start_program",
+            "attach_view",
+            "detach_view",
             "subscribe",
             "unsubscribe",
         ],
@@ -183,11 +206,18 @@ async fn check_the_row(scope: Scope) {
         }
     }
     assert_eq!(reached, granted(scope), "{scope}: what it was let call");
-    // The refused ones never reached the host; `unsubscribe` is the link's own.
+    // The refused ones never reached the host; `unsubscribe` is the link's own, and 1.0's words
+    // reach it as the hosted-program commands.
     let to_the_host: Vec<&str> = granted(scope)
         .iter()
         .copied()
         .filter(|word| *word != "unsubscribe")
+        .map(|word| match word {
+            "start" => "start_program",
+            "attach" => "attach_view",
+            "detach" => "detach_view",
+            word => word,
+        })
         .collect();
     assert_eq!(board.heard(), to_the_host, "{scope}: what the host heard");
 }
