@@ -459,6 +459,9 @@ pub trait Asks {
     /// Every path changed by a commit the current branch has and `onto` lacks: what a rebase
     /// onto it replays. `None` where git could not say.
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>>;
+    /// [`Asks::replayed`], for the commits `head` has and `onto` lacks, whatever HEAD is:
+    /// what a rebase of exactly `head` replays.
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>>;
     /// Every path `commit` tracks, or `None` where git could not say.
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>>;
     /// Which of `paths`, each tracked by the current commit, are not in the folder as that
@@ -588,7 +591,14 @@ impl Asks for Asked {
     }
 
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
-        let range = format!("{onto}..HEAD");
+        self.replayed_from(top, onto, "HEAD")
+    }
+
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        if onto.starts_with('-') || head.starts_with('-') {
+            return None;
+        }
+        let range = format!("{onto}..{head}");
         let commits = Self::git(top, &["rev-list", &range, "--"])?;
         if commits.trim().is_empty() {
             return Some(Vec::new());
@@ -943,6 +953,36 @@ pub fn said_clone(denied: &[String]) -> String {
          own terminal, where no sandbox stops the checkout.",
         listed(denied)
     )
+}
+
+/// The refusal a rebase of exactly `head` onto exactly `onto`, both commit ids, earns in the
+/// working tree at `top` (qw387), or `None`: what it writes is what differs between the two
+/// and what each commit `head` has and `onto` lacks changed, read for those ids and never for
+/// whatever HEAD names by then. What purlis runs for a chat is judged as it will run.
+pub fn judged_rebase(
+    top: &str,
+    onto: &str,
+    head: &str,
+    place: &Place<'_>,
+    asks: &dyn Asks,
+) -> Option<String> {
+    let (Some(mut paths), Some(replayed)) = (
+        asks.differ(top, head, onto),
+        asks.replayed_from(top, onto, head),
+    ) else {
+        return Some(said_unread("rebase", NO_ANSWER));
+    };
+    paths.extend(replayed);
+    let denies = Denies::of(top, place.root, place.chat_dir);
+    let mut denied = each_once(paths, &|path: &str| denies.path(path, asks));
+    if place.sparse
+        && let Some(out) = asks.left_out(top, &denied)
+        && !out.is_empty()
+    {
+        let out: std::collections::HashSet<String> = out.into_iter().collect();
+        denied.retain(|path| !out.contains(path));
+    }
+    (!denied.is_empty()).then(|| said_writes("rebase", &denied, top))
 }
 
 /// The refusal an app-run cut earns for a sandboxed chat (qw387), or `None`: a new branch
@@ -1536,6 +1576,9 @@ impl Asks for NothingThere<'_> {
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         self.0.replayed(top, onto)
     }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        self.0.replayed_from(top, onto, head)
+    }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         self.0.tracked(top, commit)
     }
@@ -1647,6 +1690,9 @@ impl Asks for Once<'_> {
     }
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         self.asks.replayed(top, onto)
+    }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        self.asks.replayed_from(top, onto, head)
     }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         self.asks.tracked(top, commit)

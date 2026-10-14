@@ -576,6 +576,9 @@ impl cloneupdate::Asks for ManyDenied {
     fn replayed(&self, _: &str, _: &str) -> Option<Vec<String>> {
         Some(self.paths.clone())
     }
+    fn replayed_from(&self, _: &str, _: &str, _: &str) -> Option<Vec<String>> {
+        Some(self.paths.clone())
+    }
     fn tracked(&self, _: &str, _: &str) -> Option<Vec<String>> {
         Some(self.paths.clone())
     }

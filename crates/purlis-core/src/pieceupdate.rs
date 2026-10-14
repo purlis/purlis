@@ -291,10 +291,11 @@ fn start(
             sparse: true,
         };
         let folder = here.folder.to_string_lossy();
-        if let Some(why) = crate::cloneupdate::judged(
-            "rebase",
-            std::slice::from_ref(&onto_id),
+        // Judged for the two ids the rebase is handed, never for what HEAD names by then.
+        if let Some(why) = crate::cloneupdate::judged_rebase(
             &folder,
+            &onto_id,
+            &head_id,
             &place,
             &crate::cloneupdate::Asked,
         ) {

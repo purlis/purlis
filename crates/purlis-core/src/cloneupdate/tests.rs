@@ -39,6 +39,8 @@ struct Fake {
     there: Vec<&'static str>,
     /// The paths a sparse checkout leaves out of the folder.
     left_out: Vec<&'static str>,
+    /// A commit, a head, and the paths the commits that head has and the commit lacks changed.
+    replayed_from: Vec<(&'static str, &'static str, Vec<&'static str>)>,
 }
 
 fn owned(paths: &[&'static str]) -> Vec<String> {
@@ -95,6 +97,19 @@ impl Asks for Fake {
             .iter()
             .find(|(oid, _)| *oid == onto)
             .map(|(_, paths)| owned(paths))
+    }
+
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        if let Some((_, _, paths)) = self
+            .replayed_from
+            .iter()
+            .find(|(base, tip, _)| *base == onto && *tip == head)
+        {
+            return Some(owned(paths));
+        }
+        (self.commit(top, "HEAD").as_deref() == Some(head))
+            .then(|| self.replayed(top, onto))
+            .flatten()
     }
 
     fn tracked(&self, _: &str, commit: &str) -> Option<Vec<String>> {
@@ -416,6 +431,34 @@ fn a_merge_or_a_rebase_is_refused_only_where_the_other_commit_touches_a_denied_f
 }
 
 #[test]
+fn a_rebase_purlis_runs_is_judged_for_the_head_it_is_handed_whatever_head_says() {
+    // qw387: HEAD answers `h` while it is judged, which replays nothing denied; the rebase is
+    // handed `t`, whose own commits carry an editor's tasks file. What is judged is `t`.
+    let pinned = Fake {
+        differ: vec![
+            ("t", "p", vec!["src/a.rs"]),
+            ("h", "p", vec!["src/a.rs", "docs/new.md"]),
+        ],
+        replayed_from: vec![("p", "t", vec!["app/.vscode/tasks.json"])],
+        ..a_clone()
+    };
+    let said = judged_rebase(TOP, "p", "t", &place(true), &pinned).expect("refused");
+    assert!(
+        said.contains("would write `app/.vscode/tasks.json`"),
+        "{said}"
+    );
+    // Judged by HEAD, it would have run.
+    assert_eq!(judge("rebase origin/plain", &pinned), None);
+    // A head whose commits touch nothing denied runs.
+    let plain = Fake {
+        differ: vec![("t", "p", vec!["src/a.rs"])],
+        replayed_from: vec![("p", "t", vec!["src/mine.rs"])],
+        ..a_clone()
+    };
+    assert_eq!(judged_rebase(TOP, "p", "t", &place(true), &plain), None);
+}
+
+#[test]
 fn a_rebase_answers_for_every_commit_it_replays() {
     // The two commits differ in no denied file, but a commit of the branch's own changed a
     // hook, which the rebase writes again.
@@ -497,6 +540,9 @@ fn a_sparse_checkout_that_leaves_the_denied_files_out_is_not_refused_for_them() 
         }
         fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
             self.0.replayed(top, onto)
+        }
+        fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+            self.0.replayed_from(top, onto, head)
         }
         fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
             self.0.tracked(top, commit)
