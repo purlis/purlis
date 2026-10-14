@@ -117,18 +117,21 @@ fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
     let _one = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
     let root = held.root().to_path_buf();
     let standing = planegit::standing(&root);
-    if standing.stopped_by != Some("rebase") || standing.conflicts.is_empty() {
+    let found = planegit::resolve::conflicts(&root);
+    if standing.stopped_by != Some("rebase")
+        || (found.marked.is_empty() && found.by_hand.is_empty())
+    {
         return Err(
             "No replay is stopped on a conflict in this project, so there is nothing for a \
              chat to settle."
                 .into(),
         );
     }
-    let held_back: Vec<&String> = standing
-        .conflicts
-        .iter()
-        .filter(|path| purlis_core::rootupdate::path_is_denied(path, &root))
-        .collect();
+    // A conflict git could not mark is never handed to a chat: the person settles it.
+    if !found.by_hand.is_empty() {
+        return Err(planegit::resolve::said_by_hand(&found.by_hand));
+    }
+    let held_back = planegit::resolve::held_from_chats(&root, &found.marked);
     if !held_back.is_empty() {
         return Err(format!(
             "A chat may not write {}, so it cannot settle this conflict. Settle it in a \
@@ -142,8 +145,8 @@ fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
     }
     let (remote, own) = planegit::resolve::sides(&root)
         .ok_or("purlis cannot tell which commits the conflict is between")?;
-    let what = format!("conflict {}", standing.conflicts.join("\0"));
-    let files = standing.conflicts;
+    let what = format!("conflict {}", found.marked.join("\0"));
+    let files = found.marked;
     fix_with(held, &what, &root, size, || {
         Ok(purlis_core::savefix::conflict(&files, &remote, &own))
     })
