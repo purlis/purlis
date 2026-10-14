@@ -202,6 +202,7 @@ mod testgit;
 // crates, and they re-run themselves through it (charter-app#267). Nothing in the product
 // calls it.
 #[doc(hidden)]
+pub mod testfixture;
 pub mod testrun;
 pub mod toolgate;
 pub mod toolhooks;

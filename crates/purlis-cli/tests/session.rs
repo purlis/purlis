@@ -30,16 +30,8 @@ fn daily() -> tempfile::TempDir {
 }
 
 fn copy(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for entry in std::fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            copy(&path, &to.join(entry.file_name()));
-        } else {
-            std::fs::copy(&path, to.join(entry.file_name())).unwrap();
-        }
-    }
+    // Fixtures are tracked under neutral names (#2089).
+    purlis_core::testfixture::copy(from, to).unwrap();
 }
 
 fn root(tmp: &tempfile::TempDir) -> PathBuf {

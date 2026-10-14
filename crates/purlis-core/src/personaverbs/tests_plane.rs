@@ -89,16 +89,8 @@ fn fixtures() -> PathBuf {
 }
 
 fn copy_tree(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for entry in std::fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_tree(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), &target).unwrap();
-        }
-    }
+    // Fixtures are tracked under neutral names (#2089).
+    crate::testfixture::copy(from, to).unwrap();
 }
 
 /// A fixture plane's `charter.toml`, `personas/` and vault registry, in a temp dir.

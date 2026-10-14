@@ -196,19 +196,6 @@ pub fn stamp(root: &Path, at: std::time::SystemTime) {
 
 /// Copy a fixture plane, modes and links included, the way `shutil.copytree` did.
 pub fn copy_plane(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).expect("the plane's directory");
-    for entry in std::fs::read_dir(from).expect("the fixture plane reads") {
-        let entry = entry.expect("an entry");
-        let src = entry.path();
-        let dst = to.join(entry.file_name());
-        let kind = entry.file_type().expect("a type");
-        if kind.is_symlink() {
-            std::os::unix::fs::symlink(std::fs::read_link(&src).expect("a link"), &dst)
-                .expect("copy a link");
-        } else if kind.is_dir() {
-            copy_plane(&src, &dst);
-        } else {
-            std::fs::copy(&src, &dst).expect("copy a file");
-        }
-    }
+    // Fixtures are tracked under neutral names (#2089).
+    purlis_core::testfixture::copy(from, to).expect("the fixture plane copies");
 }
