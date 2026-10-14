@@ -56,5 +56,8 @@ test("past the limit, a notice counts the rest", () => {
   const many = Array.from({ length: 12 }, () => advisory);
   const lines = annotations(many);
   assert.equal(lines.length, 11);
-  assert.match(lines[10], /^::notice title=\+2 more cargo-deny findings::2 more; 12 in all/);
+  assert.match(
+    lines[10],
+    /^::notice title=\+2 more cargo-deny findings::2 more; 12 in all\. The first 10 are annotated; the job's log has every one\.$/,
+  );
 });

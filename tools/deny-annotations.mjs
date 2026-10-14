@@ -10,8 +10,10 @@
 // each error into an `::error file=Cargo.lock,title=…::message` line, which the checks API
 // returns: the one place a failure is readable without the job's log.
 //
-// At most ten errors are annotated (GitHub keeps ten a step), then a notice counts the rest. A
-// job that failed with nothing to annotate says so in one annotation.
+// At most ten errors are annotated (GitHub keeps ten error annotations a step, so a higher cap
+// would only lose them silently), then a notice counts the rest and points at the job's log,
+// where the step prints all of cargo-deny's output. A job that failed with nothing to annotate
+// says so in one annotation.
 
 import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
@@ -101,7 +103,7 @@ export function annotations(records, { limit = LIMIT } = {}) {
   if (rest > 0) {
     lines.push(
       `::notice title=+${rest} more cargo-deny findings::${escapeData(
-        `${rest} more; ${found.length} in all. The first ${lines.length} are annotated.`,
+        `${rest} more; ${found.length} in all. The first ${lines.length} are annotated; the job's log has every one.`,
       )}`,
     );
   }

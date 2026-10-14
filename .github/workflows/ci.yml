@@ -183,6 +183,8 @@ jobs:
         run: |
           status=0
           cargo deny --format json --log-level warn --all-features check 2> deny.jsonl || status=$?
+          # The whole of it in the log, pass or fail: warnings, and findings past the annotations.
+          cat deny.jsonl >&2
           if [ "$status" -ne 0 ]; then
             node tools/deny-annotations.mjs deny.jsonl
           fi
