@@ -305,6 +305,8 @@ describe("a window holding more than one project", function () {
   it("makes a project from the strip's other button, and opens it through the same gate", async () => {
     // Whatever happens below, the window is left as this file found it: a miss here used to leave
     // a dialog, or a half-made project, in front of every spec after it (#1949's scenario stall).
+    // The test's own failure is the one reported: a cleanup that fails after it is only said.
+    let failed: unknown;
     try {
       await $(`${PROJECTS} button[aria-label="New project…"]`).click();
 
@@ -342,10 +344,22 @@ describe("a window holding more than one project", function () {
 
       await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(made)}"]`);
       await stripBecomes([{ path: first, front: true }]);
-    } finally {
+    } catch (error) {
+      failed = error;
+    }
+    let cleanupFailed: unknown;
+    try {
       await noDialogIsLeftUp();
       const left = `${PROJECTS} button[aria-label="Close project ${basename(made)}"]`;
       if (await $(left).isExisting()) await closeProject(left);
+    } catch (cleanup) {
+      cleanupFailed = cleanup;
     }
+    if (failed !== undefined) {
+      if (cleanupFailed !== undefined)
+        console.error("charter-e2e: the cleanup after this failure failed too:", cleanupFailed);
+      throw failed;
+    }
+    if (cleanupFailed !== undefined) throw cleanupFailed;
   });
 });
