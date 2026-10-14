@@ -412,10 +412,19 @@ Decided under delegation (the dispatcher's call), and recorded for the operator'
   in and the subjects of the two commits, quoted as data, and what to do. It is an ordinary
   chat, in its sandbox, with nothing granted past it. Where a file in conflict is one a chat's
   sandbox may not write, no chat is started, and the window says to settle it in a terminal.
-- **Continue is the window's.** It refuses while a conflict marker opens or closes a line in
-  the files, stages exactly the files git stopped in, each of which the commit being replayed
-  changes, refuses while anything else is staged, and runs `git rebase --continue`. A further
-  stop names the next files. When the replay finishes, the save runs at once and pushes it.
+- **What git stopped with is kept, for each stop**, in the window's process: the commit being
+  replayed, the files in conflict, those git could not mark (a binary file, a file one side
+  deleted, a link, a submodule, a file that is gone), and every other change git staged. A
+  conflict git could not mark is the person's to settle in a terminal, and is never handed to
+  a chat.
+- **Continue is the window's.** It refuses while a conflict git could not mark is unsettled,
+  while anything outside the files in conflict is staged otherwise than git left it, and while
+  a marker (`<<<<<<<`, `|||||||`, `>>>>>>>`) opens a line in the files. It stages the files from
+  the bytes it checked, reads back what git staged, and puts them back in conflict where that
+  differs. A further stop names the next files. A settling that leaves the commit empty offers
+  **Skip**, which drops it.
+- **When the replay finishes, what is committed is pushed**, as the project's mode says, and
+  nothing new is committed. Files changed meanwhile are named and left for the person.
 - **Abort** is `git rebase --abort`: the project is where it was before Resolve.
 
 ## Amended 2026-10-14 (the operator's rulings P1 and P2 of 2026-10-13, and of 2026-10-14): the window's side of a save's request
