@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792004472721,
+  "lastUpdate": 1792005591588,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11004,6 +11004,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5766305,
             "unit": "ms",
             "extra": "median of 5 runs: 101.112, 101.458, 101.577, 101.773, 101.999 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da2b57943c7348d38172402649d0ec69e5d18536",
+          "message": "The terminal and its engine in a crate of their own (#2066)\n\nA session host owns terminals without linking the rest of the core\n(#1995). `purlis-terminal` (crates/terminal) holds the session, the\nengine, the fork lock every program is started under, the process-group\nwait a session's end makes, and the start-size limit a chat's start is\nchecked against. It depends on nothing of git, HTTP or the keyring, and\nnot on purlis-core; a guard test reads cargo's resolution and fails on\none.\n\npurlis-core re-exports `engine` and `session`, keeps its `forklock`\ngate (the session bus step, then the terminal crate's lock), and\nre-exports the moved helpers where it used them, so no caller changes.\nThe moved tests keep their names and bodies; only paths into the core's\nsandbox module now name the terminal crate's `exec`.\n\nCloses #1995\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-14T23:06:17+04:00",
+          "tree_id": "745715e7d3d1f8273e39320f9c3bf6808eea270b",
+          "url": "https://github.com/purlis/purlis/commit/da2b57943c7348d38172402649d0ec69e5d18536"
+        },
+        "date": 1792005590636,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5177555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.491, 0.491, 0.518, 0.527, 0.529 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.018364499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.407, 16.413, 17.018, 17.121, 17.465 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.57156800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.060, 103.513, 104.572, 104.852, 105.838 ms"
           }
         ]
       }
