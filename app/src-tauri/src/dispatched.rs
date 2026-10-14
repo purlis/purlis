@@ -338,6 +338,7 @@ fn seen(held: &Held, chat: u32) -> Seen {
         waiting: glance.state == State::Waiting,
         asking: glance.asking,
         measured: dispatched::told_by_a_line(held.chats().harness(chat)),
+        interrupts: dispatched::interrupted_by_escape(held.chats().harness(chat)),
         // A permission ask its hook holds open in the window's needs-you list (HP-6): a prompt
         // in front of the person whether or not the harness said it asked.
         ask_open: held.asks_open_for(chat),

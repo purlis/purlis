@@ -340,6 +340,10 @@ pub struct Seen {
     pub asking: bool,
     /// Its harness is one purlis has measured its typed line in ([`told_by_a_line`]).
     pub measured: bool,
+    /// Its harness is one purlis has measured to end a turn on one Escape
+    /// ([`interrupted_by_escape`]). Where it is not, a turn is never ended for it: a cancel or
+    /// a stop waits for that turn's own end.
+    pub interrupts: bool,
     /// A permission ask of its is open in the window's needs-you list (HP-6): its hook holds
     /// it there until the person answers. Whether or not the harness also said it asked.
     pub ask_open: bool,
@@ -360,9 +364,10 @@ impl Seen {
         self.takes_keys() && self.waiting
     }
 
-    /// Whether its turn may be interrupted: [`Self::takes_keys`], in a turn purlis heard begin.
+    /// Whether its turn may be interrupted: [`Self::takes_keys`], in a turn purlis heard begin,
+    /// on a harness that ends a turn on one Escape.
     pub fn takes_an_interrupt(self) -> bool {
-        self.takes_keys() && self.running
+        self.takes_keys() && self.running && self.interrupts
     }
 
     /// Its turn has ended, by its harness's own word, whatever its harness is.
@@ -693,6 +698,9 @@ pub enum NoReportTurn {
     Prompt,
     /// A key of the person's has gone to its pane since its harness last spoke.
     PersonTyping,
+    /// It is in a turn its harness does not let purlis end (#1981): it can be asked once that
+    /// turn has ended.
+    MidTurn,
 }
 
 impl NoReportTurn {
@@ -720,6 +728,10 @@ impl NoReportTurn {
                 "You have typed in '{name}' since it last spoke, and purlis does not type over \
                  you."
             ),
+            Self::MidTurn => format!(
+                "'{name}' is in a turn purlis cannot end on its harness, so it can be asked for \
+                 a report once that turn ends."
+            ),
         }
     }
 }
@@ -746,6 +758,9 @@ pub fn report_turn(seen: Seen, keyed: bool, owed: Owed) -> Result<(), NoReportTu
         Err(NoReportTurn::PersonTyping)
     } else if seen.takes_a_line() || seen.takes_an_interrupt() {
         Ok(())
+    } else if seen.running {
+        // In a turn purlis heard begin, on a harness it does not interrupt.
+        Err(NoReportTurn::MidTurn)
     } else {
         // Heard from, and neither waiting nor in a turn purlis heard begin.
         Err(NoReportTurn::Unheard)
@@ -915,13 +930,25 @@ pub fn nudge(landed: &[Landed]) -> String {
     format!("purlis: {}. {attached}{otherwise}", said.join(", and "))
 }
 
-/// Whether `harness` is one purlis types a line of its own into (D-1441-13): the harnesses
-/// purlis arms a `UserPromptSubmit` hook on and has measured to hand that turn its context,
-/// and to end a turn on Escape. Codex counts only once its hooks are trusted, which is what
-/// [`Seen::heard`] says: an untrusted Codex reports nothing. On any other harness, and in a
-/// chat with none, nothing is typed: a report or a message waits for the next turn the person
-/// starts, and a cancel takes effect when the turn ends.
+/// Whether `harness` is one purlis types a line of its own into (D-1441-13, #1981): the
+/// harnesses purlis arms a prompt hook on that hands the turn the line starts its context,
+/// Claude Code's and Codex's `UserPromptSubmit` and opencode's `chat.message` in purlis's
+/// plugin. Codex counts only once its hooks are trusted, which is what [`Seen::heard`] says:
+/// an untrusted Codex reports nothing. In a chat with no harness nothing is typed: a report or
+/// a message waits for the next turn the person starts, and a cancel takes effect when the
+/// turn ends.
 pub fn told_by_a_line(harness: Option<crate::harness::Harness>) -> bool {
+    use crate::harness::Harness;
+    matches!(
+        harness,
+        Some(Harness::ClaudeCode | Harness::Codex | Harness::Opencode)
+    )
+}
+
+/// Whether `harness` is one purlis has measured to end a turn on one Escape
+/// ([`INTERRUPT`]): Claude Code and Codex. opencode ends a turn on a second Escape, and purlis
+/// sends it none: a cancel or a stop of a task mid-turn there waits for that turn's end.
+pub fn interrupted_by_escape(harness: Option<crate::harness::Harness>) -> bool {
     use crate::harness::Harness;
     matches!(harness, Some(Harness::ClaudeCode | Harness::Codex))
 }
@@ -1723,6 +1750,7 @@ mod tests {
         waiting: false,
         asking: false,
         measured: true,
+        interrupts: true,
         ask_open: false,
     };
     const RUNNING: Seen = Seen {
@@ -2136,12 +2164,53 @@ mod tests {
     }
 
     #[test]
-    fn only_a_harness_measured_to_hand_the_turn_its_context_is_typed_the_line() {
+    fn every_harness_purlis_arms_a_prompt_hook_on_is_typed_the_line() {
+        // #1981 (D-3): a follow-up to an idle task starts its turn in every harness. opencode
+        // hands the turn its context through purlis's plugin (`chat.message`), as Claude Code
+        // and Codex do through their `UserPromptSubmit` hooks.
         use crate::harness::Harness;
         assert!(told_by_a_line(Some(Harness::ClaudeCode)));
         assert!(told_by_a_line(Some(Harness::Codex)));
-        assert!(!told_by_a_line(Some(Harness::Opencode)));
+        assert!(told_by_a_line(Some(Harness::Opencode)));
         assert!(!told_by_a_line(None), "a shell tab");
+    }
+
+    #[test]
+    fn only_a_harness_measured_to_end_a_turn_on_one_escape_is_sent_one() {
+        // opencode ends a turn on a second Escape, and purlis sends it none: a cancel or a
+        // stop of a task mid-turn there waits for the turn to end.
+        use crate::harness::Harness;
+        assert!(interrupted_by_escape(Some(Harness::ClaudeCode)));
+        assert!(interrupted_by_escape(Some(Harness::Codex)));
+        assert!(!interrupted_by_escape(Some(Harness::Opencode)));
+        assert!(!interrupted_by_escape(None), "a shell tab");
+    }
+
+    #[test]
+    fn a_task_on_a_harness_purlis_does_not_interrupt_is_typed_a_line_only_once_its_turn_ends() {
+        let opencode = |running: bool| Seen {
+            heard: true,
+            running,
+            waiting: !running,
+            measured: true,
+            interrupts: false,
+            ..Seen::default()
+        };
+        assert!(opencode(false).takes_a_line());
+        assert!(!opencode(true).takes_an_interrupt());
+        assert_eq!(report_turn(opencode(false), false, Owed::Due), Ok(()));
+        assert_eq!(
+            report_turn(opencode(true), false, Owed::Due),
+            Err(NoReportTurn::MidTurn)
+        );
+        // A follow-up left for an idle opencode task is typed at once (#1981, D-3).
+        let mut ledger = Ledger::default();
+        ledger.landed(TASK, Landed::FollowUp);
+        assert_eq!(ledger.nudge_step(TASK, opencode(true)), Vec::new());
+        assert_eq!(
+            ledger.nudge_step(TASK, opencode(false)),
+            vec![Landed::FollowUp]
+        );
     }
 
     // ----- a question, a message and the person's keys (#1442) --------------------------------
@@ -2637,6 +2706,7 @@ mod tests {
         waiting: false,
         asking: false,
         measured: false,
+        interrupts: false,
         ask_open: false,
     };
 
@@ -3459,6 +3529,7 @@ mod tests {
             running,
             waiting: !running,
             measured: true,
+            interrupts: true,
             ..Seen::default()
         }
     }

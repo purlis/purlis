@@ -1865,8 +1865,9 @@ fn a_follow_up_names_the_task_and_carries_the_text_and_nothing_about_the_sender(
     assert_eq!(out.status.code(), Some(0));
     assert_eq!(
         text(&out.stdout),
-        "purlis dispatch: follow-up sent to 'check the queue' (chat 9). It reaches that chat's \
-         next turn, quoted as data from this chat.\n"
+        "purlis dispatch: follow-up sent to 'check the queue' (chat 9), quoted as data from \
+         this chat. If it is at rest, purlis starts its turn on it now; if it is mid-turn, it \
+         reads it when that turn ends.\n"
     );
     assert_eq!(
         the_task_asks(&asked)
