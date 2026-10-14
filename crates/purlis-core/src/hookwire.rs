@@ -3188,6 +3188,11 @@ const A_FRAME_WRITE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::fr
 /// What an app with no answerer says to an ask, so an asker never waits on a silence.
 pub const NOTHING_ANSWERS: &str = "this app does not open chats on request";
 
+/// What the app answers a line it cannot read (#1333): one from a newer purlis, whose kind it
+/// does not know. An asker can tell an older app from a refusal by it.
+pub const UNKNOWN_LINE: &str =
+    "the app could not read this line: it is from a purlis this app does not know";
+
 /// Reads one connection to its end: each report handed to `each`, each ask answered on it.
 ///
 /// **A report still costs exactly what it did.** A hook writes its one line and closes, so
@@ -3256,11 +3261,7 @@ fn serve(
             return;
         }
         let Some((line, token, delivery)) = read_delivered(&line) else {
-            refuse(
-                &mut writer,
-                "the app could not read this line: it is from a purlis this app does not know"
-                    .to_owned(),
-            );
+            refuse(&mut writer, UNKNOWN_LINE.to_owned());
             return;
         };
         // Every line is checked against the token of the chat it names, and one that does not

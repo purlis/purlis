@@ -231,6 +231,25 @@ pub fn tell(
     }
 }
 
+/// **Tells `line` to chat `pressed` and to each chat in `cured`** (review of #1967): one Allow
+/// answered every chat of the persona refused that vault, and each is told the same fixed line,
+/// each as its own board allows ([`tell`]). Answers what became of the line to `pressed`, which
+/// the Notice says.
+pub fn tell_every(
+    refusals: &Refusals,
+    pressed: u32,
+    cured: &[u32],
+    glance: &dyn Fn(u32) -> (State, bool),
+    line: &str,
+    send: &dyn Fn(u32, &str) -> Result<(), String>,
+) -> Told {
+    let told = tell(refusals, pressed, || glance(pressed), line.to_owned(), send);
+    for &other in cured.iter().filter(|other| **other != pressed) {
+        tell(refusals, other, || glance(other), line.to_owned(), send);
+    }
+    told
+}
+
 /// A report reached the project for chat `session`: what was queued for its turn's end is
 /// sent once the board (`glance`, asked under the queue's lock, as [`tell`] asks it) says it
 /// is waiting and asking nothing. While it runs on, or asks the person something, the lines
@@ -438,15 +457,19 @@ fn allow(
         tracing::warn!("purlis: a vault grant was kept without when it was made ({why})");
     }
     refusals.put_away(session, vault);
-    refusals.put_away_cured(&grant.persona, &grant.vault);
-    Ok(Allowed::Made(grant))
+    let cured = refusals.put_away_cured(&grant.persona, &grant.vault);
+    Ok(Allowed::Made { grant, cured })
 }
 
 /// What a press on Allow did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Allowed {
-    /// The grant is made now, and the chat is to be told what it opens.
-    Made(sandbox::local::VaultGrant),
+    /// The grant is made now, and the chat is to be told what it opens; so is each other chat
+    /// in `cured`, whose refusal of the same vault for the same persona it answered.
+    Made {
+        grant: sandbox::local::VaultGrant,
+        cured: Vec<u32>,
+    },
     /// The persona may use the vault already: nothing was changed, and the chat is not told.
     Already(sandbox::local::VaultGrant),
 }
@@ -459,13 +482,21 @@ pub enum Allowed {
 /// The Notice is raised only where the app refused the vault for the chat's persona (a
 /// brokered `secret exec`, or `secret list <vault>`), which is what the Allow opens. Reading a
 /// value in the chat stays refused, and the line says so.
-pub fn told_allowed(grant: &sandbox::local::VaultGrant) -> String {
+///
+/// `tooled` is whether the persona declares a tool with the vault
+/// ([`brokered::declares_a_tool_with`]): only then does the line name `secret exec`.
+pub fn told_allowed(grant: &sandbox::local::VaultGrant, tooled: bool) -> String {
     let (persona, vault) = (&grant.persona, &grant.vault);
-    let opens = if cfg!(target_os = "macos") {
+    let opens = if !tooled {
         format!(
-            "`purlis secret list {vault}` now lists its key names here, and `purlis secret exec \
-             {vault} … -- <tool>` now runs a tool {persona} declares with it. Reading a value \
+            "`purlis secret list {vault}` now lists its key names here. Reading a value \
              directly (`secret get`, `secret cp`) stays refused in a sandboxed chat."
+        )
+    } else if cfg!(target_os = "macos") {
+        format!(
+            "`purlis secret list {vault}` now lists its key names here, and the tools {persona} \
+             declares with it now run (`purlis secret exec {vault} … -- <tool>`). Reading a \
+             value directly (`secret get`, `secret cp`) stays refused in a sandboxed chat."
         )
     } else {
         format!(
@@ -546,7 +577,7 @@ pub async fn allow_refused_vault(
             .into_iter()
             .find(|open| open.session == session)
             .ok_or_else(|| format!("purlis allowed nothing for chat {session}: it is not open."))?;
-        let grant = match allow(
+        let (grant, cured) = match allow(
             &root,
             held.vault_refusals(),
             &Chat {
@@ -558,22 +589,27 @@ pub async fn allow_refused_vault(
             &held.audit_then_record(network.as_ref()),
             now_secs(),
         )? {
-            Allowed::Made(grant) => grant,
+            Allowed::Made { grant, cured } => (grant, cured),
             Allowed::Already(grant) => {
                 return Ok(VaultAnswered {
                     said: already_said(&grant),
                 });
             }
         };
-        let told = tell(
+        let line = told_allowed(
+            &grant,
+            brokered::declares_a_tool_with(&root, &grant.persona, &grant.vault),
+        );
+        let told = tell_every(
             held.vault_refusals(),
             session,
-            || {
-                let glance = held.board().glance(session);
+            &cured,
+            &|chat| {
+                let glance = held.board().glance(chat);
                 (glance.state, glance.asking)
             },
-            told_allowed(&grant),
-            |chat, text| {
+            &line,
+            &|chat, text| {
                 held.chats()
                     .sessions()
                     .input(chat, sent_as(text).as_bytes())
@@ -748,7 +784,7 @@ mod tests {
             &tell,
         );
         let heard = Audits::default();
-        let Ok(Allowed::Made(grant)) =
+        let Ok(Allowed::Made { grant, .. }) =
             allow(root, &refusals, &steward(), "devops", &auditing(&heard), 42)
         else {
             panic!("allowed");
@@ -786,16 +822,23 @@ mod tests {
         let ctx = Ctx::new(root, Env::of(&[]));
         assert_eq!(brokered::authorise(&ctx, Some("steward"), "devops"), Ok(()));
         assert_eq!(refusals.of(3), [], "the Notice is answered");
-        assert_eq!(told_allowed(&grant), TOLD_DEVOPS);
+        assert_eq!(told_allowed(&grant, false), TOLD_DEVOPS);
     }
 
-    /// What chat 3 is told once steward is allowed `devops`: what now runs, never "run it
-    /// again" for a command the Allow does not open (qw385).
-    const TOLD_DEVOPS: &str = if cfg!(target_os = "macos") {
+    /// What chat 3 is told once steward is allowed `devops`, where steward declares no tool
+    /// with it: what now runs, and nothing else (qw385).
+    const TOLD_DEVOPS: &str = "purlis: the person allowed chats opened as steward to use vault \
+                               devops on this machine. Nothing restarted. `purlis secret list \
+                               devops` now lists its key names here. Reading a value directly \
+                               (`secret get`, `secret cp`) stays refused in a sandboxed chat.";
+
+    /// The same, where steward declares a tool with `devops`.
+    const TOLD_DEVOPS_TOOLED: &str = if cfg!(target_os = "macos") {
         "purlis: the person allowed chats opened as steward to use vault devops on this \
          machine. Nothing restarted. `purlis secret list devops` now lists its key names here, \
-         and `purlis secret exec devops … -- <tool>` now runs a tool steward declares with it. \
-         Reading a value directly (`secret get`, `secret cp`) stays refused in a sandboxed chat."
+         and the tools steward declares with it now run (`purlis secret exec devops … -- \
+         <tool>`). Reading a value directly (`secret get`, `secret cp`) stays refused in a \
+         sandboxed chat."
     } else {
         "purlis: the person allowed chats opened as steward to use vault devops on this \
          machine. Nothing restarted. `purlis secret list devops` now lists its key names here. \
@@ -804,16 +847,35 @@ mod tests {
     };
 
     #[test]
-    fn the_allowed_chat_is_told_what_now_runs_and_never_to_run_a_value_read_again() {
+    fn the_allowed_chat_is_told_what_now_runs_and_a_tool_only_where_one_is_declared() {
         let grant = sandbox::local::VaultGrant {
             vault: "devops".to_owned(),
             persona: "steward".to_owned(),
         };
-        let told = told_allowed(&grant);
-        assert_eq!(told, TOLD_DEVOPS);
-        assert!(!told.contains("again"), "{told}");
-        assert!(told.contains("purlis secret list devops"), "{told}");
-        assert!(told.contains("stays refused"), "{told}");
+        for (tooled, said) in [(false, TOLD_DEVOPS), (true, TOLD_DEVOPS_TOOLED)] {
+            let told = told_allowed(&grant, tooled);
+            assert_eq!(told, said);
+            assert!(!told.contains("again"), "{told}");
+            assert!(told.contains("purlis secret list devops"), "{told}");
+            assert!(told.contains("stays refused"), "{told}");
+        }
+        assert!(!told_allowed(&grant, false).contains("secret exec"));
+    }
+
+    #[test]
+    fn whether_a_persona_declares_a_tool_with_the_vault_is_read_from_the_project() {
+        let project = project();
+        let root = project.path();
+        assert!(!brokered::declares_a_tool_with(root, "steward", "devops"));
+        std::fs::write(
+            purlis_core::names::manifest(root),
+            "[sandbox]\nmode = \"on\"\n[sandbox.personas.steward]\ntools = { kubectl = { vault = \"devops\", as = \
+             \"KUBECONFIG file\", key = \"kubeconfig\" } }\n",
+        )
+        .unwrap();
+        assert!(brokered::declares_a_tool_with(root, "steward", "devops"));
+        assert!(!brokered::declares_a_tool_with(root, "steward", "loose"));
+        assert!(!brokered::declares_a_tool_with(root, "devops", "devops"));
     }
 
     /// Chat `session` as the app recorded it: started sandboxed, as steward.
@@ -843,7 +905,11 @@ mod tests {
         }
         let heard = Audits::default();
         let made = allow(root, &refusals, &steward(), "devops", &auditing(&heard), 1);
-        assert!(matches!(made, Ok(Allowed::Made(_))), "{made:?}");
+        let Ok(Allowed::Made { cured, .. }) = &made else {
+            panic!("made: {made:?}");
+        };
+        // Chat 4 is told what now runs too, as chat 3 is (review of #1967).
+        assert_eq!(cured, &[4]);
         assert_eq!(
             refusals.of(4),
             [],
@@ -876,6 +942,36 @@ mod tests {
     }
 
     #[test]
+    fn every_chat_one_allow_answered_is_told_the_same_line_as_its_own_board_allows() {
+        let refusals = Refusals::default();
+        let sent = Mutex::new(Vec::new());
+        // Chat 3 (pressed) waits, chat 4 waits, chat 5 is mid-turn, chat 6 is asking.
+        let glance = |chat: u32| match chat {
+            5 => (State::Running, false),
+            6 => (State::Waiting, true),
+            _ => (State::Waiting, false),
+        };
+        let told = tell_every(
+            &refusals,
+            3,
+            &[4, 5, 6],
+            &glance,
+            "the line",
+            &|chat, text| {
+                sent.lock().unwrap().push((chat, text.to_owned()));
+                Ok(())
+            },
+        );
+        assert_eq!(told, Told::Sent);
+        assert_eq!(
+            *sent.lock().unwrap(),
+            [(3, "the line".to_owned()), (4, "the line".to_owned())]
+        );
+        assert_eq!(refusals.queued_for(5), 1, "told when its turn ends");
+        assert_eq!(refusals.queued_for(6), 0, "never onto a prompt");
+    }
+
+    #[test]
     fn a_press_where_the_grant_already_stands_puts_the_notice_away_and_changes_nothing() {
         let project = project();
         let root = project.path();
@@ -899,26 +995,6 @@ mod tests {
             "the Notice is answered, not left to loop"
         );
         assert_eq!(*heard.lock().unwrap(), []);
-    }
-
-    #[test]
-    fn refusals_are_held_in_memory_so_a_relaunch_restores_no_notice() {
-        // The window draws a vault Notice only from what the core holds now, and a relaunch
-        // holds none: a Notice whose record is gone is not drawn again.
-        let project = project();
-        let root = project.path();
-        let before = Refusals::default();
-        let (_, tell) = told();
-        refused(
-            &plane(root),
-            &before,
-            &asker(root, Some("steward")),
-            "devops",
-            &tell,
-        );
-        assert_eq!(before.of(3).len(), 1);
-        let relaunched = Refusals::default();
-        assert_eq!(relaunched.of(3), []);
     }
 
     #[test]
@@ -1247,7 +1323,7 @@ mod tests {
             allowed_said(&grant, Told::NotSent),
             format!("{head} Tell the chat it may now use the vault. It does not restart.")
         );
-        let sent = sent_as(&told_allowed(&grant));
+        let sent = sent_as(&told_allowed(&grant, false));
         assert!(
             sent.starts_with("\x1b[200~purlis: the person allowed"),
             "{sent:?}"

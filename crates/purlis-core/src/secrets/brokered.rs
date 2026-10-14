@@ -873,16 +873,48 @@ pub struct Listing {
     pub allow_locked: bool,
 }
 
-/// How long `purlis vault list` waits for the app's answer.
+/// How long `purlis vault list` waits for the app's answer: the registry alone is read.
 #[cfg(unix)]
-const A_LISTING_TAKES_AT_MOST: Duration = Duration::from_secs(5);
+const A_LISTING_TAKES_AT_MOST: Duration = if cfg!(test) {
+    Duration::from_secs(1)
+} else {
+    Duration::from_secs(5)
+};
 
-/// The app's answer to `purlis vault list` from a sandboxed chat it started (#1430), or `None`
-/// where no app answers it (no socket, an app older than the ask) and the listing is made here
-/// as it always was.
+/// How long `purlis secret list <vault>` waits for the app's answer: a provider may be asked
+/// (`op`, the keyring's index), which takes longer than the registry alone.
 #[cfg(unix)]
-pub fn listing_from_the_app(ctx: &Ctx) -> Option<Result<Listing, String>> {
-    use crate::hookwire::{Answer, Ask, Asking, ChatToken};
+pub(crate) const A_KEY_LISTING_TAKES_AT_MOST: Duration = if cfg!(test) {
+    Duration::from_secs(1)
+} else {
+    Duration::from_secs(30)
+};
+
+/// What a sandboxed chat says where the app took its ask and did not answer in time.
+pub const NOT_IN_TIME: &str = "the app that started this chat did not answer in time, so \
+                               nothing was read. Try again; this chat's sandbox does not let it \
+                               read the vault itself.";
+
+/// What a sandboxed chat says where the app is older than the ask: it answers that it cannot
+/// read the line ([`crate::hookwire::UNKNOWN_LINE`]), or, older still, closes the connection
+/// without an answer.
+pub const OLDER_APP: &str = "the app that started this chat did not answer this: it is older \
+                             than this purlis command. Update the purlis app and start the chat \
+                             again; this chat's sandbox does not let it read the vault itself.";
+
+/// **Asks the app that started this sandboxed chat**, for a listing (qw385, review of #1967).
+/// `None` only where there is no app to ask: the chat is not sandboxed, it names no socket or
+/// no chat, or nothing listens there (connecting refuses at once). **Once the ask is sent the
+/// app's answer is the only one**: a deadline passed, a dropped connection or an answer of
+/// another kind is an error naming it, never a fallback to reading the vault in the chat,
+/// whose sandbox denies that.
+#[cfg(unix)]
+fn ask_the_app(
+    ctx: &Ctx,
+    ask: impl FnOnce(u32) -> crate::hookwire::Ask,
+    within: Duration,
+) -> Option<Result<crate::hookwire::Answer, String>> {
+    use crate::hookwire::{Answer, Asking, ChatToken, NOTHING_ANSWERS, UNKNOWN_LINE};
     let env = |name: &str| ctx.env.get(name);
     if !crate::sandbox::chat_is_sandboxed_in(&env) {
         return None;
@@ -890,22 +922,42 @@ pub fn listing_from_the_app(ctx: &Ctx) -> Option<Result<Listing, String>> {
     let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
     let chat = chat_number(&env)?;
     let mut asking = Asking::on(Path::new(&socket), ChatToken::read(&env)).ok()?;
-    match asking
-        .ask(&Ask::Vaults { chat }, A_LISTING_TAKES_AT_MOST)
-        .ok()?
-    {
-        Answer::Vaults {
-            persona,
-            vaults,
-            allow_locked,
-        } => Some(Ok(Listing {
-            persona,
-            vaults,
-            allow_locked,
-        })),
-        Answer::No { why } => Some(Err(why)),
-        _ => None,
-    }
+    Some(match asking.ask(&ask(chat), within) {
+        // An app older than the ask: one that reads no ask, or not this one (#1333).
+        Ok(Answer::No { why }) if why == NOTHING_ANSWERS || why == UNKNOWN_LINE => {
+            Err(OLDER_APP.to_owned())
+        }
+        Ok(answer) => Ok(answer),
+        Err(e) => Err(match e.kind() {
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => NOT_IN_TIME,
+            _ => OLDER_APP,
+        }
+        .to_owned()),
+    })
+}
+
+/// The app's answer to `purlis vault list` from a sandboxed chat it started (#1430), or `None`
+/// where there is no app to ask ([`ask_the_app`]) and the listing is made here as it always
+/// was.
+#[cfg(unix)]
+pub fn listing_from_the_app(ctx: &Ctx) -> Option<Result<Listing, String>> {
+    use crate::hookwire::{Answer, Ask};
+    Some(
+        match ask_the_app(ctx, |chat| Ask::Vaults { chat }, A_LISTING_TAKES_AT_MOST)? {
+            Ok(Answer::Vaults {
+                persona,
+                vaults,
+                allow_locked,
+            }) => Ok(Listing {
+                persona,
+                vaults,
+                allow_locked,
+            }),
+            Ok(Answer::No { why }) => Err(why),
+            Ok(_) => Err(OLDER_APP.to_owned()),
+            Err(why) => Err(why),
+        },
+    )
 }
 
 /// Where there is no unix socket there is no app to ask.
@@ -929,33 +981,38 @@ pub fn keys_for(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<Vec<Str
 }
 
 /// The app's answer to `purlis secret list <vault>` from a sandboxed chat it started
-/// (qw385): the key names, or its refusal. `None` where no app answers (no socket, an app
-/// older than the ask), and the vault is read here as it always was.
+/// (qw385): the key names, or its refusal. `None` only where there is no app to ask
+/// ([`ask_the_app`]), and the vault is read here as it always was.
 #[cfg(unix)]
 pub fn keys_from_the_app(ctx: &Ctx, vault: &str) -> Option<Result<Vec<String>, String>> {
-    use crate::hookwire::{Answer, Ask, Asking, ChatToken};
-    let env = |name: &str| ctx.env.get(name);
-    if !crate::sandbox::chat_is_sandboxed_in(&env) {
-        return None;
-    }
-    let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
-    let chat = chat_number(&env)?;
-    let mut asking = Asking::on(Path::new(&socket), ChatToken::read(&env)).ok()?;
-    let asked = Ask::Keys {
+    use crate::hookwire::{Answer, Ask};
+    let asked = |chat| Ask::Keys {
         chat,
         vault: vault.to_owned(),
     };
-    match asking.ask(&asked, A_LISTING_TAKES_AT_MOST).ok()? {
-        Answer::Keys { keys } => Some(Ok(keys)),
-        Answer::No { why } => Some(Err(why)),
-        _ => None,
-    }
+    Some(
+        match ask_the_app(ctx, asked, A_KEY_LISTING_TAKES_AT_MOST)? {
+            Ok(Answer::Keys { keys }) => Ok(keys),
+            Ok(Answer::No { why }) => Err(why),
+            Ok(_) => Err(OLDER_APP.to_owned()),
+            Err(why) => Err(why),
+        },
+    )
 }
 
 /// Where there is no unix socket there is no app to ask.
 #[cfg(not(unix))]
 pub fn keys_from_the_app(_ctx: &Ctx, _vault: &str) -> Option<Result<Vec<String>, String>> {
     None
+}
+
+/// Whether `persona` declares a tool that is handed a value of `vault` (qw385), as the
+/// project's own sandbox settings hold it now: what the line an Allow sends says runs. Names
+/// nothing a chat wrote into that line; it only chooses between two fixed sentences.
+pub fn declares_a_tool_with(root: &Path, persona: &str, vault: &str) -> bool {
+    declared_now(root, persona)
+        .iter()
+        .any(|tool| tool.vault == vault)
 }
 
 /// **What reading a value directly is refused with in a sandboxed chat** (qw385): `secret
