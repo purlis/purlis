@@ -150,10 +150,10 @@ impl Failures {
 }
 
 /// **Chat `session`'s server `server` could not start, for good**: kept for the person, the
-/// window told, and the chat told at its next turn. `persona` is the app's record of the chat,
-/// where it has it open: nothing is said where that persona declares no such server, since a
-/// line names it. A chat that is not open yet (its start outlasted the wait) has no persona to
-/// hold the name to; the name is then held to a server name's rule alone.
+/// window told, and the chat told at its next turn. `persona` is the app's record of the chat:
+/// the persona it was started as, or, for a chat whose start outlasted the wait for its record,
+/// the one it is starting as. Nothing is said where that persona declares no such server, since
+/// a line names it, nor where the app has no persona for the chat.
 pub fn failed(
     held: &crate::planes::Held,
     plane: &PlaneId,
@@ -163,11 +163,9 @@ pub fn failed(
     server: &str,
     why: &str,
 ) {
-    let named = match persona {
-        Some(persona) => purlis_core::secrets::mcpstart::declared_by(held.root(), persona, server),
-        None => purlis_core::personaverbs::mcp::name_ok(server),
-    };
-    if !named {
+    if !persona.is_some_and(|persona| {
+        purlis_core::secrets::mcpstart::declared_by(held.root(), persona, server)
+    }) {
         return;
     }
     let error = purlis_core::secrets::mcpstart::error_shown(why);

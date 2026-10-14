@@ -1319,8 +1319,9 @@ are added to that start.
   offers Retry, the chat's restart on its conversation; and the chat is told at its next turn,
   in fixed words with the error quoted as data. A chat whose start outlasts the wait is told
   the same. The app hears a marked start only within a minute of the chat's own start, and
-  names a server only where the chat's persona, as the app started it, declares it; whether a
-  run is a server's start, and the error, are the asking process's own words.
+  names a server only where the chat's persona, as the app started it or is starting it,
+  declares it; whether a run is a server's start, and the error, are the asking process's own
+  words.
 
 Only Claude Code is started with a persona's servers, so only there does any of this apply.
 

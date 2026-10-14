@@ -522,6 +522,10 @@ pub struct Chats {
     /// record each will have: decided, not yet open, and counted as if they were. Each is
     /// taken out when its start ends, whichever way ([`Reserved`]). **In memory only.**
     reserved: Mutex<HashMap<u32, Chat>>,
+    /// The persona each chat that is starting runs as, from its announcement until it is open
+    /// or its start fails (qw381): what a chat whose start outlasts the wait for its record is
+    /// held to before purlis names one of its MCP servers. **In memory only.**
+    starting_as: Mutex<HashMap<u32, Option<String>>>,
     /// The chats whose close stops every chat at work below them (#1443): the person's "Stop
     /// them", given as a Smart close began, kept for the close that ends it. **In memory only.**
     stops_below: Mutex<std::collections::HashSet<u32>>,
@@ -850,6 +854,7 @@ impl Chats {
             briefs: crate::rebrief::Sent::default(),
             dispatching: Mutex::new(()),
             reserved: Mutex::new(HashMap::new()),
+            starting_as: Mutex::new(HashMap::new()),
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
@@ -2320,6 +2325,7 @@ impl Chats {
                 &|session| {
                     announced.store(session, std::sync::atomic::Ordering::SeqCst);
                     whose.store(session, std::sync::atomic::Ordering::SeqCst);
+                    lock(&self.starting_as).insert(session, chat.persona.clone());
                     untold.tell_untold();
                     // A new program knows no model until its harness says (#1021).
                     lock(&self.models).remove(&session);
@@ -2337,6 +2343,9 @@ impl Chats {
                 // The chat was announced and then did not start. Take it back, or the board
                 // holds one entry per failed start for the life of the app.
                 let announced = announced.load(std::sync::atomic::Ordering::SeqCst);
+                if announced > 0 {
+                    lock(&self.starting_as).remove(&announced);
+                }
                 if announced > 0
                     && let Some(gone) = lock(&self.never_started).as_ref()
                 {
@@ -2381,6 +2390,7 @@ impl Chats {
         let workspace = workspace_at_start(Some(&self.project), under.cwd.as_deref());
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
+        lock(&self.starting_as).remove(&session);
         lock(&self.open).insert(
             session,
             Running {
@@ -2409,6 +2419,7 @@ impl Chats {
 
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
+        lock(&self.starting_as).remove(&session);
         let gone = lock(&self.open).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
@@ -2870,6 +2881,19 @@ impl Chats {
     /// record, never across a start.
     pub fn deciding(&self) -> MutexGuard<'_, ()> {
         lock(&self.dispatching)
+    }
+
+    /// The persona chat `session` is starting as, while it is starting and not yet open
+    /// (qw381): `Some(None)` for a chat on no persona, `None` for a chat that is not starting.
+    pub fn starting_as(&self, session: u32) -> Option<Option<String>> {
+        lock(&self.starting_as).get(&session).cloned()
+    }
+
+    /// Notes that chat `session` is starting as `persona`, as its announcement does: for a test
+    /// that stands in for a start.
+    #[cfg(test)]
+    pub fn starting_as_for_test(&self, session: u32, persona: Option<&str>) {
+        lock(&self.starting_as).insert(session, persona.map(str::to_owned));
     }
 
     /// Holds a slot for the persona chat that is about to start as `number`, recorded as
