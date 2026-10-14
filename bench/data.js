@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792008533655,
+  "lastUpdate": 1792009642015,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11130,6 +11130,48 @@ window.BENCHMARK_DATA = {
             "value": 103.49175550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.929, 103.249, 103.492, 104.470, 104.554 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dd12dcfd6b51606a830d8e411dfeebd772843994",
+          "message": "A service on this Mac is allowed by its one port (qw384) (#1966)\n\n* feat(sandbox): a service on this Mac is allowed by its one port (qw384)\n\nA sandboxed chat that reaches a service listening on this machine (kubectl\nagainst a local cluster at 127.0.0.1:<port>, a database in a container, a\ndev server) now gets a Block naming the port, and its Notice offers Allow\nfor this chat or for this project on this machine.\n\n- core: sandbox/localport.rs judges one port (1-65535, never purlis's own),\n  reads Go's and Node's refusal words, and binds purlis's own proxy and\n  tunnel ports away from any port a chat was started with.\n- grant::What::Port, kept for one chat in memory or in this machine's\n  sandbox file (ports_mine); policy's socket-grants lock holds it too.\n- a start compiles each allowed port into the chat's Seatbelt profile\n  (Codex, opencode) and its proxy's reach, as exactly 127.0.0.1, ::1 and\n  localhost at that port.\n- sandboxblock::Kind::LocalService: Go/Node words, the sandbox's own\n  network-outbound line for a loopback address, and the proxy's refusal of\n  a loopback address each name the port.\n- app: BlockOffer::Port, GrantWhat::Port, the asks adapter, the Granted\n  list and Remove; a port the refusal did not name is typed.\n- Claude Code's sandbox takes no single loopback port, so its Notice says so\n  and offers Start without the sandbox (follow-up).\n- ADR 0067 section (to be confirmed), CONTEXT term, plane-format, changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(sandbox): review of a service on this Mac (qw384)\n\n- One lock over purlis's own ports and the ports chats were given:\n  a start and a new listener each judge and mark in one step.\n- A forge sign-in's redirect ports are purlis's own.\n- Loopback is exactly 127.0.0.1, ::1 and localhost, as the profile and\n  the proxy carry it.\n- In a Codex or opencode chat a violation block is printed text, and\n  printed words never name a port: they pre-fill the Notice's port\n  field, said to come from the command's output, for the person to check.\n- A port you allowed that purlis holds after a restart has its own sentence.\n- The Granted list says where a port applies.\n- Docs say exactly when the port is named and when it is pre-filled.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw384): the lane-writes guard knows granted_ports only reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw384): a port purlis holds is freed before the service starts again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* style(qw384): fmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T00:15:16+04:00",
+          "tree_id": "7fed19141c21e04fb7150567667dc2a8e0eae9b0",
+          "url": "https://github.com/purlis/purlis/commit/dd12dcfd6b51606a830d8e411dfeebd772843994"
+        },
+        "date": 1792009640645,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5083015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.481, 0.506, 0.508, 0.517, 0.527 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7396175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.501, 16.597, 16.740, 16.997, 17.046 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.4704435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.687, 103.572, 104.470, 105.893, 106.004 ms"
           }
         ]
       }
