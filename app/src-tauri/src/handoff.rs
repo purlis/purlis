@@ -4222,8 +4222,11 @@ mod tests {
             std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
             let runs = root.join("runs");
             std::fs::create_dir_all(&runs).expect("runs");
-            let program = stand_in::program(
-                &root,
+            // Outside the project, and answering as Claude Code where it stands in for it: the floor
+            // starts no program the chat could have written, and asks the one it starts what it is
+            // (#2071).
+            let program = stand_in::claude_code(
+                dir.path(),
                 "claude-stand-in",
                 // And then stays running, as a harness does: a chat whose program has ended is
                 // one a report cannot reach, and the tests below are about one that is there.
@@ -4281,8 +4284,14 @@ mod tests {
         /// `run.<kind>.<pid>`.
         fn with_a_persona_on(self, kind: &str, profile: &str, persona: &str) -> Self {
             let runs = self.root.join("runs");
-            let program = stand_in::program(
-                &self.root,
+            // Beside the plane, and answering as Claude Code where it stands in for it (#2071).
+            let write = if kind == "claude" {
+                stand_in::claude_code
+            } else {
+                stand_in::program
+            };
+            let program = write(
+                self._dir.path(),
                 &format!("{kind}-stand-in"),
                 &format!(
                     "#!/bin/sh\nat=$(mktemp {runs:?}/.writing.XXXXXX) || exit 1\n\

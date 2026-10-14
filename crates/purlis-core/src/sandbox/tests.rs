@@ -3133,7 +3133,11 @@ fn the_picker_shows_every_refusal_of_the_program_check() {
         NotStarted::ProgramWritable(plane.path().join("bin/claude")),
         NotStarted::WordWritable(plane.path().join("bin/run.sh").display().to_string()),
         NotStarted::WordTooLong,
-        NotStarted::NotTheHarness(Harness::ClaudeCode),
+        NotStarted::NotTheHarness(
+            Harness::ClaudeCode,
+            "/usr/local/bin/claude".to_owned(),
+            None,
+        ),
     ] {
         let said = refusal.to_string();
         let check = |_: &Applied| Err(refusal.clone());

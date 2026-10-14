@@ -1662,3 +1662,9 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   backend, or a vault registry purlis cannot read. The chat starts as it did before the floor,
   and its tab says why. A person may still start a chat without the floor, audited as the
   opt-out is.
+- **A program that does not answer as its harness is refused, not started without the floor.**
+  The floor asks a Claude Code profile's program `--version` as the full sandbox does (V87g).
+  One that answers as something else, or not at all, is refused with a sentence that names the
+  program, what it answered, and how to fix it. One that does not answer in time is asked once
+  more, with twice the wait, before it is refused. Only a system or backend where the floor
+  cannot be applied at all starts a chat without it.

@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import { LOGS } from "./processes.js";
 
@@ -207,6 +207,21 @@ export const A_FINDER_LAUNCHS_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
  * fake harness — but it is reached by its BARE NAME out of the registry, which is the part no
  * other scenario exercises.
  */
+/** What a stand-in Claude Code answers `--version` with, as `stand_in::CLAUDE_CODE_VERSION`. */
+export const CLAUDE_CODE_VERSION = "2.1.300 (Claude Code)";
+
+/** The line that answers `--version` as Claude Code, wherever among the words it is asked. */
+const ANSWERS_AS_CLAUDE_CODE = `for word in "$@"; do [ "$word" = --version ] && { echo '${CLAUDE_CODE_VERSION}'; exit 0; }; done`;
+
+/**
+ * `lines`, a script's lines, with Claude Code's answer to `--version` after its shebang:
+ * what a stand-in that a Claude Code profile runs needs (#2071).
+ */
+export function answeringAsClaudeCode(lines: string[]): string[] {
+  const [shebang, ...rest] = lines;
+  return [shebang, ANSWERS_AS_CLAUDE_CODE, ...rest];
+}
+
 export function writeAHarnessOnlyAShellWouldFind(fakeHarness: string): string {
   const home = mkdtempSync(join(THE_RUNS_TREE, "finder-home-"));
   const bin = join(home, ".local", "bin");
@@ -531,7 +546,8 @@ export function copyFixturePlane(name = "daily"): string {
  * promise that.
  */
 export function declareAProfile(plane: string, program: string, kind = "claude"): void {
-  const wrapper = join(plane, "claude-stand-in");
+  const wrapper = theProfilesWrapper(plane);
+  mkdirSync(dirname(wrapper), { recursive: true });
   writeFileSync(wrapper, theProfilesProgram(program));
   chmodSync(wrapper, 0o755);
   writeFileSync(
@@ -553,8 +569,21 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
 }
 
 /**
+ * Where `declareAProfile` puts the profile's program for `plane`: beside the plane, never in
+ * it. A chat's sandbox, the floor included, starts no program the chat could have written
+ * (#2071), and a chat writes its own project.
+ */
+export function theProfilesWrapper(plane: string): string {
+  return join(`${plane}.programs`, "claude-stand-in");
+}
+
+/**
  * The shell script a profile's command points at: it writes down what charter started it
  * with, then runs `program`.
+ *
+ * It answers `--version` as Claude Code does, first and with nothing written down: a
+ * sandboxed start asks the program it runs whether it is Claude Code and refuses one that does
+ * not answer as it (ruling V87g, #2071).
  *
  * Its own function because two callers write it — `declareAProfile` puts it in the plane as a
  * declared profile's absolute command, and `writeAHarnessOnlyAShellWouldFind` puts the same
@@ -565,6 +594,7 @@ function theProfilesProgram(program: string): string {
   return [
     "#!/bin/sh",
     "# Written by the scenario tests: a profile's command.",
+    ANSWERS_AS_CLAUDE_CODE,
     "# What the chat's environment says about charter's footer (ADR 0029), written",
     "# down where a scenario can read it. `charter statusline` is Claude Code's `statusLine`",
     "# command and inherits this environment; the fake harness runs no such command, so this",

@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { theProfilesWrapper } from "../harness.js";
 
 /**
  * **Settings › Harness & profiles adds a profile, gives it a page, and removes it**, in the built
@@ -115,7 +116,7 @@ describe("Settings › Harness & profiles", () => {
     await browser.keys(NAME.split(""));
     // The stand-in the run's own profiles start (`declareAProfile`): a program that is there.
     await form.$("label=Command").click();
-    await browser.keys(join(root, "claude-stand-in").split(""));
+    await browser.keys(theProfilesWrapper(root).split(""));
     await form.$("button=Add profile").click();
 
     await browser.waitUntil(async () => (onDisk(file) ?? "").includes(TABLE), {
@@ -124,7 +125,7 @@ describe("Settings › Harness & profiles", () => {
     });
     const written = onDisk(file) ?? "";
     expect(written).toContain('kind = "claude"');
-    expect(written).toContain(join(root, "claude-stand-in"));
+    expect(written).toContain(theProfilesWrapper(root));
 
     // Its own page, from the nav, which is where its Remove is.
     const page = await $(GROUPS).$(`button=${NAME}`);

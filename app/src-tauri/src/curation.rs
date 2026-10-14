@@ -1595,8 +1595,11 @@ mod tests {
                 "---\non: workspace\n---\n\nNo label.\n",
             )
             .unwrap();
-            let program = stand_in::program(
-                &root,
+            // Outside the project, and answering as Claude Code where it stands in for it: the floor
+            // starts no program the chat could have written, and asks the one it starts what it is
+            // (#2071).
+            let program = stand_in::claude_code(
+                dir.path(),
                 "claude-stand-in",
                 &format!(
                     "#!/bin/sh\nprintf '%s|%s' \"$CHARTER_WORKSPACE\" \"$CHARTER_PLANE_ROOT_SESSION\" \

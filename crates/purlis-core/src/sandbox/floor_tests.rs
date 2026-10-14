@@ -218,7 +218,13 @@ fn where_the_floor_cannot_be_applied_the_chat_starts_as_before_and_says_why() {
         ..machine_with(Path::new("/opt/none"))
     };
     match decide(Harness::Codex, &root, &linux, &|_| true, None, None) {
-        Ok(Some(Decided::Floorless(why))) => assert!(why.contains("no sandbox"), "{why}"),
+        // Its reason alone: not the refusal's "nothing starts", which is not so here.
+        Ok(Some(Decided::Floorless(why))) => assert_eq!(
+            why,
+            "This chat runs with no sandbox: purlis could not apply the floor here, because \
+             purlis runs Codex inside a sandbox of its own, which it can apply on macOS but not yet \
+             on Linux."
+        ),
         other => panic!("{other:?}"),
     }
 }

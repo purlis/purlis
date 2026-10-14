@@ -157,7 +157,12 @@ pub fn checked_answering(
     if harness == Harness::ClaudeCode {
         let said = match probe {
             Some(probe) => probe(&words).ok_or(Unanswered::Failed),
-            None => version_of(&words, chat),
+            // Asked once more, for twice as long, where it did not answer in time: a busy machine
+            // is slow to start a program, and the start should not be refused for that.
+            None => match version_of(&words, chat) {
+                Err(Unanswered::TimedOut) => version_within(&words, chat, PATIENCE * 2),
+                said => said,
+            },
         };
         return match said {
             Ok(said) if is_claude_code(&said) => {
@@ -165,7 +170,14 @@ pub fn checked_answering(
                 Ok((words, Some(said)))
             }
             Err(Unanswered::TimedOut) => Err(NotStarted::ProbeTimedOut(harness)),
-            Ok(_) | Err(Unanswered::Failed) => Err(NotStarted::NotTheHarness(harness)),
+            Ok(said) => Err(NotStarted::NotTheHarness(
+                harness,
+                words[0].clone(),
+                Some(crate::shown::one_line(&said, ANSWER_SHOWN)),
+            )),
+            Err(Unanswered::Failed) => {
+                Err(NotStarted::NotTheHarness(harness, words[0].clone(), None))
+            }
         };
     }
     Ok((words, None))
@@ -486,14 +498,37 @@ pub fn claude_code_version(said: &str) -> Option<(u32, u32, u32)> {
 /// hold the start up: the answer is read on a thread of its own, and given up on at the
 /// deadline.
 pub fn version_of(words: &[String], chat: Chat<'_>) -> Result<String, Unanswered> {
-    answer_of(words, chat, &mut |_| {})
+    version_within(words, chat, PATIENCE)
+}
+
+/// How much of a program's answer a refusal says.
+const ANSWER_SHOWN: usize = 80;
+
+/// [`version_of`], waiting `patience` for the answer.
+pub fn version_within(
+    words: &[String],
+    chat: Chat<'_>,
+    patience: Duration,
+) -> Result<String, Unanswered> {
+    answer_within(words, chat, patience, &mut |_| {})
 }
 
 /// [`version_of`], telling `seen` the id of the probe's process, which leads its process
 /// group: a test's way to see that the whole group is gone after.
+#[cfg(test)]
 pub(crate) fn answer_of(
     words: &[String],
     chat: Chat<'_>,
+    seen: &mut dyn FnMut(u32),
+) -> Result<String, Unanswered> {
+    answer_within(words, chat, PATIENCE, seen)
+}
+
+/// [`answer_of`], waiting `patience` for the answer.
+fn answer_within(
+    words: &[String],
+    chat: Chat<'_>,
+    patience: Duration,
     seen: &mut dyn FnMut(u32),
 ) -> Result<String, Unanswered> {
     let failed = Unanswered::Failed;
@@ -541,7 +576,7 @@ pub(crate) fn answer_of(
         let _ = stdout.take(ANSWER_MAX).read_to_end(&mut out);
         let _ = sender.send(out);
     });
-    let deadline = Instant::now() + PATIENCE;
+    let deadline = Instant::now() + patience;
     // Wait without reaping: while the probe is an unreaped zombie its id stays taken, so
     // the group kill below cannot reach a stranger that was handed the id afterwards.
     while !exited(&mut child) && Instant::now() < deadline {
@@ -677,10 +712,11 @@ mod tests {
             Ok(vec![real.display().to_string()])
         );
         // A program named `claude` that is something else: its sandbox would bind nothing.
-        assert_eq!(
+        assert!(matches!(
             fx.check(Harness::ClaudeCode, &renamed, &[], None),
-            Err(NotStarted::NotTheHarness(Harness::ClaudeCode))
-        );
+            Err(NotStarted::NotTheHarness(Harness::ClaudeCode, _, Some(ref said)))
+                if said == "codex-cli 0.147.0"
+        ));
     }
 
     #[test]
@@ -1213,8 +1249,9 @@ mod tests {
         );
         let began = Instant::now();
         assert!(fx.check(Harness::ClaudeCode, &leaver, &[], None).is_err());
+        // A held pipe reads as no answer in time, which is asked once more with a longer wait.
         assert!(
-            began.elapsed() < PATIENCE + Duration::from_secs(5),
+            began.elapsed() < PATIENCE * 3 + Duration::from_secs(5),
             "{:?}",
             began.elapsed()
         );

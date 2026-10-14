@@ -4070,7 +4070,7 @@ pub enum NotStarted {
     WordTooLong,
     /// The profile's program does not answer as the harness its sandbox was compiled for, so
     /// the sandbox may bind nothing (ruling V87g).
-    NotTheHarness(Harness),
+    NotTheHarness(Harness, String, Option<String>),
     /// The profile's program did not answer `--version` in time ([`program::PATIENCE`]): a
     /// first run of a program the system has not seen can be slow, so the person is asked to
     /// start the chat again rather than told it is not the harness.
@@ -4198,14 +4198,21 @@ impl NotStarted {
             ),
             Self::ProbeTimedOut(harness) => format!(
                 "{lead}, and this profile's program did not answer whether it is {} within {} \
-                 seconds, so it was not started. A first run of a program can be slow: start \
-                 the chat again.",
+                 seconds, asked twice, so it was not started. A first run of a program can be \
+                 slow: start the chat again.",
                 harness.title(),
-                program::PATIENCE.as_secs()
+                (program::PATIENCE * 3).as_secs()
             ),
-            Self::NotTheHarness(harness) => format!(
-                "{lead}, and this profile's program does not answer as {}, whose sandbox it was \
-                 given, so it was not started sandboxed.",
+            Self::NotTheHarness(harness, program, said) => format!(
+                "{lead}, and this profile's program {} does not answer as {}, whose sandbox it \
+                 was given{}, so it was not started sandboxed. Point the profile at {} itself, \
+                 or at a wrapper that hands `--version` on to it.",
+                crate::shown::short(program),
+                harness.title(),
+                said.as_deref().map_or_else(
+                    || ": it gave no answer purlis could read".to_owned(),
+                    |said| format!(": asked `--version`, it answered \"{said}\"")
+                ),
                 harness.title()
             ),
             // The issue it is held back for is the adapter's to name, not the window's (#1422).
@@ -4875,22 +4882,23 @@ pub enum Decided {
     Floorless(String),
 }
 
-/// **Whether a refusal of `applied`'s program check starts the chat as before instead** (#2071,
-/// Q2): at the floor, a program the floor cannot be bound to, one that does not answer as its
-/// harness or in time. A program a chat could have written, or a command naming a file there,
-/// is refused at every level: run later, it would be a chat's code.
-pub fn floorless_program(applied: &Applied, refused: &NotStarted) -> bool {
-    applied.level() == Level::Floor
-        && matches!(
-            refused,
-            NotStarted::NotTheHarness(_) | NotStarted::ProbeTimedOut(_)
-        )
-}
-
-/// What a chat's tab says where the floor could not be applied (#2071): `why`, a refusal of
-/// [`NotStarted`].
+/// What a chat's tab says where the floor could not be applied (#2071): the reason of `why`, a
+/// refusal of [`NotStarted`]. Only its reason: its lead ("this project runs every chat
+/// sandboxed") and what it goes on to say (that nothing was started, and how to start without
+/// the sandbox) are not so for a chat that started.
 pub fn floorless_said(why: &NotStarted) -> String {
-    format!("This chat runs with no sandbox: purlis could not apply the floor here. {why}")
+    let said = why.to_string();
+    let reason = said
+        .strip_prefix(LEAD)
+        .and_then(|rest| rest.strip_prefix(", and "))
+        .unwrap_or(&said);
+    let reason = reason
+        .split_once(", so ")
+        .map_or(reason, |(reason, _)| reason)
+        .trim_end_matches('.');
+    format!(
+        "This chat runs with no sandbox: purlis could not apply the floor here, because {reason}."
+    )
 }
 
 /// What a chat of `harness` in the project at `root` starts under on `machine`, where `opt_out`
@@ -5047,7 +5055,7 @@ pub fn ahead(
             | NotStarted::ProgramRelative
             | NotStarted::WordWritable(_)
             | NotStarted::WordTooLong
-            | NotStarted::NotTheHarness(_)
+            | NotStarted::NotTheHarness(..)
             | NotStarted::ProbeTimedOut(_)
             | NotStarted::Uncompilable(_)
             | NotStarted::CoversItsGround { .. }

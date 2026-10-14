@@ -114,7 +114,12 @@ fn the_ways() -> Vec<(&'static str, String)> {
     vec![
         (
             "the program does not answer as its harness",
-            NotStarted::NotTheHarness(Harness::ClaudeCode).to_string(),
+            NotStarted::NotTheHarness(
+                Harness::ClaudeCode,
+                "/usr/local/bin/claude".to_owned(),
+                None,
+            )
+            .to_string(),
         ),
         (
             "the program did not answer in time",
@@ -326,8 +331,12 @@ fn a_task_a_launch_could_not_start_again_that_the_person_ends_keeps_its_conversa
         at("2026-10-07T12:00:00Z"),
     )
     .unwrap();
-    let why =
-        crate::sandbox::NotStarted::NotTheHarness(crate::harness::Harness::ClaudeCode).to_string();
+    let why = crate::sandbox::NotStarted::NotTheHarness(
+        crate::harness::Harness::ClaudeCode,
+        "/usr/local/bin/claude".to_owned(),
+        None,
+    )
+    .to_string();
 
     assert!(
         not_put_back(

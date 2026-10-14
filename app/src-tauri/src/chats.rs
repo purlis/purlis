@@ -1139,7 +1139,7 @@ impl Chats {
             if applied.level() == purlis_core::sandbox::Level::Full {
                 writable.extend(purlis_core::sandbox::program::temp_roots(&[]));
             }
-            let (checked, said) = match purlis_core::sandbox::program::checked_answering(
+            let (checked, said) = purlis_core::sandbox::program::checked_answering(
                 harness,
                 &words,
                 applied.root(),
@@ -1149,19 +1149,8 @@ impl Chats {
                     env: &[],
                 },
                 None,
-            ) {
-                Ok(checked) => checked,
-                // At the floor, a program the floor cannot be bound to starts as before, and
-                // says why (#2071, Q2).
-                Err(refused) if purlis_core::sandbox::floorless_program(applied, &refused) => {
-                    return Ok((
-                        None,
-                        None,
-                        Some(purlis_core::sandbox::floorless_said(&refused)),
-                    ));
-                }
-                Err(refused) => return Err(refused.to_string()),
-            };
+            )
+            .map_err(|refused| refused.to_string())?;
             // Claude Code through purlis's proxy from the version that takes its ports
             // (#1665); an older one keeps its own, and says so once as it opens.
             let mut applied = applied.clone();
@@ -5494,13 +5483,11 @@ pub(crate) mod tests {
             let _ = tx.send((session, harness, conversation));
         }));
 
-        // `/bin/echo` named `claude` is what `Harness::of_command` reads, and it is the file
-        // name that decides — so this is a Claude Code chat as far as the app is concerned.
-        // Copied through `stand_in::copy_of`, not `fs::copy`: this chat runs it the moment it
-        // is written, and a program this process copied through its own descriptor can lose
-        // to `ETXTBSY` (charter-app#81).
+        // A program named `claude` is what `Harness::of_command` reads, and it is the file
+        // name that decides — so this is a Claude Code chat as far as the app is concerned. It
+        // answers `--version` as Claude Code does, which the floor's start asks (#2071).
         let dir = tempfile::tempdir().expect("a directory");
-        let claude = stand_in::copy_of(std::path::Path::new("/bin/echo"), dir.path(), "claude");
+        let claude = stand_in::claude_code(dir.path(), "claude", "#!/bin/sh\necho \"$@\"\n");
 
         chats
             .start(
@@ -5554,7 +5541,8 @@ pub(crate) mod tests {
     const OTHER: &str = "66666666-7777-4888-9999-000000000000";
 
     /// A directory holding a program called `claude` that prints the arguments it was given
-    /// and then waits, so a test can see what the app actually put on its command line.
+    /// and then waits, so a test can see what the app actually put on its command line. It
+    /// answers `--version` as Claude Code does, which a sandboxed start asks (#2071).
     fn a_claude(dir: &std::path::Path) -> String {
         // Through `stand_in::program`, which holds both halves of this. The rename is what
         // charter-app#39 needed: the stand-in ends in `sleep 600`, so an earlier chat still
@@ -5562,7 +5550,7 @@ pub(crate) mod tests {
         // 2 failures in 5 runs, and because this binary runs first, `cargo test` stopped and
         // every later test binary was SKIPPED. The write from a child is what charter-app#81
         // needed, in the other direction: a chat runs this the moment it is written.
-        stand_in::program(
+        stand_in::claude_code(
             dir,
             "claude",
             "#!/bin/sh\nprintf 'argv:'\nfor word in \"$@\"; do printf ' %s' \"$word\"; done\nprintf '\\n'\nexec sleep 600\n",
@@ -8254,12 +8242,13 @@ pub(crate) mod tests {
 
     /// A plane at `dir/plane` declaring the profile `work` (kind `claude`) in its local file,
     /// running a stand-in that waits, with `extra` after its program in its command. Nothing is
-    /// approved. Answers the plane's root.
+    /// approved. Answers the plane's root. The stand-in is beside the plane, not in it: the
+    /// floor starts no program the chat could have written (#2071).
     fn a_plane_with_work(dir: &std::path::Path, extra: &str) -> std::path::PathBuf {
         let root = dir.join("plane");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
-        let program = a_claude(&root);
+        let program = a_claude(dir);
         std::fs::write(
             root.join(purlis_core::profiles::LOCAL_FILE),
             format!("[harness.work]\nkind = \"claude\"\ncommand = [{program:?}{extra}]\n"),
@@ -10365,8 +10354,10 @@ pub(crate) mod tests {
         std::fs::write(root.join(purlis_core::plane::MANIFEST), shared).expect("charter.toml");
         let argv = root.join("argv");
         let running = root.join("running");
-        let program = stand_in::program(
-            &root,
+        // Beside the plane, not in it, and answering as Claude Code: the floor starts no program
+        // the chat could have written, and asks the one it starts what it is (#2071).
+        let program = stand_in::claude_code(
+            dir.path(),
             command[0],
             &format!(
                 "#!/bin/sh\n: > {running:?}\n\

@@ -100,6 +100,35 @@ pub fn program(dir: &Path, name: &str, contents: &str) -> PathBuf {
     put_in_place(&beside, path)
 }
 
+/// What a stand-in Claude Code answers `--version` with: a version the start reads as Claude
+/// Code's, and one that takes purlis's proxy ports (`CLAUDE_CODE_TAKES_PROXY_PORTS`).
+pub const CLAUDE_CODE_VERSION: &str = "2.1.300 (Claude Code)";
+
+/// [`program`], for a stand-in Claude Code: `contents` runs after a first line that answers
+/// `--version` as Claude Code does and ends there, before anything else the script does.
+///
+/// A sandboxed chat's start, the floor included, asks the program it runs whether it is Claude
+/// Code (ruling V87g, #2071) and refuses one that does not answer as it. A stand-in has to
+/// answer as the real one does, and the start's question must leave no trace a test reads
+/// (an argv file, a ready marker), so the answer comes first.
+#[cfg(unix)]
+pub fn claude_code(dir: &Path, name: &str, contents: &str) -> PathBuf {
+    program(dir, name, &answering_as_claude_code(contents))
+}
+
+/// `contents`, a whole script, with Claude Code's answer to `--version` after its first line.
+pub fn answering_as_claude_code(contents: &str) -> String {
+    // Any word, not only the first: a wrapper profile's own words come before the question.
+    let answer = format!(
+        "for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo '{CLAUDE_CODE_VERSION}'; \
+         exit 0; }}; done\n"
+    );
+    match contents.split_once('\n') {
+        Some((shebang, rest)) if shebang.starts_with("#!") => format!("{shebang}\n{answer}{rest}"),
+        _ => format!("#!/bin/sh\n{answer}{contents}"),
+    }
+}
+
 /// A copy of an existing program — a real binary, where a shell script would not do — under
 /// `dir/name`, runnable, at its own path.
 ///
