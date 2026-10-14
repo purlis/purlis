@@ -117,11 +117,14 @@ pub const OWN_SAID: &str = "That port is one purlis itself listens on, so no cha
                             A service of your own on this Mac listens on a port of its own.";
 
 /// What a Notice says of a port you allowed that purlis itself listens on now: the service you
-/// allowed there is not running, and purlis took the free port for a chat of its own.
+/// allowed there is not running, purlis took the free port for a chat of its own, and the
+/// service can take it back only once purlis lets it go.
 pub const TAKEN_SAID: &str = "You allowed this port, but purlis itself listens on it now, for \
-                              another chat: the service you allowed there was not running when \
-                              purlis needed a port. No chat reaches it while purlis holds it. \
-                              Start your service again, then restart this chat.";
+                              another chat's proxy or tunnel: the service you allowed there was \
+                              not running when purlis needed a port, and no chat reaches it while \
+                              purlis holds it. Your service cannot start on it until purlis lets \
+                              it go: close the chat whose proxy or tunnel holds it, or quit and \
+                              reopen purlis; then start your service, then restart this chat.";
 
 /// Whether purlis listens on `port` now, or may while a forge sign-in runs.
 pub fn is_own(port: u16) -> bool {
