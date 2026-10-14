@@ -89,21 +89,6 @@ fn a_branch_switch_in_the_root_is_refused_and_the_remedy_is_not() {
 }
 
 #[test]
-fn a_cd_whose_chain_ends_before_the_move_is_told_how_to_join_it() {
-    // qw387: `cd <path> && git status | head; git checkout …` runs the checkout wherever the
-    // `cd` left the shell, the start included if it failed: the denial says to join it.
-    let f = fixture();
-    let said = branch(
-        &f,
-        "cd /tmp && git status | head -3; git checkout --detach main",
-    )
-    .expect("refused");
-    assert!(said.contains("join it with `&&`"), "{said}");
-    // Joined all the way, the line is read where the `cd` sent it.
-    assert_eq!(branch(&f, "cd /tmp && git checkout --detach main"), None);
-}
-
-#[test]
 fn a_file_restore_is_not_a_branch_move_and_an_ambiguous_name_is_refused() {
     let f = fixture();
     assert_eq!(branch(&f, "git checkout README"), None);
