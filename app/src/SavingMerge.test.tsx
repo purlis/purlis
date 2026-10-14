@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { ProjectShownProvider } from "./projectShown";
 import { RequestMerge, type RequestOf } from "./SavingMerge";
 import { SaveIndicator, SavingView } from "./SavingView";
 import {
@@ -309,6 +310,41 @@ describe("RequestMerge", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
     window.removeEventListener(PLANE_SAVED, saved);
+  });
+
+  it("holds the question back while its project is behind another, and has it there about the same request on return", async () => {
+    const sent = commandsSent({
+      look_at_save_request: { head: HEAD, merge: RED_NOW },
+      merge_save_request: "Merged as it stands.",
+    });
+    const under = (shown: boolean) => (
+      <ProjectShownProvider value={shown}>{request(RED)}</ProjectShownProvider>
+    );
+    const { rerender } = render(under(true));
+    await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+
+    // Another project comes to the front: nothing of this one is drawn over it.
+    rerender(under(false));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.querySelector(".ui-scrim")).toBeNull();
+    expect(sent.filter((one) => one.cmd === "merge_save_request")).toEqual([]);
+
+    // Back in front: the same question, about what the look found, and its answer carries
+    // the commit and the standing it showed.
+    rerender(under(true));
+    const asking = await screen.findByRole("alertdialog");
+    expect(asking.textContent).toContain(
+      "Merge the pull request #12 of this project as it stands?",
+    );
+    expect(asking.textContent).toContain("3 checks failed: lint, e2e, build.");
+    await userEvent.click(within(asking).getByRole("button", { name: "Merge as it stands" }));
+    expect(sent.filter((one) => one.cmd === "merge_save_request")).toEqual([
+      {
+        cmd: "merge_save_request",
+        args: { plane: PLANE, workspace: null, repo: null, head: HEAD, shown: RED_NOW.shown },
+      },
+    ]);
   });
 
   it("says why it could not look, and asks nothing", async () => {

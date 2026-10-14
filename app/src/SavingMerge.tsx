@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef, useState } from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as AlertDialog from "./overlays/alert-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AnswerBar } from "./AnswerBar";
 import { commands, type PlaneId, type SaveMerge } from "./bindings";
