@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-/// A machine of the test's own: a home, Claude Code's settings folder, a data home and a
-/// project, each in one temporary folder.
+/// A machine of the test's own: a home, Claude Code's settings folder, a config home, a data
+/// home and a project, each in one temporary folder.
 struct Machine {
     dir: tempfile::TempDir,
 }
@@ -21,7 +21,7 @@ struct Machine {
 impl Machine {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        for one in ["home", "data", "claude-settings", "project"] {
+        for one in ["home", "config-home", "data", "claude-settings", "project"] {
             fs::create_dir_all(dir.path().join(one)).unwrap();
         }
         fs::write(dir.path().join("project/charter.toml"), "").unwrap();
@@ -39,6 +39,7 @@ impl Machine {
             .env("CHARTER_ROOT", self.path("project"))
             .env("HOME", self.path("home"))
             .env("PURLIS_DATA_HOME", self.path("data"))
+            .env("PURLIS_CONFIG_HOME", self.path("config-home"))
             .env("CLAUDE_CONFIG_DIR", self.path("claude-settings"))
             .env_remove("PURLIS_CHAT")
             .env_remove("CHARTER_CHAT")
@@ -139,6 +140,7 @@ fn a_chat_may_not_make_a_profile() {
         .current_dir(machine.path("project"))
         .env("HOME", machine.path("home"))
         .env("PURLIS_DATA_HOME", machine.path("data"))
+        .env("PURLIS_CONFIG_HOME", machine.path("config-home"))
         .env("PURLIS_CHAT", "7")
         .output()
         .expect("the binary runs");

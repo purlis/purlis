@@ -313,10 +313,14 @@ impl ProfileSet {
     }
 }
 
-/// The profile `record`, one of this machine's, runs: its harness's own program, with each of
-/// its harness's folder variables set to the folder the record names. None for a harness purlis
-/// does not ship, a name a profile cannot have, or a folder that is no absolute UTF-8 path.
+/// The profile `record`, one purlis made on this machine, runs: its harness's own program, with
+/// each of its harness's folder variables set to the folder the record names. None for a
+/// harness purlis does not ship, a name a profile cannot have, a folder that is no absolute
+/// UTF-8 path, or a folder adopted in place, which starts as its built-in did (#2033).
 fn of_record(record: &crate::profilestore::Record) -> Option<Profile> {
+    if record.is_adopted() {
+        return None;
+    }
     let kind = kind_of(&record.kind)?;
     let folders = &crate::harness_declaration::builtin(kind.word)?.folders;
     if !name_ok(&record.name) {
@@ -327,8 +331,8 @@ fn of_record(record: &crate::profilestore::Record) -> Option<Profile> {
             .then(|| dir.to_str().map(str::to_owned))
             .flatten()
     };
-    let mut env = vec![(folders.config_env.clone()?, path(&record.config)?)];
-    if let (Some(variable), Some(data)) = (&folders.data_env, &record.data) {
+    let mut env = vec![(folders.config_env.clone()?, path(&record.folders.config)?)];
+    if let (Some(variable), Some(data)) = (&folders.data_env, &record.folders.data) {
         env.push((variable.clone(), path(data)?));
     }
     env.sort();
@@ -396,9 +400,7 @@ pub fn derive(root: &Path) -> ProfileSet {
 pub fn derive_in(root: &Path, declared: &crate::harness_declaration::Declarations) -> ProfileSet {
     let committed = std::fs::read_to_string(crate::names::manifest(root)).ok();
     // A store that cannot be read gives no profile: the built-ins and the project's still are.
-    let machine = crate::profilestore::Store::to_read()
-        .and_then(|store| store.records().ok())
-        .unwrap_or_default();
+    let machine = crate::profilestore::listed_here();
     derive_with(committed.as_deref(), read_local(root), declared, &machine)
 }
 

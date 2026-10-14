@@ -2,15 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **This machine's profiles** (ADR 0095, #2034): the profiles a person makes in the window or
-//! with `purlis profile create`, and the harness folders adopted in place (#2033), kept in
-//! purlis's data home and never in a project. A profile here is available in every project on
-//! this machine; one declared in a clone's `charter.local.toml` of the same name is that
-//! project's, and wins there.
+//! with `purlis profile create`, and the harness folders adopted in place (#2033). A profile
+//! here is available in every project on this machine; one declared in a clone's local
+//! settings file under the same name is that project's, and wins there.
 //!
-//! **The store** is `<data>/profiles/`: `profiles.json`, the records, and one folder per profile
-//! purlis made, `<data>/profiles/<name>/`, 0700, holding `config/` (what the harness's
-//! `[folders] config_env` is set to) and, for a harness that declares `data_env`, `data/`. An
-//! adopted profile's folder is the harness's own, wherever it is, and its record names it.
+//! **The records** are `<config>/profiles.json` (in purlis's folder of the config home), the
+//! one file #2033's adoption writes too: `{"version": 1, "profiles": [...]}`, each record its
+//! `name`, `harness`, `title` and `folders` (`config`, and `data` for a harness that declares
+//! `data_env`: what the harness's folder variables are set to), `adopted` for a folder adopted
+//! in place, and `imported` for a profile purlis made. A record or a key this purlis cannot
+//! read is kept as it was written.
+//!
+//! **A made profile's folder** is `<data>/profiles/<name>/`, 0700, holding `config/` and, for a
+//! harness that declares `data_env`, `data/`. An adopted profile's folder is the harness's own,
+//! wherever it is.
 //!
 //! **A made profile's settings are imported from this machine's harness settings, never its
 //! credential files.** What is copied is a list of settings files per harness ([`ALLOWED`]),
@@ -19,20 +24,24 @@
 //! a credential is left out too. No link is followed out of the folder the settings are read
 //! from. A harness purlis does not ship has no list, so nothing of it is imported.
 //!
-//! **Removing** a made profile deletes its folder, and only a folder directly under the store:
-//! a record that names any other folder deletes nothing. Removing an adopted profile forgets
-//! its record and never deletes its folder, which is the harness's own.
+//! **Removing** a made profile deletes its folder, and only a folder directly under
+//! `<data>/profiles/`: a record that names any other folder deletes nothing. Removing an adopted
+//! profile forgets its record and never deletes its folder, which is the harness's own.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
-/// The store's folder under the data home.
+/// The made profiles' folder under the data home.
 pub const DIR: &str = "profiles";
 
-/// The records, in [`DIR`].
+/// The records, in purlis's folder of the config home.
 pub const RECORDS: &str = "profiles.json";
+
+/// The version [`RECORDS`] is written at.
+const VERSION: u64 = 1;
 
 /// A made profile's folder for its harness's `config_env`, under the profile's own folder.
 pub const CONFIG: &str = "config";
@@ -43,14 +52,13 @@ pub const DATA: &str = "data";
 /// How deep an imported settings folder is read.
 const DEEPEST: usize = 8;
 
-/// Where a profile's folder came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Origin {
-    /// purlis made it, under the store: its folder is purlis's to delete.
-    Made,
-    /// The harness's own folder on this machine, adopted in place (#2033): never deleted.
-    Adopted,
+/// The folders a profile's harness is pointed at: what its declaration's `config_env` and
+/// `data_env` are set to (ADR 0073, as amended by #2031).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Folders {
+    pub config: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<PathBuf>,
 }
 
 /// When a made profile's settings were imported, and from where.
@@ -68,78 +76,102 @@ pub struct Record {
     /// The profile's name, as a chat, a persona and the picker name it.
     pub name: String,
     /// The harness it runs: `claude`, `codex` or `opencode`.
+    #[serde(rename = "harness")]
     pub kind: String,
-    pub origin: Origin,
-    /// What the harness's `[folders] config_env` is set to.
-    pub config: PathBuf,
-    /// What its `[folders] data_env` is set to, for a harness that declares one.
+    /// How the window and the listing name it.
+    pub title: String,
+    pub folders: Folders,
+    /// How a folder adopted in place was adopted (#2033), as that record wrote it; `None` for
+    /// a profile purlis made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<PathBuf>,
-    /// When its settings were imported, for a made profile.
+    pub adopted: Option<Value>,
+    /// When its settings were imported, for a profile purlis made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported: Option<Imported>,
     /// Keys a later purlis writes, kept as they are.
     #[serde(flatten)]
-    pub rest: serde_json::Map<String, serde_json::Value>,
+    pub rest: Map<String, Value>,
 }
 
+impl Record {
+    /// Whether it is the harness's own folder, adopted in place, which purlis never deletes.
+    pub fn is_adopted(&self) -> bool {
+        self.adopted.is_some()
+    }
+}
+
+/// The file as read: every record as it was written, so a record this purlis cannot read
+/// survives a write by it.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Records {
     #[serde(default)]
-    profiles: Vec<Record>,
+    version: u64,
+    #[serde(default)]
+    profiles: Vec<Value>,
     #[serde(flatten)]
-    rest: serde_json::Map<String, serde_json::Value>,
+    rest: Map<String, Value>,
 }
 
-/// This machine's profile store.
+impl Records {
+    fn read(&self) -> Vec<Record> {
+        self.profiles
+            .iter()
+            .filter_map(|one| serde_json::from_value(one.clone()).ok())
+            .collect()
+    }
+
+    /// Where the record of `name` is in the file.
+    fn at(&self, name: &str) -> Option<usize> {
+        self.profiles
+            .iter()
+            .position(|one| one.get("name").and_then(Value::as_str) == Some(name))
+    }
+}
+
+/// This machine's profile store: its records, and the folder its made profiles are in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Store {
-    dir: PathBuf,
+    records: PathBuf,
+    folders: PathBuf,
 }
 
 impl Store {
-    /// The store under the data home `data`.
-    pub fn in_data(data: &Path) -> Self {
+    /// The store of the config home `config_root` and the data home `data`.
+    pub fn at(config_root: &Path, data: &Path) -> Self {
         Self {
-            dir: data.join(DIR),
+            records: crate::machine::dir(config_root).join(RECORDS),
+            folders: data.join(DIR),
         }
     }
 
-    /// The store under this process's data home ([`crate::datahome::root`]), to write: none
-    /// where there is no data home or it is inside a project or a git work tree (ADR 0075 §6).
+    /// The store of this process's config home and data home, to write: none where either is
+    /// missing, or the data home is inside a project or a git work tree (ADR 0075 §6).
     pub fn here() -> Option<Self> {
+        let config = crate::machine::config_root()?;
         let data = crate::datahome::root()?;
         crate::datahome::refusal(&data)
             .is_none()
-            .then(|| Self::in_data(&data))
+            .then(|| Self::at(&config, &data))
     }
 
-    /// The store under the data home this process's environment names, to read the profiles
-    /// it holds. A test build reads one only inside its fence, so a test that names no data home
-    /// of its own lists no profile of the person's.
-    pub fn to_read() -> Option<Self> {
-        let data = crate::datahome::root_in(&crate::envvar::var)?;
-        if crate::fence::FENCED && !crate::fence::inside(&data, &crate::fence::fence()) {
-            return None;
-        }
-        crate::datahome::refusal(&data)
-            .is_none()
-            .then(|| Self::in_data(&data))
-    }
-
-    /// The store's folder.
+    /// The folder purlis makes its profiles in.
     pub fn dir(&self) -> &Path {
-        &self.dir
+        &self.folders
+    }
+
+    /// The file the records are in.
+    pub fn records_file(&self) -> &Path {
+        &self.records
     }
 
     /// The folder purlis makes for the profile `name`.
     pub fn folder_of(&self, name: &str) -> PathBuf {
-        self.dir.join(name)
+        self.folders.join(name)
     }
 
-    /// Every record, in the order they were made. None where the store holds none.
+    /// Every record, in the order they were added.
     pub fn records(&self) -> io::Result<Vec<Record>> {
-        Ok(self.read()?.profiles)
+        Ok(self.read()?.read())
     }
 
     /// The record of `name`.
@@ -148,33 +180,61 @@ impl Store {
     }
 
     fn read(&self) -> io::Result<Records> {
-        match std::fs::read(self.dir.join(RECORDS)) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("{} is not a profiles record ({e})", RECORDS),
-                )
-            }),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Records::default()),
-            Err(e) => Err(e),
-        }
+        read_records(&self.records)
     }
 
-    fn write(&self, records: &Records) -> io::Result<()> {
-        let mut text = serde_json::to_string_pretty(records).map_err(io::Error::other)?;
+    fn write(&self, mut records: Records) -> io::Result<()> {
+        records.version = VERSION;
+        let mut text = serde_json::to_string_pretty(&records).map_err(io::Error::other)?;
         text.push('\n');
+        let dir = self.records_dir();
         crate::rewrite::replace(
-            &self.dir,
-            &self.dir.join(RECORDS),
+            dir,
+            &self.records,
             text.as_bytes(),
             crate::rewrite::Mode::Private,
         )
     }
 
-    /// The store's folder, made 0700 where it is not there, and held for one change.
+    fn records_dir(&self) -> &Path {
+        self.records.parent().unwrap_or(&self.records)
+    }
+
+    /// The records' folder and the made profiles' folder, each made 0700 where it is not there,
+    /// and the records held for one change.
     fn hold(&self) -> io::Result<crate::rewrite::Lock> {
-        private_dirs(&self.dir)?;
-        Ok(crate::rewrite::Lock::on(&self.dir))
+        private_dirs(self.records_dir())?;
+        private_dirs(&self.folders)?;
+        Ok(crate::rewrite::Lock::on(self.records_dir()))
+    }
+}
+
+/// The records under the config home this process's environment names, for a reader that only
+/// shows or runs what is there: none where there is no store or it cannot be read, and none for
+/// a test build whose fence does not hold it, so a test that names no config home of its own
+/// lists no profile of the person's.
+pub fn listed_here() -> Vec<Record> {
+    let Some(config) = crate::machine::config_root_unheld() else {
+        return Vec::new();
+    };
+    if crate::fence::FENCED && !crate::fence::inside(&config, &crate::fence::fence()) {
+        return Vec::new();
+    }
+    read_records(&crate::machine::dir(&config).join(RECORDS))
+        .map(|records| records.read())
+        .unwrap_or_default()
+}
+
+fn read_records(path: &Path) -> io::Result<Records> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{} is not a list of profiles ({e})", path.display()),
+            )
+        }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Records::default()),
+        Err(e) => Err(e),
     }
 }
 
@@ -297,7 +357,7 @@ pub fn create(
     let (folders, allowed) = harness_of(kind)?;
     let _held = store.hold().map_err(|e| could_not(store, &e))?;
     let mut records = store.read().map_err(|e| could_not(store, &e))?;
-    if records.profiles.iter().any(|r| r.name == name) {
+    if records.at(name).is_some() {
         return Err(format!(
             "this machine already has a profile named '{name}'. Pick another name, or remove \
              that one first."
@@ -340,14 +400,16 @@ pub fn create(
     let record = Record {
         name: name.to_owned(),
         kind: kind.to_owned(),
-        origin: Origin::Made,
-        config,
-        data,
+        title: name.to_owned(),
+        folders: Folders { config, data },
+        adopted: None,
         imported: from.map(|from| Imported { at: now, from }),
-        rest: serde_json::Map::new(),
+        rest: Map::new(),
     };
-    records.profiles.push(record.clone());
-    if let Err(e) = store.write(&records) {
+    records
+        .profiles
+        .push(serde_json::to_value(&record).map_err(|e| could_not(store, &io::Error::other(e)))?);
+    if let Err(e) = store.write(records) {
         let _ = std::fs::remove_dir_all(&folder);
         return Err(could_not(store, &e));
     }
@@ -365,25 +427,26 @@ pub fn import(
 ) -> Result<Made, String> {
     let _held = store.hold().map_err(|e| could_not(store, &e))?;
     let mut records = store.read().map_err(|e| could_not(store, &e))?;
-    let Some(at) = records.profiles.iter().position(|r| r.name == name) else {
+    let Some(at) = records.at(name) else {
         return Err(no_such(name));
     };
-    let record = &records.profiles[at];
-    if record.origin == Origin::Adopted {
+    let record: Record = serde_json::from_value(records.profiles[at].clone())
+        .map_err(|e| could_not(store, &io::Error::other(e)))?;
+    if record.is_adopted() {
         return Err(format!(
             "'{name}' is the harness's own folder, adopted in place, so its settings are \
              already the machine's. There is nothing to import."
         ));
     }
     let (_, allowed) = harness_of(&record.kind)?;
-    let folder = own_folder(store, record)?;
+    let folder = own_folder(store, &record)?;
     let Some(from) = machine.of(&record.kind) else {
         return Err(format!(
             "purlis cannot tell where this machine keeps {}'s settings, so nothing was imported.",
             record.kind
         ));
     };
-    let config = record.config.clone();
+    let config = record.folders.config.clone();
     let copied = (|| {
         let dest = settings_dest(allowed, &config);
         for one in allowed.files.iter().chain(allowed.folders) {
@@ -392,10 +455,13 @@ pub fn import(
         import_into(allowed, &from, &folder, &config)
     })()
     .map_err(|e| could_not(store, &e))?;
-    let record = &mut records.profiles[at];
-    record.imported = Some(Imported { at: now, from });
-    let record = record.clone();
-    store.write(&records).map_err(|e| could_not(store, &e))?;
+    let record = Record {
+        imported: Some(Imported { at: now, from }),
+        ..record
+    };
+    records.profiles[at] =
+        serde_json::to_value(&record).map_err(|e| could_not(store, &io::Error::other(e)))?;
+    store.write(records).map_err(|e| could_not(store, &e))?;
     Ok(Made { record, copied })
 }
 
@@ -449,11 +515,11 @@ pub fn removal(store: &Store, name: &str) -> Result<Removal, String> {
 }
 
 fn removal_of(store: &Store, record: &Record) -> Result<Removal, String> {
-    if record.origin == Origin::Adopted {
+    if record.is_adopted() {
         return Ok(Removal {
             name: record.name.clone(),
             adopted: true,
-            folder: record.config.clone(),
+            folder: record.folders.config.clone(),
             conversations: Some(Vec::new()),
         });
     }
@@ -472,10 +538,10 @@ fn removal_of(store: &Store, record: &Record) -> Result<Removal, String> {
 pub fn remove(store: &Store, name: &str, shown: &Removal) -> Result<Removal, String> {
     let _held = store.hold().map_err(|e| could_not(store, &e))?;
     let mut records = store.read().map_err(|e| could_not(store, &e))?;
-    let Some(at) = records.profiles.iter().position(|r| r.name == name) else {
+    let Some(record) = records.read().into_iter().find(|r| r.name == name) else {
         return Err(no_such(name));
     };
-    let now = removal_of(store, &records.profiles[at])?;
+    let now = removal_of(store, &record)?;
     if &now != shown {
         return Err(format!(
             "the profile '{name}' changed while you were reading what goes, so nothing was \
@@ -490,8 +556,10 @@ pub fn remove(store: &Store, name: &str, shown: &Removal) -> Result<Removal, Str
             Err(e) => return Err(could_not(store, &e)),
         }
     }
-    records.profiles.remove(at);
-    store.write(&records).map_err(|e| could_not(store, &e))?;
+    if let Some(at) = records.at(name) {
+        records.profiles.remove(at);
+    }
+    store.write(records).map_err(|e| could_not(store, &e))?;
     Ok(now)
 }
 
@@ -530,13 +598,14 @@ fn own_folder(store: &Store, record: &Record) -> Result<PathBuf, String> {
             "the profile '{}' names a folder outside purlis's profiles folder ({}), so purlis \
              deletes and writes nothing there.",
             crate::shown::short(&record.name),
-            store.dir.display()
+            store.folders.display()
         )
     };
-    if !crate::profiles::name_ok(&record.name) || !record.config.starts_with(&folder) {
+    if !crate::profiles::name_ok(&record.name) || !record.folders.config.starts_with(&folder) {
         return Err(refused());
     }
     if record
+        .folders
         .data
         .as_ref()
         .is_some_and(|data| !data.starts_with(&folder))
@@ -550,7 +619,7 @@ fn own_folder(store: &Store, record: &Record) -> Result<PathBuf, String> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(folder),
         Err(e) => return Err(could_not(store, &e)),
     }
-    let (Ok(dir), Ok(found)) = (store.dir.canonicalize(), folder.canonicalize()) else {
+    let (Ok(dir), Ok(found)) = (store.folders.canonicalize(), folder.canonicalize()) else {
         return Err(refused());
     };
     if found.parent() != Some(dir.as_path()) {
@@ -718,9 +787,9 @@ fn conversations(record: &Record, folder: &Path) -> Option<Vec<String>> {
         return None;
     };
     let (base, rest) = if let Some(rest) = file.strip_prefix("{config}/") {
-        (record.config.clone(), rest)
+        (record.folders.config.clone(), rest)
     } else {
-        (record.data.clone()?, file.strip_prefix("{data}/")?)
+        (record.folders.data.clone()?, file.strip_prefix("{data}/")?)
     };
     let parts: Vec<&str> = rest.split('/').collect();
     let mut found = Vec::new();
@@ -855,7 +924,7 @@ fn no_such(name: &str) -> String {
 fn could_not(store: &Store, e: &io::Error) -> String {
     format!(
         "purlis could not change this machine's profiles in {} ({}), so nothing was changed.",
-        store.dir.display(),
+        store.records.display(),
         crate::rewrite::os_words(e)
     )
 }

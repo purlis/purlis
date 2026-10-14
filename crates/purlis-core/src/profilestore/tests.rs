@@ -18,7 +18,7 @@ impl Machine {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         fs::create_dir_all(&home).unwrap();
-        let store = Store::in_data(&dir.path().join("data"));
+        let store = Store::at(&dir.path().join("config-home"), &dir.path().join("data"));
         Self {
             home,
             env: BTreeMap::new(),
@@ -116,7 +116,7 @@ fn an_import_copies_exactly_the_listed_settings_and_no_credential_file() {
     let made = machine.create("work", "claude", 100).unwrap();
 
     assert_eq!(
-        files(&made.record.config),
+        files(&made.record.folders.config),
         [
             "CLAUDE.md",
             "agents/reviewer.md",
@@ -125,7 +125,7 @@ fn an_import_copies_exactly_the_listed_settings_and_no_credential_file() {
         ]
     );
     assert_eq!(
-        fs::read_to_string(made.record.config.join("settings.json")).unwrap(),
+        fs::read_to_string(made.record.folders.config.join("settings.json")).unwrap(),
         "{\"theme\": \"dark\"}\n"
     );
     assert_eq!(
@@ -152,12 +152,16 @@ fn a_new_profile_is_kept_in_a_private_folder_of_its_own_under_the_store() {
     let made = machine.create("work", "claude", 100).unwrap();
 
     let folder = machine.store.folder_of("work");
-    assert_eq!(made.record.config, folder.join(CONFIG));
-    assert_eq!(made.record.origin, Origin::Made);
+    assert_eq!(made.record.folders.config, folder.join(CONFIG));
+    assert!(!made.record.is_adopted());
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        for dir in [machine.store.dir(), folder.as_path(), &made.record.config] {
+        for dir in [
+            machine.store.dir(),
+            folder.as_path(),
+            &made.record.folders.config,
+        ] {
             let mode = fs::metadata(dir).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o700, "{}", dir.display());
         }
@@ -176,7 +180,7 @@ fn an_imported_file_is_private() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let file = made.record.config.join("settings.json");
+        let file = made.record.folders.config.join("settings.json");
         assert_eq!(
             fs::metadata(file).unwrap().permissions().mode() & 0o777,
             0o600
@@ -199,7 +203,10 @@ fn an_import_follows_no_link_out_of_the_settings_folder() {
 
     let made = machine.create("work", "claude", 100).unwrap();
 
-    assert_eq!(files(&made.record.config), ["CLAUDE.md", "agents/brief.md"]);
+    assert_eq!(
+        files(&made.record.folders.config),
+        ["CLAUDE.md", "agents/brief.md"]
+    );
     assert!(
         made.copied
             .skipped
@@ -227,10 +234,10 @@ fn a_codex_import_copies_its_settings_and_never_its_sign_in() {
     let made = machine.create("work", "codex", 100).unwrap();
 
     assert_eq!(
-        files(&made.record.config),
+        files(&made.record.folders.config),
         ["AGENTS.md", "config.toml", "prompts/review.md"]
     );
-    assert_eq!(made.record.data, None);
+    assert_eq!(made.record.folders.data, None);
 }
 
 #[test]
@@ -247,7 +254,7 @@ fn an_opencode_profile_has_a_data_folder_and_its_settings_under_its_own_name() {
     let made = machine.create("work", "opencode", 100).unwrap();
 
     assert_eq!(
-        files(&made.record.config),
+        files(&made.record.folders.config),
         [
             "opencode/AGENTS.md",
             "opencode/agent/plan.md",
@@ -255,7 +262,7 @@ fn an_opencode_profile_has_a_data_folder_and_its_settings_under_its_own_name() {
         ]
     );
     let folder = machine.store.folder_of("work");
-    assert_eq!(made.record.data, Some(folder.join(DATA)));
+    assert_eq!(made.record.folders.data, Some(folder.join(DATA)));
     assert_eq!(files(&folder.join(DATA)), Vec::<String>::new());
 }
 
@@ -265,7 +272,7 @@ fn a_machine_with_no_settings_makes_a_profile_with_none() {
 
     let made = machine.create("work", "claude", 100).unwrap();
 
-    assert_eq!(files(&made.record.config), Vec::<String>::new());
+    assert_eq!(files(&made.record.folders.config), Vec::<String>::new());
     assert_eq!(made.copied, Copied::default());
 }
 
@@ -275,7 +282,7 @@ fn a_re_import_takes_the_machines_settings_again_and_keeps_the_conversations() {
     let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
     claude_settings(&source);
     let made = machine.create("work", "claude", 100).unwrap();
-    let conversation = made.record.config.join("projects/-work/kept.jsonl");
+    let conversation = made.record.folders.config.join("projects/-work/kept.jsonl");
     write(&conversation, "kept\n");
     write(&source.join("settings.json"), "{\"theme\": \"light\"}\n");
     fs::remove_file(source.join("agents/reviewer.md")).unwrap();
@@ -284,10 +291,17 @@ fn a_re_import_takes_the_machines_settings_again_and_keeps_the_conversations() {
 
     assert_eq!(again.record.imported.as_ref().unwrap().at, 200);
     assert_eq!(
-        fs::read_to_string(made.record.config.join("settings.json")).unwrap(),
+        fs::read_to_string(made.record.folders.config.join("settings.json")).unwrap(),
         "{\"theme\": \"light\"}\n"
     );
-    assert!(!made.record.config.join("agents/reviewer.md").exists());
+    assert!(
+        !made
+            .record
+            .folders
+            .config
+            .join("agents/reviewer.md")
+            .exists()
+    );
     assert_eq!(fs::read_to_string(&conversation).unwrap(), "kept\n");
     assert_eq!(machine.store.record("work").unwrap(), Some(again.record));
 }
@@ -317,8 +331,14 @@ fn a_name_purlis_already_gives_or_cannot_hold_makes_no_profile() {
 fn removing_a_profile_names_its_conversations_then_deletes_its_folder() {
     let machine = Machine::new();
     let made = machine.create("work", "claude", 100).unwrap();
-    write(&made.record.config.join("projects/-a-b/one.jsonl"), "one\n");
-    write(&made.record.config.join("projects/-c/two.jsonl"), "two\n");
+    write(
+        &made.record.folders.config.join("projects/-a-b/one.jsonl"),
+        "one\n",
+    );
+    write(
+        &made.record.folders.config.join("projects/-c/two.jsonl"),
+        "two\n",
+    );
 
     let removal = removal(&machine.store, "work").unwrap();
 
@@ -349,7 +369,10 @@ fn a_removal_that_changed_since_it_was_shown_removes_nothing() {
     let machine = Machine::new();
     let made = machine.create("work", "claude", 100).unwrap();
     let shown = removal(&machine.store, "work").unwrap();
-    write(&made.record.config.join("projects/-a/new.jsonl"), "new\n");
+    write(
+        &made.record.folders.config.join("projects/-a/new.jsonl"),
+        "new\n",
+    );
 
     let refused = remove(&machine.store, "work", &shown).unwrap_err();
 
@@ -360,7 +383,21 @@ fn a_removal_that_changed_since_it_was_shown_removes_nothing() {
 
 /// Writes the store's records as `json`, for a record purlis would not have made.
 fn records(store: &Store, json: &str) {
-    write(&store.dir().join(RECORDS), json);
+    write(store.records_file(), json);
+}
+
+/// One record as the file holds it: a made one, or one adopted in place as #2033 writes it.
+fn record_json(name: &str, config: &Path, adopted: bool) -> String {
+    let adopted = if adopted {
+        ", \"adopted\": {\"at\": 5, \"variables\": []}"
+    } else {
+        ""
+    };
+    format!(
+        "{{\"name\": {name:?}, \"harness\": \"claude\", \"title\": \"Claude Code (this Mac)\", \
+         \"folders\": {{\"config\": {:?}}}{adopted}}}",
+        config.display().to_string()
+    )
 }
 
 #[test]
@@ -371,9 +408,8 @@ fn removing_never_deletes_a_folder_outside_the_store() {
     records(
         &machine.store,
         &format!(
-            "{{\"profiles\": [{{\"name\": \"work\", \"kind\": \"claude\", \"origin\": \"made\", \
-             \"config\": {:?}}}]}}",
-            outside.join("config").display().to_string()
+            "{{\"profiles\": [{}]}}",
+            record_json("work", &outside.join("config"), false)
         ),
     );
 
@@ -404,14 +440,12 @@ fn removing_never_deletes_through_a_link_in_the_store() {
     records(
         &machine.store,
         &format!(
-            "{{\"profiles\": [{{\"name\": \"work\", \"kind\": \"claude\", \"origin\": \"made\", \
-             \"config\": {:?}}}]}}",
-            machine
-                .store
-                .folder_of("work")
-                .join("config")
-                .display()
-                .to_string()
+            "{{\"profiles\": [{}]}}",
+            record_json(
+                "work",
+                &machine.store.folder_of("work").join("config"),
+                false
+            )
         ),
     );
 
@@ -426,18 +460,14 @@ fn removing_an_adopted_profile_forgets_it_and_keeps_its_folder() {
     write(&own.join("projects/-a/one.jsonl"), "one\n");
     records(
         &machine.store,
-        &format!(
-            "{{\"profiles\": [{{\"name\": \"claude-this-mac\", \"kind\": \"claude\", \
-             \"origin\": \"adopted\", \"config\": {:?}, \"adopted_at\": 5}}]}}",
-            own.display().to_string()
-        ),
+        &format!("{{\"profiles\": [{}]}}", record_json("claude", &own, true)),
     );
 
-    let shown = removal(&machine.store, "claude-this-mac").unwrap();
+    let shown = removal(&machine.store, "claude").unwrap();
 
     assert!(shown.adopted);
     assert!(shown.says().contains("stays"), "{}", shown.says());
-    remove(&machine.store, "claude-this-mac", &shown).unwrap();
+    remove(&machine.store, "claude", &shown).unwrap();
     assert!(own.join("projects/-a/one.jsonl").is_file());
     assert_eq!(machine.store.records().unwrap(), []);
 }
@@ -448,30 +478,38 @@ fn an_adopted_profile_is_not_imported_into() {
     let own = machine.home.join(".claude");
     records(
         &machine.store,
-        &format!(
-            "{{\"profiles\": [{{\"name\": \"mine\", \"kind\": \"claude\", \"origin\": \
-             \"adopted\", \"config\": {:?}}}]}}",
-            own.display().to_string()
-        ),
+        &format!("{{\"profiles\": [{}]}}", record_json("claude", &own, true)),
     );
 
-    assert!(machine.import("mine", 2).is_err());
+    assert!(machine.import("claude", 2).is_err());
 }
 
 #[test]
-fn a_key_a_later_purlis_writes_is_kept_when_the_records_change() {
+fn an_adopted_record_a_record_this_purlis_cannot_read_and_a_later_key_are_kept() {
     let machine = Machine::new();
     records(
         &machine.store,
-        "{\"profiles\": [{\"name\": \"old\", \"kind\": \"claude\", \"origin\": \"adopted\", \
-         \"config\": \"/x\", \"adopted_at\": 5}], \"version\": 1}",
+        &format!(
+            "{{\"version\": 1, \"profiles\": [{}, {{\"name\": \"odd\", \"shape\": 3}}], \
+             \"later\": true}}",
+            record_json("claude", Path::new("/x"), true)
+        ),
     );
 
     machine.create("work", "claude", 1).unwrap();
 
-    let text = fs::read_to_string(machine.store.dir().join(RECORDS)).unwrap();
-    assert!(text.contains("\"adopted_at\": 5"), "{text}");
-    assert!(text.contains("\"version\": 1"), "{text}");
+    let text = fs::read_to_string(machine.store.records_file()).unwrap();
+    assert!(text.contains("\"variables\": []"), "{text}");
+    assert!(text.contains("\"shape\": 3"), "{text}");
+    assert!(text.contains("\"later\": true"), "{text}");
+    let names: Vec<String> = machine
+        .store
+        .records()
+        .unwrap()
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(names, ["claude", "work"]);
 }
 
 #[test]

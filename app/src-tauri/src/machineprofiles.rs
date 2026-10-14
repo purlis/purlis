@@ -39,12 +39,13 @@ impl From<&profilestore::Record> for MachineProfileRow {
             kind: record.kind.clone(),
             harness: purlis_core::harness_declaration::builtin(&record.kind)
                 .map_or_else(|| record.kind.clone(), |d| d.title.clone()),
-            origin: match record.origin {
-                profilestore::Origin::Made => "made",
-                profilestore::Origin::Adopted => "adopted",
+            origin: if record.is_adopted() {
+                "adopted"
+            } else {
+                "made"
             }
             .to_owned(),
-            folder: record.config.display().to_string(),
+            folder: record.folders.config.display().to_string(),
             imported_at: record
                 .imported
                 .as_ref()
@@ -150,7 +151,7 @@ pub async fn machine_profiles() -> Result<Vec<MachineProfileRow>, String> {
         let records = store.records().map_err(|e| {
             format!(
                 "purlis could not read this machine's profiles in {} ({}).",
-                store.dir().display(),
+                store.records_file().display(),
                 purlis_core::rewrite::os_words(&e)
             )
         })?;

@@ -5,9 +5,10 @@
 //! profile's own folder: the harness's declared folder variables are set to it, so the harness
 //! finds the settings the profile imported there, and keeps its sign-in and conversations there.
 //!
-//! The profile store is found through this process's data home, so each body runs in a child
-//! whose `PURLIS_DATA_HOME` is the test's own folder, with a stand-in for each harness first on
-//! its `PATH`, so the test is about the start and not about what the machine has installed.
+//! The profile store is found through this process's config home and data home, so each body
+//! runs in a child whose `PURLIS_CONFIG_HOME` and `PURLIS_DATA_HOME` are the test's own folder,
+//! with a stand-in for each harness first on its `PATH`, so the test is about the start and not
+//! about what the machine has installed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,7 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
         &[test],
         &[
             (purlis_core::datahome::HOME_VAR, data.path().as_os_str()),
+            (purlis_core::machine::HOME_VAR, data.path().as_os_str()),
             (DATA, data.path().as_os_str()),
             ("PATH", path.as_os_str()),
         ],
@@ -109,7 +111,7 @@ fn a_claude_chat_on_a_profile_made_here_runs_with_its_config_folder_at_the_profi
         .find(|(name, _)| name == "CLAUDE_CONFIG_DIR")
         .map(|(_, value)| PathBuf::from(value))
         .expect("the harness is pointed at a folder");
-    assert_eq!(config, record.config);
+    assert_eq!(config, record.folders.config);
     assert_eq!(
         fs::read_to_string(config.join("settings.json")).unwrap(),
         "{\"theme\": \"dark\"}\n",
@@ -152,8 +154,8 @@ fn an_opencode_chat_on_a_profile_made_here_has_both_its_folders_at_the_profiles(
             .find(|(name, _)| name == variable)
             .map(|(_, value)| PathBuf::from(value))
     };
-    assert_eq!(set("XDG_CONFIG_HOME"), Some(record.config));
-    assert_eq!(set("XDG_DATA_HOME"), record.data);
+    assert_eq!(set("XDG_CONFIG_HOME"), Some(record.folders.config));
+    assert_eq!(set("XDG_DATA_HOME"), record.folders.data);
 }
 
 #[test]
