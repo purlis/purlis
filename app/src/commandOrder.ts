@@ -124,7 +124,7 @@ export const LANES = {
  */
 export const WRITERS = {
   sandbox: {
-    "the project's manifest and local settings (charter.toml, charter.local.toml)": [
+    "the project's manifest and its local settings": [
       "answerSandboxOffer",
       "addSandboxHost",
       "removeSandboxHost",
