@@ -11,10 +11,16 @@ later prompt — so the transcript is not a safe place for a value, whatever hol
 purlis vault add devops --persona devops                          # a keyring vault, local by default
 purlis secret set devops API_TOKEN --stdin                         # value on stdin, never argv
 purlis secret list devops                                          # key names, never values
-purlis secret exec devops --env TOKEN=API_TOKEN -- curl -H "Authorization: Bearer $TOKEN" …
+purlis secret exec devops --env TOKEN=API_TOKEN -- curl --variable %TOKEN --expand-header 'Authorization: Bearer {{TOKEN}}' …
 purlis secret exec devops --file KUBECONFIG=PROD_KUBECONFIG -- kubectl get pods
 purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active persona's vault
 ```
+
+The command runs with no shell between: a `$TOKEN` written on the line is expanded by your own
+shell before purlis hands anything over, so it is empty there, and a value written into the
+command's arguments is visible to other processes. The command reads the value itself: from its
+environment or a file, as `kubectl` reads `KUBECONFIG`, or, for curl 8.3.0 or later, through
+curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--expand-user`).
 
 - **`secret exec <vault> -- <command>`** resolves each value inside purlis and hands it to
   the command in its **environment** (`--env NAME=key`), in a temp file made **0600** whose
@@ -147,19 +153,40 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
 
   `as` is `"<VARIABLE> file"` (`--file`, preferred) or `"<VARIABLE> env"` (`--env`). A tool
   that needs several values from its vault, such as a user name and a password, names each
-  under `values` instead (T-1, ruled by the operator on 2026-10-14):
+  under `values` instead (T-1, ruled by the operator on 2026-10-14). The program must read
+  each value from its variable or file itself:
+
+  ```toml
+  [sandbox.personas.cloud]
+  tools = { aws = { vault = "cloud", values = {
+      AWS_ACCESS_KEY_ID = { key = "aws-access-key-id", as = "env" },
+      AWS_SECRET_ACCESS_KEY = { key = "aws-secret-access-key", as = "env" } } } }
+  ```
+
+  Its script runs `purlis secret exec cloud --env AWS_ACCESS_KEY_ID=aws-access-key-id --env
+  AWS_SECRET_ACCESS_KEY=aws-secret-access-key -- /usr/local/bin/aws`, so `aws s3 ls` in the chat
+  signs its requests with both, and a chat's own `secret exec` of it runs only with exactly that
+  set. A tool is written one way or the other, never both; it takes at most 16 values, each in a
+  variable of its own.
+
+  **curl reads no credential from a variable by itself**, and a chat's `$VAR` on the command
+  line is expanded by the chat's own shell, where it is unset. With curl 8.3.0 or later (macOS
+  ships 8.7), hand the values as `env` and have curl expand them itself:
 
   ```toml
   [sandbox.personas.logs]
   tools = { curl = { vault = "elastic-logs-master", values = {
       KIBANA_USER = { key = "kibana-username", as = "env" },
-      KIBANA_PASS = { key = "kibana-password", as = "file" } } } }
+      KIBANA_PASS = { key = "kibana-password", as = "env" } } } }
   ```
 
-  Its script runs `purlis secret exec elastic-logs-master --file KIBANA_PASS=kibana-password
-  --env KIBANA_USER=kibana-username -- /usr/bin/curl`, and a chat's own `secret exec` of it runs
-  only with exactly that set. A tool is written one way or the other, never both; it takes at
-  most 16 values, each in a variable of its own. As a
+  ```bash
+  curl --variable %KIBANA_USER --variable %KIBANA_PASS \
+       --expand-user '{{KIBANA_USER}}:{{KIBANA_PASS}}' https://kibana.example.test/api/status
+  ```
+
+  The single quotes keep `{{…}}` away from the chat's shell; curl fills them from its own
+  environment, and stops with an error where a variable is not set. As a
   sandboxed chat running as `devops` starts, the app writes one small script per tool under
   `.purlis/app/tools/devops/bin/`, which no chat may write, and puts that folder first on the
   chat's `PATH`. A Claude Code chat is also handed `CLAUDE_ENV_FILE`, which puts it first again
