@@ -939,6 +939,11 @@ fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_ca
         "rsync",
         "ssh",
         "curl.exe",
+        // Programs that copy, encode or rewrite what they are given.
+        "base64",
+        "/usr/bin/xxd",
+        "Tee",
+        "/usr/bin/openssl",
         // So is a name no tool may take.
         "/usr/bin/python3.12",
         "/bin/bash",
@@ -959,7 +964,7 @@ fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_ca
 }
 
 #[test]
-fn a_general_purpose_tool_says_so_in_one_sentence_and_a_narrow_one_says_nothing() {
+fn a_general_purpose_tool_says_so_in_one_sentence_and_an_unlisted_one_says_nothing() {
     let said = caution(&token_tool("curl"), &[]).expect("curl is general-purpose");
     assert_eq!(
         said,
@@ -973,6 +978,7 @@ fn a_general_purpose_tool_says_so_in_one_sentence_and_a_narrow_one_says_nothing(
         Some(true)
     );
     assert_eq!(caution(&token_tool("aws"), &[]), None);
+    assert!(caution(&token_tool("base64"), &[]).is_some());
     assert_eq!(caution(&kubectl(), &[]), None);
 }
 

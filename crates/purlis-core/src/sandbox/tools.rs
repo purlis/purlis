@@ -402,13 +402,17 @@ fn runs_what_it_is_told(name: &str) -> bool {
 }
 
 /// **General-purpose programs** (T-4, the operator's ruling of 2026-10-14): each fetches,
-/// sends, writes or rewrites content as its arguments say, so what it does with the values it
+/// sends, copies, encodes, writes or rewrites content as its arguments say, so what it does with the values it
 /// is handed is the chat's to decide, not the declaration's. Such a program stays a tool; its
-/// Allow says so in one sentence ([`caution`]). A short list, reviewed with each addition.
+/// Allow says so in one sentence ([`caution`]). A short list, reviewed with each addition, and
+/// not a complete one: a program off it is not thereby one that keeps what it is handed.
 const GENERAL_PURPOSE: &[&str] = &[
     // fetch and send over the network
     "curl", "wget", "wget2", "http", "https", "httpie", "xh", "xhs", "aria2c", "nc", "ncat",
     "netcat", "socat", "ssh", "scp", "sftp", "rsync",
+    // copy, encode or rewrite what they are given
+    "cat", "cp", "tee", "dd", "sed", "base64", "xxd", "od", "hexdump", "openssl", "gzip", "tar",
+    "zip",
 ];
 
 /// **Whether the program at `program` is a general-purpose one**, by its file name, whatever
@@ -425,7 +429,7 @@ pub fn general_purpose(program: &Path) -> bool {
 
 /// **The sentence a person reads beside `tool`'s Allow** where its program is a general-purpose
 /// one (T-4): by the tool's name, and by each program that name finds on `search`, as found and
-/// as its links resolve. None for a narrow program, and none for a browser login, whose program
+/// as its links resolve. None for a program off the list, and none for a browser login, whose program
 /// purlis picks. The sentence is said beside the tool's line, never part of it, so an Allow
 /// stays bound to the line alone ([`super::persona::digest_of`]).
 pub fn caution(tool: &Tool, search: &[PathBuf]) -> Option<String> {

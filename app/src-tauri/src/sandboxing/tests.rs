@@ -1634,9 +1634,9 @@ fn a_tool_handed_several_values_is_shown_and_allowed_whole() {
 }
 
 /// T-4: a tool whose program is a general-purpose one carries one sentence beside its Allow, a
-/// narrow one none, and the sentence is never part of what the Allow is bound to.
+/// tool off the list none, and the sentence is never part of what the Allow is bound to.
 #[test]
-fn a_general_purpose_tool_says_so_beside_its_allow_and_a_narrow_one_does_not() {
+fn a_general_purpose_tool_says_so_beside_its_allow_and_an_unlisted_one_does_not() {
     let project = tempfile::tempdir().expect("a project");
     let root = project.path();
     std::fs::write(

@@ -189,17 +189,18 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   environment, and stops with an error where a variable is not set.
 
   **A general-purpose program can show the values it receives in the chat's output** (T-4,
-  ruled by the operator on 2026-10-14). curl, wget, httpie and the like fetch, send or write
-  content as their arguments say, and the chat writes the arguments. purlis still runs such a
-  program as a tool, and its Allow says so: the Notice, Settings › Sandbox and the Granted list
-  add one sentence beside its line, "curl can show the values it is handed in the chat's
-  output; allow it only for a persona you trust with them." Allow one only for a persona you
-  trust with its values. The sentence follows a short, reviewed list of program names, matched
-  on the tool's name and on the file name of the program it finds; it is not part of what the
-  Allow is bound to, so an Allow you made before it stands.
+  ruled by the operator on 2026-10-14). curl, wget, httpie, base64, tee and the like fetch,
+  send, copy, encode or write content as their arguments say, and the chat writes the
+  arguments. purlis still runs such a program as a tool, and its Allow says so: the Notice,
+  Settings › Sandbox and the Granted list add one sentence beside its line, "curl can show the
+  values it is handed in the chat's output; allow it only for a persona you trust with them."
+  Allow one only for a persona you trust with its values. The sentence follows a short,
+  reviewed list of program names, matched on the tool's name and on the file name of the
+  program it finds; it is not part of what the Allow is bound to, so an Allow you made before
+  it stands. The list is not exhaustive, and a tool without the sentence is not thereby a safe
+  one: any program can show what it is handed if its arguments ask it to.
 
-  As a
-  sandboxed chat running as `devops` starts, the app writes one small script per tool under
+  As a sandboxed chat running as `devops` starts, the app writes one small script per tool under
   `.purlis/app/tools/devops/bin/`, which no chat may write, and puts that folder first on the
   chat's `PATH`. A Claude Code chat is also handed `CLAUDE_ENV_FILE`, which puts it first again
   before each command, after your shell's own start files. So `kubectl get pods`, in a
