@@ -1665,6 +1665,18 @@ export const PlaneView = memo(function PlaneView({
     },
     [sidebar],
   );
+  /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
+  const sandboxOf = useCallback(
+    (session: number | undefined): string | null => {
+      if (session === undefined || sidebar === undefined) return null;
+      for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
+        const found = chats.find((chat) => chat.session === session);
+        if (found) return found.sandbox ?? null;
+      }
+      return null;
+    },
+    [sidebar],
+  );
   const filedIn = useCallback<FiledIn>(
     (session) => {
       const at = (chat: number) => {
@@ -8210,6 +8222,7 @@ export const PlaneView = memo(function PlaneView({
                 stopping={stopping}
                 shells={shells}
                 personaOf={personaOf}
+                sandboxOf={sandboxOf}
                 taskNameOf={taskNameOf}
                 taskTabOf={taskTabOf}
                 tabHasTasks={tabHasTasks}

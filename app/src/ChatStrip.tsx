@@ -105,6 +105,7 @@ export function ChatStrip({
   stopping,
   shells,
   personaOf,
+  sandboxOf,
   taskNameOf,
   taskTabOf,
   tabHasTasks,
@@ -373,6 +374,7 @@ export function ChatStrip({
                                   tabs={tabs}
                                   id={id}
                                   persona={personaOf(chatOf(tabs, id))}
+                                  sandbox={sandboxOf?.(chatOf(tabs, id))}
                                   shells={shells}
                                   wrapping={wrapping}
                                   stopping={stopping}
@@ -478,6 +480,7 @@ export function ChatStrip({
                     tabs={tabs}
                     id={id}
                     persona={personaOf(chatOf(tabs, id))}
+                    sandbox={sandboxOf?.(chatOf(tabs, id))}
                     updates={planeUpdates}
                     shells={shells}
                     wrapping={wrapping}
@@ -552,6 +555,8 @@ type ChatStripProps = {
   stopping: ReadonlySet<number>;
   shells: ReadonlySet<number>;
   personaOf: (session: number | undefined) => string | null;
+  /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it. */
+  sandboxOf?: (session: number | undefined) => string | null;
   taskNameOf: (id: number) => string | undefined;
   taskTabOf: (id: number) => { asker: string | undefined } | undefined;
   tabHasTasks: (id: number) => boolean;

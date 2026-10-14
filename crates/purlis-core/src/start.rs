@@ -404,6 +404,14 @@ fn ready_given(
                 notices.push(lifted.notice());
                 (None, Some(lifted))
             }
+            // The floor could not be applied here (#2071): the chat starts as before, and its
+            // tab says why.
+            Some(crate::sandbox::Decided::Floorless(why)) => {
+                if !why.is_empty() {
+                    notices.push(why);
+                }
+                (None, None)
+            }
             None => (None, None),
         },
         None => {
@@ -483,6 +491,8 @@ fn ready_given(
         )
         .map_err(|refused| refused.to_string())?;
         program = checked[0].clone();
+        // At the floor, the program it starts is never written by the chat (#2071, Q4).
+        applied.hold_programs(&checked);
         // Claude Code goes through purlis's proxy from the version that takes its ports, and an
         // older one says once, on its tab, that it keeps its own (#1665).
         if let Some(said) = said {

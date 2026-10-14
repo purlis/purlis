@@ -1343,6 +1343,8 @@ fn this_machine_s_hosts_in_a_file_git_would_commit_grant_nothing() {
 
 fn compiled(denied: Denied, os: Os) -> Compiled {
     Compiled {
+        level: Level::Full,
+        held: Vec::new(),
         denied,
         hosts: vec!["github.com".to_owned()],
         reach: reach::Reach::open(vec!["github.com".to_owned()]),
@@ -1726,12 +1728,22 @@ const ON_WITHOUT_CACHES: &str =
     "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n";
 
 #[test]
-fn a_chat_in_a_plane_that_says_nothing_starts_as_it_always_has() {
+fn a_chat_in_a_plane_that_says_nothing_starts_at_the_floor_or_as_before_where_it_cannot() {
+    // #2071: the floor is the default. Where it cannot be applied (no backend here), the chat
+    // starts as it always has, and says why.
     let plane = plane_saying("schema = 1\n");
-    let started = for_start(Harness::Codex, plane.path(), &machine(Os::Windows), &|_| {
-        false
-    });
-    assert_eq!(started, Ok(None));
+    let decided = decide(
+        Harness::Codex,
+        plane.path(),
+        &machine(Os::Windows),
+        &|_| false,
+        None,
+        None,
+    );
+    assert!(
+        matches!(decided, Ok(Some(Decided::Floorless(_)))),
+        "{decided:?}"
+    );
 }
 
 #[test]
@@ -2075,12 +2087,12 @@ fn a_charter_toml_that_cannot_be_read_starts_no_chat_rather_than_one_unsandboxed
              chat again."
         );
     }
-    // No file at all says nothing, as before.
+    // No file at all says nothing, so the chat would start at the floor (#2071); a start
+    // refuses it first ([`decide`], D-1410e).
     let none = tempfile::tempdir().expect("a directory");
-    assert_eq!(
-        for_start(Harness::Codex, none.path(), &machine(Os::MacOs), &|_| true),
-        Ok(None)
-    );
+    let started =
+        for_start(Harness::Codex, none.path(), &machine(Os::MacOs), &|_| true).expect("a start");
+    assert_eq!(started.map(|applied| applied.level()), Some(Level::Floor));
 }
 
 #[test]
@@ -2676,7 +2688,7 @@ fn the_opt_out_is_what_lets_a_chat_start_where_the_sandbox_cannot_be_applied() {
 }
 
 #[test]
-fn a_project_that_has_not_turned_the_sandbox_on_has_nothing_to_opt_out_of() {
+fn a_project_that_has_not_turned_the_sandbox_on_opts_out_of_the_floor() {
     let plane = plane_saying("schema = 1\n");
     let decided = decide(
         Harness::ClaudeCode,
@@ -2686,7 +2698,14 @@ fn a_project_that_has_not_turned_the_sandbox_on_has_nothing_to_opt_out_of() {
         Some(&off(Some("why not"))),
         None,
     );
-    assert_eq!(decided, Ok(None), "no lift, so nothing to audit");
+    // #2071: the floor is on, so a person's opt-out lifts it, audited.
+    assert_eq!(
+        decided,
+        Ok(Some(Decided::Unsandboxed(Lifted {
+            by: By::Person,
+            reason: Some("why not".to_owned()),
+        })))
+    );
 }
 
 #[test]

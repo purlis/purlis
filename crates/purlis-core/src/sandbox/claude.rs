@@ -87,7 +87,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use super::{Access, Compiled, Uncompilable};
+use super::{Access, Compiled, Level, Uncompilable};
 use crate::harness::Harness;
 
 /// `path` as written, and as the kernel names it where that differs.
@@ -226,12 +226,27 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             allow_write.push(path);
         }
     }
+    // The floor (#2071): no folder limits, so every folder is written but what it holds.
+    if compiled.level == Level::Floor {
+        allow_write = vec!["/".to_owned()];
+        for path in &compiled.held {
+            for name in names_for(path) {
+                let name = name.display().to_string();
+                edit_rules.push(format!("Edit(/{name})"));
+                edit_rules.push(format!("Edit(/{name}/**)"));
+                deny_write.push(name);
+            }
+        }
+    }
     let mut filesystem = json!({
         "denyRead": deny_read,
         "denyWrite": deny_write,
     });
     if !allow_write.is_empty() {
         filesystem["allowWrite"] = json!(allow_write);
+    }
+    if compiled.level == Level::Floor {
+        return Ok(floor(filesystem, read_rules, edit_rules, compiled));
     }
     let deny = WEB_TOOLS
         .iter()
@@ -268,7 +283,63 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     Ok(Settings { sandbox, deny })
 }
 
+/// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
+/// denial class, and the floor's held folders, with every other folder writable), and nothing
+/// limiting the network: no allowed domains, which is what leaves a command's network
+/// unrestricted (Claude Code restricts it only while they are set), no proxy, local binding on,
+/// and its web tools allowed. Unix sockets stay as at the full sandbox: none but the ones a
+/// person allowed (the operator's ruling Q1), and the hook socket the chat opens with.
+fn floor(
+    filesystem: Value,
+    read_rules: Vec<String>,
+    edit_rules: Vec<String>,
+    compiled: &Compiled,
+) -> Settings {
+    let mut sandbox = json!({
+        "enabled": true,
+        "failIfUnavailable": true,
+        "allowUnsandboxedCommands": false,
+        "enableWeakerNetworkIsolation": compiled.widened.trust,
+        "network": {
+            "allowAllUnixSockets": false,
+            "allowLocalBinding": true,
+        },
+        "filesystem": filesystem,
+    });
+    if !compiled.widened.sockets.is_empty() {
+        sandbox["network"]["allowUnixSockets"] = json!(
+            compiled
+                .widened
+                .sockets
+                .iter()
+                .map(|socket| socket.display().to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+    Settings {
+        sandbox,
+        deny: read_rules.into_iter().chain(edit_rules).collect(),
+    }
+}
+
 impl Settings {
+    /// These settings with `held` folders never written, at the floor (#2071): each under every
+    /// name a rule on it is written by, to the sandbox and to the Edit tool.
+    pub fn holding(&self, held: &[PathBuf]) -> Settings {
+        let mut out = self.clone();
+        for path in held {
+            for name in names_for(path) {
+                let name = name.display().to_string();
+                if let Some(list) = out.sandbox["filesystem"]["denyWrite"].as_array_mut() {
+                    list.push(json!(name));
+                }
+                out.deny.push(format!("Edit(/{name})"));
+                out.deny.push(format!("Edit(/{name}/**)"));
+            }
+        }
+        out
+    }
+
     /// These settings for a chat whose commands reach the network through purlis's proxy
     /// (#1665): `ports`, its HTTP and then its SOCKS5 port, as `network.httpProxyPort` and
     /// `network.socksProxyPort`, and nothing else changed.

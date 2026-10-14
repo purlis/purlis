@@ -6736,6 +6736,12 @@ h2.sidebar-title .node-icon {
 }
 
 /* The mark a view's tab carries in place of a chat's state: what kind of thing the tab holds. */
+/* A chat's sandbox level after its name (#2071): drawn as the tab's other marks are. */
+.tab-sandbox {
+  display: inline-flex;
+  align-items: center;
+}
+
 .tab-mark {
   flex: none;
   width: 1em;

@@ -421,6 +421,122 @@ pub fn profile(
     Ok(out)
 }
 
+/// **The floor's profile** (#2071): everything allowed, as a harness runs unsandboxed, but the
+/// denial classes and the floor's `held` folders, and what the harness keeps for itself
+/// (`own.deny`, `own.after`). Seatbelt takes the last rule that matches, so each denial follows
+/// the `(allow default)` it narrows.
+///
+/// Every denied path is held as the full profile holds it: under each name the kernel may give
+/// it (#1336, #1356), and every folder above it pinned as an entry, so it is never moved aside
+/// with what it holds; here up to `/`, since the chat may write anywhere. Every name a later
+/// program runs ([`PLANTED`]) is never written at any depth anywhere, and no directory is made
+/// under a `.git/modules`.
+pub fn floor_profile(
+    denied: &[Denial],
+    held: &[PathBuf],
+    own: &Own,
+) -> Result<String, &'static str> {
+    let mut out = String::from(FLOOR_BASE);
+    let mut line = |text: String| {
+        out.push_str(&text);
+        out.push('\n');
+    };
+    let mut all: Vec<Denial> = denied.to_vec();
+    all.extend(held.iter().map(|path| Denial {
+        class: super::Class::LaterCode,
+        path: path.clone(),
+        access: Access::Write,
+        named: None,
+    }));
+    let named = |path: &Path| -> Result<Vec<String>, &'static str> {
+        super::kernel_names(path)
+            .iter()
+            .map(|name| string(&name.display().to_string()))
+            .collect()
+    };
+    for denial in &all {
+        let what = match denial.access {
+            Access::ReadWrite => "file-read* file-write*",
+            Access::Write => "file-write*",
+        };
+        let mut names: Vec<PathBuf> = Vec::new();
+        for held in held_names(&denial.path) {
+            for name in super::both_firmlink_names(held) {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+        for name in names {
+            line(format!(
+                "(deny {what} (subpath {}))",
+                string(&name.display().to_string())?
+            ));
+        }
+    }
+    // Every folder above a denied path, as an entry: never moved away with it, nor replaced.
+    let mut pinned = std::collections::BTreeSet::new();
+    for denial in &all {
+        for path in super::kernel_names(&denial.path) {
+            for ancestor in path.ancestors().skip(1) {
+                if ancestor.parent().is_none() {
+                    continue;
+                }
+                for name in named(ancestor)? {
+                    if pinned.insert(name.clone()) {
+                        line(format!("(deny file-write* (literal {name}))"));
+                    }
+                }
+            }
+        }
+    }
+    for rule in floor_planted_rules()? {
+        line(rule);
+    }
+    line("(deny file-write-create (require-all (vnode-type DIRECTORY) (regex #\"^/(.*/)?\\.git/modules/.+\")))".to_owned());
+    for rule in own.deny.iter().chain(&own.after) {
+        line(rule.clone());
+    }
+    if out.len() > MOST_PROFILE {
+        return Err(TOO_LARGE);
+    }
+    Ok(out)
+}
+
+/// The rules that keep every [`PLANTED`] name from being written, at any depth anywhere: the
+/// floor lets a chat write every folder, so each name is held wherever it is.
+pub fn floor_planted_rules() -> Result<Vec<String>, &'static str> {
+    PLANTED
+        .iter()
+        .map(|planted| {
+            let tail = match planted.reach {
+                Reach::Itself => "$",
+                Reach::AndBelow => "(/.*)?$",
+            };
+            let mut body = String::new();
+            let parts: Vec<&str> = planted.path.split('/').collect();
+            for (at, part) in parts.iter().enumerate() {
+                if *part == "**" {
+                    body.push_str("(.*/)?");
+                    continue;
+                }
+                body.push_str(&escaped(part));
+                if at + 1 < parts.len() {
+                    body.push('/');
+                }
+            }
+            let regex = format!("^/(.*/)?{body}{tail}");
+            Ok(format!("(deny file-write* (regex {}))", string(&regex)?))
+        })
+        .collect()
+}
+
+/// What the floor's profile starts from (#2071): everything a process may do, as with no
+/// sandbox, narrowed after it by [`floor_profile`].
+const FLOOR_BASE: &str = "(version 1)
+(allow default)
+";
+
 /// The profile a program answers `--version` inside, before a sandboxed chat starts on it
 /// (D-88k): no network at all, and nothing written but `tmp`, the probe's own temp directory,
 /// and `/dev/null`. Stricter than any chat's, so a program that loads a file a chat wrote

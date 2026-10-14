@@ -2193,10 +2193,78 @@ fn counted_hosts(granted: &[hosts::Granted]) -> Besides {
     }
 }
 
+/// **How much a chat's sandbox holds** (#2071, the operator's ruling of 2026-10-14).
+///
+/// - [`Level::Full`]: the sandbox a project turns on (`[sandbox] mode = "on"`): the hosts it
+///   lists, the folders a chat writes, the Allow asks, and every denial class.
+/// - [`Level::Floor`]: the default for a project that has not turned it on. No network limits,
+///   no folder limits and no Allow asks, so a chat works as its harness does unsandboxed; but
+///   the denial classes stay ([`Class`]): no vault and none of purlis's own keys is read, and
+///   nothing a later program runs outside any protection is written. A brokered `secret exec`
+///   still runs only the persona's declared tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Level {
+    #[default]
+    Full,
+    Floor,
+}
+
+impl Level {
+    /// What a chat's tab and its start call the level.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Full => "full sandbox",
+            Self::Floor => "floor",
+        }
+    }
+}
+
+/// **Whether the floor also keeps a chat from writing every folder on the person's `PATH`**
+/// (#2071, the operator's ruling of 2026-10-14): a chat cannot plant a program the person runs
+/// later. Besides it, the floor always holds the harness's own program and each declared tool's
+/// ([`Applied::hold_programs`]). A write it refuses is a sandbox block like any other, whose
+/// Allow lets that chat write the folder ([`Compiled::floor`] leaves a granted folder out).
+pub const FLOOR_HOLDS_PATH: bool = true;
+
+/// **The folders on `machine`'s `PATH` the floor keeps a chat from writing** ([`FLOOR_HOLDS_PATH`]):
+/// each folder a program is searched in ([`crate::programs::search_dirs_from`]), as the kernel
+/// names it, but none that holds the project at `root` or is inside it (the chat writes its
+/// project), none that is the home folder or above it, and none inside a folder a person let the
+/// chat write (`granted`).
+pub fn floor_held(root: &Path, machine: &Machine, granted: &[PathBuf]) -> Vec<PathBuf> {
+    if !FLOOR_HOLDS_PATH {
+        return Vec::new();
+    }
+    let path = machine.env.get("PATH").map(std::ffi::OsString::from);
+    let root = real(root);
+    let home = machine.home.as_deref().map(real);
+    let mut held: Vec<PathBuf> = Vec::new();
+    for dir in crate::programs::search_dirs_from(path.as_deref(), machine.home.as_deref()) {
+        let dir = real(&dir);
+        let around_root = root.starts_with(&dir) || dir.starts_with(&root);
+        let above_home = home.as_deref().is_some_and(|home| home.starts_with(&dir));
+        let granted_here = granted.iter().any(|folder| dir.starts_with(folder));
+        if dir.parent().is_none() || around_root || above_home || granted_here {
+            continue;
+        }
+        if !held.contains(&dir) {
+            held.push(dir);
+        }
+    }
+    held
+}
+
 /// The policy for one chat, resolved to this machine and ready for a harness's compiler: the
 /// neutral answer every compiler reads, and the only one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Compiled {
+    /// How much it holds ([`Level`]): every compiler reads it.
+    pub level: Level,
+    /// At the floor, the folders a chat may not write that no denial class names: the person's
+    /// `PATH` and the harness's own program ([`floor_held`], [`Applied::hold_programs`]). A
+    /// person's Allow lifts one. Empty for the full sandbox, which lists what a chat writes.
+    pub held: Vec<PathBuf>,
     pub denied: Denied,
     pub hosts: Vec<String>,
     /// The same hosts, each with the layer that lists it (#1664): what purlis's egress proxy
@@ -2399,6 +2467,63 @@ impl Homes {
 }
 
 impl Compiled {
+    /// **The floor** ([`Level::Floor`]) for a chat in the project at `root` on `machine`: every
+    /// denial class, and nothing else held. No hosts are listed, since nothing limits the
+    /// network; the folders a chat writes are not listed, since nothing limits them. The local
+    /// sockets and system services stay as a person granted them (the operator's ruling Q1 on
+    /// #2071): a socket can reach what the floor denies. The certificate check is on.
+    pub fn floor(root: &Path, machine: &Machine, chat: &grant::Grants) -> Self {
+        let locks = policy::Locks::of(root);
+        let mut denied = Denied::of(root, machine);
+        // The keychain's files, by path: the floor allows the lookups the full sandbox's profile
+        // denies by default, and the items' own access rule holds the rest (V90a, Q5).
+        if let Some(keychains) = seatbelt::keychains(machine.home.as_deref())
+            && !denied.paths.contains(&keychains)
+        {
+            denied.paths.push(keychains);
+        }
+        let in_scope = |what: grant::What| locks.keeps_scope(chat.level_of(&what));
+        let mut sockets: Vec<PathBuf> = chat
+            .sockets
+            .iter()
+            .filter(|socket| in_scope(grant::What::Socket((*socket).clone())))
+            .cloned()
+            .collect();
+        let mut services: Vec<String> = chat
+            .services
+            .iter()
+            .filter(|service| in_scope(grant::What::Service((*service).clone())))
+            .cloned()
+            .collect();
+        let (kept_sockets, kept_services) = kept_in_scope(root, &locks);
+        sockets.extend(kept_sockets);
+        services.extend(kept_services);
+        let writable = granted_folders(root, machine, chat, &locks);
+        Self {
+            level: Level::Floor,
+            held: floor_held(root, machine, &writable),
+            widened: Widened {
+                trust: true,
+                ..Widened::default()
+            }
+            .and_granted(
+                &sockets,
+                &services,
+                &services::SocketGround::of(root, machine, &chat.writes),
+                &locks,
+            ),
+            denied,
+            hosts: Vec::new(),
+            reach: reach::Reach::default(),
+            writable,
+            os: machine.os,
+            homes: Homes {
+                codex_project: Homes::codex_project(machine, root),
+                ..Homes::of(machine)
+            },
+        }
+    }
+
     /// Whether every class a service holds here is held for `harness`'s chat on this system.
     ///
     /// **The credential store is held by the store itself on macOS** (ruling V90a): charter
@@ -2551,6 +2676,8 @@ impl Compiled {
             }
         }
         Self {
+            level: Level::Full,
+            held: Vec::new(),
             widened,
             denied,
             hosts: reached,
@@ -2601,6 +2728,8 @@ impl Uncompilable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Applied {
     harness: Harness,
+    /// How much it holds ([`Level`]).
+    level: Level,
     /// Boxed: a wrap carries its grants and widenings, and [`Decided`] carries this beside a
     /// variant of a few words.
     form: Box<Form>,
@@ -2666,7 +2795,7 @@ impl Applied {
     /// ([`Self::older_notice`]). A harness purlis wraps goes through the proxy whatever it
     /// answers.
     pub fn answered(&mut self, answer: &str) {
-        if self.harness != Harness::ClaudeCode {
+        if self.harness != Harness::ClaudeCode || self.level == Level::Floor {
             return;
         }
         let version = program::claude_code_version(answer);
@@ -2714,6 +2843,64 @@ impl Applied {
     /// The harness it was compiled for.
     pub fn harness(&self) -> Harness {
         self.harness
+    }
+
+    /// How much it holds ([`Level`]).
+    pub fn level(&self) -> Level {
+        self.level
+    }
+
+    /// **At the floor, the programs `words` start, never written by the chat** (#2071, the
+    /// operator's ruling Q4): the first word as written (a link on the `PATH` among them) and the
+    /// folder of the real file it names, held as [`Compiled::held`] holds the `PATH`. The full
+    /// sandbox lists what a chat writes, and [`program::checked`] refuses a program there, so it
+    /// is left as it is. A folder that holds the project, or is inside it, is not held: the chat
+    /// writes its project, and the program check refuses a program there.
+    pub fn hold_programs(&mut self, words: &[String]) {
+        if self.level != Level::Floor {
+            return;
+        }
+        let root = real(&self.root);
+        let mut more: Vec<PathBuf> = Vec::new();
+        for word in words.iter().take(1) {
+            let written = PathBuf::from(word);
+            if !written.is_absolute() {
+                continue;
+            }
+            let folder = real(&written).parent().map(Path::to_path_buf);
+            for path in std::iter::once(written).chain(folder) {
+                let around_root = root.starts_with(&path) || path.starts_with(&root);
+                if !around_root && path.parent().is_some() && !more.contains(&path) {
+                    more.push(path);
+                }
+            }
+        }
+        self.hold(more);
+    }
+
+    /// `more` held at the floor besides what was compiled: in the form, and for a run for the chat.
+    fn hold(&mut self, more: Vec<PathBuf>) {
+        let more: Vec<PathBuf> = more
+            .into_iter()
+            .filter(|path| !self.confines.held.contains(path))
+            .filter(|path| {
+                !self
+                    .confines
+                    .writable
+                    .iter()
+                    .any(|folder| path.starts_with(folder))
+            })
+            .collect();
+        if more.is_empty() {
+            return;
+        }
+        self.confines.held.extend(more.iter().cloned());
+        match &mut *self.form {
+            Form::ClaudeCode(settings) => *settings = settings.holding(&more),
+            Form::Codex(codex::Wrap { held, .. }) | Form::Opencode(opencode::Wrap { held, .. }) => {
+                held.extend(more);
+            }
+        }
     }
 
     /// The plane it was compiled for.
@@ -3255,6 +3442,8 @@ fn never_with(compile: Option<Compiler>, held_back: Option<u32>, os: Os) -> Opti
         return Some("purlis cannot keep its chats inside the sandbox yet".to_owned());
     }
     let nothing = Compiled {
+        level: Level::Full,
+        held: Vec::new(),
         denied: Denied::default(),
         hosts: Vec::new(),
         reach: reach::Reach::default(),
@@ -4129,9 +4318,10 @@ pub fn for_start_granted(
     if plane.unreadable() {
         return Err(NotStarted::PlaneUnreadable);
     }
-    // The project's own, or the one an administrator's policy requires (D-1423-1).
+    // The project's own, or the one an administrator's policy requires (D-1423-1); else the
+    // floor (#2071).
     let Some(policy) = plane.in_force(&policy::Locks::of(root)) else {
-        return Ok(None);
+        return floor_for_start(harness, root, &plane, machine, has, persona, chat).map(Some);
     };
     let Some(compile) = compiler(harness) else {
         return Err(NotStarted::NoCompiler(harness));
@@ -4169,6 +4359,60 @@ pub fn for_start_granted(
     Ok(Some(applied))
 }
 
+/// **The floor for a chat of `harness`** in a project that has not turned the sandbox on
+/// (#2071): [`Compiled::floor`] compiled by the harness's own compiler, with the persona's
+/// tools armed as the full sandbox arms them, so a brokered `secret exec` still runs only those
+/// ([`tools::declared`]); or why it cannot be applied here, which [`decide_granted`] turns into
+/// a start without it ([`Decided::Floorless`], the operator's ruling Q2).
+fn floor_for_start(
+    harness: Harness,
+    root: &Path,
+    plane: &Plane,
+    machine: &Machine,
+    has: &dyn Fn(&str) -> bool,
+    persona: Option<&str>,
+    chat: &grant::Grants,
+) -> Result<Applied, NotStarted> {
+    let Some(compile) = compiler(harness) else {
+        return Err(NotStarted::NoCompiler(harness));
+    };
+    if let Some(issue) = harness.adapter().sandbox_held_back() {
+        return Err(NotStarted::HeldBack(harness, issue));
+    }
+    if let Some(missing) = backend::missing(machine.os, has) {
+        return Err(NotStarted::NoBackend(missing));
+    }
+    let compiled = Compiled::floor(root, machine, chat);
+    let mut applied = applied_of(harness, compile, &compiled, root, machine)?;
+    if let Some(name) = persona {
+        // What the file says with the sandbox not turned on: its personas' tools (#1407).
+        let said = plane.said().unset.unwrap_or_else(Policy::defaults);
+        let mut writable = compiled.writable.clone();
+        writable.extend(applied.writable());
+        if let Some(resolved) = tools::for_chat(
+            root,
+            &said.personas,
+            name,
+            &policy::Locks::of(root),
+            &crate::programs::search_dirs(),
+            &writable,
+        ) {
+            let programs: Vec<PathBuf> = resolved
+                .ready
+                .iter()
+                .map(|ready| ready.program.clone())
+                .collect();
+            applied.confines.tools = resolved.ready.clone();
+            applied.tools = Some(Box::new(resolved));
+            // Each tool's program is one the person runs too: never written by the chat (Q4).
+            for program in programs {
+                applied.hold_programs(&[program.display().to_string()]);
+            }
+        }
+    }
+    Ok(applied)
+}
+
 /// `compiled`, compiled by `compile` for a chat of `harness` in the plane at `root` on
 /// `machine`, with what a command run for that chat is held to ([`Confines`]).
 pub(crate) fn applied_of(
@@ -4199,11 +4443,14 @@ pub(crate) fn applied_of(
     }
     Ok(Applied {
         harness,
+        level: compiled.level,
         form: Box::new(form),
         root: root.to_path_buf(),
         denied,
         caches: compiled.widened.caches.clone().map(Box::new),
         confines: Box::new(Confines {
+            level: compiled.level,
+            held: compiled.held.clone(),
             denied: held,
             hosts: compiled.hosts.clone(),
             reach: compiled.reach.clone(),
@@ -4212,8 +4459,9 @@ pub(crate) fn applied_of(
             tools: Vec::new(),
         }),
         reach: Box::new(compiled.reach.clone()),
-        // Claude Code waits for its program's answer ([`Applied::answered`]).
-        through_proxy: harness != Harness::ClaudeCode,
+        // Claude Code waits for its program's answer ([`Applied::answered`]). The floor lists
+        // no host, so nothing goes through a proxy.
+        through_proxy: harness != Harness::ClaudeCode && compiled.level == Level::Full,
         older: None,
         tools: None,
     })
@@ -4227,6 +4475,12 @@ pub(crate) fn applied_of(
 /// recorded too, so the run gets the chat's certificate check and cache grants.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Confines {
+    /// How much the chat's own sandbox holds ([`Level`]): at the floor a run for it reaches the
+    /// network as the chat does, with no proxy and no host list.
+    pub level: Level,
+    /// At the floor, the folders the chat may not write that no class names
+    /// ([`Compiled::held`]): held for a run too.
+    pub held: Vec<PathBuf>,
     pub denied: Vec<Denial>,
     pub hosts: Vec<String>,
     /// The layer that lists each of [`Self::hosts`] (#1708): Open, the persona's, yours or this
@@ -4443,10 +4697,22 @@ impl Change {
 /// What a chat in a sandboxed project starts under.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decided {
-    /// The sandbox, compiled for its harness.
+    /// The sandbox, compiled for its harness: the full sandbox or the floor ([`Applied::level`]).
     Sandboxed(Applied),
     /// No sandbox, and why ([`Lifted`]): audited as `trust.sandbox.off`.
     Unsandboxed(Lifted),
+    /// No sandbox in a project that has not turned it on, because the floor cannot be applied
+    /// here (#2071, the operator's ruling Q2): the sentence its tab says. The chat starts as it
+    /// did before the floor; nothing was lifted, so nothing is audited.
+    Floorless(String),
+}
+
+/// What a chat's tab says where the floor could not be applied (#2071): `why`, a refusal of
+/// [`NotStarted`].
+pub fn floorless_said(why: &NotStarted) -> String {
+    format!(
+        "This chat runs with no sandbox: purlis could not apply the floor here ({why}). Turn          the sandbox on in Settings › Sandbox to have it refused instead."
+    )
 }
 
 /// What a chat of `harness` in the project at `root` starts under on `machine`, where `opt_out`
@@ -4499,7 +4765,28 @@ pub fn decide_granted(
     let plane = Plane::read(root);
     let locks = policy::Locks::of(root);
     if !plane.unreadable() && !plane.missing() && plane.in_force(&locks).is_none() {
-        return Ok(None);
+        // The floor (#2071): a person may still start the chat without it, audited as the
+        // opt-out is. Where it cannot be applied the chat starts as before, and says so.
+        if let Some(opt_out) = opt_out {
+            return Ok(Some(Decided::Unsandboxed(Lifted {
+                by: By::Person,
+                reason: opt_out.kept_reason(),
+            })));
+        }
+        if !machine.os.has_backend() {
+            return Ok(Some(Decided::Floorless(
+                "This chat runs with no sandbox: purlis has no sandbox backend on this system \
+                 yet."
+                    .to_owned(),
+            )));
+        }
+        return Ok(Some(
+            match for_start_granted(harness, root, machine, has, persona, chat) {
+                Ok(Some(applied)) => Decided::Sandboxed(applied),
+                Ok(None) => Decided::Floorless(String::new()),
+                Err(not) => Decided::Floorless(floorless_said(&not)),
+            },
+        ));
     }
     if let Some(opt_out) = opt_out {
         // An administrator's policy may forbid it (#1343, ADR 0067 §7): refused, saying who.
@@ -4596,6 +4883,8 @@ pub fn ahead(
             Err(not) => refused(not),
         },
         Ok(Some(Decided::Unsandboxed(lifted))) => Ahead::Unsandboxed(lifted),
+        // Where the floor cannot be applied the chat starts as before, with nothing to choose.
+        Ok(Some(Decided::Floorless(_))) => Ahead::Off,
         Err(not) => refused(not),
     }
 }
@@ -4663,6 +4952,8 @@ mod claude_tests;
 mod codex_tests;
 #[cfg(test)]
 mod egress_tests;
+#[cfg(test)]
+mod floor_tests;
 #[cfg(test)]
 mod hosts_tests;
 #[cfg(test)]

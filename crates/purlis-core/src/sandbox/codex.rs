@@ -72,6 +72,12 @@ use crate::harness::Harness;
 /// What a Codex chat is wrapped in, before the place it opens is known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wrap {
+    /// How much it holds ([`super::Level`]): at the floor every folder is written and the
+    /// network is open, but what [`Self::denied`] and [`Self::held`] name.
+    pub level: super::Level,
+    /// At the floor, the folders the chat may not write that no class names
+    /// ([`super::Compiled::held`]).
+    pub held: Vec<PathBuf>,
     /// Every path the chat is denied, with the keychain files and the operator's own Codex home
     /// among them.
     pub denied: Vec<Denial>,
@@ -136,6 +142,8 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         });
     }
     Ok(Wrap {
+        level: compiled.level,
+        held: compiled.held.clone(),
         denied,
         hosts: compiled.hosts.clone(),
         widened: Box::new(compiled.widened.clone()),
@@ -558,6 +566,9 @@ pub fn profile(
     proxy_ports: &[u16],
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
+    if wrap.level == super::Level::Floor {
+        return floor_profile(wrap);
+    }
     seatbelt::profile(
         &wrap.denied,
         &own(wrap)?,
@@ -566,6 +577,12 @@ pub fn profile(
         proxy_ports,
         hook_socket,
     )
+}
+
+/// The floor's profile (#2071): every folder written and the network open, but what the wrap
+/// denies and holds, and what the harness keeps for itself ([`seatbelt::floor_profile`]).
+pub fn floor_profile(wrap: &Wrap) -> Result<String, &'static str> {
+    seatbelt::floor_profile(&wrap.denied, &wrap.held, &own(wrap)?)
 }
 
 /// What a wrapped Codex keeps for itself.

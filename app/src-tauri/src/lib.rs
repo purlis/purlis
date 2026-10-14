@@ -548,6 +548,10 @@ async fn close_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<(), String
 #[derive(serde::Serialize, specta::Type)]
 struct OpenChat {
     session: u32,
+    /// How much its sandbox holds (#2071): `full`, `floor`, or `none` for a chat that runs
+    /// with no sandbox; `null` for a shell, or a chat still to start. Its tab draws it.
+    #[specta(optional)]
+    sandbox: Option<String>,
     /// Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
     /// window keys what it keeps of a chat beyond this launch by, such as the Chats list's
     /// folds (#1687). `null` for a chat that has no id yet.
@@ -2363,6 +2367,14 @@ impl From<chats::Open> for OpenChat {
     fn from(open: chats::Open) -> Self {
         Self {
             session: open.session,
+            sandbox: open.harness.map(|_| {
+                match open.sandbox {
+                    Some(purlis_core::sandbox::Level::Full) => "full",
+                    Some(purlis_core::sandbox::Level::Floor) => "floor",
+                    None => "none",
+                }
+                .to_owned()
+            }),
             // The store's record of it, which `drawn_of` reads: not part of what opened.
             id: None,
             name: open.name,

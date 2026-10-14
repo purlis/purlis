@@ -171,29 +171,40 @@ impl HarnessAdapter for Opencode {
                  lets it write, so nothing was started."
             ));
         };
-        let Some((confinement, tmp)) = at
-            .confinement
-            .and_then(|confinement| Some((confinement, confinement.tmp()?)))
-        else {
-            return Err(format!(
-                "{lead} purlis's egress proxy was not started for this opencode chat, so \
-                 nothing was started."
+        // The floor (#2071): no proxy and no temp directory of its own, since nothing limits
+        // the network or the folders it writes; opencode keeps its own state directory.
+        let (profile, env) = if wrap.level == crate::sandbox::Level::Floor {
+            crate::sandbox::opencode::prepare(wrap);
+            (crate::sandbox::opencode::floor_profile(wrap), Vec::new())
+        } else {
+            let Some((confinement, tmp)) = at
+                .confinement
+                .and_then(|confinement| Some((confinement, confinement.tmp()?)))
+            else {
+                return Err(format!(
+                    "{lead} purlis's egress proxy was not started for this opencode chat, so \
+                     nothing was started."
+                ));
+            };
+            crate::sandbox::opencode::prepare(wrap);
+            let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
+            env.push((
+                crate::sandbox::opencode::STATE_ENV.to_owned(),
+                tmp.join("state").display().to_string(),
             ));
+            (
+                crate::sandbox::opencode::profile(
+                    wrap,
+                    cwd,
+                    tmp,
+                    &confinement.proxy_ports(),
+                    at.hook_socket,
+                ),
+                env,
+            )
         };
-        crate::sandbox::opencode::prepare(wrap);
-        let profile = crate::sandbox::opencode::profile(
-            wrap,
-            cwd,
-            tmp,
-            &confinement.proxy_ports(),
-            at.hook_socket,
-        )
-        .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
-        let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
-        env.push((
-            crate::sandbox::opencode::STATE_ENV.to_owned(),
-            tmp.join("state").display().to_string(),
-        ));
+        let profile = profile
+            .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         let crate::sandbox::Words {
             program,
             command,

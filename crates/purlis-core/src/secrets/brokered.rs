@@ -1516,7 +1516,14 @@ pub(crate) fn serve_recorded(
             crate::sandbox::tools::path_outside(&path, &asker.root, &chat_writes(asker, confines)),
         );
     }
+    // At the floor (#2071) the run reaches the network as its chat does: no proxy is named.
+    let floor = confines.level == crate::sandbox::Level::Floor;
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
+        let proxied = crate::sandbox::seatbelt::PROXY_ENV.contains(&k.as_str())
+            || crate::sandbox::seatbelt::NO_PROXY_ENV.contains(&k.as_str());
+        if floor && proxied {
+            continue;
+        }
         exec::set_var(&mut base, &k, v);
     }
     // A browser login finds its browser and its sessions under the person's own home, never
@@ -1601,14 +1608,20 @@ pub(crate) fn serve_recorded(
         .collect();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
     // one the chat may not reach is refused as the proxy refuses one (#1667).
-    let (tunnels, notes) = match tunnelled(
-        &mut prepared,
-        &req.env,
-        &command[0],
-        confines,
-        &refusals,
-        reached,
-    ) {
+    // No tunnel at the floor: nothing keeps the run from the host itself.
+    let opened = if floor {
+        Ok((Vec::new(), Vec::new()))
+    } else {
+        tunnelled(
+            &mut prepared,
+            &req.env,
+            &command[0],
+            confines,
+            &refusals,
+            reached,
+        )
+    };
+    let (tunnels, notes) = match opened {
         Ok(opened) => opened,
         Err(e) => {
             return refuse(
@@ -2292,6 +2305,11 @@ pub(crate) fn profile_on(
             "(allow file-read* file-write* (subpath {}))",
             seatbelt::quote(dir)?
         ));
+    }
+    // The floor (#2071): every folder written and the network open, but what the chat's own
+    // sandbox denies and holds.
+    if confines.level == crate::sandbox::Level::Floor {
+        return seatbelt::floor_profile(denied, &confines.held, &own);
     }
     seatbelt::profile(denied, &own, folder, tmp, ports, None)
 }

@@ -802,7 +802,11 @@ fn a_project_with_no_sandbox_starts_its_chats_sandboxed_where_policy_requires_it
     let project = tempfile::tempdir().expect("a project");
     let project = project.path().canonicalize().expect("a real folder");
     std::fs::write(project.join(crate::plane::MANIFEST), "schema = 1\n").expect("a manifest");
-    assert_eq!(decided(&project, Os::MacOs, &Locks::none()), Ok(None));
+    // #2071: the floor, where no policy requires the full sandbox.
+    assert!(matches!(
+        decided(&project, Os::MacOs, &Locks::none()),
+        Ok(Some(Decided::Sandboxed(ref applied))) if applied.level() == super::super::Level::Floor
+    ));
     assert!(matches!(
         decided(&project, Os::MacOs, &locks(REQUIRED)),
         Ok(Some(Decided::Sandboxed(_)))
@@ -814,7 +818,10 @@ fn a_project_with_no_sandbox_starts_its_chats_sandboxed_where_policy_requires_it
             Os::Windows
         ))
     );
-    assert_eq!(decided(&project, Os::Windows, &Locks::none()), Ok(None));
+    assert!(matches!(
+        decided(&project, Os::Windows, &Locks::none()),
+        Ok(Some(Decided::Floorless(_)))
+    ));
 }
 
 // ---- no refusal sends the person to an opt-out policy forbids (#1423) --------------------------

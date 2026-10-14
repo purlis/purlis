@@ -153,6 +153,9 @@ pub struct Open {
     /// The chat whose tab it has a pane in, where it is not its tab's own chat (#1489):
     /// [`purlis_core::reopen::Chat::beside`].
     pub beside: Option<u32>,
+    /// How much its sandbox holds as it started (#2071): the full sandbox or the floor, and
+    /// `None` for a chat that runs with no sandbox.
+    pub sandbox: Option<purlis_core::sandbox::Level>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -1115,7 +1118,8 @@ impl Chats {
         let (applied, lifted) = match decided {
             Some(purlis_core::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None),
             Some(purlis_core::sandbox::Decided::Unsandboxed(lifted)) => (None, Some(lifted)),
-            None => (None, None),
+            // Where the floor cannot be applied the chat starts as before (#2071, Q2).
+            Some(purlis_core::sandbox::Decided::Floorless(_)) | None => (None, None),
         };
         // Ruling V87g: the program is the harness the sandbox was compiled for, and not a file
         // a sandboxed chat could have changed. The real file it names is what the check asks;
@@ -1146,6 +1150,8 @@ impl Chats {
             if let Some(said) = said {
                 applied.answered(&said);
             }
+            // At the floor, the program it starts is never written by the chat (#2071, Q4).
+            applied.hold_programs(&checked);
             return Ok((Some((applied, checked[0].clone())), None));
         }
         Ok((None, lifted))
@@ -1962,7 +1968,7 @@ impl Chats {
             };
             let now = match decided {
                 Some(Decided::Sandboxed(applied)) => Some(Settled::of(applied.confines())),
-                Some(Decided::Unsandboxed(_)) | None => None,
+                Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None => None,
             };
             if now != started {
                 // Policy is the cause where the chat runs unconfined and policy requires the
@@ -3442,6 +3448,7 @@ impl Chats {
                     tab: chat.has_tab(),
                     shows: chat.shows,
                     beside: chat.beside,
+                    sandbox: running.confines.as_ref().map(|confines| confines.level),
                 })
             })
             .collect()
@@ -3893,6 +3900,8 @@ impl Chats {
                 tab: one.chat.has_tab(),
                 shows: one.chat.shows,
                 beside: one.chat.beside,
+                // How it is sandboxed is its start's to say.
+                sandbox: None,
             })
             .collect()
     }
@@ -6403,7 +6412,7 @@ pub(crate) mod tests {
                         (Some((applied, chat.program.clone())), None)
                     }
                     Some(Decided::Unsandboxed(lifted)) => (None, Some(lifted)),
-                    None => (None, None),
+                    Some(Decided::Floorless(_)) | None => (None, None),
                 })
             }),
         );
