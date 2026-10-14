@@ -342,6 +342,11 @@ rule while one who reads a bare refusal files an issue.
   asked about the branch of a name before a tag of it, and about the one remote branch of a
   name nothing else has, as git reads it there.
 
+  A path a sparse checkout leaves out of the folder is one git does not write, and is not
+  counted: where `core.sparseCheckout` is on there, git's own `sparse-checkout check-rules`
+  says which those are. A sparse clone that leaves the denied files out moves freely. Where
+  git does not answer, every path counts.
+
   A folder with no commit yet (after `git init` and a `fetch`) has nothing to compare with:
   a move there answers for the whole tree of the commit it lands on. So does any checkout,
   hard reset or restore in a folder that has a commit and was never checked out (a clone
@@ -363,7 +368,8 @@ rule while one who reads a bare refusal files an issue.
   person's `git -C <folder> restore --source=HEAD --staged --worktree -- :/`.
 
   git is asked through the hardened runner alone, with no global or system configuration,
-  and only by plumbing that compares commits: no file is read through a filter and no
+  and only by plumbing that compares commits or reads the sparse patterns: no file is read
+  through a filter and no
   program a repository's configuration names is started. A path that reads as prose is
   counted in a refusal and never repeated.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the

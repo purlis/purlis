@@ -585,6 +585,9 @@ impl cloneupdate::Asks for ManyDenied {
     fn is_there(&self, _: &Path) -> bool {
         true
     }
+    fn left_out(&self, _: &str, _: &[String]) -> Option<Vec<String>> {
+        Some(Vec::new())
+    }
 }
 
 /// The other length a hook reads is the repository's: the clone update guard reads every path

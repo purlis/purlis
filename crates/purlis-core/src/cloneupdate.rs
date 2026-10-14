@@ -23,6 +23,12 @@
 //! commit the command moves it to, and refuses only where one of them is a path the sandbox
 //! denies. The refusal names those paths. A move that touches none of them runs.
 //!
+//! **A path git will not write is not counted.** Where a sparse checkout is on in the folder
+//! (`core.sparseCheckout`, as git reads it there), git writes no path its patterns leave out,
+//! whatever the move changes, so the arm asks git which of the denied paths those are
+//! (`git sparse-checkout check-rules`) and drops them. Where git does not answer, every one
+//! counts.
+//!
 //! **Where the other commit cannot be named before the command runs**, the arm falls back to
 //! what [`crate::rootupdate`] does: it refuses where the repository tracks a denied path at
 //! all, and says how to make the move one it can check. That is a `pull`, which fetches its
@@ -33,7 +39,8 @@
 //! **A mistake guard, not the boundary**: the sandbox already refuses the writes. So it reads
 //! only what is tracked, by name, and never asks the kernel. Every question is put to git
 //! through the one hardened runner ([`crate::worktree::git`]), reading no global or system
-//! configuration, and only plumbing that compares trees: nothing here reads a file's content
+//! configuration, and only plumbing that compares trees or reads the sparse patterns: nothing
+//! here reads a file's content
 //! through a filter or starts a program a repository's configuration names.
 
 use std::path::{Path, PathBuf};
@@ -459,6 +466,10 @@ pub trait Asks {
     fn changed(&self, top: &str, paths: &[String]) -> Option<Vec<String>>;
     /// Whether something is at `path`.
     fn is_there(&self, path: &Path) -> bool;
+    /// Which of `paths` git leaves out of the working tree at `top` because a sparse checkout
+    /// is on there and its patterns leave them out: git writes none of them, whatever a move
+    /// changes. Empty where no sparse checkout is on, and `None` where git could not say.
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>>;
 }
 
 /// [`Asks`], answered by git through the hardened runner, with no global or system
@@ -679,6 +690,50 @@ impl Asks for Asked {
 
     fn is_there(&self, path: &Path) -> bool {
         std::fs::symlink_metadata(path).is_ok()
+    }
+
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+        if paths.is_empty() {
+            return Some(Vec::new());
+        }
+        // Only where git applies the patterns: with no sparse checkout on, a bit set by hand
+        // keeps no file a move changes from being written.
+        let on = Self::git(
+            top,
+            &["config", "--type=bool", "--get", "core.sparseCheckout"],
+        )?;
+        if on.trim() != "true" {
+            return Some(Vec::new());
+        }
+        // git's own reading of the patterns, the paths on standard input and never arguments.
+        // It answers the paths the patterns keep; the rest are left out.
+        let mut input = Vec::new();
+        for path in paths {
+            input.extend_from_slice(path.as_bytes());
+            input.push(0);
+        }
+        let asked = git::isolated(&git::Isolated::default(), || {
+            git::run_with_input(
+                Path::new(top),
+                &["sparse-checkout", "check-rules", "-z"],
+                input,
+                crate::doctor::CHECK_TIMEOUT,
+            )
+        })
+        .ok()?;
+        if asked.code != Some(0) {
+            return None;
+        }
+        let kept = String::from_utf8_lossy(&asked.out);
+        let kept: std::collections::HashSet<&str> =
+            kept.split('\0').filter(|path| !path.is_empty()).collect();
+        Some(
+            paths
+                .iter()
+                .filter(|path| !kept.contains(path.as_str()))
+                .cloned()
+                .collect(),
+        )
     }
 }
 
@@ -1060,7 +1115,19 @@ pub fn judged(
     };
     let denies = Denies::of(&top, place.root, place.chat_dir);
     let denied_path = |path: &str| denies.path(path, asks);
-    let denied = |paths: Vec<String>| each_once(paths, &denied_path);
+    // What git will write of them: a sparse checkout leaves some out, and git writes none of
+    // those whatever the move changes. Where git could not say, every one counts.
+    let written_of = |paths: Vec<String>| match asks.left_out(&top, &paths) {
+        Some(out) if !out.is_empty() => {
+            let out: std::collections::HashSet<String> = out.into_iter().collect();
+            paths
+                .into_iter()
+                .filter(|path| !out.contains(path))
+                .collect()
+        }
+        _ => paths,
+    };
+    let denied = |paths: Vec<String>| written_of(each_once(paths, &denied_path));
     // The commit the folder is at. Where git did not say, nothing is known of it.
     let head = match asks.head(&top) {
         Head::At(oid) => Some(oid),
@@ -1097,7 +1164,7 @@ pub fn judged(
         // In a folder that was checked out it writes only what was changed there, and git
         // names any file it could not write. In one that never was, it writes everything.
         if head.is_some() && holds.is_none() {
-            return match held() {
+            return match held().map(|lacks| written_of(lacks.to_vec())) {
                 Some(lacks) => (!lacks.is_empty()).then(|| said_unchecked(sub, &lacks, &top)),
                 None => Some(said_unread(sub, NO_ANSWER)),
             };
@@ -1218,7 +1285,7 @@ pub fn judged(
             let denied = denied(paths);
             (!denied.is_empty()).then(|| said_writes(sub, &denied, &top))
         }
-        None => match held() {
+        None => match held().map(|held| written_of(held.to_vec())) {
             Some(held) => (!held.is_empty()).then(|| said_unnamed(sub, &held, &top, why)),
             // A commit git did not list: not known, so not started.
             None => Some(said_unread(sub, NO_ANSWER)),
@@ -1358,6 +1425,9 @@ impl Asks for NothingThere<'_> {
     fn is_there(&self, _: &Path) -> bool {
         false
     }
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+        self.0.left_out(top, paths)
+    }
 }
 
 /// [`Asks`], each question put once for a line: what a folder's repository is, the commit it
@@ -1466,6 +1536,9 @@ impl Asks for Once<'_> {
     }
     fn is_there(&self, path: &Path) -> bool {
         self.asks.is_there(path)
+    }
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+        self.asks.left_out(top, paths)
     }
 }
 

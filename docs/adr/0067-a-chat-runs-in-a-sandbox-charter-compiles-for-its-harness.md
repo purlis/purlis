@@ -1388,3 +1388,12 @@ window's Resolve (ADR 0051, noted the same day) runs the replay, the staging and
 edits the files git stopped in and nothing else. The window stages only files git stopped in
 that the commit being replayed changes, and runs fixed commands. A conflict in a file section 5
 denies a chat is not handed to one: the window says to settle it in a terminal.
+
+## Noted (2026-10-14, qw387): what a sparse checkout leaves out, the clone guard does not count
+
+The guard of the qw349 note above counts a denied path only where git would write it. Where a
+sparse checkout is on in the folder (`core.sparseCheckout`, as git reads it there), git writes
+no path its patterns leave out, whatever a move changes, so those are dropped: git's own
+`sparse-checkout check-rules` is asked, through the hardened runner, which of the denied paths
+they are. Where git does not answer, every path counts. A command that cannot finish still does
+not start.
