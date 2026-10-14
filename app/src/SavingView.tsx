@@ -285,7 +285,28 @@ export function SavingView({
               onDismiss={() => setLeft(null)}
             />
           )}
-          {saving.stage === "blocked" && (
+          {saving.stage === "blocked" && saving.byHand != null && (
+            /* A save's replay that conflicted (qw382): settled with git in the project's root,
+               which a chat may not run there, so the way out is a terminal and the commands are
+               said. Offering a chat sent the person round to Update and back. */
+            <Notice
+              cause="saving-rebase-by-hand"
+              tone="trouble"
+              link={{ label: "Open terminal here", onPress: () => askWayOut(plane, "terminal") }}
+              under={
+                saving.conflicts.length > 0 ? (
+                  <ul className="saving-files" aria-label="Where it conflicts">
+                    {saving.conflicts.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
+                ) : undefined
+              }
+            >
+              {saving.byHand}
+            </Notice>
+          )}
+          {saving.stage === "blocked" && saving.byHand == null && (
             <div className="saving-question" role="group" aria-label="Ways out">
               {saving.conflicts.length > 0 && (
                 <ul className="saving-files" aria-label="Where it conflicts">
@@ -295,14 +316,18 @@ export function SavingView({
                 </ul>
               )}
               <SettingActions>
-                <button
-                  type="button"
-                  className="ui-button ui-button-sm panel-view"
-                  tabIndex={0}
-                  onClick={() => askWayOut(plane, "chat")}
-                >
-                  Resolve in a chat
-                </button>
+                {/* A tree git stopped part-way in a conflict is settled with git, which a chat
+                    may not finish in the project's root (qw382). */}
+                {saving.conflicts.length === 0 && (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-sm panel-view"
+                    tabIndex={0}
+                    onClick={() => askWayOut(plane, "chat")}
+                  >
+                    Resolve in a chat
+                  </button>
+                )}
                 <button
                   type="button"
                   className="ui-button ui-button-sm panel-view"

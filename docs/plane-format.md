@@ -6417,6 +6417,14 @@ descends from it: a plane moved off that commit by hand is no longer the plane t
 about. The next save or fetch settles a `pr-open` record by asking the forge where the PR stands
 (purlis#298).
 
+A push-path `conflict` record (qw382) is read as follows. One with neither a `detail` nor a
+`conflicts` list is no block: the Saving view says the save stopped earlier, and the next save
+retries the push. A `conflict` or `stranded` record that has not landed makes a Save of a clean
+plane re-run the push and its retry even when `[plane] mode` is unset, so the record is rewritten
+in current words or deleted. The window's Update deletes a push-path record once it has
+replayed the plane's own commits onto the remote's, since the commit the record names was
+rewritten.
+
 ### `save-branch.json`
 - **Format:** JSON object, `indent=2`
 - **Status:** **internal** — what a request mode's saves keep about this clone's save branch, apart

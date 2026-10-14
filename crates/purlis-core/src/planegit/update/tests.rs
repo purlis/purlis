@@ -516,3 +516,65 @@ fn every_reason_says_whether_the_project_is_as_it_was() {
         );
     }
 }
+
+/// A push record as a save's push retry wrote it, about the commit the project is on.
+fn a_push_record(project: &Project, outcome: &str) -> PathBuf {
+    let record = super::super::push_record_path(&project.root);
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    std::fs::write(
+        &record,
+        format!(
+            r#"{{"outcome": "{outcome}", "branch": "main", "head": "{}", "detail": ""}}"#,
+            project.head()
+        ),
+    )
+    .unwrap();
+    record
+}
+
+#[test]
+fn an_update_that_replays_the_projects_own_commits_forgets_the_push_record_about_them() {
+    // qw382: a save's retry left "conflict" about the project's own commit, and an Update has
+    // since replayed it onto the remote's. The record is about a commit that no longer exists,
+    // so nothing would ever clear it.
+    let project = Project::new();
+    project.remote_commits(|root| std::fs::write(root.join("theirs.md"), "theirs\n").unwrap());
+    project.commits("mine.md", "mine\n");
+    let record = a_push_record(&project, "conflict");
+
+    let (got, said) = project.brings_in(true);
+
+    assert!(matches!(got, Updated::Moved(_)), "{got:?} {said:?}");
+    assert!(!record.exists(), "the record the replay made stale is gone");
+}
+
+#[test]
+fn an_update_that_conflicts_keeps_the_push_record_and_names_the_commands_for_a_terminal() {
+    let project = Project::new();
+    project.remote_commits(|root| std::fs::write(root.join("a.md"), "theirs\n").unwrap());
+    project.commits("a.md", "mine\n");
+    let record = a_push_record(&project, "conflict");
+
+    let (got, _) = project.brings_in(true);
+
+    assert!(record.exists(), "a real conflict keeps its record");
+    let sentence = got.said("pull request");
+    for command in ["`git fetch`", "`git rebase @{u}`", "`git rebase --abort`"] {
+        assert!(sentence.contains(command), "{sentence}");
+    }
+}
+
+#[test]
+fn the_conflict_sentence_names_every_command_and_sends_nobody_back_to_update() {
+    let sentence = Left::Conflict(vec!["a.md".into()]).said("pull request");
+    for command in [
+        "`git fetch`",
+        "`git rebase @{u}`",
+        "`git add`",
+        "`git rebase --continue`",
+        "`git rebase --abort`",
+    ] {
+        assert!(sentence.contains(command), "{sentence}");
+    }
+    assert!(!sentence.contains("Update"), "{sentence}");
+}

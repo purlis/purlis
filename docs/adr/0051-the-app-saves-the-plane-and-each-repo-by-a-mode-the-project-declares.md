@@ -369,6 +369,26 @@ its sandbox and is refused it (ADR 0067, noted 2026-10-13).
   an update is not a save. Whether an update is journalled, and under which words, is open.
 
 
+## Noted (2026-10-14, qw382): a blocked save is re-derived, and its way out is never a loop
+
+Decided under delegation, and recorded for the operator's ruling.
+
+- **Save re-runs a push that stopped.** On a plane whose last push stopped in a conflict or a
+  stranded commit and has not landed, Save re-runs the push and its fetch-and-rebase retry
+  even when the tree is clean and `[plane] mode` is unset. The answer it leaves is current:
+  the push lands and the record goes, or a conflict is recorded again with its files, or git's
+  own words are.
+- **A conflict that names nothing is not believed.** A `conflict` record with no `detail` and
+  no files is no block. The Saving view says "Save stopped earlier — Save to retry", and the
+  next save, automatic or pressed, retries the push.
+- **Update forgets what its replay settled.** After the window's Update replays the project's
+  own commits onto the remote's, the push record about the commit it rewrote is deleted.
+- **A real conflict names its files and is settled in a terminal.** The title bar and the
+  Saving view name the files. A chat may not rebase the project's root, so a conflict block
+  offers no chat. Its Notice gives the git commands (`git fetch`, `git rebase @{u}`, `git add`,
+  `git rebase --continue`, `git rebase --abort`) and *Open terminal here*. Update's own
+  conflict answer gives the same commands.
+
 ## Amended 2026-10-14 (the operator's rulings P1 and P2 of 2026-10-13, and of 2026-10-14): the window's side of a save's request
 
 Ruled, not to be confirmed again:

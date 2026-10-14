@@ -7276,6 +7276,11 @@ export type PlaneSaving = {
 	 *  none is open or the mode does not merge it.
 	 */
 	merge?: SaveMerge | null,
+	/**
+	 *  How the person settles the block in a terminal, when it is a save's replay onto the
+	 *  remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
+	 */
+	byHand?: string | null,
 };
 
 /**

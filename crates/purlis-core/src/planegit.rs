@@ -423,6 +423,55 @@ pub fn unlanded(root: &Path) -> Option<serde_json::Value> {
     (!is_spent(root, head)).then_some(rec)
 }
 
+/// What the Saving view and the title bar say of a push record that calls itself a conflict
+/// and names nothing (qw382): a build before qw348 wrote every failed rebase that way, so the
+/// word is not believed, and the next save retries the push.
+pub const STOPPED_EARLIER: &str = "Save stopped earlier — Save to retry";
+
+/// Whether a push record says `conflict` and names neither a reason nor a file: a record no
+/// conflict is believed of (qw382). A conflict this build records always names its files.
+fn names_no_conflict(rec: &serde_json::Value) -> bool {
+    let empty = |key: &str| match rec.get(key) {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::String(text)) => text.trim().is_empty(),
+        Some(serde_json::Value::Array(all)) => all.is_empty(),
+        Some(_) => false,
+    };
+    rec.get("outcome").and_then(serde_json::Value::as_str) == Some(Outcome::Conflict.word())
+        && empty("detail")
+        && empty("conflicts")
+}
+
+/// Whether the next save of a clean plane pushes again because its last push stopped and has
+/// not landed since (qw382): a push-path record of a conflict or a stranded commit. A Save
+/// pressed on such a plane re-runs the push and its retry even where it names no mode, so the
+/// answer it leaves is a current one: the push lands and the record goes, or it is written
+/// again in today's words.
+fn retries_its_push(root: &Path) -> bool {
+    unlanded(root).is_some_and(|rec| {
+        !prsave::is_pr_record(&rec)
+            && matches!(
+                rec.get("outcome").and_then(serde_json::Value::as_str),
+                Some("conflict" | "stranded")
+            )
+    })
+}
+
+/// Forget a push-path record once the project's own commits were replayed onto the remote's
+/// by the window's Update (qw382): the record is about a commit the replay rewrote, so it can
+/// never land, and the rebase it says stopped has since gone through. A request mode's record
+/// is its request's, and is left to it.
+pub(crate) fn forget_replayed_push(root: &Path) {
+    let Some(rec) = push_record(root) else {
+        return;
+    };
+    if prsave::is_pr_record(&rec) {
+        return;
+    }
+    let _ = std::fs::remove_file(push_record_path(root));
+    touch(root);
+}
+
 // --------------------------------------------------------------------------------------- //
 // where unsaved work sits                                                                   //
 // --------------------------------------------------------------------------------------- //
@@ -498,6 +547,10 @@ pub struct Standing {
     /// Each changed file the next save would refuse for what looks like a credential, while
     /// that is why it is blocked ([`SECRET_REFUSED`]); empty otherwise.
     pub secrets: Vec<SecretAt>,
+    /// Whether the block is a save's replay onto the remote that conflicted, with the tree
+    /// not stopped part-way (qw382): the person settles it with a rebase of their own in a
+    /// terminal, since a chat may not rebase the plane root.
+    pub rebase_by_hand: bool,
     /// Where the open pull request of a `pr-merge` plane stands with merging, as the last look
     /// at the forge found it: waiting on its checks, red with the checks that failed, in a
     /// merge queue, unable to merge, or merged and not moved onto yet. `None` when no request
@@ -538,6 +591,7 @@ pub fn standing(root: &Path) -> Standing {
             conflicts: Vec::new(),
             notice: None,
             secrets: Vec::new(),
+            rebase_by_hand: false,
             merge: None,
             // An unborn branch is a repository with nothing to count against, and what is
             // staged in it is still the root being worked in (FD-11: the alerts read this).
@@ -580,7 +634,10 @@ pub fn standing(root: &Path) -> Standing {
             .filter(|v| !v.is_empty())
             .map(str::to_string)
     };
-    let outcome = said("outcome");
+    // A record that calls itself a conflict and names nothing is not believed (qw382): it is a
+    // save that stopped, which the next save retries, and never a block.
+    let unnamed = record.as_ref().is_some_and(names_no_conflict);
+    let outcome = said("outcome").filter(|_| !unnamed);
     let pr = matches!(outcome.as_deref(), Some("branched" | "pr-open"))
         .then(|| said("url"))
         .flatten()
@@ -594,7 +651,8 @@ pub fn standing(root: &Path) -> Standing {
                 .flatten()
         });
     let push_failed = (outcome.as_deref() == Some(Outcome::Failed.word()))
-        .then(|| said("detail").unwrap_or_else(|| "the push failed".into()));
+        .then(|| said("detail").unwrap_or_else(|| "the push failed".into()))
+        .or_else(|| unnamed.then(|| STOPPED_EARLIER.to_owned()));
     let conflicts: Vec<String> = record
         .as_ref()
         .and_then(|r| r.get("conflicts"))
@@ -650,6 +708,9 @@ pub fn standing(root: &Path) -> Standing {
     // Git stopped part-way through a merge or rebase, asked of the tree now (#433): named
     // before any other block, since a save refuses it first and auto-save waits while it is.
     let stopped = gitstate::stopped(root);
+    // The record's conflict is the block only while git is not stopped part-way, which is
+    // named first and settled by its own way out.
+    let rebase_by_hand = stopped.is_none() && outcome.as_deref() == Some(Outcome::Conflict.word());
     let blocked = stopped.as_ref().map(gitstate::Stopped::why).or(blocked);
     // Named only while they are why: a stopped merge is settled first.
     if blocked.as_deref() != Some(SECRET_REFUSED) {
@@ -697,6 +758,7 @@ pub fn standing(root: &Path) -> Standing {
         tracked,
         head,
         secrets,
+        rebase_by_hand,
         merge,
     }
 }
@@ -3069,13 +3131,16 @@ fn commit_push(
 
 /// How many commits a clean plane has that its mode would still push: `None` unless the plane
 /// names a mode past `commit` and the target branch on the remote lacks commits HEAD has —
-/// and, in a request mode, the pull request does not already carry HEAD.
+/// and, in a request mode, the pull request does not already carry HEAD. A plane that names no
+/// mode counts too while its last push stopped and has not landed ([`retries_its_push`]), so a
+/// Save pressed on it tries again rather than answering "nothing to save" (qw382).
 fn unpushed(root: &Path, plane: &crate::planesave::Plane) -> Option<u32> {
     use crate::planesave::Mode;
-    let mode = plane.mode.value?;
-    if !matches!(mode, Mode::Push | Mode::Pr | Mode::PrMerge) {
-        return None;
-    }
+    let mode = match plane.mode.value {
+        Some(mode @ (Mode::Push | Mode::Pr | Mode::PrMerge)) => mode,
+        None if retries_its_push(root) => Mode::Push,
+        _ => return None,
+    };
     let branch = match &plane.branch.value {
         Some(branch) => branch.clone(),
         None => git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
@@ -3209,7 +3274,7 @@ mod prsave;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
-pub use update::{Left, Moved, Updated, update};
+pub use update::{BY_HAND, Left, Moved, Updated, update};
 
 pub use blockedby::{SecretAt, file_of as blocked_file};
 

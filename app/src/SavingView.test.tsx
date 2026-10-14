@@ -387,12 +387,11 @@ describe("SavingView", () => {
     expect(screen.getByText("1 committed, not pushed")).toBeTruthy();
   });
 
-  it("offers a blocked save's two ways out, and names where it conflicts", async () => {
+  it("offers a block a chat can settle its two ways out", async () => {
     core([
       standing({
         stage: "blocked",
-        blocked: "the remote changed the same lines in: notes.md",
-        conflicts: ["notes.md"],
+        blocked: "this plane is on topic, and [plane] branch is main",
       }),
     ]);
     const asked: { plane: string; way: string }[] = [];
@@ -401,11 +400,6 @@ describe("SavingView", () => {
     render(<SavingView plane={PLANE} />);
 
     const ways = await screen.findByRole("group", { name: "Ways out" });
-    expect(
-      within(within(ways).getByRole("list", { name: "Where it conflicts" }))
-        .getAllByRole("listitem")
-        .map((li) => li.textContent),
-    ).toEqual(["notes.md"]);
     await userEvent.click(within(ways).getByRole("button", { name: "Resolve in a chat" }));
     await userEvent.click(within(ways).getByRole("button", { name: "Open terminal here" }));
     window.removeEventListener("charter-saving-way-out", listen);
@@ -414,6 +408,76 @@ describe("SavingView", () => {
       { plane: PLANE, way: "chat" },
       { plane: PLANE, way: "terminal" },
     ]);
+  });
+
+  it("names where a save's replay conflicts, the commands that settle it, and never a chat", async () => {
+    // qw382: a chat may not rebase the project's root, so offering one sent the person round
+    // to Update and back. The way out is a terminal, with the commands said.
+    const byHand =
+      "To settle it, open a terminal here and run `git fetch`, then `git rebase @{u}`; edit each " +
+      "file git names, `git add` it and run `git rebase --continue`, then Save. `git rebase " +
+      "--abort` puts the project back as it was.";
+    core([
+      standing({
+        stage: "blocked",
+        blocked: "the remote changed the same lines in: notes.md",
+        conflicts: ["notes.md"],
+        byHand,
+      }),
+    ]);
+    const asked: { plane: string; way: string }[] = [];
+    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener("charter-saving-way-out", listen);
+    render(<SavingView plane={PLANE} />);
+
+    expect(await screen.findByText(byHand)).toBeTruthy();
+    expect(
+      within(screen.getByRole("list", { name: "Where it conflicts" }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["notes.md"]);
+    expect(screen.queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
+    expect(
+      screen.getByText("Blocked: the remote changed the same lines in: notes.md"),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Open terminal here" }));
+    window.removeEventListener("charter-saving-way-out", listen);
+
+    expect(asked).toEqual([{ plane: PLANE, way: "terminal" }]);
+  });
+
+  it("offers no chat for a tree git stopped part-way in a conflict", async () => {
+    core([
+      standing({
+        stage: "blocked",
+        blocked:
+          "a rebase is stopped part-way with conflicts in notes.md; settle the conflicts and `git add` the files, then `git rebase --continue`, or `git rebase --abort`",
+        conflicts: ["notes.md"],
+      }),
+    ]);
+    render(<SavingView plane={PLANE} />);
+
+    const ways = await screen.findByRole("group", { name: "Ways out" });
+    expect(within(ways).queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
+    expect(within(ways).getByRole("button", { name: "Open terminal here" })).toBeTruthy();
+  });
+
+  it("says a save that stopped earlier is retried by Save, and offers Save", async () => {
+    core([
+      standing({
+        stage: "committed",
+        ahead: 1,
+        mode: null,
+        pushFailed: "Save stopped earlier — Save to retry",
+      }),
+    ]);
+    render(<SavingView plane={PLANE} />);
+
+    expect(
+      await screen.findByText("The last push did not land: Save stopped earlier — Save to retry"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Blocked/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 });
 
