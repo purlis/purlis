@@ -151,20 +151,9 @@ fn no_port_listens_while_a_real_engine_runs() {
     );
     let ports = listening(&pids);
     assert!(ports.is_empty(), "the engine listens: {ports:?}");
+    let group = engine.process_group();
     engine.stop(Duration::from_secs(2));
-    gone_within_after_stop(&pids);
-}
-
-fn gone_within_after_stop(pids: &[u32]) {
-    use nix::errno::Errno;
-    use nix::sys::signal::kill;
-    use nix::unistd::Pid;
-    let left: Vec<u32> = pids
-        .iter()
-        .copied()
-        .filter(|&pid| kill(Pid::from_raw(pid as i32), None) != Err(Errno::ESRCH))
-        .collect();
-    assert!(left.is_empty(), "still running after stop: {left:?}");
+    gone_within(group, &pids, Duration::from_secs(1));
 }
 
 /// The host's part: start a real engine with a page open, name every process it has, and wait.
