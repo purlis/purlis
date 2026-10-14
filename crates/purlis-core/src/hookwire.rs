@@ -1489,6 +1489,49 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<String>,
     },
+    /// `purlis worktree add <repo> <piece> [--base <branch>] [--branch]` (qw387): cut from
+    /// `base`, a branch of the clone by name, or `HEAD` for the clone's HEAD; with no base, from
+    /// the branch the remote names its default where the clone has one. A kind of its own, so
+    /// an app that does not know it answers nothing rather than cutting from the clone's HEAD.
+    WorktreeCut {
+        repo: String,
+        piece: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// `purlis worktree update [--base <branch>] [--continue | --abort]` (qw387): the branch
+    /// folder `<repo>/<piece>` brought up to its base, which the chat stands in or above.
+    WorktreeUpdate {
+        repo: String,
+        piece: String,
+        step: UpdateStep,
+    },
+    /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
+    /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
+    WorktreePush {
+        repo: String,
+        piece: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        lease: bool,
+    },
+}
+
+/// What a [`GitWork::WorktreeUpdate`] does.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateStep {
+    /// Fetch, bring the base up to its remote where it may be, and rebase onto it: the base
+    /// named, or the one recorded when the piece was cut.
+    Start {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// Stage the files a stopped rebase named, once resolved, and go on.
+    Continue,
+    /// Put the branch back where it was before the rebase began.
+    Abort,
 }
 
 /// A session record a chat asks the app to write for it, as `purlis session record` and the
@@ -4471,6 +4514,29 @@ mod tests {
             GitWork::Create {
                 vision: Some("Ship the importer".to_owned()),
                 repos: vec!["widget".to_owned()],
+            },
+            GitWork::WorktreeCut {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                branch: None,
+                base: Some("main".to_owned()),
+            },
+            GitWork::WorktreePush {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                lease: true,
+            },
+            GitWork::WorktreeUpdate {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                step: UpdateStep::Start {
+                    base: Some("main".to_owned()),
+                },
+            },
+            GitWork::WorktreeUpdate {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                step: UpdateStep::Continue,
             },
         ] {
             let ask = Ask::Git(Box::new(GitAsk {

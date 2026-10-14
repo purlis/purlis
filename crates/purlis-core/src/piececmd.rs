@@ -17,9 +17,11 @@
 //! # Where this differs from Python, on purpose
 //!
 //! - **`--branch` names the NEW branch.** Python's checked out an existing branch.
-//!   [`crate::worktree::add`] always cuts a fresh branch off the clone's HEAD, because the
-//!   branch a piece was cut from is recorded at cut time and an existing branch has no such
-//!   record.
+//!   [`crate::worktree::add`] always cuts a fresh branch, because the branch a piece was cut
+//!   from is recorded at cut time and an existing branch has no such record.
+//! - **A piece is cut from the remote's default branch** (qw387), or `--base <branch>`, brought
+//!   up to its remote where nothing has it checked out ([`crate::worktree::fresh`]); `--base
+//!   HEAD` is the clone's HEAD, which is all Python cut from.
 //! - **A removal names what it would discard.** Python counted unique commits and said
 //!   "uncommitted changes". The refusal here lists the changed paths and the commits, because
 //!   `--force` is an informed choice only when the operator can see what it takes.
@@ -38,6 +40,9 @@ use crate::worktree::{self, Dirt, Refusal};
 /// that loses a race takes the next name from its plan, and must not have to parse English to
 /// know that is what happened — nor mistake an invalid name for a lost race.
 pub const CLAIM_TAKEN: u8 = 2;
+
+/// What `--base` is given for the clone's own HEAD, whatever branch it is on.
+pub const HEAD: &str = "HEAD";
 
 /// The gap between two columns of a listing.
 const GAP: usize = 2;
@@ -76,8 +81,10 @@ fn taken(piece: &str, held: &str, say: &mut dyn FnMut(Say)) -> u8 {
     CLAIM_TAKEN
 }
 
-/// `charter worktree add <repo> <piece>`: cut a piece off the clone's HEAD, wire the layer,
-/// and log `claimed`.
+/// `charter worktree add <repo> <piece> [--base <branch>]`: cut a piece off branch `base`
+/// brought up to its remote, or with no base off the branch the remote names its default where
+/// the clone has one (qw387); off the clone's HEAD for `--base HEAD`, or where there is no
+/// default. Wire the layer, and log `claimed`.
 #[allow(clippy::too_many_arguments)]
 pub fn add(
     plane: &Path,
@@ -85,6 +92,7 @@ pub fn add(
     repo: &str,
     piece: &str,
     branch: Option<&str>,
+    base: Option<&str>,
     who: &Who,
     now: DateTime<Utc>,
     say: &mut dyn FnMut(Say),
@@ -94,8 +102,18 @@ pub fn add(
     if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
         return taken(piece, &held, say);
     }
-    let added = match worktree::add(plane, ws, repo, piece, branch) {
-        Ok(added) => added,
+    let base = match base {
+        Some(HEAD) => None,
+        Some(base) => Some(base.to_owned()),
+        None => worktree::fresh::remote_default(plane, ws, repo),
+    };
+    let cut = match base.as_deref() {
+        Some(base) => worktree::add_based(plane, ws, repo, piece, branch, base),
+        None => worktree::add(plane, ws, repo, piece, branch)
+            .map(|added| (added, worktree::fresh::Fresh::default())),
+    };
+    let (added, fresh) = match cut {
+        Ok(cut) => cut,
         Err(refusal) => {
             // The check above is not the mutex — git is. A worker that won between that check
             // and git's own lock leaves a failure that reads like a broken repo unless charter
@@ -122,11 +140,15 @@ pub fn add(
         "{repo} · {piece} → {}",
         shown(plane, &added.path)
     )));
-    let base = match &added.base {
-        worktree::Base::Branch(b) => b.clone(),
-        worktree::Base::Detached(sha) => format!("{sha} (detached)"),
+    for note in &fresh.notes {
+        say(Say::Warn(note.clone()));
+    }
+    let shown_base = match (&added.base, &fresh.moved_to) {
+        (worktree::Base::Branch(b), Some(up)) => format!("{b} (brought up to {up})"),
+        (worktree::Base::Branch(b), None) => b.clone(),
+        (worktree::Base::Detached(sha), _) => format!("{sha} (detached)"),
     };
-    say(Say::Info(format!("  base:   {base}")));
+    say(Say::Info(format!("  base:   {shown_base}")));
     say(Say::Info(format!("  branch: {}", added.branch)));
     say(Say::Info(format!(
         "  enter:  cd {} && claude    (or hand this path to EnterWorktree)",

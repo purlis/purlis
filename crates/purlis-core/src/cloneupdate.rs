@@ -477,9 +477,16 @@ pub trait Asks {
 pub struct Asked;
 
 impl Asked {
+    /// The isolation each question is asked under: the one the thread holds where purlis runs
+    /// git for a chat (pinned to the repository it checked), and otherwise none of the global
+    /// or system configuration.
+    fn held() -> git::Isolated {
+        git::isolation().unwrap_or_default()
+    }
+
     /// One question's answer, where git answered it.
     fn git(dir: &str, args: &[&str]) -> Option<String> {
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run(Path::new(dir), args, crate::doctor::CHECK_TIMEOUT)
         })
         .ok()?;
@@ -599,7 +606,7 @@ impl Asks for Asked {
             "--no-renames",
             "-z",
         ];
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &args,
@@ -666,7 +673,7 @@ impl Asks for Asked {
             input.push('\n');
         }
         let args = ["hash-object", "--no-filters", "--stdin-paths"];
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &args,
@@ -712,7 +719,7 @@ impl Asks for Asked {
             input.extend_from_slice(path.as_bytes());
             input.push(0);
         }
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &["sparse-checkout", "check-rules", "-z"],

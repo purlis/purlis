@@ -525,7 +525,7 @@ fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
         .find(|listed| listed.piece == piece && listed.prunable.is_none())?;
     Some(worktree::Start {
         branch: found.branch?,
-        tree: found.path,
+        tree: Some(found.path),
     })
 }
 

@@ -302,8 +302,10 @@ folder**) while keeping the branch.
 
 From a terminal or a chat, `purlis worktree` (alias `wt`):
 
-    charter wt add <repo> <piece> [-w <ws>]   # cut it off the clone's HEAD; exit 2 if taken
+    charter wt add <repo> <piece> [--base <branch>|HEAD] [-w <ws>]   # cut it; exit 2 if taken
     purlis worktree commit -m "<message>" [--all | <path>…]   # from a sandboxed chat inside the piece
+    purlis worktree update [--base <branch>] [--continue | --abort]   # from inside the piece
+    purlis worktree push [--force-with-lease]   # from inside the piece
     charter wt done                          # from inside the piece: it is finished
     charter wt abandon "<why you stopped>"   # from inside the piece: it is given up
     charter wt list [<repo>] [-w <ws>]       # what git has, and what each piece said
@@ -342,6 +344,32 @@ trailers. It names no repository or branch: the app uses the folder it started t
 - One commit runs in a piece at a time. If the app was stopped in the middle of one, the next
   `purlis worktree commit` unstages what it had staged and carries on.
 - A chat that is not sandboxed, and any chat in a clone, uses `git commit` as before.
+
+**Where a piece is cut from.** `add` cuts from the branch the remote names its default
+(`origin/HEAD`, `main` most often), or from `--base <branch>`, a branch of the clone; `--base
+HEAD` cuts from whatever the clone is on, as git's own `worktree add` does. The branch is
+recorded as the piece's base: what a merge lands it into and what its Changes count against.
+Before the cut, the base is brought up to its remote-tracking branch where that is a
+fast-forward and no worktree has it checked out, as `git fetch <remote> <branch>:<branch>`
+would; where it cannot be, it is used as the clone has it and the command says why. `add`
+fetches nothing: `update` does.
+
+**Keeping a piece current, and publishing it.** A sandboxed chat may not write a piece's git
+directory, so its own `git fetch`, `git rebase` and `git reset` fail there. From inside the
+piece, these run in the app for a chat (and here from a terminal):
+
+- `purlis worktree update` fetches the base's remote, brings the base up as above, and rebases
+  the piece onto it: the base it was cut from, or `--base <branch>`. A piece with uncommitted
+  changes is refused: commit first. A rebase that stops on a conflict names the files: resolve
+  them in the folder, then `purlis worktree update --continue`, which stages exactly those
+  files and goes on, or `--abort`, which puts the branch back. A file still holding a conflict
+  marker, a submodule and a file marked for a content filter are refused there; finish those
+  from your own terminal. For a sandboxed chat, an update that would write a file the chat's
+  sandbox denies (an editor's tasks, a hook, an agent's settings) does not start, and names it.
+- `purlis worktree push` pushes the piece's own branch to its remote under its own name, after
+  purlis's scan of what it would publish, never the branch the remote names its default.
+  `--force-with-lease` pushes over the remote's copy, only right after `update` rewrote the
+  branch, and only if the remote still has what was fetched just before.
 
 **What purlis's own git reads in a piece.** Before purlis runs git in a folder whose `.git` is
 a file, it reads that file itself and tells git which repository to use. A piece is read only

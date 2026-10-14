@@ -134,6 +134,7 @@ pub mod personas;
 pub mod personaverbs;
 pub mod piececmd;
 pub mod pieces;
+pub mod pieceupdate;
 pub mod plane;
 pub mod planechange;
 pub mod planegit;

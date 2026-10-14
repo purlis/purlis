@@ -1465,3 +1465,33 @@ Decided under delegation; the operator confirms or changes it.
   Claude Code chat one port is follow-up work.
 - **Policy.** `sandbox.socket-grants = false` holds a service on this Mac as it holds a socket,
   and `allow-scopes` holds its two scopes as any other.
+
+## Amended (2026-10-14, qw387; amends the brokered commit's "It only commits"): a branch folder is kept current by the app — to be confirmed
+
+**To be confirmed by the operator.** Decided in implementation, on the operator's ask.
+
+A branch folder's index, HEAD and rebase state are in its clone's `.git`, which section 5
+denies a chat, so a sandboxed chat's own `git fetch`, `git rebase` and `git reset` fail there.
+Two verbs beside `purlis worktree commit` are handed to the app as a brokered git action,
+for a chat standing in that folder or above branch folders in its workspace, and run the
+same core code a terminal runs:
+
+1. **`purlis worktree update [--base <branch>] [--continue | --abort]`** fetches the base's
+   remote under the chat's internet access, brings the base branch up to its remote-tracking
+   branch where that is a fast-forward and no worktree has it checked out, and rebases the
+   folder onto it. A folder with uncommitted changes is refused. A move that would write a file
+   section 5 denies the chat is judged by the clone guard's own rules and does not start,
+   naming the file. A conflict stops it and names the files; `--continue` stages exactly
+   those, refusing one that still holds a conflict marker, a submodule and a file marked for a
+   content filter; `--abort` puts the branch back. The rebase runs with no editor, no signer,
+   no hook and no other branch moved.
+2. **`purlis worktree push [--force-with-lease]`** pushes the folder's own branch to its
+   remote under its own name, never the branch the remote names its default, after purlis's
+   scan of what it would publish. `--force-with-lease` only right after an update rewrote the
+   branch, leased to what the remote had when it was fetched just before.
+3. **`purlis worktree add` cuts from the branch the remote names its default** (`origin/HEAD`),
+   or `--base <branch>`, brought up as in 1; `--base HEAD` keeps the clone's HEAD. An ask from
+   an older command, which names no base, keeps the clone's HEAD.
+
+The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
+

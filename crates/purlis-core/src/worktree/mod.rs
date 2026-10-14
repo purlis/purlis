@@ -12,6 +12,7 @@
 //! lives in git too, as `branch.<branch>.charterBase` in the clone's config.
 
 pub mod confine;
+pub mod fresh;
 pub mod git;
 pub mod link;
 pub mod listing;
@@ -681,7 +682,32 @@ pub struct Start {
     /// The branch the piece is cut from, and recorded as its base: what `merge` lands it into.
     pub branch: String,
     /// The worktree that branch is checked out in: what the dirty-tree note is read from.
-    pub tree: PathBuf,
+    /// `None` where no worktree has it checked out, and there is no tree to read.
+    pub tree: Option<PathBuf>,
+}
+
+/// [`add`], cut from branch `base` of the clone by name (`purlis worktree add --base`, qw387):
+/// the branch is brought up to its remote first where it may be ([`fresh::bring_up`]), the
+/// piece is cut from it, and it is recorded as the piece's base. Answers what bringing it up
+/// did, for the command to say.
+pub fn add_based(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    branch: Option<&str>,
+    base: &str,
+) -> Result<(Added, fresh::Fresh), Refusal> {
+    relocation_refusal(plane)?;
+    path_for(plane, ws, repo, piece)?;
+    let clone = clone_dir(plane, ws, repo)?;
+    let fresh = fresh::bring_up(&clone, base)?;
+    let start = Start {
+        branch: base.to_owned(),
+        tree: fresh::checked_out_in(&clone, base)?,
+    };
+    let added = add_from(plane, ws, repo, piece, branch, Some(&start))?;
+    Ok((added, fresh))
 }
 
 /// [`add`], cut from `from` where one is given, and from the clone's HEAD otherwise.
@@ -741,17 +767,17 @@ pub fn add_from(
             }
             (Base::Branch(start.branch.clone()), start.tree.clone())
         }
-        None => (head_of(&clone)?, clone.clone()),
+        None => (head_of(&clone)?, Some(clone.clone())),
     };
     let mut warnings = Vec::new();
-    match dirt(&dirt_of) {
-        Dirt::Dirty => warnings.push(Note::Dirty {
+    match dirt_of.as_deref().map(dirt) {
+        Some(Dirt::Dirty) => warnings.push(Note::Dirty {
             repo: repo.to_string(),
         }),
-        Dirt::Unknown => warnings.push(Note::DirtUnknown {
+        Some(Dirt::Unknown) => warnings.push(Note::DirtUnknown {
             repo: repo.to_string(),
         }),
-        Dirt::Clean => {}
+        Some(Dirt::Clean) | None => {}
     }
 
     // The confinement checks sit HERE, immediately before the write, and not at the top of
