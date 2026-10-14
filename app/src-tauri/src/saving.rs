@@ -432,6 +432,114 @@ pub fn update(root: &Path) -> ProjectUpdate {
     }
 }
 
+/// How a press of Resolve, Continue or Abort on a save's conflict ended (qw382).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveSettled {
+    /// `saved`: the replay finished and the save carried it on (`said` says how the push
+    /// went). `stopped`: git stopped on a conflict in `files`, and the rebase is left stopped.
+    /// `aborted`: the project is back where it was. `refused`: nothing changed, and `said`
+    /// says why.
+    pub outcome: String,
+    /// How it ended, as sentences for the person.
+    pub said: String,
+    /// The files git stopped in, for `stopped`.
+    pub files: Vec<String>,
+    /// What it said it was doing, in order, the save's lines included.
+    pub lines: Vec<String>,
+}
+
+/// **Resolve a save's conflict from the window** (qw382): `step` is `start` (fetch and replay
+/// the project's own commits, stopping where git stops), `continue` (stage exactly the files
+/// in conflict, once no marker is left in them, and carry on; `files` are the ones the window
+/// showed), or `abort`. Where the replay finishes, the save runs at once and pushes it.
+///
+/// The window's alone (`WINDOW_ONLY`): it moves the project's working tree under every chat in
+/// it, and a chat's sandbox may never run it.
+///
+/// On a blocking thread: it fetches, and rewrites the tree.
+#[tauri::command]
+#[specta::specta]
+pub async fn settle_save_conflict(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    step: String,
+    files: Vec<String>,
+) -> Result<SaveSettled, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let done = tauri::async_runtime::spawn_blocking(move || settle(&root, &step, &files))
+        .await
+        .map_err(|err| format!("it did not finish: {err}"))??;
+    if done.outcome != "refused" {
+        held.tree_moved();
+    }
+    Ok(done)
+}
+
+/// [`settle_save_conflict`], without a runtime.
+pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, String> {
+    use planegit::resolve::{self, Settled};
+    let mut lines: Vec<String> = Vec::new();
+    let settled = {
+        let mut say = |line: Say| lines.push(line.to_string());
+        match step {
+            // The window's own git (#752): its sign-in, offered to the recorded remote alone.
+            "start" => crate::forgeaccounts::window_git(|| resolve::start(root, &mut say)),
+            "continue" => resolve::carry_on(root, files, &mut say),
+            "abort" => resolve::abort(root),
+            other => return Err(format!("{other} is not a step: start, continue or abort")),
+        }
+    };
+    planegit::touch(root);
+    let (outcome, said, files) = match settled {
+        Settled::Replayed => {
+            let ok = match save(root, None) {
+                Ok(said) => {
+                    lines.extend(said);
+                    true
+                }
+                Err(refused) => {
+                    lines.push(refused);
+                    false
+                }
+            };
+            (
+                "saved",
+                if ok {
+                    "Resolved: the project's own commits are on the remote's, and the save \
+                     carried them on."
+                        .to_owned()
+                } else {
+                    "Resolved: the project's own commits are on the remote's. The save after it \
+                     did not finish; its words are below."
+                        .to_owned()
+                },
+                Vec::new(),
+            )
+        }
+        Settled::Stopped(files) => (
+            "stopped",
+            "git stopped on a conflict. Settle the files below, in a chat or by hand, then \
+             Continue. Abort puts the project back where it was."
+                .to_owned(),
+            files,
+        ),
+        Settled::Aborted => (
+            "aborted",
+            "Aborted: the project is back where it was before Resolve.".to_owned(),
+            Vec::new(),
+        ),
+        Settled::Refused(why) => ("refused", why, Vec::new()),
+    };
+    Ok(SaveSettled {
+        outcome: outcome.to_owned(),
+        said,
+        files,
+        lines,
+    })
+}
+
 /// **Merge a save's pull request as it stands**, its failed and missing checks included: the
 /// project's own request, or the one of `repo` in `workspace` when both are named (the
 /// operator's ruling P1, 2026-10-13; ADR 0051).
@@ -1153,5 +1261,22 @@ mod tests {
         let err = save(dir.path(), None).expect_err("not a repository");
 
         assert!(err.contains("is not a git repository"), "{err}");
+    }
+
+    #[test]
+    fn a_conflicts_step_is_one_of_three_and_none_runs_where_no_rebase_is_stopped() {
+        let dir = tempfile::tempdir().expect("a directory");
+
+        let unknown = settle(dir.path(), "merge", &[]).expect_err("not a step");
+        assert!(unknown.contains("start, continue or abort"), "{unknown}");
+        for step in ["continue", "abort"] {
+            let got = settle(dir.path(), step, &[]).expect("answered");
+            assert_eq!(got.outcome, "refused", "{step}");
+            assert!(
+                got.said.contains("No rebase is stopped"),
+                "{step}: {}",
+                got.said
+            );
+        }
     }
 }

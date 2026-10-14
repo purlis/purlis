@@ -245,6 +245,8 @@ macro_rules! app_commands {
                 saving::merge_save_request,
                 saving::look_at_save_request,
                 savefix::fix_save_request,
+                savefix::resolve_save_in_a_chat,
+                saving::settle_save_conflict,
                 saving::workspace_saving,
                 saving::save_repo,
                 remotequestion::confirm_remote,

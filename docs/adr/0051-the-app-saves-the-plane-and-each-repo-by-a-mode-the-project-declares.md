@@ -396,6 +396,28 @@ Decided under delegation, and recorded for the operator's ruling.
   plane pushes the commits its upstream lacks even when `[plane] mode` is unset, so the window
   never says "nothing to save" while there are some. `purlis save` keeps its recorded answer.
 
+## Noted (2026-10-14, qw382b): a save's conflict is resolved from the window — to be confirmed
+
+Decided under delegation (the dispatcher's call), and recorded for the operator's ruling.
+
+- **Resolve** is offered where a save's replay onto the remote conflicted. It is the person's
+  press in the window: the window fetches the target branch from the remote recorded for the
+  project and replays the project's own commits onto it, under no chat's sandbox, and leaves
+  the replay stopped where git stops. A tree with unsaved work, off its target branch or
+  already stopped part-way is not touched.
+- **While it is stopped,** the Saving view names the files and offers *Resolve in a chat*,
+  *Continue*, *Abort* and *Open terminal here*.
+- **The chat edits files and runs no git.** It starts at the plane root on a message purlis
+  writes, through the same start as *Fix* (ADR 0061, amended 2026-10-14): the files git stopped
+  in and the subjects of the two commits, quoted as data, and what to do. It is an ordinary
+  chat, in its sandbox, with nothing granted past it. Where a file in conflict is one a chat's
+  sandbox may not write, no chat is started, and the window says to settle it in a terminal.
+- **Continue is the window's.** It refuses while a conflict marker opens or closes a line in
+  the files, stages exactly the files git stopped in, each of which the commit being replayed
+  changes, refuses while anything else is staged, and runs `git rebase --continue`. A further
+  stop names the next files. When the replay finishes, the save runs at once and pushes it.
+- **Abort** is `git rebase --abort`: the project is where it was before Resolve.
+
 ## Amended 2026-10-14 (the operator's rulings P1 and P2 of 2026-10-13, and of 2026-10-14): the window's side of a save's request
 
 Ruled, not to be confirmed again:

@@ -3288,6 +3288,7 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
 mod blockedby;
 pub mod merging;
 mod prsave;
+pub mod resolve;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};

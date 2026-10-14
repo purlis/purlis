@@ -465,6 +465,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat at once on a message purlis wrote, which nothing else in purlis does for a press.
     // The person's own press in the window, and no link's or chat's.
     "fix_save_request",
+    // Resolving a save's conflict (qw382): the window runs the rebase, stages exactly the files
+    // in conflict and continues or aborts it, which moves the project's tree; and a chat is
+    // started on a message purlis wrote, to edit those files and run no git. The person's own
+    // presses in the window, and no link's or chat's.
+    "settle_save_conflict",
+    "resolve_save_in_a_chat",
     // Filing a sandbox block's report (#806): it opens an issue on purlis's tracker as the
     // person, with their purlis sign-in, so only their own window's press files it.
     "file_sandbox_block_report",
