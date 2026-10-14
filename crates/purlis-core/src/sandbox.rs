@@ -4875,6 +4875,18 @@ pub enum Decided {
     Floorless(String),
 }
 
+/// **Whether a refusal of `applied`'s program check starts the chat as before instead** (#2071,
+/// Q2): at the floor, a program the floor cannot be bound to, one that does not answer as its
+/// harness or in time. A program a chat could have written, or a command naming a file there,
+/// is refused at every level: run later, it would be a chat's code.
+pub fn floorless_program(applied: &Applied, refused: &NotStarted) -> bool {
+    applied.level() == Level::Floor
+        && matches!(
+            refused,
+            NotStarted::NotTheHarness(_) | NotStarted::ProbeTimedOut(_)
+        )
+}
+
 /// What a chat's tab says where the floor could not be applied (#2071): `why`, a refusal of
 /// [`NotStarted`].
 pub fn floorless_said(why: &NotStarted) -> String {

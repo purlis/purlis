@@ -545,11 +545,28 @@ fn a_service_on_this_mac_a_person_allowed_is_reached_at_the_floor() {
     };
     let compiled = Compiled::floor(&root, &machine, &chat);
     assert_eq!(compiled.widened.ports, [5432]);
-    assert!(compiled.reach.decide("127.0.0.1", 5432, &[443], &[]).carries());
-    assert!(!compiled.reach.decide("127.0.0.1", 6379, &[443], &[]).carries());
-    assert!(compiled.reach.decide("example.org", 443, &[443], &[]).carries());
+    assert!(
+        compiled
+            .reach
+            .decide("127.0.0.1", 5432, &[443], &[])
+            .carries()
+    );
+    assert!(
+        !compiled
+            .reach
+            .decide("127.0.0.1", 6379, &[443], &[])
+            .carries()
+    );
+    assert!(
+        compiled
+            .reach
+            .decide("example.org", 443, &[443], &[])
+            .carries()
+    );
     let profile = wrapped_floor_of(Harness::Codex, &compiled, &[4040]);
-    let allowed = profile.find(&localport::seatbelt_rule(5432)).expect("the port");
+    let allowed = profile
+        .find(&localport::seatbelt_rule(5432))
+        .expect("the port");
     let held = profile
         .find("(deny network-outbound (remote ip \"localhost:*\"))")
         .expect("the loopback held");

@@ -479,7 +479,7 @@ fn ready_given(
         if applied.level() == crate::sandbox::Level::Full {
             writable.extend(crate::sandbox::program::temp_roots(&env));
         }
-        let (checked, said) = crate::sandbox::program::checked_answering(
+        match crate::sandbox::program::checked_answering(
             harness,
             &words,
             applied.root(),
@@ -489,15 +489,25 @@ fn ready_given(
                 env: &env,
             },
             None,
-        )
-        .map_err(|refused| refused.to_string())?;
-        program = checked[0].clone();
-        // At the floor, the program it starts is never written by the chat (#2071, Q4).
-        applied.hold_programs(&checked);
-        // Claude Code goes through purlis's proxy from the version that takes its ports, and an
-        // older one says once, on its tab, that it keeps its own (#1665).
-        if let Some(said) = said {
-            applied.answered(&said);
+        ) {
+            Ok((checked, said)) => {
+                program = checked[0].clone();
+                // At the floor, the program it starts is never written by the chat (#2071, Q4).
+                applied.hold_programs(&checked);
+                // Claude Code goes through purlis's proxy from the version that takes its
+                // ports, and an older one says once, on its tab, that it keeps its own (#1665).
+                if let Some(said) = said {
+                    applied.answered(&said);
+                }
+            }
+            // At the floor, a program the floor cannot be bound to (it does not answer as its
+            // harness) starts as before, and says why (#2071, Q2). A program a chat could have
+            // written is refused at every level.
+            Err(refused) if crate::sandbox::floorless_program(applied, &refused) => {
+                notices.push(crate::sandbox::floorless_said(&refused));
+                sandbox = None;
+            }
+            Err(refused) => return Err(refused.to_string()),
         }
     }
     // Only a record's path: the briefing reads it through `sessionrecord::open`, which refuses
@@ -602,7 +612,7 @@ pub fn sandbox_ahead(
         if applied.level() == crate::sandbox::Level::Full {
             writable.extend(crate::sandbox::program::temp_roots(&env));
         }
-        crate::sandbox::program::checked(
+        match crate::sandbox::program::checked(
             harness,
             &words,
             applied.root(),
@@ -612,8 +622,11 @@ pub fn sandbox_ahead(
                 env: &env,
             },
             probe,
-        )
-        .map(|_| ())
+        ) {
+            // At the floor such a program starts as before (#2071, Q2): nothing to refuse.
+            Err(refused) if crate::sandbox::floorless_program(applied, &refused) => Ok(()),
+            checked => checked.map(|_| ()),
+        }
     };
     Some(crate::sandbox::ahead(
         harness, root, machine, has, os_release, &check,

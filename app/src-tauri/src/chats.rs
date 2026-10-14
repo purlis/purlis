@@ -1139,7 +1139,7 @@ impl Chats {
             if applied.level() == purlis_core::sandbox::Level::Full {
                 writable.extend(purlis_core::sandbox::program::temp_roots(&[]));
             }
-            let (checked, said) = purlis_core::sandbox::program::checked_answering(
+            let (checked, said) = match purlis_core::sandbox::program::checked_answering(
                 harness,
                 &words,
                 applied.root(),
@@ -1149,8 +1149,19 @@ impl Chats {
                     env: &[],
                 },
                 None,
-            )
-            .map_err(|refused| refused.to_string())?;
+            ) {
+                Ok(checked) => checked,
+                // At the floor, a program the floor cannot be bound to starts as before, and
+                // says why (#2071, Q2).
+                Err(refused) if purlis_core::sandbox::floorless_program(applied, &refused) => {
+                    return Ok((
+                        None,
+                        None,
+                        Some(purlis_core::sandbox::floorless_said(&refused)),
+                    ));
+                }
+                Err(refused) => return Err(refused.to_string()),
+            };
             // Claude Code through purlis's proxy from the version that takes its ports
             // (#1665); an older one keeps its own, and says so once as it opens.
             let mut applied = applied.clone();
