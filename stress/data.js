@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792006869413,
+  "lastUpdate": 1792006886052,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4022,6 +4022,42 @@ window.BENCHMARK_DATA = {
             "value": 437.8,
             "unit": "MB",
             "extra": "median of 6 samples: 408.5, 427.9, 431, 444.6, 445, 538.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "68472aa3f7158ee6f4d9717dd2470946b0db1999",
+          "message": "review(qw387): the sparse allowlist is each subcommand's own, and an editor counts as configuration\n\nA flag harmless to one subcommand may be another's command to run\n(`cherry-pick -x` is `rebase --exec`), so each move's options are held\nto its own subcommand's list. An editor set on the line (GIT_EDITOR,\nGIT_SEQUENCE_EDITOR, EDITOR, VISUAL) turns the filter off, as\nconfiguration does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T22:59:40+04:00",
+          "tree_id": "41d069cacc129b118d1cbd182d8453a5e6aebab8",
+          "url": "https://github.com/purlis/purlis/commit/68472aa3f7158ee6f4d9717dd2470946b0db1999"
+        },
+        "date": 1792006884436,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1379.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1264.9, 1379.1, 1498.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 437.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 410.4, 427.6, 429.8, 445.8, 446.3, 520.1 MB"
           }
         ]
       }
