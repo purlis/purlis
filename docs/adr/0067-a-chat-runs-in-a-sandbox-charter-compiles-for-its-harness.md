@@ -1293,3 +1293,28 @@ paragraphs of section 1 on a persona's tools.
   persona's hosts and on the Granted row), not in it: the tool's line and the digest an Allow is
   bound to are unchanged, so every Allow made before this stands.
 - `crates/purlis-core/docs/secrets.md` and the plane-format `tools` row state the limit.
+
+## Amended (2026-10-14, qw381; the operator's ruling T-3): a persona's MCP server's start is tried twice
+
+A persona's credentialed MCP server is started by the chat's harness, as `purlis secret exec
+<vault> … -- <server>`, which asks the app for the server's run (section 5, class 1). Two things
+are added to that start.
+
+- **The app waits for a chat that is still starting.** A harness starts its MCP servers as soon
+  as its program runs, and the app records the chat as open only once its start is done. A
+  brokered run asked for by a line that carried the chat's current token, from inside its
+  program, now waits up to ten seconds for that record before it is refused. The authorisation,
+  the persona and the sandbox the run is held to are still the app's record of the chat, read
+  once it exists.
+- **One more try, and then the person is told.** purlis marks the start it wraps with the
+  server's name (`PURLIS_MCP_SERVER`, in the server's environment). A marked `secret exec` whose
+  run was refused, or ended before the server wrote on stdout, asks once more after two
+  seconds, handing the second run the stdin the first one took; the second ask says it is the
+  last. A server that wrote anything is never started again by purlis. When the last try fails,
+  the app keeps the failure for the chat's tab, where a Notice names the server and its own
+  error (its last stderr, bounded, masked with the run's values and purlis's credential shapes)
+  and offers Retry, the chat's restart on its conversation; and the chat is told at its next
+  turn, in fixed words with the error quoted as data. The server is named only where the chat's
+  persona, as the app started it, declares it.
+
+Only Claude Code is started with a persona's servers, so only there does any of this apply.

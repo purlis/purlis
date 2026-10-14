@@ -118,6 +118,10 @@ pub struct Wanted {
     /// Whether the asker sends its stdin ([`Input`]). The child's is empty otherwise.
     #[serde(default)]
     pub stdin: bool,
+    /// Where this run is a persona's MCP server's start, the server and whether this is its
+    /// last try ([`super::mcpstart`]): what the app tells the person of when it fails.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<super::mcpstart::McpStart>,
 }
 
 /// **How [`Wanted::environment`] is written on the line** (#1407 review). Each variable whose
@@ -341,6 +345,9 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
 /// Only inside a chat the app started sandboxed ([`crate::sandbox::chat_is_sandboxed_in`]): an
 /// unsandboxed chat reads its vault as the person does. A chat that claims to be sandboxed when
 /// it is not gets the stricter run, and one that hides it gets the vault's own refusal.
+///
+/// A persona's MCP server's start ([`super::mcpstart::server_in`]) is tried once more where the
+/// first run failed before the server spoke ([`started_server`]).
 #[cfg(unix)]
 pub fn forwarded(ctx: &Ctx, req: &Request, command: &[String], io: &mut dyn Io) -> Option<i32> {
     let env = |name: &str| ctx.env.get(name);
@@ -350,8 +357,11 @@ pub fn forwarded(ctx: &Ctx, req: &Request, command: &[String], io: &mut dyn Io) 
     let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
     let chat = chat_number(&env)?;
     let token = crate::hookwire::ChatToken::read(&env);
-    let stream = std::os::unix::net::UnixStream::connect(&socket).ok()?;
-    converse(ctx, req, command, chat, token, stream, io)
+    let connect = || std::os::unix::net::UnixStream::connect(&socket).ok();
+    if let Some(server) = super::mcpstart::server_in(&env) {
+        return started_server(ctx, req, command, chat, token, &server, &connect, io);
+    }
+    converse(ctx, req, command, chat, token, connect()?, io)
 }
 
 /// [`forwarded`]'s exchange with the app, on a connection already made.
@@ -365,13 +375,109 @@ fn converse(
     stream: std::os::unix::net::UnixStream,
     io: &mut dyn Io,
 ) -> Option<i32> {
-    // The child gets the asker's stdin where it is not a terminal and the caller can hand it
-    // on as a stream; an empty one otherwise.
-    let mut stdin = if io.stdin_is_terminal() {
+    let feed = super::mcpstart::Feed::new(stdin_of(io), false);
+    match exchange(
+        ctx,
+        req,
+        command,
+        chat,
+        token.as_ref(),
+        stream,
+        io,
+        &feed,
+        None,
+    ) {
+        Outcome::NotTaken => None,
+        Outcome::Ended { code, .. } => Some(code),
+    }
+}
+
+/// **A persona's MCP server's start, tried once more where the first failed** (qw381): a run
+/// refused, not taken, or ended before the server wrote a byte on stdout is asked for again
+/// after [`super::mcpstart::RETRY_AFTER`], handed the stdin the first was. The second ask says
+/// it is the last, so the app tells the person when it fails too. `connect` makes each
+/// connection to the app.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+fn started_server(
+    ctx: &Ctx,
+    req: &Request,
+    command: &[String],
+    chat: u32,
+    token: Option<crate::hookwire::ChatToken>,
+    server: &str,
+    connect: &dyn Fn() -> Option<std::os::unix::net::UnixStream>,
+    io: &mut dyn Io,
+) -> Option<i32> {
+    use super::mcpstart::{AGAIN, McpStart, RETRY_AFTER};
+    let feed = super::mcpstart::Feed::new(stdin_of(io), true);
+    for last in [false, true] {
+        let start = McpStart {
+            server: server.to_owned(),
+            last,
+        };
+        let outcome = match connect() {
+            Some(stream) => exchange(
+                ctx,
+                req,
+                command,
+                chat,
+                token.as_ref(),
+                stream,
+                io,
+                &feed,
+                Some(start),
+            ),
+            None => Outcome::NotTaken,
+        };
+        match outcome {
+            Outcome::Ended { code, spoke } if spoke || last || !feed.replayable() => {
+                return Some(code);
+            }
+            Outcome::NotTaken if last => return None,
+            _ => {}
+        }
+        io.say(Say::Info(AGAIN.to_owned()));
+        std::thread::sleep(RETRY_AFTER);
+    }
+    None
+}
+
+/// The asker's stdin, where it is not a terminal and the caller can hand it on as a stream.
+#[cfg(unix)]
+fn stdin_of(io: &mut dyn Io) -> Option<Box<dyn Read + Send>> {
+    if io.stdin_is_terminal() {
         None
     } else {
         io.stdin_stream()
-    };
+    }
+}
+
+/// What one exchange with the app came to.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Outcome {
+    /// No app took it: nothing ran.
+    NotTaken,
+    /// It ended with `code`; `spoke` where the child wrote on stdout.
+    Ended { code: i32, spoke: bool },
+}
+
+/// One ask on `stream`, and what comes back printed through `io`. The child is given `feed`
+/// once it has started.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+fn exchange(
+    ctx: &Ctx,
+    req: &Request,
+    command: &[String],
+    chat: u32,
+    token: Option<&crate::hookwire::ChatToken>,
+    stream: std::os::unix::net::UnixStream,
+    io: &mut dyn Io,
+    feed: &Arc<super::mcpstart::Feed>,
+    mcp: Option<super::mcpstart::McpStart>,
+) -> Outcome {
     let ask = Ask {
         chat,
         secret_exec: Wanted {
@@ -390,14 +496,19 @@ fn converse(
                 .filter(|(_, v)| v.len() <= A_VARIABLE_IS_AT_MOST)
                 .cloned()
                 .collect(),
-            stdin: stdin.is_some(),
+            stdin: feed.has_stdin(),
+            mcp,
         },
     };
-    let line = crate::hookwire::line_with(token.as_ref(), &ask).ok()?;
-    (&stream).write_all(&line).ok()?;
-    let writer = stream.try_clone().ok()?;
-    let mut reader = std::io::BufReader::new(stream);
+    let Ok(line) = crate::hookwire::line_with(token, &ask) else {
+        return Outcome::NotTaken;
+    };
+    if (&stream).write_all(&line).is_err() {
+        return Outcome::NotTaken;
+    }
+    let mut reader = std::io::BufReader::new(&stream);
     let mut started = false;
+    let mut spoke = false;
     loop {
         let mut said = String::new();
         let read = (&mut reader).take(A_FRAME_IS_AT_MOST).read_line(&mut said);
@@ -408,31 +519,37 @@ fn converse(
         let Some(frame) = frame else {
             // An app older than this line drops it unread: nothing ran, so it runs here.
             if !started {
-                return None;
+                return Outcome::NotTaken;
             }
             io.say(Say::Err(
                 "the app stopped answering while the command ran, so how it ended is not known."
                     .into(),
             ));
-            return Some(1);
+            return Outcome::Ended { code: 1, spoke };
         };
         match frame {
             Frame::Started => {
                 started = true;
-                if let Some(stdin) = stdin.take() {
-                    pump(stdin, writer.try_clone().ok());
+                if let Ok(writer) = stream.try_clone() {
+                    feed.attach(Box::new(writer));
                 }
             }
             Frame::Note(note) => io.say(Say::Info(note)),
-            Frame::Stdout(bytes) => io.out(&unb64(&bytes)),
+            Frame::Stdout(bytes) => {
+                if !spoke {
+                    spoke = true;
+                    feed.spoke();
+                }
+                io.out(&unb64(&bytes));
+            }
             Frame::Stderr(bytes) => io.err(&unb64(&bytes)),
-            Frame::Exit(code) => return Some(code),
+            Frame::Exit(code) => return Outcome::Ended { code, spoke },
             Frame::Refused { why, .. } if why == crate::hookwire::NOTHING_ANSWERS && !started => {
-                return None;
+                return Outcome::NotTaken;
             }
             Frame::Refused { why, code } => {
                 io.say(Say::Err(why));
-                return Some(code);
+                return Outcome::Ended { code, spoke };
             }
         }
     }
@@ -444,33 +561,35 @@ pub fn forwarded(_ctx: &Ctx, _req: &Request, _command: &[String], _io: &mut dyn 
     None
 }
 
-/// Sends `stdin` to the app as it comes, on a thread of its own, and says when it ends.
-#[cfg(unix)]
-fn pump(mut stdin: Box<dyn Read + Send>, writer: Option<std::os::unix::net::UnixStream>) {
-    let Some(mut writer) = writer else { return };
-    let _ = std::thread::Builder::new()
-        .name("purlis-secret-exec-stdin".into())
-        .spawn(move || {
-            let mut buf = vec![0u8; A_CHUNK];
-            loop {
-                let input = match stdin.read(&mut buf) {
-                    Ok(0) | Err(_) => Input::StdinClosed,
-                    Ok(n) => Input::Stdin(b64(&buf[..n])),
-                };
-                let done = input == Input::StdinClosed;
-                let Ok(mut line) = serde_json::to_vec(&input) else {
-                    return;
-                };
-                line.push(b'\n');
-                if writer.write_all(&line).is_err() || done {
-                    return;
-                }
-            }
-        });
-}
-
 // ----------------------------------------------------------------------------------------
 // the app: authorise, resolve, run
+
+/// How long the app waits for a chat that is still starting to be recorded as open, before a
+/// brokered run it asked for is refused (qw381).
+///
+/// A chat's harness may start a persona's MCP server as soon as its program runs, and that
+/// server asks for its run at once; the app records the chat as open only once its start is
+/// done, which takes longer while several chats start together. Only a line that carried the
+/// chat's current token, from inside its program, is waited for.
+pub const A_START_IS_WAITED_FOR: Duration = Duration::from_secs(10);
+
+/// How often a starting chat's record is looked for.
+const A_START_IS_LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
+
+/// **The asking chat's record, once the app has it** (qw381): `look` now, and again until it
+/// answers or `at_most` has passed.
+pub fn once_recorded<T>(mut look: impl FnMut() -> Option<T>, at_most: Duration) -> Option<T> {
+    let until = std::time::Instant::now() + at_most;
+    loop {
+        if let Some(found) = look() {
+            return Some(found);
+        }
+        if std::time::Instant::now() >= until {
+            return None;
+        }
+        std::thread::sleep(A_START_IS_LOOKED_AT_EVERY);
+    }
+}
 
 /// The chat that asked, as the app recorded it: never as the line says.
 #[derive(Debug, Clone)]

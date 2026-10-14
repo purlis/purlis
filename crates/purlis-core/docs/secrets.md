@@ -123,7 +123,9 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   loader's, and `NODE_OPTIONS`, `PYTHONPATH` and their kind). Anything else, a shell or an interpreter among them, is refused with a sentence that
   names the tool to declare, and nothing runs. A credentialed MCP server of the persona that you
   approved on this machine (`purlis persona approve-mcp`) runs as approved: only the exact line
-  purlis wraps from the entry you approved, never a server's own arguments written in that shape. **Your own terminal,
+  purlis wraps from the entry you approved, never a server's own arguments written in that shape.
+  Such a server's start is marked as one, and is asked for once more when its first run fails
+  before the server answered (see personas.md). **Your own terminal,
   and a chat the app did not start sandboxed, are not limited**: `secret exec` there runs any
   command, as it always has.
 

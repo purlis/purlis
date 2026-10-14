@@ -14,6 +14,7 @@ import { Notice, NoticeOf } from "./Notice";
 import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
+import { McpFailedNotice } from "./McpFailedNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { TasksSharingNotice } from "./TasksSharingNotice";
@@ -411,6 +412,7 @@ export function ChatNotices({
         requestHere={dispatchDrawn.length > 0}
         onShowInbox={onShowInbox}
       />
+      <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
       {off > 0 && onShowInbox !== undefined && (
         <Notice
           cause={`asks-in-inbox:${session}`}

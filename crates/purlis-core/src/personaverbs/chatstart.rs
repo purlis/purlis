@@ -84,6 +84,17 @@ pub fn servers(root: &Path, state: &Path, persona: &str, binary: &Path) -> Serve
         let mut entry = mcp::render_entry(vault.as_deref(), entry, &approved);
         if wrapped && let Some(map) = entry.as_object_mut() {
             map.insert("command".into(), binary.display().to_string().into());
+            // Marked as this server's start, so its `secret exec` tries once more where the
+            // first run fails before the server speaks (qw381, `secrets::mcpstart`).
+            if let Value::Object(env) = map
+                .entry("env")
+                .or_insert_with(|| Value::Object(Map::new()))
+            {
+                env.insert(
+                    crate::secrets::mcpstart::SERVER_ENV.into(),
+                    name.clone().into(),
+                );
+            }
         }
         started.insert(name.clone(), entry);
     }

@@ -623,6 +623,13 @@ export const commands = {
 	 *  next turn that the person kept the workspace, and not to ask again unless they ask.
 	 */
 	keepAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<null, string>(__TAURI_INVOKE("keep_asked_workspace", { plane, session, workspace })),
+	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
+	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
+	/**
+	 *  **Dismiss** on a failed server's Notice, and what Retry does once it has asked for the
+	 *  chat's restart: puts it away, and changes nothing else.
+	 */
+	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -6068,6 +6075,18 @@ export type MachineWorkspacePin = {
 	 *  the project itself cannot be read, since then nothing is known about its workspaces.
 	 */
 	gone: boolean,
+};
+
+/**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
+export type McpFailed = {
+	plane: PlaneId,
+	session: number,
+	/**  The server's name, as the persona declares it. */
+	server: string,
+	/**  The persona the app started the chat as. */
+	persona: string,
+	/**  The server's own error: its last words, bounded and masked. */
+	error: string,
 };
 
 /**  What a Delete did, and what its Undo hands back. */

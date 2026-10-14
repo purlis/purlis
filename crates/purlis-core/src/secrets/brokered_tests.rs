@@ -3134,3 +3134,302 @@ fn a_run_takes_no_program_from_a_cache_home_the_chat_writes() {
     crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
     assert_eq!(path, "/usr/bin");
 }
+
+// ----------------------------------------------------------------------------------------
+// qw381: a persona's MCP server's start, tried once more
+
+use crate::secrets::mcpstart;
+
+/// A [`Rec`] whose stdin is `stdin`, handed on as a stream, as a harness's pipe is.
+struct Piped {
+    rec: Rec,
+    stdin: Option<Vec<u8>>,
+}
+
+impl Io for Piped {
+    fn say(&mut self, line: Say) {
+        Io::say(&mut self.rec, line);
+    }
+    fn out(&mut self, bytes: &[u8]) {
+        Io::out(&mut self.rec, bytes);
+    }
+    fn err(&mut self, bytes: &[u8]) {
+        Io::err(&mut self.rec, bytes);
+    }
+    fn stdout_is_terminal(&self) -> bool {
+        false
+    }
+    fn stdin_is_terminal(&self) -> bool {
+        false
+    }
+    fn read_stdin(&mut self) -> String {
+        String::new()
+    }
+    fn read_hidden(&mut self, _prompt: &str) -> String {
+        String::new()
+    }
+    fn stdin_stream(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stdin
+            .take()
+            .map(|bytes| Box::new(std::io::Cursor::new(bytes)) as Box<dyn Read + Send>)
+    }
+}
+
+/// How a stand-in app answers one ask.
+#[derive(Clone, Copy)]
+enum Answers {
+    /// Refuses it before anything runs.
+    Refuses,
+    /// Starts it, reads its stdin to the end, and ends with status 1 having said nothing on
+    /// stdout: a server that took `initialize` and died.
+    DiesSilently,
+    /// Starts it, reads its stdin to the end, and echoes it on stdout.
+    Echoes,
+    /// Starts it, says something on stdout, and ends with status 1.
+    SpeaksThenDies,
+}
+
+/// A stand-in app that answers the asks made of it in turn as `answers` says, and keeps each
+/// ask it read, through the connections `connect` makes.
+#[allow(clippy::type_complexity)]
+fn a_stand_in_app(
+    answers: Vec<Answers>,
+) -> (
+    impl Fn() -> Option<std::os::unix::net::UnixStream>,
+    Arc<Mutex<Vec<Wanted>>>,
+) {
+    let asked: Arc<Mutex<Vec<Wanted>>> = Arc::default();
+    let turn = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let kept = Arc::clone(&asked);
+    let connect = move || {
+        let n = turn.fetch_add(1, Ordering::SeqCst);
+        let answer = *answers.get(n).expect("asked no more than the test answers");
+        let (chat_end, app_end) = std::os::unix::net::UnixStream::pair().ok()?;
+        let asked = Arc::clone(&kept);
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(app_end.try_clone().unwrap());
+            let mut writer = app_end;
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let mut value: Value = serde_json::from_str(&line).unwrap();
+            value.as_object_mut().unwrap().remove("token");
+            let ask: Ask = serde_json::from_value(value).unwrap();
+            asked.lock().unwrap().push(ask.secret_exec);
+            let frame = |writer: &mut std::os::unix::net::UnixStream, frame: Frame| {
+                let mut line = serde_json::to_vec(&frame).unwrap();
+                line.push(b'\n');
+                let _ = writer.write_all(&line);
+            };
+            let read_stdin = |reader: &mut std::io::BufReader<std::os::unix::net::UnixStream>| {
+                let mut got = Vec::new();
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        return got;
+                    }
+                    match serde_json::from_str::<Input>(&line) {
+                        Ok(Input::Stdin(bytes)) => got.extend(unb64(&bytes)),
+                        _ => return got,
+                    }
+                }
+            };
+            match answer {
+                Answers::Refuses => frame(
+                    &mut writer,
+                    Frame::Refused {
+                        why: "chat 7 is not one this app has open".into(),
+                        code: 1,
+                    },
+                ),
+                Answers::DiesSilently => {
+                    frame(&mut writer, Frame::Started);
+                    read_stdin(&mut reader);
+                    frame(
+                        &mut writer,
+                        Frame::Stderr(b64(b"cannot reach the cluster\n")),
+                    );
+                    frame(&mut writer, Frame::Exit(1));
+                }
+                Answers::Echoes => {
+                    frame(&mut writer, Frame::Started);
+                    let got = read_stdin(&mut reader);
+                    frame(&mut writer, Frame::Stdout(b64(&got)));
+                    frame(&mut writer, Frame::Exit(0));
+                }
+                Answers::SpeaksThenDies => {
+                    frame(&mut writer, Frame::Started);
+                    frame(&mut writer, Frame::Stdout(b64(b"{}\n")));
+                    frame(&mut writer, Frame::Exit(1));
+                }
+            }
+        });
+        Some(chat_end)
+    };
+    (connect, asked)
+}
+
+/// The harness's first message to a server, as it writes it on the server's stdin.
+const INITIALIZE: &[u8] = b"{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\"}\n";
+
+fn start_server(
+    connect: &dyn Fn() -> Option<std::os::unix::net::UnixStream>,
+    io: &mut Piped,
+) -> Option<i32> {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let req = Request {
+        vault: "team".into(),
+        env: vec!["X=TOKEN".into()],
+        ..Request::default()
+    };
+    started_server(
+        &ctx,
+        &req,
+        &["elastic-mcp".to_owned()],
+        7,
+        None,
+        "elasticsearch",
+        connect,
+        io,
+    )
+}
+
+fn piped() -> Piped {
+    Piped {
+        rec: Rec::default(),
+        stdin: Some(INITIALIZE.to_vec()),
+    }
+}
+
+/// T-3: a server whose first run ends before it speaks is started once more, and the second run
+/// reads the `initialize` the first one took. The second ask says it is the last.
+#[test]
+fn a_server_that_fails_once_then_works_is_tried_once_more_with_what_it_was_sent() {
+    let (connect, asked) = a_stand_in_app(vec![Answers::DiesSilently, Answers::Echoes]);
+    let mut io = piped();
+    let code = start_server(&connect, &mut io);
+    assert_eq!(code, Some(0), "{:?}", io.rec.said);
+    assert_eq!(
+        io.rec.out, INITIALIZE,
+        "the second run read the first message"
+    );
+    let asked = asked.lock().unwrap();
+    let tries: Vec<_> = asked.iter().map(|w| w.mcp.clone()).collect();
+    assert_eq!(
+        tries,
+        [
+            Some(mcpstart::McpStart {
+                server: "elasticsearch".into(),
+                last: false
+            }),
+            Some(mcpstart::McpStart {
+                server: "elasticsearch".into(),
+                last: true
+            }),
+        ]
+    );
+    assert!(
+        io.rec
+            .said
+            .iter()
+            .any(|said| matches!(said, Say::Info(t) if t == mcpstart::AGAIN)),
+        "the harness's log says it was tried again: {:?}",
+        io.rec.said
+    );
+}
+
+/// A run refused before anything ran is tried again too: the chat may still be starting.
+#[test]
+fn a_server_refused_once_then_run_is_tried_once_more() {
+    let (connect, asked) = a_stand_in_app(vec![Answers::Refuses, Answers::Echoes]);
+    let mut io = piped();
+    assert_eq!(start_server(&connect, &mut io), Some(0));
+    assert_eq!(io.rec.out, INITIALIZE);
+    assert_eq!(asked.lock().unwrap().len(), 2);
+}
+
+/// T-3: a second failure is given up, with the app's own words, and only twice was it asked.
+#[test]
+fn a_server_that_fails_twice_is_given_up_after_the_last_try() {
+    let (connect, asked) = a_stand_in_app(vec![Answers::DiesSilently, Answers::Refuses]);
+    let mut io = piped();
+    assert_eq!(start_server(&connect, &mut io), Some(1));
+    assert!(io.rec.out.is_empty());
+    assert_eq!(asked.lock().unwrap().len(), 2);
+    assert!(
+        matches!(io.rec.said.last(), Some(Say::Err(why)) if why.contains("not one this app has open")),
+        "{:?}",
+        io.rec.said
+    );
+}
+
+/// A server that spoke is the harness's: it is never started a second time behind its back.
+#[test]
+fn a_server_that_spoke_is_never_tried_again() {
+    let (connect, asked) = a_stand_in_app(vec![Answers::SpeaksThenDies]);
+    let mut io = piped();
+    assert_eq!(start_server(&connect, &mut io), Some(1));
+    assert_eq!(asked.lock().unwrap().len(), 1);
+}
+
+/// What tells a server's start from any other `secret exec`: purlis's mark, naming a server.
+#[test]
+fn only_a_marked_start_names_a_server() {
+    let none = |_: &str| None;
+    assert_eq!(mcpstart::server_in(&none), None);
+    let marked = |name: &str| (name == mcpstart::SERVER_ENV).then(|| "elasticsearch".to_owned());
+    assert_eq!(mcpstart::server_in(&marked), Some("elasticsearch".into()));
+    let odd = |name: &str| (name == mcpstart::SERVER_ENV).then(|| "bad name".to_owned());
+    assert_eq!(mcpstart::server_in(&odd), None);
+}
+
+/// T-3: the error the person and the chat are shown is the server's own, and a vault value it
+/// printed is masked: the run's mask, then purlis's on the text.
+#[test]
+fn a_failed_starts_error_carries_no_value_from_the_vault() {
+    let project = project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"echo "cannot log in with $X" >&2; exit 2"#),
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let (asker, want) = as_tool(asker(project.path(), Some("devops")), want);
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    let (watch, seen) = mcpstart::Watch::new(Box::new(wire.clone()));
+    serve_wrapped(&asker, want, reader, Box::new(watch), Wrap::Unwrapped);
+    let failure = seen.lock().unwrap().failure().expect("it failed");
+    assert_eq!(failure, "cannot log in with ***");
+    assert!(!failure.contains(TOKEN));
+    // What passed through is what the chat would have been sent, frame for frame.
+    let passed = String::from_utf8(wire.0.lock().unwrap().clone()).unwrap();
+    assert!(
+        passed
+            .lines()
+            .all(|l| serde_json::from_str::<Frame>(l).is_ok())
+    );
+}
+
+/// qw381, the root cause: a chat's MCP server asks for its run before the app has recorded the
+/// chat as open. The record is waited for, so the run is not refused for a start still under
+/// way; one that never comes is refused once the wait is over.
+#[test]
+fn a_chat_still_starting_is_waited_for_and_one_never_recorded_is_not() {
+    let looked = std::cell::Cell::new(0);
+    let found = once_recorded(
+        || {
+            looked.set(looked.get() + 1);
+            (looked.get() >= 3).then_some("chat 7")
+        },
+        Duration::from_secs(5),
+    );
+    assert_eq!(found, Some("chat 7"));
+    assert_eq!(looked.get(), 3);
+    let began = std::time::Instant::now();
+    assert_eq!(
+        once_recorded(|| None::<u32>, Duration::from_millis(120)),
+        None
+    );
+    assert!(began.elapsed() >= Duration::from_millis(120));
+}

@@ -98,6 +98,8 @@ macro_rules! app_commands {
                 vaultroute::allow_refused_vault,
                 vaultroute::keep_vault_blocked,
                 removalasks::keep_asked_workspace,
+                mcpfailed::mcp_failures,
+                mcpfailed::put_away_mcp_failure,
                 dispatchlimits::dispatch_limits,
                 dispatchgrants::dispatch_grants_needed,
                 dispatchgrants::allow_dispatch,
