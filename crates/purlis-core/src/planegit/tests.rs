@@ -4531,3 +4531,126 @@ fn a_saves_push_of_personal_data_or_of_nothing_secret_goes_on() {
         "{said}"
     );
 }
+
+// --------------------------------------------------------------------------------------- //
+// resolving a save's conflict from the window (qw382)                                      //
+// --------------------------------------------------------------------------------------- //
+
+/// A plane whose own commit changes `theirs.md` the other way from the remote's, so a replay
+/// of it stops on a conflict there.
+fn a_plane_that_conflicts_with_its_remote() -> (Fixture, PathBuf) {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("theirs.md"), "mine, not theirs").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    (fixture, bare)
+}
+
+fn resolve_start(fixture: &Fixture) -> resolve::Settled {
+    resolve::start(&fixture.root, &mut |_: Say| {})
+}
+
+fn resolve_continue(fixture: &Fixture, shown: &[&str]) -> resolve::Settled {
+    let shown: Vec<String> = shown.iter().map(|s| (*s).to_string()).collect();
+    resolve::carry_on(&fixture.root, &shown, &mut |_: Say| {})
+}
+
+#[test]
+fn resolve_stops_on_the_conflict_and_continue_lands_it_once_the_markers_are_gone() {
+    let (fixture, bare) = a_plane_that_conflicts_with_its_remote();
+
+    assert_eq!(
+        resolve_start(&fixture),
+        resolve::Settled::Stopped(vec!["theirs.md".into()])
+    );
+    assert_eq!(standing(&fixture.root).stopped_by, Some("rebase"));
+    assert_eq!(
+        resolve::sides(&fixture.root),
+        Some(("theirs".to_string(), "mine".to_string()))
+    );
+
+    // The markers are still there: nothing is staged, and the rebase stays stopped.
+    let refused = resolve_continue(&fixture, &["theirs.md"]);
+    assert!(
+        matches!(&refused, resolve::Settled::Refused(why) if why.contains("conflict markers")),
+        "{refused:?}"
+    );
+    assert_eq!(
+        gitstate::unmerged(&fixture.root),
+        vec!["theirs.md".to_string()]
+    );
+
+    std::fs::write(fixture.root.join("theirs.md"), "both").unwrap();
+    assert_eq!(
+        resolve_continue(&fixture, &["theirs.md"]),
+        resolve::Settled::Replayed
+    );
+    assert!(gitstate::stopped(&fixture.root).is_none());
+    assert_eq!(
+        run(&fixture.root, &["log", "--format=%s", "-2"]).trim(),
+        "mine\ntheirs"
+    );
+
+    let (code, said) = pressed_save(&fixture);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "mine",
+        "{said}"
+    );
+}
+
+#[test]
+fn continue_stages_only_files_the_replayed_commit_changes() {
+    let (fixture, _) = a_plane_that_conflicts_with_its_remote();
+    resolve_start(&fixture);
+    std::fs::write(fixture.root.join("theirs.md"), "both").unwrap();
+
+    // A file the commit being replayed does not change is never staged by the window.
+    let outside = resolve_continue(&fixture, &["theirs.md", "README.md"]);
+    assert!(
+        matches!(&outside, resolve::Settled::Refused(why) if why.contains("`README.md`")),
+        "{outside:?}"
+    );
+    // Nor is a commit continued with something else staged beside it.
+    std::fs::write(fixture.root.join("other.md"), "other").unwrap();
+    run(&fixture.root, &["add", "other.md"]);
+    let staged = resolve_continue(&fixture, &["theirs.md"]);
+    assert!(
+        matches!(&staged, resolve::Settled::Refused(why) if why.contains("`other.md`")),
+        "{staged:?}"
+    );
+    assert!(gitstate::stopped(&fixture.root).is_some(), "still stopped");
+}
+
+#[test]
+fn abort_puts_the_plane_back_where_it_was() {
+    let (fixture, _) = a_plane_that_conflicts_with_its_remote();
+    let before = ask(&fixture.root, &["rev-parse", "HEAD"]);
+    resolve_start(&fixture);
+
+    assert_eq!(resolve::abort(&fixture.root), resolve::Settled::Aborted);
+
+    assert!(gitstate::stopped(&fixture.root).is_none());
+    assert_eq!(ask(&fixture.root, &["rev-parse", "HEAD"]), before);
+    assert!(matches!(
+        resolve::abort(&fixture.root),
+        resolve::Settled::Refused(_)
+    ));
+}
+
+#[test]
+fn resolve_with_nothing_in_conflict_replays_and_forgets_the_record() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote_that_moved();
+    tracks_what_it_pushed(&fixture);
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    a_conflict_that_names_nothing(&fixture);
+
+    assert_eq!(resolve_start(&fixture), resolve::Settled::Replayed);
+    assert!(push_record(&fixture.root).is_none());
+}

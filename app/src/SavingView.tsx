@@ -39,6 +39,7 @@ import { RemoteQuestionNotice } from "./RemoteQuestion";
 import { SaveBlockedBySecret } from "./SaveBlockedBySecret";
 import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
 import { RequestMerge } from "./SavingMerge";
+import { SaveConflict } from "./SavingResolve";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -285,28 +286,12 @@ export function SavingView({
               onDismiss={() => setLeft(null)}
             />
           )}
-          {saving.stage === "blocked" && saving.byHand != null && (
-            /* A save's replay that conflicted (qw382): settled with git in the project's root,
-               which a chat may not run there, so the way out is a terminal and the commands are
-               said. Offering a chat sent the person round to Update and back. */
-            <Notice
-              cause="saving-rebase-by-hand"
-              tone="trouble"
-              link={{ label: "Open terminal here", onPress: () => askWayOut(plane, "terminal") }}
-              under={
-                saving.conflicts.length > 0 ? (
-                  <ul className="saving-files" aria-label="Where it conflicts">
-                    {saving.conflicts.map((path) => (
-                      <li key={path}>{path}</li>
-                    ))}
-                  </ul>
-                ) : undefined
-              }
-            >
-              {saving.byHand}
-            </Notice>
+          {saving.stage === "blocked" && (
+            /* A save's replay that conflicted, or the window's own replay stopped on one
+               (qw382): Resolve, Continue and Abort are the window's, and a chat only edits. */
+            <SaveConflict plane={plane} saving={saving} onSaved={onSaved} />
           )}
-          {saving.stage === "blocked" && saving.byHand == null && (
+          {saving.stage === "blocked" && saving.byHand == null && saving.stoppedBy !== "rebase" && (
             <div className="saving-question" role="group" aria-label="Ways out">
               {saving.conflicts.length > 0 && (
                 <ul className="saving-files" aria-label="Where it conflicts">

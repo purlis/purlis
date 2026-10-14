@@ -1687,6 +1687,30 @@ export const commands = {
 	 */
 	fixSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null, columns: number, rows: number) => typedError<Fixing, string>(__TAURI_INVOKE("fix_save_request", { plane, workspace, repo, columns, rows })),
 	/**
+	 *  **Resolve a save's conflict in a chat** (qw382): the project's rebase is stopped on a
+	 *  conflict the window started (`settle_save_conflict`), and a chat is started at the plane
+	 *  root on a message that names the files and the two sides, asking it to edit them and run
+	 *  no git. The window stages and continues; the chat's sandbox and A3c are as they are.
+	 * 
+	 *  Refused when no rebase is stopped on a conflict, and when a file in conflict is one a
+	 *  chat's sandbox may not write: that one is the person's to settle, in a terminal.
+	 * 
+	 *  The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
+	 */
+	resolveSaveInAChat: (plane: PlaneId, columns: number, rows: number) => typedError<Fixing, string>(__TAURI_INVOKE("resolve_save_in_a_chat", { plane, columns, rows })),
+	/**
+	 *  **Resolve a save's conflict from the window** (qw382): `step` is `start` (fetch and replay
+	 *  the project's own commits, stopping where git stops), `continue` (stage exactly the files
+	 *  in conflict, once no marker is left in them, and carry on; `files` are the ones the window
+	 *  showed), or `abort`. Where the replay finishes, the save runs at once and pushes it.
+	 * 
+	 *  The window's alone (`WINDOW_ONLY`): it moves the project's working tree under every chat in
+	 *  it, and a chat's sandbox may never run it.
+	 * 
+	 *  On a blocking thread: it fetches, and rewrites the tree.
+	 */
+	settleSaveConflict: (plane: PlaneId, step: string, files: string[]) => typedError<SaveSettled, string>(__TAURI_INVOKE("settle_save_conflict", { plane, step, files })),
+	/**
 	 *  Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
 	 *  never the network.
 	 * 
@@ -8335,6 +8359,23 @@ export type SaveMerge = {
 	 *  the merge is made only of what its question showed.
 	 */
 	shown: string,
+};
+
+/**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
+export type SaveSettled = {
+	/**
+	 *  `saved`: the replay finished and the save carried it on (`said` says how the push
+	 *  went). `stopped`: git stopped on a conflict in `files`, and the rebase is left stopped.
+	 *  `aborted`: the project is back where it was. `refused`: nothing changed, and `said`
+	 *  says why.
+	 */
+	outcome: string,
+	/**  How it ended, as sentences for the person. */
+	said: string,
+	/**  The files git stopped in, for `stopped`. */
+	files: string[],
+	/**  What it said it was doing, in order, the save's lines included. */
+	lines: string[],
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */

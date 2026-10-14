@@ -89,6 +89,66 @@ pub async fn fix_save_request(
     .map_err(|err| format!("the chat did not start: {err}"))?
 }
 
+/// **Resolve a save's conflict in a chat** (qw382): the project's rebase is stopped on a
+/// conflict the window started (`settle_save_conflict`), and a chat is started at the plane
+/// root on a message that names the files and the two sides, asking it to edit them and run
+/// no git. The window stages and continues; the chat's sandbox and A3c are as they are.
+///
+/// Refused when no rebase is stopped on a conflict, and when a file in conflict is one a
+/// chat's sandbox may not write: that one is the person's to settle, in a terminal.
+///
+/// The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
+#[tauri::command]
+#[specta::specta]
+pub async fn resolve_save_in_a_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    columns: u16,
+    rows: u16,
+) -> Result<Fixing, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || resolve_request(&held, Size { columns, rows }))
+        .await
+        .map_err(|err| format!("the chat did not start: {err}"))?
+}
+
+/// [`resolve_save_in_a_chat`], without a runtime.
+fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
+    let root = held.root().to_path_buf();
+    let standing = planegit::standing(&root);
+    if standing.stopped_by != Some("rebase") || standing.conflicts.is_empty() {
+        return Err(
+            "No replay is stopped on a conflict in this project, so there is nothing for a \
+             chat to settle."
+                .into(),
+        );
+    }
+    let held_back: Vec<&String> = standing
+        .conflicts
+        .iter()
+        .filter(|path| purlis_core::rootupdate::path_is_denied(path, &root))
+        .collect();
+    if !held_back.is_empty() {
+        return Err(format!(
+            "A chat may not write {}, so it cannot settle this conflict. Settle it in a \
+             terminal here, then Continue, or Abort.",
+            held_back
+                .iter()
+                .map(|path| format!("`{path}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let (remote, own) = planegit::resolve::sides(&root)
+        .ok_or("purlis cannot tell which commits the conflict is between")?;
+    let what = format!("conflict {}", standing.conflicts.join("\0"));
+    let files = standing.conflicts;
+    fix_with(held, &what, &root, size, || {
+        Ok(purlis_core::savefix::conflict(&files, &remote, &own))
+    })
+}
+
 /// [`fix_save_request`], without a runtime.
 fn fix_request(
     held: &Arc<Held>,
@@ -502,9 +562,36 @@ mod tests {
             "every call that starts a chat on a sent message"
         );
         // This module's own entries are called from this module, and by nothing else.
-        for (entry, calls) in [("savefix::start", 0), ("savefix::fix_request", 0)] {
+        for (entry, calls) in [
+            ("savefix::start", 0),
+            ("savefix::fix_request", 0),
+            ("savefix::resolve_request", 0),
+            ("savefix::fix_with", 0),
+        ] {
             assert_eq!(call_sites(&sources, entry).len(), calls, "{entry}");
         }
+        // The window's two presses reach it, each once, through `fix_with`: Fix on a red
+        // request, and Resolve in a chat on a save's conflict (qw382). The other two calls are
+        // this module's tests. A third press is a new amendment to the record first.
+        let reaching: Vec<String> = call_sites(&sources, "fix_with");
+        assert_eq!(
+            reaching,
+            vec!["app/src-tauri/src/savefix.rs".to_string(); 4]
+        );
+        let own = &sources
+            .iter()
+            .find(|(file, _)| file == "app/src-tauri/src/savefix.rs")
+            .expect("savefix.rs")
+            .1;
+        let shipped = own
+            .split("#[cfg(test)]\nmod tests")
+            .next()
+            .unwrap_or_default();
+        assert_eq!(
+            shipped.matches(concat!("fix_with", "(held,")).count(),
+            2,
+            "fix_request and resolve_request"
+        );
         // The reasons, as the source spells them: one.
         let curation = &sources
             .iter()
@@ -524,11 +611,17 @@ mod tests {
             .collect();
         assert_eq!(variants, ["FixASave"]);
         let SentFor::FixASave = SentFor::FixASave;
-        // And the command is the window's alone.
-        assert!(purlis_session_protocol::ui::window_only("fix_save_request"));
-        assert!(!purlis_session_protocol::ui::served_on_a_link(
-            "fix_save_request"
-        ));
+        // And the commands are the window's alone.
+        for command in ["fix_save_request", "resolve_save_in_a_chat"] {
+            assert!(
+                purlis_session_protocol::ui::window_only(command),
+                "{command}"
+            );
+            assert!(
+                !purlis_session_protocol::ui::served_on_a_link(command),
+                "{command}"
+            );
+        }
     }
 
     #[test]

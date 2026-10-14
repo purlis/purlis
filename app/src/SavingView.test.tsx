@@ -430,7 +430,7 @@ describe("SavingView", () => {
     window.addEventListener("charter-saving-way-out", listen);
     render(<SavingView plane={PLANE} />);
 
-    expect(await screen.findByText(byHand)).toBeTruthy();
+    expect(await screen.findByText(byHand, { exact: false })).toBeTruthy();
     expect(
       within(screen.getByRole("list", { name: "Where it conflicts" }))
         .getAllByRole("listitem")
@@ -459,9 +459,11 @@ describe("SavingView", () => {
     ]);
     render(<SavingView plane={PLANE} />);
 
-    const ways = await screen.findByRole("group", { name: "Ways out" });
-    expect(within(ways).queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
-    expect(within(ways).getByRole("button", { name: "Open terminal here" })).toBeTruthy();
+    // The window's own replay, stopped: Continue and Abort are its own presses.
+    expect(await screen.findByRole("button", { name: "Continue" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Ways out" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open terminal here" })).toBeTruthy();
   });
 
   it("offers a chat for a merge stopped on a conflict, which a chat may finish", async () => {

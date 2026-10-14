@@ -872,6 +872,8 @@ export const commands = {
 	mergeSaveRequest: __WINDOW_ONLY_RESULT,
 	lookAtSaveRequest: __WINDOW_ONLY_RESULT,
 	fixSaveRequest: __WINDOW_ONLY_RESULT,
+	resolveSaveInAChat: __WINDOW_ONLY_RESULT,
+	settleSaveConflict: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
 	 *  never the network.
@@ -7085,6 +7087,23 @@ export type SaveMerge = {
 	 *  the merge is made only of what its question showed.
 	 */
 	shown: string,
+};
+
+/**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
+export type SaveSettled = {
+	/**
+	 *  `saved`: the replay finished and the save carried it on (`said` says how the push
+	 *  went). `stopped`: git stopped on a conflict in `files`, and the rebase is left stopped.
+	 *  `aborted`: the project is back where it was. `refused`: nothing changed, and `said`
+	 *  says why.
+	 */
+	outcome: string,
+	/**  How it ended, as sentences for the person. */
+	said: string,
+	/**  The files git stopped in, for `stopped`. */
+	files: string[],
+	/**  What it said it was doing, in order, the save's lines included. */
+	lines: string[],
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */
