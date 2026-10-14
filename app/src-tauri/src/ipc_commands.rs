@@ -419,6 +419,9 @@ macro_rules! app_commands {
                 vaults::vault_setup_cancel,
                 // A forge token, taken from the window once (#1814, ADR 0077 §4).
                 forgeaccounts::forge_sign_in_with_token,
+                // The clipboard's text, for a Paste pressed in a terminal's menu (ADR 0052
+                // amended 2026-10-14): what is on the clipboard may be a vault's value.
+                pasteread::clipboard_text,
             ],
         }
     };

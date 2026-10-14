@@ -2842,6 +2842,12 @@ export const commands = {
 	 *  own keyring item. The account as Settings lists it, or the core's sentence saying why not.
 	 */
 	forgeSignInWithToken: (kind: string, host: string, token: ForgeToken) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_sign_in_with_token", { kind, host, token })),
+	/**
+	 *  The clipboard's text, for the window to paste into the terminal the person pressed Paste
+	 *  on ([`pasted`]). None where the clipboard holds no text. Read off the window's thread: a
+	 *  clipboard another program serves can take its time.
+	 */
+	clipboardText: () => typedError<string | null, string>(__TAURI_INVOKE("clipboard_text")),
 };
 
 /* Constants */

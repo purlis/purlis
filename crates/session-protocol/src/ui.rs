@@ -196,6 +196,10 @@ pub struct Server {
 /// project through one.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
+    // The clipboard's text, read for a Paste the person pressed in a terminal's menu
+    // (ADR 0052 amended 2026-10-14). The clipboard is the person's, and may hold a vault's
+    // value: no link reads it, so no chat, tool or hook does.
+    "clipboard_text",
     // Ends.
     "end_task",
     "task_ending",
@@ -1068,6 +1072,23 @@ mod credential_tests {
         fn call(&self, _: String, _: Value) -> BoxFuture<'_, Result<Value, Value>> {
             Box::pin(async { Ok(Value::Null) })
         }
+    }
+
+    #[test]
+    fn the_clipboards_text_is_never_among_the_methods_a_link_serves() {
+        // ADR 0052 amended 2026-10-14: a host built with the app's whole command list still
+        // refuses a link the read, so nothing that speaks over a link reads the clipboard.
+        let server = Server::new("0.0.0+test", ["rename_chat", "clipboard_text"], Nothing);
+        assert_eq!(
+            server
+                .methods
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["rename_chat"]
+        );
+        assert!(window_only("clipboard_text"));
+        assert!(!served_on_a_link("clipboard_text"));
     }
 
     #[test]

@@ -80,6 +80,22 @@ export function listedMenuOf(
 }
 
 /**
+ * **The rows of the panes' menu, for a terminal to list under its own** (`TerminalMenu.tsx`):
+ * a right-click on a terminal opens the terminal's menu, and what the panes' menu offered
+ * there before — a new tab, the splits, ending the chat — is the same catalogue rows, picked
+ * out by the ids that menu lists (`actions.menuOn`).
+ */
+export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalogued {
+  const { above, below } = menuOn({ on: "pane" });
+  return new Map(
+    [...above, ...below].flatMap((id) => {
+      const offer = offerFor(id);
+      return offer === undefined ? [] : [[id, offer] as const];
+    }),
+  );
+}
+
+/**
  * One pane's frame: what purlis has to say of its chats, in a row of its own at the top
  * (`PaneNotices`, #1647), and under it the terminal, with what charter draws over it in the
  * pane's two corners — side by side with the terminal, so neither is ever a child of the
@@ -647,6 +663,10 @@ export function LayoutPanes({
             session={content.session}
             focused={layout.pane === focused}
             onFocus={() => onFocus(layout.pane)}
+            menu={{
+              offers: paneMenuOf(offerFor),
+              onPress: (offer) => onPaneDoes(layout.pane, offer),
+            }}
           />
         )}
       </PaneFrame>
