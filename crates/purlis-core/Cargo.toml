@@ -27,7 +27,6 @@ futures = "0.3"
 # `charter news` prints the app's own CHANGELOG.md sections through the same parser the release
 # workflow and About Charter use (#352), so the three cannot disagree about a version.
 changelog.workspace = true
-alacritty_terminal = "0.26"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # `home_dir`, for the last rung of the config-home ladder `machine` shares with
 # `charter/report.py:consent_path`. Already in this workspace's lockfile — Tauri depends on
@@ -44,7 +43,10 @@ memchr = "2"
 # matches it, `*` and `?`, never a leading dot. The rust-lang crate, already in this workspace's
 # lockfile, so it adds no crate to the tree.
 glob = "0.3"
-portable-pty.workspace = true
+# A program in its own pseudo-terminal and the engine that keeps its screen (`session`,
+# `engine`), and the fork lock every program is started under (`forklock`): a crate of their
+# own, which a session host links without the rest of this one (#1995).
+purlis-terminal.workspace = true
 # ⌘P's fuzzy file names (FM-7, #1110): helix's matcher, the fzf algorithm with a bonus for
 # path boundaries, and no allocation per match. MPL-2.0, on deny.toml's allow-list as a
 # file-level copyleft used unmodified; its dependencies, memchr and unicode-segmentation, are
@@ -90,9 +92,9 @@ gix = { version = "0.88", default-features = false, features = ["sha1", "status"
 # stops past the cap. Portable where `setrlimit` is not (macOS refuses an address-space limit
 # below what a process has already mapped). MIT OR Apache-2.0.
 memory-stats = "1"
-# How many cells a character takes, measured as `alacritty_terminal` measures it: the engine
-# needs it to repair what inserting a character does (`engine/pane_rules.rs`). Already in this
-# workspace's lockfile through `alacritty_terminal`, so it adds no crate to the tree.
+# How many cells a character takes, measured as `alacritty_terminal` measures it: whether a
+# name draws anything (`doctor/fix/identity.rs`). Already in this workspace's lockfile through
+# `alacritty_terminal`, so it adds no crate to the tree.
 unicode-width = "0.2"
 # The keyed fingerprint `secret get` prints (`charter/secrets/fingerprint.py`): HMAC-SHA256 over
 # `sha2`, and 32 random bytes for the plane's key. Both already in this workspace's lockfile.
@@ -167,6 +169,8 @@ test-support = []
 # dev-dependency on itself is how a crate turns a feature on for its tests and only its
 # tests; without it the fence would be a rule every crate but this one had to keep.
 purlis-core = { path = ".", features = ["fenced", "test-support"] }
+# The fork lock held as a fork holds it, for the executor's test of what waits for one.
+purlis-terminal = { workspace = true, features = ["test-support"] }
 # The frozen fuzz subsets under `fixtures/corpora/*-generated.jsonl.gz` are read through it.
 # Test-only, and already in this workspace's lockfile (Tauri's `png` pulls it in), with the
 # same default features — so it adds no crate to the tree and no licence to review.

@@ -107,7 +107,7 @@ const STOP_GRACE: Duration = Duration::from_secs(2);
 /// has gone, so the wait ends when nothing of the group is left, and the kill that follows
 /// reaches only what would not go. The group is looked at less and less often as the wait
 /// goes on, and one that cannot be read at all is given a tenth of a second once its leader
-/// has gone ([`crate::process::UNSEEN_GRACE`]), not the whole grace.
+/// has gone ([`purlis_terminal::process::UNSEEN_GRACE`]), not the whole grace.
 ///
 /// **Never a group whose leader was reaped.** A group's id is its leader's process id, and
 /// the system may hand that id to a stranger once the leader has been waited for and nothing

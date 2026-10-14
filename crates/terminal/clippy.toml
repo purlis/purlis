@@ -1,0 +1,20 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# This crate opens pseudo-terminals, so every fork in a process that links it has to go
+# through `purlis_terminal::forklock` (charter-app#53): `portable-pty`'s `openpty` leaves both
+# descriptors without `FD_CLOEXEC` for a few syscalls, and a child forked in that window
+# inherits the terminal's slave. The same rule as `crates/purlis-core/clippy.toml`, repeated
+# because clippy reads one configuration file and never merges two. Tests are in too: this
+# crate's own test binary opens terminals and starts programs in the same process.
+disallowed-methods = [
+  { path = "std::process::Command::spawn", reason = "use purlis_terminal::forklock::spawn — charter-app#53" },
+  { path = "std::process::Command::output", reason = "use purlis_terminal::forklock::output — charter-app#53" },
+  { path = "std::process::Command::status", reason = "use purlis_terminal::forklock::status — charter-app#53" },
+]
+
+# A diagnostic goes through `tracing`, to the log `purlis_core::applog` installs (#647).
+disallowed-macros = [
+  { path = "std::eprintln", reason = "a diagnostic goes through tracing (purlis_core::applog, #647)" },
+  { path = "std::eprint", reason = "a diagnostic goes through tracing (purlis_core::applog, #647)" },
+]

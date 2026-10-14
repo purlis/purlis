@@ -1,0 +1,50 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-terminal"
+description = "A program in its own pseudo-terminal and the headless engine that keeps its screen, with nothing of git, HTTP or the keyring"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Nothing of git, HTTP or the keyring, and not purlis-core, which holds all three (#1995):
+# `tests/the_terminal_links_no_git_http_or_keyring_code.rs` reads cargo's resolution and fails
+# on one.
+[dependencies]
+# The engine: a terminal emulator with no renderer.
+alacritty_terminal = "0.26"
+# The same searcher vte uses to find these sequences in the same bytes.
+memchr = "2"
+# How many cells a character takes, measured as `alacritty_terminal` measures it: the engine
+# needs it to repair what inserting a character does (`engine/pane_rules.rs`).
+unicode-width = "0.2"
+portable-pty.workspace = true
+thiserror.workspace = true
+
+[target."cfg(unix)".dependencies]
+# A session's program group: whether it still runs, and ending it (`waitid`, `killpg`).
+rustix = { version = "1", features = ["process"] }
+# `ICANON`, to read whether the terminal's line discipline is in canonical mode
+# (`Session::edits_lines`). Already in this workspace's lockfile.
+libc = "0.2"
+
+[features]
+# `forklock::held_as_a_fork_holds_it`, for a test of another crate that asks what waits for a
+# fork. Only tests turn it on.
+test-support = []
+
+[dev-dependencies]
+proptest = "1"
+# The guard on this crate's own dependency tree reads `cargo metadata`.
+serde_json.workspace = true
+# A test that writes a program and then runs it goes through this and nothing else
+# (charter-app#81).
+stand-in.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
