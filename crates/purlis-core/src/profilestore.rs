@@ -719,10 +719,8 @@ fn conversations(record: &Record, folder: &Path) -> Option<Vec<String>> {
     };
     let (base, rest) = if let Some(rest) = file.strip_prefix("{config}/") {
         (record.config.clone(), rest)
-    } else if let Some(rest) = file.strip_prefix("{data}/") {
-        (record.data.clone()?, rest)
     } else {
-        return None;
+        (record.data.clone()?, file.strip_prefix("{data}/")?)
     };
     let parts: Vec<&str> = rest.split('/').collect();
     let mut found = Vec::new();

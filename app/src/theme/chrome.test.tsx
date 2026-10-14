@@ -53,6 +53,7 @@ import { Extensions } from "../Extensions";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
+import { RemoveProfile } from "../settings/profiles";
 import { LinkWorkItem } from "../LinkWorkItem";
 import { LiveDialog } from "../LiveDialog";
 import { NewBranch } from "../NewBranch";
@@ -752,6 +753,24 @@ const DIALOGS: Opened[] = [
     name: "the forge token sign-in",
     file: "ForgeTokenSignIn.tsx",
     open: async () => render(<ForgeTokenSignIn onSignedIn={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "removing a profile",
+    file: "settings/profiles.tsx",
+    open: async () =>
+      render(
+        <RemoveProfile
+          removal={{
+            name: "work",
+            adopted: false,
+            folder: "/data/profiles/work",
+            conversations: ["config/projects/-a/one.jsonl"],
+            says: "Removing the profile 'work' deletes its folder, with its one conversation.",
+          }}
+          onRemove={nothing}
+          onCancel={nothing}
+        />,
+      ),
   },
   {
     name: "linking a work item",

@@ -616,6 +616,11 @@ export const commands = {
 	forgeDeviceSignInCancel: __WINDOW_ONLY,
 	forgePkceSignIn: __WINDOW_ONLY_RESULT,
 	forgePkceSignInCancel: __WINDOW_ONLY,
+	machineProfiles: __WINDOW_ONLY_RESULT,
+	machineProfileCreate: __WINDOW_ONLY_RESULT,
+	machineProfileImport: __WINDOW_ONLY_RESULT,
+	machineProfileRemoval: __WINDOW_ONLY_RESULT,
+	machineProfileRemove: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -4823,6 +4828,47 @@ export type LocalModelRow = {
 	base_url: string,
 	/**  The harness that can use it with no account (`opencode`). */
 	harness: string,
+};
+
+/**  A profile made or imported into, and what its import did. */
+export type MachineProfileImported = {
+	profile: MachineProfileRow,
+	/**  The settings copied, as paths under the folder they were read from. */
+	copied: string[],
+	/**  What was left out, each with why. */
+	skipped: string[],
+};
+
+/**
+ *  What removing a profile takes away, as the window asks about it. Sent back as it was shown,
+ *  so the core removes only that.
+ */
+export type MachineProfileRemoval = {
+	name: string,
+	/**  Adopted: only the record goes, and the folder stays. */
+	adopted: boolean,
+	folder: string,
+	/**  The conversations that go, as paths under the folder; null where they cannot be listed. */
+	conversations: string[] | null,
+	/**  The confirmation's sentence, the core's. */
+	says: string,
+};
+
+/**  One of this machine's profiles, as Settings lists it. */
+export type MachineProfileRow = {
+	name: string,
+	/**  The harness, as a profile's kind names it: `claude`, `codex` or `opencode`. */
+	kind: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+	/**  `made` (its folder is purlis's) or `adopted` (the harness's own folder). */
+	origin: string,
+	/**  The folder its harness is pointed at. */
+	folder: string,
+	/**  When its settings were imported, in seconds since the epoch, for a made profile. */
+	imported_at: number | null,
+	/**  The folder they were imported from. */
+	imported_from: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

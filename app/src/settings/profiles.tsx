@@ -176,7 +176,7 @@ function EntryButton({
   return (
     <button
       type="button"
-      className="ui-setting-reset"
+      className="ui-setting-reset ui-button"
       tabIndex={0}
       aria-label={spoken}
       disabled={disabled}
@@ -262,7 +262,7 @@ const list: LiveSetting = {
  * the removal last at the trailing edge (D-1210-8). An adopted profile's question says its
  * folder stays.
  */
-function RemoveProfile({
+export function RemoveProfile({
   removal,
   onRemove,
   onCancel,
