@@ -46,7 +46,12 @@ fn prompt_as(dir: &std::path::Path, payload: &serde_json::Value, env: &[(&str, &
 }
 
 fn asking(prompt: &str) -> serde_json::Value {
-    serde_json::json!({"session_id": "s-1", "prompt": prompt, "permission_mode": "default"})
+    in_session(prompt, "s-1")
+}
+
+/// `prompt` as harness session `session` hands it.
+fn in_session(prompt: &str, session: &str) -> serde_json::Value {
+    serde_json::json!({"session_id": session, "prompt": prompt, "permission_mode": "default"})
 }
 
 fn context_of(stdout: &str) -> String {
@@ -62,6 +67,9 @@ fn context_of(stdout: &str) -> String {
 }
 
 const FORKED: &str = "refactor the importer so it is maybe cleaner across every repo";
+
+/// Forked work that does not open with its ask: read on a session's first prompt only.
+const OPENS_WITH_MAYBE: &str = "maybe refactor the importer so it is cleaner across every repo";
 
 /// A design answer in a grill, as the ruling quotes it, that reads as forked work by the
 /// fork signals alone: an action, a fork, and a symptom word.
@@ -125,13 +133,10 @@ fn the_quiet_is_counted_in_prompts_of_any_kind() {
 }
 
 #[test]
-fn a_chats_first_prompt_is_read_for_a_fork_whatever_it_opens_with() {
+fn a_sessions_first_prompt_is_read_for_a_fork_whatever_it_opens_with() {
     let plane = a_plane();
 
-    let context = context_of(&prompt_in(
-        plane.path(),
-        &asking("maybe refactor the importer so it is cleaner across every repo"),
-    ));
+    let context = context_of(&prompt_in(plane.path(), &asking(OPENS_WITH_MAYBE)));
 
     assert!(context.contains("Commitment point"), "{context}");
 }
@@ -139,6 +144,16 @@ fn a_chats_first_prompt_is_read_for_a_fork_whatever_it_opens_with() {
 #[test]
 fn a_design_answer_on_a_later_turn_says_nothing() {
     let plane = a_plane();
+    // The same words open a fresh session with the gate's advice, so the silence below is the
+    // later-turn rule and nothing else.
+    assert!(
+        !prompt_in(plane.path(), &in_session(DESIGN_ANSWER, "fresh")).is_empty(),
+        "a first prompt"
+    );
+    assert!(
+        !prompt_in(plane.path(), &in_session(OPENS_WITH_MAYBE, "fresh-2")).is_empty(),
+        "a first prompt"
+    );
     assert_eq!(
         prompt_in(plane.path(), &asking("let us grill the importer")),
         ""
@@ -146,6 +161,7 @@ fn a_design_answer_on_a_later_turn_says_nothing() {
 
     for answer in [
         DESIGN_ANSWER,
+        OPENS_WITH_MAYBE,
         "agree at all",
         "yes",
         "the second option, maybe across repos",
@@ -176,15 +192,12 @@ fn a_later_prompt_that_asks_for_a_code_change_is_told() {
 }
 
 #[test]
-fn each_chat_has_its_own_first_prompt() {
+fn each_session_has_its_own_first_prompt() {
     let plane = a_plane();
     assert_eq!(prompt_in(plane.path(), &asking("hello")), "");
 
-    let mut other = asking(DESIGN_ANSWER);
-    other["session_id"] = "s-2".into();
-
     assert!(
-        !prompt_in(plane.path(), &other).is_empty(),
+        !prompt_in(plane.path(), &in_session(DESIGN_ANSWER, "s-2")).is_empty(),
         "s-2's first prompt"
     );
     assert_eq!(
@@ -192,6 +205,30 @@ fn each_chat_has_its_own_first_prompt() {
         "",
         "s-1's second"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_session_whose_record_cannot_be_written_is_past_its_first_prompt() {
+    use std::os::unix::fs::PermissionsExt;
+    let plane = a_plane();
+    let gate = plane.path().join(".charter").join("commit-gate");
+    std::fs::create_dir_all(&gate).expect("the gate's folder");
+    std::fs::set_permissions(&gate, std::fs::Permissions::from_mode(0o500)).expect("read-only");
+    if std::fs::write(gate.join("probe"), b"").is_ok() {
+        // Run as a user the mode does not bind (root in a container): nothing to show here.
+        std::fs::set_permissions(&gate, std::fs::Permissions::from_mode(0o700)).unwrap();
+        return;
+    }
+
+    let design = prompt_in(plane.path(), &asking(DESIGN_ANSWER));
+    let ask = prompt_in(plane.path(), &asking(FORKED));
+    std::fs::set_permissions(&gate, std::fs::Permissions::from_mode(0o700)).expect("writable");
+
+    // DESIGN_ANSWER is told as a first prompt where the record can be kept (above).
+    assert_eq!(design, "", "read as a later prompt");
+    let context = context_of(&ask);
+    assert!(context.contains("Commitment point"), "{context}");
 }
 
 #[test]

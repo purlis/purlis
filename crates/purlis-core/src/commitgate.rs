@@ -22,10 +22,11 @@
 //! - **Only on a chat's first prompt, or a later one that asks for a code change** (#1988).
 //!   A later prompt counts only when it opens with the ask itself ([`asks_for_a_code_change`]):
 //!   a short reply, an answer to a question and a design answer ("agree at all, but …") are
-//!   none of them a commitment point, whatever words follow. The first prompt is known from
-//!   the gate's own record of the chat, `<state>/commit-gate/<session>`: a session with no
-//!   record has not prompted yet. Every harness that runs `userpromptsubmit` hands the hook its
-//!   session id, so the rule is the same in each.
+//!   none of them a commitment point, whatever words follow. "First" is the first prompt of a
+//!   harness session, known from the gate's own record of that session,
+//!   `<state>/commit-gate/<session>`: a session with no record has not prompted yet. Every
+//!   harness that runs `userpromptsubmit` hands the hook its session id, so the rule is the same
+//!   in each. A record the gate cannot write makes the prompt a later one, never a first.
 //! - **Once, then quiet for [`COOLDOWN`] prompts**, so the answers to its own question do not
 //!   set it off again.
 //!
@@ -134,7 +135,7 @@ static PASTED: LazyLock<Regex> = LazyLock::new(|| {
 /// question is not a commitment.
 pub fn signals(prompt: &str) -> Vec<&'static str> {
     let p = prompt.trim();
-    if p.is_empty() || p.starts_with('/') || LOOKUP.is_match(p) || !ACTION.is_match(p) {
+    if p.is_empty() || a_command_or_a_question(p) || !ACTION.is_match(p) {
         return Vec::new();
     }
     let mut found = Vec::new();
@@ -153,14 +154,19 @@ pub fn signals(prompt: &str) -> Vec<&'static str> {
     found
 }
 
-/// Whether a prompt after a chat's first asks for a code change (#1988): it is not a slash
+/// A slash command, whose method the operator has already picked, or a lookup: never a
+/// commitment point.
+fn a_command_or_a_question(p: &str) -> bool {
+    p.starts_with('/') || LOOKUP.is_match(p)
+}
+
+/// Whether a prompt after a session's first asks for a code change (#1988): it is not a slash
 /// command, a question or a short reply, and it opens with the ask, after at most a lead-in
 /// ("please", "ok, now", "can you"). Anything else, an answer to a question or a design answer
 /// above all, is not: the test errs toward staying quiet.
 pub fn asks_for_a_code_change(prompt: &str) -> bool {
     let p = prompt.trim();
-    if p.starts_with('/') || LOOKUP.is_match(p) || p.split_whitespace().count() < SHORT_REPLY_WORDS
-    {
+    if a_command_or_a_question(p) || p.split_whitespace().count() < SHORT_REPLY_WORDS {
         return false;
     }
     let lead = LEAD_IN.find(p).map_or(0, |m| m.end());
@@ -201,7 +207,7 @@ pub fn message(prompt: &str) -> Option<String> {
 }
 
 /// The gate as `userpromptsubmit` runs it: [`message`], in a plane, attended, out of its
-/// cooldown, and on the chat's first prompt or a later one that [asks for a code
+/// cooldown, and on the session's first prompt or a later one that [asks for a code
 /// change](asks_for_a_code_change).
 pub fn nudge(hook: &Hook) -> Option<String> {
     if !hook.in_plane {
@@ -213,9 +219,9 @@ pub fn nudge(hook: &Hook) -> Option<String> {
     }
     let session = payload.get("session_id").and_then(|v| v.as_str());
     let record = Record::of(hook, hookstate::session(session, hook.env));
-    // A chat purlis cannot name has no first prompt it can know of: each of its prompts is
+    // A session purlis cannot name has no first prompt it can know of: each of its prompts is
     // read as a later one, which errs toward quiet.
-    let first = record.as_ref().is_some_and(Record::first);
+    let first = record.as_ref().is_some_and(Record::first_prompt);
     // Every attended prompt moves the cooldown, whether or not it would fire: the answers to
     // the gate's own question are what the quiet is for, and they rarely look like a fork.
     if record.as_ref().is_some_and(Record::counting_down) {
@@ -227,19 +233,15 @@ pub fn nudge(hook: &Hook) -> Option<String> {
     } else {
         None
     };
-    if let Some(record) = record {
-        if said.is_some() {
-            record.start();
-        } else if first {
-            record.seen();
-        }
+    if let (Some(record), Some(_)) = (&record, &said) {
+        record.start();
     }
     said
 }
 
-/// One session's record, under `<state>/commit-gate/<session>`: the count of prompts left to
-/// stay quiet for, and, by being there at all, that the session has prompted before. A session
-/// purlis cannot name has none, and a count it cannot keep reads as zero: the gate may cost a
+/// One harness session's record, under `<state>/commit-gate/<session>`: the count of prompts
+/// left to stay quiet for, and, by being there at all, that the session has prompted before. A
+/// session purlis cannot name has none, and a count it cannot keep reads as zero: the gate may cost a
 /// prompt, never a turn.
 struct Record {
     state: State,
@@ -255,15 +257,17 @@ impl Record {
         Some(Self { state, file })
     }
 
-    /// Whether this is the session's first prompt: it has no record yet. A record that is
-    /// there but cannot be read is a session that has prompted before.
-    fn first(&self) -> bool {
-        matches!(self.state.read(&self.file), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
-    }
-
-    /// The session has prompted, and the gate did not fire: nothing to stay quiet for.
-    fn seen(&self) {
-        let _ = self.state.replace(&self.file, b"0");
+    /// Whether this is the session's first prompt, recording that it has prompted: it had no
+    /// record, and one, `0`, is written now. A record that is there but cannot be read, or one
+    /// that cannot be written, makes this a later prompt: the gate errs toward quiet, so a
+    /// session whose record cannot be kept is never read as on its first prompt again and
+    /// again.
+    fn first_prompt(&self) -> bool {
+        let none = matches!(
+            self.state.read(&self.file),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound
+        );
+        none && self.state.replace(&self.file, b"0").is_ok()
     }
 
     /// Whether the gate is still quiet — and if it is, one prompt fewer to wait.
@@ -319,7 +323,7 @@ mod tests {
         assert_eq!(signals(&long), vec!["a long, many-part ask"]);
     }
 
-    /// One row per behaviour of the later-prompt test (#1988): what a chat's later prompt must
+    /// One row per behaviour of the later-prompt test (#1988): what a session's later prompt must
     /// say to be read as an ask for a code change. It errs toward "no".
     #[test]
     fn a_later_prompt_counts_only_when_it_asks_for_a_code_change() {
@@ -361,6 +365,16 @@ mod tests {
             ("can you implement the importer across every repo", true),
             ("let's build the importer so it streams rows", true),
             ("Fix the importer crash, maybe it's the cache", true),
+            // Acknowledgement-led asks and asks under five words stay quiet by design.
+            ("thanks, now add a cache in front of the importer", false),
+            (
+                "I'd like you to refactor the importer across every repo",
+                false,
+            ),
+            ("add caching everywhere", false),
+            // Pinned as it is today, not as it should be: an imperative answer to a question
+            // the agent asked reads as a new ask. The follow-up is #2070.
+            ("Add a retry, maybe with backoff, across every repo", true),
         ] {
             assert_eq!(asks_for_a_code_change(prompt), asks, "{prompt}");
         }
