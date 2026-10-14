@@ -548,6 +548,21 @@ export const commands = {
 	endTaskThatDidNotStart: __WINDOW_ONLY_RESULT,
 	startChatFresh: __WINDOW_ONLY_RESULT,
 	askChatRestart: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What restarting chat `session` would end now** (#1986, ruling Q63), for the Ask that
+	 *  restarts it to say beforehand: each program its commands started that listens on a TCP port,
+	 *  and how many others they started are running ([`purlis_core::restartends`]). `None` where
+	 *  purlis cannot tell: the chat runs no program here, or the process table or its listening
+	 *  sockets could not be read. Read from the operating system, never from what the chat printed.
+	 * 
+	 *  Off the window's thread: it runs `ps` and `lsof`.
+	 */
+	whatARestartEnds: (plane: PlaneId, session: number) => typedError<{
+	/**  Each program below the chat listening on a TCP port, by port. */
+	listening: ListeningProgram[],
+	/**  How many other programs its commands started are running. */
+	others: number,
+} | null, string>(__TAURI_INVOKE("what_a_restart_ends", { plane, session })),
 	restartChat: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The chats this project has open that run under a sandbox other than the one the
@@ -4790,6 +4805,13 @@ export type ListedRepo = {
 	project: boolean,
 };
 
+/**  One program listening on one port. */
+export type ListeningProgram = {
+	/**  Its program's name, without its folder. */
+	program: string,
+	port: number,
+};
+
 /**  What switching a workspace would do, for the confirmation that asks first. */
 export type LivePreview = {
 	/**  Whether it is LIVE now. */
@@ -6771,6 +6793,14 @@ export type RepoStates = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**  [`purlis_core::restartends::Ends`], as the window reads it. */
+export type RestartEnds = {
+	/**  Each program below the chat listening on a TCP port, by port. */
+	listening: ListeningProgram[],
+	/**  How many other programs its commands started are running. */
+	others: number,
 };
 
 /**

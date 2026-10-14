@@ -172,6 +172,7 @@ macro_rules! app_commands {
                 end_task_that_did_not_start,
                 start_chat_fresh,
                 ask_chat_restart,
+                what_a_restart_ends,
                 restart_chat,
                 chats_on_older_sandbox,
                 restart_chat_without_sandbox,

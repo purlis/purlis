@@ -1929,6 +1929,18 @@ impl Chats {
         owed
     }
 
+    /// **Chat `session`'s program ended** before the pause its restart waited for (#1986): it is
+    /// restarted by nothing, and owed nothing. What was allowed reaches it at its next start.
+    /// Not while a restart of it is under way: that one ends this program itself, and carries
+    /// what it owes to the new run ([`Self::restarted`]).
+    pub fn its_program_ended(&self, session: u32) {
+        // Read on its own: a lock is never taken while another of these is held.
+        let restarting = lock(&self.restarting).contains(&session);
+        if !restarting {
+            lock(&self.owed).remove(&session);
+        }
+    }
+
     /// Starts a chat, and remembers what it was started as.
     ///
     /// For a chat that is NOT on a profile — the operator's shell — where what runs is
@@ -4494,6 +4506,26 @@ fn what_its_hooks_read(
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    /// #1986: a chat whose program ended before its next pause is restarted by nothing: what
+    /// it was owed goes, unless a restart of it is under way, which carries what it owes.
+    #[test]
+    fn a_chat_whose_program_ended_is_owed_no_restart() {
+        let chats = Chats::new();
+        lock(&chats.owed).insert(3, vec!["allowed".to_owned()]);
+        lock(&chats.owed).insert(4, vec!["allowed".to_owned()]);
+        chats.its_program_ended(3);
+        assert_eq!(chats.owed_restarts(), [4]);
+
+        chats.claim(4).expect("claimed");
+        chats.its_program_ended(4);
+        assert_eq!(
+            chats.owed_restarts(),
+            [4],
+            "the restart under way takes what it owes"
+        );
+        chats.unclaim(4);
+    }
 
     /// #1353: past the hosts it names, a wrapped chat's proxy tells the count under the chat's
     /// number, as it grows, once the chat has one and only to a listener there is.

@@ -1090,6 +1090,21 @@ export const commands = {
 	 */
 	askChatRestart: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("ask_chat_restart", { plane, session })),
 	/**
+	 *  **What restarting chat `session` would end now** (#1986, ruling Q63), for the Ask that
+	 *  restarts it to say beforehand: each program its commands started that listens on a TCP port,
+	 *  and how many others they started are running ([`purlis_core::restartends`]). `None` where
+	 *  purlis cannot tell: the chat runs no program here, or the process table or its listening
+	 *  sockets could not be read. Read from the operating system, never from what the chat printed.
+	 * 
+	 *  Off the window's thread: it runs `ps` and `lsof`.
+	 */
+	whatARestartEnds: (plane: PlaneId, session: number) => typedError<{
+	/**  Each program below the chat listening on a TCP port, by port. */
+	listening: ListeningProgram[],
+	/**  How many other programs its commands started are running. */
+	others: number,
+} | null, string>(__TAURI_INVOKE("what_a_restart_ends", { plane, session })),
+	/**
 	 *  **Restarts chat `session`**: the same chat on its conversation, started again with the
 	 *  project's sandbox as it is compiled now and what the chat was granted, and told, as its
 	 *  first message, what was allowed where something was (#1342). The one restart: a sandbox
@@ -6063,6 +6078,13 @@ export type ListedRepo = {
 	project: boolean,
 };
 
+/**  One program listening on one port. */
+export type ListeningProgram = {
+	/**  Its program's name, without its folder. */
+	program: string,
+	port: number,
+};
+
 /**  What switching a workspace would do, for the confirmation that asks first. */
 export type LivePreview = {
 	/**  Whether it is LIVE now. */
@@ -8044,6 +8066,14 @@ export type RepoStates = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**  [`purlis_core::restartends::Ends`], as the window reads it. */
+export type RestartEnds = {
+	/**  Each program below the chat listening on a TCP port, by port. */
+	listening: ListeningProgram[],
+	/**  How many other programs its commands started are running. */
+	others: number,
 };
 
 /**
