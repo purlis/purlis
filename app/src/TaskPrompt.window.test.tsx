@@ -556,4 +556,52 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
 
     await waitFor(() => expect(promptNotice(5)).not.toBeNull());
   });
+
+  it("a dismissed permission keeps the stopped line hidden once the hold ends, for that wait", async () => {
+    const { said, move } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await move(5, "running", 1);
+    await asks(said, [prompt(5, "Run purlis persona where")]);
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    // purlis's hold ends; the harness's own prompt decides in the task's pane: the same wait.
+    await move(5, "waiting", 2, [5], { asking: true });
+    await asks(said, []);
+    expect(promptNotice(5)).toBeNull();
+
+    // Answered, it goes on; its next stop is a new wait and shows.
+    await move(5, "running", 3);
+    await move(5, "waiting", 4, [5], { asking: true });
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
+  });
+
+  it("a new wait shows even where the pane was away while the old one ended", async () => {
+    const { move } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await move(5, "waiting", 1, [5], { asking: true });
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    // Another session's tab: steward 1's pane is not drawn while the wait ends and a new one
+    // begins.
+    fireEvent.click(tab("steward 2"));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
+    await move(5, "running", 2);
+    await move(5, "waiting", 3, [5], { asking: true });
+
+    fireEvent.click(tab("steward 1"));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
+  });
 });

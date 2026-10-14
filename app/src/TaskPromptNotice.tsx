@@ -1,10 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useContext, useEffect } from "react";
+import { useContext, useLayoutEffect, useRef } from "react";
 import type { Shown } from "./bindings";
-import { useChatsHere, useChatsSelect, waitsOnItsPrompt } from "./chatState";
-import { hideForNow, showForNowAgain, useHiddenForNow } from "./dismissals";
+import { movedAt, useChatsHere, useChatsSelect, waitsOnItsPrompt } from "./chatState";
+import { hideForNow, useHiddenForNow } from "./dismissals";
 import { Notice, NoticeOf } from "./Notice";
 
 /**
@@ -29,9 +29,12 @@ import { Notice, NoticeOf } from "./Notice";
  *   tool of its own began after the prompt and one came back), the turn that asked ended, its
  *   next prompt, or the chat ended.
  * - **Dismiss puts it away for this wait** (qw386): hidden in memory for this run, never
- *   answered, so the needs-you list and the tab's hand still say the chat waits. A new prompt
- *   of the chat (a new ask) shows again; the line for a chat stopped on its harness's own
- *   prompt, which has no ask of its own, shows again at the chat's next wait.
+ *   answered, so the needs-you list and the tab's hand still say the chat waits. Each line is
+ *   keyed by what it is about: a held prompt by its ask, and the line of a chat stopped on its
+ *   harness's own prompt by the moment the core says the chat last moved, so a new prompt or
+ *   a new wait is a new line and shows, whether or not this pane was drawn while the old one
+ *   ended. A prompt put away while purlis held it keeps the stopped line of the same wait away
+ *   once the hold ends, where this pane saw it end; where it did not, the line shows.
  */
 /** What Dismiss does here, as its tooltip: it hides, and answers nothing. */
 const DISMISS_SAYS =
@@ -57,7 +60,9 @@ export function TaskPromptNotice({
   registry?: readonly Shown[];
 }) {
   const of = useContext(NoticeOf);
-  const waitsOnIt = useChatsSelect(useChatsHere(), (states) => waitsOnItsPrompt(states, session));
+  const chats = useChatsHere();
+  const waitsOnIt = useChatsSelect(chats, (states) => waitsOnItsPrompt(states, session));
+  const moved = useChatsSelect(chats, (states) => movedAt(states, session));
   const stopped =
     registry === undefined
       ? waitsOnIt
@@ -68,19 +73,28 @@ export function TaskPromptNotice({
   const first = held[0];
   const waiting = first !== undefined || stopped;
   const each = `task-permission:${session}:`;
-  const asked = `${each}asked`;
+  const asked = `${each}asked:${moved}`;
   const cause = first === undefined ? asked : `${each}${first.ask}`;
+  /** Where a held prompt was put away: the moment the chat had last moved then. The stopped
+   *  line of the first move after it is the same wait's. Kept with this pane alone, so a pane
+   *  drawn again later never takes a later wait for it. */
+  const carried = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (carried.current === null) return;
+    if (!waiting) carried.current = null;
+    else if (first === undefined && moved !== carried.current) {
+      hideForNow(plane, asked);
+      carried.current = null;
+    }
+  }, [waiting, first, moved, plane, asked]);
   const hidden = useHiddenForNow(plane, cause);
-  // The wait is over: what was put away for it is let go, so the next wait shows.
-  useEffect(() => {
-    if (!waiting) showForNowAgain(plane, each);
-  }, [waiting, plane, each]);
   if (of === null || !waiting || hidden) return null;
   // Put away for this wait: its prompt, and the line that stands for the wait once purlis's
   // hold of the prompt ends.
   const onDismiss = () => {
     hideForNow(plane, cause);
     hideForNow(plane, asked);
+    if (first !== undefined) carried.current = moved;
   };
   // Which chat it is comes from the core's lineage (`NoticeOf.task`), never from its name.
   const fixes = [
