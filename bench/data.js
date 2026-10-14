@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791984231607,
+  "lastUpdate": 1791988905739,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10920,6 +10920,48 @@ window.BENCHMARK_DATA = {
             "value": 103.581657,
             "unit": "ms",
             "extra": "median of 5 runs: 101.542, 103.516, 103.582, 103.966, 105.055 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "01ab033d5f33693fc01aa014597b7ed7d0eb3c74",
+          "message": "review(qw390): the deny job prints all of cargo-deny's output, pass or fail\n\nThe annotations stay at ten (GitHub keeps ten error annotations a step);\nthe notice for the rest now points at the log, which has every finding\nand warning.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T18:40:18+04:00",
+          "tree_id": "8a19c036891e4bcf2e5bb25cd0291b567ff1ffc3",
+          "url": "https://github.com/purlis/purlis/commit/01ab033d5f33693fc01aa014597b7ed7d0eb3c74"
+        },
+        "date": 1791988905030,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.541696,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.528, 0.538, 0.542, 0.550, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0213675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.420, 17.014, 17.021, 17.392, 17.544 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.72968,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.434, 103.841, 104.730, 105.113, 106.632 ms"
           }
         ]
       }
