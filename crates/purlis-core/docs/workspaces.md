@@ -351,8 +351,10 @@ HEAD` cuts from whatever the clone is on, as git's own `worktree add` does. The 
 recorded as the piece's base: what a merge lands it into and what its Changes count against.
 Before the cut, the base is brought up to its remote-tracking branch where that is a
 fast-forward and no worktree has it checked out, as `git fetch <remote> <branch>:<branch>`
-would; where it cannot be, it is used as the clone has it and the command says why. `add`
-fetches nothing: `update` does.
+would. Where the base is checked out (the clone is on it, most often) and behind, it is left
+where it is and the piece is cut from, or rebased onto, the remote-tracking branch instead;
+the command says so, and until the clone is brought up (`purlis sync`) the piece's Changes
+count the remote's newer commits too. `add` fetches nothing: `update` does.
 
 **Keeping a piece current, and publishing it.** A sandboxed chat may not write a piece's git
 directory, so its own `git fetch`, `git rebase` and `git reset` fail there. From inside the

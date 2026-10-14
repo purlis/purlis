@@ -1479,7 +1479,8 @@ same core code a terminal runs:
 1. **`purlis worktree update [--base <branch>] [--continue | --abort]`** fetches the base's
    remote under the chat's internet access, brings the base branch up to its remote-tracking
    branch where that is a fast-forward and no worktree has it checked out, and rebases the
-   folder onto it. A folder with uncommitted changes is refused. A move that would write a file
+   folder onto it; onto the remote-tracking branch itself where the base is checked out and
+   behind it. A folder with uncommitted changes is refused. A move that would write a file
    section 5 denies the chat is judged by the clone guard's own rules and does not start,
    naming the file. A conflict stops it and names the files; `--continue` stages exactly
    those, refusing one that still holds a conflict marker, a submodule and a file marked for a

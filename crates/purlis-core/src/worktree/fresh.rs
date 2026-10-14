@@ -11,8 +11,9 @@
 //! remote-tracking branch it follows (its upstream, or `origin`'s of the same name), **as
 //! `git fetch <remote> <branch>:<branch>` would**: only a fast-forward, and only where no
 //! worktree has the branch checked out, since moving a checked-out branch would leave that
-//! tree's files behind its commit. Where it cannot be moved it is used as the clone has it, and
-//! the note says why and what brings it up.
+//! tree's files behind its commit. Where it is checked out and behind, the remote-tracking
+//! branch is used in its place ([`Fresh::instead`]); where it has moved on from its remote, it
+//! is used as the clone has it. The note says which, and what brings the clone up.
 //!
 //! Every git call goes through the hardened runner, under whatever isolation the caller holds.
 
