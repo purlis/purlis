@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791946139632,
+  "lastUpdate": 1791947300785,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10500,6 +10500,48 @@ window.BENCHMARK_DATA = {
             "value": 101.332551,
             "unit": "ms",
             "extra": "median of 5 runs: 101.155, 101.174, 101.333, 101.666, 101.991 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "14a4e8dabf956a25788d5a3babeab83b9b1cd38d",
+          "message": "fix(app): a pane's gauge is read after a switch is painted, and an overlay has one name\n\nTwo things left by the review of the pull request that kept a project's view\nbehind another.\n\nA chat's gauge was read at once as its project came back. Its command is one\nthe core answers on the window's own thread, and every pane of the tab in front\nhas a gauge, so that was one such command per pane ahead of the paint: the cost\nthat grows with a window, on the path that is meant to wait on nothing. It is\nread once the project has been painted, as every other read made again is. The\ncost test's budgets are drawn in to just above what a switch does now, and a\nnew case holds the commands sent before the paint to the same number with one,\ntwenty and forty panes in the tab in front.\n\nRadix exports each part twice, `Content` and `DialogContent`. The window's\noverlay files handed the package on whole, so the long name was the same part\nwith nothing asked of it. They hand on the parts by their short names alone,\nand the guard fails for a part that draws handed on as it is under any name.\n\nThe test of the scrolled places being let go as they pile up, which the review\nnoted missing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T07:07:12+04:00",
+          "tree_id": "d86424612700612b624d36180e71d1f6809d12cd",
+          "url": "https://github.com/purlis/purlis/commit/14a4e8dabf956a25788d5a3babeab83b9b1cd38d"
+        },
+        "date": 1791947300023,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.478609,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.454, 0.466, 0.479, 0.480, 0.482 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2299975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.122, 16.150, 16.230, 16.391, 16.587 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.34237949999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.034, 101.289, 101.342, 102.010, 102.373 ms"
           }
         ]
       }
