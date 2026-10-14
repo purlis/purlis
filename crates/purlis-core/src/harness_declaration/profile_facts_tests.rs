@@ -68,11 +68,11 @@ fn each_built_in_says_whether_its_credentials_can_be_kept_from_its_commands() {
     );
     assert_eq!(
         of(Harness::Codex).sign_in.kept_from_commands,
-        Answer::No("purlis wraps Codex and the commands it runs in one sandbox".to_owned())
+        Answer::No("Codex and the commands it runs are wrapped in one sandbox".to_owned())
     );
     assert_eq!(
         of(Harness::Opencode).sign_in.kept_from_commands,
-        Answer::No("purlis wraps opencode and the commands it runs in one sandbox".to_owned())
+        Answer::No("opencode and the commands it runs are wrapped in one sandbox".to_owned())
     );
 }
 
@@ -304,7 +304,7 @@ tested = "0.150.0"
 
 [harnesses.codex.sign_in]
 kinds = ["subscription", "api-key", "cloud", "local"]
-kept_from_commands = "no: purlis wraps Codex and the commands it runs in one sandbox"
+kept_from_commands = "no: Codex and the commands it runs are wrapped in one sandbox"
 "#;
     let dir = project(&[]);
     let read = read_with(dir.path(), Ok(Some(restated.to_owned())));

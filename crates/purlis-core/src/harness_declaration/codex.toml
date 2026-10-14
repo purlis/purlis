@@ -32,7 +32,7 @@ hooks = true
 [sign_in]
 # A ChatGPT plan through `codex login`; an OpenAI key; Azure; a local model with `--oss`.
 kinds = ["subscription", "api-key", "cloud", "local"]
-kept_from_commands = "no: purlis wraps Codex and the commands it runs in one sandbox"
+kept_from_commands = "no: Codex and the commands it runs are wrapped in one sandbox"
 
 [folders]
 # `CODEX_HOME`: its settings, its sign-in and its sessions.

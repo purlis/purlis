@@ -4169,7 +4169,7 @@ fn harness_listing(
         declared
             .get(&p.kind)
             .and_then(purlis_core::harness_declaration::Declaration::profile_sign_in)
-            .map_or("unknown", purlis_core::harness_declaration::SignIn::word)
+            .map_or("unknown", |kind| kind.word())
             .to_owned()
     };
     let heads: Vec<&str> = match declared {
