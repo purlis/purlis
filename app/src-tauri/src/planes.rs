@@ -220,6 +220,10 @@ pub struct Held {
     tell: Teller,
     chats: Chats,
     records: Arc<Records>,
+    /// The project's reopen record on its way to disk (#1949): written behind the window where
+    /// the registry says so ([`Planes::recording_behind_the_window`]), and every write of it
+    /// goes through here, so none lands after a newer one.
+    recorded: Arc<WrittenBehind<reopen::Record>>,
     /// What tells the window the plane moved on disk (charter-app#264). None where the
     /// platform would not watch; the panels then read the plane when focused, as they did.
     watch: Mutex<Option<crate::planewatch::Watch>>,
@@ -725,7 +729,7 @@ impl Held {
         let record = match record {
             Ok(record) if choice == Choice::StartFresh => {
                 let fresh = record.chosen(Choice::StartFresh);
-                self.records.write(&fresh);
+                self.recorded.write_now(fresh.clone());
                 tracing::info!(
                     "purlis: plane {}, started fresh as asked; nothing is reopened",
                     self.root.display()
@@ -1327,8 +1331,9 @@ impl Held {
                 .unwrap_or_else(PoisonError::into_inner)
                 .take(),
         );
+        // The last record, after any written behind the window, and the writer ends with it.
         self.chats.write_last(|record| {
-            self.records.write(&reopen::Record {
+            self.recorded.write_last(reopen::Record {
                 relaunch_after_update: to_update,
                 ..record.clone()
             });
@@ -1528,38 +1533,56 @@ impl MachineStore {
     }
 }
 
-/// **The window's tabs, written to this machine's store behind the window** (#1949): one writer,
-/// which always writes the newest arrangement it was handed, so a switch hands its tabs over
-/// and goes on drawing, and an older arrangement never lands after a newer one.
-#[derive(Default)]
-pub(crate) struct ArrangedBehind {
-    slot: Mutex<Arranging>,
+/// **A file written behind the window** (#1949): one writer, which always writes the newest
+/// value it was handed, so a command hands its change over and the window goes on drawing, and
+/// an older value never lands after a newer one. The window's tabs in this machine's store
+/// (`window_holds_planes`, at every switch) and a project's reopen record (each tab moved) are
+/// written this way.
+pub(crate) struct WrittenBehind<T> {
+    slot: Mutex<Behind<T>>,
     moved: Condvar,
+    write: Box<dyn Fn(T) + Send + Sync>,
 }
 
-/// What the writer has to do: the newest arrangement not yet written, and whether a write is
-/// under way or the writer has started.
-#[derive(Default)]
-struct Arranging {
-    newest: Option<(PathBuf, Vec<machine::Window>)>,
+/// What the writer has to do: the newest value not yet written, whether a write is under way,
+/// whether the writer has started, and whether it is done for good.
+struct Behind<T> {
+    newest: Option<T>,
     writing: bool,
     started: bool,
+    done: bool,
 }
 
-impl ArrangedBehind {
-    fn slot(&self) -> MutexGuard<'_, Arranging> {
+impl<T: Send + 'static> WrittenBehind<T> {
+    /// A writer that writes each value with `write`.
+    pub(crate) fn new(write: impl Fn(T) + Send + Sync + 'static) -> Arc<Self> {
+        Arc::new(Self {
+            slot: Mutex::new(Behind {
+                newest: None,
+                writing: false,
+                started: false,
+                done: false,
+            }),
+            moved: Condvar::new(),
+            write: Box::new(write),
+        })
+    }
+
+    fn slot(&self) -> MutexGuard<'_, Behind<T>> {
         self.slot.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Hands `windows` over to be written into the store under `config`, in place of any
-    /// arrangement still waiting.
-    fn hand(self: &Arc<Self>, config: PathBuf, windows: Vec<machine::Window>) {
+    /// Hands `value` over to be written, in place of any value still waiting.
+    pub(crate) fn hand(self: &Arc<Self>, value: T) {
         let mut slot = self.slot();
-        slot.newest = Some((config, windows));
+        if slot.done {
+            return;
+        }
+        slot.newest = Some(value);
         if !slot.started {
             let writer = Arc::clone(self);
             slot.started = std::thread::Builder::new()
-                .name("purlis-arrangement".to_owned())
+                .name("purlis-written-behind".to_owned())
                 .spawn(move || writer.write_each())
                 .is_ok();
         }
@@ -1572,15 +1595,18 @@ impl ArrangedBehind {
         }
     }
 
-    /// The writer: each newest arrangement, as it comes.
+    /// The writer: each newest value, as it comes, until the last one is written.
     fn write_each(&self) {
         loop {
-            let (config, windows) = {
+            let value = {
                 let mut slot = self.slot();
                 loop {
                     if let Some(newest) = slot.newest.take() {
                         slot.writing = true;
                         break newest;
+                    }
+                    if slot.done {
+                        return;
                     }
                     slot = self
                         .moved
@@ -1588,14 +1614,14 @@ impl ArrangedBehind {
                         .unwrap_or_else(PoisonError::into_inner);
                 }
             };
-            write_arrangement(&config, windows);
+            (self.write)(value);
             self.slot().writing = false;
             self.moved.notify_all();
         }
     }
 
     /// Writes what is waiting now and answers once it is on disk, after any write under way.
-    fn flush(&self) {
+    pub(crate) fn flush(&self) {
         let mut slot = self.slot();
         while slot.writing {
             slot = self
@@ -1604,11 +1630,45 @@ impl ArrangedBehind {
                 .unwrap_or_else(PoisonError::into_inner);
         }
         // Under the lock, so the writer takes nothing older after it.
-        if let Some((config, windows)) = slot.newest.take() {
-            write_arrangement(&config, windows);
+        if let Some(value) = slot.newest.take() {
+            (self.write)(value);
         }
     }
+
+    /// Writes `value` now, in place of whatever is waiting, after any write under way, and
+    /// answers once it is on disk: nothing handed over before it lands after it.
+    pub(crate) fn write_now(&self, value: T) {
+        let mut slot = self.slot();
+        while slot.writing {
+            slot = self
+                .moved
+                .wait(slot)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        slot.newest = None;
+        (self.write)(value);
+    }
+
+    /// [`Self::write_now`], as the last value: the writer ends, and nothing handed over after it
+    /// is written.
+    pub(crate) fn write_last(&self, value: T) {
+        let mut slot = self.slot();
+        while slot.writing {
+            slot = self
+                .moved
+                .wait(slot)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        slot.newest = None;
+        slot.done = true;
+        (self.write)(value);
+        drop(slot);
+        self.moved.notify_all();
+    }
 }
+
+/// The window's tabs on their way to this machine's store: the config home and the windows.
+pub(crate) type ArrangedBehind = WrittenBehind<(PathBuf, Vec<machine::Window>)>;
 
 /// Writes `windows` into the store under `config`. Never worth refusing anything over: an
 /// arrangement that could not be filed costs the next launch its tabs.
@@ -1629,11 +1689,13 @@ pub(crate) struct Closing {
     held: Arc<Held>,
     released: Released,
     closed: Closed,
+    /// The project's turn, let go of last, when everything above is done.
+    _turn: OpenTurn,
 }
 
 impl Closing {
     /// Lets go of the plane: its record is written, its chats ended, its hook socket released,
-    /// and every window drawing it told.
+    /// and every window drawing it told. Only then may it be opened again.
     pub(crate) fn finish(self) {
         self.held.let_go(false);
         (self.released)(&self.held.root);
@@ -1653,6 +1715,10 @@ pub struct Planes {
     /// once its record is registered ([`Self::restoring_behind_the_window`]). The app's own
     /// registry does; one a test makes starts them in turn, so what it asks next is settled.
     restores_behind: bool,
+    /// Whether a project's reopen record is written behind the window
+    /// ([`Self::recording_behind_the_window`]). The app's own registry does; one a test makes
+    /// writes it as each change is made, so what it reads next is on disk.
+    records_behind: bool,
     open: Mutex<HashMap<PlaneId, Arc<Held>>>,
     /// Told when a handoff has opened a chat in any plane (charter-app#204).
     arrivals: crate::handoff::Arrivals,
@@ -1703,34 +1769,84 @@ pub struct Planes {
     /// Collects a plane's month-old per-session files as it opens (SC-7):
     /// [`purlis_core::retention::on_open`], or a test's stand-in.
     sweep: Sweep,
-    /// The projects an open is between its sweep and holding them (#1027), so a second open of
-    /// one waits for the first: see [`Planes::opening`].
-    opening: Mutex<HashSet<PlaneId>>,
-    /// Told each time an open of a project ends, for an open of the same one waiting on it.
-    opened: Condvar,
+    /// The projects an open is between its sweep and holding them (#1027), or a close between
+    /// taking them out and having let go of them (#1949), so an open of one waits for it: see
+    /// [`Planes::opening`].
+    turns: Arc<Turns>,
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
 }
 
-/// One open of a project, from before its sweep until it holds the project or finds it held
+/// The projects an open or a close is under way for, one at a time each ([`OpenTurn`]).
+#[derive(Default)]
+struct Turns {
+    ids: Mutex<HashSet<PlaneId>>,
+    /// Told each time a turn ends, for one of the same project waiting on it.
+    moved: Condvar,
+}
+
+impl Turns {
+    /// The turn at project `id`, once nothing else holds it.
+    fn take(self: &Arc<Self>, id: &PlaneId) -> OpenTurn {
+        let mut ids = self.ids.lock().unwrap_or_else(PoisonError::into_inner);
+        while ids.contains(id) {
+            ids = self.moved.wait(ids).unwrap_or_else(PoisonError::into_inner);
+        }
+        ids.insert(id.clone());
+        OpenTurn {
+            turns: Arc::clone(self),
+            id: id.clone(),
+        }
+    }
+
+    /// Whether nothing holds the turn at `id` within `within`, waiting for it until then.
+    fn free_within(&self, id: &PlaneId, within: std::time::Duration) -> bool {
+        let until = std::time::Instant::now() + within;
+        let mut ids = self.ids.lock().unwrap_or_else(PoisonError::into_inner);
+        while ids.contains(id) {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            ids = self
+                .moved
+                .wait_timeout(ids, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        true
+    }
+}
+
+/// One open of a project, from before its sweep until it holds the project or finds it held,
+/// or one close, from taking it out of the registry until it has let go of it
 /// ([`Planes::opening`]). Dropped, it lets the next open of that project go on.
-struct OpenTurn<'a> {
-    planes: &'a Planes,
+struct OpenTurn {
+    turns: Arc<Turns>,
     id: PlaneId,
 }
 
-impl Drop for OpenTurn<'_> {
+impl Drop for OpenTurn {
     fn drop(&mut self) {
-        let mut opening = self
-            .planes
-            .opening
+        let mut ids = self
+            .turns
+            .ids
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        opening.remove(&self.id);
-        self.planes.opened.notify_all();
+        ids.remove(&self.id);
+        self.turns.moved.notify_all();
     }
 }
+
+/// How long an open the window asks for waits for a close of the same project still letting go
+/// of it, before it says so instead (#1949).
+const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// What an open says when a close of the same project has not let go of it within
+/// [`CLOSE_WAIT`].
+const STILL_CLOSING: &str =
+    "purlis is still letting go of this project, ending its chats. Open it again in a moment.";
 
 /// What collects a plane's month-old per-session files as [`Planes::open`] opens it.
 type Sweep = Arc<dyn Fn(&Path) + Send + Sync>;
@@ -1810,6 +1926,7 @@ impl Planes {
             kill_switch: crate::killswitch::KillSwitch::kept_in(config.clone()),
             config,
             restores_behind: false,
+            records_behind: false,
             open: Mutex::new(HashMap::new()),
             // Nobody to tell yet. A registry with no window still opens a handed-off chat;
             // it simply has no strip to put it on until one asks what is open.
@@ -1822,7 +1939,7 @@ impl Planes {
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
             blocks: Arc::new(|_| {}),
-            arranged: Arc::default(),
+            arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
@@ -1835,8 +1952,7 @@ impl Planes {
             sweep: Arc::new(|root| {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
             }),
-            opening: Mutex::new(HashSet::new()),
-            opened: Condvar::new(),
+            turns: Arc::default(),
             network: None,
         }
     }
@@ -1846,6 +1962,15 @@ impl Planes {
     /// their own, each told to the window as it does.
     pub fn restoring_behind_the_window(mut self) -> Self {
         self.restores_behind = true;
+        self
+    }
+
+    /// Writes each project's reopen record behind the window (#1949): a tab moved, focused,
+    /// pinned or renamed changes the record at once, in order, and hands the write to one
+    /// writer per project, which writes the newest. A close and the quit write the last one
+    /// themselves, after it.
+    pub fn recording_behind_the_window(mut self) -> Self {
+        self.records_behind = true;
         self
     }
 
@@ -2670,6 +2795,8 @@ impl Planes {
     /// read what it would contribute.
     pub fn open_if_approved(&self, root: &Path) -> Result<Opening, String> {
         let root = plane_at(root)?;
+        // A close of it still letting go of it is waited for, a while (#1949).
+        self.not_closing(&root)?;
         // **A plane this process is already holding is answered, not asked about.** "Open it"
         // then means "show me that project", which is what a recents row and a second launch
         // both mean when they name a plane already on screen. Asking again would put a dialog
@@ -2748,6 +2875,7 @@ impl Planes {
         between: impl FnOnce(),
     ) -> Result<PlaneId, String> {
         let root = plane_at(root)?;
+        self.not_closing(&root)?;
         let reading = machine::Contribution::read(&root);
         if &reading.contributes != shown {
             return Err(format!(
@@ -2870,7 +2998,7 @@ impl Planes {
     /// `Unsupported` is silent, because it is Windows having no store at all (ADR 0031) rather
     /// than a fault.
     ///
-    /// Written by the one writer [`ArrangedBehind`] keeps, as every arrangement is, and waited
+    /// Written by the one writer [`WrittenBehind`] keeps, as every arrangement is, and waited
     /// for here: what this answers after is on disk.
     pub fn remember_arrangement(&self, windows: &[Holding]) {
         if self.remember_arrangement_behind(windows) {
@@ -2914,7 +3042,7 @@ impl Planes {
                 })
                 .collect()
         };
-        self.arranged.hand(config.to_path_buf(), arranged);
+        self.arranged.hand((config.to_path_buf(), arranged));
         true
     }
 
@@ -3010,13 +3138,19 @@ impl Planes {
             allowed: AtomicBool::new(false),
             clone_seat: reopen::CloneSeat::of(&root, device.clone()),
         });
-        let writes = Arc::clone(&records);
+        let recorded = WrittenBehind::new({
+            let records = Arc::clone(&records);
+            move |record: reopen::Record| records.write(&record)
+        });
+        let recorder: Box<dyn Fn(&reopen::Record) + Send + Sync> = if self.records_behind {
+            let recorded = Arc::clone(&recorded);
+            Box::new(move |record| recorded.hand(record.clone()))
+        } else {
+            let records = Arc::clone(&records);
+            Box::new(move |record| records.write(record))
+        };
         // The project every chat started here is of, sandbox and all (#1410).
-        let mut chats = Chats::on_host(
-            Box::new(move |record| writes.write(record)),
-            (self.hosting)(reporting),
-            root.clone(),
-        );
+        let mut chats = Chats::on_host(recorder, (self.hosting)(reporting), root.clone());
         chats.arming_with(self.shipped.clone());
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
@@ -3226,6 +3360,7 @@ impl Planes {
             tell: Arc::clone(&self.tell),
             chats,
             records,
+            recorded,
             watch: Mutex::new(watch),
             model,
             autosave: Mutex::new(Some(autosave)),
@@ -3266,7 +3401,13 @@ impl Planes {
     /// [`Self::close`] in two halves (#1949): the plane is taken out of the registry now, so
     /// nothing asks it again, and the [`Closing`] answered lets go of it, which writes its
     /// record and ends its chats, wherever that may take its time.
+    ///
+    /// **The close holds the project's turn until it has let go of it** (#1949): an open of the
+    /// same project waits for the close, so it never binds the socket, nor starts the chats,
+    /// of a project whose old chats are still ending, and the windows are told it closed before
+    /// it can be open again.
     pub(crate) fn closing(&self, plane: &PlaneId) -> Result<Closing, String> {
+        let turn = self.turns.take(plane);
         let held = self
             .map()
             .remove(plane)
@@ -3276,6 +3417,7 @@ impl Planes {
             held,
             released: Arc::clone(&self.released),
             closed: Arc::clone(&self.closed),
+            _turn: turn,
         })
     }
 
@@ -3412,18 +3554,19 @@ impl Planes {
     /// still the best answer there is, and refusing to draw anything at all would be worse.
     /// This open's turn at project `id` (#1027): it waits while another open of the same project
     /// is between its sweep and holding it, and an open of any other project waits for nothing.
-    fn opening(&self, id: &PlaneId) -> OpenTurn<'_> {
-        let mut opening = self.opening.lock().unwrap_or_else(PoisonError::into_inner);
-        while opening.contains(id) {
-            opening = self
-                .opened
-                .wait(opening)
-                .unwrap_or_else(PoisonError::into_inner);
-        }
-        opening.insert(id.clone());
-        OpenTurn {
-            planes: self,
-            id: id.clone(),
+    fn opening(&self, id: &PlaneId) -> OpenTurn {
+        self.turns.take(id)
+    }
+
+    /// Refuses, with why, an open of `root` while a close of it is still letting go of it after
+    /// [`CLOSE_WAIT`] (#1949); waits for it until then. An open of a project being closed would
+    /// otherwise bind its socket and start its chats while the close still ends the old ones.
+    fn not_closing(&self, root: &Path) -> Result<(), String> {
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        if self.turns.free_within(&PlaneId::of(&root), CLOSE_WAIT) {
+            Ok(())
+        } else {
+            Err(STILL_CLOSING.to_owned())
         }
     }
 
@@ -4902,6 +5045,64 @@ mod tests {
     }
 
     #[test]
+    fn a_project_opened_again_while_its_close_lets_go_of_it_waits_for_the_close() {
+        // #1949: a close takes the project out, then lets go of it off the window's thread,
+        // which ends its chats and can take seconds. An open of the same project in that time
+        // waits for it: one project held at the end, a new one, and the windows told it closed
+        // before it was open again.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("one"));
+        let said: Arc<Mutex<Vec<String>>> = Arc::default();
+        let planes = planes().telling_closed({
+            let said = Arc::clone(&said);
+            Arc::new(move |_: &PlaneId| said.lock().unwrap().push("closed".to_owned()))
+        });
+        let id = planes.open(&root);
+        let before = planes.held(&id).expect("held");
+
+        let closing = planes.closing(&id).expect("it closes");
+        std::thread::scope(|scope| {
+            let again = scope.spawn(|| {
+                let reopened = planes.open(&root);
+                said.lock().unwrap().push("opened".to_owned());
+                reopened
+            });
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            assert!(
+                !again.is_finished(),
+                "opened while the close still let go of it"
+            );
+            assert!(planes.open_now().is_empty());
+            closing.finish();
+            assert_eq!(again.join().expect("it opens"), id);
+        });
+
+        assert_eq!(planes.open_now(), std::slice::from_ref(&id));
+        let after = planes.held(&id).expect("held again");
+        assert!(
+            !Arc::ptr_eq(&before, &after),
+            "the old project is still the one held"
+        );
+        assert_eq!(*said.lock().unwrap(), ["closed", "opened"]);
+    }
+
+    #[test]
+    fn an_open_the_window_asks_for_says_so_when_a_close_does_not_let_go_in_time() {
+        // #1949: the wait is bounded, and the open says why rather than hanging.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("one"));
+        let planes = planes();
+        let id = planes.open(&root);
+        let _closing = planes.closing(&id).expect("it closes");
+        let canon = root.canonicalize().expect("it resolves");
+        assert!(
+            !planes
+                .turns
+                .free_within(&PlaneId::of(&canon), std::time::Duration::from_millis(50))
+        );
+    }
+
+    #[test]
     fn a_plane_that_is_not_open_tells_no_window_it_closed() {
         let dir = tempfile::tempdir().expect("a directory");
         let told: Arc<Mutex<Vec<PlaneId>>> = Arc::default();
@@ -6282,6 +6483,43 @@ mod tests {
                 planes: vec![two.canonicalize().expect("two resolves")],
                 active: 0,
             }]
+        );
+    }
+
+    #[test]
+    fn a_value_written_behind_answers_at_once_and_the_newest_lands_last() {
+        // #1949: the hand-over returns while a write is under way, values handed meanwhile give
+        // way to the newest, and the last value written by hand lands after all of them.
+        let (go, gate) = std::sync::mpsc::channel::<()>();
+        let gate = Mutex::new(gate);
+        let landed: Arc<Mutex<Vec<u32>>> = Arc::default();
+        let behind = WrittenBehind::new({
+            let landed = Arc::clone(&landed);
+            move |value: u32| {
+                if value == 1 {
+                    gate.lock().unwrap().recv().expect("let go");
+                }
+                landed.lock().unwrap().push(value);
+            }
+        });
+        behind.hand(1);
+        // The first is being written and held there; these answer at once all the same.
+        while landed.lock().unwrap().is_empty() && !behind.slot().writing {
+            std::thread::yield_now();
+        }
+        behind.hand(2);
+        behind.hand(3);
+        go.send(()).expect("let go");
+        behind.write_last(4);
+        behind.hand(5);
+        behind.flush();
+        let landed = landed.lock().unwrap().clone();
+        assert_eq!(landed.first(), Some(&1));
+        assert_eq!(landed.last(), Some(&4));
+        assert!(!landed.contains(&2), "an older value landed: {landed:?}");
+        assert!(
+            !landed.contains(&5),
+            "a value after the last landed: {landed:?}"
         );
     }
 
@@ -9410,6 +9648,72 @@ mod tests {
             .cloned()
             .expect("the window was told");
         assert_eq!(last.state, "failed");
+    }
+
+    #[test]
+    fn a_tab_moved_writes_its_record_behind_the_window_and_the_close_writes_the_last() {
+        // #1949: a chat's tab pinned, moved or brought to the front changes the project's
+        // record, a synced file and a vouch in this machine's store. With the store held by
+        // another writer, the change still answers at once; the close writes the last record
+        // after it, and that is what is on disk.
+        let dir = tempfile::tempdir().expect("a directory");
+        let config = dir.path().join("config");
+        let root = a_plane(&dir.path().join("plane"));
+        let host = Pretend::default();
+        let planes = {
+            let host = host.clone();
+            Planes::telling(
+                Arc::new(|_: Moved| {}),
+                crate::Shipped::default(),
+                Some(config.clone()),
+            )
+            .running_sessions_on(Arc::new(move |_| Box::new(host.clone())))
+            .recording_behind_the_window()
+        };
+        let plane = planes.open(&root);
+        let held = planes.held(&plane).expect("it is held");
+        held.reopen(STARTING, reopen::read_or_refusal(&root), Choice::ReopenAll);
+        let session = held
+            .chats()
+            .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+            .expect("the host starts it");
+        held.recorded.flush();
+
+        // Another writer holds this machine's store, as another purlis may.
+        let (holding, held_now) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let other = std::thread::spawn({
+            let config = config.clone();
+            move || {
+                machine::update(&config, |_| {
+                    holding.send(()).expect("told");
+                    released.recv().expect("let go");
+                })
+                .expect("the store is written");
+            }
+        });
+        held_now.recv().expect("the store is held");
+
+        let pinning = std::thread::spawn({
+            let held = Arc::clone(&held);
+            move || held.chats().pin(session, true)
+        });
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !pinning.is_finished() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let answered = pinning.is_finished();
+        release.send(()).expect("let go");
+        other.join().expect("the other writer ends");
+        pinning.join().expect("pinned").expect("it pins");
+        assert!(answered, "the pin waited for the store's write");
+
+        planes.close(&plane).expect("it closes");
+        let on_disk = reopen::read_or_refusal(&root).expect("the record reads");
+        assert!(
+            on_disk.chats.iter().any(|chat| chat.pinned),
+            "the last record is not the one on disk: {on_disk:?}"
+        );
     }
 
     // --- a chat's sub-agents end with its run (#1084) ------------------------------------ //

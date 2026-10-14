@@ -6,6 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
+import { keepTheirOrder } from "./commandOrder";
+
+// As the window runs: the lanes that keep a read and a change in order (#1949), whose reads
+// must not queue behind each other on a switch.
+keepTheirOrder();
 
 /**
  * **A switch between two projects the person is working in builds nothing** (`projectShown.tsx`).

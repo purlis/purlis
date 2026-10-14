@@ -133,6 +133,10 @@ async function installCli(): Promise<Ran> {
     : { ok: false, refused: answer.error };
 }
 
+/** What the window says while an open waits for its own close of the same project (#1949). */
+const STILL_CLOSING =
+  "Waiting for purlis to finish letting go of this project before it opens again…";
+
 /**
  * The window, which holds projects.
  *
@@ -202,6 +206,8 @@ function App() {
   /** Why the last attempt to open a project opened nothing. Shown on the opener, which is
    *  where the operator is standing when it happens. */
   const [openTrouble, setOpenTrouble] = useState<string>();
+  /** The projects this window asked the core to let go of, until it has (#1949). */
+  const closingNow = useRef(new Map<string, Promise<unknown>>());
   /** What a window-level action answered, when it had something to say. */
   const [report, setReport] = useState<Said>();
   /** Whether the palette is up, so what an action answered is said in one place rather than
@@ -510,6 +516,14 @@ function App() {
   const openInto = useCallback(
     async (path: string, andShow: boolean, into = true): Promise<PlaneId | undefined> => {
       setOpenTrouble(undefined);
+      // A project this window is still letting go of opens once that is done (#1949): the
+      // core would make it wait anyway, and the window says why in the meantime.
+      const closing = closingNow.current.get(path);
+      if (closing !== undefined) {
+        setOpenTrouble(STILL_CLOSING);
+        await closing;
+        setOpenTrouble((said) => (said === STILL_CLOSING ? undefined : said));
+      }
       const answer = await commands
         .openPlane(path)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -632,6 +646,10 @@ function App() {
       const asked = commands
         .closePlane(plane)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      closingNow.current.set(plane, asked);
+      void asked.finally(() => {
+        if (closingNow.current.get(plane) === asked) closingNow.current.delete(plane);
+      });
       takeOut(plane);
       const answer = await asked;
       if (answer.status === "error") return { ok: false, refused: answer.error };

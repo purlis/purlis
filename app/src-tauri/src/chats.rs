@@ -2062,6 +2062,11 @@ impl Chats {
         operator_shell: bool,
         why: Why,
     ) -> Result<u32, String> {
+        // A project being let go of starts nothing more (#1949): its close may be running on
+        // another thread than this start.
+        if self.ending.load(Ordering::SeqCst) {
+            return Err(LETTING_GO.to_owned());
+        }
         // Said before anything runs, and until the chat is listed as open below: a discard of
         // its folder in the meantime is refused, and a folder that is going is no place to
         // start one (#1472).
@@ -2393,6 +2398,12 @@ impl Chats {
             },
         );
         self.write_it_down();
+        // A close that began while this started, past the check above, has ended every chat
+        // it found: this one is ended as well, so nothing runs in a project nobody holds.
+        if self.ending.load(Ordering::SeqCst) {
+            let _ = self.close(session);
+            return Err(LETTING_GO.to_owned());
+        }
         Ok(session)
     }
 
@@ -4073,6 +4084,10 @@ impl Default for Chats {
         Self::new()
     }
 }
+
+/// What a start in a project being let go of is refused with (#1949).
+pub(crate) const LETTING_GO: &str =
+    "purlis is letting go of this project, so no chat starts in it now.";
 
 /// A slot held for a persona chat while it starts ([`Chats::reserve`]). Dropping it lets the
 /// slot go.
@@ -10527,3 +10542,7 @@ pub(crate) mod tests {
 #[cfg(test)]
 #[path = "chats_restoring_tests.rs"]
 mod restoring_tests;
+
+#[cfg(test)]
+#[path = "chats_letting_go_tests.rs"]
+mod letting_go_tests;
