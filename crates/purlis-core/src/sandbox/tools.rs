@@ -22,10 +22,10 @@
 //! under `values`, each with its variable, key and hand-over, all from the tool's one vault:
 //!
 //! ```toml
-//! [sandbox.personas.logs]
-//! tools = { curl = { vault = "elastic", values = {
-//!     KIBANA_USER = { key = "kibana-username", as = "env" },
-//!     KIBANA_PASS = { key = "kibana-password", as = "file" } } } }
+//! [sandbox.personas.cloud]
+//! tools = { aws = { vault = "cloud", values = {
+//!     AWS_ACCESS_KEY_ID = { key = "aws-access-key-id", as = "env" },
+//!     AWS_SECRET_ACCESS_KEY = { key = "aws-secret-access-key", as = "env" } } } }
 //! ```
 //!
 //! A tool takes one form or the other: `key` and `as`, or `values` ([`MOST_VALUES`] at most,
@@ -199,8 +199,8 @@ impl Tool {
     /// shares an Allow. A program's tool handed one value keeps its spelling: its key is the only
     /// free text in it, and what follows the key is a vault's and a variable's name, which hold
     /// no space. One handed several names every value on its one line, each key quoted for the
-    /// same reason (T-1): `curl with "kibana-password" as KIBANA_PASS file and
-    /// "kibana-username" as KIBANA_USER env from vault elastic`.
+    /// same reason (T-1): `aws with "aws-access-key-id" as AWS_ACCESS_KEY_ID env and
+    /// "aws-secret-access-key" as AWS_SECRET_ACCESS_KEY env from vault cloud`.
     pub fn whole(&self) -> String {
         if let Some(login) = &self.login {
             let user = self

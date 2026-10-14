@@ -1246,9 +1246,10 @@ Ruled by the operator. This extends the 2026-10-11 and 2026-10-12 paragraphs of 
 persona's tools (D-PE-ruling-1, D-PE-ruling-2, D-PE-browser-1).
 
 - **A tool may be handed several values from its one vault**, named under `values`, each with
-  its variable, key and hand-over: `curl = { vault = "elastic-logs-master", values = {
-  KIBANA_USER = { key = "kibana-username", as = "env" }, KIBANA_PASS = { key =
-  "kibana-password", as = "file" } } }`. The one-value form (`as` and `key`) stays, unchanged in
+  its variable, key and hand-over: `aws = { vault = "cloud", values = { AWS_ACCESS_KEY_ID = {
+  key = "aws-access-key-id", as = "env" }, AWS_SECRET_ACCESS_KEY = { key =
+  "aws-secret-access-key", as = "env" } } }`. The program reads each value from its variable or
+  file itself; purlis adds nothing to its arguments. The one-value form (`as` and `key`) stays, unchanged in
   meaning and in its Allow; a tool written both ways is refused with a sentence. A `values`
   table of one is that same tool.
 - **Each variable is held to the one-value form's rules** (a variable's name, none of the names
@@ -1268,6 +1269,6 @@ persona's tools (D-PE-ruling-1, D-PE-ruling-2, D-PE-browser-1).
   vault, every one of its values and nothing else, each variable paired with its key and handed
   the way it is declared, in any order, and no `--dotenv`. Anything else is refused with a
   sentence naming the declared line and the command that runs it. No refusal names a value.
-- Values never reach the model: a `file` hand-over keeps the one-value rules (0600, removed when
-  the run ends), and output is masked for every value. Policy's `persona-tools` still forbids
+- purlis logs no value and no refusal names one; a `file` hand-over keeps the one-value rules
+  (0600, removed when the run ends), and output is masked for every value. Policy's `persona-tools` still forbids
   every tool, and tools stay local to this machine's chats (T-2).
