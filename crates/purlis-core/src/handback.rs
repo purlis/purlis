@@ -273,7 +273,15 @@ pub fn last_message_summary(last: Option<&str>) -> String {
     let Some(last) = last.map(str::trim).filter(|last| !last.is_empty()) else {
         return NOTHING_SAID.to_owned();
     };
-    let drawable: String = last
+    // Masked as written first, whole: a value that spans lines or holds white space is found
+    // only in the text as it was. Then line by line, then made drawable.
+    let whole = crate::secrets::mcpstart::masked(last);
+    let masked: Vec<String> = whole
+        .split('\n')
+        .map(crate::secrets::mcpstart::masked)
+        .collect();
+    let drawable: String = masked
+        .join("\n")
         .chars()
         .map(|c| match c {
             '\n' => '\n',
@@ -282,11 +290,7 @@ pub fn last_message_summary(last: Option<&str>) -> String {
             c => c,
         })
         .collect();
-    let masked: Vec<String> = drawable
-        .split('\n')
-        .map(crate::secrets::mcpstart::masked)
-        .collect();
-    let mut text = masked.join("\n").trim().to_owned();
+    let mut text = drawable.trim().to_owned();
     if text.len() > crate::handoff::MOST_REPORT_BYTES {
         let mut end = crate::handoff::MOST_REPORT_BYTES - CUT.len();
         while !text.is_char_boundary(end) {
@@ -1922,6 +1926,10 @@ mod tests {
             said.starts_with("Logged in.\n") && said.ends_with("\nAll good."),
             "{said}"
         );
+        // A vault value that spans lines is masked whole, before anything is changed.
+        crate::secrets::seen::remember("first half 4kq\n\tsecond half 4kq");
+        let said = last_message_summary(Some("It printed:\nfirst half 4kq\n\tsecond half 4kq\nok"));
+        assert!(!said.contains("half 4kq"), "{said}");
         // Cut on a character to the report's bound, and marked.
         let long = last_message_summary(Some(&"é".repeat(crate::handoff::MOST_REPORT_BYTES)));
         assert!(
