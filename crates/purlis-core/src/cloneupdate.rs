@@ -1580,50 +1580,55 @@ pub fn refusal_with(
     refusal_of(&line, cwd, &root, chat_dir, asks)
 }
 
-/// The options a move may carry and still be judged by its folder's sparse checkout: each
-/// spelled out whole, and each one that changes nothing about which paths git writes. Any
-/// other option, an abbreviation or a bundle of short options included, and the paths the
-/// patterns leave out count again ([`Place::sparse`]).
-const SPARSE_KEEPS: [&str; 22] = [
-    "-q",
-    "--quiet",
-    "-v",
-    "--verbose",
-    "--hard",
-    "--keep",
-    "--merge",
-    "-m",
-    "-f",
-    "--force",
-    "--detach",
-    "-b",
-    "-B",
-    "-c",
-    "-C",
-    "--ff-only",
-    "--no-edit",
-    "--no-gpg-sign",
-    "-S",
-    "--gpg-sign",
-    "--no-verify",
-    "--no-autostash",
+/// The options any move may carry and still be judged by its folder's sparse checkout.
+const SPARSE_KEEPS_ANY: [&str; 4] = ["-q", "--quiet", "-v", "--verbose"];
+
+/// Those of a `checkout` or `switch`, beside [`BRANCHING_FLAGS`].
+const SPARSE_KEEPS_CHECKOUT: [&str; 9] = [
+    "-f", "--force", "--detach", "-b", "-B", "-c", "-C", "-m", "--merge",
 ];
 
-/// Whether every option among a move's words `post` is one [`SPARSE_KEEPS`] lists, or one of
-/// the flags the move's own arm already reads as harmless.
-fn sparse_keeps(post: &[String]) -> bool {
+/// Those of a `reset`.
+const SPARSE_KEEPS_RESET: [&str; 5] = ["--hard", "--keep", "--merge", "--soft", "--mixed"];
+
+/// Those of a `rebase`, beside [`REBASE_FLAGS`]: signing only.
+const SPARSE_KEEPS_REBASE: [&str; 2] = ["-S", "--gpg-sign"];
+
+/// Those of a `cherry-pick` or `revert`, beside [`PICK_FLAGS`]: signing only.
+const SPARSE_KEEPS_PICK: [&str; 2] = ["-S", "--gpg-sign"];
+
+/// Those of a `restore`.
+const SPARSE_KEEPS_RESTORE: [&str; 5] = ["-s", "--staged", "-S", "--worktree", "-W"];
+
+/// Whether every option of `git <sub> <post…>` is one its own subcommand's list holds, spelled
+/// out whole, each one that changes nothing about which paths git writes. Any other option, an
+/// abbreviation or a bundle of short options included, and the paths the folder's sparse
+/// checkout leaves out count again ([`Place::sparse`]). A flag one subcommand reads as
+/// harmless may be another's command to run, so no list is shared between them.
+fn sparse_keeps(sub: &str, post: &[String]) -> bool {
+    let own: &[&str] = match sub {
+        "checkout" | "switch" => &[&SPARSE_KEEPS_CHECKOUT[..], &BRANCHING_FLAGS[..]].concat(),
+        "reset" => &SPARSE_KEEPS_RESET,
+        "merge" | "pull" => &MERGE_FLAGS,
+        "rebase" => &[&REBASE_FLAGS[..], &SPARSE_KEEPS_REBASE[..]].concat(),
+        "cherry-pick" | "revert" => &[&PICK_FLAGS[..], &SPARSE_KEEPS_PICK[..]].concat(),
+        "restore" => &SPARSE_KEEPS_RESTORE,
+        _ => &[],
+    };
     post.iter()
         .take_while(|word| word.as_str() != "--")
         .filter(|word| word.starts_with('-'))
         .all(|word| {
             let word = word.as_str();
-            SPARSE_KEEPS.contains(&word)
-                || MERGE_FLAGS.contains(&word)
-                || REBASE_FLAGS.contains(&word)
-                || PICK_FLAGS.contains(&word)
-                || BRANCHING_FLAGS.contains(&word)
+            SPARSE_KEEPS_ANY.contains(&word)
+                || own.contains(&word)
+                || (sub == "restore" && word.starts_with("--source="))
         })
 }
+
+/// What, set on the line, may run a program or change a setting in the middle of a move: the
+/// editors git asks for a message or a todo list.
+const EDITOR_ENV: [&str; 4] = ["GIT_EDITOR=", "GIT_SEQUENCE_EDITOR=", "EDITOR=", "VISUAL="];
 
 /// Whether `inv` sets git configuration on the line: `-c`, `--config-env`, or a `GIT_CONFIG*`
 /// variable among the assignments and exports it runs with.
@@ -1632,9 +1637,9 @@ fn configures(inv: &RootInvocation) -> bool {
         .iter()
         .any(|word| word.starts_with("-c") || word.starts_with("--config-env"))
         || inv.env.iter().chain(&inv.own_env).any(|assign| {
-            assign
-                .trim_start_matches("export ")
-                .starts_with("GIT_CONFIG")
+            let assign = assign.trim_start_matches("export ");
+            assign.starts_with("GIT_CONFIG")
+                || EDITOR_ENV.iter().any(|editor| assign.starts_with(editor))
         })
 }
 
@@ -1751,7 +1756,7 @@ pub fn refusal_of(
             root,
             chat_dir,
             alone,
-            sparse: alone && line_leaves_sparsity && sparse_keeps(&post),
+            sparse: alone && line_leaves_sparsity && sparse_keeps(&sub, &post),
         };
         for dir in &each.dirs {
             if !moves_from_another && folders.insert(dir.as_str()) && folders.len() > MAX_FOLDERS {

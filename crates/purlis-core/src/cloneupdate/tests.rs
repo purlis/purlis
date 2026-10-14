@@ -564,6 +564,16 @@ fn a_sparse_checkout_counts_only_where_nothing_on_the_line_can_change_it() {
         "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.sparseCheckout \
          GIT_CONFIG_VALUE_0=false; git checkout tasks",
         "export GIT_CONFIG_COUNT=1; git checkout tasks",
+        // A flag harmless to one subcommand that is another's command to run.
+        "git rebase -x true origin/tasks",
+        "git rebase --exec true origin/tasks",
+        "git rebase -i origin/tasks",
+        "git checkout -x tasks",
+        // An editor set on the line, which git may start in the middle of a move.
+        "GIT_EDITOR=true git rebase origin/tasks",
+        "GIT_SEQUENCE_EDITOR=true git rebase origin/tasks",
+        "EDITOR=true git rebase origin/tasks",
+        "export VISUAL=true; git rebase origin/tasks",
     ] {
         let (_, said) = f
             .asked(stopped, &sparse)
