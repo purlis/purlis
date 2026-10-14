@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792006886052,
+  "lastUpdate": 1792009532197,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2082,6 +2082,42 @@ window.BENCHMARK_DATA = {
             "value": 210.6,
             "unit": "MB",
             "extra": "median of 6 samples: 275.9, 210.8, 209.4, 210.5, 211.3, 157.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "5f0fda7994e51030cc82d626a5f072da3b398fc0",
+          "message": "fix(app): the lane guard counts what the sandbox records as seen, and reads past comments\n\n- `hosts_seen_by_you` and `presets_seen_by_you` write this machine's sandbox\n  file (they acknowledge what the window wrote): they are no longer among the\n  local file's reads, and their site, `settings.rs seen_by_you`, is listed\n  with the commands that reach it through a method call.\n- The guard blanks block comments (nested) and raw strings that span lines\n  before it reads a file a line at a time, so a call inside one is not a\n  write, and a quote in a character literal starts no string.\n- The reasons the forge and profile commands stay out of the sandbox lane\n  also cover the read they answer with, which drops confirmed hosts the file\n  no longer lists.\n\nRefs #1949\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T23:40:09+04:00",
+          "tree_id": "72a24c5a23d92e2085d608732af89779298cdf39",
+          "url": "https://github.com/purlis/purlis/commit/5f0fda7994e51030cc82d626a5f072da3b398fc0"
+        },
+        "date": 1792009529638,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 835,
+            "unit": "MB",
+            "extra": "median of 3 samples: 770, 835, 1005 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 203.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 237.5, 233.1, 213, 194.2, 194.3, 124 MB"
           }
         ]
       }
