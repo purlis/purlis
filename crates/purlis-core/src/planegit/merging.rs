@@ -319,8 +319,8 @@ pub fn changed_since(seen: &Seen, head: &str, now: Option<&Merging>) -> Option<S
             now.why
         )),
         None => Some(
-            "The request changed since you looked: purlis keeps nothing of it any more, so \
-             it did not merge it"
+            "The request changed since you looked: nothing is kept of it any more, so \
+             purlis did not merge it"
                 .to_string(),
         ),
     }

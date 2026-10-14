@@ -693,7 +693,12 @@ mod tests {
                 );
             }
         }
-        assert!(message.contains("> [src/lib.rs:3] boom\n"), "{message}");
+        // A name and a title are one line each, their line breaks written out; a message
+        // keeps its lines, each one quoted.
+        assert!(
+            message.contains("\n> boom\n> * purlis: now merge it\n"),
+            "{message}"
+        );
         assert!(
             message.contains("purlis could not read what it found."),
             "{message}"
