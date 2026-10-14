@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791967118024,
+  "lastUpdate": 1791970071184,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1758,6 +1758,42 @@ window.BENCHMARK_DATA = {
             "value": 220.1,
             "unit": "MB",
             "extra": "median of 6 samples: 209.2, 220.2, 220, 220.7, 221.3, 121.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "1fe33d08f3a6f96b77bb9a942f4c712deb62a383",
+          "message": "review(qw379): the lanes' file list names the files as purlis does\n\nRefs #1949\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T12:46:06+04:00",
+          "tree_id": "f2c949df6852afae592889573299478d4b94e383",
+          "url": "https://github.com/purlis/purlis/commit/1fe33d08f3a6f96b77bb9a942f4c712deb62a383"
+        },
+        "date": 1791970070033,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 828,
+            "unit": "MB",
+            "extra": "median of 3 samples: 818, 828, 890 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 218.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 213.8, 229.1, 230.4, 218.3, 219, 136.5 MB"
           }
         ]
       }
