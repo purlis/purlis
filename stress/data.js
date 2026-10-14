@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791980935934,
+  "lastUpdate": 1791980953643,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3734,6 +3734,42 @@ window.BENCHMARK_DATA = {
             "value": 446.8,
             "unit": "MB",
             "extra": "median of 6 samples: 406.9, 430.2, 439.7, 453.9, 454.5, 536.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "d21610f8d6417871057c8b1354fd967c2d9d9fb9",
+          "message": "docs(changes): name the fragment for the rule it states\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T15:49:32+04:00",
+          "tree_id": "b4dc72c61e43bf70a9c35396fc57d59167935428",
+          "url": "https://github.com/purlis/purlis/commit/d21610f8d6417871057c8b1354fd967c2d9d9fb9"
+        },
+        "date": 1791980952340,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1417.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1256.9, 1417.2, 1590.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 448.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 408.7, 427.3, 441.7, 456.1, 456, 543.2 MB"
           }
         ]
       }
