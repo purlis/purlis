@@ -166,7 +166,8 @@ its chats already start on, and `color: cyan` or `magenta` to purlis's name for 
 reports the keys nothing reads now with what widened, and any `.claude/agent-memory/` folder
 the harness kept for a sub-agent. It makes no commit, `git restore -- .claude/agents personas`
 takes it back before the next save, and a second run changes nothing more. It is offered by
-the `personas` row when a generated file is still there. See `purlis docs show personas`,
+the `personas` row when a generated file is still there, and the app's Inbox stands that row as
+a Notice whose Fix applies it. See `purlis docs show personas`,
 *After updating*.
 
 **`handoff-rule` runs only by name**, as `purlis doctor --fix handoff-rule` or the

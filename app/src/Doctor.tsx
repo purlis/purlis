@@ -422,11 +422,16 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
  *   tallies) silently never happens. Its fix is a form the Notice opens where it stands.
  * - `memory-optimize` (`memory indexes`): a memory its `MEMORY.md` does not list is never read
  *   by a chat, so what was learnt is silently lost. The fix only appends the missing links.
+ * - `persona-agents` (`personas`, #1990, Q67): the sub-agent files purlis generated for a
+ *   persona, still in the project. Removing them is the person's chore, so it stands here once
+ *   instead of a line in every chat's briefing. It runs only by its name, and the Notice's Fix
+ *   names it as the dialog's does; it makes no commit, so the person reviews what it changed
+ *   at the next save.
  *
  * And why each of the others stays in the dialog:
- * - `discover`, `rename-plane`, `rename-local`, `persona-agents` and `handoff-rule` run only by
- *   their name (`by_name_only` in core doctor/fix.rs): the network, this machine's folders, or
- *   committed files every teammate pulls. One press in the Inbox is not how those are asked.
+ * - `discover`, `rename-plane`, `rename-local` and `handoff-rule` run only by their name
+ *   (`by_name_only` in core doctor/fix.rs): the network, this machine's folders, or committed
+ *   files every teammate pulls. One press in the Inbox is not how those are asked.
  * - `plugin-install` is about the chats started outside the app; the app arms its own either
  *   way, and the doctor the window runs at open reports the row as fine.
  * - `reinit` creates a missing baseline folder, which blocks nothing in the meantime.
@@ -443,6 +448,7 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
 export const FINDINGS_AS_NOTICES: ReadonlyMap<string, string> = new Map([
   ["git-identity", "git identity"],
   ["memory-optimize", "memory indexes"],
+  ["persona-agents", "personas"],
 ]);
 
 /** The family of cause a doctor finding's Notice is (`doctor-finding:<fix id>`). */
