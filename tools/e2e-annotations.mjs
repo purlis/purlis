@@ -38,10 +38,16 @@ export const MESSAGE_CHARS = 300;
  * scenario stall): what the window was still waiting for, and the core's last log lines. The
  * first failure of a mass failure is the one that names its cause.
  */
-export const EVIDENCE_FOR = 3;
+export const EVIDENCE_FOR = 5;
 
 /** How much evidence one annotation keeps, the newest lines kept when it is cut. */
 export const EVIDENCE_CHARS = 3000;
+
+/** Whether `record` carries the evidence block: a test's or a hook's failure does, the left-chats
+ *  guard's own record does not. */
+export function carriesEvidence(record) {
+  return Array.isArray(record.late) || Array.isArray(record.coreLog);
+}
 
 /**
  * The evidence `record` carries, as lines of text: the commands the window had not had answered
@@ -49,29 +55,86 @@ export const EVIDENCE_CHARS = 3000;
  * with anything secret-shaped replaced (`purlis_core::applog`). Empty where it carries none.
  */
 export function evidenceOf(record) {
-  const parts = [];
-  const late = Array.isArray(record.late) ? record.late : [];
-  if (late.length > 0) {
-    const said = late.map((one) =>
+  if (!carriesEvidence(record)) return "";
+  let late = "";
+  const waited = Array.isArray(record.late) ? record.late : [];
+  if (waited.length > 0) {
+    const said = waited.map((one) =>
       typeof one.ms === "number"
         ? `${one.command} (answered after ${Math.round(one.ms / 1000)} s)`
         : `${one.command} (never answered)`,
     );
-    parts.push(`the window waited for: ${said.join(", ")}`);
+    late = `the window waited for: ${said.join(", ")}`;
   }
+  // What lay over the element a test could not press or see (`app/e2e/covers.ts`). They are read
+  // from the page, which the core's redaction never saw, so they go through the same check here.
+  const over = Array.isArray(record.covers) ? record.covers : [];
+  const covers =
+    over.length > 0
+      ? `what covered it:\n${over.map((line) => redacted(String(line))).join("\n")}`
+      : "";
   const log = Array.isArray(record.coreLog) ? record.coreLog : [];
+  let logPart = "";
   if (log.length > 0) {
+    const header = "the core's last log lines:\n";
+    // The late commands and the covers are kept whole; the log has the room they leave, its
+    // newest lines kept, since they say what happened last.
+    const room =
+      EVIDENCE_CHARS -
+      [late, covers]
+        .filter(Boolean)
+        .reduce((n, part) => n + part.length + 1, 0) -
+      header.length;
     let lines = log.map((line) => String(line).replace(ANSI, ""));
-    // The newest lines are the ones that say what happened last: cut from the front.
-    while (lines.length > 1 && lines.join("\n").length > EVIDENCE_CHARS)
+    while (lines.length > 1 && lines.join("\n").length > room)
       lines = lines.slice(1);
-    parts.push(`the core's last log lines:\n${lines.join("\n")}`);
+    logPart = `${header}${lines.join("\n")}`;
   }
+  const parts = [late, logPart, covers].filter(Boolean);
+  // A block recorded with nothing in it says so: a quiet core reads apart from no block at all.
+  if (parts.length === 0)
+    parts.push("no command was late; the core logged nothing");
   const text = parts.join("\n");
+  // Only a single log line longer than the room, or late commands and covers past the budget
+  // on their own, still need cutting: the newest end is kept.
   return text.length > EVIDENCE_CHARS
     ? text.slice(text.length - EVIDENCE_CHARS)
     : text;
 }
+
+/**
+ * `line`, or in its place a line naming the kind of secret it looks like it holds: the shapes
+ * the core's log is checked for (`purlis_core::applog`, `secretshape`), the common ones, for
+ * text the core never saw. Like the log, the whole line goes, not only the match.
+ */
+export function redacted(line) {
+  for (const [shape, kind] of SECRET_SHAPES)
+    if (shape.test(line))
+      return `[redacted: a line that looks like it holds ${kind}]`;
+  return line;
+}
+
+const SECRET_SHAPES = [
+  [
+    /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/,
+    "a GitHub token",
+  ],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/, "a GitLab token"],
+  [/\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}/, "an API key"],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/, "a Slack token"],
+  [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/, "an AWS key"],
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "a private key"],
+  [
+    /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
+    "a JSON web token",
+  ],
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/i, "a bearer token"],
+  [
+    /[A-Za-z_]*(?:token|secret|password|passwd|api[_-]?key)[A-Za-z_]*["']?\s*[:=]\s*["']?[^\s"']{6,}/i,
+    "a field named for a secret",
+  ],
+  [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/, "an email address"],
+];
 
 // Colour codes the spec reporter and `expect` put in their messages.
 // eslint-disable-next-line no-control-regex
@@ -163,6 +226,7 @@ export function annotations(
         ),
     ];
   }
+  let evidenced = 0;
   const lines = records.slice(0, limit).map((record, index) => {
     const level = index < PER_LEVEL ? "error" : "warning";
     const props = [];
@@ -176,7 +240,11 @@ export function annotations(
     const title = level === "error" ? named : `also failed › ${named}`;
     props.push(`title=${escapeProperty(title)}`);
     const trimmed = trimMessage(record.message) || "failed with no message";
-    const evidence = index < EVIDENCE_FOR ? evidenceOf(record) : "";
+    // The first EVIDENCE_FOR failures that carry a block show it; a record with none uses no place.
+    const evidence =
+      carriesEvidence(record) && evidenced++ < EVIDENCE_FOR
+        ? evidenceOf(record)
+        : "";
     const message = evidence ? `${trimmed}\n\n${evidence}` : trimmed;
     return `::${level} ${props.join(",")}::${escapeData(message)}`;
   });

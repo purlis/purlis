@@ -17,6 +17,7 @@ import {
   writeShell,
 } from "./harness.js";
 import { browser } from "@wdio/globals";
+import { coveredIn, whatCovers } from "./covers.js";
 import { theWindowIsDrawn } from "./drawn.js";
 import { noDialogIsLeftUp } from "./opening.js";
 import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
@@ -65,7 +66,7 @@ writeForgeCache(plane);
  * in time, asked of the window itself, and the core's last log lines. A window that does not
  * answer leaves the first out, not the failure.
  */
-async function evidence(): Promise<Evidence> {
+async function evidence(error?: unknown): Promise<Evidence> {
   const late = await browser
     .execute(
       () =>
@@ -74,9 +75,16 @@ async function evidence(): Promise<Evidence> {
         ).__purlisLateAnswers?.() ?? [],
     )
     .catch(() => []);
+  // And, where the test could not press or see an element, what lay over it.
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message: unknown }).message)
+      : String(error ?? "");
+  const covered = coveredIn(message);
   return {
     late: late.map((one) => ({ command: one.command, ms: one.ms })),
     coreLog: coreLogTail(LOGS),
+    covers: covered === undefined ? undefined : await whatCovers(covered),
   };
 }
 
@@ -182,7 +190,7 @@ export const config: WebdriverIO.Config = {
   async afterTest(test, _context, { passed, error, duration }) {
     recordTiming(test, duration);
     if (!passed) {
-      recordFailure(test, error ?? "failed with no error", await evidence());
+      recordFailure(test, error ?? "failed with no error", await evidence(error));
       const where = collectEvidence(app, `${test.parent} ${test.title}`);
       console.error(`charter-e2e: what was left to look at is in ${where}`);
     }
@@ -192,6 +200,6 @@ export const config: WebdriverIO.Config = {
   // hook's own failure is what gets annotated (`failures.ts`).
   async afterHook(test, _context, { error, duration }) {
     recordTiming(test, duration ?? 0, "hook");
-    recordFailure(test, error, error ? await evidence() : {});
+    recordFailure(test, error, error ? await evidence(error) : {});
   },
 };
