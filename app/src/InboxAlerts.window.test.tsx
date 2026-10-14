@@ -576,12 +576,14 @@ describe("a save's red request (`save-request-red`)", () => {
       request: "pull request",
       pr: "https://github.com/acme/plane/pull/12",
       target: "main",
+      autosave: true,
       merge: {
         state: "red",
         why: "1 check failed: lint",
         checks: [{ name: "lint", url: null }],
         needs: null,
         number: "#12",
+        shown: "red - lint",
       },
     },
   };
@@ -607,6 +609,13 @@ describe("a save's red request (`save-request-red`)", () => {
   }
 
   it("is a Notice in the Inbox with the Saving view's two answers, and goes when the reading no longer lists it", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      const way = RED.way;
+      return cmd === "look_at_save_request" && way.kind === "save-request"
+        ? { head: "6dcb09b5b57875f334f61aebed695e2e4193db5e", merge: way.merge }
+        : null;
+    });
     const { rerender } = render(inbox([RED]));
 
     const line = screen.getByRole("status");
@@ -616,9 +625,9 @@ describe("a save's red request (`save-request-red`)", () => {
       "The pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint.",
     );
     expect(within(line).getByRole("button", { name: "Fix in a chat" })).toBeInTheDocument();
-    // The merge asks first here too, and names the request and where it goes.
+    // The merge looks, then asks, here too, and names the request and where it goes.
     await userEvent.click(within(line).getByRole("button", { name: "Merge as it stands…" }));
-    expect(screen.getByRole("alertdialog").textContent).toContain(
+    expect((await screen.findByRole("alertdialog")).textContent).toContain(
       "Merge the pull request #12 of this project as it stands?",
     );
     expect(calls("merge_save_request")).toEqual([]);

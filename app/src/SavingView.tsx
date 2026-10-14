@@ -393,6 +393,7 @@ export function SavingView({
                   pr={repo.pr}
                   target={repo.target}
                   merge={repo.merge}
+                  needsSave={!repo.autosave}
                 />
               ),
           )}

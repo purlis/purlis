@@ -1093,6 +1093,60 @@ mod pr_saves {
         assert_eq!(plane.standing().stage, Stage::Saved);
     }
 
+    /// **The person's merge is of what they were shown** (review of #1953): the request is
+    /// looked at afresh at the press, and a check that failed since the confirmation was
+    /// drawn, or a commit pushed since, is not merged past.
+    #[test]
+    fn the_persons_merge_is_made_only_of_the_commit_and_the_standing_they_confirmed() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (plane, head) = pr_merge_plane("pr-merge-seen.test");
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+        assert_eq!(code, 0, "{said}");
+        the_settle_wait_is_over(&plane);
+        // The forge says a check failed, at every look from here on.
+        looked(&plane, &head, "UNSTABLE", &[FAILED]);
+        let put = merged_by_purlis(&plane, &head);
+        let window = purlis_core::forge::Caller::window();
+
+        // The confirmation showed a wait with no failed check: the failure came after.
+        let waited = planegit::Merging::of(&Ok(purlis_core::forge::pr::Ready::Stalled(
+            "no check has started on it".into(),
+        )));
+        let shown_a_wait = planegit::Seen {
+            head: head.clone(),
+            shown: waited.shown(),
+        };
+        let refused = planegit::merge_as_seen(&plane.root, &window, &shown_a_wait, &mut |_| {});
+        assert!(
+            matches!(&refused, Err(why) if why.contains("changed since you looked")),
+            "{refused:?}"
+        );
+        assert!(!was_asked(&put), "merged past a failure nobody was shown");
+        // What the fresh look found is what the window now draws.
+        let red = plane.standing().merge.expect("where the request stands");
+        assert_eq!(red.state, planegit::MergeState::Red, "{red:?}");
+
+        // The confirmation showed this red request at another commit: one was pushed since.
+        let at_an_older_commit = planegit::Seen {
+            head: "1".repeat(40),
+            shown: red.shown(),
+        };
+        let refused =
+            planegit::merge_as_seen(&plane.root, &window, &at_an_older_commit, &mut |_| {});
+        assert!(
+            matches!(&refused, Err(why) if why.contains("a new commit was pushed")),
+            "{refused:?}"
+        );
+        assert!(!was_asked(&put), "merged a commit nobody confirmed");
+        assert_eq!(
+            planegit::seen(&plane.root).map(|seen| seen.head),
+            Some(head)
+        );
+    }
+
     const CHECKS_EXPECTED: &str =
         include_str!("../src/forge/github/queries/checks_expected.graphql");
     const MERGE_READY: &str = include_str!("../src/forge/github/queries/merge_ready.graphql");

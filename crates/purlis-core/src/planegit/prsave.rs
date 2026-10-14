@@ -360,6 +360,11 @@ pub(super) fn known_merging(root: &Path) -> Option<Merging> {
     Kept::read(root).pr.and_then(|pr| pr.merge)
 }
 
+/// The commit the kept request is at, and where it stands with merging, when one is kept.
+pub(super) fn kept_seen(root: &Path) -> Option<(String, Option<Merging>)> {
+    Kept::read(root).pr.map(|pr| (pr.head, pr.merge))
+}
+
 /// The request this clone keeps open, when one is: when its head was pushed, and its head.
 pub(super) fn open_request(root: &Path) -> Option<(Option<u64>, String)> {
     Kept::read(root).pr.map(|pr| (pr.pushed_at, pr.head))
@@ -1301,10 +1306,17 @@ pub(super) fn trouble(
         &known.head,
         known.number,
         &red.checks,
-    );
+    )
+    .map_err(|not| not.said(&request))?;
     Ok((
         known.number,
-        crate::savefix::red_request(&request, &known.url, crate::savefix::Whose::Project, failed),
+        crate::savefix::red_request(
+            &request,
+            &known.url,
+            &repo,
+            crate::savefix::Whose::Project,
+            failed,
+        ),
     ))
 }
 

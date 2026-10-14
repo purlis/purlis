@@ -420,6 +420,18 @@ function dialogCore() {
         return new Promise(() => undefined);
       case "vault_open":
         return VAULT;
+      case "look_at_save_request":
+        return {
+          head: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+          merge: {
+            state: "red",
+            why: "1 check failed: lint",
+            checks: [{ name: "lint", url: null }],
+            needs: null,
+            number: "#12",
+            shown: "red - lint",
+          },
+        };
       case "plane_saving":
         return {
           stage: "committed",
@@ -995,10 +1007,12 @@ const DIALOGS: Opened[] = [
             checks: [{ name: "lint", url: null }],
             needs: null,
             number: "#12",
+            shown: "red - lint",
           }}
         />,
       );
       await userEvent.click(screen.getByRole("button", { name: "Merge as it stands…" }));
+      await screen.findByRole("alertdialog");
     },
   },
   {

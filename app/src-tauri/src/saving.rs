@@ -77,6 +77,10 @@ pub struct SaveMerge {
     /// The request as its forge names it, `#12` or `!12`; `null` when its page does not end
     /// in a number.
     pub number: Option<String>,
+    /// Where it stands, as one line that is the same for the same standing
+    /// (`Merging::shown`): what **Merge as it stands** hands back with the commit, so that
+    /// the merge is made only of what its question showed.
+    pub shown: String,
 }
 
 impl SaveMerge {
@@ -93,6 +97,7 @@ impl SaveMerge {
             });
         SaveMerge {
             number,
+            shown: merge.shown(),
             needs: merge.needs.map(|needs| needs.word().to_owned()),
             state: merge.state.word().to_owned(),
             why: merge.why,
@@ -434,11 +439,14 @@ pub async fn merge_save_request(
     plane: PlaneId,
     workspace: Option<String>,
     repo: Option<String>,
+    head: String,
+    shown: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let (said, moved) = tauri::async_runtime::spawn_blocking(move || {
-        merge_as_it_stands(&root, workspace.as_deref(), repo.as_deref())
+        let seen = planegit::Seen { head, shown };
+        merge_as_it_stands(&root, workspace.as_deref(), repo.as_deref(), &seen)
     })
     .await
     .map_err(|err| format!("the merge did not finish: {err}"))??;
@@ -449,12 +457,103 @@ pub async fn merge_save_request(
     Ok(said)
 }
 
+/// What a fresh look at a save's request found, for the question **Merge as it stands…**
+/// asks: the commit it is at and where it stands now. The press hands `head` and
+/// `merge.shown` back, and the merge is made only of them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveLook {
+    /// The commit the request is at; `null` when no request is open any more.
+    pub head: Option<String>,
+    /// Where it stands now; `null` when no request is open any more (it merged, or closed).
+    pub merge: Option<SaveMerge>,
+}
+
+/// **Look at a save's request now**, before the person is asked whether to merge it as it
+/// stands: every check is read afresh, so the question shows what is there and not what the
+/// last look kept. As every look does, it merges a request whose checks all passed.
+///
+/// The window's alone (`WINDOW_ONLY`): it asks the forge with the person's sign-in, and may
+/// merge and move the project's tree.
+///
+/// On a blocking thread: it asks the forge.
+#[tauri::command]
+#[specta::specta]
+pub async fn look_at_save_request(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: Option<String>,
+    repo: Option<String>,
+) -> Result<SaveLook, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let (look, moved) = tauri::async_runtime::spawn_blocking(move || {
+        look_now(&root, workspace.as_deref(), repo.as_deref())
+    })
+    .await
+    .map_err(|err| format!("the look did not finish: {err}"))??;
+    if moved {
+        held.tree_moved();
+    }
+    Ok(look)
+}
+
+/// [`look_at_save_request`], without a runtime: what it found, and whether the project's tree
+/// moved.
+pub fn look_now(
+    root: &Path,
+    workspace: Option<&str>,
+    repo: Option<&str>,
+) -> Result<(SaveLook, bool), String> {
+    use purlis_core::forge::Caller;
+    match (workspace, repo) {
+        (None, None) => {
+            let looked = crate::forgeaccounts::window_git(|| {
+                planegit::look(root, &Caller::window(), &mut |_: Say| {})
+            })?;
+            planegit::touch(root);
+            let saving = saving_of(root);
+            Ok((
+                SaveLook {
+                    head: planegit::seen(root).map(|seen| seen.head),
+                    merge: saving.merge,
+                },
+                looked.moved,
+            ))
+        }
+        (Some(workspace), Some(name)) => {
+            let found =
+                purlis_core::repos::clones(root, workspace).map_err(|why| why.to_string())?;
+            let repo = found
+                .repos
+                .iter()
+                .find(|repo| repo.name == name)
+                .ok_or_else(|| format!("{workspace} holds no clone called {name}"))?;
+            crate::forgeaccounts::window_git(|| {
+                reposave::look(root, workspace, repo, &Caller::window())
+            })?;
+            let row = repos_saving(root, workspace)?
+                .into_iter()
+                .find(|row| row.name == name);
+            Ok((
+                SaveLook {
+                    head: reposave::seen(root, workspace, repo).map(|seen| seen.head),
+                    merge: row.and_then(|row| row.merge),
+                },
+                false,
+            ))
+        }
+        _ => Err("name both the workspace and the repo, or neither for the project's own".into()),
+    }
+}
+
 /// [`merge_save_request`], without a runtime: what happened, and whether the project's tree
 /// moved.
 pub fn merge_as_it_stands(
     root: &Path,
     workspace: Option<&str>,
     repo: Option<&str>,
+    seen: &planegit::Seen,
 ) -> Result<(String, bool), String> {
     use purlis_core::forge::Caller;
     use purlis_core::planegit::MergedAsItStands;
@@ -464,7 +563,7 @@ pub fn merge_as_it_stands(
             // The window's own git and sign-in (#752): the fetch after the merge is held to
             // the remote recorded for the project.
             let merged = crate::forgeaccounts::window_git(|| {
-                planegit::merge_as_it_stands(root, &Caller::window(), &mut |line: Say| {
+                planegit::merge_as_seen(root, &Caller::window(), seen, &mut |line: Say| {
                     lines.push(line.to_string());
                 })
             })?;
@@ -481,7 +580,7 @@ pub fn merge_as_it_stands(
                 .find(|repo| repo.name == name)
                 .ok_or_else(|| format!("{workspace} holds no clone called {name}"))?;
             crate::forgeaccounts::window_git(|| {
-                reposave::merge_as_it_stands(root, workspace, repo, &Caller::window())
+                reposave::merge_as_seen(root, workspace, repo, &Caller::window(), seen)
             })?
         }
         _ => {

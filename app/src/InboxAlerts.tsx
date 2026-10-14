@@ -156,6 +156,7 @@ function ThisProject({
               pr={way.pr}
               target={way.target}
               merge={way.merge}
+              needsSave={way.repo !== null && !way.autosave}
             />
           );
         return (

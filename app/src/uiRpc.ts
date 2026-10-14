@@ -850,6 +850,7 @@ export const commands = {
 	openBlockedFile: __WINDOW_ONLY_RESULT,
 	updateProject: __WINDOW_ONLY_RESULT,
 	mergeSaveRequest: __WINDOW_ONLY_RESULT,
+	lookAtSaveRequest: __WINDOW_ONLY_RESULT,
 	fixSaveRequest: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
@@ -1861,7 +1862,12 @@ request: string;
 /**  The request's page. */
 pr: string; 
 /**  The branch it goes into, where purlis can tell. */
-target: string | null; merge: SaveMerge };
+target: string | null; 
+/**
+ *  Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
+ *  next save, so where this is off the Notice says a save is needed.
+ */
+autosave: boolean; merge: SaveMerge };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before
@@ -6969,6 +6975,18 @@ export type SaveEntry = {
 };
 
 /**
+ *  What a fresh look at a save's request found, for the question **Merge as it stands…**
+ *  asks: the commit it is at and where it stands now. The press hands `head` and
+ *  `merge.shown` back, and the merge is made only of them.
+ */
+export type SaveLook = {
+	/**  The commit the request is at; `null` when no request is open any more. */
+	head: string | null,
+	/**  Where it stands now; `null` when no request is open any more (it merged, or closed). */
+	merge: SaveMerge | null,
+};
+
+/**
  *  Where a `pr-merge` save's pull request stands with merging, as the last look at the forge
  *  found it (ADR 0051, amended 2026-10-13). Never a block: a red request stays open, and a
  *  later save pushes onto it.
@@ -7000,6 +7018,12 @@ export type SaveMerge = {
 	 *  in a number.
 	 */
 	number: string | null,
+	/**
+	 *  Where it stands, as one line that is the same for the same standing
+	 *  (`Merging::shown`): what **Merge as it stands** hands back with the commit, so that
+	 *  the merge is made only of what its question showed.
+	 */
+	shown: string,
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */

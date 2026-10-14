@@ -70,6 +70,9 @@ pub(crate) enum AlertWay {
         pr: String,
         /// The branch it goes into, where purlis can tell.
         target: Option<String>,
+        /// Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
+        /// next save, so where this is off the Notice says a save is needed.
+        autosave: bool,
         merge: Box<crate::saving::SaveMerge>,
     },
 }
@@ -202,6 +205,7 @@ fn request_red(
     request: &str,
     pr: Option<&str>,
     target: Option<&str>,
+    autosave: bool,
     merge: Option<&crate::saving::SaveMerge>,
 ) -> Option<AlertRow> {
     let (merge, pr) = (merge.filter(|merge| merge.state == "red")?, pr?);
@@ -225,6 +229,7 @@ fn request_red(
             request: request.to_owned(),
             pr: pr.to_owned(),
             target: target.map(str::to_owned),
+            autosave,
             merge: Box::new(merge.clone()),
         },
     })
@@ -244,6 +249,7 @@ fn requests_red(root: &Path) -> Vec<AlertRow> {
             &saving.request,
             saving.pr.as_deref(),
             Some(&saving.branch),
+            purlis_core::autosave::on(&settings.plane),
             saving.merge.as_ref(),
         ));
     }
@@ -264,6 +270,7 @@ fn requests_red(root: &Path) -> Vec<AlertRow> {
                 &repo.request,
                 repo.pr.as_deref(),
                 repo.target.as_deref(),
+                repo.autosave,
                 repo.merge.as_ref(),
             ));
         }
@@ -351,6 +358,7 @@ mod tests {
             }],
             needs: None,
             number: Some("#12".to_owned()),
+            shown: "red - lint".to_owned(),
         }
     }
 
@@ -363,6 +371,7 @@ mod tests {
             "pull request",
             Some(PR),
             Some("main"),
+            true,
             Some(&red),
         )
         .expect("a red request is said");
@@ -384,6 +393,7 @@ mod tests {
                 request: "pull request".to_owned(),
                 pr: PR.to_owned(),
                 target: Some("main".to_owned()),
+                autosave: true,
                 merge: Box::new(red.clone()),
             }
         );
@@ -393,6 +403,7 @@ mod tests {
             "merge request",
             Some(PR),
             None,
+            false,
             Some(&red),
         )
         .expect("said");
@@ -412,12 +423,20 @@ mod tests {
         for state in ["waiting", "queued", "cannot-merge", "merged"] {
             let not_red = merge(state);
             assert!(
-                request_red((None, None), "pull request", Some(PR), None, Some(&not_red)).is_none(),
+                request_red(
+                    (None, None),
+                    "pull request",
+                    Some(PR),
+                    None,
+                    true,
+                    Some(&not_red)
+                )
+                .is_none(),
                 "{state}"
             );
         }
-        assert!(request_red((None, None), "pull request", Some(PR), None, None).is_none());
-        assert!(request_red((None, None), "pull request", None, None, Some(&red)).is_none());
+        assert!(request_red((None, None), "pull request", Some(PR), None, true, None).is_none());
+        assert!(request_red((None, None), "pull request", None, None, true, Some(&red)).is_none());
     }
 
     #[test]
