@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791970636124,
+  "lastUpdate": 1791972069188,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10668,6 +10668,48 @@ window.BENCHMARK_DATA = {
             "value": 101.564769,
             "unit": "ms",
             "extra": "median of 5 runs: 101.153, 101.512, 101.565, 101.606, 101.913 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "73f710c974e64e5ffd6de179f8cdb3b482a4e6ee",
+          "message": "review(qw383): the list takes programs that copy or encode, and says it is not exhaustive\n\n- GENERAL_PURPOSE adds the programs that copy, encode or rewrite what\n  they are given (cat, cp, tee, dd, sed, base64, xxd, od, hexdump,\n  openssl, gzip, tar, zip), beside the network ones; a core test covers\n  them.\n- secrets.md, the plane-format tools row, ADR 0067's T-4 section and the\n  changes fragment say the list is not exhaustive: a tool without the\n  sentence is not thereby a safe one, since any program can show what it\n  is handed if its arguments ask it to. Tests name such tools \"unlisted\".\n- The Notice keeps one space between the vault sentence and what follows,\n  with or without the sentence; secrets.md's paragraph joins again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T13:59:51+04:00",
+          "tree_id": "a59ba7e2caa6b943beab0985d52f6d378ed55e86",
+          "url": "https://github.com/purlis/purlis/commit/73f710c974e64e5ffd6de179f8cdb3b482a4e6ee"
+        },
+        "date": 1791972068109,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.429109,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.413, 0.422, 0.429, 0.439, 0.440 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4218105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.241, 16.325, 16.422, 16.525, 16.711 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1213495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.366, 100.971, 101.121, 102.021, 102.168 ms"
           }
         ]
       }
