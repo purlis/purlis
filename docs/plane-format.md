@@ -124,11 +124,12 @@ its own plane:
 - what a chat's harness said its session cost, `.charter/app/spend/<chat>.json`, last written
   30 days or more before, unless the chat, by its id, is one the reopen record will bring back
   (#1457).
-- a commit gate cooldown, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
+- a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
-  begins with, then `-`). Losing one costs a returning session one more question or one more
-  reminder, never its work (#1004).
+  begins with, then `-`). Losing a gate record makes a returning session's next prompt count as
+  its first, so it may be read for a fork once more; losing a nudge marker costs one more
+  reminder; neither costs its work (#1004, #1988).
 - a saved-record line a chat in a workspace left for a `Stop` that never ran,
   `workspaces/<ws>/.charter/sessions/<chat>.saved`, last written 30 days or more before, unless
   the chat is one the reopen record will bring back. The plane root's are markers in
@@ -6321,16 +6322,22 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 
 ### `commit-gate/<sid>`
 - **Format:** plain text, a small decimal integer (countdown), no newline
-- **Status:** **internal** — a per-session cooldown counter for one nudge, written and read
-  only by `hooks`. Deleted ⇒ the next prompt may nudge once more.
+- **Status:** **internal** — the commit gate's record of one harness session, written and read
+  only by `hooks`. Its number is the prompts left to stay quiet for after the gate fired. Its
+  presence (purlis, #1988) says the session has prompted before: it is written, `0`, on the
+  session's first attended prompt when the gate does not fire, and a session with no file has
+  not prompted yet. The gate reads every prompt of a session without one for a fork, and of a
+  session with one only an ask for a code change. Deleted ⇒ the session's next prompt counts
+  as its first, and its cooldown, if any, is over.
 - **Tier:** Clone state, transient — a gate file.
 - **Written by:** `charter/hooks.py:8322` / `charter/hooks.py:8324` (reset to
   `_COMMIT_COOLDOWN` = 3, `charter/hooks.py:8262`)
 - **Read by:** `charter/hooks.py:8320`
 - **Git:** gitignored; filename is the sanitised session id (`charter/hooks.py:8319`)
-- **Collected (purlis):** when the app opens the plane, a cooldown last written 30 days or more
-  before is removed, unless its session is one the reopen record brings back. Losing one costs
-  that session one more nudge (`retention::on_open`, #1004).
+- **Collected (purlis):** when the app opens the plane, a record last written 30 days or more
+  before is removed, unless its session is one the reopen record brings back. A session whose
+  record was collected has its next prompt count as its first, so it may be read for a fork
+  once more, never lose its work (`retention::on_open`, #1004, #1988).
 
 ### `dispatch-commit.lock`
 - **Format:** empty file, used with `flock(LOCK_EX)`
