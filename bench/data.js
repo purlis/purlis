@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792011992002,
+  "lastUpdate": 1792013027513,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11256,6 +11256,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9146585,
             "unit": "ms",
             "extra": "median of 5 runs: 101.495, 101.756, 101.915, 101.955, 102.067 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "db3ea9746698e7bb577ecc6e7ae516cc627fd262",
+          "message": "review(qw388b): a command is masked as written, and the ADR names its exception\n\nA command line is masked before its white space is folded, so a value\nholding white space or a line break is found. ADR 0090 names keeping a\ntask's masked command lines in memory as the operator-ruled exception to\nthe digest-only rule of ADR 0066 and ADR 0075, and marks the counts, the\nkeeping after close and the plugin's wait as to be confirmed.\n\nRefs #1981\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-15T01:20:12+04:00",
+          "tree_id": "a94819d831c1e56a5f5dd8bda25613b61d2884a0",
+          "url": "https://github.com/purlis/purlis/commit/db3ea9746698e7bb577ecc6e7ae516cc627fd262"
+        },
+        "date": 1792013026370,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.523918,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.514, 0.524, 0.525, 0.543 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7752335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.381, 16.731, 16.775, 16.842, 16.984 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.2237385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.862, 103.478, 104.224, 104.285, 104.973 ms"
           }
         ]
       }
