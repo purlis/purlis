@@ -1711,8 +1711,9 @@ pub async fn allow_sandbox_block(
 }
 
 /// **Keep blocked** on a block's Notice (#1666, taking over #1411's line): `shown` is the block
-/// the Notice showed, `reason` what the person typed for the chat, if anything. Refused unless
-/// the chat is held on that block now (#1538). Nothing is granted. For a host, what the chat's
+/// the Notice showed, `reason` what the person typed for the chat, if anything. Nothing is
+/// done where the chat is not held on that block now (#1538): it was answered already.
+/// Nothing is granted. For a host, what the chat's
 /// proxy holds on it is refused now; for every kind, the chat is told in one line not to retry,
 /// with the reason (#1987).
 #[tauri::command]
@@ -1725,7 +1726,11 @@ pub fn keep_sandbox_block(
     reason: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    let block = keep_block(held.chats(), session, &shown, reason.as_deref())?;
+    // Answered already, by another press or another window: nothing is left to keep blocked,
+    // and the chat was told by that answer (#1987).
+    let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref()) else {
+        return Ok(());
+    };
     // The person's no, kept where the Inbox's look back reads it (#1700).
     if block.what == GrantWhat::Host {
         crate::network::record_kept_blocked(
@@ -1739,14 +1744,15 @@ pub fn keep_sandbox_block(
     Ok(())
 }
 
-/// [`keep_sandbox_block`] on `chats`: the block it answered.
+/// [`keep_sandbox_block`] on `chats`: the block it answered, or none where the chat is not held
+/// on it any more, and then nothing is done and the chat is told nothing.
 pub(crate) fn keep_block(
     chats: &crate::chats::Chats,
     session: u32,
     shown: &crate::taskblocks::BlockShown,
     reason: Option<&str>,
-) -> Result<crate::taskblocks::HeldBlock, String> {
-    let block = crate::taskblocks::shown_one(chats.blocks(), session, shown)?;
+) -> Option<crate::taskblocks::HeldBlock> {
+    let block = crate::taskblocks::shown_one(chats.blocks(), session, shown).ok()?;
     chats.blocks().answered(session, &block);
     if block.what == GrantWhat::Host
         && let Ok(host) = sandbox::grant::host(&block.target)
@@ -1754,7 +1760,7 @@ pub(crate) fn keep_block(
         chats.keep_blocked_live(session, &host);
     }
     crate::askoutcome::kept_blocked(chats, session, (block.what, &shown.target), reason);
-    Ok(block)
+    Some(block)
 }
 
 /// The chats of this project owed a restart (#1342, #1428): to take a grant, or because the

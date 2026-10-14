@@ -22,7 +22,8 @@ type Answer = { status: "ok"; data: { said: string } | null } | { status: "error
  *   Network, and removed there. The chat does not restart: its next run reads it. The core
  *   tells the chat what now runs only when that is safe (a waiting chat now, a
  *   chat mid-turn when its turn ends), and otherwise the Notice says to ask the chat.
- * - **Keep blocked**: puts the Notice away. The chat's next try raises it again.
+ * - **Keep blocked**: puts the Notice away, and the chat is told in one line not to retry
+ *   (#1987). The chat's next try raises it again.
  *
  * **It never loops** (qw385): after any press, every chat's refusals of the project are read
  * again, so a Notice the core no longer holds (answered by an Allow on another chat of the same
@@ -30,8 +31,9 @@ type Answer = { status: "ok"; data: { said: string } | null } | { status: "error
  *
  * - **Dispatch to {persona}…**, where the vault is tagged for a persona the project defines
  *   (#1438): opens Ask {persona} for this chat, the dialog its tab's menu opens, and you type
- *   what to ask, and puts the Notice away as Keep blocked does. The chat's own refusal also
- *   told it how to dispatch to that persona.
+ *   what to ask, and puts the Notice away (`put_away_refused_vault`), telling the chat nothing:
+ *   nothing was kept blocked (#1987). The chat's own refusal also told it how to dispatch to
+ *   that persona.
  *
  * **The dialog opens empty.** What is typed there reaches the new chat as your own words, so
  * this Notice hands it nothing a chat produced: not the command that was refused, and not the
@@ -182,7 +184,9 @@ export function VaultRefusedNotice({
                 askPersona(session, newest.dispatch_to, undefined, "notice");
                 // The way forward is taken: the Notice is put away, as Keep blocked puts it
                 // (qw385). The chat's next try at the vault raises it again.
-                press(() => commands.keepVaultBlocked(plane, session, vault, null));
+                // Nothing was kept blocked, so the chat is told nothing (#1987): it hears how
+                // the work went from that persona or the person.
+                press(() => commands.putAwayRefusedVault(plane, session, vault));
               },
             },
           ];

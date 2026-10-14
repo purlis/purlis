@@ -1508,7 +1508,7 @@ impl Chats {
                         purlis_core::askoutcome::Outcome {
                             about: purlis_core::askoutcome::About::Host { host: target },
                             answer: purlis_core::askoutcome::Answer::Allowed {
-                                scope: purlis_core::askoutcome::Scope::of(level),
+                                scope: purlis_core::askoutcome::Scope::live(level),
                             },
                         },
                     );

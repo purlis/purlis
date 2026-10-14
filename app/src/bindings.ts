@@ -530,8 +530,9 @@ export const commands = {
 	keepSandboxBlockForTasks: (plane: PlaneId, session: number, seen: SeenBlock[], reason: string | null) => typedError<number[], string>(__TAURI_INVOKE("keep_sandbox_block_for_tasks", { plane, session, seen, reason })),
 	/**
 	 *  **Keep blocked** on a block's Notice (#1666, taking over #1411's line): `shown` is the block
-	 *  the Notice showed, `reason` what the person typed for the chat, if anything. Refused unless
-	 *  the chat is held on that block now (#1538). Nothing is granted. For a host, what the chat's
+	 *  the Notice showed, `reason` what the person typed for the chat, if anything. Nothing is
+	 *  done where the chat is not held on that block now (#1538): it was answered already.
+	 *  Nothing is granted. For a host, what the chat's
 	 *  proxy holds on it is refused now; for every kind, the chat is told in one line not to retry,
 	 *  with the reason (#1987).
 	 */
@@ -620,6 +621,13 @@ export const commands = {
 	 *  anything (#1987). Its next try at the vault raises the Notice again.
 	 */
 	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
+	/**
+	 *  **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to
+	 *  {persona}… on it, where the work goes to the vault's own persona. Nothing was kept blocked
+	 *  by the person, so the chat is not told it was; it hears how the work went from that persona
+	 *  or the person. Its next try at the vault raises the Notice again.
+	 */
+	putAwayRefusedVault: (plane: PlaneId, session: number, vault: string) => typedError<null, string>(__TAURI_INVOKE("put_away_refused_vault", { plane, session, vault })),
 	/**
 	 *  **Keep** on a chat's question: puts it away and removes nothing. The chat is told on its
 	 *  next turn that the person kept the workspace, and not to ask again unless they ask.

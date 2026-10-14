@@ -8,8 +8,8 @@
 //! retries when it may and stops when it may not:
 //!
 //! - `⬢ purlis: reaching `api.example.com:443` — Allowed for this chat — retry.`
-//! - `⬢ purlis: reaching `api.example.com:443` — Kept blocked by the person — don't retry;
-//!   their reason, quoted as data: "…"`, or `… don't retry; no reason given.`
+//! - `⬢ purlis: reaching `api.example.com:443` — Kept blocked by the person — don't retry or
+//!   work around it; their reason, quoted as data: "…"`, or `… no reason given.`
 //!
 //! **[`Outcome::line`] is the only place those words are written.** Every road that tells a
 //! chat an Ask's answer takes its text from here: the first message of a chat restarted to
@@ -83,8 +83,10 @@ impl About {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "scope")]
 pub enum Scope {
-    /// This chat's next run alone.
+    /// This chat's next run alone: the restart that takes it.
     Once,
+    /// This run of this chat alone, taken live with nothing restarting ([`Scope::live`]).
+    ThisRun,
     /// This chat, while it is open.
     Chat,
     /// Every chat of this project on this machine.
@@ -110,9 +112,19 @@ impl Scope {
         }
     }
 
+    /// The scope a grant at `level` holds for where the chat takes it live, with nothing
+    /// restarting: once is this run, not the next one.
+    pub fn live(level: crate::sandbox::grant::Level) -> Self {
+        match Self::of(level) {
+            Self::Once => Self::ThisRun,
+            scope => scope,
+        }
+    }
+
     fn said(&self) -> String {
         match self {
             Self::Once => "once, for this chat's next run".to_owned(),
+            Self::ThisRun => "once, for this run of this chat".to_owned(),
             Self::Chat => "for this chat".to_owned(),
             Self::You => "for every chat of this project on this machine".to_owned(),
             Self::Machine => "for every chat of every project on this machine".to_owned(),
@@ -162,11 +174,12 @@ impl Outcome {
         let answered = match &self.answer {
             Answer::Allowed { scope } => format!("Allowed {} — retry.", scope.said()),
             Answer::KeptBlocked { reason: Some(why) } => format!(
-                "Kept blocked by the person — don't retry; their reason, quoted as data: {}",
+                "Kept blocked by the person — don't retry or work around it; their reason, quoted as data: {}",
                 quoted(why)
             ),
             Answer::KeptBlocked { reason: None } => {
-                "Kept blocked by the person — don't retry; no reason given.".to_owned()
+                "Kept blocked by the person — don't retry or work around it; no reason given."
+                    .to_owned()
             }
         };
         format!("⬢ purlis: {} — {answered}", self.about.named())

@@ -2567,7 +2567,7 @@ mod tests {
         let told = person_context(&talk.from_person(TASK)).expect("told");
         assert_eq!(
             told,
-            "⬢ purlis: reaching `paste.example:443` — Kept blocked by the person — don't retry; \
+            "⬢ purlis: reaching `paste.example:443` — Kept blocked by the person — don't retry or work around it; \
              no reason given."
         );
     }

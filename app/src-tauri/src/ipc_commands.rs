@@ -97,6 +97,7 @@ macro_rules! app_commands {
                 dispatchunattended::chat_attended,
                 vaultroute::allow_refused_vault,
                 vaultroute::keep_vault_blocked,
+                vaultroute::put_away_refused_vault,
                 removalasks::keep_asked_workspace,
                 mcpfailed::mcp_failures,
                 mcpfailed::put_away_mcp_failure,

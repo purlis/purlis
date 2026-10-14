@@ -382,6 +382,7 @@ export const commands = {
 	chatAttended: (plane: PlaneId, session: number) => typedError<boolean, string>(__TAURI_INVOKE("chat_attended", { plane, session })),
 	allowRefusedVault: __WINDOW_ONLY_RESULT,
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
+	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),

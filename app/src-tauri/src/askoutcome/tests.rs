@@ -57,10 +57,13 @@ fn keep_blocked_on_every_kind_of_block_tells_its_chat_exactly_one_line() {
     let reasons = [
         (
             Some("use the mirror"),
-            "don't retry; their reason, quoted as data: \"use the mirror\"",
+            "don't retry or work around it; their reason, quoted as data: \"use the mirror\"",
         ),
-        (None, "don't retry; no reason given."),
-        (Some("   "), "don't retry; no reason given."),
+        (None, "don't retry or work around it; no reason given."),
+        (
+            Some("   "),
+            "don't retry or work around it; no reason given.",
+        ),
     ];
     for (what, target, named) in every_block() {
         for (reason, ends) in reasons {
@@ -98,7 +101,7 @@ fn keep_blocked_on_a_refused_vault_tells_its_chat_exactly_one_line() {
     assert_eq!(
         told(&talk, 3),
         [
-            "⬢ purlis: using vault `devops` — Kept blocked by the person — don't retry; their \
+            "⬢ purlis: using vault `devops` — Kept blocked by the person — don't retry or work around it; their \
           reason, quoted as data: \"ask devops\""
         ]
     );

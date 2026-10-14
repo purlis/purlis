@@ -352,6 +352,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Grant commands (#1927): a consent given, answered or taken back.
     "allow_refused_vault",
     "keep_vault_blocked",
+    "put_away_refused_vault",
     "allow_persona_grants",
     "confirm_sandbox_host",
     "list_grantable_folder",

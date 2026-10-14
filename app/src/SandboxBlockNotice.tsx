@@ -527,7 +527,8 @@ function AllowNotice({
       asksMoved(block.plane);
     });
   };
-  /** Keep blocked (#1666): the core refuses what the proxy holds, and tells the chat. */
+  /** Keep blocked (#1666, #1987): the core refuses what the proxy holds on a host, and tells
+   *  the chat, whatever the block is. */
   const keepBlocked = () => {
     if (busy) return;
     const targets = hosts.length > 0 ? asking : block.target !== null ? [block.target] : [];
@@ -536,24 +537,8 @@ function AllowNotice({
       onDismiss();
       return;
     }
-    // Anything but a host: the chat is told in one line not to retry (#1987), then the Notice
-    // goes as it always did, whatever the answer.
-    if (what !== "host") {
-      setBusy(true);
-      void commands
-        .keepSandboxBlock(
-          block.plane,
-          block.session,
-          { operation: block.operation, kind: block.kind, what, target: targets[0] },
-          null,
-        )
-        .catch(() => undefined)
-        .finally(() => {
-          setBusy(false);
-          onDismiss();
-        });
-      return;
-    }
+    // Every kind is kept blocked by the core, which tells the chat in one line (#1987); a
+    // block answered already is a quiet no-op there, and the Notice goes.
     setBusy(true);
     setSaid(undefined);
     void Promise.all(

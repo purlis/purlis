@@ -84,8 +84,8 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
         what: GrantWhat::Host,
         target: "paste.example:8443".to_owned(),
     };
-    // Not held on it: refused whole, and the chat is told nothing.
-    assert!(keep_block(&chats, 4, &shown, None).is_err());
+    // Not held on it: answered already, so nothing is done and the chat is told nothing.
+    assert!(keep_block(&chats, 4, &shown, None).is_none());
     assert!(told.lock().unwrap().is_empty());
     chats.blocks().heard(
         4,
@@ -109,8 +109,9 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
             },
         )]
     );
-    // Answered: a second press finds nothing held.
-    assert!(keep_block(&chats, 4, &shown, None).is_err());
+    // Answered: a second press finds nothing held, and tells the chat nothing more.
+    assert!(keep_block(&chats, 4, &shown, None).is_none());
+    assert_eq!(told.lock().unwrap().len(), 1);
 }
 
 // ---- an administrator's policy (#1343), through the test build's seam ----

@@ -663,6 +663,25 @@ pub fn keep_vault_blocked(
     Ok(())
 }
 
+/// **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to
+/// {persona}… on it, where the work goes to the vault's own persona. Nothing was kept blocked
+/// by the person, so the chat is not told it was; it hears how the work went from that persona
+/// or the person. Its next try at the vault raises the Notice again.
+#[tauri::command]
+#[specta::specta]
+pub fn put_away_refused_vault(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    vault: String,
+) -> Result<(), String> {
+    planes
+        .held(&plane)?
+        .vault_refusals()
+        .put_away(session, &vault);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
