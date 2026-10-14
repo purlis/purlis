@@ -86,8 +86,10 @@ const BUSY: &str = "A save of this project is running. Wait for it to finish, th
 
 /// What a press says where this window holds no stop for the rebase git is stopped in.
 const NOT_HELD: &str = "This window did not see where git stopped (it was restarted, or the \
-     rebase was started elsewhere), so it carries nothing on. Abort, then Resolve again; or \
-     carry on in a terminal.";
+     rebase was started elsewhere), so it carries nothing on. Carry on in a terminal here, which \
+     keeps what is settled: `git add -- <file>` for each settled file, then `git rebase \
+     --continue`. Abort instead throws away the edits already made and puts the project back \
+     where it was, and Resolve then starts again.";
 
 /// **Resolve**: fetch the target branch and replay the project's own commits onto it, stopping
 /// where git stops. For the person's own press in the window, and nothing else.
@@ -207,7 +209,7 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             if outside.len() == 1 { "is" } else { "are" },
         ));
     }
-    let left = conflicts(root);
+    let left = sorted(root, Some(&stop.by_hand));
     if !left.by_hand.is_empty() {
         return Settled::Refused(said_by_hand(&left.by_hand));
     }
@@ -247,12 +249,11 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             }
             Err(unavailable) => return Settled::Refused(unavailable.to_string()),
         }
-        // What was staged is what was checked, or nothing goes on.
+        // What was staged is what was checked, as git stores it for that path (its clean
+        // filter and line endings applied), or nothing goes on.
         let moved: Vec<&String> = checked
             .iter()
-            .filter(|(path, bytes)| {
-                staged_text(root, path).as_deref() != Some(&*String::from_utf8_lossy(bytes))
-            })
+            .filter(|(path, bytes)| !staged_as_checked(root, path, bytes))
             .map(|(path, _)| *path)
             .collect();
         if !moved.is_empty() {
@@ -292,6 +293,21 @@ pub fn skip(root: &Path) -> Settled {
     };
     if let Err(refused) = held_stop(root) {
         return refused;
+    }
+    // Only a commit with nothing left to commit is dropped, whatever the window last drew.
+    let settled = unmerged(root).is_empty();
+    let empty = git::run(
+        root,
+        &["diff", "--cached", "--quiet", "HEAD", "--"],
+        git::READ,
+    )
+    .is_ok_and(|run| run.ok());
+    if !(settled && empty) {
+        return Settled::Refused(
+            "Skip drops only a commit that has nothing left to commit, and this one still \
+             changes files. Continue it, or Abort."
+                .into(),
+        );
     }
     let skipped = git::run_untimed(root, &["-c", "core.editor=true", "rebase", "--skip"]);
     after_step(root, skipped)
@@ -342,11 +358,27 @@ pub fn push_after(root: &Path, say: Sink) -> (Option<PushResult>, Vec<String>) {
     (Some(pushed), left)
 }
 
-/// The files of the rebase stopped in the project, by who may settle them. Empty where none is.
+/// The files of the rebase stopped in the project, by who may settle them, as this window saw
+/// them at the stop. Where it holds no stop, a file with no marker in it is the person's.
+/// Empty where none is.
 pub fn conflicts(root: &Path) -> Conflicts {
+    let held = held_stop(root).ok().map(|stop| stop.by_hand);
+    sorted(root, held.as_ref())
+}
+
+/// The unmerged files, sorted: by `by_hand` as held at the stop, or, with none, by whether git
+/// could mark them and whether a marker is in the file now. A file sorted as markable with no
+/// marker in it is the person's: a `.gitattributes` `binary`, `-merge` or merge driver leaves
+/// one side's copy and no marker.
+fn sorted(root: &Path, by_hand: Option<&BTreeSet<String>>) -> Conflicts {
     let mut out = Conflicts::default();
     for (path, stages) in unmerged(root) {
-        if marks_nothing(root, &path, &stages) {
+        let hand = marks_nothing(root, &path, &stages)
+            || match by_hand {
+                Some(held) => held.contains(&path),
+                None => !read_plain(root, &path).is_ok_and(|bytes| markers_in(&bytes)),
+            };
+        if hand {
             out.by_hand.push(path);
         } else {
             out.marked.push(path);
@@ -470,7 +502,7 @@ fn hold_stop(root: &Path) {
     let Some(at) = rev(root, "REBASE_HEAD") else {
         return;
     };
-    let found = conflicts(root);
+    let found = sorted(root, None);
     let conflicted: BTreeSet<String> = found.marked.iter().chain(&found.by_hand).cloned().collect();
     let stop = Stop {
         at,
@@ -594,6 +626,29 @@ fn marks_nothing(root: &Path, path: &str, stages: &[(u8, String, String)]) -> bo
         return true;
     }
     std::fs::symlink_metadata(root.join(path)).is_err()
+}
+
+/// Whether what is staged at `path` is `bytes`, as git would store them for that path: its
+/// clean filter and line endings applied (`hash-object --path`).
+pub(super) fn staged_as_checked(root: &Path, path: &str, bytes: &[u8]) -> bool {
+    let staged = git::run(
+        root,
+        &["rev-parse", "--verify", "-q", &format!(":0:{path}")],
+        git::READ,
+    )
+    .ok()
+    .filter(git::Run::ok)
+    .map(|run| run.line().trim().to_string());
+    let checked = git::run_with_input(
+        root,
+        &["hash-object", "--path", path, "--stdin"],
+        bytes.to_vec(),
+        git::READ,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0))
+    .map(|run| String::from_utf8_lossy(&run.out).trim().to_string());
+    staged.is_some() && staged == checked
 }
 
 /// What is staged at `path` (stage 0), as text; `None` where nothing is.
