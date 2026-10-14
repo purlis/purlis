@@ -145,6 +145,8 @@ function core(
     /** The chats the asks registry says wait on a reply, by project (#1690): the Inbox lists
      *  them. None said, the registry answers nothing. */
     asks?: Record<string, number[]>;
+    /** What `close_plane` answers with, where a test holds its answer back (#1949). */
+    closes?: () => Promise<null>;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -177,6 +179,7 @@ function core(
       };
     }
     if (cmd === "open_plane") return { plane: given.path, ask: null };
+    if (cmd === "close_plane" && over.closes !== undefined) return over.closes();
     if (cmd === "plane_sidebar") return sidebarOf(plane ?? "");
     if (cmd === "opened_chats") return chats[plane ?? ""] ?? [];
     if (cmd === "chat_states") return [];
@@ -643,6 +646,39 @@ describe("a window holding more than one project", () => {
       { plane: TWO },
     ]);
     expect(chatTabs()).toEqual(["one.1"]);
+  });
+
+  it("takes a closing project's tab out at once, while the core is still ending its chats (#1949)", async () => {
+    // The core lets go of a project off the window's thread, which can take a while: the tab
+    // goes as the close is asked, so a second press can never close it again.
+    let answer: (said: null) => void = () => {};
+    const { asked } = core({
+      launch: ONE,
+      chats: {
+        [ONE]: [chat({ session: 1, name: "one.1" })],
+        [TWO]: [chat({ session: 1, name: "two.1" })],
+      },
+      closes: () => new Promise((said) => (answer = said)),
+    });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
+    await openByPath(TWO);
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "Close project two" }));
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: /^Close and end/,
+      }),
+    );
+
+    // Not answered yet, and the tab is gone.
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    expect(asked.filter((one) => one.cmd === "close_plane")).toHaveLength(1);
+    answer(null);
+    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    expect(asked.filter((one) => one.cmd === "close_plane")).toHaveLength(1);
   });
 
   it("warns about every project's chats when it is asked to quit, and tells two chat 1s apart", async () => {
