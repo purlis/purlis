@@ -19,6 +19,13 @@
 //! - **Never on a slash command.** The operator has already picked the method.
 //! - **Never unattended** (`permission_mode: bypassPermissions`). "Ask the operator" is advice
 //!   nobody can follow there, and following it would block the run.
+//! - **Only on a chat's first prompt, or a later one that asks for a code change** (#1988).
+//!   A later prompt counts only when it opens with the ask itself ([`asks_for_a_code_change`]):
+//!   a short reply, an answer to a question and a design answer ("agree at all, but …") are
+//!   none of them a commitment point, whatever words follow. The first prompt is known from
+//!   the gate's own record of the chat, `<state>/commit-gate/<session>`: a session with no
+//!   record has not prompted yet. Every harness that runs `userpromptsubmit` hands the hook its
+//!   session id, so the rule is the same in each.
 //! - **Once, then quiet for [`COOLDOWN`] prompts**, so the answers to its own question do not
 //!   set it off again.
 //!
@@ -52,6 +59,9 @@ pub const COOLDOWN: u32 = 3;
 /// The permission mode a harness reports for a run nobody is watching.
 const UNATTENDED: &str = "bypassPermissions";
 
+/// Fewer words than this make a short reply, which is never an ask for a code change.
+const SHORT_REPLY_WORDS: usize = 5;
+
 /// Characters of actual prose, pasted evidence removed, that make an ask "many-part".
 const PROSE_LONG: usize = 240;
 
@@ -59,12 +69,22 @@ fn pattern(source: &str) -> Regex {
     Regex::new(source).expect("a valid pattern")
 }
 
-/// Asking for work to happen, not for information.
-static ACTION: LazyLock<Regex> = LazyLock::new(|| {
+/// The verbs that ask for work to happen, not for information.
+const ACTION_VERBS: &str = r"implement|build|create|add|write|refactor|migrate|redesign|rewrite|port|integrate|wire\s+up|set\s+up|introduce|replace|split|extract|optimi[sz]e|improve|fix|make\s+(?:it|this|our|the)\b";
+
+/// Asking for work to happen, anywhere in the prompt.
+static ACTION: LazyLock<Regex> = LazyLock::new(|| pattern(&format!(r"(?i)\b({ACTION_VERBS})")));
+
+/// The words a person puts before an ask without changing it: "please", "ok, now", "can you".
+static LEAD_IN: LazyLock<Regex> = LazyLock::new(|| {
     pattern(
-        r"(?i)\b(implement|build|create|add|write|refactor|migrate|redesign|rewrite|port|integrate|wire\s+up|set\s+up|introduce|replace|split|extract|optimi[sz]e|improve|fix|make\s+(?:it|this|our|the)\b)",
+        r"(?i)^(?:(?:please|now|then|next|also|ok(?:ay)?|so|and|let(?:'|\x{2019})?s|let\s+us|go\s+ahead\s+and|(?:can|could|would|will)\s+you)\b[\s,]*)*",
     )
 });
+
+/// A prompt that opens with the ask itself, once its lead-in is set aside.
+static LEADS_WITH_ACTION: LazyLock<Regex> =
+    LazyLock::new(|| pattern(&format!(r"(?i)^(?:{ACTION_VERBS})\b")));
 
 /// The request admits more than one defensible approach.
 static FUZZY: LazyLock<Regex> = LazyLock::new(|| {
@@ -133,6 +153,20 @@ pub fn signals(prompt: &str) -> Vec<&'static str> {
     found
 }
 
+/// Whether a prompt after a chat's first asks for a code change (#1988): it is not a slash
+/// command, a question or a short reply, and it opens with the ask, after at most a lead-in
+/// ("please", "ok, now", "can you"). Anything else, an answer to a question or a design answer
+/// above all, is not: the test errs toward staying quiet.
+pub fn asks_for_a_code_change(prompt: &str) -> bool {
+    let p = prompt.trim();
+    if p.starts_with('/') || LOOKUP.is_match(p) || p.split_whitespace().count() < SHORT_REPLY_WORDS
+    {
+        return false;
+    }
+    let lead = LEAD_IN.find(p).map_or(0, |m| m.end());
+    LEADS_WITH_ACTION.is_match(&p[lead..])
+}
+
 /// What the gate says for `prompt`, or nothing. Pure: no cooldown, no plane.
 pub fn message(prompt: &str) -> Option<String> {
     let found = signals(prompt);
@@ -166,8 +200,9 @@ pub fn message(prompt: &str) -> Option<String> {
     ))
 }
 
-/// The gate as `userpromptsubmit` runs it: [`message`], in a plane, attended, and out of its
-/// cooldown.
+/// The gate as `userpromptsubmit` runs it: [`message`], in a plane, attended, out of its
+/// cooldown, and on the chat's first prompt or a later one that [asks for a code
+/// change](asks_for_a_code_change).
 pub fn nudge(hook: &Hook) -> Option<String> {
     if !hook.in_plane {
         return None;
@@ -177,35 +212,58 @@ pub fn nudge(hook: &Hook) -> Option<String> {
         return None;
     }
     let session = payload.get("session_id").and_then(|v| v.as_str());
-    let counter = Cooldown::of(hook, hookstate::session(session, hook.env));
+    let record = Record::of(hook, hookstate::session(session, hook.env));
+    // A chat purlis cannot name has no first prompt it can know of: each of its prompts is
+    // read as a later one, which errs toward quiet.
+    let first = record.as_ref().is_some_and(Record::first);
     // Every attended prompt moves the cooldown, whether or not it would fire: the answers to
     // the gate's own question are what the quiet is for, and they rarely look like a fork.
-    if counter.as_ref().is_some_and(Cooldown::counting_down) {
+    if record.as_ref().is_some_and(Record::counting_down) {
         return None;
     }
     let prompt = payload.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
-    let said = message(prompt)?;
-    if let Some(counter) = counter {
-        counter.start();
+    let said = if first || asks_for_a_code_change(prompt) {
+        message(prompt)
+    } else {
+        None
+    };
+    if let Some(record) = record {
+        if said.is_some() {
+            record.start();
+        } else if first {
+            record.seen();
+        }
     }
-    Some(said)
+    said
 }
 
-/// One session's count of prompts left to stay quiet for, under
-/// `<state>/commit-gate/<session>`. A session charter cannot name has none, and a count it
-/// cannot keep reads as zero: the gate may cost a prompt, never a turn.
-struct Cooldown {
+/// One session's record, under `<state>/commit-gate/<session>`: the count of prompts left to
+/// stay quiet for, and, by being there at all, that the session has prompted before. A session
+/// purlis cannot name has none, and a count it cannot keep reads as zero: the gate may cost a
+/// prompt, never a turn.
+struct Record {
     state: State,
     file: PathBuf,
 }
 
-impl Cooldown {
+impl Record {
     fn of(hook: &Hook, session: Option<String>) -> Option<Self> {
         // `hookstate::session` leaves `.` and `..` standing, and neither is a file.
         let session = session.filter(|id| !id.chars().all(|c| c == '.'))?;
         let state = State::of(hook.root);
         let file = state.dir().join("commit-gate").join(session);
         Some(Self { state, file })
+    }
+
+    /// Whether this is the session's first prompt: it has no record yet. A record that is
+    /// there but cannot be read is a session that has prompted before.
+    fn first(&self) -> bool {
+        matches!(self.state.read(&self.file), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+    }
+
+    /// The session has prompted, and the gate did not fire: nothing to stay quiet for.
+    fn seen(&self) {
+        let _ = self.state.replace(&self.file, b"0");
     }
 
     /// Whether the gate is still quiet — and if it is, one prompt fewer to wait.
@@ -259,6 +317,53 @@ mod tests {
         assert_eq!(signals(&log), Vec::<&str>::new());
         let long = format!("fix the importer so that {}", "it reads rows ".repeat(30));
         assert_eq!(signals(&long), vec!["a long, many-part ask"]);
+    }
+
+    /// One row per behaviour of the later-prompt test (#1988): what a chat's later prompt must
+    /// say to be read as an ask for a code change. It errs toward "no".
+    #[test]
+    fn a_later_prompt_counts_only_when_it_asks_for_a_code_change() {
+        for (prompt, asks) in [
+            // The ruling's own case: a design answer in a grill.
+            ("agree at all", false),
+            (
+                "agree at all, but add a retry to the error dialog across every repo",
+                false,
+            ),
+            ("Agreed. Now implement it across every repo.", false),
+            // Short replies.
+            ("yes", false),
+            ("go on", false),
+            ("the second option", false),
+            ("fix it", false),
+            ("B, maybe across repos", false),
+            // Answers and opinions lead with something other than an ask.
+            ("yes, and add a cache in front of the importer", false),
+            (
+                "I think we should maybe add a cache across every repo",
+                false,
+            ),
+            (
+                "no, the error is in the importer and it fails across repos",
+                false,
+            ),
+            // Questions and slash commands.
+            ("why does the importer fail across every repo?", false),
+            ("can you check whether the importer is cleaner now", false),
+            ("/review refactor the importer across every repo", false),
+            // Asks for a code change.
+            (
+                "refactor the importer so it is cleaner across every repo",
+                true,
+            ),
+            ("please rewrite the importer to stream its rows", true),
+            ("ok, now add a cache in front of the importer", true),
+            ("can you implement the importer across every repo", true),
+            ("let's build the importer so it streams rows", true),
+            ("Fix the importer crash, maybe it's the cache", true),
+        ] {
+            assert_eq!(asks_for_a_code_change(prompt), asks, "{prompt}");
+        }
     }
 
     #[test]

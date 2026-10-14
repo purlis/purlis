@@ -3,7 +3,9 @@
 
 //! The commitment gate on `userpromptsubmit` (charter#369): a prompt that asks for work AND
 //! leaves a real fork open is told to scout and then ask before it builds. Everything else is
-//! silent, because a nudge that fires on a lookup is one the reader learns to skip.
+//! silent, because a nudge that fires on a lookup is one the reader learns to skip. It is
+//! considered only on a chat's first prompt and on a later one that asks for a code change
+//! (#1988), never on a short reply or the answer to a question.
 //!
 //! Run the way a harness runs it: `charter hook userpromptsubmit` in a plane, the payload on
 //! stdin.
@@ -59,7 +61,12 @@ fn context_of(stdout: &str) -> String {
         .to_owned()
 }
 
-const FORKED: &str = "maybe refactor the importer so it is cleaner across every repo";
+const FORKED: &str = "refactor the importer so it is maybe cleaner across every repo";
+
+/// A design answer in a grill, as the ruling quotes it, that reads as forked work by the
+/// fork signals alone: an action, a fork, and a symptom word.
+const DESIGN_ANSWER: &str =
+    "agree at all, but I think the error dialog should add a retry across every repo";
 
 #[test]
 fn work_with_a_fork_in_it_is_told_to_scout_and_ask_before_building() {
@@ -114,6 +121,76 @@ fn the_quiet_is_counted_in_prompts_of_any_kind() {
     assert!(
         !prompt_in(plane.path(), &asking(FORKED)).is_empty(),
         "a new fork after the quiet is told"
+    );
+}
+
+#[test]
+fn a_chats_first_prompt_is_read_for_a_fork_whatever_it_opens_with() {
+    let plane = a_plane();
+
+    let context = context_of(&prompt_in(
+        plane.path(),
+        &asking("maybe refactor the importer so it is cleaner across every repo"),
+    ));
+
+    assert!(context.contains("Commitment point"), "{context}");
+}
+
+#[test]
+fn a_design_answer_on_a_later_turn_says_nothing() {
+    let plane = a_plane();
+    assert_eq!(
+        prompt_in(plane.path(), &asking("let us grill the importer")),
+        ""
+    );
+
+    for answer in [
+        DESIGN_ANSWER,
+        "agree at all",
+        "yes",
+        "the second option, maybe across repos",
+    ] {
+        assert_eq!(prompt_in(plane.path(), &asking(answer)), "", "{answer}");
+    }
+}
+
+#[test]
+fn a_design_answer_as_the_first_prompt_is_still_read_for_a_fork() {
+    // The first prompt is read whatever it opens with; only later prompts must ask for a
+    // code change. The same words, second, are silent (above).
+    let plane = a_plane();
+
+    let context = context_of(&prompt_in(plane.path(), &asking(DESIGN_ANSWER)));
+
+    assert!(context.contains("Commitment point"), "{context}");
+}
+
+#[test]
+fn a_later_prompt_that_asks_for_a_code_change_is_told() {
+    let plane = a_plane();
+    assert_eq!(prompt_in(plane.path(), &asking("hello")), "");
+
+    let context = context_of(&prompt_in(plane.path(), &asking(FORKED)));
+
+    assert!(context.contains("Commitment point"), "{context}");
+}
+
+#[test]
+fn each_chat_has_its_own_first_prompt() {
+    let plane = a_plane();
+    assert_eq!(prompt_in(plane.path(), &asking("hello")), "");
+
+    let mut other = asking(DESIGN_ANSWER);
+    other["session_id"] = "s-2".into();
+
+    assert!(
+        !prompt_in(plane.path(), &other).is_empty(),
+        "s-2's first prompt"
+    );
+    assert_eq!(
+        prompt_in(plane.path(), &asking(DESIGN_ANSWER)),
+        "",
+        "s-1's second"
     );
 }
 

@@ -124,7 +124,7 @@ its own plane:
 - what a chat's harness said its session cost, `.charter/app/spend/<chat>.json`, last written
   30 days or more before, unless the chat, by its id, is one the reopen record will bring back
   (#1457).
-- a commit gate cooldown, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
+- a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
   begins with, then `-`). Losing one costs a returning session one more question or one more
@@ -6321,6 +6321,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Format:** plain text, a small decimal integer (countdown), no newline
 - **Status:** **internal** — a per-session cooldown counter for one nudge, written and read
   only by `hooks`. Deleted ⇒ the next prompt may nudge once more.
+- **Its presence** (purlis, #1988): written, `0`, on a session's first attended prompt when the
+  gate does not fire, so a session with no file has not prompted yet. The gate reads every
+  prompt of a session without one, and only an ask for a code change of a session with one.
+  Deleted ⇒ the session's next prompt is read as its first.
 - **Tier:** Clone state, transient — a gate file.
 - **Written by:** `charter/hooks.py:8322` / `charter/hooks.py:8324` (reset to
   `_COMMIT_COOLDOWN` = 3, `charter/hooks.py:8262`)
