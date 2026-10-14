@@ -109,10 +109,11 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   **Allow {persona} to use this vault** and **Keep blocked**. Allow is kept on this machine
   beside the project, never in the committed registry; it is recorded, listed in Settings ›
   Sandbox › Granted and revoked there, and the next run reads it, so the chat does not restart.
-  The chat is then told exactly what now runs: `secret list` of that vault and the persona's
-  declared tools with it; reading a value directly stays refused. One Allow answers every chat
-  opened as that persona that was refused the same vault, and a press where the persona may
-  use the vault already says so and puts the notice away.
+  The chat is then told exactly what now runs: `secret list` of that vault, and the persona's
+  declared tools with it where it declares one; reading a value directly stays refused. One
+  Allow answers every chat opened as that persona that was refused the same vault, and each is
+  told the same; a press where the persona may use the vault already says so and puts the
+  notice away.
   A policy's `"vault-grants": false` forbids it. The other way forward is a dispatch to the
   persona the vault is tagged for. A chat's persona is fixed for its life, so nothing run in
   the chat changes which vaults it may use. A vault name the project does not register is
@@ -154,6 +155,8 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   by the app, which authorises the vault exactly as it does a brokered `secret exec` (the
   vault is tagged for the chat's persona, or you allowed it) and answers the names alone. A
   vault the persona may not use raises the same notice, whose Allow lets the same command run.
+  An app that does not answer in time, or is older than the command, is said so; the vault is
+  never read in the chat instead.
   `secret get` and `secret cp` (and their `persona secret` forms) are refused in a sandboxed
   chat for every provider, whatever was allowed; the refusal names `secret list` for the key
   names and `secret exec` through a declared tool for a value (a terminal outside the chat on

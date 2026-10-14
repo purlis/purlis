@@ -1979,6 +1979,96 @@ fn secret_list_outside_a_sandboxed_chat_asks_no_app() {
     assert!(!asked.load(Ordering::SeqCst));
 }
 
+/// An app that takes every ask and answers it only after the chat has stopped waiting.
+fn an_app_too_slow_to_answer() -> crate::hookwire::Answerer {
+    Box::new(|_, _| {
+        std::thread::sleep(A_KEY_LISTING_TAKES_AT_MOST + Duration::from_secs(1));
+        crate::hookwire::Answer::No { why: "late".into() }
+    })
+}
+
+#[test]
+fn an_app_that_does_not_answer_in_time_is_said_and_the_vault_is_never_read_here() {
+    // The vault is readable where the chat runs, so a read here would list it: once the ask
+    // was sent from a sandboxed chat, only the app's answer counts (review of #1967).
+    let project = project();
+    let (_dir, _reading, env) = an_app_answering(
+        Box::new(|_, _, writer| not_answered(writer)),
+        an_app_too_slow_to_answer(),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let chat = chat_ctx(project.path(), &env);
+
+    let mut rec = Rec::default();
+    let code = super::super::cmd::list(&chat, "team", &mut rec);
+    assert_eq!(code, 1);
+    assert!(rec.out.is_empty(), "nothing listed here: {:?}", rec.out);
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains(NOT_IN_TIME), "{said}");
+
+    let mut rec = Rec::default();
+    let code = super::super::vaultcmd::list(&chat, &mut rec);
+    assert_eq!(code, 1);
+    assert!(rec.out.is_empty(), "nothing listed here: {:?}", rec.out);
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains(NOT_IN_TIME), "{said}");
+}
+
+#[test]
+fn an_app_that_closes_without_answering_is_an_older_app_and_the_vault_is_never_read_here() {
+    // An app older than the ask cannot read the line, and closes the connection unanswered.
+    let project = project();
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("hooks.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let older = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            let _ = std::io::BufReader::new(&stream).read_line(&mut line);
+        }
+    });
+    let env = vec![
+        (crate::hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()),
+        (
+            crate::hookwire::SOCKET_ENV.to_owned(),
+            socket.display().to_string(),
+        ),
+        (crate::hookwire::CHAT_ENV.to_owned(), "7".to_owned()),
+    ];
+    let chat = chat_ctx(project.path(), &env);
+
+    let mut rec = Rec::default();
+    assert_eq!(super::super::cmd::list(&chat, "team", &mut rec), 1);
+    assert!(rec.out.is_empty());
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains(OLDER_APP), "{said}");
+
+    let mut rec = Rec::default();
+    assert_eq!(super::super::vaultcmd::list(&chat, &mut rec), 1);
+    assert!(rec.out.is_empty());
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains(OLDER_APP), "{said}");
+    older.join().unwrap();
+
+    // An app that reads lines it does not know says so (#1333): that is an older app too.
+    let (_dir, _reading, env) = an_app_answering(
+        Box::new(|_, _, writer| not_answered(writer)),
+        Box::new(|_, _| crate::hookwire::Answer::No {
+            why: crate::hookwire::UNKNOWN_LINE.into(),
+        }),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let mut rec = Rec::default();
+    assert_eq!(
+        super::super::cmd::list(&chat_ctx(project.path(), &env), "team", &mut rec),
+        1
+    );
+    assert!(rec.out.is_empty());
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains(OLDER_APP), "{said}");
+}
+
 #[test]
 fn a_sandboxed_chat_is_refused_reading_a_value_with_the_route_that_works() {
     let project = project();
