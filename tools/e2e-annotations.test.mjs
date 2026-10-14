@@ -17,6 +17,7 @@ import {
   LIMIT,
   MESSAGE_CHARS,
   annotations,
+  evidenceOf,
   lineOf,
   readRecords,
 } from "./e2e-annotations.mjs";
@@ -250,4 +251,57 @@ test("what covered the element a test could not press is said", () => {
     ),
     line,
   );
+});
+
+test("a long log is cut to the room the late commands and the covers leave, which stay whole", () => {
+  const coreLog = Array.from(
+    { length: 400 },
+    (_, n) =>
+      `2026-10-15T00:00:${String(n).padStart(3, "0")} INFO purlis: line ${n}`,
+  );
+  const covers = [
+    "at its centre: div.palette-backdrop",
+    "focused: input#palette",
+  ];
+  const text = evidenceOf({
+    late: [{ command: "close_plane", ms: null }],
+    coreLog,
+    covers,
+  });
+  assert.ok(text.length <= EVIDENCE_CHARS, `${text.length}`);
+  assert.ok(
+    text.startsWith("the window waited for: close_plane (never answered)\n"),
+    text.slice(0, 200),
+  );
+  assert.ok(
+    text.includes("\nthe core's last log lines:\n"),
+    "the log's header",
+  );
+  assert.ok(
+    text.endsWith(`what covered it:\n${covers.join("\n")}`),
+    "the covers whole",
+  );
+  // The newest line is kept, the oldest cut.
+  assert.ok(text.includes("purlis: line 399\n"));
+  assert.ok(!text.includes("purlis: line 0\n"));
+});
+
+test("a cover that looks like it holds a secret is said redacted, as the core's log is", () => {
+  // Made up, and built here so the repository holds no token-shaped text.
+  const token = ["ghp", "_", "0123456789abcdefghij", "ABCDEFGHIJ012345"].join(
+    "",
+  );
+  const text = evidenceOf({
+    late: [],
+    coreLog: [],
+    covers: [
+      `at its centre: div.toast “${token}”`,
+      "focused: input#token “access_token=s3cr3tvalue1234”",
+      "open: [role=dialog] Switch project",
+    ],
+  });
+  assert.ok(!text.includes(token.slice(0, 14)), text);
+  assert.ok(!text.includes("s3cr3tvalue1234"), text);
+  assert.ok(text.includes("[redacted: a line that looks like it holds"), text);
+  assert.ok(text.includes("open: [role=dialog] Switch project"), text);
 });
