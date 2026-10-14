@@ -131,8 +131,7 @@ export function watchTheAnswers(): void {
     if (typeof ask !== "function" || WAITS_BY_DESIGN.has(name)) continue;
     asks[name] = timed(name, ask.bind(commands));
   }
-  (globalThis as { __purlisLateAnswers?: () => readonly Late[] }).__purlisLateAnswers = () =>
-    late;
+  (globalThis as { __purlisLateAnswers?: () => readonly Late[] }).__purlisLateAnswers = () => late;
 }
 
 /** The late answers kept, oldest first. */
