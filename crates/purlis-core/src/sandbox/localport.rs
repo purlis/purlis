@@ -29,6 +29,13 @@ use std::sync::{Mutex, PoisonError};
 
 use super::grant::Refused;
 
+/// **The name a chat reaches a service on this Mac by, through its proxy** (qw384b):
+/// `this-mac.internal:<port>`, carried to that port of the loopback interface while the chat
+/// holds it ([`super::reach::Reach::decide_resolving`]). A client that never sends this
+/// machine's own addresses to a proxy (Claude Code's `NO_PROXY`, every Go client) still sends a
+/// name. Under `.internal`, which no public name is ever given.
+pub const THIS_MAC: &str = "this-mac.internal";
+
 /// What allowing a service on this Mac means, in one honest line.
 pub const RISK: &str = "lets this chat connect to whatever listens on that port on this Mac, as \
                         you; a container engine's or a cluster's port can reach much of your \

@@ -198,3 +198,128 @@ fn a_host_policy_pins_never_allowed_is_refused_never_asked() {
     );
     assert_eq!(pinned.decide("example.org", 443, HTTPS, &[]), Decision::Ask);
 }
+
+// qw384b: a service on this Mac reached by name, through the proxy, for a client that never
+// proxies this machine's own addresses (Claude Code's NO_PROXY, Go's built-in bypass).
+
+/// What `localport::reach_entries` lists for a port granted for this chat.
+fn granted(port: u16) -> Reach {
+    Reach::of(
+        super::localport::reach_entries(port)
+            .into_iter()
+            .map(|entry| (entry, By::Chat))
+            .collect(),
+    )
+}
+
+fn loopback(_: &str) -> Vec<IpAddr> {
+    vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
+}
+
+fn elsewhere(_: &str) -> Vec<IpAddr> {
+    vec!["93.184.216.34".parse().expect("an address")]
+}
+
+fn nowhere(_: &str) -> Vec<IpAddr> {
+    Vec::new()
+}
+
+#[test]
+fn this_mac_by_name_is_carried_to_a_granted_port_at_the_layer_that_granted_it() {
+    let this_mac = super::localport::THIS_MAC;
+    assert_eq!(this_mac, "this-mac.internal");
+    let reach = granted(50795);
+    assert_eq!(
+        reach.decide_resolving(this_mac, 50795, HTTPS, &[], &nowhere),
+        Decision::Allowed(By::Chat)
+    );
+    // Any spelling of the name: a trailing dot, capitals.
+    assert_eq!(
+        reach.decide_resolving("This-Mac.Internal.", 50795, HTTPS, &[], &nowhere),
+        Decision::Allowed(By::Chat)
+    );
+    // Reached at this machine's loopback, on that port alone.
+    assert_eq!(
+        reach.address_of(this_mac, 50795),
+        Some(std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, 50795)))
+    );
+    assert_eq!(reach.address_of("example.org", 443), None);
+}
+
+#[test]
+fn this_mac_by_name_on_a_port_not_granted_is_refused_as_this_machine_never_asked() {
+    let held = granted(50795);
+    for port in [50796, 443, 22] {
+        assert_eq!(
+            held.decide_resolving(super::localport::THIS_MAC, port, HTTPS, &[], &nowhere),
+            Decision::Refused(Refused::LocalAddress),
+            "{port}"
+        );
+    }
+    // A chat with no port at all: the same, and never asked about as a host.
+    assert_eq!(
+        reach().decide_resolving(super::localport::THIS_MAC, 50795, HTTPS, &[], &nowhere),
+        Decision::Refused(Refused::LocalAddress)
+    );
+}
+
+#[test]
+fn a_name_that_resolves_to_this_machine_is_carried_to_a_granted_port_and_never_asked_about() {
+    let reach = granted(6443);
+    assert_eq!(
+        reach.decide_resolving("kubernetes.docker.internal", 6443, HTTPS, &[], &loopback),
+        Decision::Allowed(By::Chat)
+    );
+    // On a port not granted it is this machine: refused, not asked about as a host.
+    assert_eq!(
+        reach.decide_resolving("kubernetes.docker.internal", 6444, HTTPS, &[], &loopback),
+        Decision::Refused(Refused::LocalAddress)
+    );
+    // A name that resolves elsewhere is decided as a host, as before.
+    assert_eq!(
+        reach.decide_resolving("example.org", 6443, HTTPS, &[], &elsewhere),
+        Decision::Ask
+    );
+}
+
+#[test]
+fn a_chat_with_no_port_granted_decides_names_as_before_without_resolving_them() {
+    let asked = std::cell::Cell::new(0);
+    let counting = |_: &str| {
+        asked.set(asked.get() + 1);
+        vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
+    };
+    assert_eq!(
+        reach().decide_resolving("kubernetes.docker.internal", 6443, HTTPS, &[], &counting),
+        Decision::Ask
+    );
+    assert_eq!(
+        reach().decide_resolving("api.anthropic.com", 443, HTTPS, &[], &counting),
+        Decision::Open
+    );
+    assert_eq!(
+        asked.get(),
+        0,
+        "no name is resolved for a chat with no port"
+    );
+}
+
+#[test]
+fn a_withdrawn_port_is_carried_no_longer_by_name_or_by_address() {
+    let reach = granted(50795);
+    let carrying = reach.clone();
+    reach.withdraw(50795);
+    // Every copy of it: the proxy's own is a copy of the one compiled.
+    for one in [&reach, &carrying] {
+        assert_eq!(
+            one.decide_resolving(super::localport::THIS_MAC, 50795, HTTPS, &[], &nowhere),
+            Decision::Refused(Refused::LocalAddress)
+        );
+        assert_eq!(
+            one.decide("127.0.0.1", 50795, HTTPS, &[]),
+            Decision::Refused(Refused::LocalAddress)
+        );
+        assert!(!one.lists_exactly(IpAddr::V4(Ipv4Addr::LOCALHOST), 50795));
+        assert_eq!(one.address_of(super::localport::THIS_MAC, 50795), None);
+    }
+}

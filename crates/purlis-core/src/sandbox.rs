@@ -4587,6 +4587,7 @@ pub mod egress;
 pub mod grant;
 pub mod held;
 pub mod hosts;
+pub mod kubeconfig;
 pub mod local;
 pub mod localport;
 pub mod opencode;

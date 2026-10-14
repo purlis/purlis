@@ -929,15 +929,23 @@ impl Teller {
 impl Allowed {
     /// The decision for a connection to `host` on `port`, a tunnel or not.
     fn decide(&self, host: &str, port: u16, tunnel: bool, own: &[std::net::IpAddr]) -> Decision {
-        if self.any_port {
-            return self.reach.decide_on_any_port(host, port, own);
-        }
-        let ports = if tunnel {
+        // A service on this Mac is reached by name too (qw384b): a name is resolved for it only
+        // where the chat holds one.
+        let resolve = |name: &str| -> Vec<std::net::IpAddr> {
+            (name, port)
+                .to_socket_addrs()
+                .map(|found| found.map(|addr| addr.ip()).collect())
+                .unwrap_or_default()
+        };
+        let ports = if self.any_port {
+            &[port][..]
+        } else if tunnel {
             &self.tunnel_ports
         } else {
             &self.plain_ports
         };
-        self.reach.decide(host, port, ports, own)
+        self.reach
+            .decide_resolving(host, port, ports, own, &resolve)
     }
 
     /// **The decision, once the person had their say** (#1666): an ask is held on the chat's
@@ -1511,7 +1519,10 @@ pub(crate) fn connect(host: &str, port: u16, reach: &Reach, own: &[std::net::IpA
             .map(Iterator::collect)
             .unwrap_or_default()
     };
-    let resolved: Vec<SocketAddr> = resolve(host, port);
+    // A service on this Mac by the name no resolver knows (qw384b), where the chat holds it.
+    let resolved: Vec<SocketAddr> = reach
+        .address_of(host, port)
+        .map_or_else(|| resolve(host, port), |addr| vec![addr]);
     if resolved.is_empty() {
         return Connected::Not;
     }
