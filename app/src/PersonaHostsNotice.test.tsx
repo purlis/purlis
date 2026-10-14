@@ -271,6 +271,21 @@ describe("a persona's hosts Notice", () => {
     expect(cloud.textContent).toContain("from the vault. Anyone who can change");
   });
 
+  it("says why a tool runs nothing where the program it runs is one no tool may be", async () => {
+    const KUBECTL = "kubectl with kubeconfig from vault devops as KUBECONFIG file";
+    const REFUSED =
+      "devops's tool fetch runs nothing: fetch runs whatever it is told, so it would hand the vault's credential to anything — a tool is the one program that needs it";
+    core({
+      ...QUIET,
+      persona_hosts: [{ ...DEVOPS, hosts: [], reached: [], tools: [KUBECTL], refused: [REFUSED] }],
+    });
+    render(<PersonaHostsNotice plane={PLANE} />);
+
+    const notice = await screen.findByRole("status", { name: "devops's tools wait for you" });
+    expect(notice).toHaveTextContent(`let chats as devops run ${KUBECTL}, through purlis`);
+    expect(notice).toHaveTextContent(REFUSED);
+  });
+
   it("hides on Not now and keeps nothing", async () => {
     const asked = core(WAITING);
     render(<PersonaHostsNotice plane={PLANE} />);

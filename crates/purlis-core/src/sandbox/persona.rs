@@ -327,13 +327,34 @@ fn reached(grants: &Grants, locks: &Locks) -> Vec<Host> {
 
 /// `persona`'s tools in `grants` as a chat would get them under `locks`: none a policy forbids
 /// (`persona-tools`), so the Notice never asks for a tool no chat would get.
-fn reached_tools(persona: &str, grants: &Grants, locks: &Locks) -> Vec<super::tools::Tool> {
-    grants
+/// `grants`' tools a chat would get under `locks` in the project at `root`: none a policy
+/// forbids, and none whose program here is one no tool may be (a tool is judged by the program
+/// it runs, not only the name it is declared under: [`super::tools::refused_here`]), each with
+/// why, in that order.
+fn reached_tools(
+    root: &Path,
+    persona: &str,
+    grants: &Grants,
+    locks: &Locks,
+) -> (Vec<super::tools::Tool>, Vec<String>) {
+    let mut refused = Vec::new();
+    let tools = grants
         .tools
         .iter()
         .filter(|tool| locks.refuses_tool(persona, &tool.name).is_none())
+        .filter(|tool| match super::tools::refused_here(root, tool) {
+            Some(why) => {
+                refused.push(format!(
+                    "{persona}'s tool {} runs nothing: {why}",
+                    tool.name
+                ));
+                false
+            }
+            None => true,
+        })
         .cloned()
-        .collect()
+        .collect();
+    (tools, refused)
 }
 
 /// Where the person's Allow of one persona's hosts stands on this machine.
@@ -418,7 +439,7 @@ fn allowed_here(
         return None;
     };
     let hosts = reached(grants, locks);
-    let tools = reached_tools(name, grants, locks);
+    let (tools, _) = reached_tools(root, name, grants, locks);
     let now = digest_of(&hosts, &tools, is_default(root, name));
     let asked = !hosts.is_empty() || !tools.is_empty();
     (asked && standing(root, name, &now, true) == Standing::Allowed).then_some((hosts, tools))
@@ -443,6 +464,9 @@ pub struct Shown {
     pub digest: String,
     /// Where the Allow kept here stands.
     pub standing: Standing,
+    /// Each of its tools left out of [`Self::tools`] because its program here is one no tool may
+    /// be, as one sentence: a tool is judged by the program it runs, not only its name.
+    pub refused: Vec<String>,
 }
 
 impl Shown {
@@ -476,7 +500,7 @@ pub fn shown_in(root: &Path, plane: &super::Plane, locks: &Locks) -> Vec<Shown> 
         .filter(|(_, grants)| !grants.hosts.is_empty() || !grants.tools.is_empty())
         .map(|(persona, grants)| {
             let hosts = reached(grants, locks);
-            let tools = reached_tools(persona, grants, locks);
+            let (tools, refused) = reached_tools(root, persona, grants, locks);
             let default = is_default(root, persona);
             let digest = digest_of(&hosts, &tools, default);
             let asked = !hosts.is_empty() || !tools.is_empty();
@@ -488,6 +512,7 @@ pub fn shown_in(root: &Path, plane: &super::Plane, locks: &Locks) -> Vec<Shown> 
                 digest,
                 hosts,
                 tools,
+                refused,
             }
         })
         .collect()

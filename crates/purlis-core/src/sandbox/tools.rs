@@ -59,7 +59,9 @@
 //!
 //! **Refused**, with a sentence, and given no shim: a name that is a shell, an interpreter,
 //! `env`, `sudo`, `xargs` or another program that runs what it is told, or purlis itself
-//! ([`refused_name`]); a variable that steers how programs are found or loaded
+//! ([`refused_name`]), and one whose program, as found and as its links resolve, is one of
+//! those, since a tool is judged by the program it runs, not only the name it is declared under
+//! ([`refused_program`]); a variable that steers how programs are found or loaded
 //! ([`refused_var`]); a tool policy forbids ([`super::policy::Locks::refuses_tool`]); and one
 //! whose program is not found where no chat writes.
 //!
@@ -382,13 +384,78 @@ pub fn refused_name(name: &str) -> Option<String> {
                 .to_owned(),
         );
     }
-    if runs_what_it_is_told(name) {
-        return Some(format!(
-            "{name} runs whatever it is told, so it would hand the vault's credential to anything \
-             — a tool is the one program that needs it"
-        ));
+    runs_what_it_is_told(name).then(|| runs_anything(name))
+}
+
+/// The sentence a tool named `name` is refused with where its program runs whatever it is told.
+fn runs_anything(name: &str) -> String {
+    format!(
+        "{name} runs whatever it is told, so it would hand the vault's credential to anything — \
+         a tool is the one program that needs it"
+    )
+}
+
+/// `program`'s file name as it is judged: lower case, a `.exe` aside.
+fn file_name_of(program: &Path) -> String {
+    let lower = program
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    lower.strip_suffix(".exe").unwrap_or(&lower).to_owned()
+}
+
+/// **Why `program`, found for `tool`, may not run as it**, if it may not: **a tool is judged by
+/// the program it runs, not only the name it is declared under.** One whose file name, as found
+/// or as its links resolve, is one no tool may take ([`refused_name`]) is refused with the same
+/// sentence. A browser login's program is purlis's own pick, and is not judged here.
+pub fn refused_program(tool: &Tool, program: &Path) -> Option<String> {
+    if tool.login.is_some() {
+        return None;
     }
-    None
+    let real = program.canonicalize().ok();
+    std::iter::once(program)
+        .chain(real.as_deref())
+        .map(file_name_of)
+        .any(|name| !name.is_empty() && runs_what_it_is_told(&name))
+        .then(|| runs_anything(&tool.name))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's own search path, in place of the app's, for the calls on its thread.
+    pub(crate) static SEARCH_HERE: std::cell::RefCell<Option<Vec<PathBuf>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The app's own search path, where a tool's program is found.
+fn search_dirs() -> Vec<PathBuf> {
+    #[cfg(test)]
+    if let Some(dirs) = SEARCH_HERE.with(|dirs| dirs.borrow().clone()) {
+        return dirs;
+    }
+    crate::programs::search_dirs()
+}
+
+/// **Why `tool` runs nothing in the project at `root`, judged by its program on this machine**
+/// ([`refused_program`]), as the Notice shows it and an Allow is of it: its program found on
+/// the app's search path as [`resolve`] finds it, outside the project and the temporary
+/// folders. None where it runs or is not found; a chat's own start judges again, with every
+/// folder it may write left out of the search.
+pub fn refused_here(root: &Path, tool: &Tool) -> Option<String> {
+    if tool.login.is_some() {
+        return None;
+    }
+    let mut written = vec![root.to_path_buf()];
+    written.extend(temp_folders());
+    search_dirs()
+        .iter()
+        .filter(|dir| dir.is_absolute() && !inside_any(dir, &written))
+        .find_map(|dir| {
+            let program = crate::programs::find(&tool.name, std::slice::from_ref(dir))?;
+            let real = program.canonicalize().ok()?;
+            (!inside_any(&real, &written)).then_some(program)
+        })
+        .and_then(|program| refused_program(tool, &program))
 }
 
 /// Whether `name` is one of [`REFUSED_NAMES`], or starts with one of [`REFUSED_PREFIXES`],
@@ -419,12 +486,8 @@ const GENERAL_PURPOSE: &[&str] = &[
 /// its folder and case (a `.exe` aside): one of [`GENERAL_PURPOSE`], or of the names no tool may
 /// take ([`refused_name`]).
 pub fn general_purpose(program: &Path) -> bool {
-    let Some(name) = program.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    let lower = name.to_ascii_lowercase();
-    let name = lower.strip_suffix(".exe").unwrap_or(&lower);
-    !name.is_empty() && (GENERAL_PURPOSE.contains(&name) || runs_what_it_is_told(name))
+    let name = file_name_of(program);
+    !name.is_empty() && (GENERAL_PURPOSE.contains(&name.as_str()) || runs_what_it_is_told(&name))
 }
 
 /// **The sentence a person reads beside `tool`'s Allow** where its program is a general-purpose
@@ -455,7 +518,7 @@ pub fn caution(tool: &Tool, search: &[PathBuf]) -> Option<String> {
 
 /// [`caution`] for each of `tools`, in order, on the app's own search path.
 pub fn cautions(tools: &[Tool]) -> Vec<String> {
-    let search = crate::programs::search_dirs();
+    let search = search_dirs();
     tools
         .iter()
         .filter_map(|tool| caution(tool, &search))
@@ -931,6 +994,17 @@ pub(crate) fn resolve_beside(
             let real = program.canonicalize().ok()?;
             (!inside_any(&real, &written)).then_some(program)
         });
+        // A tool is judged by the program it runs, not only the name it is declared under.
+        if let Some(why) = found
+            .as_deref()
+            .and_then(|program| refused_program(tool, program))
+        {
+            left.push(format!(
+                "{persona}'s tool {} runs nothing: {why}",
+                tool.name
+            ));
+            continue;
+        }
         match found {
             Some(program) => ready.push(Ready {
                 tool: tool.clone(),

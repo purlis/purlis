@@ -264,6 +264,7 @@ fn an_allow_is_kept_only_for_the_list_as_it_stands_when_it_is_pressed() {
         digest: digest.to_owned(),
         standing: Standing::NotAllowed,
         tools: Vec::new(),
+        refused: Vec::new(),
     };
     assert_eq!(
         pick(vec![devops("now")], "devops", "now").map(|one| one.persona),
@@ -802,4 +803,59 @@ fn a_resume_whose_persona_declares_a_tool_the_trusted_one_does_not_is_held() {
     assert!(
         super::persona::held_unless_within(Some(&policy), Some("devops"), Some("devops")).is_none()
     );
+}
+
+/// A tool is judged by the program it runs, not only the name it is declared under: one whose
+/// program, as found on this machine and as its links resolve, is one no tool may be is left out
+/// of what is shown and allowed, and says why.
+#[test]
+fn a_tool_whose_program_is_one_no_tool_may_be_is_not_shown_or_allowed_and_says_why() {
+    use super::persona::{digest_of, shown_in};
+    let root = tempfile::tempdir().expect("a project");
+    let base = tempfile::tempdir().expect("a machine");
+    let system = base.path().join("system");
+    std::fs::create_dir_all(&system).expect("dir");
+    let elsewhere = base.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("dir");
+    let real = elsewhere.join("zsh");
+    std::fs::write(&real, "#!/bin/sh\n").expect("written");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    }
+    std::os::unix::fs::symlink(&real, system.join("fetch")).expect("link");
+    super::tools::SEARCH_HERE.with(|dirs| *dirs.borrow_mut() = Some(vec![system.clone()]));
+    super::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+
+    let text = DEVOPS_TOOLS.replace(
+        "tools = { kubectl = {",
+        "tools = { fetch = { vault = \"devops\", as = \"TOKEN env\", key = \"token\" }, kubectl = {",
+    );
+    let declared = &policy(&text).personas["devops"].tools;
+    assert_eq!(declared.len(), 2, "the name itself is taken");
+    let shown = shown_in(root.path(), &Plane::of(Some(&text)), &Locks::none()).remove(0);
+    let names: Vec<&str> = shown.tools.iter().map(|tool| tool.name.as_str()).collect();
+    assert_eq!(names, ["kubectl"]);
+    assert_eq!(shown.refused.len(), 1, "{:?}", shown.refused);
+    assert!(
+        shown.refused[0].starts_with("devops's tool fetch runs nothing: fetch runs whatever"),
+        "{:?}",
+        shown.refused
+    );
+    // An Allow of the list with it in grants nothing; one of the list as shown, never it.
+    super::local::allow_persona_hosts(
+        root.path(),
+        "devops",
+        &digest_of(&shown.hosts, declared, false),
+    )
+    .expect("kept");
+    assert_eq!(
+        tools_here(root.path(), &text, &Locks::none()),
+        Vec::<String>::new()
+    );
+    super::local::allow_persona_hosts(root.path(), "devops", &shown.digest).expect("kept");
+    assert_eq!(tools_here(root.path(), &text, &Locks::none()), ["kubectl"]);
+
+    super::tools::SEARCH_HERE.with(|dirs| *dirs.borrow_mut() = None);
+    super::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
 }

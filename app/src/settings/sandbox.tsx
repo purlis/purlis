@@ -884,16 +884,20 @@ export function personaHostsChange(
 /**
  * **The page's sentences** (#1407): for each persona, the hosts its list holds that an
  * administrator's policy keeps every chat from, as the core read them (`reached`): written, and
- * reaching nothing.
+ * reaching nothing; and each of its tools that runs nothing for the program it runs here.
  */
 export function personaHostsNotes(sandbox: SandboxState | undefined): string[] {
   return (sandbox?.persona_hosts ?? []).flatMap((one) => {
     const kept = one.hosts.filter((host) => !one.reached.includes(host));
-    return kept.length === 0 || sandbox?.policy?.persona_hosts === true
-      ? []
-      : [
-          `${one.persona} lists ${listed(kept)}, which policy on this machine keeps every chat from. ${sandbox?.policy?.locked_by ?? ""}`.trim(),
-        ];
+    const locked =
+      kept.length === 0 || sandbox?.policy?.persona_hosts === true
+        ? []
+        : [
+            `${one.persona} lists ${listed(kept)}, which policy on this machine keeps every chat from. ${sandbox?.policy?.locked_by ?? ""}`.trim(),
+          ];
+    // A tool is judged by the program it runs, not only the name it is declared under: the
+    // core's sentence for each that runs nothing for it.
+    return [...locked, ...(one.refused ?? []).map((why) => `${why}.`)];
   });
 }
 
