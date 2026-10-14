@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791974365961,
+  "lastUpdate": 1791975542595,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10752,6 +10752,48 @@ window.BENCHMARK_DATA = {
             "value": 105.4669595,
             "unit": "ms",
             "extra": "median of 5 runs: 104.031, 104.440, 105.467, 105.619, 105.736 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "86112c50f1ad1243577a433874ccf0cc963b0a1d",
+          "message": "review(qw379b): the guard follows commands to the writes, and an open after the quit lets go\n\n- The lane guard (lane_writes_guard_tests.rs) follows each window command two\n  calls down, qualified calls to that module's file and plain calls in the\n  same file, and holds every command that reaches a listed write to that\n  site's `by`. Any function of the sandbox's local file that is not one of its\n  known reads counts as a write. Test modules are skipped by their braces, so\n  code after one is read. A row no command writes says why. Self-tests hold\n  each of these, with fixtures: a new command writing through a listed\n  helper, code after a test module, a new local function.\n- It found what the table missed: the settings commands that prune confirmed\n  hosts through `file_of`, choosePlaneMode through the settings writer, the\n  away list's Dismiss, and the sandbox's start tally (`local::count`).\n- An open still in its sweep when the quit stops waiting lets go of the\n  project it built instead of holding it: the quit sets a flag the open reads\n  under the registry's lock.\n\nRefs #1949\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T14:57:48+04:00",
+          "tree_id": "96bcd46eace2853b52aa623486cbe4ece6d20678",
+          "url": "https://github.com/purlis/purlis/commit/86112c50f1ad1243577a433874ccf0cc963b0a1d"
+        },
+        "date": 1791975541239,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.276521,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.269, 0.270, 0.277, 0.277, 0.288 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.497253,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.471, 16.497, 16.525, 16.598 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.51117149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.103, 101.338, 101.511, 101.578, 101.584 ms"
           }
         ]
       }
