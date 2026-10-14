@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791941342162,
+  "lastUpdate": 1791941355479,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3018,6 +3018,42 @@ window.BENCHMARK_DATA = {
             "value": 439.6,
             "unit": "MB",
             "extra": "median of 6 samples: 401.7, 402.9, 437, 442.3, 442.7, 528 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "10463db493a7ba5fc5a7a0b4dd0fc53319a56eab",
+          "message": "review(qw376): a git that never said what it started fails the profiles test\n\nThe pid marker is still waited for with a bound, but its absence is a\nfailure again: without the id, the assertion that the group was ended\ncould pass without holding anything.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T04:41:06+04:00",
+          "tree_id": "2f29e87d7873ff57e0a35bbb608215625b712663",
+          "url": "https://github.com/purlis/purlis/commit/10463db493a7ba5fc5a7a0b4dd0fc53319a56eab"
+        },
+        "date": 1791941354585,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1548.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1404.9, 1548.7, 1652.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 445.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 411, 422.9, 443.5, 448.4, 448.7, 535.3 MB"
           }
         ]
       }
