@@ -330,10 +330,10 @@ fixed for a run. It is always shown with the account it is billed to (ADR 0087).
 _Avoid_: model config, model settings
 
 **Model source**:
-How a chat reaches its model: the harness's own **login**, a **key** the user keeps in a vault,
-or a **local** model. None of them passes through purlis's servers. A subscription's sign-in is
-the harness's, kept in the chat's **profile**, and purlis never reads, copies, stores or relays it
-(ADR 0087, ADR 0095).
+How a chat reaches its model: the harness's own sign-in (the `login` source), a **key** the user
+keeps in a vault, or a **local** model. None of them passes through purlis's servers. A
+subscription's sign-in is the harness's, kept in the chat's **profile**, and purlis never reads,
+copies, stores or relays it (ADR 0087, ADR 0095).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
 
 **Profile**:

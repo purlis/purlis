@@ -4,7 +4,8 @@
 (#2030), ticket #2032. It replaces the promise of [ADR 0087](0087-a-chats-model-is-one-choice-from-four-sources-and-charter-never-carries-a-harness-login.md)
 §5, carried from V9, that *"purlis never reads, copies, stores or relays a harness credential"*,
 with the rule below, and amends ADR 0087, ADR 0078 and ADR 0080 in sections of their own at the
-end. It follows these of the operator's rulings of 2026-10-14:
+end. Three readings of ADR 0087 are the dispatcher's, to be confirmed (*Decided (dispatcher), to be
+confirmed*, at the end). It follows these of the operator's rulings of 2026-10-14:
 
 - **Q27 and Q30 to Q35** (rounds 3 and 4, the operator's own idea), in short: a profile becomes
   first-class. purlis owns each profile's folder, imports its settings from the machine's harness
@@ -80,6 +81,7 @@ A subscription (a Claude plan, ChatGPT, Copilot and their like) is the harness's
 - **One sign-in per device.** Each device a profile runs on signs it in there, a runner included,
   and the sign-in never travels between devices. Each device's harness then refreshes its own
   sign-in alone.
+- **On a runner, a subscription profile needs a kept claim** (Q30 to Q35); how is spec #2041's.
 - **A subscription a harness may not carry is never offered.** A Claude plan is never offered in
   opencode. Anthropic's terms forbid a third party from storing or intermediating Claude
   subscription tokens and require Anthropic's own sign-in flow, and this rule keeps to them.
@@ -106,10 +108,10 @@ A subscription (a Claude plan, ChatGPT, Copilot and their like) is the harness's
 
 ### 6. Unattended runs still ask once
 
-**Settled by X12**, unchanged. An unattended run prefers an `api-key`, `cloud` or `local` profile.
-Before a subscription profile runs unattended, purlis asks once, per project and profile on this
-machine, for the person's acknowledgement, and the run waits as a needs-you item until it is
-given. The acknowledgement store of ADR 0087 §11 keeps it, keyed by the profile.
+**Settled by X12**, which stands unchanged, as ADR 0087 §3 and §11 record it: an unattended run
+prefers an API-key or local-model source, and purlis asks once, per project, harness and login on
+this machine, before a subscription runs unattended. The run waits as a needs-you item until the
+acknowledgement is given.
 
 ## ADR 0087, amended
 
@@ -120,18 +122,12 @@ given. The acknowledgement store of ADR 0087 §11 keeps it, keyed by the profile
   purlis never reads, copies, stores or relays it. A key or cloud credentials are vault values
   sent to owned devices.** The rest of §5 stands: a `login` chat starts with no routing variables,
   committed harness config cannot reroute it, and smart model choice never moves it.
-- **The source `login` is a profile's `subscription` sign-in.** §2's "whatever `claude /login`,
-  `codex login` or the harness's own flow set up" is read as the sign-in the harness keeps in the
-  chat's profile folder. A key the harness itself stores in that folder is still the harness's,
-  and purlis does not read it.
-- **§5's "the user's own global harness config"** is the adopted profile's own settings (§2 above),
-  and a profile purlis made has the settings it imported. Each is the person's choice, as §5 says.
 - **§5's "Logging in is the harness's own flow, in a shell tab"** becomes: signing in is the
   harness's own flow, run in the profile's folder and shown in the window as an Ask (§3 above).
 - **§9's "`login` on a runner is the runner's own login, made in a shell tab on the runner"**
   becomes: a subscription profile is signed in on the runner through the harness's own flow,
   shown in the window, and the desktop's sign-in never travels.
-- **§3's unattended acknowledgement** is keyed by the profile (§6 above). X12 stands.
+- **§3's unattended acknowledgement** stands as it is (§6 above).
 - How a model choice names a profile is recorded with #2036.
 
 ## ADR 0078, amended
@@ -159,12 +155,12 @@ The code does not change with this record.
 | ADR 0087, ADR 0078, ADR 0080 | Amended above, each with a line pointing here |
 | #2031 | Harness declarations say each harness's sign-in kinds, folder variables, `kept_from_commands` and how a conversation moves (ADR 0073, amended) |
 | #2033 | Each existing harness folder adopted in place as a profile, losing nothing |
-| #2034 | Making, importing and removing profiles |
-| #2035 | A subscription signed in through the harness's own flow, as an Ask |
+| #2034 | Making, importing and removing profiles. `crates/purlis-core/docs/control-plane.md` (*No credentials in a profile*) says a profile is signed in from the window or `purlis profile` |
+| #2035 | A subscription signed in through the harness's own flow, as an Ask, and the same section of `control-plane.md` |
 | #2036 | `api-key` and `cloud` profiles from the vault; a model choice is a profile plus a model |
-| #2037 | A profile's credential files denied to the agent's commands |
+| #2037 | A profile's credential files denied to the agent's commands. `SECURITY.md` (*What Codex keeps for itself*) says a sandboxed Codex chat keeps its state in its profile's folder |
 | #2038 | A profile pins its harness version |
-| #2039 | Personas, teammates, and the rules that stay: X12, the permission-flag refusal, dispatch lists and approval |
+| #2039 | Personas, teammates, and the rules that stay: X12 (its store, `.charter/unattended-logins.json` in `docs/plane-format.md`, keyed as ADR 0087 keys it), the permission-flag refusal, dispatch lists and approval |
 
 ## What this costs
 
@@ -182,3 +178,17 @@ The code does not change with this record.
   forbid it, and refresh tokens that rotate would fight across devices. Each device signs in.
 - **Keeping every chat on the machine's default harness folder.** It ties every chat to one account
   per harness and leaves nothing a profile can name.
+
+## Decided (dispatcher), to be confirmed
+
+Three readings of ADR 0087 were not ruled, and the dispatcher decided them on 2026-10-14, to be
+confirmed by the operator:
+
+- **The source `login` is a profile's `subscription` sign-in.** ADR 0087 §2's "whatever
+  `claude /login`, `codex login` or the harness's own flow set up" is read as the sign-in the
+  harness keeps in the chat's profile folder.
+- **A key the harness itself stores in a profile's folder is still the harness's**, and purlis
+  does not read it (ADR 0087 §2's last bullet, applied to profiles).
+- **ADR 0087 §5's "the user's own global harness config"** is the adopted profile's own settings
+  (§2 above), and a profile purlis made has the settings it imported. Each is the person's choice,
+  as §5 says.

@@ -1,5 +1,11 @@
 # A level-3 chat is an ACP client session, and its ACP adapter program is the user's
 
+**Amended by [ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md) (2026-10-14):** V9's rule on harness logins, which this record
+applies to local chats, is replaced: every sign-in purlis uses belongs to a profile, and a
+subscription is signed in through the harness's own flow per device, shown in the window, and
+never held by purlis. purlis still supplies nothing to `authenticate`. What follows is the record
+as it was decided.
+
 **Accepted 2026-10-01** by the operator (ruling V28), drafted for program-map ticket HP-1 (#668). It follows these of the
 operator's rulings:
 
