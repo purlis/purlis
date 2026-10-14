@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { ASKS_NOTIFIED, useInboxOpenTold, useNotificationLanding } from "./askNotices";
+import { ASKS_NOTIFIED, landsOn, useInboxOpenTold, useNotificationLanding } from "./askNotices";
 
 /**
  * The window's half of the asks' system notifications (#1694, I-7): the core is told whether a
@@ -119,6 +119,52 @@ describe("a notification clicked", () => {
     renderHook(() => useNotificationLanding(land));
     await act(async () => {
       await emit(ASKS_NOTIFIED, { plane: PLANE, session: "3" });
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(land).not.toHaveBeenCalled();
+  });
+});
+
+describe("the chat a notification about several lands on (#1989)", () => {
+  const waiting =
+    (...chats: number[]) =>
+    (chat: number) =>
+      chats.includes(chat);
+
+  it.each([
+    ["one chat, waiting", { plane: PLANE, session: 3 }, waiting(3), 3],
+    ["one chat, answered since", { plane: PLANE, session: 3 }, waiting(), undefined],
+    [
+      "three, the first waiting",
+      { plane: PLANE, session: 3, sessions: [3, 4, 5] },
+      waiting(3, 5),
+      3,
+    ],
+    [
+      "three, the first answered",
+      { plane: PLANE, session: 3, sessions: [3, 4, 5] },
+      waiting(5, 4),
+      4,
+    ],
+    [
+      "three, all answered",
+      { plane: PLANE, session: 3, sessions: [3, 4, 5] },
+      waiting(),
+      undefined,
+    ],
+  ])("%s", (_, to, waits, chat) => {
+    expect(landsOn(to, waits)).toBe(chat);
+  });
+
+  it("ignores a notice whose chats are not numbers", async () => {
+    sent();
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const land = vi.fn();
+    renderHook(() => useNotificationLanding(land));
+    await act(async () => {
+      await emit(ASKS_NOTIFIED, { plane: PLANE, session: 3, sessions: ["3"] });
     });
     act(() => {
       window.dispatchEvent(new Event("focus"));

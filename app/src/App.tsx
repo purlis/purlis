@@ -112,7 +112,7 @@ import { CountPill } from "./CountPill";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
-import { useNotificationLanding, type Landing } from "./askNotices";
+import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { useAwayRefusals } from "./dispatchAway";
 import { useUpdates } from "./Updates";
 import { StripTablist, useTabIds } from "./StripTablist";
@@ -1808,13 +1808,16 @@ function App() {
   }, [registry.held]);
   /**
    * **A clicked notification lands on the Inbox at its chat's group** (#1694, I-7): its project
-   * brought to the front, while that chat still has something waiting there. One answered
-   * elsewhere since moves nothing.
+   * brought to the front, at the first chat it counted that still has something waiting there
+   * (#1989). One whose chats were all answered elsewhere since moves nothing.
    */
   const landOnNotified = useCallback(
-    ({ plane, session }: Landing) => {
+    (to: Landing) => {
+      const { plane } = to;
       if (!planesNow.current.includes(plane)) return;
-      if (!(registry.held[plane] ?? []).some((ask) => ask.session === session)) return;
+      const asks = registry.held[plane] ?? [];
+      const session = landsOn(to, (chat) => asks.some((ask) => ask.session === chat));
+      if (session === undefined) return;
       setShowing({ at: "plane", plane });
       setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1, session }));
     },

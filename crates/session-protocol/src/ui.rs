@@ -196,6 +196,10 @@ pub struct Server {
 /// project through one.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
+    // The system's notification permission, asked for only when the person presses Allow in
+    // Settings (#1989), and whether it was given. No link asks for it.
+    "ask_notification_permission",
+    "notification_permission",
     // The clipboard's text, read for a Paste the person pressed in a terminal's menu
     // (ADR 0052 amended 2026-10-14). The clipboard is the person's, and may hold a vault's
     // value: no link reads it, so no chat, tool or hook does.

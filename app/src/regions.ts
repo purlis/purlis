@@ -15,6 +15,7 @@ import { commands } from "./bindings";
 import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textSize";
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
+import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { EXPLORER_SECTIONS, type SectionId } from "./explorerSections";
 import { SCREEN_READER } from "./screenReader";
 import { forgetGroups } from "./settings/links";
@@ -521,6 +522,7 @@ const LAYOUT_PREFS = [
   CHATS_LIST,
   EXPLORER_SECTIONS,
   SCREEN_READER,
+  NOTIFICATIONS,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -553,6 +555,9 @@ type Document = {
   explorer?: { closed: SectionId[] };
   /** Screen-reader mode in every chat's terminal (`screenReader.ts`, #629), while it is on. */
   screenReader?: true;
+  /** When the asks' notifications keep quiet (`notificationPrefs.ts`, #1989), when it is not
+   *  the default. The core reads it too (`asknotify.rs`). */
+  notifications?: NotificationPrefs;
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

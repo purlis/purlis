@@ -502,6 +502,8 @@ export const commands = {
 	 *  is focused with the project in front, no notification is sent about that project's asks.
 	 */
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
+	notificationPermission: __WINDOW_ONLY,
+	askNotificationPermission: __WINDOW_ONLY,
 	sendInput: __WINDOW_ONLY_RESULT,
 	sendInputBytes: __WINDOW_ONLY_RESULT,
 	/**  Tells a session how big the pane showing it now is. */

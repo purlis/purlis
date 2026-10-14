@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **System notifications, for asks only** (#1694, spec #1688, I-7).
+//! **System notifications, for asks only** (#1694, spec #1688, I-7; #1989, Q66).
 //!
 //! What the person is interrupted for is what blocks work: an **ask** (a permission prompt, a
 //! dispatch grant, a sandbox host, a prompt in a harness's terminal, a chat whose turn ended
@@ -18,11 +18,19 @@
 //! own wait is keyed by the chat, so the board's edge into the queue renews it ([`moved`]).
 //!
 //! **A notification says who asks and what kind of ask it is** (`steward 12 › #3046 drill`,
-//! "Asks your permission"), never the ask's words ([`kind_said`]).
+//! "Asks your permission"), never the ask's words ([`kind_said`]). **Several chats waiting
+//! together are one** (#1989): "3 chats need you", naming them (`steward 3, devops 4 and
+//! builder 5`). A name is the chat's, so it is data: plain text, capped ([`plain`]).
 //!
-//! **One chat's asks a few seconds apart share one notification** ([`TOGETHER`]): the first
-//! is sent at once, and each that follows within the window of the one before rides it. Two
-//! chats are two notifications.
+//! **A project's asks a few seconds apart share one notification** ([`TOGETHER`]): the first
+//! is sent at once, and each that follows within the window of the one before rides it,
+//! whichever chat asks. A new ask past the window sends one that counts every chat still
+//! waiting that the person is not looking at, the longest waiting first.
+//!
+//! **Nothing is sent in the person's quiet hours** ([`QuietHours`], Settings › You ›
+//! Notifications, kept in the layout file): an ask asked in them waits in the Inbox, and is not
+//! sent when they end. Nor when the system has not given purlis its permission: purlis never
+//! asks for it at launch, only when the person presses Allow in Settings.
 //!
 //! **Nothing is sent while the person is looking** ([`Looking`]): the window holding the
 //! ask's project is on screen, focused and has that project in front, and it shows either the
@@ -58,6 +66,12 @@ pub const NOTIFIED: &str = "asks-notified";
 /// one before rides the first.
 pub const TOGETHER: Duration = Duration::from_secs(5);
 
+/// The most characters of a chat's name, or of a title, a notification says.
+pub const MOST_NAME: usize = 60;
+
+/// The most chats a notification names; the rest it counts.
+const MOST_NAMED: usize = 3;
+
 /// How long a burst of moves is let settle before the registry is read, as the window does.
 const SETTLE: Duration = Duration::from_millis(150);
 
@@ -65,8 +79,10 @@ const SETTLE: Duration = Duration::from_millis(150);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
     pub plane: PlaneId,
-    /// The chat whose asks it is about: the Inbox's group a click lands on.
+    /// The chat a click lands on: the first of [`Self::sessions`].
     pub session: u32,
+    /// Every chat it counts, the longest waiting first.
+    pub sessions: Vec<u32>,
     /// Who is asking, as its chain (I-9).
     pub title: String,
     /// What kind of ask it is ([`kind_said`]), and how many more ride with it.
@@ -77,7 +93,10 @@ pub struct Notice {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Landing {
     pub plane: PlaneId,
+    /// The first chat it counted.
     pub session: u32,
+    /// Every chat it counted, in order: a window lands on the first still waiting.
+    pub sessions: Vec<u32>,
 }
 
 /// One read of a project's asks, as [`Rules::heard`] takes it.
@@ -87,6 +106,8 @@ pub struct Heard<'a> {
     pub asks: &'a [Shown],
     /// Whether the person is looking at a chat's asks now ([`Looking`]).
     pub looking: &'a dyn Fn(u32) -> bool,
+    /// Whether it is the person's quiet hours now: asked only when there is something to send.
+    pub quiet: &'a dyn Fn() -> bool,
     pub now: Instant,
 }
 
@@ -96,47 +117,51 @@ pub struct Rules {
     /// The asks of each project read last, by key, with the chat that asks and whether the
     /// ask is the chat's own wait ([`own_wait`]): an ask in here was already considered.
     known: HashMap<PlaneId, HashMap<String, (u32, bool)>>,
-    /// When each chat last had an ask that a notification covered.
-    covered: HashMap<(PlaneId, u32), Instant>,
+    /// When each project last had an ask that a notification covered.
+    covered: HashMap<PlaneId, Instant>,
 }
 
 impl Rules {
-    /// The notifications one read of a project's asks sends: one per chat with an ask not
-    /// read before, unless the chat's asks are riding one sent within [`TOGETHER`], or the
-    /// person is looking at them. An ask the person was looking at is not sent later either.
+    /// The notification one read of a project's asks sends, if any: one when an ask is new
+    /// since the last read, counting every chat waiting that the person is not looking at,
+    /// unless the project's asks are riding one sent within [`TOGETHER`] or it is quiet hours.
+    /// An ask the person was looking at, or asked in quiet hours, is not sent later either.
     pub fn heard(&mut self, heard: &Heard<'_>) -> Vec<Notice> {
-        let asks: Vec<&Shown> = heard.asks.iter().collect();
         let known = self.known.entry(heard.plane.clone()).or_default();
-        let mut fresh: Vec<(u32, Vec<&Shown>)> = Vec::new();
-        for ask in asks.iter().filter(|ask| !known.contains_key(&ask.ask)) {
-            match fresh
-                .iter_mut()
-                .find(|(session, _)| *session == ask.session)
-            {
-                Some((_, mine)) => mine.push(ask),
-                None => fresh.push((ask.session, vec![ask])),
-            }
-        }
-        *known = asks
+        let fresh: Vec<&Shown> = heard
+            .asks
+            .iter()
+            .filter(|ask| !known.contains_key(&ask.ask))
+            .collect();
+        *known = heard
+            .asks
             .iter()
             .map(|ask| (ask.ask.clone(), (ask.session, own_wait(ask))))
             .collect();
         self.covered
             .retain(|_, at| heard.now.saturating_duration_since(*at) < TOGETHER);
-        let mut sent = Vec::new();
-        for (session, mine) in fresh {
-            let key = (heard.plane.clone(), session);
-            if let Some(at) = self.covered.get_mut(&key) {
-                *at = heard.now;
-                continue;
-            }
-            if (heard.looking)(session) {
-                continue;
-            }
-            self.covered.insert(key, heard.now);
-            sent.push(notice(heard.plane, session, &mine));
+        if fresh.is_empty() {
+            return Vec::new();
         }
-        sent
+        if let Some(at) = self.covered.get_mut(heard.plane) {
+            *at = heard.now;
+            return Vec::new();
+        }
+        let mut chats: Vec<u32> = Vec::new();
+        for ask in heard.asks {
+            if !chats.contains(&ask.session) && !(heard.looking)(ask.session) {
+                chats.push(ask.session);
+            }
+        }
+        let fresh: Vec<&Shown> = fresh
+            .into_iter()
+            .filter(|ask| chats.contains(&ask.session))
+            .collect();
+        if fresh.is_empty() || (heard.quiet)() {
+            return Vec::new();
+        }
+        self.covered.insert(heard.plane.clone(), heard.now);
+        vec![notice(heard.plane, &chats, heard.asks, &fresh)]
     }
 
     /// **Chat `session` of `plane` waits on the person anew**, as the board's own edge says
@@ -153,7 +178,7 @@ impl Rules {
     /// A project let go of, or no longer held: nothing of it is remembered.
     pub fn forget(&mut self, plane: &PlaneId) {
         self.known.remove(plane);
-        self.covered.retain(|(held, _), _| held != plane);
+        self.covered.remove(plane);
     }
 }
 
@@ -179,25 +204,163 @@ fn own_wait(ask: &Shown) -> bool {
     matches!(ask.source, AskSource::Question | AskSource::Terminal)
 }
 
-/// The notification for chat `session`'s new asks, `asks`, the first first.
-fn notice(plane: &PlaneId, session: u32, asks: &[&Shown]) -> Notice {
-    let first = asks[0];
-    let title = if first.chain.is_empty() {
-        format!("chat {session}")
+/// The notification for `chats` waiting, the first first, of a project whose list is `asks`
+/// and whose new asks are `fresh`. One chat: who asks and what kind of ask, as before
+/// (#1694). Several: how many, and their names.
+fn notice(plane: &PlaneId, chats: &[u32], asks: &[Shown], fresh: &[&Shown]) -> Notice {
+    let session = chats[0];
+    let (title, body) = if let [only] = chats {
+        let first = fresh[0];
+        let title = if first.chain.is_empty() {
+            format!("chat {only}")
+        } else {
+            capped(
+                &first
+                    .chain
+                    .iter()
+                    .map(|name| plain(name))
+                    .collect::<Vec<_>>()
+                    .join(" › "),
+            )
+        };
+        let kind = kind_said(first);
+        let body = match fresh.len() {
+            1 => kind.to_owned(),
+            many => format!("{kind}, and {} more", many - 1),
+        };
+        (title, body)
     } else {
-        first.chain.join(" › ")
-    };
-    let kind = kind_said(first);
-    let body = match asks.len() {
-        1 => kind.to_owned(),
-        many => format!("{kind}, and {} more", many - 1),
+        let names: Vec<String> = chats
+            .iter()
+            .take(MOST_NAMED)
+            .map(|chat| name_of(*chat, asks))
+            .collect();
+        let body = match (chats.len() - names.len(), names.split_last()) {
+            (0, Some((last, rest))) => format!("{} and {last}", rest.join(", ")),
+            (more, _) => format!("{} and {more} more", names.join(", ")),
+        };
+        (format!("{} chats need you", chats.len()), body)
     };
     Notice {
         plane: plane.clone(),
         session,
+        sessions: chats.to_vec(),
         title,
         body,
     }
+}
+
+/// Chat `session`'s name, as its first ask in `asks` gives it (the session, I-9), or its
+/// number.
+fn name_of(session: u32, asks: &[Shown]) -> String {
+    asks.iter()
+        .find(|ask| ask.session == session)
+        .and_then(|ask| ask.chain.first())
+        .map(|name| plain(name))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("chat {session}"))
+}
+
+/// **A name a chat chose, as plain text** for a notification: every control and direction
+/// mark dropped, each run of white space one space, and at most [`MOST_NAME`] characters.
+pub fn plain(name: &str) -> String {
+    let mut out = String::new();
+    let mut gap = false;
+    for one in name.chars() {
+        if one.is_whitespace() {
+            gap = !out.is_empty();
+            continue;
+        }
+        if one.is_control() || is_direction_mark(one) {
+            continue;
+        }
+        if gap {
+            out.push(' ');
+            gap = false;
+        }
+        out.push(one);
+    }
+    capped(&out)
+}
+
+/// `text` at most [`MOST_NAME`] characters, ending in `…` where it was cut.
+fn capped(text: &str) -> String {
+    if text.chars().count() <= MOST_NAME {
+        return text.to_owned();
+    }
+    let mut cut: String = text.chars().take(MOST_NAME - 1).collect();
+    cut.push('…');
+    cut
+}
+
+/// The marks that turn the direction of the text after them.
+fn is_direction_mark(one: char) -> bool {
+    matches!(one, '\u{200e}' | '\u{200f}' | '\u{061c}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// **The person's quiet hours** (#1989): from a time of day until another, in minutes since
+/// midnight, local time. A span that ends before it starts runs across midnight; one that ends
+/// where it starts covers nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuietHours {
+    pub from: u16,
+    pub to: u16,
+}
+
+impl QuietHours {
+    /// The quiet hours a layout document keeps, under `notifications.quiet` (`{"on": true,
+    /// "from": "22:00", "to": "07:00"}`, `app/src/notificationPrefs.ts`), while they are on.
+    /// Anything else is none: the window says what it put right.
+    pub fn of_layout(document: &serde_json::Value) -> Option<Self> {
+        let quiet = document.get("notifications")?.get("quiet")?;
+        if quiet.get("on")?.as_bool() != Some(true) {
+            return None;
+        }
+        let at = |key: &str| quiet.get(key)?.as_str().and_then(minute_of);
+        Some(Self {
+            from: at("from")?,
+            to: at("to")?,
+        })
+    }
+
+    /// Whether `minute` of the day is in them.
+    pub fn covers(self, minute: u16) -> bool {
+        match self.from.cmp(&self.to) {
+            std::cmp::Ordering::Less => (self.from..self.to).contains(&minute),
+            std::cmp::Ordering::Greater => minute >= self.from || minute < self.to,
+            std::cmp::Ordering::Equal => false,
+        }
+    }
+}
+
+/// The minute of the day `text` names, written `HH:MM` on a 24-hour clock.
+pub fn minute_of(text: &str) -> Option<u16> {
+    let (hours, minutes) = text.split_once(':')?;
+    let two = |part: &str| {
+        (part.len() == 2 && part.bytes().all(|one| one.is_ascii_digit()))
+            .then(|| part.parse::<u16>().ok())
+            .flatten()
+    };
+    let (hours, minutes) = (two(hours)?, two(minutes)?);
+    (hours < 24 && minutes < 60).then_some(hours * 60 + minutes)
+}
+
+/// Whether it is the person's quiet hours on this machine now, as the layout file says. A file
+/// that cannot be read says none.
+fn quiet_now() -> bool {
+    use chrono::Timelike;
+    let Some(root) = purlis_core::machine::config_root() else {
+        return false;
+    };
+    let Some(document) = purlis_core::windowprefs::read_layout(&root).document else {
+        return false;
+    };
+    let Some(hours) = QuietHours::of_layout(&document) else {
+        return false;
+    };
+    let now = chrono::Local::now();
+    let minute = u16::try_from(now.hour() * 60 + now.minute()).unwrap_or_default();
+    hours.covers(minute)
 }
 
 /// **Whether the person is looking at a chat's asks**: all of the window's questions, each
@@ -381,6 +544,36 @@ pub fn inbox_shown(
     notifier.inbox.shown(window.label(), &plane, open);
 }
 
+/// **Whether the system lets purlis show notifications**: `granted`, `denied`, or `prompt`
+/// where it has not been asked yet (Settings › You › Notifications).
+#[tauri::command]
+#[specta::specta]
+pub async fn notification_permission(app: tauri::AppHandle) -> String {
+    use tauri_plugin_notification::NotificationExt;
+    permission_said(app.notification().permission_state())
+}
+
+/// **Asks the system to let purlis show notifications**, as the person pressed Allow: never at
+/// launch, and never from anything but that press. Answers what the system said.
+#[tauri::command]
+#[specta::specta]
+pub async fn ask_notification_permission(app: tauri::AppHandle) -> String {
+    use tauri_plugin_notification::NotificationExt;
+    permission_said(app.notification().request_permission())
+}
+
+fn permission_said(
+    state: tauri_plugin_notification::Result<tauri_plugin_notification::PermissionState>,
+) -> String {
+    use tauri_plugin_notification::PermissionState;
+    match state {
+        Ok(PermissionState::Granted) => "granted",
+        Ok(PermissionState::Denied) => "denied",
+        _ => "prompt",
+    }
+    .to_owned()
+}
+
 /// The notifier's thread: each poke, then whatever follows it while it settles, read once.
 fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
     let mut rules = Rules::default();
@@ -428,6 +621,7 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
         // The registry's own split (#1693, #1694): an update is not listed, so never notifies.
         asks: &asking.asks,
         looking: &|session| looking(app, plane, session, &held).is_looking(),
+        quiet: &quiet_now,
         now: Instant::now(),
     });
     for notice in sent {
@@ -476,7 +670,16 @@ fn looking(
 
 /// Sends one notification, and tells the window holding its project where a click lands.
 fn send(app: &tauri::AppHandle, notice: Notice) {
-    use tauri_plugin_notification::NotificationExt;
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    // The system's permission, never asked for here: only the person's Allow asks
+    // ([`ask_notification_permission`]).
+    if app
+        .notification()
+        .permission_state()
+        .is_ok_and(|state| state != PermissionState::Granted)
+    {
+        return;
+    }
     // Best effort, always. A desktop that refuses notifications, or a person who turned them
     // off, is not a reason for anything else here to stop working.
     let _ = app
@@ -491,6 +694,7 @@ fn send(app: &tauri::AppHandle, notice: Notice) {
     let landing = Landing {
         plane: notice.plane,
         session: notice.session,
+        sessions: notice.sessions,
     };
     crate::windows::emit_for_plane(app, &landing.plane.clone(), NOTIFIED, &landing);
 }

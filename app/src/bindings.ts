@@ -997,6 +997,16 @@ export const commands = {
 	 */
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
 	/**
+	 *  **Whether the system lets purlis show notifications**: `granted`, `denied`, or `prompt`
+	 *  where it has not been asked yet (Settings › You › Notifications).
+	 */
+	notificationPermission: () => __TAURI_INVOKE<string>("notification_permission"),
+	/**
+	 *  **Asks the system to let purlis show notifications**, as the person pressed Allow: never at
+	 *  launch, and never from anything but that press. Answers what the system said.
+	 */
+	askNotificationPermission: () => __TAURI_INVOKE<string>("ask_notification_permission"),
+	/**
 	 *  Sends what a pane typed to the session's program. Anything but the terminal's own answer
 	 *  drops a curation prompt still waiting to be typed into it (`Held::operator_input`).
 	 */
