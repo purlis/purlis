@@ -47,7 +47,7 @@ export function grantSaid(one: SandboxGrant): string {
             : one.what === "service"
               ? `Reach the system service ${one.target}${one.expected ? " (this project expects it)" : ""}`
               : one.what === "port"
-                ? `Connect to the service on this Mac at port ${one.target}`
+                ? `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`
                 : `Write ${one.target} and everything in it`;
   const by =
     one.level !== "project"

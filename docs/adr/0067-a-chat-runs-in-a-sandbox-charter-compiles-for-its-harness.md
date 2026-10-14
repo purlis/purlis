@@ -1433,15 +1433,26 @@ Decided under delegation; the operator confirms or changes it.
   or every port. It is this machine's, kept as a socket is (in memory for one chat, in this
   machine's sandbox file for the project), audited as `trust.sandbox.grant` with `what = "port"`,
   and listed in Settings' Network page with Remove.
-- **Never purlis's own.** A port one of purlis's proxies or tunnels listens on is refused when it
-  is allowed and left out when a chat starts, and a proxy or tunnel purlis opens never listens on
-  a port a chat's sandbox was started with.
+- **Never purlis's own.** A port one of purlis's proxies or tunnels listens on, and a forge
+  sign-in's redirect ports, are refused when allowed and left out when a chat starts; a proxy or
+  tunnel purlis opens never listens on a port a chat's sandbox was started with. Which ports are
+  whose is judged and marked in one step, under one lock. A port you allowed that purlis holds
+  after a restart is said as such on its Notice.
+- **This machine's loopback is `127.0.0.1`, `::1` and `localhost`**, exactly what the profile and
+  the proxy carry; no other address is read as a service on this Mac.
 - **The refusal is a Block naming the port.** A program's own words for a refused connection to
   a loopback port (Go's `dial tcp 127.0.0.1:<port>: connect: operation not permitted`, Node's
   `connect EPERM 127.0.0.1:<port>`), the sandbox's own `network-outbound` line for one, and the
   chat's proxy refusing a loopback address are each a Block of kind `local-service`. Its Notice
-  says "a connection to a service on this Mac", names the port where the failed command's own
-  error, the sandbox's line or the proxy named it, and otherwise asks the person to type it.
+  says "a connection to a service on this Mac".
+  - **Named**: by purlis's proxy in Codex and opencode; in Claude Code by its sandbox's own
+    report and by a failed command's own error.
+  - **Pre-filled, to check**: in a Codex or opencode chat, a client that connects directly (Go,
+    Node) is refused by purlis's own sandbox, which reports nothing, and the harness hands its
+    words back as printed output. The Notice's port field is pre-filled from them and says the
+    port is from the command's output; the person checks it before allowing.
+  - A `<sandbox_violations>` block in a Codex or opencode chat's result is printed text: purlis's
+    own sandbox appends none, so it is never read as the sandbox's report.
 - **What it compiles to.** A chat purlis wraps (Codex, opencode) is let connect to that port on
   the loopback interface (`(allow network-outbound (remote ip "localhost:<port>"))`), and its
   proxy carries exactly `127.0.0.1`, `::1` and `localhost` at that port, so a client that
