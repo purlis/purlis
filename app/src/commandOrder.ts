@@ -117,16 +117,21 @@ export const LANES = {
  * **Every place in the core that writes a file one of the lanes reads, and the window commands
  * that reach it** (#1949): `writeSites.json`, one table for both sides.
  *
- * - The core's test (`off_the_main_thread_costs_tests.rs`) finds each call of a function that
- *   writes one of these files in the app crate, by name, and fails on one the table does not
- *   list: a writer added later is caught where it writes, whatever command reaches it.
+ * - The core's test (`lane_writes_guard_tests.rs`) reads the app crate's own code, its test
+ *   modules left out, and fails where the table does not hold what it finds:
+ *   - a call that writes one of these files, by the writers it names (and, for the sandbox's
+ *     local file, any function of it that is not a known read) and the function it is in;
+ *   - a window command that reaches such a call within two calls, by a qualified call
+ *     (`module::name(`) or a plain one in the same file, and is not in that site's `by`.
+ *
+ *   What it does not follow: a command reaching a write through a method (`held.x().y(`), or
+ *   deeper than two calls. There the table's `by` is the word, kept by hand.
  * - This module's test holds each command the table names as a writer of a lane's file to that
  *   lane, as a change, or to {@link OUTSIDE_THE_LANES} with why; and each change of a lane to a
  *   file of it.
  *
- * Which commands reach a write is the table's word, kept by hand where a writer is listed: a
- * call graph by name, tried first, found every command reaching every file through names any
- * module shares (`open`, `held`, `chats`), and so told nothing.
+ * A call graph by name across the whole crate was tried first: it found every command reaching
+ * every file through names many modules share (`open`, `held`, `chats`), and so told nothing.
  */
 export const WRITE_SITES = writeSites as {
   sections: Record<string, keyof typeof LANES>;

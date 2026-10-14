@@ -1783,6 +1783,11 @@ pub struct Planes {
     /// taking them out and having let go of them (#1949), so an open of one waits for it: see
     /// [`Planes::opening`].
     turns: Arc<Turns>,
+    /// How long the quit waits for the opens and closes under way ([`QUIT_WAITS_FOR_TURNS`]).
+    quit_waits: std::time::Duration,
+    /// Set as the quit begins (#1949): an open that ends after it lets go of the project it
+    /// built instead of holding it, since the quit has let go of every project already.
+    quitting: AtomicBool,
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
@@ -2005,6 +2010,8 @@ impl Planes {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
             }),
             turns: Arc::default(),
+            quit_waits: QUIT_WAITS_FOR_TURNS,
+            quitting: AtomicBool::new(false),
             network: None,
         }
     }
@@ -2039,6 +2046,14 @@ impl Planes {
             self.kill_switch.record_into(Arc::clone(events));
         }
         self.events = events;
+        self
+    }
+
+    /// Waits `within` at the quit for the opens and closes under way, instead of
+    /// [`QUIT_WAITS_FOR_TURNS`]: for a test of one that outlasts it.
+    #[cfg(test)]
+    pub(crate) fn quitting_within(mut self, within: std::time::Duration) -> Self {
+        self.quit_waits = within;
         self
     }
 
@@ -2662,6 +2677,14 @@ impl Planes {
                     .map(|held| held.mid_turn_in(workspace))
                     .unwrap_or_default()
             }));
+        }
+        // A quit that began while this opened has let go of every project already, and nothing
+        // after it lets go of one (#1949): the project is let go of here, not held.
+        if self.quitting.load(Ordering::SeqCst) {
+            drop(open);
+            held.let_go(false);
+            (self.released)(&held.root);
+            return id;
         }
         open.insert(id.clone(), Arc::clone(&held));
         id
@@ -3595,10 +3618,13 @@ impl Planes {
 
     /// Empties the registry, then lets go of each plane it held. See [`Self::let_go_of_all`].
     fn let_go_of_every_plane(&self, to_update: bool) {
+        // From here an open that ends lets go of its project instead of holding it (#1949): the
+        // flag is read under the registry's lock, which the drain below takes too.
+        self.quitting.store(true, Ordering::SeqCst);
         // Every open and close still under way first (#1949): a close is out of the registry
         // already, so nothing below reaches it, and its last record and its chats' end are its
         // own; an open holds its project in the registry once it is done, and is let go of below.
-        let still = self.turns.all_done_within(QUIT_WAITS_FOR_TURNS);
+        let still = self.turns.all_done_within(self.quit_waits);
         if still > 0 {
             tracing::warn!(
                 "purlis: {still} project(s) were still being opened or let go of as purlis quit; \
@@ -5192,6 +5218,47 @@ mod tests {
         );
         drop(opening);
         assert_eq!(planes.not_closing_within(&canon, soon), Ok(()));
+    }
+
+    #[test]
+    fn an_open_that_outlasts_the_quit_s_wait_lets_go_of_its_project_instead_of_holding_it() {
+        // #1949: a real open, held in its sweep of the project's old files past the quit's
+        // bounded wait. The quit ends with the registry empty; the open, done after it, lets go
+        // of the project it built rather than holding a project nothing will let go of.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("one"));
+        let let_go: Arc<Mutex<Vec<PathBuf>>> = Arc::default();
+        let (in_sweep, sweeping) = std::sync::mpsc::channel::<()>();
+        let (go_on, held_in_sweep) = std::sync::mpsc::channel::<()>();
+        let held_in_sweep = Mutex::new(held_in_sweep);
+        let in_sweep = Mutex::new(in_sweep);
+        let planes = planes()
+            .sweeping_with(Arc::new(move |_| {
+                in_sweep.lock().unwrap().send(()).expect("told");
+                held_in_sweep.lock().unwrap().recv().expect("let go on");
+            }))
+            .telling_released({
+                let let_go = Arc::clone(&let_go);
+                Arc::new(move |root: &Path| let_go.lock().unwrap().push(root.to_path_buf()))
+            })
+            .quitting_within(std::time::Duration::from_millis(50));
+        std::thread::scope(|scope| {
+            let opening = scope.spawn(|| planes.open(&root));
+            sweeping.recv().expect("the open is in its sweep");
+            planes.let_go_of_all();
+            assert!(planes.open_now().is_empty(), "the quit left a project held");
+            go_on.send(()).expect("on");
+            opening.join().expect("the open ends");
+        });
+        assert!(
+            planes.open_now().is_empty(),
+            "the open held its project after the quit: {:?}",
+            planes.open_now()
+        );
+        assert_eq!(
+            *let_go.lock().unwrap(),
+            [root.canonicalize().expect("it resolves")]
+        );
     }
 
     #[test]

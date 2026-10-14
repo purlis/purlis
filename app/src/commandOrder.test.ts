@@ -136,7 +136,8 @@ describe("the window's lanes", () => {
 
   it("name a lane for every file the table's writers write, and why for a write of none", () => {
     for (const site of WRITE_SITES.sites) {
-      if (site.writes === null) expect(site.why, site.at).toBeTruthy();
+      if (site.writes === null || (site.by ?? []).length === 0)
+        expect(site.why, site.at).toBeTruthy();
       else expect(LANES[WRITE_SITES.sections[site.writes]], site.writes).toBeDefined();
     }
     // The two writers found after the lanes were first audited (#1949).
