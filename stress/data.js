@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791937222646,
+  "lastUpdate": 1791939143293,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1472,6 +1472,42 @@ window.BENCHMARK_DATA = {
             "value": 169.2,
             "unit": "MB",
             "extra": "median of 6 samples: 208.6, 214.5, 167.9, 168.9, 169.6, 120.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "859fe395d7297cf9d86571a72c13c76664aa24b3",
+          "message": "review(qw372): a warning is never cut, a name is never in capitals, and Stop is in the last group\n\nFrom the independent review of #1946:\n\n- A group named by data (a persona's group under Curate) wore the label\n  role and was headed in capitals, against ruling T4. It now wears the\n  secondary role as the name is written.\n- What stands under a row's words wraps and is never cut: a warning could\n  lose \"There is no undo.\" to an ellipsis, and a greyed row's reason had its\n  rest only in a platform tooltip that no keyboard opens.\n- The show-more and the away menus keep their own width: their rows have no\n  part that gives way to an ellipsis.\n- A vault's warning claimed every vault's secrets are lost; only a keychain\n  vault's are. Stop all tasks says the chat keeps running, and a workspace's\n  names what is deleted.\n- Stop, whose rows each end something, is in the last group above End, and\n  the test for \"what cannot be undone is last\" looks inside submenus.\n- The task chip's Activity row uses the menus' tooltip. The every-menu test\n  covers a session record, a memory, a finished task and a refused read, and\n  Read the workspace again has its place in the model.\n- `Groups` is exported for a menu whose rows are not the catalogue's, and\n  the docs say how such a menu declares its rows.\n- Comments in actions.ts that said where a menu draws a row are corrected;\n  no behaviour there is changed.\n\nNot seen rendered.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T04:10:48+04:00",
+          "tree_id": "fe4aae765ec09378138d44187d9f2e90032b7a46",
+          "url": "https://github.com/purlis/purlis/commit/859fe395d7297cf9d86571a72c13c76664aa24b3"
+        },
+        "date": 1791939142586,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 837,
+            "unit": "MB",
+            "extra": "median of 3 samples: 746, 837, 892 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 209.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 210.3, 217.1, 215.3, 208.3, 208.5, 120.9 MB"
           }
         ]
       }
