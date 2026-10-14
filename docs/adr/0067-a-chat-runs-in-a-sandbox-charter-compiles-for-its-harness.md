@@ -1630,15 +1630,30 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   carries every host and asks about none; this machine's own addresses, a link-local address, a
   metadata service and a host policy pins as never allowed stay refused there. Write every
   folder but what it holds.
-- **What it holds.** Every denial class of section 5, path for path. The later-code class at
-  every depth anywhere and at the person's own level: git's own config, ssh's, what macOS
-  starts at login, each harness's user-level config and hooks, each editor's user settings and
-  tasks. The folders on the person's `PATH`, the package each link there leads to, and the
-  program the chat starts with its package: a write there is a sandbox block whose Allow lets
-  that chat write the folder (SO-10). No program started outside the profile (no Apple Event,
-  no Launch Services, no job handed to launchd, cron or at), no unix socket but the hook socket
-  and the ones a person allowed (ruling Q1), no port of this machine but the proxy's. The
-  certificate check as the project says it, and as policy leaves it.
+- **What it holds.**
+  - Every denial class of section 5, path for path, and the keychain's files.
+  - The later-code names at every depth anywhere, each letter in either case. Besides the
+    project-level names of section 5, the person's own: git's config (`.gitconfig`,
+    `.config/git`); ssh's config, `config.d`, `authorized_keys`, `rc` and `environment` (its
+    `known_hosts` stays writable) and the `.ssh` folder itself; `Library/LaunchAgents`; the
+    shell startup files, fish's config and the logout files; `.claude.json`, `.claude`'s
+    hooks and plugins, `.codex`, `.config/opencode`; VS Code's and Cursor's user folders,
+    JetBrains', `.cursor` and `.config/zed`.
+  - Folders a person runs programs from later: each folder on the person's `PATH`, and the
+    package each link there leads to; Homebrew's whole prefix where it is there
+    (`/opt/homebrew`, or `Cellar`, `opt`, `lib` and `Homebrew` under `/usr/local`); npm's
+    global packages; the person's own Python site folders (`Library/Python`,
+    `.local/lib/python*`); the program the chat starts, with its whole package; and each
+    declared tool's program. A write to one of these is a sandbox block whose Allow lets that
+    chat write the folder (SO-10).
+  - Codex and opencode: no Apple Event, nothing opened through Launch Services, no job
+    created in launchd, and no `crontab` or `at` run; no unix socket but the hook socket and
+    the ones a person allowed (ruling Q1), and the hook socket's folder never written; no port
+    of this machine but the chat's proxy's.
+  - The certificate check as the project says it, and as policy leaves it.
+- **What it does not hold.** What a chat may read outside the denial classes, what a
+  program it runs does with the network, and code a later program loads from a place this list
+  does not name.
 - **Per harness.** Claude Code: its own sandbox, every folder but the held ones writable, no
   domain list, its commands' network through the chat's proxy, local binding off. Codex and
   opencode on macOS: purlis's own profile from `(allow default)` with the floor's denials. A

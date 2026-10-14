@@ -766,7 +766,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 58] = [
+pub const PLANTED: [Planted; 64] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -830,7 +830,15 @@ pub const PLANTED: [Planted; 58] = [
     // editor's user settings and tasks.
     Planted::and_below(".gitconfig"),
     Planted::and_below(".config/git"),
-    Planted::and_below(".ssh"),
+    // ssh's own: what it runs, and who it lets in. Its `known_hosts` stays the chat's to add to,
+    // as ssh does on a first connection; the folder itself is never moved aside.
+    Planted::itself(".ssh"),
+    Planted::and_below(".ssh/config"),
+    Planted::and_below(".ssh/config.d"),
+    Planted::and_below(".ssh/authorized_keys"),
+    Planted::and_below(".ssh/authorized_keys2"),
+    Planted::and_below(".ssh/rc"),
+    Planted::and_below(".ssh/environment"),
     Planted::and_below("Library/LaunchAgents"),
     Planted::and_below(".claude.json"),
     Planted::and_below(".claude/hooks"),
@@ -2260,6 +2268,31 @@ pub fn floor_held(root: &Path, machine: &Machine, granted: &[PathBuf]) -> Vec<Pa
     }
     let path = machine.env.get("PATH").map(std::ffi::OsString::from);
     let mut held: Vec<PathBuf> = Vec::new();
+    // A package manager's whole prefix, where it is there: what its programs load at every start
+    // (a keg's libraries, `opt` links, Python's `site-packages`) as well as the programs.
+    for prefix in PREFIXES_HELD {
+        let prefix = Path::new(prefix);
+        if prefix.is_dir() {
+            hold_where(&mut held, real(prefix), root, machine, granted);
+        }
+    }
+    // The person's own Python site folders, whose `.pth` files run at every interpreter start.
+    if let Some(home) = &machine.home {
+        hold_where(
+            &mut held,
+            real(&home.join("Library/Python")),
+            root,
+            machine,
+            granted,
+        );
+        if let Ok(entries) = std::fs::read_dir(home.join(".local/lib")) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("python") {
+                    hold_where(&mut held, real(&entry.path()), root, machine, granted);
+                }
+            }
+        }
+    }
     for dir in crate::programs::search_dirs_from(path.as_deref(), machine.home.as_deref()) {
         hold_where(&mut held, real(&dir), root, machine, granted);
         // What each link in it leads to, a few thousand at most: a `PATH` folder is mostly
@@ -2273,12 +2306,26 @@ pub fn floor_held(root: &Path, machine: &Machine, granted: &[PathBuf]) -> Vec<Pa
                 let target = real(&entry.path());
                 if target != entry.path() {
                     hold_where(&mut held, package_root(&target), root, machine, granted);
+                    // npm's global packages, all of them: what one loads, another can be.
+                    if let Some(global) = node_modules_of(&target) {
+                        hold_where(&mut held, global, root, machine, granted);
+                    }
                 }
             }
         }
     }
     held
 }
+
+/// The package managers' prefixes the floor holds whole where they are there ([`floor_held`]):
+/// Homebrew's on Apple silicon, and its folders under `/usr/local` on Intel.
+const PREFIXES_HELD: [&str; 5] = [
+    "/opt/homebrew",
+    "/usr/local/Cellar",
+    "/usr/local/opt",
+    "/usr/local/lib",
+    "/usr/local/Homebrew",
+];
 
 /// The most entries of one `PATH` folder [`floor_held`] follows.
 const LINKS_LOOKED_AT_MOST: usize = 4096;
@@ -2300,6 +2347,14 @@ fn hold_where(
         return;
     }
     held.push(dir);
+}
+
+/// The `node_modules` folder `file` is in, where it is in one: npm's global packages for a
+/// program a `PATH` link leads to.
+fn node_modules_of(file: &Path) -> Option<PathBuf> {
+    file.ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "node_modules"))
+        .map(Path::to_path_buf)
 }
 
 /// **The package a program file belongs to**, as far as its path says (#2071): the whole of a

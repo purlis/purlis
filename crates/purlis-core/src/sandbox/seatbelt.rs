@@ -538,6 +538,7 @@ pub fn floor_profile(
 /// person allowed are given back after it.
 pub const FLOOR_HELD: &str = "(deny appleevent-send)
 (deny lsopen)
+(deny job-creation)
 (deny mach-lookup
   (global-name \"com.apple.coreservices.launchservicesd\")
   (global-name \"com.apple.coreservices.appleevents\"))
@@ -574,10 +575,40 @@ pub fn floor_planted_rules() -> Result<Vec<String>, &'static str> {
                     body.push('/');
                 }
             }
-            let regex = format!("^/(.*/)?{body}{tail}");
+            // Each letter either case: the disk compares names case-folded, so a name spelled
+            // another way is the same file.
+            let regex = format!("^/(.*/)?{}{tail}", either_case(&body));
             Ok(format!("(deny file-write* (regex {}))", string(&regex)?))
         })
         .collect()
+}
+
+/// `pattern` with each ASCII letter as a class of both its cases (`a` as `[aA]`), so a name
+/// matches however it is spelled on a disk that compares names case-folded.
+pub fn either_case(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len() * 4);
+    let mut escaped = false;
+    for c in pattern.chars() {
+        if escaped {
+            out.push(c);
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' => {
+                out.push(c);
+                escaped = true;
+            }
+            c if c.is_ascii_alphabetic() => {
+                out.push('[');
+                out.push(c.to_ascii_lowercase());
+                out.push(c.to_ascii_uppercase());
+                out.push(']');
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// What the floor's profile starts from (#2071): everything a process may do, as with no

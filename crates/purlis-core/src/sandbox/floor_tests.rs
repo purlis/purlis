@@ -286,6 +286,10 @@ fn a_wrapped_harness_at_the_floor_writes_everything_but_what_the_floor_holds() {
             PathBuf::from("/Users/op/.gitconfig"),
             PathBuf::from("/Users/op/.config/git/config"),
             PathBuf::from("/Users/op/.ssh/config"),
+            PathBuf::from("/Users/op/.ssh/authorized_keys"),
+            // A name spelled another way is the same file on a case-folding disk.
+            PathBuf::from("/Users/op/library/launchagents/x.plist"),
+            PathBuf::from("/Users/op/.GitConfig"),
             PathBuf::from("/Users/op/Library/LaunchAgents/x.plist"),
             PathBuf::from("/Users/op/.zshrc"),
             PathBuf::from("/Users/op/.config/fish/config.fish"),
@@ -302,6 +306,11 @@ fn a_wrapped_harness_at_the_floor_writes_everything_but_what_the_floor_holds() {
                 not.display()
             );
         }
+        // ssh adds to its known hosts on a first connection: that stays writable.
+        assert!(
+            writes(&profile, Path::new("/Users/op/.ssh/known_hosts")),
+            "{harness:?}"
+        );
     }
 }
 
@@ -362,6 +371,29 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
     ] {
         assert_eq!(run(&tried(program)), "no", "{program}");
     }
+    // Nor by a copy of a program: what launchd is asked is held, not the program asking.
+    let copied = real(sockets.path()).join("l");
+    std::fs::copy("/bin/launchctl", &copied).expect("a copy of launchctl");
+    assert_eq!(
+        run(&tried(&format!(
+            "{} submit -l purlis.floor.test -- /usr/bin/true",
+            copied.display()
+        ))),
+        "no",
+        "a job handed to launchd"
+    );
+    let _ = crate::forklock::status(
+        std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.test"]),
+    );
+    // A later-code name spelled another way is refused too.
+    let home = real(sockets.path()).join("home");
+    assert_eq!(
+        run(&tried(&format!(
+            "mkdir -p {0}/library/launchagents && touch {0}/library/launchagents/x.plist",
+            home.display()
+        ))),
+        "no"
+    );
     // The hook socket and the proxy's port, and no other socket or port of this machine.
     let nc = |target: &str| tried(&format!("/usr/bin/nc -z -w 2 {target}"));
     assert_eq!(
@@ -404,6 +436,14 @@ fn a_claude_code_chat_at_the_floor_reaches_every_host_through_its_proxy() {
             .carries()
     );
     assert!(!reach.decide("127.0.0.1", 6379, &[443], &[]).carries());
+}
+
+#[test]
+fn a_later_code_name_is_held_in_either_case() {
+    assert_eq!(
+        seatbelt::either_case(r"\.ssh/rc"),
+        r"\.[sS][sS][hH]/[rR][cC]"
+    );
 }
 
 #[test]
