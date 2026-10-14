@@ -547,10 +547,15 @@ pub struct Standing {
     /// Each changed file the next save would refuse for what looks like a credential, while
     /// that is why it is blocked ([`SECRET_REFUSED`]); empty otherwise.
     pub secrets: Vec<SecretAt>,
-    /// Whether the block is a save's replay onto the remote that conflicted, with the tree
-    /// not stopped part-way (qw382): the person settles it with a rebase of their own in a
-    /// terminal, since a chat may not rebase the plane root.
+    /// Whether the save is blocked by the push record of a save's replay onto the remote that
+    /// conflicted, git not being stopped part-way now (qw382): the person settles it with a
+    /// rebase of their own, since a chat may not rebase the plane root.
     pub rebase_by_hand: bool,
+    /// What git is stopped part-way in, by kind (qw382): an operation's
+    /// [`gitstate::Operation::kind`], or `conflicts` for unmerged files and no operation.
+    /// `None` when it is not. A window decides by it which ways out it offers: a chat may
+    /// finish a merge, and may not continue the others in the plane root.
+    pub stopped_by: Option<&'static str>,
     /// Where the open pull request of a `pr-merge` plane stands with merging, as the last look
     /// at the forge found it: waiting on its checks, red with the checks that failed, in a
     /// merge queue, unable to merge, or merged and not moved onto yet. `None` when no request
@@ -592,6 +597,7 @@ pub fn standing(root: &Path) -> Standing {
             notice: None,
             secrets: Vec::new(),
             rebase_by_hand: false,
+            stopped_by: None,
             merge: None,
             // An unborn branch is a repository with nothing to count against, and what is
             // staged in it is still the root being worked in (FD-11: the alerts read this).
@@ -710,7 +716,14 @@ pub fn standing(root: &Path) -> Standing {
     let stopped = gitstate::stopped(root);
     // The record's conflict is the block only while git is not stopped part-way, which is
     // named first and settled by its own way out.
-    let rebase_by_hand = stopped.is_none() && outcome.as_deref() == Some(Outcome::Conflict.word());
+    let rebase_by_hand = stopped.is_none()
+        && blocked.is_some()
+        && outcome.as_deref() == Some(Outcome::Conflict.word());
+    let stopped_by = stopped.as_ref().map(|stopped| {
+        stopped
+            .operation
+            .map_or("conflicts", gitstate::Operation::kind)
+    });
     let blocked = stopped.as_ref().map(gitstate::Stopped::why).or(blocked);
     // Named only while they are why: a stopped merge is settled first.
     if blocked.as_deref() != Some(SECRET_REFUSED) {
@@ -759,6 +772,7 @@ pub fn standing(root: &Path) -> Standing {
         head,
         secrets,
         rebase_by_hand,
+        stopped_by,
         merge,
     }
 }

@@ -6035,6 +6035,11 @@ export type PlaneSaving = {
 	 *  remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
 	 */
 	byHand?: string | null,
+	/**
+	 *  What git is stopped part-way in, by kind: `merge`, `rebase`, `am`, `cherry-pick`,
+	 *  `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
+	 */
+	stoppedBy?: string | null,
 };
 
 /**

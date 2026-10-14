@@ -2502,6 +2502,52 @@ fn a_real_conflict_record_names_its_files_and_is_settled_by_hand() {
     assert!(got.rebase_by_hand);
 }
 
+/// A rebase of `main` onto a branch that changed README.md the other way, stopped on it.
+fn a_rebase_stopped_on_a_conflict(fixture: &Fixture) {
+    run(&fixture.root, &["checkout", "-q", "-b", "side"]);
+    std::fs::write(fixture.root.join("README.md"), "side\n").unwrap();
+    run(&fixture.root, &["commit", "-q", "-am", "side"]);
+    run(&fixture.root, &["checkout", "-q", "main"]);
+    std::fs::write(fixture.root.join("README.md"), "main\n").unwrap();
+    run(&fixture.root, &["commit", "-q", "-am", "main"]);
+    let stopped = crate::testgit::run(&fixture.root, &["rebase", "side"]);
+    assert!(!stopped.ok(), "the rebase stops on the conflict");
+}
+
+#[test]
+fn a_rebase_stopped_with_every_file_added_is_still_said_to_be_a_rebase() {
+    // Review of qw382: with nothing left unmerged, the window offered a chat, which may not
+    // continue a rebase in the plane root.
+    let fixture = Fixture::plane();
+    a_rebase_stopped_on_a_conflict(&fixture);
+    std::fs::write(fixture.root.join("README.md"), "both\n").unwrap();
+    run(&fixture.root, &["add", "README.md"]);
+
+    let got = standing(&fixture.root);
+
+    assert_eq!(got.stage, Stage::Blocked, "{got:?}");
+    assert!(got.conflicts.is_empty(), "{got:?}");
+    assert_eq!(got.stopped_by, Some("rebase"));
+    assert!(!got.rebase_by_hand);
+}
+
+#[test]
+fn a_merge_stopped_on_a_conflict_is_said_to_be_a_merge() {
+    let fixture = Fixture::plane();
+    run(&fixture.root, &["checkout", "-q", "-b", "side"]);
+    std::fs::write(fixture.root.join("README.md"), "side\n").unwrap();
+    run(&fixture.root, &["commit", "-q", "-am", "side"]);
+    run(&fixture.root, &["checkout", "-q", "main"]);
+    std::fs::write(fixture.root.join("README.md"), "main\n").unwrap();
+    run(&fixture.root, &["commit", "-q", "-am", "main"]);
+    assert!(!crate::testgit::run(&fixture.root, &["merge", "side"]).ok());
+
+    let got = standing(&fixture.root);
+
+    assert_eq!(got.stopped_by, Some("merge"));
+    assert_eq!(got.conflicts, vec!["README.md".to_string()]);
+}
+
 #[test]
 fn save_on_a_clean_plane_whose_push_stopped_retries_it_and_clears_the_record() {
     // qw382: a clean tree and no mode answered "Nothing to save", and the record held.

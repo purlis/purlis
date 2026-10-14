@@ -316,9 +316,9 @@ export function SavingView({
                 </ul>
               )}
               <SettingActions>
-                {/* A tree git stopped part-way in a conflict is settled with git, which a chat
-                    may not finish in the project's root (qw382). */}
-                {saving.conflicts.length === 0 && (
+                {/* A rebase, `git am`, cherry-pick, revert or bisect git stopped part-way is
+                    finished with git, which a chat may not run in the project's root (qw382). */}
+                {chatMaySettle(saving) && (
                   <button
                     type="button"
                     className="ui-button ui-button-sm panel-view"
@@ -908,6 +908,17 @@ export function furthestBack(
   const [one, many] = phrases[stage] ?? [stage, stage];
   const words = n === 1 ? `1 repo ${one}` : `${n} repos ${many}`;
   return { stage, said: withIncoming(words, incoming), words, incoming, red: false };
+}
+
+/** What git stopped part-way that a chat may not finish in the project's root: continuing
+ *  any of these rewrites the tree, which its guard refuses there (A3c). A merge's
+ *  `--continue`, and unmerged files with no operation, are a chat's to finish. */
+const ONLY_GIT_FINISHES = new Set(["rebase", "am", "cherry-pick", "revert", "bisect"]);
+
+/** Whether a blocked save offers *Resolve in a chat*: never for a save's own replay that
+ *  conflicted, nor for a stop only git in a terminal can finish (qw382). */
+export function chatMaySettle(saving: PlaneSaving): boolean {
+  return saving.byHand == null && !ONLY_GIT_FINISHES.has(saving.stoppedBy ?? "");
 }
 
 /** Whether pressing Save could do anything: files to commit, a blocked save to try again, or

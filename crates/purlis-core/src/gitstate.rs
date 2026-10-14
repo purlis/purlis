@@ -159,6 +159,19 @@ impl Operation {
             })
     }
 
+    /// Its kind as one plain word, for a reader that decides by it: `merge`, `rebase`, `am`,
+    /// `cherry-pick`, `revert` or `bisect`.
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::Merge => "merge",
+            Self::Rebase => "rebase",
+            Self::Am => "am",
+            Self::CherryPick => "cherry-pick",
+            Self::Revert => "revert",
+            Self::Bisect => "bisect",
+        }
+    }
+
     /// The word for it: "a merge is stopped part-way".
     pub fn word(self) -> &'static str {
         match self {

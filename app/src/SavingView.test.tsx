@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SaveIndicator, SavingView } from "./SavingView";
+import { chatMaySettle, SaveIndicator, SavingView } from "./SavingView";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import type { PlaneSaving, RepoSaving, SaveEntry } from "./bindings";
 
@@ -446,13 +446,15 @@ describe("SavingView", () => {
     expect(asked).toEqual([{ plane: PLANE, way: "terminal" }]);
   });
 
-  it("offers no chat for a tree git stopped part-way in a conflict", async () => {
+  it("offers no chat for a rebase stopped part-way, even with every file added", async () => {
+    // Review of qw382: with nothing left unmerged, the chat came back, and it may not continue
+    // a rebase in the project's root.
     core([
       standing({
         stage: "blocked",
-        blocked:
-          "a rebase is stopped part-way with conflicts in notes.md; settle the conflicts and `git add` the files, then `git rebase --continue`, or `git rebase --abort`",
-        conflicts: ["notes.md"],
+        blocked: "a rebase is stopped part-way; `git rebase --continue`, or `git rebase --abort`",
+        conflicts: [],
+        stoppedBy: "rebase",
       }),
     ]);
     render(<SavingView plane={PLANE} />);
@@ -460,6 +462,37 @@ describe("SavingView", () => {
     const ways = await screen.findByRole("group", { name: "Ways out" });
     expect(within(ways).queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
     expect(within(ways).getByRole("button", { name: "Open terminal here" })).toBeTruthy();
+  });
+
+  it("offers a chat for a merge stopped on a conflict, which a chat may finish", async () => {
+    core([
+      standing({
+        stage: "blocked",
+        blocked:
+          "a merge is stopped part-way with conflicts in notes.md; settle the conflicts and `git add` the files, then `git commit` to finish the merge, or `git merge --abort`",
+        conflicts: ["notes.md"],
+        stoppedBy: "merge",
+      }),
+    ]);
+    render(<SavingView plane={PLANE} />);
+
+    const ways = await screen.findByRole("group", { name: "Ways out" });
+    expect(within(ways).getByRole("button", { name: "Resolve in a chat" })).toBeTruthy();
+    expect(within(ways).getByRole("list", { name: "Where it conflicts" })).toBeTruthy();
+  });
+
+  it("offers a chat only where a chat may finish what git stopped", () => {
+    const blocked = (stoppedBy: string | null) =>
+      chatMaySettle(standing({ stage: "blocked", stoppedBy }));
+    expect(["rebase", "am", "cherry-pick", "revert", "bisect"].map(blocked)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect([null, "merge", "conflicts"].map(blocked)).toEqual([true, true, true]);
+    expect(chatMaySettle(standing({ stage: "blocked", byHand: "run git" }))).toBe(false);
   });
 
   it("says a save that stopped earlier is retried by Save, and offers Save", async () => {
