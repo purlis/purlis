@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792014906262,
+  "lastUpdate": 1792017050691,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11382,6 +11382,48 @@ window.BENCHMARK_DATA = {
             "value": 101.978897,
             "unit": "ms",
             "extra": "median of 5 runs: 101.553, 101.631, 101.979, 102.011, 102.274 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "279dcfa723287464c747f6af22b61f625785a469",
+          "message": "fix(qw387d): git's own variables count as configuration, and a selection says what landed (#2099)\n\n* fix(qw387d): git's own variables count as configuration, and a selection says what landed\n\n- Any `GIT_*` assignment or export on the line turns the clone guard's\n  sparse filter off, as `GIT_CONFIG*` and the editors did.\n- `select::set_active` answers what it wrote: a pointer the state folder\n  refused is `Scope::Unwritten`, and `workspace use` / `create --use`\n  fail saying nothing was selected.\n- A `cd` whose `&&` chain ends before a branch move in the plane root\n  gets the hint to join it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw387d): the loose-cd hint stays out: it changes recorded plane-root answers\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T02:29:33+04:00",
+          "tree_id": "76fca178735b60cc85c4c0a72530125140d9c6ea",
+          "url": "https://github.com/purlis/purlis/commit/279dcfa723287464c747f6af22b61f625785a469"
+        },
+        "date": 1792017049603,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.521875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.514, 0.522, 0.532, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8970405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.349, 16.877, 16.897, 17.016, 17.381 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.8536355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.022, 104.603, 104.854, 105.707, 106.483 ms"
           }
         ]
       }
