@@ -330,9 +330,10 @@ fixed for a run. It is always shown with the account it is billed to (ADR 0087).
 _Avoid_: model config, model settings
 
 **Model source**:
-How a chat reaches its model: the harness's own **login**, a **key** the user keeps in a vault,
-or a **local** model. None of them passes through purlis's servers. purlis never reads, stores
-or relays a harness's login (ADR 0087).
+How a chat reaches its model: the harness's own sign-in (the `login` source), a **key** the user
+keeps in a vault, or a **local** model. None of them passes through purlis's servers. A
+subscription's sign-in is the harness's, kept in the chat's **profile**, and purlis never reads,
+copies, stores or relays it (ADR 0087, ADR 0095).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
 
 **Profile**:
@@ -340,10 +341,12 @@ A harness as the person runs it on a device, under a name: the harness, its sett
 sign-in, its conversations and the browser logins kept under it. It is the person's: a persona
 names one, a chat runs on one, and it lives on its device and is never committed. A
 subscription is signed in once per device through the harness's own flow, and purlis never
-holds it. One browser writes a profile's kept logins at a time, and a second chat that wants
-them is offered a copy.
+holds it. Every sign-in a chat uses is a profile's (ADR 0095). One browser writes a profile's
+kept logins at a time, and a second chat that wants them is offered a copy.
 _Avoid_: browser profile, kept profile (both are the profile), harness folder (that is where a
-profile is kept), user data, persistent browser, account (that is who a model is billed to)
+profile is kept), harness login, login (for its sign-in: a login is a browser's, or a **browser
+login**), account (that is who a model is billed to), credentials (that is what a
+sign-in leaves in its folder), user data, persistent browser
 
 **Session host** (`purlisd`):
 The process that owns every **hosted program** on a device, every chat's terminal and every
