@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791972069188,
+  "lastUpdate": 1791974365961,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10710,6 +10710,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1213495,
             "unit": "ms",
             "extra": "median of 5 runs: 100.366, 100.971, 101.121, 102.021, 102.168 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "3a9d2ded5811202ab44087f8c629c7c9737c0a35",
+          "message": "review(qw381): the failed-start commands are listed as in-memory window commands\n\nAfter the rebase onto #1956: mcp_failures and put_away_mcp_failure read and\nput away what the app holds in memory, so they stay synchronous with that\nreason on the list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T14:37:47+04:00",
+          "tree_id": "da1911e195495fcdf5a341be3d490c52e17ebd92",
+          "url": "https://github.com/purlis/purlis/commit/3a9d2ded5811202ab44087f8c629c7c9737c0a35"
+        },
+        "date": 1791974364500,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5156825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.492, 0.505, 0.516, 0.522, 0.532 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.765201500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.254, 16.518, 16.765, 16.920, 17.074 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.4669595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.031, 104.440, 105.467, 105.619, 105.736 ms"
           }
         ]
       }
