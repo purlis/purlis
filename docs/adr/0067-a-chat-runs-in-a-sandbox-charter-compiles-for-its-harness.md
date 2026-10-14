@@ -1323,3 +1323,12 @@ are added to that start.
   run is a server's start, and the error, are the asking process's own words.
 
 Only Claude Code is started with a persona's servers, so only there does any of this apply.
+
+## Noted (2026-10-14, qw387): what a sparse checkout leaves out, the clone guard does not count
+
+The guard of the qw349 note above counts a denied path only where git would write it. Where a
+sparse checkout is on in the folder (`core.sparseCheckout`, as git reads it there), git writes
+no path its patterns leave out, whatever a move changes, so those are dropped: git's own
+`sparse-checkout check-rules` is asked, through the hardened runner, which of the denied paths
+they are. Where git does not answer, every path counts. A command that cannot finish still does
+not start.

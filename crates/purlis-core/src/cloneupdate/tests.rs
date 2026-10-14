@@ -37,6 +37,8 @@ struct Fake {
     guessed: Vec<(&'static str, &'static str)>,
     /// What is in the folder.
     there: Vec<&'static str>,
+    /// The paths a sparse checkout leaves out of the folder.
+    left_out: Vec<&'static str>,
 }
 
 fn owned(paths: &[&'static str]) -> Vec<String> {
@@ -116,6 +118,20 @@ impl Asks for Fake {
         self.there
             .iter()
             .any(|there| Path::new(TOP).join(there) == path || Path::new(there) == path)
+    }
+
+    fn left_out(&self, _: &str, paths: &[String]) -> Option<Vec<String>> {
+        Some(
+            paths
+                .iter()
+                .filter(|path| {
+                    self.left_out
+                        .iter()
+                        .any(|out| path.as_str() == *out || path.starts_with(&format!("{out}/")))
+                })
+                .cloned()
+                .collect(),
+        )
     }
 }
 
@@ -418,6 +434,89 @@ fn a_rebase_answers_for_every_commit_it_replays() {
     let said = judge("rebase origin/plain", &unasked).expect("refused");
     assert!(
         said.contains("purlis could not name before it runs"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_sparse_checkout_that_leaves_the_denied_files_out_is_not_refused_for_them() {
+    // The clone's sparse checkout leaves out the folders that hold the denied files, so git
+    // writes none of them, whatever the move changes.
+    let sparse = Fake {
+        left_out: vec!["app", "fixtures"],
+        changed: vec!["app/.vscode/tasks.json", "fixtures/.claude/settings.json"],
+        ..a_clone()
+    };
+    for kept in [
+        "checkout tasks",
+        "switch tasks",
+        "merge origin/tasks",
+        "rebase origin/tasks",
+        "reset --hard tasks",
+        "reset --hard",
+        "checkout -f main",
+        "pull",
+        "pull --rebase origin main",
+    ] {
+        assert_eq!(judge(kept, &sparse), None, "git {kept}");
+    }
+    // A sparse checkout that keeps one of them in: only that one is named.
+    let partly = Fake {
+        left_out: vec!["fixtures"],
+        ..sparse.clone()
+    };
+    let said = judge("checkout tasks", &partly).expect("refused");
+    assert!(
+        said.contains("would write `app/.vscode/tasks.json`"),
+        "{said}"
+    );
+    let said = judge("pull", &partly).expect("refused");
+    assert!(said.contains("app/.vscode/tasks.json"), "{said}");
+    assert!(!said.contains("settings.json"), "{said}");
+    // Where git could not say what the sparse checkout leaves out, every file counts.
+    struct Unsaid(Fake);
+    impl Asks for Unsaid {
+        fn top(&self, dir: &str) -> Top {
+            self.0.top(dir)
+        }
+        fn head(&self, top: &str) -> Head {
+            self.0.head(top)
+        }
+        fn has_index(&self, top: &str) -> bool {
+            self.0.has_index(top)
+        }
+        fn commit(&self, top: &str, name: &str) -> Option<String> {
+            self.0.commit(top, name)
+        }
+        fn guessed(&self, top: &str, word: &str) -> Option<String> {
+            self.0.guessed(top, word)
+        }
+        fn differ(&self, top: &str, from: &str, to: &str) -> Option<Vec<String>> {
+            self.0.differ(top, from, to)
+        }
+        fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
+            self.0.replayed(top, onto)
+        }
+        fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
+            self.0.tracked(top, commit)
+        }
+        fn changed(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+            self.0.changed(top, paths)
+        }
+        fn is_there(&self, path: &Path) -> bool {
+            self.0.is_there(path)
+        }
+        fn left_out(&self, _: &str, _: &[String]) -> Option<Vec<String>> {
+            None
+        }
+    }
+    let unsaid = Unsaid(sparse);
+    let mut words = ["checkout", "tasks"].map(str::to_string).into_iter();
+    let sub = words.next().expect("a subcommand");
+    let post: Vec<String> = words.collect();
+    let said = judged(&sub, &post, TOP, &place(true), &unsaid).expect("refused");
+    assert!(
+        said.contains("would write `app/.vscode/tasks.json`"),
         "{said}"
     );
 }
@@ -1066,6 +1165,43 @@ fn on_a_repository_git_says_which_files_a_move_would_write() {
         said.contains("would write `app/.vscode/tasks.json`"),
         "{said}"
     );
+}
+
+#[test]
+fn on_a_sparse_repository_git_says_which_files_it_leaves_out() {
+    let f = a_repository();
+    let top = Path::new(&f.scratch);
+    let asked = |cmd: &str| refusal(cmd, &f.scratch, &f.root, Some(Path::new(&f.workspace)));
+    // Before: the editor's tasks are written by these.
+    assert!(asked("git checkout tasks").is_some());
+    // A sparse checkout that leaves the editor's folder out. Every pattern is git's to read.
+    git(
+        top,
+        &["sparse-checkout", "set", "--no-cone", "/*", "!/app/"],
+    );
+    let paths = vec!["app/.vscode/tasks.json".to_string(), "src/a.rs".to_string()];
+    assert_eq!(
+        Asked.left_out(&f.scratch, &paths),
+        Some(vec!["app/.vscode/tasks.json".to_string()])
+    );
+    for kept in [
+        "git checkout tasks",
+        "git merge --ff-only tasks",
+        "git reset --hard tasks",
+        "git reset --hard plain",
+        "git rebase tasks",
+        "git pull",
+    ] {
+        assert_eq!(asked(kept), None, "{kept}");
+    }
+    // Off again, the file counts again, though the index still marks it left out: with no
+    // sparse checkout on, git writes a file a move changes whatever its bit says.
+    git(
+        top,
+        &["config", "--worktree", "core.sparseCheckout", "false"],
+    );
+    assert_eq!(Asked.left_out(&f.scratch, &paths), Some(Vec::new()));
+    assert!(asked("git checkout tasks").is_some());
 }
 
 #[test]
