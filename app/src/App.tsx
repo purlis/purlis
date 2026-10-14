@@ -625,11 +625,16 @@ function App() {
 
   const letGoOf = useCallback(
     async (plane: string): Promise<Ran> => {
-      const answer = await commands
+      // The core takes the project out of what it holds as it is asked, then writes its record
+      // and ends its chats off the window's thread (#1949), which can take a while. Its tab goes
+      // now, so nothing in it is pressed again meanwhile: a second close of a project already
+      // let go of is refused.
+      const asked = commands
         .closePlane(plane)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (answer.status === "error") return { ok: false, refused: answer.error };
       takeOut(plane);
+      const answer = await asked;
+      if (answer.status === "error") return { ok: false, refused: answer.error };
       return { ok: true, said: `purlis let go of ${plane}. Nothing in it was changed.` };
     },
     [takeOut],
