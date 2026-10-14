@@ -200,3 +200,54 @@ test("only the first few failures carry the evidence, each held to its own size"
     );
   }
 });
+
+test("a failure that carried an empty block says so, and one that carried none says nothing", () => {
+  // A quiet core and a block that was never recorded read differently (#2029's review).
+  const [quiet] = annotations([failure({ late: [], coreLog: [] })], {
+    root,
+    read: noSource,
+  });
+  assert.ok(
+    quiet.includes("no command was late; the core logged nothing"),
+    quiet,
+  );
+  const [none] = annotations([failure()], { root, read: noSource });
+  assert.ok(!none.includes("%0A%0A"), none);
+});
+
+test("only failures that carried a block count towards the first few that show it", () => {
+  // The left-chats guard writes a record of its own, with no block: it does not use up a place.
+  const records = [
+    failure({ title: "first", late: [], coreLog: ["purlis: one"] }),
+    failure({ title: "the guard's own record" }),
+    ...Array.from({ length: EVIDENCE_FOR }, (_, n) =>
+      failure({ title: `after ${n}`, late: [], coreLog: ["purlis: one"] }),
+    ),
+  ];
+  const lines = annotations(records, { root, read: noSource });
+  const shown = lines.filter((line) =>
+    line.includes("the core's last log lines"),
+  ).length;
+  assert.equal(shown, EVIDENCE_FOR);
+  assert.ok(EVIDENCE_FOR >= 5);
+});
+
+test("what covered the element a test could not press is said", () => {
+  const record = failure({
+    message: 'element ("button=New tab") still not clickable after 20000ms',
+    late: [],
+    coreLog: [],
+    covers: [
+      "at its centre: div.palette-backdrop",
+      "focused: input#palette",
+      "open: [role=dialog] Switch project",
+    ],
+  });
+  const [line] = annotations([record], { root, read: noSource });
+  assert.ok(
+    line.includes(
+      "what covered it:%0Aat its centre: div.palette-backdrop%0Afocused: input#palette%0Aopen: [role=dialog] Switch project",
+    ),
+    line,
+  );
+});

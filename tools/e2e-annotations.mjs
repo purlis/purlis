@@ -38,10 +38,16 @@ export const MESSAGE_CHARS = 300;
  * scenario stall): what the window was still waiting for, and the core's last log lines. The
  * first failure of a mass failure is the one that names its cause.
  */
-export const EVIDENCE_FOR = 3;
+export const EVIDENCE_FOR = 5;
 
 /** How much evidence one annotation keeps, the newest lines kept when it is cut. */
 export const EVIDENCE_CHARS = 3000;
+
+/** Whether `record` carries the evidence block: a test's or a hook's failure does, the left-chats
+ *  guard's own record does not. */
+export function carriesEvidence(record) {
+  return Array.isArray(record.late) || Array.isArray(record.coreLog);
+}
 
 /**
  * The evidence `record` carries, as lines of text: the commands the window had not had answered
@@ -49,6 +55,7 @@ export const EVIDENCE_CHARS = 3000;
  * with anything secret-shaped replaced (`purlis_core::applog`). Empty where it carries none.
  */
 export function evidenceOf(record) {
+  if (!carriesEvidence(record)) return "";
   const parts = [];
   const late = Array.isArray(record.late) ? record.late : [];
   if (late.length > 0) {
@@ -67,6 +74,12 @@ export function evidenceOf(record) {
       lines = lines.slice(1);
     parts.push(`the core's last log lines:\n${lines.join("\n")}`);
   }
+  // What lay over the element a test could not press or see (`app/e2e/covers.ts`).
+  const covers = Array.isArray(record.covers) ? record.covers : [];
+  if (covers.length > 0) parts.push(`what covered it:\n${covers.join("\n")}`);
+  // A block recorded with nothing in it says so: a quiet core reads apart from no block at all.
+  if (parts.length === 0)
+    parts.push("no command was late; the core logged nothing");
   const text = parts.join("\n");
   return text.length > EVIDENCE_CHARS
     ? text.slice(text.length - EVIDENCE_CHARS)
@@ -163,6 +176,7 @@ export function annotations(
         ),
     ];
   }
+  let evidenced = 0;
   const lines = records.slice(0, limit).map((record, index) => {
     const level = index < PER_LEVEL ? "error" : "warning";
     const props = [];
@@ -176,7 +190,11 @@ export function annotations(
     const title = level === "error" ? named : `also failed › ${named}`;
     props.push(`title=${escapeProperty(title)}`);
     const trimmed = trimMessage(record.message) || "failed with no message";
-    const evidence = index < EVIDENCE_FOR ? evidenceOf(record) : "";
+    // The first EVIDENCE_FOR failures that carry a block show it; a record with none uses no place.
+    const evidence =
+      carriesEvidence(record) && evidenced++ < EVIDENCE_FOR
+        ? evidenceOf(record)
+        : "";
     const message = evidence ? `${trimmed}\n\n${evidence}` : trimmed;
     return `::${level} ${props.join(",")}::${escapeData(message)}`;
   });
