@@ -115,9 +115,9 @@ pub enum DispatchCommand {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
     },
-    /// Send a follow-up to a task this chat dispatched that is still working. It reaches that
-    /// chat's next turn, quoted as data from this chat. Refused, with the task's state, once
-    /// the task has finished.
+    /// Send a follow-up to a task this chat dispatched that is still working, quoted as data
+    /// from this chat. A task at rest is started on it at once; one mid-turn reads it when that
+    /// turn ends. Refused, with the task's state, once the task has finished.
     Tell {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
@@ -677,8 +677,9 @@ pub fn tell(to: u32, text: &str) -> Result<String, String> {
     let text = message(text)?;
     let (_, name) = sent(What::Tell { to, text })?;
     Ok(format!(
-        "{SAYS} follow-up sent to '{name}' (chat {to}). It reaches that chat's next turn, \
-         quoted as data from this chat."
+        "{SAYS} follow-up sent to '{name}' (chat {to}), quoted as data from this chat. If it is \
+         at rest, purlis starts its turn on it now; if it is mid-turn, it reads it when that \
+         turn ends."
     ))
 }
 
