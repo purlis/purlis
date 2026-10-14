@@ -436,8 +436,10 @@ pub fn update(root: &Path) -> ProjectUpdate {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettled {
-    /// `saved`: the replay finished and the save carried it on (`said` says how the push
-    /// went). `stopped`: git stopped on a conflict in `files`, and the rebase is left stopped.
+    /// `saved`: the replay finished and what is committed was pushed, with no new commit
+    /// (`said` says how the push went, and names files changed meanwhile, left unsaved).
+    /// `stopped`: git stopped on a conflict in `files`, and the rebase is left stopped.
+    /// `empty`: the commit being replayed has nothing left to commit, and Skip drops it.
     /// `aborted`: the project is back where it was. `refused`: nothing changed, and `said`
     /// says why.
     pub outcome: String,
@@ -450,9 +452,10 @@ pub struct SaveSettled {
 }
 
 /// **Resolve a save's conflict from the window** (qw382): `step` is `start` (fetch and replay
-/// the project's own commits, stopping where git stops), `continue` (stage exactly the files
-/// in conflict, once no marker is left in them, and carry on; `files` are the ones the window
-/// showed), or `abort`. Where the replay finishes, the save runs at once and pushes it.
+/// the project's own commits, stopping where git stops), `continue` (carry on once the files in
+/// conflict are settled; `files` are the ones the window showed), `skip` (drop a commit the
+/// settling left empty), or `abort`. Where the replay finishes, what is committed is pushed,
+/// and nothing new is committed.
 ///
 /// The window's alone (`WINDOW_ONLY`): it moves the project's working tree under every chat in
 /// it, and a chat's sandbox may never run it.
@@ -487,43 +490,32 @@ pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, 
             // The window's own git (#752): its sign-in, offered to the recorded remote alone.
             "start" => crate::forgeaccounts::window_git(|| resolve::start(root, &mut say)),
             "continue" => resolve::carry_on(root, files, &mut say),
+            "skip" => resolve::skip(root),
             "abort" => resolve::abort(root),
-            other => return Err(format!("{other} is not a step: start, continue or abort")),
+            other => {
+                return Err(format!(
+                    "{other} is not a step: start, continue, skip or abort"
+                ));
+            }
         }
     };
     planegit::touch(root);
     let (outcome, said, files) = match settled {
-        Settled::Replayed => {
-            let ok = match save(root, None) {
-                Ok(said) => {
-                    lines.extend(said);
-                    true
-                }
-                Err(refused) => {
-                    lines.push(refused);
-                    false
-                }
-            };
-            (
-                "saved",
-                if ok {
-                    "Resolved: the project's own commits are on the remote's, and the save \
-                     carried them on."
-                        .to_owned()
-                } else {
-                    "Resolved: the project's own commits are on the remote's. The save after it \
-                     did not finish; its words are below."
-                        .to_owned()
-                },
-                Vec::new(),
-            )
-        }
+        Settled::Replayed => ("saved", pushed_after(root, &mut lines), Vec::new()),
         Settled::Stopped(files) => (
             "stopped",
             "git stopped on a conflict. Settle the files below, in a chat or by hand, then \
              Continue. Abort puts the project back where it was."
                 .to_owned(),
             files,
+        ),
+        Settled::Empty => (
+            "empty",
+            "Settled, this commit of the project's own changes nothing the remote does not \
+             already have. Skip drops it and carries the replay on; Abort puts the project \
+             back where it was."
+                .to_owned(),
+            Vec::new(),
         ),
         Settled::Aborted => (
             "aborted",
@@ -538,6 +530,47 @@ pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, 
         files,
         lines,
     })
+}
+
+/// After a replay that finished: the push of what is committed, as the person's own press, and
+/// no new commit. Files changed meanwhile are named and left for the person.
+fn pushed_after(root: &Path, lines: &mut Vec<String>) -> String {
+    let (pushed, left) = {
+        let mut say = |line: Say| lines.push(line.to_string());
+        crate::forgeaccounts::window_git(|| {
+            gitcredential::confirmed_if(true, || planegit::resolve::push_after(root, &mut say))
+        })
+    };
+    let first = match pushed {
+        Some(res) if res.outcome == planegit::Outcome::Pushed => {
+            "Resolved: the project's own commits are on the remote's, and they are pushed."
+                .to_owned()
+        }
+        Some(res) => format!(
+            "Resolved: the project's own commits are on the remote's. The push after it did \
+             not land ({}){}",
+            res.outcome.word(),
+            if res.detail.is_empty() {
+                ".".to_owned()
+            } else {
+                format!(": {}", res.detail)
+            }
+        ),
+        None => "Resolved: the project's own commits are on the remote's, and nothing was \
+                 pushed: this project's saves stop at the commit, or a save was running."
+            .to_owned(),
+    };
+    if left.is_empty() {
+        return first;
+    }
+    format!(
+        "{first} These files changed while it was resolved and were not saved: {}. Save them, \
+         or remove them.",
+        left.iter()
+            .map(|path| format!("`{path}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 /// **Merge a save's pull request as it stands**, its failed and missing checks included: the
@@ -1268,8 +1301,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("a directory");
 
         let unknown = settle(dir.path(), "merge", &[]).expect_err("not a step");
-        assert!(unknown.contains("start, continue or abort"), "{unknown}");
-        for step in ["continue", "abort"] {
+        assert!(
+            unknown.contains("start, continue, skip or abort"),
+            "{unknown}"
+        );
+        for step in ["continue", "skip", "abort"] {
             let got = settle(dir.path(), step, &[]).expect("answered");
             assert_eq!(got.outcome, "refused", "{step}");
             assert!(

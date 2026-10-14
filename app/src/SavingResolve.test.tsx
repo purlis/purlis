@@ -173,4 +173,25 @@ describe("SaveConflict", () => {
     );
     expect(container.textContent).toBe("");
   });
+
+  it("offers Skip when the settling left the commit empty, and sends it", async () => {
+    let answers: SaveSettled[] = [
+      settled({ outcome: "empty", said: "Skip drops it." }),
+      settled({ outcome: "saved", said: "Resolved." }),
+    ];
+    const sent: { cmd: string; args: Record<string, unknown> }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args: args as Record<string, unknown> });
+      const [first, ...rest] = answers;
+      answers = rest;
+      return first;
+    });
+    render(<SaveConflict plane={PLANE} saving={standing({ ...STOPPED, conflicts: [] })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+
+    expect(sent.map((one) => one.args.step)).toEqual(["continue", "skip"]);
+    expect(await screen.findByText("Resolved.")).toBeTruthy();
+  });
 });

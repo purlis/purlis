@@ -12,46 +12,82 @@
 //! - [`start`] fetches the target branch from the remote recorded for the project and replays
 //!   the project's own commits onto it. Where git stops on a conflict, the rebase is left
 //!   stopped, and the answer names the files.
-//! - [`carry_on`] is *Continue*: it checks that no conflict marker is left in those files,
-//!   stages exactly them, and runs `git rebase --continue`. Where git stops again, the answer
-//!   names the next files.
-//! - [`abort`] is *Abort*: `git rebase --abort`, which puts the project back where it was.
+//! - [`carry_on`] is *Continue*, [`skip`] is *Skip* (a commit the settling left empty), and
+//!   [`abort`] is *Abort*, which puts the project back where it was.
+//! - [`push_after`] is what follows a replay that finished: a push of what is committed, and
+//!   nothing else.
 //!
-//! **What the window stages is decided by git and the window, never by what a chat wrote.**
-//! The files staged are those git still calls unmerged and those the window was shown, and
-//! every one of them must be a file the commit being replayed changes: anything else is
-//! refused, as is anything already staged that is not one of those. The commands are fixed
+//! **What git stopped with is kept, in this process, for each stop** ([`Stop`]): the commit it
+//! stopped on, the files in conflict, which of them git could not mark ([`Conflicts::by_hand`]),
+//! and every other change git had staged. Continue carries on only from that: the files in
+//! conflict, settled, and everything else exactly as git staged it. The commands are fixed
 //! here, and file names reach git after `--` with literal pathspecs.
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use super::{
-    Claim, Rebased, WRITE, changed_paths, count, fetch_branch, forget_replayed_push, gpgsign,
-    rebase_in_progress, rebase_onto, tail,
+    Claim, PushResult, Rebased, WRITE, changed_paths, count, fetch_branch, forget_replayed_push,
+    gpgsign, rebase_in_progress, rebase_onto, tail,
 };
 use crate::gitstate;
 use crate::repocmd::{Say, Sink};
 use crate::worktree::git;
 
-/// How a press of Resolve, Continue or Abort ended.
+/// How a press of Resolve, Continue, Skip or Abort ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Settled {
-    /// The project's own commits are on the remote's now. What is left is the save's push.
+    /// The project's own commits are on the remote's now. What is left is the push
+    /// ([`push_after`]).
     Replayed,
     /// git stopped on a conflict in these files. The rebase is left stopped for the person.
     Stopped(Vec<String>),
+    /// The commit being replayed has nothing left to commit once settled: Skip drops it.
+    Empty,
     /// The rebase was undone: the project is where it was before Resolve.
     Aborted,
     /// Nothing was changed, and why, as a sentence for the person.
     Refused(String),
 }
 
+/// The files of a stop, by who may settle them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Conflicts {
+    /// Files git marked the conflict in, still unsettled: a person's or a chat's to edit.
+    pub marked: Vec<String>,
+    /// Files git could not mark the conflict in, still unsettled: a binary file, a file one
+    /// side deleted, a link, a submodule, or a file that is gone. The person settles each in a
+    /// terminal, by choosing a side and staging it.
+    pub by_hand: Vec<String>,
+}
+
+/// What git stopped with, as the window saw it at the stop.
+#[derive(Debug, Clone)]
+struct Stop {
+    /// The commit being replayed.
+    at: String,
+    /// The files git left in conflict.
+    conflicted: BTreeSet<String>,
+    /// The files of those that git could not mark.
+    by_hand: BTreeSet<String>,
+    /// Every other change git had staged, against HEAD: each path's mode and object.
+    staged: BTreeMap<String, (String, String)>,
+}
+
+/// The stops the window is holding, by the project's root.
+static STOPS: Mutex<Option<HashMap<PathBuf, Stop>>> = Mutex::new(None);
+
 /// The most of a file read for conflict markers.
 const MOST_READ: u64 = 16 * 1024 * 1024;
 
 /// What a press says while a save or a fetch holds the project.
 const BUSY: &str = "A save of this project is running. Wait for it to finish, then try again.";
+
+/// What a press says where this window holds no stop for the rebase git is stopped in.
+const NOT_HELD: &str = "This window did not see where git stopped (it was restarted, or the \
+     rebase was started elsewhere), so it carries nothing on. Abort, then Resolve again; or \
+     carry on in a terminal.";
 
 /// **Resolve**: fetch the target branch and replay the project's own commits onto it, stopping
 /// where git stops. For the person's own press in the window, and nothing else.
@@ -96,7 +132,7 @@ pub fn start(root: &Path, say: Sink) -> Settled {
         ));
     }
     let theirs = format!("refs/remotes/origin/{branch}");
-    let Some(before) = head_of(root) else {
+    let Some(before) = rev(root, "HEAD") else {
         return Settled::Refused("Nothing was started: the project has no commit.".into());
     };
     if count(root, &format!("HEAD..{theirs}")) == Some(0) {
@@ -109,7 +145,10 @@ pub fn start(root: &Path, say: Sink) -> Settled {
             forget_replayed_push(root);
             Settled::Replayed
         }
-        Rebased::Conflict(files) => Settled::Stopped(files),
+        Rebased::Conflict(files) => {
+            hold_stop(root);
+            Settled::Stopped(files)
+        }
         Rebased::Held(files) => Settled::Refused(format!(
             "Nothing was started, since these files cannot be written here: {}.",
             files.join(", ")
@@ -138,49 +177,66 @@ pub fn start(root: &Path, say: Sink) -> Settled {
     }
 }
 
-/// **Continue**: stage the files the conflict is in, once no conflict marker is left in them,
-/// and let git carry on. `shown` are the files the window showed the person; git's own
-/// unmerged files are added to them.
+/// **Continue**: carry the stopped replay on once every file in conflict is settled.
+///
+/// `shown` are the files the window showed the person; each must be one git left in conflict.
+/// Refused, with nothing staged, while:
+/// - a file git could not mark is unsettled ([`Conflicts::by_hand`]);
+/// - a marked file still has a conflict marker, is not a plain file, or is gone;
+/// - anything outside the files in conflict is staged differently from how git left it.
+///
+/// The marked files are then staged from the bytes that were checked: what git staged is read
+/// back, and where it differs the files are put back in conflict and nothing goes on.
 pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    if !rebase_in_progress(root) {
-        return Settled::Refused(
-            "No rebase is stopped in this project, so there is nothing to continue.".into(),
-        );
-    }
-    let Some(replayed) = replayed_paths(root) else {
-        return Settled::Refused(
-            "purlis cannot tell which commit git stopped on, so it stages nothing. Continue \
-             it in a terminal, or Abort."
-                .into(),
-        );
+    let stop = match held_stop(root) {
+        Ok(stop) => stop,
+        Err(refused) => return refused,
     };
-    let stage: BTreeSet<String> = shown
+    let outside: Vec<&String> = shown
         .iter()
-        .cloned()
-        .chain(gitstate::unmerged(root))
+        .filter(|path| !stop.conflicted.contains(*path))
         .collect();
-    if let Some(error) = refuse_staging(root, &stage, &replayed) {
-        return Settled::Refused(error);
-    }
-    let staged = staged_paths(root);
-    let extra: Vec<&String> = staged
-        .iter()
-        .filter(|path| !replayed.contains(*path))
-        .collect();
-    if !extra.is_empty() {
+    if !outside.is_empty() {
         return Settled::Refused(format!(
-            "{} {} staged, and the commit being replayed does not change it. Unstage it \
-             (`git restore --staged -- <file>`), then Continue.",
-            join(&extra),
-            if extra.len() == 1 { "is" } else { "are" },
+            "purlis stages only the files git stopped in, and {} {} not one. Nothing was \
+             staged.",
+            join(&outside),
+            if outside.len() == 1 { "is" } else { "are" },
         ));
     }
-    if !stage.is_empty() {
+    let left = conflicts(root);
+    if !left.by_hand.is_empty() {
+        return Settled::Refused(said_by_hand(&left.by_hand));
+    }
+    if let Some(why) = staged_elsewhere(root, &stop) {
+        return Settled::Refused(why);
+    }
+    // Settled already, and staged: by the person in a terminal, or by a chat.
+    for path in stop.conflicted.difference(&stop.by_hand) {
+        if left.marked.contains(path) {
+            continue;
+        }
+        if staged_text(root, path).is_some_and(|text| markers_in(text.as_bytes())) {
+            return Settled::Refused(said_markers(path, "is staged with"));
+        }
+    }
+    let mut checked: Vec<(&String, Vec<u8>)> = Vec::new();
+    for path in &left.marked {
+        match read_plain(root, path) {
+            Ok(bytes) if markers_in(&bytes) => {
+                return Settled::Refused(said_markers(path, "still has"));
+            }
+            Ok(bytes) => checked.push((path, bytes)),
+            Err(why) => return Settled::Refused(why),
+        }
+    }
+    if !checked.is_empty() {
+        let paths: Vec<&str> = checked.iter().map(|(path, _)| path.as_str()).collect();
         let mut add: Vec<&str> = vec!["--literal-pathspecs", "add", "-A", "--"];
-        add.extend(stage.iter().map(String::as_str));
+        add.extend(&paths);
         match git::run(root, &add, WRITE) {
             Ok(run) if run.ok() => {}
             Ok(run) => {
@@ -190,6 +246,26 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
                 ));
             }
             Err(unavailable) => return Settled::Refused(unavailable.to_string()),
+        }
+        // What was staged is what was checked, or nothing goes on.
+        let moved: Vec<&String> = checked
+            .iter()
+            .filter(|(path, bytes)| {
+                staged_text(root, path).as_deref() != Some(&*String::from_utf8_lossy(bytes))
+            })
+            .map(|(path, _)| *path)
+            .collect();
+        if !moved.is_empty() {
+            let mut back: Vec<&str> =
+                vec!["--literal-pathspecs", "update-index", "--unresolve", "--"];
+            back.extend(&paths);
+            let _ = git::run(root, &back, WRITE);
+            return Settled::Refused(format!(
+                "{} changed while purlis was checking {}, so nothing was carried on. Continue \
+                 again once it is settled.",
+                join(&moved),
+                if moved.len() == 1 { "it" } else { "them" },
+            ));
         }
     }
     say(Say::Info("Continuing the replay …".into()));
@@ -206,26 +282,19 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
         ],
         WRITE,
     );
-    if !rebase_in_progress(root) {
-        // A finished rebase can leave its `REBASE_HEAD` behind, which would read as one still
-        // stopped: it names a commit now replayed, and is dropped.
-        if gitstate::stopped(root).is_some_and(|left| left.unmerged.is_empty()) {
-            let _ = git::run(root, &["update-ref", "-d", "REBASE_HEAD"], WRITE);
-        }
-        forget_replayed_push(root);
-        return Settled::Replayed;
+    after_step(root, continued)
+}
+
+/// **Skip**: drop the commit being replayed, where settling it left nothing to commit.
+pub fn skip(root: &Path) -> Settled {
+    let Some(_claim) = Claim::of(root) else {
+        return Settled::Refused(BUSY.into());
+    };
+    if let Err(refused) = held_stop(root) {
+        return refused;
     }
-    let unmerged = gitstate::unmerged(root);
-    if !unmerged.is_empty() {
-        return Settled::Stopped(unmerged);
-    }
-    Settled::Refused(format!(
-        "git did not carry on: {}. The rebase is still stopped: Continue again, or Abort.",
-        match continued {
-            Ok(run) => one_line(&tail(&run)),
-            Err(unavailable) => unavailable.to_string(),
-        }
-    ))
+    let skipped = git::run_untimed(root, &["-c", "core.editor=true", "rebase", "--skip"]);
+    after_step(root, skipped)
 }
 
 /// **Abort**: put the project back where it was before the rebase started.
@@ -248,15 +317,49 @@ pub fn abort(root: &Path) -> Settled {
             }
         ));
     }
+    let_go(root);
     super::touch(root);
     Settled::Aborted
+}
+
+/// **What follows a replay that finished**: a push of what is committed, as the project's
+/// mode says, and no new commit. Answers the push and the files changed meanwhile, which are
+/// left as they are for the person to save or remove.
+pub fn push_after(root: &Path, say: Sink) -> (Option<PushResult>, Vec<String>) {
+    let Some(_claim) = Claim::of(root) else {
+        return (None, Vec::new());
+    };
+    let left = changed_paths(root);
+    let plane = crate::planesave::Settings::read(root).plane;
+    if matches!(
+        plane.mode.value,
+        Some(crate::planesave::Mode::Commit | crate::planesave::Mode::Off)
+    ) {
+        return (None, left);
+    }
+    let pushed = super::push_saved(root, plane.sign.value, say);
+    super::touch(root);
+    (Some(pushed), left)
+}
+
+/// The files of the rebase stopped in the project, by who may settle them. Empty where none is.
+pub fn conflicts(root: &Path) -> Conflicts {
+    let mut out = Conflicts::default();
+    for (path, stages) in unmerged(root) {
+        if marks_nothing(root, &path, &stages) {
+            out.by_hand.push(path);
+        } else {
+            out.marked.push(path);
+        }
+    }
+    out
 }
 
 /// The two sides of a stopped rebase, by their commit subjects: the remote's (`HEAD` while a
 /// rebase is stopped) and the project's own being replayed (`REBASE_HEAD`).
 pub fn sides(root: &Path) -> Option<(String, String)> {
-    let subject = |rev: &str| {
-        git::run(root, &["log", "-1", "--format=%s", rev, "--"], git::READ)
+    let subject = |name: &str| {
+        git::run(root, &["log", "-1", "--format=%s", name, "--"], git::READ)
             .ok()
             .filter(git::Run::ok)
             .map(|run| run.line().trim().to_string())
@@ -264,123 +367,305 @@ pub fn sides(root: &Path) -> Option<(String, String)> {
     Some((subject("HEAD")?, subject("REBASE_HEAD")?))
 }
 
-/// Why `stage` may not be staged: a file the commit being replayed does not change, a file
-/// that is not a plain one, or one with a conflict marker left in it. `None` when it may.
-fn refuse_staging(
-    root: &Path,
-    stage: &BTreeSet<String>,
-    replayed: &BTreeSet<String>,
-) -> Option<String> {
-    let outside: Vec<&String> = stage.iter().filter(|p| !replayed.contains(*p)).collect();
-    if !outside.is_empty() {
-        return Some(format!(
-            "purlis stages only the files the conflict is in, and the commit being replayed \
-             does not change {}. Nothing was staged.",
-            join(&outside)
+/// Of `files`, those a chat's sandbox may not write: settled by the person, never a chat.
+pub fn held_from_chats(root: &Path, files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|path| crate::rootupdate::path_is_denied(path, root))
+        .cloned()
+        .collect()
+}
+
+/// The sentence for files git could not mark a conflict in.
+pub fn said_by_hand(files: &[String]) -> String {
+    let named: Vec<&String> = files.iter().collect();
+    format!(
+        "git could not mark the conflict in {} (a binary file, a file one side deleted, a link, \
+         a submodule, or a file that is gone), so {} settled in a terminal here: keep one \
+         side with `git checkout --ours -- <file>` or `git checkout --theirs -- <file>` (during \
+         a rebase, ours is the remote's and theirs is this project's own), or delete it, then \
+         `git add -- <file>` or `git rm -- <file>`. Then Continue.",
+        join(&named),
+        if files.len() == 1 {
+            "it is"
+        } else {
+            "they are"
+        },
+    )
+}
+
+/// Whether `text` has a line that starts with one of git's conflict markers: the opener, the
+/// closer, or the common ancestor's (`diff3`, `zdiff3`). The separator alone is not one, since
+/// a Markdown heading is underlined the same way.
+pub fn markers_in(text: &[u8]) -> bool {
+    text.split(|b| *b == b'\n').any(|line| {
+        line.starts_with(b"<<<<<<<") || line.starts_with(b">>>>>>>") || line.starts_with(b"|||||||")
+    })
+}
+
+/// How a step that ran git left the replay: finished, stopped again, empty, or refused.
+fn after_step(root: &Path, ran: Result<git::Run, git::GitUnavailable>) -> Settled {
+    if !rebase_in_progress(root) {
+        // A finished rebase can leave its `REBASE_HEAD` behind, which would read as one still
+        // stopped: it names a commit now replayed, and is dropped.
+        if gitstate::stopped(root).is_some_and(|left| left.unmerged.is_empty()) {
+            let _ = git::run(root, &["update-ref", "-d", "REBASE_HEAD"], WRITE);
+        }
+        let_go(root);
+        forget_replayed_push(root);
+        return Settled::Replayed;
+    }
+    let unmerged: Vec<String> = unmerged(root).into_keys().collect();
+    if !unmerged.is_empty() {
+        hold_stop(root);
+        return Settled::Stopped(unmerged);
+    }
+    let nothing_staged = git::run(
+        root,
+        &["diff", "--cached", "--quiet", "HEAD", "--"],
+        git::READ,
+    )
+    .is_ok_and(|run| run.ok());
+    if nothing_staged {
+        return Settled::Empty;
+    }
+    let unstaged = names(root, &["diff", "--name-only", "-z", "--"]);
+    if !unstaged.is_empty() {
+        let named: Vec<&String> = unstaged.iter().collect();
+        return Settled::Refused(format!(
+            "git will not carry on while {} {} changes it has not staged. Undo them, or settle \
+             them in a terminal, then Continue.",
+            join(&named),
+            if unstaged.len() == 1 { "has" } else { "have" },
         ));
     }
-    for path in stage {
-        let file = root.join(path);
-        match std::fs::symlink_metadata(&file) {
-            Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
-            Err(why) => return Some(format!("`{path}` cannot be read: {why}.")),
-            Ok(meta) if !meta.is_file() => {
-                return Some(format!(
-                    "`{path}` is not a plain file, so purlis will not stage it. Settle it in a \
-                     terminal, or Abort."
-                ));
-            }
-            Ok(_) => {
-                if has_markers(&file) {
-                    return Some(format!(
-                        "`{path}` still has conflict markers (`<<<<<<<`, `>>>>>>>`). Settle \
-                         them, then Continue."
-                    ));
-                }
-            }
+    Settled::Refused(format!(
+        "git did not carry on: {}. The rebase is still stopped: Continue again, or Abort.",
+        match ran {
+            Ok(run) => one_line(&tail(&run)),
+            Err(unavailable) => unavailable.to_string(),
         }
-    }
-    None
+    ))
 }
 
-/// Whether a file still holds a line git opens or closes a conflict with.
-fn has_markers(file: &Path) -> bool {
-    use std::io::Read;
-    let Ok(open) = std::fs::File::open(file) else {
-        return true;
+/// The stop this window holds for the rebase stopped now, or the refusal to carry on.
+fn held_stop(root: &Path) -> Result<Stop, Settled> {
+    if !rebase_in_progress(root) {
+        return Err(Settled::Refused(
+            "No rebase is stopped in this project, so there is nothing to carry on.".into(),
+        ));
+    }
+    let at = rev(root, "REBASE_HEAD");
+    let stops = STOPS.lock().unwrap_or_else(PoisonError::into_inner);
+    stops
+        .as_ref()
+        .and_then(|held| held.get(root))
+        .filter(|stop| Some(&stop.at) == at.as_ref())
+        .cloned()
+        .ok_or_else(|| Settled::Refused(NOT_HELD.into()))
+}
+
+/// Keep what git stopped with now, for the next Continue.
+fn hold_stop(root: &Path) {
+    let Some(at) = rev(root, "REBASE_HEAD") else {
+        return;
     };
-    let mut bytes = Vec::new();
-    if open.take(MOST_READ).read_to_end(&mut bytes).is_err() {
-        return true;
+    let found = conflicts(root);
+    let conflicted: BTreeSet<String> = found.marked.iter().chain(&found.by_hand).cloned().collect();
+    let stop = Stop {
+        at,
+        conflicted,
+        by_hand: found.by_hand.into_iter().collect(),
+        staged: staged_against_head(root),
+    };
+    STOPS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .insert(root.to_path_buf(), stop);
+}
+
+/// Forget the stop held for `root`.
+fn let_go(root: &Path) {
+    if let Some(held) = STOPS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+    {
+        held.remove(root);
     }
-    markers_in(&bytes)
 }
 
-/// Whether `text` has a line that starts with git's conflict opener or closer.
-pub fn markers_in(text: &[u8]) -> bool {
-    text.split(|b| *b == b'\n')
-        .any(|line| line.starts_with(b"<<<<<<<") || line.starts_with(b">>>>>>>"))
+/// Why anything outside the files in conflict is not as git staged it at the stop, or `None`.
+fn staged_elsewhere(root: &Path, stop: &Stop) -> Option<String> {
+    let now = staged_against_head(root);
+    let paths: BTreeSet<&String> = now.keys().chain(stop.staged.keys()).collect();
+    let differ: Vec<&String> = paths
+        .into_iter()
+        .filter(|path| !stop.conflicted.contains(*path) && now.get(*path) != stop.staged.get(*path))
+        .collect();
+    (!differ.is_empty()).then(|| {
+        format!(
+            "{} {} not as git left {} when the replay stopped, and purlis carries on only what \
+             git staged and the files in conflict. Abort and Resolve again, or carry on in a \
+             terminal.",
+            join(&differ),
+            if differ.len() == 1 { "is" } else { "are" },
+            if differ.len() == 1 { "it" } else { "them" },
+        )
+    })
 }
 
-/// The paths the commit being replayed changes, or `None` when git cannot say.
-fn replayed_paths(root: &Path) -> Option<BTreeSet<String>> {
-    let run = git::run(
+/// Every change staged against HEAD that is not in conflict: each path's mode and object.
+fn staged_against_head(root: &Path) -> BTreeMap<String, (String, String)> {
+    let Some(run) = git::run(
         root,
-        &[
-            "diff-tree",
-            "--root",
-            "--no-commit-id",
-            "--no-renames",
-            "-r",
-            "--name-only",
-            "-z",
-            "REBASE_HEAD",
-        ],
+        &["diff-index", "--cached", "--no-renames", "-z", "HEAD", "--"],
         git::READ,
     )
     .ok()
-    .filter(git::Run::ok)?;
-    let paths: BTreeSet<String> = run
-        .out
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
-        .collect();
-    (!paths.is_empty()).then_some(paths)
+    .filter(git::Run::ok) else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    let mut fields = run.out.split('\0');
+    // `:<old mode> <new mode> <old object> <new object> <status>` then the path.
+    while let (Some(meta), Some(path)) = (fields.next(), fields.next()) {
+        let parts: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        if let [_, mode, _, object, status] = parts[..]
+            && status != "U"
+            && !path.is_empty()
+        {
+            out.insert(path.to_string(), (mode.to_string(), object.to_string()));
+        }
+    }
+    out
 }
 
-/// The paths staged against HEAD now.
-fn staged_paths(root: &Path) -> Vec<String> {
+/// The files git calls unmerged, each with its index entries: stage, mode and object.
+fn unmerged(root: &Path) -> BTreeMap<String, Vec<(u8, String, String)>> {
+    let Some(run) = git::run(root, &["ls-files", "-u", "-z"], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+    else {
+        return BTreeMap::new();
+    };
+    let mut out: BTreeMap<String, Vec<(u8, String, String)>> = BTreeMap::new();
+    // `<mode> <object> <stage>\t<path>`
+    for entry in run.out.split('\0').filter(|e| !e.is_empty()) {
+        let Some((meta, path)) = entry.split_once('\t') else {
+            continue;
+        };
+        let parts: Vec<&str> = meta.split(' ').collect();
+        if let [mode, object, stage] = parts[..]
+            && let Ok(stage) = stage.parse::<u8>()
+        {
+            out.entry(path.to_string()).or_default().push((
+                stage,
+                mode.to_string(),
+                object.to_string(),
+            ));
+        }
+    }
+    out
+}
+
+/// Whether git could not mark the conflict in `path`: a side is missing (one deleted it), an
+/// entry is a link or a submodule, a side is binary as git judges it (a NUL in its first 8000
+/// bytes), or the file is gone from the work tree.
+fn marks_nothing(root: &Path, path: &str, stages: &[(u8, String, String)]) -> bool {
+    let side = |n: u8| stages.iter().find(|(stage, _, _)| *stage == n);
+    let (Some(ours), Some(theirs)) = (side(2), side(3)) else {
+        return true;
+    };
+    if stages
+        .iter()
+        .any(|(_, mode, _)| mode == "120000" || mode == "160000")
+    {
+        return true;
+    }
+    let binary = |object: &str| {
+        git::run(root, &["cat-file", "blob", object], git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .is_none_or(|run| run.out.bytes().take(8000).any(|b| b == 0))
+    };
+    if binary(&ours.2) || binary(&theirs.2) {
+        return true;
+    }
+    std::fs::symlink_metadata(root.join(path)).is_err()
+}
+
+/// What is staged at `path` (stage 0), as text; `None` where nothing is.
+fn staged_text(root: &Path, path: &str) -> Option<String> {
     git::run(
         root,
         &[
-            "diff",
-            "--cached",
-            "--no-renames",
-            "--name-only",
-            "-z",
-            "HEAD",
+            "--literal-pathspecs",
+            "cat-file",
+            "blob",
+            &format!(":0:{path}"),
         ],
         git::READ,
     )
     .ok()
     .filter(git::Run::ok)
-    .map(|run| {
-        run.out
-            .split('\0')
-            .filter(|p| !p.is_empty())
-            .map(str::to_string)
-            .collect()
-    })
-    .unwrap_or_default()
+    .map(|run| run.out)
 }
 
-fn head_of(root: &Path) -> Option<String> {
-    git::run(root, &["rev-parse", "--verify", "-q", "HEAD"], git::READ)
+/// The bytes of a plain file, or why it is not one purlis stages.
+fn read_plain(root: &Path, path: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let file = root.join(path);
+    match std::fs::symlink_metadata(&file) {
+        Err(_) => Err(format!(
+            "`{path}` is gone from the project, so purlis will not stage its conflict. Settle \
+             it in a terminal (`git add` or `git rm` it), then Continue."
+        )),
+        Ok(meta) if !meta.is_file() => Err(format!(
+            "`{path}` is not a plain file, so purlis will not stage it. Settle it in a \
+             terminal, or Abort."
+        )),
+        Ok(meta) if meta.len() > MOST_READ => Err(format!(
+            "`{path}` is too large for purlis to check. Settle it in a terminal, or Abort."
+        )),
+        Ok(_) => {
+            let mut bytes = Vec::new();
+            std::fs::File::open(&file)
+                .and_then(|mut open| open.read_to_end(&mut bytes))
+                .map_err(|why| format!("`{path}` cannot be read: {why}."))?;
+            Ok(bytes)
+        }
+    }
+}
+
+fn said_markers(path: &str, how: &str) -> String {
+    format!(
+        "`{path}` {how} conflict markers (`<<<<<<<`, `|||||||`, `>>>>>>>`). Settle them, then \
+         Continue."
+    )
+}
+
+fn names(root: &Path, args: &[&str]) -> Vec<String> {
+    git::run(root, args, git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| {
+            run.out
+                .split('\0')
+                .filter(|p| !p.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn rev(root: &Path, name: &str) -> Option<String> {
+    git::run(root, &["rev-parse", "--verify", "-q", name], git::READ)
         .ok()
         .filter(git::Run::ok)
         .map(|r| r.line().trim().to_string())
-        .filter(|head| !head.is_empty())
+        .filter(|sha| !sha.is_empty())
 }
 
 fn join(paths: &[&String]) -> String {
@@ -400,11 +685,12 @@ mod tests {
     use super::markers_in;
 
     #[test]
-    fn a_conflicts_opener_or_closer_is_a_marker_and_a_heading_rule_is_not() {
+    fn a_conflicts_opener_closer_or_ancestor_is_a_marker_and_a_heading_rule_is_not() {
         assert!(markers_in(
             b"a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> mine\n"
         ));
         assert!(markers_in(b">>>>>>> mine"));
+        assert!(markers_in(b"kept\n||||||| base\nold\n"));
         assert!(!markers_in(
             b"Title\n=======\n\ntext <<<<<<< inside a line\n"
         ));

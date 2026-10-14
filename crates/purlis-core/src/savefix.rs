@@ -478,7 +478,9 @@ pub fn conflict(files: &[String], remote: &str, own: &str) -> Trouble {
         source: "this project's git history: file names and commit subjects",
         failed,
         then: "edit only the files named above. In each, keep what both sides need, and \
-               remove every conflict marker line (`<<<<<<<`, `=======`, `>>>>>>>`). \
+               remove every conflict marker line (`<<<<<<<`, `|||||||`, `=======`, \
+               `>>>>>>>`). A part between `|||||||` and `=======` is what both sides started \
+               from: keep it only where a side still needs it. \
                Do not run git in the project's root: no `git add`, no `git rebase`, no \
                commit. When every file is settled, say so and stop. The person presses \
                Continue in the window, and purlis checks that no marker is left, stages \
@@ -1074,6 +1076,7 @@ mod tests {
             told.contains("Do not run git in the project's root"),
             "{told}"
         );
+        assert!(told.contains("`|||||||`"), "{told}");
         assert_eq!(trouble.label, "Resolve the conflict");
     }
 }

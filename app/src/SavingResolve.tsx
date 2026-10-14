@@ -7,7 +7,7 @@ import { Notice, type NoticeAction } from "./Notice";
 import { askWayOut, FIX_STARTING_SIZE, tellFixStarted, tellSaved } from "./saving";
 
 /** What the conflict Notice is busy with, while a press runs. */
-type Busy = "resolve" | "chat" | "continue" | "abort";
+type Busy = "resolve" | "chat" | "continue" | "skip" | "abort";
 
 /**
  * **A save's conflict, resolved from the window** (qw382; ADR 0051, noted 2026-10-14).
@@ -17,6 +17,9 @@ type Busy = "resolve" | "chat" | "continue" | "abort";
  * - While that replay is stopped, the Notice names the files and offers *Resolve in a chat*
  *   (a chat that edits the files and runs no git), *Continue* (the window checks no conflict
  *   marker is left, stages exactly those files and carries on) and *Abort* (back where it was).
+ *   A commit the settling left empty offers *Skip*, which drops it.
+ * - When the replay finishes, what is committed is pushed and nothing new is committed: a file
+ *   changed meanwhile is named and left for the person.
  *
  * Every git command is the window's own press: a chat may not rewrite the project root's tree,
  * and nothing it writes decides which files are staged or what runs.
@@ -32,12 +35,15 @@ export function SaveConflict({
 }) {
   const [busy, setBusy] = useState<Busy>();
   const [said, setSaid] = useState<string>();
+  /** The last Continue found the commit being replayed has nothing left to commit: Skip is
+   *  offered, which drops it. */
+  const [empty, setEmpty] = useState(false);
   /** The files git stopped in, as the last answer named them: Continue stages them with what
    *  git still calls unmerged, so a file settled and staged by hand is still checked. */
   const shown = useRef<string[]>([]);
   const sending = useRef(false);
 
-  const step = (which: "start" | "continue" | "abort") => {
+  const step = (which: "start" | "continue" | "skip" | "abort") => {
     if (sending.current) return;
     sending.current = true;
     setBusy(which === "start" ? "resolve" : which);
@@ -51,6 +57,7 @@ export function SaveConflict({
           return;
         }
         const got = answer.data;
+        setEmpty(got.outcome === "empty");
         if (got.outcome === "stopped") shown.current = got.files;
         if (got.outcome === "saved" || got.outcome === "aborted") shown.current = [];
         setSaid(got.said);
@@ -103,11 +110,18 @@ export function SaveConflict({
       busy: !!busy,
     };
     const abort: NoticeAction = { label: "Abort", onPress: () => step("abort"), busy: !!busy };
+    const skip: NoticeAction = { label: "Skip", onPress: () => step("skip"), busy: !!busy };
     return (
       <Notice
         cause="saving-resolving"
         tone="trouble"
-        fixes={saving.conflicts.length > 0 ? [chat, carryOn, abort] : [carryOn, abort]}
+        fixes={
+          empty
+            ? [skip, abort]
+            : saving.conflicts.length > 0
+              ? [chat, carryOn, abort]
+              : [carryOn, abort]
+        }
         link={terminal}
         under={files || undefined}
       >

@@ -4655,3 +4655,327 @@ fn resolve_with_nothing_in_conflict_replays_and_forgets_the_record() {
     assert_eq!(resolve_start(&fixture), resolve::Settled::Replayed);
     assert!(push_record(&fixture.root).is_none());
 }
+
+/// A plane and its remote with a shared base, and a clone of the remote standing in for
+/// somebody else: what the conflicts below are made of.
+struct Scene {
+    fixture: Fixture,
+    theirs: PathBuf,
+}
+
+impl Scene {
+    /// `base` committed on the plane and pushed, and a second clone at it.
+    fn new(base: &[(&str, &[u8])]) -> Scene {
+        let fixture = Fixture::plane();
+        let bare = fixture.with_a_remote();
+        for (path, bytes) in base {
+            write(&fixture.root, path, bytes);
+        }
+        run(&fixture.root, &["add", "-A"]);
+        run(&fixture.root, &["commit", "-q", "-m", "base"]);
+        run(
+            &fixture.root,
+            &[
+                "push",
+                "-q",
+                &bare.display().to_string(),
+                "HEAD:refs/heads/main",
+            ],
+        );
+        tracks_what_it_pushed(&fixture);
+        let theirs = fixture.root.parent().unwrap().join("theirs");
+        run(
+            fixture.root.parent().unwrap(),
+            &[
+                "clone",
+                "-q",
+                &bare.display().to_string(),
+                &theirs.display().to_string(),
+            ],
+        );
+        run(&theirs, &["config", "user.name", "Other"]);
+        run(&theirs, &["config", "user.email", "other@example.invalid"]);
+        Scene { fixture, theirs }
+    }
+
+    /// A commit on the remote, made in the other clone by `change` and pushed.
+    fn theirs(&self, subject: &str, change: impl FnOnce(&Path)) {
+        change(&self.theirs);
+        run(&self.theirs, &["add", "-A"]);
+        run(&self.theirs, &["commit", "-q", "-m", subject]);
+        run(&self.theirs, &["push", "-q", "origin", "main"]);
+    }
+
+    /// A commit of the plane's own, made by `change`.
+    fn mine(&self, subject: &str, change: impl FnOnce(&Path)) {
+        change(&self.fixture.root);
+        run(&self.fixture.root, &["add", "-A"]);
+        run(&self.fixture.root, &["commit", "-q", "-m", subject]);
+    }
+
+    fn at(&self, path: &str) -> Vec<u8> {
+        std::fs::read(self.fixture.root.join(path)).unwrap_or_default()
+    }
+}
+
+fn write(root: &Path, path: &str, bytes: &[u8]) {
+    let file = root.join(path);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(file, bytes).unwrap();
+}
+
+fn refused_with(settled: &resolve::Settled, words: &str) -> bool {
+    matches!(settled, resolve::Settled::Refused(why) if why.contains(words))
+}
+
+#[test]
+fn a_binary_conflict_is_the_persons_to_settle_and_continue_waits_for_it() {
+    let scene = Scene::new(&[("logo.bin", b"base\0bytes")]);
+    scene.theirs("theirs", |dir| write(dir, "logo.bin", b"theirs\0bytes"));
+    scene.mine("mine", |dir| write(dir, "logo.bin", b"mine\0bytes"));
+
+    assert_eq!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(vec!["logo.bin".into()])
+    );
+    assert_eq!(
+        resolve::conflicts(&scene.fixture.root).by_hand,
+        vec!["logo.bin".to_string()]
+    );
+    let refused = resolve_continue(&scene.fixture, &["logo.bin"]);
+    assert!(refused_with(&refused, "`logo.bin`"), "{refused:?}");
+    assert!(refused_with(&refused, "terminal"), "{refused:?}");
+
+    // The person keeps the project's own side and stages it: that is carried on as staged.
+    run(
+        &scene.fixture.root,
+        &["checkout", "--theirs", "--", "logo.bin"],
+    );
+    run(&scene.fixture.root, &["add", "--", "logo.bin"]);
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["logo.bin"]),
+        resolve::Settled::Replayed
+    );
+    assert_eq!(scene.at("logo.bin"), b"mine\0bytes");
+}
+
+#[test]
+fn a_file_one_side_deleted_is_never_carried_on_with_the_other_sides_copy() {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| {
+        std::fs::remove_file(dir.join("a.md")).unwrap()
+    });
+
+    assert!(matches!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(_)
+    ));
+    assert_eq!(
+        resolve::conflicts(&scene.fixture.root).by_hand,
+        vec!["a.md".to_string()]
+    );
+    let refused = resolve_continue(&scene.fixture, &["a.md"]);
+    assert!(refused_with(&refused, "`a.md`"), "{refused:?}");
+    assert!(
+        gitstate::stopped(&scene.fixture.root).is_some(),
+        "still stopped"
+    );
+}
+
+#[test]
+fn a_change_git_carried_through_a_rename_is_kept_and_continue_accepts_it() {
+    let scene = Scene::new(&[("a.md", b"one\n"), ("b.md", b"first\nsecond\n")]);
+    scene.theirs("theirs", |dir| {
+        write(dir, "a.md", b"theirs\n");
+        run(dir, &["mv", "b.md", "c.md"]);
+    });
+    scene.mine("mine", |dir| {
+        write(dir, "a.md", b"mine\n");
+        write(dir, "b.md", b"first\nsecond, mine\n");
+    });
+
+    assert_eq!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(vec!["a.md".into()])
+    );
+    write(&scene.fixture.root, "a.md", b"both\n");
+
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["a.md"]),
+        resolve::Settled::Replayed
+    );
+    assert_eq!(scene.at("c.md"), b"first\nsecond, mine\n");
+}
+
+#[test]
+fn a_cleanly_merged_file_staged_otherwise_stops_continue() {
+    let scene = Scene::new(&[("a.md", b"one\n"), ("b.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| {
+        write(dir, "a.md", b"mine\n");
+        write(dir, "b.md", b"mine\n");
+    });
+    resolve_start(&scene.fixture);
+    write(&scene.fixture.root, "a.md", b"both\n");
+    write(&scene.fixture.root, "b.md", b"something else\n");
+    run(&scene.fixture.root, &["add", "--", "b.md"]);
+
+    let refused = resolve_continue(&scene.fixture, &["a.md"]);
+
+    assert!(refused_with(&refused, "`b.md`"), "{refused:?}");
+    assert_eq!(
+        gitstate::unmerged(&scene.fixture.root),
+        vec!["a.md".to_string()],
+        "nothing was staged"
+    );
+}
+
+#[test]
+fn a_replay_of_several_commits_stops_on_each_conflict_in_turn() {
+    let scene = Scene::new(&[("x.md", b"one\n"), ("y.md", b"one\n")]);
+    scene.theirs("theirs", |dir| {
+        write(dir, "x.md", b"theirs\n");
+        write(dir, "y.md", b"theirs\n");
+    });
+    scene.mine("first", |dir| write(dir, "x.md", b"mine\n"));
+    scene.mine("second", |dir| write(dir, "y.md", b"mine\n"));
+
+    assert_eq!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(vec!["x.md".into()])
+    );
+    write(&scene.fixture.root, "x.md", b"both\n");
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["x.md"]),
+        resolve::Settled::Stopped(vec!["y.md".into()])
+    );
+    // The first stop's files are not the second's.
+    assert!(refused_with(
+        &resolve_continue(&scene.fixture, &["x.md"]),
+        "`x.md`"
+    ));
+    write(&scene.fixture.root, "y.md", b"both\n");
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["y.md"]),
+        resolve::Settled::Replayed
+    );
+    assert_eq!(
+        run(&scene.fixture.root, &["log", "--format=%s", "-3"]).trim(),
+        "second\nfirst\ntheirs"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_conflicted_file_turned_into_a_link_is_not_staged() {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+    resolve_start(&scene.fixture);
+    std::fs::remove_file(scene.fixture.root.join("a.md")).unwrap();
+    std::os::unix::fs::symlink("README.md", scene.fixture.root.join("a.md")).unwrap();
+
+    let refused = resolve_continue(&scene.fixture, &["a.md"]);
+
+    assert!(refused_with(&refused, "not a plain file"), "{refused:?}");
+}
+
+#[test]
+fn file_names_that_start_with_a_dash_or_hold_a_newline_are_staged_as_names() {
+    let odd = "line\nbreak.md";
+    let scene = Scene::new(&[("-x.md", b"one\n"), (odd, b"one\n")]);
+    scene.theirs("theirs", |dir| {
+        write(dir, "-x.md", b"theirs\n");
+        write(dir, odd, b"theirs\n");
+    });
+    scene.mine("mine", |dir| {
+        write(dir, "-x.md", b"mine\n");
+        write(dir, odd, b"mine\n");
+    });
+
+    let resolve::Settled::Stopped(mut files) = resolve_start(&scene.fixture) else {
+        panic!("it stops on the conflict");
+    };
+    files.sort();
+    assert_eq!(files, vec!["-x.md".to_string(), odd.to_string()]);
+    write(&scene.fixture.root, "-x.md", b"both\n");
+    write(&scene.fixture.root, odd, b"both\n");
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["-x.md", odd]),
+        resolve::Settled::Replayed
+    );
+    assert_eq!(scene.at(odd), b"both\n");
+}
+
+#[test]
+fn a_common_ancestor_marker_left_in_a_file_stops_continue() {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+    resolve_start(&scene.fixture);
+    write(&scene.fixture.root, "a.md", b"mine\n||||||| base\none\n");
+
+    let refused = resolve_continue(&scene.fixture, &["a.md"]);
+
+    assert!(refused_with(&refused, "conflict markers"), "{refused:?}");
+}
+
+#[test]
+fn a_settling_that_leaves_nothing_to_commit_is_skipped() {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+    resolve_start(&scene.fixture);
+    // Settled as the remote has it: the project's own commit has nothing left.
+    write(&scene.fixture.root, "a.md", b"theirs\n");
+
+    let mut got = resolve_continue(&scene.fixture, &["a.md"]);
+    if got == resolve::Settled::Empty {
+        got = resolve::skip(&scene.fixture.root);
+    }
+
+    assert_eq!(got, resolve::Settled::Replayed);
+    assert_eq!(scene.at("a.md"), b"theirs\n");
+    assert!(gitstate::stopped(&scene.fixture.root).is_none());
+}
+
+#[test]
+fn after_a_resolve_the_push_carries_what_is_committed_and_leaves_new_files_alone() {
+    let (fixture, bare) = a_plane_that_conflicts_with_its_remote();
+    resolve_start(&fixture);
+    std::fs::write(fixture.root.join("theirs.md"), "both").unwrap();
+    std::fs::write(fixture.root.join("scratch.md"), "a chat's notes").unwrap();
+    assert_eq!(
+        resolve_continue(&fixture, &["theirs.md"]),
+        resolve::Settled::Replayed
+    );
+
+    let (pushed, left) = resolve::push_after(&fixture.root, &mut |_: Say| {});
+
+    assert_eq!(pushed.map(|res| res.outcome), Some(Outcome::Pushed));
+    assert_eq!(left, vec!["scratch.md".to_string()]);
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "mine"
+    );
+    assert!(
+        ask(&bare, &["ls-tree", "--name-only", "main"])
+            .lines()
+            .all(|name| name != "scratch.md"),
+        "not committed"
+    );
+}
+
+#[test]
+fn a_file_a_chats_sandbox_may_not_write_is_held_from_chats() {
+    let root = Path::new("/plane");
+    let files = vec![
+        crate::names::PLANE_MANIFEST.write.to_string(),
+        "notes.md".to_string(),
+    ];
+    assert_eq!(
+        resolve::held_from_chats(root, &files),
+        vec![crate::names::PLANE_MANIFEST.write.to_string()]
+    );
+}
