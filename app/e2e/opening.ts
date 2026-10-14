@@ -166,11 +166,43 @@ export async function closeProject(closer: string): Promise<void> {
     .waitForDisplayed({ timeout: 3_000 })
     .then(() => true)
     .catch(() => false);
-  if (!asked) return;
-  const answer = await asking.$("button*=Close and end");
-  await answer.waitForClickable({ timeout: 20_000 });
-  await answer.click();
-  await expect(asking).not.toBeDisplayed();
+  if (asked) {
+    const answer = await asking.$("button*=Close and end");
+    await answer.waitForClickable({ timeout: 20_000 });
+    await answer.click();
+    await expect(asking).not.toBeDisplayed();
+  }
+  await everyCloseHasLetGo();
+}
+
+/**
+ * Waits until every close this window asked has let go of its project (#1949): the tab goes
+ * as the close is asked, and the core ends its chats behind the window, one close at a time.
+ * The next spec then starts on a core with nothing of a close still under way.
+ */
+export async function everyCloseHasLetGo(): Promise<void> {
+  await browser.waitUntil(
+    async () => (await $('[data-strip="Projects"]').getAttribute("data-letting-go")) === "0",
+    {
+      timeout: 60_000,
+      timeoutMsg: "a project this window closed never finished letting go",
+    },
+  );
+}
+
+/**
+ * Puts away whatever dialog a spec left up, so the next one starts on the window itself and not
+ * behind a modal: Escape, a few times, while one is shown.
+ */
+export async function noDialogIsLeftUp(): Promise<void> {
+  for (let press = 0; press < 3; press++) {
+    const shown = await $('[role="dialog"], [role="alertdialog"]')
+      .isDisplayed()
+      .catch(() => false);
+    if (!shown) return;
+    await browser.keys("Escape");
+    await browser.pause(200);
+  }
 }
 
 /**

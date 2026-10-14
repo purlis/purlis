@@ -8,6 +8,7 @@ import { attach } from "./bench";
 import { settleLayout } from "./regions";
 import { keepTheirOrder } from "./commandOrder";
 import { startTheSwitchClock } from "./switchClock";
+import { watchTheAnswers } from "./answerWatch";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import { DEFAULT_THEME, drawIn } from "./theme/theme";
 import { theirThemeOnce } from "./windowprefs";
@@ -41,6 +42,10 @@ keepTheirOrder();
 
 // What each project switch took in this window, for the doctor's dialog (`switchClock.ts`).
 startTheSwitchClock();
+
+// A command the core has not answered for a while is said on the window's line, and a failed
+// scenario test reads which (`answerWatch.ts`).
+watchTheAnswers();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
