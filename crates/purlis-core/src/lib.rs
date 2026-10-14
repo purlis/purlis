@@ -197,6 +197,10 @@ pub mod state;
 pub(crate) mod steer;
 pub mod taskchanges;
 pub mod template;
+// Public, and not `cfg(test)`: the integration tests of every crate copy the fixture planes
+// through it (#2089). Nothing in the product calls it.
+#[doc(hidden)]
+pub mod testfixture;
 #[cfg(test)]
 mod testgit;
 // Public, and not `cfg(test)`, for one reason: purlis-core's integration tests are separate
