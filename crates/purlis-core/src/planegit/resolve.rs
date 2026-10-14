@@ -111,7 +111,7 @@ pub fn start(root: &Path, say: Sink) -> Settled {
         }
         Rebased::Conflict(files) => Settled::Stopped(files),
         Rebased::Held(files) => Settled::Refused(format!(
-            "Nothing was started: purlis may not write {}.",
+            "Nothing was started, since these files cannot be written here: {}.",
             files.join(", ")
         )),
         other => {
@@ -207,6 +207,11 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
         WRITE,
     );
     if !rebase_in_progress(root) {
+        // A finished rebase can leave its `REBASE_HEAD` behind, which would read as one still
+        // stopped: it names a commit now replayed, and is dropped.
+        if gitstate::stopped(root).is_some_and(|left| left.unmerged.is_empty()) {
+            let _ = git::run(root, &["update-ref", "-d", "REBASE_HEAD"], WRITE);
+        }
         forget_replayed_push(root);
         return Settled::Replayed;
     }

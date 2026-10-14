@@ -4587,11 +4587,12 @@ fn resolve_stops_on_the_conflict_and_continue_lands_it_once_the_markers_are_gone
         resolve_continue(&fixture, &["theirs.md"]),
         resolve::Settled::Replayed
     );
-    assert!(gitstate::stopped(&fixture.root).is_none());
     assert_eq!(
         run(&fixture.root, &["log", "--format=%s", "-2"]).trim(),
         "mine\ntheirs"
     );
+    let left = gitstate::stopped(&fixture.root);
+    assert!(left.is_none(), "{left:?}");
 
     let (code, said) = pressed_save(&fixture);
     assert_eq!(code, 0, "{said}");
