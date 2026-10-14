@@ -9,92 +9,149 @@ import { commands } from "./bindings";
  *
  * The core answers a command that touches the disk, git or a process off the window's thread
  * (`off_the_main_thread.rs`), so the window keeps drawing while it works. Such commands no
- * longer answer in the order they were asked: a read asked just before a write can answer just
- * after it, and draw what the write had already changed. A window regaining focus as a notice's
+ * longer answer in the order they were asked: a read asked just before a change can answer just
+ * after it, and draw what the change had already undone. A window regaining focus as a notice's
  * button is pressed does exactly that: the focus reads the sandbox's state again, the press
  * changes it.
  *
- * So the commands that read and change the same thing are one lane each, per project, and a
- * command in a lane is sent only once the one asked before it in the same lane has answered:
- * the order a synchronous core kept, kept here, without the window waiting for any of it.
- * Commands in no lane are sent at once, as before. A lane's first argument is always the
- * project.
+ * So the commands that read and change the same files are one lane each, per project, and a
+ * lane keeps the order a synchronous core kept **between a change and everything else**:
+ *
+ * - a **read** is sent once the last change asked before it in its lane has answered, and runs
+ *   beside every other read: the forty panes a switch draws ask theirs together;
+ * - a **change** is sent once everything asked before it in its lane has answered, reads
+ *   included.
+ *
+ * One lane per set of files, never a file in two lanes: a read in one lane would not wait for a
+ * change in another. Commands in no lane are sent at once, as before. A lane's first argument is
+ * always the project (a path, for this machine's pins).
  */
 export const LANES = {
-  /** The project's sandbox: its state, and every answer that changes it. */
-  sandbox: [
-    "sandboxState",
-    "answerSandboxOffer",
-    "acknowledgeProjectHosts",
-    "acknowledgeProjectPresets",
-    "allowProjectExpects",
-    "declineProjectExpects",
-    "allowPersonaHosts",
-    "grantableFolders",
-    "listGrantableFolder",
-    "unlistGrantableFolder",
-  ],
-  /** A chat holding the asking chat's persona grants, and the Allow that ends it. */
-  personaGrants: ["personaGrantsHeld", "allowPersonaGrants"],
-  /** Settings' dispatch grants beside the named ones, and what changes them. */
-  dispatchStanding: [
-    "dispatchStanding",
-    "liftDispatchNever",
-    "revokeDispatchToAny",
-    "declineProjectDispatch",
-    "declineProjectDispatchIn",
-    "removeDormantDispatch",
-  ],
-  /** The dispatches a chat waits on, and the person's answers to them. */
-  dispatchHeld: [
-    "dispatchGrantsNeeded",
-    "allowDispatch",
-    "allowDispatchAnywhere",
-    "neverDispatch",
-    "keepDispatchBlocked",
-  ],
-  /** What was refused while nobody was there, and the answers to it. */
-  dispatchAway: ["dispatchAway", "allowDispatchAway", "neverDispatchAway", "dismissDispatchAway"],
-  /** This machine's network record: what it lists, and the answers kept in it. */
-  network: [
-    "sandboxNetwork",
-    "chatNetwork",
-    "sandboxKeptBlocked",
-    "allowBlockedHost",
-    "allowSandboxBlock",
-    "keepSandboxBlock",
-    "forgetSandboxBlock",
-    "allowSandboxBlockForTasks",
-    "keepSandboxBlockForTasks",
-  ],
-  /** The work item a chat is linked to. */
-  workLink: ["chatWorkItem", "chatWorkLink", "chatWorkUnlink"],
-  /** The person's pins in a project. */
-  pins: ["planePins", "pinProject", "pinWorkspace", "arrangeWorkspacePins"],
-} as const satisfies Record<string, readonly (keyof typeof commands)[]>;
+  /**
+   * The project's sandbox: its manifest and local settings, this machine's answers and grants
+   * (`sandbox-grants`), the persona hosts allowed here, the network record, and a chat's grants
+   * and blocks. One lane, since an Allow on a block or of a persona's hosts is read back by the
+   * sandbox's state and the persona grants alike.
+   */
+  sandbox: {
+    reads: [
+      "sandboxState",
+      "personaGrantsHeld",
+      "sandboxNetwork",
+      "chatNetwork",
+      "sandboxKeptBlocked",
+      "sandboxGrants",
+    ],
+    changes: [
+      "answerSandboxOffer",
+      "acknowledgeProjectHosts",
+      "acknowledgeProjectPresets",
+      "allowProjectExpects",
+      "declineProjectExpects",
+      "allowPersonaHosts",
+      "allowPersonaGrants",
+      // It drops a listed folder that resolves elsewhere now, so it writes as it reads.
+      "grantableFolders",
+      "listGrantableFolder",
+      "unlistGrantableFolder",
+      "allowBlockedHost",
+      "allowSandboxBlock",
+      "keepSandboxBlock",
+      "forgetSandboxBlock",
+      "allowSandboxBlockForTasks",
+      "keepSandboxBlockForTasks",
+      "revokeSandboxGrant",
+    ],
+  },
+  /**
+   * The dispatch grants: the project's committed grants, this machine's acceptances and nevers,
+   * the dispatches waiting on the person, and what was refused while nobody was there. One lane,
+   * since an Allow or a Never in any one of them is read back by all.
+   */
+  dispatch: {
+    reads: [
+      "dispatchGrantsNeeded",
+      "dispatchStanding",
+      "dispatchAway",
+      "dispatchGrants",
+      "dispatchArrival",
+    ],
+    changes: [
+      "allowDispatch",
+      "allowDispatchAnywhere",
+      "neverDispatch",
+      "keepDispatchBlocked",
+      "liftDispatchNever",
+      "revokeDispatchToAny",
+      "declineProjectDispatch",
+      "declineProjectDispatchIn",
+      "removeDormantDispatch",
+      "allowDispatchAway",
+      "neverDispatchAway",
+      "dismissDispatchAway",
+      "revokeDispatchGrant",
+      "addDispatchGrant",
+      "acceptProjectDispatch",
+      "acceptProjectDispatchIn",
+      "allowDispatchToAny",
+      "setDispatchWorkspace",
+      "giveBackDispatch",
+      "answerDispatchArrival",
+      "dispatchGoneTold",
+    ],
+  },
+  /** The project's work log: the item a chat is linked to. */
+  workLink: { reads: ["chatWorkItem"], changes: ["chatWorkLink", "chatWorkUnlink"] },
+  /** This machine's store: the person's pins in a project, by its path. */
+  pins: {
+    reads: ["planePins"],
+    changes: ["pinProject", "pinWorkspace", "arrangeWorkspacePins", "pinOnThisMachine"],
+  },
+} as const satisfies Record<
+  string,
+  { reads: readonly (keyof typeof commands)[]; changes: readonly (keyof typeof commands)[] }
+>;
 
 type Ask = (...args: unknown[]) => Promise<unknown>;
 
-/** The last ask of each lane of each project, until it has answered. */
-const tails = new Map<string, Promise<unknown>>();
+/** What one lane of one project waits on: its last change, and every read asked since. */
+type Lane = { change: Promise<unknown> | undefined; reads: Set<Promise<unknown>> };
+
+const lanes = new Map<string, Lane>();
+
+/** `answer`, settled either way, for what waits on it. */
+const settledOf = (answer: Promise<unknown>) =>
+  answer.then(
+    () => undefined,
+    () => undefined,
+  );
 
 /**
- * `ask`, sent once every ask before it in `lane` for the same project has answered. Answered
- * as `ask` answers, a refusal or an error included.
+ * `ask` in `lane`, as a read or a change: see {@link LANES}. Answered as `ask` answers, a
+ * refusal or an error included. Sent in the same tick where it waits for nothing.
  */
-export function inOrder(lane: string, ask: Ask): Ask {
+export function inOrder(lane: string, kind: "read" | "change", ask: Ask): Ask {
   return (...args: unknown[]) => {
     const key = `${lane}\u0000${String(args[0])}`;
-    const before = tails.get(key);
-    // Nothing ahead of it: sent now, in the same tick, as it was sent before there were lanes.
-    const answer = before === undefined ? ask(...args) : before.then(() => ask(...args));
-    const settled = answer.then(
-      () => undefined,
-      () => undefined,
-    );
-    tails.set(key, settled);
+    const now = lanes.get(key) ?? { change: undefined, reads: new Set() };
+    lanes.set(key, now);
+    const before = kind === "read" ? [now.change] : [now.change, ...now.reads];
+    const waits = before.filter((one): one is Promise<unknown> => one !== undefined);
+    const answer = waits.length === 0 ? ask(...args) : Promise.all(waits).then(() => ask(...args));
+    const settled = settledOf(answer);
+    if (kind === "read") {
+      now.reads.add(settled);
+      void settled.then(() => now.reads.delete(settled));
+    } else {
+      now.change = settled;
+      now.reads = new Set();
+      void settled.then(() => {
+        if (now.change === settled) now.change = undefined;
+      });
+    }
     void settled.then(() => {
-      if (tails.get(key) === settled) tails.delete(key);
+      if (lanes.get(key) === now && now.change === undefined && now.reads.size === 0)
+        lanes.delete(key);
     });
     return answer;
   };
@@ -111,6 +168,8 @@ export function keepTheirOrder(): void {
   if (kept) return;
   kept = true;
   const asks = commands as unknown as Record<string, Ask>;
-  for (const [lane, names] of Object.entries(LANES))
-    for (const name of names) asks[name] = inOrder(lane, asks[name].bind(commands));
+  for (const [lane, { reads, changes }] of Object.entries(LANES)) {
+    for (const name of reads) asks[name] = inOrder(lane, "read", asks[name].bind(commands));
+    for (const name of changes) asks[name] = inOrder(lane, "change", asks[name].bind(commands));
+  }
 }

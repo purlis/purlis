@@ -32,8 +32,15 @@
 //! waiting. That is the sandbox's state and every answer that changes it, a pane's usage gauge
 //! and persona grants, the network record's reads and Allows, the dispatch grants' reads and
 //! answers, a session record, the pins and this machine's store, a chat's start, a project's
-//! close and making one. The window's tabs, reported at every switch, are written to this
-//! machine's store by a writer of their own (`planes::ArrangedBehind`), newest last.
+//! close and making one. What the window's tab commands change is changed in memory, in order,
+//! and the files it lands in (the window's tabs in this machine's store, a project's reopen
+//! record) are written by a writer of their own (`planes::WrittenBehind`), newest last; a
+//! close and the quit write the last one themselves.
+//!
+//! **A close and a start, or a close and an open, can now meet.** A close holds the project's
+//! turn until it has let go of it, so an open of the same project waits for it (a while, then
+//! says so), and a chat's start into a project being let go of is refused, or ended where it
+//! registered as the close ended the rest.
 //!
 //! **What stays synchronous is listed, each with its reason** (`SYNCHRONOUS` in this module's
 //! costs tests, which fail on a synchronous command not on it): what the app holds in memory,
@@ -41,8 +48,9 @@
 //! hands the extensions' report to a thread of its own.
 //!
 //! **A command made `async` answers when its work is done, not in the order it was asked.**
-//! Where the window asks a read and a change of the same thing, `app/src/commandOrder.ts` sends
-//! each in its lane only once the one before has answered, per project.
+//! Where the window reads and changes the same files, `app/src/commandOrder.ts` keeps them in
+//! one lane per project: reads run together and wait for the last change before them, and a
+//! change waits for everything before it.
 //!
 //! Smart close's offer, its start and its cancel stay synchronous, for a terminal's reason. They
 //! run no git, and the offer and the cancel read only what the app holds in memory, well under

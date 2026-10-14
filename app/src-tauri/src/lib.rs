@@ -528,12 +528,12 @@ fn open_planes(planes: tauri::State<'_, Planes>) -> Vec<PlaneId> {
 /// only ever does less.
 #[tauri::command]
 #[specta::specta]
-async fn close_plane(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), String> {
-    // Off the window's thread (#1949): its record is written and its chats are ended. It is out
-    // of the registry before that, as it was, so nothing asks it again meanwhile.
-    let closing = planes.closing(&plane)?;
+async fn close_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<(), String> {
+    // Off the window's thread (#1949): its record is written and its chats are ended. The close
+    // holds the project's turn throughout, so an open of it waits until it has let go.
     off_the_window("letting go of the project", move || {
-        closing.finish();
+        use tauri::Manager as _;
+        app.state::<Planes>().closing(&plane)?.finish();
         Ok(())
     })
     .await
@@ -3239,6 +3239,8 @@ pub fn run() {
                 )
                 // A project's chats start behind the window, a few at a time (`restoring.rs`).
                 .restoring_behind_the_window()
+                // Its reopen record is written behind the window (#1949).
+                .recording_behind_the_window()
                 // The host's event log (FD-9): one event per hook call, from every project.
                 .recording_events(events())
                 // This machine's network record (#1662): every block and Allow, for the

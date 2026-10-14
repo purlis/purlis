@@ -430,10 +430,14 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "cancel_get_project",
             "forge_device_sign_in_cancel",
             "forge_pkce_sign_in_cancel",
-            // Reads this machine's store once, as Settings is drawn; its answer has no error to
-            // carry a hand-off that did not finish.
-            "update_channel",
         ],
+    ),
+    (
+        // Reads this machine's store from the disk, a small file, once as Settings or the
+        // updater is drawn. Its answer is a word with no error to carry a hand-off that did not
+        // finish, so it moves off the window's thread with a change of its answer's type.
+        "THIS_MACHINE_ONCE",
+        &["update_channel"],
     ),
     (
         // A chat's pane and what lands in it: typed text, a resize before the watch after it
@@ -462,8 +466,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
     ),
     (
         // The window's tabs, focus and front chat, each change applied in the order it was
-        // sent: two tab moves answered out of order would leave the wrong one in place. Each
-        // writes the project's reopen record behind it.
+        // sent: two tab moves answered out of order would leave the wrong one in place. The
+        // change is made in memory here; the project's reopen record and this machine's store
+        // it lands in are written behind the window (`planes::WrittenBehind`).
         "TAB_ORDER",
         &[
             "chat_in_front",

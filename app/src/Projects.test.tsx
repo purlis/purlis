@@ -204,6 +204,11 @@ function core(
   });
   return {
     asked,
+    /** Fires `event` to every handler of it, the way the core emits one. */
+    fire(event: string, payload: unknown) {
+      for (const handler of listeners.get(event) ?? [])
+        window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+    },
     /** Fires one `chat-moved`, the way the core pushes one. */
     move(moved: Moved) {
       const handlers = listeners.get("chat-moved") ?? [];
@@ -679,6 +684,38 @@ describe("a window holding more than one project", () => {
     answer(null);
     await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
     expect(asked.filter((one) => one.cmd === "close_plane")).toHaveLength(1);
+  });
+
+  it("opens a project it is still letting go of only once that is done, and keeps it (#1949)", async () => {
+    // Close, then open it again at once: the open waits for the close and says so, the core's
+    // `plane-closed` (told before its close answers) takes nothing out, and the project is
+    // back as a tab.
+    let answer: (said: null) => void = () => {};
+    const { asked, fire } = core({
+      launch: ONE,
+      chats: { [ONE]: [chat({ session: 1, name: "one.1" })] },
+      closes: () => new Promise((said) => (answer = said)),
+    });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
+    await openByPath(TWO);
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
+    await userEvent.click(screen.getByRole("button", { name: "Close project two" }));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    const opens = () => asked.filter((one) => one.cmd === "open_plane").length;
+    const before = opens();
+
+    await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
+    await openByPath(TWO);
+    expect(await screen.findByText(/finish letting go of this project/)).toBeInTheDocument();
+    expect(opens()).toBe(before);
+
+    fire("plane-closed", { plane: TWO });
+    answer(null);
+    await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
+    expect(opens()).toBe(before + 1);
+    expect(screen.queryByText(/finish letting go of this project/)).toBeNull();
   });
 
   it("warns about every project's chats when it is asked to quit, and tells two chat 1s apart", async () => {
