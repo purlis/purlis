@@ -16,9 +16,11 @@ import {
   writeForgeCache,
   writeShell,
 } from "./harness.js";
+import { browser } from "@wdio/globals";
 import { theWindowIsDrawn } from "./drawn.js";
-import { PANIC_LOG, collectEvidence } from "./processes.js";
-import { recordFailure } from "./failures.js";
+import { noDialogIsLeftUp } from "./opening.js";
+import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
+import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 
 /**
@@ -57,6 +59,26 @@ cloneTheFixtureRepos(plane);
 // workspace holds and a plane with none of them cannot tell an empty listing from a drawn one.
 cutAFixturePiece(plane);
 writeForgeCache(plane);
+
+/**
+ * What a failure carries for its annotation (#1949): the commands the window had not had answered
+ * in time, asked of the window itself, and the core's last log lines. A window that does not
+ * answer leaves the first out, not the failure.
+ */
+async function evidence(): Promise<Evidence> {
+  const late = await browser
+    .execute(
+      () =>
+        (
+          globalThis as { __purlisLateAnswers?: () => { command: string; ms?: number }[] }
+        ).__purlisLateAnswers?.() ?? [],
+    )
+    .catch(() => []);
+  return {
+    late: late.map((one) => ({ command: one.command, ms: one.ms })),
+    coreLog: coreLogTail(LOGS),
+  };
+}
 
 export const config: WebdriverIO.Config = {
   runner: "local",
@@ -115,6 +137,9 @@ export const config: WebdriverIO.Config = {
   // them waits too.
   async before() {
     await theWindowIsDrawn();
+    // A dialog an earlier spec left up would cover every control of this one, and fifty specs
+    // would fail for the one that left it (#1949's scenario stall).
+    await noDialogIsLeftUp();
   },
 
   // The service reads `tauri:options`, which WebdriverIO's own capability type does not know.
@@ -154,10 +179,10 @@ export const config: WebdriverIO.Config = {
   // A test that fails because the app died looks, from the test, like any other: an element
   // that never came. So every failure writes down whether the app is alive, its size, and
   // what the operating system and the app's panic hook recorded (charter-app#16).
-  afterTest(test, _context, { passed, error, duration }) {
+  async afterTest(test, _context, { passed, error, duration }) {
     recordTiming(test, duration);
     if (!passed) {
-      recordFailure(test, error ?? "failed with no error");
+      recordFailure(test, error ?? "failed with no error", await evidence());
       const where = collectEvidence(app, `${test.parent} ${test.title}`);
       console.error(`charter-e2e: what was left to look at is in ${where}`);
     }
@@ -165,8 +190,8 @@ export const config: WebdriverIO.Config = {
 
   // A failed `before` or `beforeEach` fails every test under it without an `afterTest`, so the
   // hook's own failure is what gets annotated (`failures.ts`).
-  afterHook(test, _context, { error, duration }) {
+  async afterHook(test, _context, { error, duration }) {
     recordTiming(test, duration ?? 0, "hook");
-    recordFailure(test, error);
+    recordFailure(test, error, error ? await evidence() : {});
   },
 };

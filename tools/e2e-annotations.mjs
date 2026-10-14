@@ -33,6 +33,46 @@ const PER_LEVEL = 10;
 /** How much of an assertion's message an annotation keeps. */
 export const MESSAGE_CHARS = 300;
 
+/**
+ * How many of the first failures carry the evidence the job's log and artifact hold (#1949's
+ * scenario stall): what the window was still waiting for, and the core's last log lines. The
+ * first failure of a mass failure is the one that names its cause.
+ */
+export const EVIDENCE_FOR = 3;
+
+/** How much evidence one annotation keeps, the newest lines kept when it is cut. */
+export const EVIDENCE_CHARS = 3000;
+
+/**
+ * The evidence `record` carries, as lines of text: the commands the window had not had answered
+ * in time (`app/src/answerWatch.ts`) and the core's last log lines, which the app already writes
+ * with anything secret-shaped replaced (`purlis_core::applog`). Empty where it carries none.
+ */
+export function evidenceOf(record) {
+  const parts = [];
+  const late = Array.isArray(record.late) ? record.late : [];
+  if (late.length > 0) {
+    const said = late.map((one) =>
+      typeof one.ms === "number"
+        ? `${one.command} (answered after ${Math.round(one.ms / 1000)} s)`
+        : `${one.command} (never answered)`,
+    );
+    parts.push(`the window waited for: ${said.join(", ")}`);
+  }
+  const log = Array.isArray(record.coreLog) ? record.coreLog : [];
+  if (log.length > 0) {
+    let lines = log.map((line) => String(line).replace(ANSI, ""));
+    // The newest lines are the ones that say what happened last: cut from the front.
+    while (lines.length > 1 && lines.join("\n").length > EVIDENCE_CHARS)
+      lines = lines.slice(1);
+    parts.push(`the core's last log lines:\n${lines.join("\n")}`);
+  }
+  const text = parts.join("\n");
+  return text.length > EVIDENCE_CHARS
+    ? text.slice(text.length - EVIDENCE_CHARS)
+    : text;
+}
+
 // Colour codes the spec reporter and `expect` put in their messages.
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*m/g;
@@ -74,7 +114,9 @@ export function lineOf(record, root, read = readSource) {
     }
     const source = read(isAbsolute(base) ? base : join(root, base));
     if (source && record.title) {
-      const index = source.split("\n").findIndex((line) => line.includes(record.title));
+      const index = source
+        .split("\n")
+        .findIndex((line) => line.includes(record.title));
       if (index >= 0) return index + 1;
     }
   }
@@ -99,15 +141,20 @@ export function trimMessage(message) {
 }
 
 // Workflow command escaping: `%`, CR and LF in data; `:` and `,` too in a property.
-const escapeData = (s) => s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-const escapeProperty = (s) => escapeData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
+const escapeData = (s) =>
+  s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+const escapeProperty = (s) =>
+  escapeData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
 
 /**
  * The `::error` lines for `records`, at most `limit` of them and a last one counting the rest.
  *
  * @param records what `app/e2e/failures.ts` wrote: `{ file, title, parent, message, stack }`.
  */
-export function annotations(records, { root = ROOT, limit = LIMIT, read = readSource } = {}) {
+export function annotations(
+  records,
+  { root = ROOT, limit = LIMIT, read = readSource } = {},
+) {
   if (records.length === 0) {
     return [
       "::error title=scenario tests failed with no test recorded::" +
@@ -123,10 +170,14 @@ export function annotations(records, { root = ROOT, limit = LIMIT, read = readSo
       props.push(`file=${escapeProperty(repoPath(record.file, root))}`);
       props.push(`line=${lineOf(record, root, read)}`);
     }
-    const named = [record.parent, record.title].filter(Boolean).join(" › ") || "scenario test";
+    const named =
+      [record.parent, record.title].filter(Boolean).join(" › ") ||
+      "scenario test";
     const title = level === "error" ? named : `also failed › ${named}`;
     props.push(`title=${escapeProperty(title)}`);
-    const message = trimMessage(record.message) || "failed with no message";
+    const trimmed = trimMessage(record.message) || "failed with no message";
+    const evidence = index < EVIDENCE_FOR ? evidenceOf(record) : "";
+    const message = evidence ? `${trimmed}\n\n${evidence}` : trimmed;
     return `::${level} ${props.join(",")}::${escapeData(message)}`;
   });
   const rest = records.length - lines.length;
@@ -142,6 +193,8 @@ export function annotations(records, { root = ROOT, limit = LIMIT, read = readSo
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const file = process.argv[2] ?? "logs/failures.jsonl";
-  const records = existsSync(file) ? readRecords(readFileSync(file, "utf8")) : [];
+  const records = existsSync(file)
+    ? readRecords(readFileSync(file, "utf8"))
+    : [];
   for (const line of annotations(records)) console.log(line);
 }
