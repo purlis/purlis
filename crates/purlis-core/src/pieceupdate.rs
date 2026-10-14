@@ -177,10 +177,23 @@ pub(crate) fn remote_of(clone: &Path, branch: &str) -> Option<String> {
     origin.ok().then(|| "origin".to_owned())
 }
 
+/// What git has stopped in the folder, as [`gitstate::stopped`] reads it, less a rebase git
+/// no longer has under way: one is in progress only while its own folder is there
+/// (`rebase-merge` or `rebase-apply`), whatever other marker it left.
+fn stopped_in(here: &Here) -> Option<gitstate::Stopped> {
+    let stopped = gitstate::stopped(&here.folder)?;
+    let rebasing = ["rebase-merge", "rebase-apply"]
+        .iter()
+        .any(|dir| here.git_dir.join(dir).is_dir());
+    let gone =
+        stopped.operation == Some(Operation::Rebase) && !rebasing && stopped.unmerged.is_empty();
+    (!gone).then_some(stopped)
+}
+
 /// What a rebase that git stopped says, and its status.
 fn stopped_said(piece: &Piece, here: &Here, git_said: &str, say: &mut dyn FnMut(Say)) -> u8 {
     let (repo, name) = (piece.repo, piece.piece);
-    match gitstate::stopped(&here.folder) {
+    match stopped_in(here) {
         Some(stopped) if stopped.operation == Some(Operation::Rebase) => {
             let files = if stopped.unmerged.is_empty() {
                 String::new()
@@ -209,7 +222,7 @@ fn start(
     say: &mut dyn FnMut(Say),
 ) -> Result<u8, String> {
     let (repo, name_) = (piece.repo, piece.piece);
-    if let Some(stopped) = gitstate::stopped(&here.folder) {
+    if let Some(stopped) = stopped_in(here) {
         let what = stopped.operation.map_or("merge", Operation::word);
         return Err(format!(
             "a {what} is stopped in {repo} · {name_}: `purlis worktree update --continue` once \
@@ -305,8 +318,8 @@ const MARKER: &[u8] = b"<<<<<<< ";
 
 fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     let (repo, name_) = (piece.repo, piece.piece);
-    let Some(stopped) = gitstate::stopped(&here.folder)
-        .filter(|stopped| stopped.operation == Some(Operation::Rebase))
+    let Some(stopped) =
+        stopped_in(here).filter(|stopped| stopped.operation == Some(Operation::Rebase))
     else {
         return Err(format!(
             "no rebase is stopped in {repo} · {name_}: `purlis worktree update` starts one"
@@ -337,6 +350,11 @@ fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
+    if !went.ok() && went.err.contains("no rebase in progress") {
+        return Err(format!(
+            "no rebase is stopped in {repo} · {name_}: `purlis worktree update` starts one"
+        ));
+    }
     if !went.ok() {
         return Ok(stopped_said(piece, here, &went.err, say));
     }
@@ -402,14 +420,16 @@ fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
 
 fn abort(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     let (repo, name_) = (piece.repo, piece.piece);
-    if !gitstate::stopped(&here.folder)
-        .is_some_and(|stopped| stopped.operation == Some(Operation::Rebase))
-    {
+    if !stopped_in(here).is_some_and(|stopped| stopped.operation == Some(Operation::Rebase)) {
         return Err(format!("no rebase is stopped in {repo} · {name_}"));
     }
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--abort"]);
     let back = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
+    // git's own answer settles whether one was stopped, whatever the markers said.
+    if !back.ok() && back.err.contains("no rebase in progress") {
+        return Err(format!("no rebase is stopped in {repo} · {name_}"));
+    }
     if !back.ok() {
         return Err(format!(
             "git did not put {repo} · {name_} back: {}",
@@ -441,7 +461,7 @@ fn pushed(
 ) -> Result<u8, String> {
     let (repo, name_) = (piece.repo, piece.piece);
     let branch = &here.branch;
-    if gitstate::stopped(&here.folder).is_some() {
+    if stopped_in(here).is_some() {
         return Err(format!(
             "an operation is stopped in {repo} · {name_}: finish it (`purlis worktree update \
              --continue`) or abort it before pushing"
