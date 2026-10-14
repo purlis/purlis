@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791947300785,
+  "lastUpdate": 1791964712755,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10542,6 +10542,48 @@ window.BENCHMARK_DATA = {
             "value": 101.34237949999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.034, 101.289, 101.342, 102.010, 102.373 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "9b7cc465b3e2833aacc57154b509a9b6e626ea1e",
+          "message": "docs(secrets): a tool's example reads its values itself; curl expands its own\n\nThe several-values example is now `aws`, which reads AWS_ACCESS_KEY_ID and\nAWS_SECRET_ACCESS_KEY from its environment. curl reads no credential from\na variable, and a chat's arguments reach a tool with no shell between, so\nthe secrets guide shows curl's own expansion instead (curl 8.3.0 or\nlater): both values as env, then\n`curl --variable %KIBANA_USER --variable %KIBANA_PASS\n--expand-user '{{KIBANA_USER}}:{{KIBANA_PASS}}' <url>`.\nThe guide's first `secret exec ... curl` line is written the same way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T11:57:23+04:00",
+          "tree_id": "f7f967a304bd3f18ca443a1ba94e078b0b124bd6",
+          "url": "https://github.com/purlis/purlis/commit/9b7cc465b3e2833aacc57154b509a9b6e626ea1e"
+        },
+        "date": 1791964711516,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2854605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.262, 0.277, 0.285, 0.287, 0.299 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.635003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.577, 16.583, 16.635, 16.664, 16.709 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.870088,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.064, 101.189, 101.870, 101.928, 101.960 ms"
           }
         ]
       }
