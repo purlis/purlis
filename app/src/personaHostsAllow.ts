@@ -23,6 +23,16 @@ export function listedHosts(hosts: readonly string[]): string {
   return `${hosts.slice(0, -1).join(", ")} and ${hosts[hosts.length - 1]}`;
 }
 
+/**
+ * A persona's tools, each its whole line, joined so that two never run together: "a", "a; and
+ * b", "a; b; and c". A tool handed several values names each on its own line, with commas and
+ * "and" of its own (T-1), so the lines are kept apart by semicolons.
+ */
+export function listedTools(tools: readonly string[]): string {
+  if (tools.length < 2) return tools.join("");
+  return `${tools.slice(0, -1).join("; ")}; and ${tools[tools.length - 1]}`;
+}
+
 /** What of `one` waits for an Allow, as a noun: its hosts, its tools, or both (D-PE-ruling-1). */
 export function whatWaits(one: PersonaHosts, hostsLocked = false): string {
   const hosts = !hostsLocked && one.reached.length > 0;
@@ -34,7 +44,7 @@ export function whatWaits(one: PersonaHosts, hostsLocked = false): string {
 /** What `one` lets a chat do once allowed, as a clause: reach its hosts, run its tools. */
 export function whatItLets(one: PersonaHosts, hostsLocked = false): string {
   const hosts = !hostsLocked && one.reached.length > 0 ? `reach ${listedHosts(one.reached)}` : "";
-  const tools = one.tools.length > 0 ? `run ${listedHosts(one.tools)}` : "";
+  const tools = one.tools.length > 0 ? `run ${listedTools(one.tools)}` : "";
   return hosts && tools ? `${hosts}, and ${tools}` : hosts || tools;
 }
 

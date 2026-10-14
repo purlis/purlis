@@ -95,7 +95,11 @@ this chat's persona declares**: a program the project's settings name under
 user has allowed the persona's tools on this machine. Run such a tool by its plain name
 (`kubectl get pods`): the app hands it the credential. Any other command, a shell or an
 interpreter among them, is refused with a sentence that names the tool to declare; tell the
-user that sentence, and that they can run the command in their own terminal. The app also
+user that sentence, and that they can run the command in their own terminal. A tool that needs
+several values (a user name and a password, a key and a secret) can be declared with all of
+them: `<program> = { vault = "<vault>", values = { <VAR> = { key = "<key>", as = "env" }, <VAR> =
+{ key = "<key>", as = "file" } } }`. When a tool needs more than the one value it has, tell the
+user that form rather than looking for another way to the vault. The app also
 checks that this chat's persona may use the vault (the vault is tagged for it, or the user
 allowed it for that persona on this machine), runs the tool in this chat's sandbox, and streams
 the output back with each value's literal text masked. Do not try to read the vault some other

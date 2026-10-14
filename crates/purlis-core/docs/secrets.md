@@ -145,7 +145,21 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   tools = { kubectl = { vault = "devops", as = "KUBECONFIG file", key = "PROD_KUBECONFIG" } }
   ```
 
-  `as` is `"<VARIABLE> file"` (`--file`, preferred) or `"<VARIABLE> env"` (`--env`). As a
+  `as` is `"<VARIABLE> file"` (`--file`, preferred) or `"<VARIABLE> env"` (`--env`). A tool
+  that needs several values from its vault, such as a user name and a password, names each
+  under `values` instead (T-1, ruled by the operator on 2026-10-14):
+
+  ```toml
+  [sandbox.personas.logs]
+  tools = { curl = { vault = "elastic-logs-master", values = {
+      KIBANA_USER = { key = "kibana-username", as = "env" },
+      KIBANA_PASS = { key = "kibana-password", as = "file" } } } }
+  ```
+
+  Its script runs `purlis secret exec elastic-logs-master --file KIBANA_PASS=kibana-password
+  --env KIBANA_USER=kibana-username -- /usr/bin/curl`, and a chat's own `secret exec` of it runs
+  only with exactly that set. A tool is written one way or the other, never both; it takes at
+  most 16 values, each in a variable of its own. As a
   sandboxed chat running as `devops` starts, the app writes one small script per tool under
   `.purlis/app/tools/devops/bin/`, which no chat may write, and puts that folder first on the
   chat's `PATH`. A Claude Code chat is also handed `CLAUDE_ENV_FILE`, which puts it first again

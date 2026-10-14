@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::super::policy::Locks;
 use super::login::{self, Login};
-use super::{Asked, Handed, Ready, Tool, declared, keyed, resolve_beside, run_words, shim};
+use super::{Asked, Handed, Ready, Tool, Value, declared, keyed, resolve_beside, run_words, shim};
 
 const HERE: &str = "sandbox.personas.qa";
 const PURLIS: &str = "/Applications/Purlis.app/Contents/MacOS/purlis";
@@ -26,19 +26,33 @@ fn read(text: &str) -> (Vec<Tool>, Vec<String>) {
     (tools, refused.into_iter().map(|one| one.why).collect())
 }
 
-fn shop_login() -> Tool {
+/// A login's value handed in `var`, from `key`.
+fn file(var: &str, key: &str) -> Value {
+    Value {
+        var: var.to_owned(),
+        handed: Handed::File,
+        key: key.to_owned(),
+    }
+}
+
+/// `shop_login` with `user` as its user name's key (none for a page that asks for a password
+/// alone) and `key` as its password's.
+fn shop_login_with(user: Option<&str>, key: &str) -> Tool {
     Tool {
         name: "shop-login".to_owned(),
         vault: "qa".to_owned(),
-        var: login::PASS_VAR.to_owned(),
-        handed: Handed::File,
-        key: "password".to_owned(),
+        values: std::iter::once(file(login::PASS_VAR, key))
+            .chain(user.map(|user| file(login::USER_VAR, user)))
+            .collect(),
         login: Some(Login {
             url: "https://shop.example.test/login".to_owned(),
             origin: "https://shop.example.test".to_owned(),
-            user: Some("username".to_owned()),
         }),
     }
+}
+
+fn shop_login() -> Tool {
+    shop_login_with(Some("username"), "password")
 }
 
 fn armed() -> Vec<Ready> {
@@ -84,7 +98,11 @@ fn a_browser_login_is_read_with_its_page_its_origin_and_both_keys() {
     assert_eq!(refused, Vec::<String>::new());
     let login = tools[0].login.clone().expect("a login");
     assert_eq!(login.origin, "https://pin.example.test:8443");
-    assert_eq!(login.user, None);
+    assert_eq!(
+        tools[0].values,
+        [file(login::PASS_VAR, "pin")],
+        "no user's file"
+    );
 }
 
 #[test]
@@ -173,8 +191,7 @@ fn the_allow_is_bound_to_the_login_page_and_both_keys() {
     let digest = |tool: Tool| super::super::persona::digest_of(&[], &[tool], false);
     let mut elsewhere = shop_login();
     elsewhere.login.as_mut().expect("login").url = "https://shop.example.test/other".to_owned();
-    let mut other_user = shop_login();
-    other_user.login.as_mut().expect("login").user = Some("admin".to_owned());
+    let other_user = shop_login_with(Some("admin"), "password");
     assert_ne!(digest(shop_login()), digest(elsewhere));
     assert_ne!(digest(shop_login()), digest(other_user));
 }
@@ -183,12 +200,7 @@ fn the_allow_is_bound_to_the_login_page_and_both_keys() {
 /// which key is the user's and which the password's never share a line, nor an Allow.
 #[test]
 fn a_login_s_keys_are_quoted_so_no_two_logins_share_a_line() {
-    let login = |user: Option<&str>, key: &str| {
-        let mut tool = shop_login();
-        tool.key = key.to_owned();
-        tool.login.as_mut().expect("login").user = user.map(str::to_owned);
-        tool
-    };
+    let login = shop_login_with;
     let digest =
         |tool: &Tool| super::super::persona::digest_of(&[], std::slice::from_ref(tool), false);
     let pairs = [
