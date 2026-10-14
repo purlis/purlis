@@ -118,6 +118,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "change_status",
             "dispatch",
             "dispatch_list",
+            "dispatch_read",
             "dispatch_report",
             "ask_operator",
         ]
@@ -920,6 +921,28 @@ fn a_fifo_in_a_store_is_refused_at_once_and_the_store_is_let_go() {
 }
 
 #[test]
+fn dispatch_read_names_the_task_by_its_chat_number_and_nothing_else() {
+    // #2084: the same one argument `purlis dispatch read <chat>` takes.
+    let args = |value: Value| value.as_object().cloned().unwrap_or_default();
+    assert_eq!(dispatch_read_args(&args(json!({"chat": 9}))), Ok(9));
+    for bad in [
+        json!({}),
+        json!({"chat": "9"}),
+        json!({"chat": -1}),
+        json!({"chat": 5_000_000_000_u64}),
+    ] {
+        let said = dispatch_read_args(&args(bad.clone())).expect_err("refused");
+        assert!(said.contains("dispatch_list"), "{bad}: {said}");
+    }
+    let tool = TOOLS
+        .iter()
+        .find(|tool| tool.name == DISPATCH_READ)
+        .expect("a tool");
+    assert!(tool.read_only);
+    assert_eq!((tool.schema)()["required"], json!(["chat"]));
+}
+
+#[test]
 fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
     // V79: the pre-allowed tools are the five reads, and `persona_where` beside them
     // (V98a, #1450) and `dispatch_list` (#1463): each a tool the server offers and marks
@@ -934,6 +957,7 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "change_status",
             "persona_where",
             "dispatch_list",
+            "dispatch_read",
         ]
     );
     for name in PRE_ALLOWED {

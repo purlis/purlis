@@ -166,6 +166,7 @@ fn a_harness_lists_charter_s_tools() {
             "change_status",
             "dispatch",
             "dispatch_list",
+            "dispatch_read",
             "dispatch_report",
             "ask_operator",
         ]

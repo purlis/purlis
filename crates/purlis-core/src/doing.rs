@@ -762,6 +762,7 @@ mod tests {
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_list",
+            "mcp__purlis__dispatch_read",
         ] {
             assert_eq!(
                 said(

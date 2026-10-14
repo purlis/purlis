@@ -674,6 +674,20 @@ chat has to say, and what changed. It is data to the asking chat, never instruct
 kept for the workspace when the asking chat is gone.
 _Avoid_: reply, result (for a handoff), handback (in UI text)
 
+**Reading a task** (`purlis dispatch read`):
+What the asking chat may see of a task it dispatched: the task's last few messages and the
+shell commands it ran with their exit codes, as its harness handed them to purlis, quoted as
+data and masked as tool output is. Only the chat that asked can read its own tasks, while they
+run and after they end. The whole conversation stays the person's, in the task's tab.
+_Avoid_: transcript, log, output (for the whole conversation)
+
+**Quiet note** (on a task):
+purlis's note that a task at work has gone quiet: nothing heard from its harness for a while,
+or one command running long, named by its program. It goes to the asking chat and to the
+task's tab, and ends nothing. The times are settings (`quiet-note-minutes`,
+`one-command-note-minutes`).
+_Avoid_: heartbeat, timeout, stall (it ends nothing)
+
 **Activity** (of a chat):
 One timeline of what a chat and its tasks said to each other through purlis, and the tasks of
 its tasks: each brief, follow-up, progress note, question, answer and report, oldest first. It
