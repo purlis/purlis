@@ -1844,15 +1844,16 @@ impl Turns {
         None
     }
 
-    /// Waits until no close holds a turn, or `within` has passed: how many still do then.
-    fn closes_done_within(&self, within: std::time::Duration) -> usize {
+    /// Waits until no open or close holds a turn, or `within` has passed: how many still do
+    /// then.
+    fn all_done_within(&self, within: std::time::Duration) -> usize {
         let until = std::time::Instant::now() + within;
         let mut held = self.held();
         loop {
-            let closing = held.values().filter(|turn| **turn == Turn::Close).count();
+            let under_way = held.len();
             let left = until.saturating_duration_since(std::time::Instant::now());
-            if closing == 0 || left.is_zero() {
-                return closing;
+            if under_way == 0 || left.is_zero() {
+                return under_way;
             }
             held = self
                 .moved
@@ -1892,10 +1893,11 @@ const STILL_CLOSING: &str =
 const STILL_OPENING: &str =
     "purlis is still opening this project for another window. Open it again in a moment.";
 
-/// How long the quit waits for the closes still letting go of their projects (#1949): each
-/// writes its project's last record and ends its chats, and the process ending under it would
-/// cut both off.
-const QUIT_WAITS_FOR_CLOSES: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long the quit waits for the opens and closes still under way (#1949). A close writes its
+/// project's last record and ends its chats, and the process ending under it would cut both off;
+/// an open would hold its project after the quit emptied the registry, and nothing would let go
+/// of it.
+const QUIT_WAITS_FOR_TURNS: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// What collects a plane's month-old per-session files as [`Planes::open`] opens it.
 type Sweep = Arc<dyn Fn(&Path) + Send + Sync>;
@@ -3593,17 +3595,19 @@ impl Planes {
 
     /// Empties the registry, then lets go of each plane it held. See [`Self::let_go_of_all`].
     fn let_go_of_every_plane(&self, to_update: bool) {
-        // The window's tabs as last handed over, on disk before anything ends (#1949).
-        self.arranged.flush();
-        // And every close still letting go of its project: it is out of the registry already, so
-        // nothing below reaches it, and its last record and its chats' end are its own (#1949).
-        let still = self.turns.closes_done_within(QUIT_WAITS_FOR_CLOSES);
+        // Every open and close still under way first (#1949): a close is out of the registry
+        // already, so nothing below reaches it, and its last record and its chats' end are its
+        // own; an open holds its project in the registry once it is done, and is let go of below.
+        let still = self.turns.all_done_within(QUIT_WAITS_FOR_TURNS);
         if still > 0 {
             tracing::warn!(
-                "purlis: {still} project(s) were still being let go of as purlis quit; their last \
-                 record may not be written"
+                "purlis: {still} project(s) were still being opened or let go of as purlis quit; \
+                 what they write may not be written"
             );
         }
+        // The window's tabs as last handed over, on disk before anything ends: after the wait,
+        // since a close that let go meanwhile told the window, which reported them again.
+        self.arranged.flush();
         let all: Vec<_> = self.map().drain().map(|(_, held)| held).collect();
         // Every command purlis is running with a vault for a chat ends here, with everything it
         // started that stayed in its process group (#1407).
@@ -5188,6 +5192,86 @@ mod tests {
         );
         drop(opening);
         assert_eq!(planes.not_closing_within(&canon, soon), Ok(()));
+    }
+
+    #[test]
+    fn the_quit_waits_for_an_open_still_under_way() {
+        // #1949: an open between its sweep and holding its project when the quit comes would
+        // hold it after the quit emptied the registry, and nothing would let go of it. The quit
+        // waits for the open first.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("one"));
+        let planes = planes();
+        let id = PlaneId::of(&root.canonicalize().expect("it resolves"));
+        let opening = planes.opening(&id);
+        std::thread::scope(|scope| {
+            let quitting = scope.spawn(|| planes.let_go_of_all());
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            assert!(
+                !quitting.is_finished(),
+                "the quit ended with an open still under way"
+            );
+            drop(opening);
+            quitting.join().expect("it quits");
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_quit_writes_the_windows_tabs_a_close_handed_over_while_it_waited() {
+        // #1949: a close that lets go while the quit waits for it tells the window, which
+        // reports its tabs; that report is on disk before the quit is done. Another writer
+        // holds this machine's store while it is handed over, so the write is still under way
+        // when the close finishes.
+        let dir = tempfile::tempdir().expect("a directory");
+        let config = dir.path().join("config");
+        let one = a_plane(&dir.path().join("one"));
+        let two = a_plane(&dir.path().join("two"));
+        let planes = planes_keeping(&config);
+        let first = planes.open(&one);
+        let second = planes.open(&two);
+        let closing = planes.closing(&first).expect("it closes");
+
+        let (holding, held_now) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let other = std::thread::spawn({
+            let config = config.clone();
+            move || {
+                machine::update(&config, |_| {
+                    holding.send(()).expect("told");
+                    released.recv().expect("let go");
+                })
+                .expect("the store is written");
+            }
+        });
+        held_now.recv().expect("the store is held");
+        std::thread::scope(|scope| {
+            let quitting = scope.spawn(|| planes.let_go_of_all());
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            // The window, told of the close, reports what it holds now.
+            planes.remember_arrangement_behind(&[Holding {
+                planes: vec![second.clone()],
+                active: Some(0),
+            }]);
+            closing.finish();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let early = quitting.is_finished();
+            release.send(()).expect("let go");
+            other.join().expect("the other writer ends");
+            quitting.join().expect("it quits");
+            assert!(
+                !early,
+                "the quit ended with the window's tabs still being written"
+            );
+        });
+        let back = machine::read(&config).store.windows;
+        assert_eq!(
+            back,
+            vec![machine::Window {
+                planes: vec![two.canonicalize().expect("two resolves")],
+                active: 0,
+            }]
+        );
     }
 
     #[test]

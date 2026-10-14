@@ -50,7 +50,9 @@
 //! **A command made `async` answers when its work is done, not in the order it was asked.**
 //! Where the window reads and changes the same files, `app/src/commandOrder.ts` keeps them in
 //! one lane per project: reads run together and wait for the last change before them, and a
-//! change waits for everything before it.
+//! change waits for everything before it. Every call in this crate that writes a file a lane
+//! reads is listed in `app/src/writeSites.json` with the commands that reach it; this module's
+//! costs tests fail on one that is not.
 //!
 //! Smart close's offer, its start and its cancel stay synchronous, for a terminal's reason. They
 //! run no git, and the offer and the cancel read only what the app holds in memory, well under

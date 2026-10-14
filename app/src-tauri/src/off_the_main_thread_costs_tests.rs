@@ -585,3 +585,235 @@ fn a_command_is_synchronous_only_where_the_list_says_why() {
     once.dedup();
     assert_eq!(once, listed, "a command listed twice");
 }
+
+/// The calls that write a file one of the window's lanes reads (`app/src/commandOrder.ts`), by
+/// the module and the functions each is spelled with: each is `<module>::<function>(`.
+const LANE_FILE_WRITES: &[(&str, &[&str])] = &[
+    ("settings", &["save", "move_keys"]),
+    ("forges", &["add", "remove"]),
+    (
+        "harness_profiles",
+        &["add", "remove", "rename", "rename_everywhere"],
+    ),
+    ("hosts", &["add", "remove", "confirm"]),
+    (
+        "local",
+        &[
+            "answer",
+            "acknowledge_hosts",
+            "acknowledge_presets",
+            "confirm_host",
+            "unconfirm_host",
+            "forget_hosts_not_in",
+            "grant_write",
+            "revoke_write",
+            "grant_socket",
+            "revoke_socket",
+            "grant_service",
+            "revoke_service",
+            "acknowledge_expects",
+            "list_grantable",
+            "unlist_grantable",
+            "folders_moved",
+            "grant_vault",
+            "revoke_vault",
+            "persona_hosts_changed",
+            "allow_persona_hosts",
+            "revoke_persona_hosts",
+            "record_made",
+            "forget_made",
+            "grant_dispatch",
+            "revoke_dispatch",
+            "acknowledge_dispatch",
+            "drop_legacy_dispatch_nevers",
+            "grant_dispatch_any",
+            "revoke_dispatch_any",
+            "acknowledge_dispatch_any",
+            "forget_dispatch_any",
+            "mark_dispatch_away",
+            "know_dispatch_personas",
+            "set_aside_dispatch",
+            "forget_dormant_dispatch",
+            "give_back_dispatch",
+            "decline_dispatch",
+            "accept_dispatch",
+            "settle_dispatch",
+            "forget_dispatch_gone",
+            "keep_dispatch_in",
+            "drop_dispatch_in",
+            "move_dispatch_mine",
+            "note_dispatch_workspaces",
+        ],
+    ),
+    (
+        "dispatchgrant",
+        &[
+            "never",
+            "never_said_as",
+            "lift_never",
+            "allow_any",
+            "revoke_any",
+            "accept_any_of_the_project",
+            "decline",
+            "acknowledge",
+            "acknowledge_pair",
+            "acknowledge_any",
+            "forget_pair",
+        ],
+    ),
+    (
+        "dispatchwithin",
+        &[
+            "grant_yours",
+            "revoke_yours",
+            "accept",
+            "unaccept",
+            "set_yours",
+        ],
+    ),
+    (
+        "dispatchdormant",
+        &["noticed", "judged", "persona_gone", "give_back", "remove"],
+    ),
+    ("dispatcharrival", &["told_gone"]),
+    (
+        "machine",
+        &[
+            "update",
+            "forget_project",
+            "revoke_approval",
+            "locate_project",
+        ],
+    ),
+];
+
+/// The same, where any function of the module whose name begins so writes: `<module>::<start>…(`.
+const LANE_FILE_WRITES_BEGINNING: &[(&str, &[&str])] = &[
+    ("away", &["dismiss", "mark", "forget"]),
+    ("network", &["record_"]),
+    ("log", &["append", "link", "unlink"]),
+];
+
+/// Whether `line` calls one of the writes above, or the audit that keeps an Allow in the network
+/// record (`audit_then_record`).
+fn writes_a_lane_file(line: &str) -> bool {
+    if line.contains("audit_then_record(") {
+        return true;
+    }
+    let exact = LANE_FILE_WRITES.iter().any(|(module, names)| {
+        names
+            .iter()
+            .any(|name| line.contains(&format!("{module}::{name}(")))
+    });
+    exact
+        || LANE_FILE_WRITES_BEGINNING.iter().any(|(module, starts)| {
+            starts.iter().any(|start| {
+                let needle = format!("{module}::{start}");
+                line.match_indices(&needle).any(|(at, _)| {
+                    line[at + needle.len()..]
+                        .chars()
+                        .find(|c| !(c.is_ascii_alphanumeric() || *c == '_'))
+                        == Some('(')
+                })
+            })
+        })
+}
+
+/// Each place in the crate's own code (not its tests) that writes a lane's file, as
+/// `<file> <enclosing function>`.
+fn lane_file_write_sites() -> std::collections::BTreeSet<String> {
+    fn walk(dir: &Path, root: &Path, found: &mut std::collections::BTreeSet<String>) {
+        for entry in std::fs::read_dir(dir).expect("the crate's sources") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                walk(&path, root, found);
+                continue;
+            }
+            let name = path.to_string_lossy().into_owned();
+            if !name.ends_with(".rs") || name.ends_with("_tests.rs") || name.ends_with("/tests.rs")
+            {
+                continue;
+            }
+            let file = path
+                .strip_prefix(root)
+                .expect("under the sources")
+                .to_string_lossy()
+                .into_owned();
+            let text = std::fs::read_to_string(&path).expect("a source file");
+            let lines: Vec<&str> = text.lines().collect();
+            let mut function: Option<String> = None;
+            for (at, line) in lines.iter().enumerate() {
+                let trimmed = line.trim_start();
+                // A module of tests ends what the crate itself runs, in this crate's layout.
+                if trimmed.starts_with("#[cfg(test)]")
+                    && lines
+                        .get(at + 1)
+                        .is_some_and(|next| next.contains("mod ") && !next.contains(';'))
+                {
+                    break;
+                }
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                let signature = trimmed
+                    .trim_start_matches("pub(crate) ")
+                    .trim_start_matches("pub ")
+                    .trim_start_matches("async ");
+                if let Some(rest) = signature.strip_prefix("fn ") {
+                    let named: String = rest
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                        .collect();
+                    function = Some(named);
+                }
+                if writes_a_lane_file(line) {
+                    found.insert(format!(
+                        "{file} {}",
+                        function.as_deref().unwrap_or("(none)")
+                    ));
+                }
+            }
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut found = std::collections::BTreeSet::new();
+    walk(&root, &root, &mut found);
+    found
+}
+
+#[test]
+fn every_place_that_writes_a_lanes_file_is_in_the_window_s_table() {
+    // #1949: the window keeps a read and a change of the same file in order only for the
+    // commands its lanes hold (`commandOrder.ts`), and which commands write which file is
+    // `writeSites.json`. A new write of one of those files in the core fails here until the
+    // table names it, its file and the commands that reach it, so its command is put in the
+    // file's lane, or out of it with a reason.
+    let table: Value =
+        serde_json::from_str(include_str!("../../src/writeSites.json")).expect("the table is JSON");
+    let sites = table["sites"].as_array().expect("its sites");
+    let listed: std::collections::BTreeSet<String> = sites
+        .iter()
+        .filter_map(|site| site["at"].as_str())
+        .filter(|at| !at.starts_with("memory:"))
+        .map(str::to_owned)
+        .collect();
+    for site in sites {
+        if site["writes"].is_null() {
+            assert!(
+                site["why"].as_str().is_some_and(|why| !why.is_empty()),
+                "{site}: written by no lane's file, and no reason says why"
+            );
+        }
+    }
+    let found = lane_file_write_sites();
+    let unlisted: Vec<&String> = found.difference(&listed).collect();
+    assert!(
+        unlisted.is_empty(),
+        "writes a lane's file and is not in app/src/writeSites.json: {unlisted:?}"
+    );
+    let stale: Vec<&String> = listed.difference(&found).collect();
+    assert!(
+        stale.is_empty(),
+        "listed in app/src/writeSites.json and writes no lane's file: {stale:?}"
+    );
+}

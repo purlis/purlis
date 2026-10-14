@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { commands } from "./bindings";
+import writeSites from "./writeSites.json";
 
 /**
  * **The core's answers come back in the order the window asked, where that order matters**
@@ -73,14 +74,10 @@ export const LANES = {
    * since an Allow or a Never in any one of them is read back by all.
    */
   dispatch: {
-    reads: [
-      "dispatchGrantsNeeded",
-      "dispatchStanding",
-      "dispatchAway",
-      "dispatchGrants",
-      "dispatchArrival",
-    ],
+    reads: ["dispatchGrantsNeeded", "dispatchAway", "dispatchGrants", "dispatchArrival"],
     changes: [
+      // It marks a persona that is gone as it reads, so it writes as it reads.
+      "dispatchStanding",
       "allowDispatch",
       "allowDispatchAnywhere",
       "neverDispatch",
@@ -117,94 +114,37 @@ export const LANES = {
 >;
 
 /**
- * **What each lane's files are, and every command of the window that writes one** (#1949): the
- * audit the lanes are held to (`commandOrder.test.ts`). Each writer is a change of the file's
- * lane, or is in {@link OUTSIDE_THE_LANES} with why. A command added that writes one of these
- * files goes here, and so into its lane or out of it with a reason.
+ * **Every place in the core that writes a file one of the lanes reads, and the window commands
+ * that reach it** (#1949): `writeSites.json`, one table for both sides.
+ *
+ * - The core's test (`off_the_main_thread_costs_tests.rs`) finds each call of a function that
+ *   writes one of these files in the app crate, by name, and fails on one the table does not
+ *   list: a writer added later is caught where it writes, whatever command reaches it.
+ * - This module's test holds each command the table names as a writer of a lane's file to that
+ *   lane, as a change, or to {@link OUTSIDE_THE_LANES} with why; and each change of a lane to a
+ *   file of it.
+ *
+ * Which commands reach a write is the table's word, kept by hand where a writer is listed: a
+ * call graph by name, tried first, found every command reaching every file through names any
+ * module shares (`open`, `held`, `chats`), and so told nothing.
  */
-export const WRITERS = {
-  sandbox: {
-    "the project's manifest and its local settings": [
-      "answerSandboxOffer",
-      "addSandboxHost",
-      "removeSandboxHost",
-      "saveProjectSettings",
-      "moveProjectSettings",
-      "addProjectForge",
-      "removeProjectForge",
-      "addProjectProfile",
-      "removeProjectProfile",
-      "renameProjectProfile",
-    ],
-    "this machine's answers about the project (sandbox-grants)": [
-      "confirmSandboxHost",
-      "acknowledgeProjectHosts",
-      "acknowledgeProjectPresets",
-      "allowProjectExpects",
-      "declineProjectExpects",
-      "allowPersonaHosts",
-      "grantableFolders",
-      "listGrantableFolder",
-      "unlistGrantableFolder",
-      "allowBlockedHost",
-      "allowSandboxBlock",
-      "allowSandboxBlockForTasks",
-      "revokeSandboxGrant",
-      "allowRefusedVault",
-    ],
-    "this machine's network record": [
-      "allowBlockedHost",
-      "allowSandboxBlock",
-      "allowSandboxBlockForTasks",
-      "allowProjectExpects",
-      "allowPersonaHosts",
-      "allowPersonaGrants",
-      "forgetSandboxBlock",
-      "keepSandboxBlock",
-      "keepSandboxBlockForTasks",
-    ],
-    "a chat's grants, held in memory": ["allowPersonaGrants"],
-  },
-  dispatch: {
-    "the project's dispatch grants, this machine's acceptances and nevers, and the dispatches held":
-      [
-        "allowDispatch",
-        "allowDispatchAnywhere",
-        "neverDispatch",
-        "keepDispatchBlocked",
-        "liftDispatchNever",
-        "revokeDispatchToAny",
-        "declineProjectDispatch",
-        "declineProjectDispatchIn",
-        "removeDormantDispatch",
-        "allowDispatchAway",
-        "neverDispatchAway",
-        "dismissDispatchAway",
-        "revokeDispatchGrant",
-        "addDispatchGrant",
-        "acceptProjectDispatch",
-        "acceptProjectDispatchIn",
-        "allowDispatchToAny",
-        "setDispatchWorkspace",
-        "giveBackDispatch",
-        "answerDispatchArrival",
-        "dispatchGoneTold",
-      ],
-  },
-  workLink: { "the project's work log": ["chatWorkLink", "chatWorkUnlink"] },
-  pins: {
-    "this machine's store": [
-      "pinProject",
-      "pinWorkspace",
-      "arrangeWorkspacePins",
-      "pinOnThisMachine",
-      "forgetProject",
-      "revokeApproval",
-      "locateProject",
-      "windowHoldsPlanes",
-    ],
-  },
-} as const satisfies Record<keyof typeof LANES, Record<string, readonly (keyof typeof commands)[]>>;
+export const WRITE_SITES = writeSites as {
+  sections: Record<string, keyof typeof LANES>;
+  sites: { at: string; writes: string | null; by?: string[]; why?: string }[];
+};
+
+/** Each lane's files, and the window commands that write each, from {@link WRITE_SITES}. */
+export const WRITERS: Record<string, Record<string, readonly string[]>> = (() => {
+  const out: Record<string, Record<string, string[]>> = {};
+  for (const site of WRITE_SITES.sites) {
+    if (site.writes === null) continue;
+    const lane = WRITE_SITES.sections[site.writes];
+    const files = (out[lane] ??= {});
+    const writers = (files[site.writes] ??= []);
+    for (const command of site.by ?? []) if (!writers.includes(command)) writers.push(command);
+  }
+  return out;
+})();
 
 /** The writers of a lane's files that stay out of it, each with why. */
 export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> = {
@@ -212,7 +152,6 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "It tells the chat, in fixed words typed into its pane, not to try again: that lands in the " +
     "order of the person's own typing, which a lane behind a slow read would break. Its line in " +
     "the network record is a look back, read again at the next look.",
-  keepSandboxBlockForTasks: "As keepSandboxBlock, for each task it tells.",
   addProjectForge:
     "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
     "the file again after it.",
@@ -222,14 +161,16 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "the file again after it.",
   removeProjectProfile: "As addProjectProfile.",
   renameProjectProfile: "As addProjectProfile.",
+  choosePlaneMode:
+    "It writes the manifest's `[plane] mode`, which no read of the sandbox's lane draws; the " +
+    "saving view draws its own answer.",
+  projectSettings:
+    "Settings' read of a settings file drops the confirmed hosts the file no longer lists, a " +
+    "tidy-up of what no read of the sandbox's lane would count anyway.",
   forgetProject:
     "Settings › This machine names a project by its path, not as the window holds it, waits for " +
     "the answer and reads the store again.",
-  revokeApproval: "As forgetProject.",
   locateProject: "As forgetProject.",
-  windowHoldsPlanes:
-    "It writes the window's tabs, which no read of the pins' lane draws, and it is synchronous for " +
-    "its order with the window's other reports.",
 };
 
 type Ask = (...args: unknown[]) => Promise<unknown>;
