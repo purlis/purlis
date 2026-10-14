@@ -1110,7 +1110,8 @@ Whatever listens on one port of this machine's loopback interface: a local Kuber
 database in a container, a dev server. A sandboxed chat reaches none of them until a person
 allows that one port, for *this chat* or for *this project on this machine*; never a range,
 never every port, never one of purlis's own. Kept on this machine only, listed in Settings'
-Network page with Remove.
+Network page with Remove. A Claude Code chat reaches it through its proxy by the name
+`this-mac.internal:<port>`, and its kubectl through a copy of one context purlis makes for it.
 _Avoid_: localhost (in UI text), local port grant, loopback
 
 **Block**:

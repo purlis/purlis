@@ -1460,9 +1460,9 @@ Decided under delegation; the operator confirms or changes it.
   profile is fixed when the chat starts, so an Allow restarts the chat on its conversation, as a
   socket's does.
 - **Claude Code.** Its sandbox lets a command reach this machine's loopback on the proxy's two
-  ports, or on every port (`allowLocalBinding`), and on no one port alone, so purlis cannot hand
-  it one port. Its Notice says so and offers Start without the sandbox. A route that gives a
-  Claude Code chat one port is follow-up work.
+  ports, or on every port (`allowLocalBinding`), and on no one port alone, so purlis never sets
+  `allowLocalBinding` and hands its sandbox no port. The port is carried by name instead
+  (amendment qw384b below).
 - **Policy.** `sandbox.socket-grants = false` holds a service on this Mac as it holds a socket,
   and `allow-scopes` holds its two scopes as any other.
 
@@ -1505,3 +1505,40 @@ same core code a terminal runs:
 
 The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
 
+## Amended (2026-10-15, qw384b; extends the qw384 amendment): a Claude Code chat reaches a service on this Mac by name — to be confirmed
+
+Decided under delegation (option A of qw384's follow-up); the operator confirms or changes it.
+
+- **By name, through the chat's proxy.** Claude Code sends a command's connections to purlis's
+  proxy, but its `NO_PROXY` keeps `localhost`, `127.0.0.1`, `::1` and the private ranges off it,
+  and every Go client never proxies `localhost` or a loopback literal. A name it does send. So
+  the chat's proxy carries `this-mac.internal:<port>`, and a name that resolves to this machine's
+  loopback alone (`kubernetes.docker.internal`), to `127.0.0.1:<port>`:
+  - only while the chat holds that port (granted for it, or for every chat of the project on
+    this machine), at the layer that granted it; on any other port it is this machine, refused
+    as such and never asked about as a host;
+  - each connection kept in the network record by the name it was reached by;
+  - names are resolved for this only in a chat that holds a port, so no other chat's decisions
+    change. The decision is the reach table's (`Reach::decide_resolving`); the proxy only asks it.
+- **Live removal.** Removing a port's grant withdraws it from every open chat's proxy at once
+  (but a chat that holds it for itself), by any name; the Seatbelt rule of a Codex or opencode
+  chat goes at its next start, as before.
+- **The Notice.** A Claude Code chat's port Block offers the same Allow as Codex and opencode,
+  saying the name its commands reach it by. The chat restarts on its conversation to take it
+  and is told the name.
+- **kubectl: Point kubectl at it.** After the Allow, on the person's press, the Notice lists the
+  contexts of their kubeconfig (as `kubectl config view` reads it) and copies the one they pick
+  for that chat alone:
+  - only a context whose server is on this Mac (`127.0.0.1`, `localhost` or
+    `kubernetes.docker.internal`, over HTTPS); any other is listed with why and cannot be pressed,
+    and one that names a proxy of its own or skips the certificate check is refused;
+  - its server becomes `https://this-mac.internal:<port>` and `tls-server-name` the name it had,
+    so the certificate is still checked against the name it was made for;
+  - the copy is written into the chat's own folder at each of its starts, readable by its owner
+    only, named by `KUBECONFIG` for that chat alone, and removed when the chat ends; held in
+    memory by the chat's id, as a chat's own grant is;
+  - purlis never writes `~/.kube` or any kubeconfig of the person's. The chat restarts on its
+    conversation to take it.
+- **What it does not reach.** A program that uses no proxy (psql, redis-cli, mysql) cannot reach
+  a service on this Mac from a Claude Code chat this way. A brokered run for those is a separate
+  ticket.

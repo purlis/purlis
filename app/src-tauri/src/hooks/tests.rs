@@ -2470,7 +2470,7 @@ fn a_clear_begins_a_run_the_record_is_told_even_with_no_event_log() {
 /// refusal did not name is typed; Claude Code's sandbox takes no one port, so there its Notice
 /// offers Start without the sandbox, saying why.
 #[test]
-fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_takes_none_alone() {
+fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_is_carried_it_by_name() {
     use purlis_core::harness::Harness;
     use purlis_core::sandbox::localport::RISK;
     use purlis_core::sandboxblock::{Block, Kind, Operation};
@@ -2504,10 +2504,16 @@ fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_takes_none_alone()
         for_its_harness(Some(Harness::Opencode), named.clone()).0,
         BlockOffer::Port
     );
+    // qw384b: a Claude Code chat is offered the same Allow, its proxy carrying the port by the
+    // name its commands send a proxy, and the Notice says so beside the risk.
     let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), named);
-    assert_eq!(offer, BlockOffer::Unsandboxed);
+    assert_eq!(offer, BlockOffer::Port);
     assert_eq!(target.as_deref(), Some("50795"));
-    assert_eq!(why.as_deref(), Some(CLAUDE_CODE_PORT_SAID));
+    let why = why.expect("a route");
+    assert!(why.contains(RISK), "{why}");
+    assert!(why.contains(CLAUDE_CODE_PORT_SAID), "{why}");
+    assert!(CLAUDE_CODE_PORT_SAID.contains("this-mac.internal"));
+    assert!(CLAUDE_CODE_PORT_SAID.contains("kubectl"));
 }
 
 /// qw384 review: a port only printed words name is pre-filled for the person to check, on a
@@ -2546,8 +2552,8 @@ fn a_printed_port_is_only_ever_a_suggestion_on_a_notice_that_asks_for_one() {
     // No port a grant could name.
     let never = blocked(&plane, &line(Harness::Opencode, None, Some("0")));
     assert_eq!(never.suggested, None);
-    // A Notice that asks for no port.
+    // A Claude Code chat's Notice asks for the port too since qw384b: suggested alike.
     let claude = blocked(&plane, &line(Harness::ClaudeCode, None, Some("50795")));
-    assert_eq!(claude.offer, BlockOffer::Unsandboxed);
-    assert_eq!(claude.suggested, None);
+    assert_eq!(claude.offer, BlockOffer::Port);
+    assert_eq!(claude.suggested.as_deref(), Some("50795"));
 }

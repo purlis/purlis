@@ -69,6 +69,7 @@ mod inboxupdates;
 mod instance;
 mod ipc;
 mod killswitch;
+mod kubectl;
 mod lifecycle;
 mod live;
 mod mcpfailed;

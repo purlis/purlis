@@ -3029,6 +3029,9 @@ pub struct Confinement {
     /// The folder a Claude Code chat's route was written in, where no chat writes
     /// ([`Self::proxy_only_routed`]): removed as this ends.
     routed: Option<tempfile::TempDir>,
+    /// A folder of the chat's own made for what it keeps ([`Self::keep_own`]) where it has
+    /// neither of the two above: removed as this ends.
+    kept: Option<tempfile::TempDir>,
 }
 
 impl Confinement {
@@ -3061,6 +3064,7 @@ impl Confinement {
             asks,
             ssh,
             routed: None,
+            kept: None,
         })
     }
 
@@ -3075,6 +3079,7 @@ impl Confinement {
             asks,
             ssh: None,
             routed: None,
+            kept: None,
         })
     }
 
@@ -3127,6 +3132,37 @@ impl Confinement {
     /// The chat's own temp directory, which a proxy-only one has none of.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(tempfile::TempDir::path)
+    }
+
+    /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
+    /// for as long as it runs: its temp directory, or else the folder its ssh route was
+    /// written in, where no chat writes, or else a folder made for it. Readable by its owner
+    /// alone. Where the file is.
+    pub fn keep_own(&mut self, name: &str, text: &str) -> std::io::Result<PathBuf> {
+        let dir = match (&self.tmp, &self.routed, &self.kept) {
+            (Some(own), _, _) | (None, Some(own), _) | (None, None, Some(own)) => {
+                own.path().to_path_buf()
+            }
+            (None, None, None) => {
+                let made = tempfile::Builder::new().prefix("purlis-chat-").tempdir()?;
+                let path = made.path().to_path_buf();
+                self.kept = Some(made);
+                path
+            }
+        };
+        let path = dir.join(name);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        std::io::Write::write_all(&mut options.open(&path)?, text.as_bytes())?;
+        Ok(path)
+    }
+
+    /// **`port` of this machine is carried by its proxy no longer** (qw384b): its grant was
+    /// removed while the chat runs.
+    pub fn withdraw_port(&self, port: u16) {
+        self.proxy.withdraw_port(port);
     }
 }
 

@@ -36,6 +36,16 @@ use super::grant::Refused;
 /// name. Under `.internal`, which no public name is ever given.
 pub const THIS_MAC: &str = "this-mac.internal";
 
+/// What a chat whose commands send no address of this machine to a proxy (Claude Code's) is
+/// told of `port` once it is allowed (qw384b): the name its proxy carries it by.
+pub fn reached_by_name(port: u16) -> String {
+    format!(
+        "Its commands reach it through this chat's proxy as `{THIS_MAC}:{port}`, never as \
+         127.0.0.1 or localhost: `curl https://{THIS_MAC}:{port}`. A program that uses no proxy \
+         cannot reach it."
+    )
+}
+
 /// What allowing a service on this Mac means, in one honest line.
 pub const RISK: &str = "lets this chat connect to whatever listens on that port on this Mac, as \
                         you; a container engine's or a cluster's port can reach much of your \
@@ -190,7 +200,8 @@ pub fn seatbelt_rule(port: u16) -> String {
 
 /// **The port of a service on this Mac that `target` names**, where it names one on the
 /// loopback interface as the profile and the proxy carry it: `127.0.0.1:50795`, `[::1]:50795`,
-/// `localhost:50795`. None for any other address, a name, or no port.
+/// `localhost:50795`, and `this-mac.internal:50795` (qw384b). None for any other address, a name,
+/// or no port.
 pub fn loopback_port(target: &str) -> Option<u16> {
     let target = target.trim().trim_end_matches(['.', ',', ';']);
     let (host, port) = if let Some(rest) = target.strip_prefix('[') {
@@ -202,12 +213,30 @@ pub fn loopback_port(target: &str) -> Option<u16> {
     let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
     // Exactly the names the profile and the proxy carry ([`reach_entries`]): never another
     // address of the loopback block, which neither carries.
-    let loopback = host.eq_ignore_ascii_case("localhost")
+    let named = host.strip_suffix('.').unwrap_or(host);
+    let loopback = named.eq_ignore_ascii_case("localhost")
+        || named.eq_ignore_ascii_case(THIS_MAC)
         || host.parse::<IpAddr>().is_ok_and(|ip| {
             ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
                 || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
         });
     loopback.then_some(port)
+}
+
+/// **The port of this Mac a name the proxy refused as this machine names** (qw384b): what
+/// [`loopback_port`] names, and a name that `resolve` answers with this machine's loopback alone
+/// (`kubernetes.docker.internal:6443`). None for a name that resolves anywhere else, or nowhere.
+pub fn named_port(target: &str, resolve: &dyn Fn(&str) -> Vec<IpAddr>) -> Option<u16> {
+    if let Some(port) = loopback_port(target) {
+        return Some(port);
+    }
+    let (host, port) = target.trim().rsplit_once(':')?;
+    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
+    if host.is_empty() || host.starts_with('[') || host.parse::<IpAddr>().is_ok() {
+        return None;
+    }
+    let resolved = resolve(host);
+    (!resolved.is_empty() && resolved.iter().all(IpAddr::is_loopback)).then_some(port)
 }
 
 /// **The port a program's own refusal of a connection on this machine names** (qw384): Go's

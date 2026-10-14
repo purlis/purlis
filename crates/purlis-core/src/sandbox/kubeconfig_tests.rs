@@ -161,3 +161,34 @@ fn every_context_is_listed_with_its_server_and_whether_purlis_can_point_at_it() 
     assert_eq!(listed[2].port, None);
     assert!(listed[2].refused.is_some());
 }
+
+/// The copy is the chat's alone: in a folder of its own, readable by its owner only, and gone
+/// once the chat ends. Binds the chat's proxy: first run on CI.
+#[test]
+fn the_copy_is_kept_in_the_chats_own_folder_for_as_long_as_it_runs() {
+    use crate::sandbox::{Confinement, egress, reach::Reach};
+    let mut confinement =
+        Confinement::proxy_only(egress::Serving::of(Reach::default())).expect("a confinement");
+    let path = confinement
+        .keep_own(super::FILE, "{\"kind\": \"Config\"}")
+        .expect("kept");
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read back"),
+        "{\"kind\": \"Config\"}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path)
+            .expect("there")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    // Kept again: the same file, its words replaced.
+    let again = confinement.keep_own(super::FILE, "{}").expect("kept");
+    assert_eq!(again, path);
+    assert_eq!(std::fs::read_to_string(&path).expect("read back"), "{}");
+    drop(confinement);
+    assert!(!path.exists(), "gone with the chat");
+}

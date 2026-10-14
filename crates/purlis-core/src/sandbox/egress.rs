@@ -758,6 +758,12 @@ impl Proxy {
         &self.refusals
     }
 
+    /// **`port` of this machine is carried no longer** (qw384b): its grant was removed while
+    /// the chat runs ([`Reach::withdraw`]).
+    pub fn withdraw_port(&self, port: u16) {
+        self.allowed.reach.withdraw(port);
+    }
+
     /// The loopback port its HTTP proxy listens on.
     pub fn port(&self) -> u16 {
         self.http.port()

@@ -36,6 +36,9 @@ pub const ON_THIS_MAC: [&str; 3] = ["127.0.0.1", "localhost", "kubernetes.docker
 /// The file's name in the chat's own folder.
 pub const FILE: &str = "kubeconfig.json";
 
+/// The variable kubectl reads its kubeconfig's path from, set for the one chat.
+pub const ENV: &str = "KUBECONFIG";
+
 /// A context copied for one chat: the kubeconfig to write, and the port of this Mac it reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pointed {

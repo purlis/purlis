@@ -1555,6 +1555,13 @@ pub(crate) fn kept_for(
         )?;
     }
     let told = grant::told(what, level);
+    // A Claude Code chat reaches a service on this Mac by name alone (qw384b): told which.
+    let told = match (what, session.and_then(|session| chats.harness(session))) {
+        (What::Port(port), Some(purlis_core::harness::Harness::ClaudeCode)) => {
+            format!("{told} {}", sandbox::localport::reached_by_name(*port))
+        }
+        _ => told,
+    };
     match (what, level, session) {
         (_, Level::Once, Some(session)) => chats.hold_grant_once(session, what.clone(), at)?,
         (_, Level::Chat, Some(session)) => chats.hold_grant(session, what.clone(), at)?,
@@ -2144,6 +2151,13 @@ fn revoke(
             if let What::Host(host) = &grant {
                 chats.forget_live(Some(chat), host, level);
             }
+            // Carried by its proxy no longer (qw384b), unless this machine's file still holds
+            // it for every chat of the project.
+            if let What::Port(port) = &grant
+                && !sandbox::local::granted_ports(root).contains(port)
+            {
+                chats.withdraw_port(Some(chat), *port);
+            }
         }
         (What::Host(host), None) => {
             purlis_core::settings::hosts::revoke(root, hosts_file(level), host)?;
@@ -2176,6 +2190,9 @@ fn revoke(
         (What::Port(port), None) => {
             sandbox::local::revoke_port(root, *port)
                 .map_err(|why| format!("purlis could not remove port {port}: {why}"))?;
+            // Carried by no open chat's proxy any more but one that holds it for itself
+            // (qw384b).
+            chats.withdraw_port(None, *port);
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {

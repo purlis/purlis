@@ -1429,3 +1429,82 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
         told.lock().unwrap()
     );
 }
+
+// ---- qw384b: a service on this Mac by name, for a client that never proxies this machine -----
+
+/// A Claude Code chat's proxy holding `port` for the chat, as its start compiles it.
+fn holding(heard: &Heard, port: u16) -> Proxy {
+    Proxy::serving(super::egress::Serving {
+        any_port: true,
+        ..heard.serving(Reach::of(
+            super::localport::reach_entries(port)
+                .into_iter()
+                .map(|entry| (entry, By::Chat))
+                .collect(),
+        ))
+    })
+    .expect("a proxy")
+}
+
+#[test]
+fn this_mac_by_name_is_tunnelled_to_a_granted_port_and_each_connection_recorded() {
+    let (listener, port) = an_echo_server();
+    let echoed = echo_once(listener);
+    let heard = Heard::default();
+    let proxy = holding(&heard, port);
+    let mut client = to(&proxy);
+    let name = format!("{}:{port}", super::localport::THIS_MAC);
+    let said = status(
+        &mut client,
+        &format!("CONNECT {name} HTTP/1.1\r\nHost: {name}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    client.write_all(b"ping").expect("through the tunnel");
+    let mut back = [0u8; 4];
+    client.read_exact(&mut back).expect("echoed back");
+    assert_eq!(&back, b"ping");
+    assert_eq!(echoed.join().expect("the server"), b"ping");
+    drop(client);
+    drop(proxy);
+    // Recorded by the name it was reached by, and the layer that granted it.
+    assert_eq!(heard.reached(), [(Some(name), "chat", 1)]);
+}
+
+#[test]
+fn this_mac_by_name_is_refused_on_a_port_not_granted_and_once_withdrawn() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = holding(&heard, port);
+    let other = format!(
+        "{}:{}",
+        super::localport::THIS_MAC,
+        port.wrapping_add(1).max(1)
+    );
+    assert_eq!(
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT {other} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 403 Forbidden"
+    );
+    proxy.withdraw_port(port);
+    let name = format!("{}:{port}", super::localport::THIS_MAC);
+    assert_eq!(
+        status(&mut to(&proxy), &format!("CONNECT {name} HTTP/1.1\r\n\r\n")),
+        "HTTP/1.1 403 Forbidden"
+    );
+    assert_eq!(
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT {LOOPBACK}:{port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 403 Forbidden"
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "a withdrawn port was reached");
+    proxy.settled();
+    // Refused as this machine: a Block of a service on this Mac, never a host's ask.
+    assert!(heard.local().contains(&name), "{:?}", heard.local());
+    assert!(heard.refused().is_empty(), "{:?}", heard.refused());
+}
