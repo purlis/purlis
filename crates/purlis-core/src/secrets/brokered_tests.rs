@@ -1877,6 +1877,142 @@ fn vault_list_outside_a_sandboxed_chat_asks_no_app() {
 }
 
 // ----------------------------------------------------------------------------------------
+// `secret list <vault>` from a sandboxed chat, answered by the app (qw385)
+
+#[test]
+fn the_app_lists_a_vaults_key_names_for_a_persona_that_may_use_it_and_never_a_value() {
+    let project = project();
+    let root = project.path();
+    let ctx = Ctx::new(root, Env::of(&[]));
+    let keys = keys_for(&ctx, Some("devops"), "team").expect("its own vault");
+    assert_eq!(keys, ["KUBECONFIG", "TOKEN"]);
+    let wire = serde_json::to_string(&crate::hookwire::Answer::Keys { keys }).unwrap();
+    assert!(
+        !wire.contains(TOKEN) && !wire.contains("k8s-s3cret"),
+        "{wire}"
+    );
+
+    // A vault the persona may not use is refused as a brokered run is, naming the Allow.
+    let refused = keys_for(&ctx, Some("devops"), "other").expect_err("not its vault");
+    assert!(
+        refused.starts_with("vault 'other' is not one persona 'devops' may use"),
+        "{refused}"
+    );
+    assert!(refused.contains("press Allow"), "{refused}");
+    // A chat on no persona lists none.
+    assert!(keys_for(&ctx, None, "team").is_err());
+
+    // Once the person allows it, the same command lists it, with nothing restarted.
+    crate::sandbox::local::grant_vault(root, "other", "devops").unwrap();
+    assert_eq!(
+        keys_for(&ctx, Some("devops"), "other").expect("allowed"),
+        ["TOKEN"]
+    );
+}
+
+/// The app's answer to a vault's key names: chat 7, as persona `devops`, whatever the line
+/// says of anything but the vault.
+fn the_app_lists_keys(root: &Path) -> crate::hookwire::Answerer {
+    let root = root.to_path_buf();
+    Box::new(move |_, ask| match ask {
+        crate::hookwire::Ask::Keys { chat: 7, vault } => {
+            match keys_for(&Ctx::new(&root, Env::of(&[])), Some("devops"), &vault) {
+                Ok(keys) => crate::hookwire::Answer::Keys { keys },
+                Err(why) => crate::hookwire::Answer::No { why },
+            }
+        }
+        _ => crate::hookwire::Answer::No {
+            why: "not a key listing".into(),
+        },
+    })
+}
+
+#[test]
+fn secret_list_in_a_sandboxed_chat_is_the_apps_answer_after_an_allow_and_refused_before() {
+    // Screenshot 42: the vault was allowed, and `secret list` still read the vault file
+    // itself, which the chat's sandbox denies. Now the app answers it.
+    let project = project();
+    let root = project.path();
+    let (_dir, _reading, env) = an_app_answering(
+        Box::new(|_, _, writer| not_answered(writer)),
+        the_app_lists_keys(root),
+        Arc::new(AtomicBool::new(false)),
+    );
+    // The chat's own view has no vault to read at all.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let chat = chat_ctx(elsewhere.path(), &env);
+
+    let mut rec = Rec::default();
+    let code = super::super::cmd::list(&chat, "other", &mut rec);
+    assert_eq!(code, 1);
+    assert!(rec.out.is_empty());
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains("press Allow"), "{said}");
+
+    crate::sandbox::local::grant_vault(root, "other", "devops").unwrap();
+    let mut rec = Rec::default();
+    let code = super::super::cmd::list(&chat, "other", &mut rec);
+    assert_eq!(code, 0, "{:?}", rec.said);
+    assert_eq!(String::from_utf8_lossy(&rec.out), "TOKEN\n");
+}
+
+#[test]
+fn secret_list_outside_a_sandboxed_chat_asks_no_app() {
+    let project = project();
+    let asked = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&asked);
+    let (_dir, _reading, mut env) = an_app_answering(
+        Box::new(|_, _, writer| not_answered(writer)),
+        Box::new(move |_, _| {
+            seen.store(true, Ordering::SeqCst);
+            crate::hookwire::Answer::No {
+                why: "asked".into(),
+            }
+        }),
+        Arc::new(AtomicBool::new(false)),
+    );
+    env.retain(|(k, _)| k != crate::hookwire::SANDBOXED_ENV);
+    assert_eq!(
+        keys_from_the_app(&chat_ctx(project.path(), &env), "team"),
+        None
+    );
+    assert!(!asked.load(Ordering::SeqCst));
+}
+
+#[test]
+fn a_sandboxed_chat_is_refused_reading_a_value_with_the_route_that_works() {
+    let project = project();
+    let root = project.path();
+    let chat = Ctx::new(root, Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]));
+    let route = if cfg!(target_os = "macos") {
+        "purlis secret exec team --env NAME=key -- <tool>"
+    } else {
+        "terminal outside the chat"
+    };
+    let mut rec = Rec::default();
+    let code = super::super::cmd::get(&chat, "team", "TOKEN", true, true, &mut rec);
+    assert_eq!(code, 1);
+    assert!(rec.out.is_empty(), "nothing of the value");
+    let said = format!("{:?}", rec.said);
+    assert!(said.contains("does not read a vault's values"), "{said}");
+    assert!(said.contains("no Allow changes that"), "{said}");
+    assert!(said.contains("purlis secret list team"), "{said}");
+    assert!(said.contains(route), "{said}");
+    assert!(!said.contains("again"), "never 'run it again': {said}");
+    assert!(!said.contains(TOKEN), "{said}");
+
+    // Outside a sandboxed chat the person's own read goes on.
+    let person = Ctx::new(root, Env::of(&[]));
+    let mut rec = Rec::default();
+    assert_eq!(
+        super::super::cmd::get(&person, "team", "TOKEN", false, false, &mut rec),
+        0,
+        "{:?}",
+        rec.said
+    );
+}
+
+// ----------------------------------------------------------------------------------------
 // a host the run's sandbox refused (the brokered half of the block flow, #1338/#1342)
 
 /// What a brokered command's own output gives the chat when the run's proxy refused its host:

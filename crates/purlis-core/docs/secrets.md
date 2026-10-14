@@ -109,6 +109,10 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   **Allow {persona} to use this vault** and **Keep blocked**. Allow is kept on this machine
   beside the project, never in the committed registry; it is recorded, listed in Settings ›
   Sandbox › Granted and revoked there, and the next run reads it, so the chat does not restart.
+  The chat is then told exactly what now runs: `secret list` of that vault and the persona's
+  declared tools with it; reading a value directly stays refused. One Allow answers every chat
+  opened as that persona that was refused the same vault, and a press where the persona may
+  use the vault already says so and puts the notice away.
   A policy's `"vault-grants": false` forbids it. The other way forward is a dispatch to the
   persona the vault is tagged for. A chat's persona is fixed for its life, so nothing run in
   the chat changes which vaults it may use. A vault name the project does not register is
@@ -145,6 +149,15 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   refusal names what to run instead: `secret exec` through the app on macOS, and a terminal
   outside the chat where the app runs no command for a chat yet (Linux). Any other vault runs
   as before.
+- **A sandboxed chat lists a vault's key names through the app, and reads no value itself**
+  (qw385). `secret list <vault>` (and `persona secret list`) in a sandboxed chat is answered
+  by the app, which authorises the vault exactly as it does a brokered `secret exec` (the
+  vault is tagged for the chat's persona, or you allowed it) and answers the names alone. A
+  vault the persona may not use raises the same notice, whose Allow lets the same command run.
+  `secret get` and `secret cp` (and their `persona secret` forms) are refused in a sandboxed
+  chat for every provider, whatever was allowed; the refusal names `secret list` for the key
+  names and `secret exec` through a declared tool for a value (a terminal outside the chat on
+  Linux).
 - **A persona's tools: a plain `kubectl` that runs through `secret exec`** (#1407). The
   project's `charter.toml` can name the programs a persona's chats run with a vault's value:
 
@@ -255,7 +268,8 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   sends the browser to a sign-in service on another origin: the login fails closed (declare
   that service's page instead). The storage it hands over holds whatever the site keeps
   there, which for a site that keeps a credential in its local storage is that credential.
-- **`secret list <vault>`** prints the key names.
+- **`secret list <vault>`** prints the key names. In a sandboxed chat the app answers it, for
+  a vault the chat's persona may use.
 - **`secret get <vault> <key>`** prints a size band and a keyed fingerprint —
   `devops/API_TOKEN: present · 16–31 bytes · fp:9c41a0b7e5d2` — never the value. The
   fingerprint is `HMAC-SHA256` under a 32-byte key kept 0600 at `.charter/fingerprint.key`, so

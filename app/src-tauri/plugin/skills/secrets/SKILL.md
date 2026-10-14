@@ -20,6 +20,8 @@ purlis vault list                 # vaults: name, provider, persona, status. No 
                                   # In a sandboxed chat: name, provider, persona, and
                                   # whether THIS chat may use each ("may use" / "not allowed").
 purlis secret list <vault>        # the KEYS in one vault. No values.
+                                  # In a sandboxed chat the app answers it, for a vault
+                                  # this chat's persona may use.
 ```
 
 ## Store one: the value never goes on the command line
@@ -104,8 +106,10 @@ checks that this chat's persona may use the vault (the vault is tagged for it, o
 allowed it for that persona on this machine), runs the tool in this chat's sandbox, and streams
 the output back with each value's literal text masked. Do not try to read the vault some other
 way.
-`secret get` and `secret cp` of a vault held in the system keyring, and anything else that would
-read the keyring, are refused in a sandboxed chat; the refusal names what to run instead.
+`secret get` and `secret cp` are refused in a sandboxed chat for every vault, whatever the user
+allowed: a sandboxed chat never reads a value itself. Use `purlis secret list <vault>` for the
+key names and `purlis secret exec` through a declared tool for a value. Anything else that would
+read the keyring is refused too; each refusal names what to run instead.
 
 **When the command cannot reach a host** ("Forbidden", a refused connection) and purlis adds
 that its sandbox refused a connection to a host, that host is not one this chat may reach.
@@ -122,8 +126,9 @@ may reach; one it may not is refused with the same Allow on the tab. Do not add 
 `ProxyCommand` or `-F` of your own.
 
 **When a vault is refused for this chat's persona**, the refusal names the ways forward. A
-notice on this chat's tab lets the user press *Allow*; once they have, run the same command
-again, with no restart. Or dispatch the work to the persona the vault is tagged for, with the
+notice on this chat's tab lets the user press *Allow*; once they have, purlis tells this chat
+what now runs (`purlis secret list <vault>` and this persona's declared tools with it), with no
+restart. Run that, not a direct read of a value. Or dispatch the work to the persona the vault is tagged for, with the
 command the refusal names. A chat's persona is fixed for its life: do not try to change it,
 and do not edit a persona's file or the vault registry to get at the vault. `purlis vault
 list` shows which vaults this chat may use.

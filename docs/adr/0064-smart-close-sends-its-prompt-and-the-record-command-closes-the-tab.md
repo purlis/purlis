@@ -574,7 +574,8 @@ holds. It is one bracketed paste, then Enter, in one write, as the smart-close p
   waiting and asking nothing;
 - a chat that is asking the person something (a permission prompt, a question), a chat that has
   reported no state, and a chat whose program has ended are sent nothing. The Notice then says
-  *Ask the chat to run the command again.*
+  *Tell the chat it may now use the vault.* (ADR 0067's amendment of 2026-10-14, qw385, has the
+  line name what now runs, never "run the command again".)
 
 **An Enter never lands on a harness's own prompt.** There it would confirm the highlighted
 choice, and a press on one control would answer another.
