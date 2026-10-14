@@ -369,6 +369,7 @@ export function ChatNotices({
       <TasksSharingNotice plane={plane} session={session} />
       {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}
       <TaskPromptNotice
+        plane={plane}
         session={session}
         asks={asks}
         registry={
