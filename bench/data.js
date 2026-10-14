@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791940454037,
+  "lastUpdate": 1791941715465,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10332,6 +10332,48 @@ window.BENCHMARK_DATA = {
             "value": 101.605799,
             "unit": "ms",
             "extra": "median of 5 runs: 101.346, 101.545, 101.606, 102.079, 102.528 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "5c1f53608b732c19ed31753d58f3c08bc51d0ae4",
+          "message": "review(qw376): the quit test's hook id is read off unix too\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T05:34:04+04:00",
+          "tree_id": "ad8a16719918685eacef1cb22a31041342c3f43d",
+          "url": "https://github.com/purlis/purlis/commit/5c1f53608b732c19ed31753d58f3c08bc51d0ae4"
+        },
+        "date": 1791941714148,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4973905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.480, 0.482, 0.497, 0.499, 0.499 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3744165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.308, 16.331, 16.374, 16.377, 16.390 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.952509,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.511, 100.847, 100.953, 101.176, 101.448 ms"
           }
         ]
       }
