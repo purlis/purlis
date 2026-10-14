@@ -182,6 +182,8 @@ absence lowers the offer, never the product.
   because that passes nothing through purlis. A method that asks the client for a value is never
   used. When no usable method remains, purlis tells the operator to log in through the harness's
   own flow in a shell tab (the declaration's `login`), and the chat starts at its next level.
+  *(Amended by [ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md): the chat's profile is signed in through the harness's own flow,
+  shown in the window.)*
 - **Agent capabilities become harness capabilities for the run.** What the agent reports at
   `initialize` (loading a session, the prompt content it takes, and each optional method it
   advertises) is mapped onto ADR 0073 §6's harness capabilities for that run: `loadSession` is
