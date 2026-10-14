@@ -330,6 +330,12 @@ fn kind_of(tool: &str) -> Kind {
     }
 }
 
+/// Whether `tool`, by a harness's name for it, runs a shell command: Claude Code's and
+/// opencode's `Bash`, and Codex's shell tools (#1981).
+pub fn is_a_command(tool: &str) -> bool {
+    kind_of(tool) == Kind::Command
+}
+
 /// What the hook `word` says its chat is doing, from the payload a harness gave it, or nothing
 /// for a hook that is not a tool's.
 ///

@@ -1196,3 +1196,12 @@ task never started, and the person relayed by hand.
   report of its own later reaches the chat that asked too, and takes this one's place on its
   dispatch record. The chat that asked is flagged for the person, as for a task that came to
   nothing, and the count puts it there.
+- **The chat that asked can read what its task said and ran** (D-2): `purlis dispatch read
+  <chat>`, for its own tasks alone, by the app's record of whose task it is, while the task runs
+  and after it closed. It prints the task's last three messages and its last twenty shell
+  commands with the status its harness said, each line quoted as data under purlis's sentence,
+  masked as tool output is. The commands reach the app from the shell tool's post hooks on the
+  line the last message travels on, never spooled or recorded, and are kept in memory for a
+  task alone. The full conversation stays the person's, in the task's tab. Claude Code still
+  asks the person before `read` runs: it joins the pre-allowed dispatch words of ADR 0064 only
+  when that is ruled.

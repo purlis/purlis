@@ -1594,6 +1594,25 @@ fn tell_the_host_about_the_tool_call(
             },
         );
     }
+    // A shell command of the chat's own that came back, with its status (#1981): what
+    // `purlis dispatch read` lists of a task. On a line of its own, sent once and never spooled.
+    if call.agent.is_none()
+        && let Some(turn_output) = hookwire::Output::of_ran(
+            word,
+            &data,
+            purlis_core::envvar::var(hookwire::HARNESS_ENV).as_deref(),
+        )
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            token.as_ref(),
+            &hookwire::TurnOutput {
+                chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(payload, &purlis_core::envvar::var),
+            },
+        );
+    }
 }
 
 /// Each sandbox block a block word found in the call's result, to the host, when one is

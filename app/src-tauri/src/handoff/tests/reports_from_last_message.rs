@@ -162,3 +162,48 @@ fn what_a_chat_that_is_no_task_said_is_not_kept() {
     its_turn_ends_saying(&held, steward, "The steward's own words.");
     assert_eq!(held.tasks().ledger().last_said(steward), None);
 }
+
+// ----- reading what a task said and ran (#1981) ----------------------------------------------
+
+#[test]
+fn the_chat_that_asked_reads_what_its_task_said_and_ran_and_no_other_chat_does() {
+    use purlis_core::dispatched::{Answered, Ran, What};
+    let (plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    a_turn_begins(&held, task);
+    crate::dispatched::said(
+        &held,
+        TurnOutput {
+            chat: task,
+            turn_output: Output::Ran {
+                command: "cargo test -p core".to_owned(),
+                exit: Some(101),
+                failed: true,
+            },
+            speaker: purlis_core::hookwire::Speaker::default(),
+        },
+    );
+    its_turn_ends_saying(&held, task, "Two tests fail in core.");
+
+    let said = asks(&held, &id, steward, What::Output { of: task });
+    let Answer::Task(answered) = said else {
+        panic!("answered, not {said:?}");
+    };
+    assert_eq!(
+        *answered,
+        Answered::Output {
+            of: task,
+            name: "check prod".to_owned(),
+            finals: vec!["Two tests fail in core.".to_owned()],
+            ran: vec![Ran::shown("cargo test -p core", Some(101), true)],
+        }
+    );
+
+    // Another chat of the project, which did not dispatch it, is refused.
+    let alpha = held.root().join("workspaces").join("alpha");
+    let other = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+    let said = asks(&held, &id, other, What::Output { of: task });
+    assert!(matches!(said, Answer::No { .. }), "{said:?}");
+    // And the task reads nothing of itself through it.
+    let said = asks(&held, &id, task, What::Output { of: task });
+    assert!(matches!(said, Answer::No { .. }), "{said:?}");
+}

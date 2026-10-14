@@ -2241,12 +2241,79 @@ pub enum Output {
         /// The message, cut to [`Output::MOST_BYTES`] by the hook.
         text: String,
     },
+    /// A shell command the turn ran, as its tool's hook heard it come back (#1981): what
+    /// `purlis dispatch read` lists of a task.
+    Ran {
+        /// The command line, cut to [`Output::MOST_COMMAND_BYTES`] by the hook.
+        command: String,
+        /// Its exit status, where the harness said one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit: Option<i32>,
+        /// Whether its harness said it failed, with or without a status.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        failed: bool,
+    },
 }
 
 impl Output {
     /// The most bytes of a message the hook sends: a report's text is far shorter, and what is
     /// kept is cut again to it.
     pub const MOST_BYTES: usize = 16 * 1024;
+
+    /// The most bytes of a command line the hook sends.
+    pub const MOST_COMMAND_BYTES: usize = 1024;
+
+    /// The command a shell tool's post hook `word` heard come back, from its `payload`, or none
+    /// for any other hook or tool (#1981). `harness` is the chat's harness, by the word the
+    /// project calls it ([`HARNESS_ENV`]).
+    ///
+    /// **The status is the harness's word, where it says one**: opencode's (purlis's plugin
+    /// sends `exit_code`); Claude Code's, whose `PostToolUse` fires for a command that
+    /// succeeded and `PostToolUseFailure` for one that did not, with "Exit code N" in its
+    /// error. A command left running in the background has no status yet.
+    pub fn of_ran(word: &str, payload: &serde_json::Value, harness: Option<&str>) -> Option<Self> {
+        if !word.starts_with("posttooluse") {
+            return None;
+        }
+        if !crate::doing::is_a_command(payload["tool_name"].as_str()?) {
+            return None;
+        }
+        let input = &payload["tool_input"];
+        let command = match &input["command"] {
+            serde_json::Value::String(line) => line.trim().to_owned(),
+            serde_json::Value::Array(words) => words
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => return None,
+        };
+        if command.is_empty() {
+            return None;
+        }
+        let mut end = command.len().min(Self::MOST_COMMAND_BYTES);
+        while !command.is_char_boundary(end) {
+            end -= 1;
+        }
+        let failure = word.starts_with("posttoolusefailure");
+        let background = input["run_in_background"].as_bool() == Some(true);
+        let exit = payload["exit_code"]
+            .as_i64()
+            .and_then(|code| i32::try_from(code).ok())
+            .or_else(|| {
+                failure
+                    .then(|| payload["error"].as_str().and_then(exit_code_in))
+                    .flatten()
+            })
+            .or_else(|| {
+                (!failure && !background && harness == Some(BACKGROUND_TASKS_HARNESS)).then_some(0)
+            });
+        Some(Self::Ran {
+            command: command[..end].to_owned(),
+            exit,
+            failed: failure || exit.is_some_and(|code| code != 0),
+        })
+    }
 
     /// The last message `text` of a turn, cut on a character to [`Self::MOST_BYTES`], or none
     /// for one with nothing in it.
@@ -2270,6 +2337,16 @@ impl Output {
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
         Self::last_message(read.get("last_assistant_message")?.as_str()?)
     }
+}
+
+/// The status in a Claude Code `PostToolUseFailure` error: "Exit code N" at its start.
+fn exit_code_in(error: &str) -> Option<i32> {
+    let rest = error.trim_start().strip_prefix("Exit code ")?;
+    let digits: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
+    digits.parse().ok()
 }
 
 /// What hears a [`TurnOutput`]. Nothing is answered: the hook does not wait for it.
@@ -7463,6 +7540,94 @@ mod tests {
         ] {
             assert_eq!(Output::of_stop(none), None, "{none}");
         }
+    }
+
+    #[test]
+    fn a_command_s_end_is_read_with_the_status_each_harness_says() {
+        let claude = |word: &str, more: serde_json::Value| {
+            let mut payload = serde_json::json!({
+                "tool_name": "Bash",
+                "tool_input": {"command": "cargo test -p core"},
+            });
+            for (key, value) in more.as_object().unwrap() {
+                payload[key] = value.clone();
+            }
+            Output::of_ran(word, &payload, Some("claude-code"))
+        };
+        let ran = |exit: Option<i32>, failed: bool| {
+            Some(Output::Ran {
+                command: "cargo test -p core".to_owned(),
+                exit,
+                failed,
+            })
+        };
+        // Claude Code: its post hook fires for a command that succeeded.
+        assert_eq!(
+            claude("posttooluse-blocked", serde_json::json!({})),
+            ran(Some(0), false)
+        );
+        // And its failure hook for one that did not, with the status in its error.
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Exit code 101\nerror: test failed"})
+            ),
+            ran(Some(101), true)
+        );
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Interrupted"})
+            ),
+            ran(None, true)
+        );
+        // A command left running in the background has no status yet.
+        let background = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "sleep 60", "run_in_background": true},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &background, Some("claude-code")),
+            Some(Output::Ran {
+                command: "sleep 60".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // opencode: purlis's plugin sends the status.
+        let opencode = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "exit_code": 2,
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &opencode, Some("opencode")),
+            Some(Output::Ran {
+                command: "ls".to_owned(),
+                exit: Some(2),
+                failed: true
+            })
+        );
+        // Codex: its shell's words, and no status it says.
+        let codex = serde_json::json!({
+            "tool_name": "shell",
+            "tool_input": {"command": ["bash", "-lc", "make"]},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &codex, Some("codex")),
+            Some(Output::Ran {
+                command: "bash -lc make".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // Not a command's end: nothing.
+        assert_eq!(claude("pretooluse", serde_json::json!({})), None);
+        let edit = serde_json::json!({"tool_name": "Edit", "tool_input": {"command": "x"}});
+        assert_eq!(
+            Output::of_ran("posttooluse", &edit, Some("claude-code")),
+            None
+        );
     }
 
     #[test]
