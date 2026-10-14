@@ -345,10 +345,14 @@ rule while one who reads a bare refusal files an issue.
   A redirection on the line (`2>&1`, `> /dev/null`, a pipe into `tail`) is the shell's, not
   git's: `git rebase <upstream> 2>&1 | tail -5` is judged as `git rebase <upstream>`.
 
-  A path a sparse checkout leaves out of the folder is one git does not write, and is not
-  counted: where `core.sparseCheckout` is on there, git's own `sparse-checkout check-rules`
-  says which those are. A sparse clone that leaves the denied files out moves freely. Where
-  git does not answer, every path counts.
+  A path the folder's own sparse checkout leaves out is one git does not write, and is not
+  counted, where nothing on the line changes that checkout: the move is the only git that
+  writes on its line, sets no configuration there (`-c`, `--config-env`, `GIT_CONFIG_*`),
+  takes no option that checks out past the patterns, and no `git sparse-checkout` is beside
+  it. Then, where `core.sparseCheckout` is on in the folder, git's own `sparse-checkout
+  check-rules` says which paths those are. Otherwise, or where git does not answer, every path
+  counts. A word spelled like a redirection but quoted (`'>'`) is an operand: on such a line
+  nothing is read as a redirection.
 
   A folder with no commit yet (after `git init` and a `fetch`) has nothing to compare with:
   a move there answers for the whole tree of the commit it lands on. So does any checkout,

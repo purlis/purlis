@@ -190,6 +190,7 @@ fn place(alone: bool) -> Place<'static> {
         root: "/project",
         chat_dir: Some(Path::new("/project/workspaces/ide")),
         alone,
+        sparse: alone,
     }
 }
 
@@ -519,6 +520,55 @@ fn a_sparse_checkout_that_leaves_the_denied_files_out_is_not_refused_for_them() 
         said.contains("would write `app/.vscode/tasks.json`"),
         "{said}"
     );
+}
+
+#[test]
+fn a_sparse_checkout_counts_only_where_nothing_on_the_line_can_change_it() {
+    // The folder's own patterns decide what git writes only where the line leaves them be.
+    let sparse = Fake {
+        left_out: vec!["app", "fixtures"],
+        ..a_clone()
+    };
+    let f = folders();
+    for kept in ["git checkout tasks", "git rebase origin/tasks"] {
+        assert_eq!(f.asked(kept, &sparse), None, "{kept}");
+    }
+    for stopped in [
+        // Configuration given on the line.
+        "git -c core.sparseCheckout=false checkout tasks",
+        "git --config-env=core.sparseCheckout=OFF checkout tasks",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.sparseCheckout GIT_CONFIG_VALUE_0=false git \
+         checkout tasks",
+        "GIT_CONFIG_PARAMETERS=\"'core.sparsecheckout'='false'\" git checkout tasks",
+        // An option that checks out past the patterns.
+        "git checkout --ignore-skip-worktree-bits tasks -- .",
+        "git restore --ignore-skip-worktree-bits --source tasks .",
+        "git read-tree -mu --no-sparse-checkout tasks",
+        // The patterns changed on the same line.
+        "git sparse-checkout disable && git checkout tasks",
+        "printf '/*' > ../.git/info/sparse-checkout; git checkout tasks",
+    ] {
+        let (_, said) = f
+            .asked(stopped, &sparse)
+            .unwrap_or_else(|| panic!("{stopped}: allowed"));
+        assert!(said.contains("app/.vscode/tasks.json"), "{stopped}: {said}");
+    }
+}
+
+#[test]
+fn a_quoted_word_spelled_like_a_redirection_is_an_operand() {
+    // `'>'` is a file name to git, and the path after it is named for the command.
+    let f = folders();
+    for line in [
+        "git checkout main -- '>' app/.vscode/tasks.json",
+        "git checkout main -- \\> app/.vscode/tasks.json",
+        "git checkout main -- \">\" app/.vscode/tasks.json",
+    ] {
+        let (_, said) = f
+            .asked(line, &a_clone())
+            .unwrap_or_else(|| panic!("{line}: allowed"));
+        assert!(said.contains("app/.vscode/tasks.json"), "{line}: {said}");
+    }
 }
 
 // (b) A checkout of a branch that differs in a denied path.

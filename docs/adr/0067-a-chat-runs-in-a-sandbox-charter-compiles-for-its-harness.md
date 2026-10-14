@@ -1395,8 +1395,10 @@ The guard of the qw349 note above counts a denied path only where git would writ
 sparse checkout is on in the folder (`core.sparseCheckout`, as git reads it there), git writes
 no path its patterns leave out, whatever a move changes, so those are dropped: git's own
 `sparse-checkout check-rules` is asked, through the hardened runner, which of the denied paths
-they are. Where git does not answer, every path counts. A command that cannot finish still does
-not start.
+they are, only where nothing on the line can change that checkout (configuration the line
+sets, an option that checks out past the patterns, a `git sparse-checkout` beside the move, or
+any other writer before it). Where git does not answer, every path counts. A command that
+cannot finish still does not start.
 
 ## Amended (2026-10-14, qw387; amends section 2): a chat's workspace create is made whole — to be confirmed
 
