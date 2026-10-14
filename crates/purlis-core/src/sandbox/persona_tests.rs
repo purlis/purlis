@@ -805,9 +805,8 @@ fn a_resume_whose_persona_declares_a_tool_the_trusted_one_does_not_is_held() {
     );
 }
 
-/// A tool is judged by the program it runs, not only the name it is declared under: one whose
-/// program, as found on this machine and as its links resolve, is one no tool may be is left out
-/// of what is shown and allowed, and says why.
+/// A tool whose program, as found on this machine and as its links resolve, is one no tool may
+/// be is left out of what is shown and allowed, and says why.
 #[test]
 fn a_tool_whose_program_is_one_no_tool_may_be_is_not_shown_or_allowed_and_says_why() {
     use super::persona::{digest_of, shown_in};

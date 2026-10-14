@@ -222,7 +222,7 @@ fn the_real_program_is_found_only_where_no_chat_writes() {
         resolved.ready,
         [Ready {
             tool: kubectl(),
-            program: real,
+            program: real.canonicalize().expect("real"),
         }]
     );
     assert_eq!(resolved.left, Vec::<String>::new());
@@ -334,7 +334,7 @@ fn a_tool_is_armed_for_a_chat_only_once_this_machine_allows_it() {
         armed(&listed).expect("armed").ready,
         [Ready {
             tool: kubectl(),
-            program: real,
+            program: real.canonicalize().expect("real"),
         }]
     );
     // A teammate hands it another key: no shim until it is allowed again.
@@ -1012,7 +1012,7 @@ fn the_sentence_is_not_part_of_what_an_allow_is_bound_to() {
 }
 
 #[test]
-fn a_tool_is_judged_by_the_program_it_runs_not_only_the_name_it_is_declared_under() {
+fn a_tool_whose_program_runs_what_it_is_told_is_refused_as_found_and_as_its_links_resolve() {
     for target in ["bash", "Python3.12", "env"] {
         let base = outside_temp("judged");
         let system = base.join("system");
@@ -1055,5 +1055,96 @@ fn a_tool_is_judged_by_the_program_it_runs_not_only_the_name_it_is_declared_unde
     assert_eq!(resolved.ready.len(), 1, "{:?}", resolved.left);
     assert_eq!(refused_program(&kubectl(), &system.join("kubectl")), None);
     assert!(refused_program(&token_tool("fetch"), Path::new("/bin/SH")).is_some());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn a_tool_runs_the_program_its_start_judged_by_its_resolved_path() {
+    let base = outside_temp("bound");
+    let system = base.join("system");
+    let real = program(&base.join("elsewhere"), "kubectl-1.31");
+    std::fs::create_dir_all(&system).expect("dir");
+    std::os::unix::fs::symlink(&real, system.join("kubectl")).expect("link");
+    let resolved = resolve(
+        &base.join("project"),
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        &[],
+    )
+    .expect("tools");
+    assert_eq!(
+        resolved.ready,
+        [Ready {
+            tool: kubectl(),
+            program: real.canonicalize().expect("real"),
+        }]
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn every_link_on_the_way_to_a_tool_s_program_is_where_no_chat_writes() {
+    let base = outside_temp("chain");
+    let system = base.join("system");
+    let granted = base.join("granted");
+    let real = program(&base.join("elsewhere"), "kubectl");
+    std::fs::create_dir_all(&system).expect("dir");
+    std::fs::create_dir_all(&granted).expect("dir");
+    // A link in a folder no chat writes, to a link in one a chat writes, to the program.
+    std::os::unix::fs::symlink(&real, granted.join("middle")).expect("link");
+    std::os::unix::fs::symlink(granted.join("middle"), system.join("kubectl")).expect("link");
+    let resolved = resolve(
+        &base.join("project"),
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        std::slice::from_ref(&granted),
+    )
+    .expect("tools");
+    assert_eq!(resolved.ready, Vec::<Ready>::new());
+    assert!(
+        resolved.left[0].contains("no kubectl was found"),
+        "{:?}",
+        resolved.left
+    );
+    // A folder on the way that is a link through one a chat writes is the same.
+    let via = base.join("via");
+    std::fs::create_dir_all(granted.join("bin")).expect("dir");
+    std::os::unix::fs::symlink(&real, granted.join("bin/kubectl")).expect("link");
+    std::os::unix::fs::symlink(&granted, via.with_extension("d")).expect("link");
+    std::fs::create_dir_all(&via).expect("dir");
+    std::os::unix::fs::symlink(
+        via.with_extension("d").join("bin/kubectl"),
+        via.join("kubectl"),
+    )
+    .expect("link");
+    let resolved = resolve(
+        &base.join("project"),
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&via),
+        std::slice::from_ref(&granted),
+    )
+    .expect("tools");
+    assert_eq!(resolved.ready, Vec::<Ready>::new(), "{:?}", resolved.left);
+    // With nothing on the way a chat writes, the same chain runs the program itself.
+    let resolved = resolve(
+        &base.join("project"),
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        &[],
+    )
+    .expect("tools");
+    assert_eq!(resolved.ready.len(), 1, "{:?}", resolved.left);
+    assert_eq!(
+        resolved.ready[0].program,
+        real.canonicalize().expect("real")
+    );
     let _ = std::fs::remove_dir_all(&base);
 }

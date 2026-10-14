@@ -325,12 +325,10 @@ fn reached(grants: &Grants, locks: &Locks) -> Vec<Host> {
         .collect()
 }
 
-/// `persona`'s tools in `grants` as a chat would get them under `locks`: none a policy forbids
-/// (`persona-tools`), so the Notice never asks for a tool no chat would get.
-/// `grants`' tools a chat would get under `locks` in the project at `root`: none a policy
-/// forbids, and none whose program here is one no tool may be (a tool is judged by the program
-/// it runs, not only the name it is declared under: [`super::tools::refused_here`]), each with
-/// why, in that order.
+/// `persona`'s tools in `grants` as a chat would get them under `locks` in the project at
+/// `root`, so the Notice never asks for a tool no chat would get: none a policy forbids
+/// (`persona-tools`), and none refused for the program it runs here
+/// ([`super::tools::refused_here`]); the sentence for each one so refused.
 fn reached_tools(
     root: &Path,
     persona: &str,
@@ -464,8 +462,8 @@ pub struct Shown {
     pub digest: String,
     /// Where the Allow kept here stands.
     pub standing: Standing,
-    /// Each of its tools left out of [`Self::tools`] because its program here is one no tool may
-    /// be, as one sentence: a tool is judged by the program it runs, not only its name.
+    /// Each of its tools left out of [`Self::tools`] because the program it runs here is one no
+    /// tool may be, as one sentence.
     pub refused: Vec<String>,
 }
 
