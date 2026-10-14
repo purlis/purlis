@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { commands } from "./bindings";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";

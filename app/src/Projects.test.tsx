@@ -941,11 +941,12 @@ describe("a project that is not in front stays drawn, off the window", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
-  it("takes down what a part of the view asked over the window, when a notification brings another project forward", async () => {
+  it("puts away what a part of the view asked over the window, when a notification brings another project forward", async () => {
     // The review's case: a confirm opened deeper in a project's view is drawn over the whole
     // window. Kept with its project, "Delete persona steward?" asked in one project stood over
-    // another, named no project, and deleted in the first. A project that leaves the front
-    // with anything asked over the window is taken down, as every project used to be.
+    // another, named no project, and deleted in the first. Every overlay's portal asks whether
+    // its project is shown (`overlays/`), so it is put away with the project and is there
+    // again when the person is back in the project it is about.
     const planes = ["/home/dev/p0", "/home/dev/p1"];
     const { asked, notified } = core({
       launch: null,
@@ -968,7 +969,7 @@ describe("a project that is not in front stays drawn, off the window", () => {
     // project's own state.
     fireEvent.click(screen.getByTestId("status-doctor"));
     expect(await screen.findByRole("dialog", { name: "Doctor" })).toBeInTheDocument();
-    expect(open(planes[0])).toBe(1);
+    const built = started(planes[0]);
 
     // No press reaches a tab under a dialog; a clicked notification changes the project anyway.
     act(() => notified(planes[1], 1));
@@ -976,11 +977,13 @@ describe("a project that is not in front stays drawn, off the window", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    // Taken down whole: its pane was closed, once.
-    await waitFor(() => expect(open(planes[0])).toBe(0));
-    // And it is built again, without the dialog, when the person goes back.
-    await goTo(0);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    // The other project is not held by it: nothing of a dialog is left on the document.
+    expect(document.body.style.pointerEvents).not.toBe("none");
+
+    // Back in the project it was opened in, it is there again, and the project was kept.
+    fireEvent.click(projectTab("p0"));
+    expect(await screen.findByRole("dialog", { name: "Doctor" })).toBeInTheDocument();
+    expect(started(planes[0])).toBe(built);
     expect(open(planes[0])).toBe(1);
   });
 

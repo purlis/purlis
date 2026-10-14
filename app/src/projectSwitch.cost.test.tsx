@@ -15,8 +15,9 @@ import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
  * and 15 more for each chat of the project it showed, unmounted as many of the one it hid, sent
  * the core some fifty commands, and closed one terminal to start another. With the view of a
  * project kept while another is in front, it mounts the gear on the project's tab and nothing
- * else, starts no terminal, and sends eight commands before it is painted, which say which
- * project is in front, and five after, which read again what the view held while it was away.
+ * and little else, starts no terminal, and sends ten commands before it is painted, which say
+ * which project is in front, and seven after, which read again what the view held while it was
+ * away.
  *
  * **Held by counts, which are the same on every machine**, and not by milliseconds, which here
  * are jsdom's (ADR 0086). Each budget is far above what a switch costs now and far below what
@@ -49,17 +50,18 @@ const line = (shape: Shape, one: Switch) =>
     syncMs: Math.round(one.syncMs),
   });
 
-/** The most a switch between two projects kept drawn may mount or unmount. It mounts 3 now, the
- *  gear on the tab of the project in front; built again, a view of twenty chats mounts 1,099. */
+/** The most a switch between two projects kept drawn may mount or unmount. It mounts 5 now, the
+ *  gear on the tab of the project in front among them; built again, a view of twenty chats
+ *  mounts 1,099. */
 const MOUNTS = 60;
 /** The most commands such a switch may send the core before the press returns, which is before
- *  the project is painted. It sends 8 now, which say which project is in front and whose Inbox
- *  is open; a view built again sent 49, all of them then. */
+ *  the project is painted. It sends 10 now, which say which project is in front and whose
+ *  Inbox is open; a view built again sent 49, all of them then. */
 const COMMANDS_AT_ONCE = 12;
-/** The most it may send in all, with what it reads again once it is painted. It sends 13. */
+/** The most it may send in all, with what it reads again once it is painted. It sends 17. */
 const COMMANDS = 24;
-/** The most times React may commit for it, the reads' answers among them. It commits 4 times
- *  now, one of them after the paint, and did 5 before it. */
+/** The most times React may commit for it, the reads' answers among them. It commits 5 times
+ *  now, two of them small ones after the paint. */
 const COMMITS = 6;
 
 describe("what a project switch costs", () => {

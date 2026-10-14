@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { Info } from "lucide-react";
 import { commands, type About } from "./bindings";
 import { ExternalLink, ReleaseNotes } from "./ReleaseNotes";

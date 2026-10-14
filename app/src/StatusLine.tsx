@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Bell, FolderRoot } from "lucide-react";
-import * as Tooltip from "@radix-ui/react-tooltip";
+import * as Tooltip from "./overlays/tooltip";
 import type { WorkspaceState } from "./workspaceState";
 import { Health, type DoctorState } from "./Doctor";
 import { PinItem } from "./Updates";

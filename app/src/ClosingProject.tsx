@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef } from "react";
-import * as Alert from "@radix-ui/react-alert-dialog";
+import * as Alert from "./overlays/alert-dialog";
 import { useFocusBack } from "./EndingChat";
 import { EndingList, type Ending } from "./QuitWarning";
 import { AnswerBar } from "./AnswerBar";

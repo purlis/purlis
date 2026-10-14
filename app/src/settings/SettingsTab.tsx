@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import * as Menu from "@radix-ui/react-dropdown-menu";
+import * as Menu from "../overlays/dropdown-menu";
 import { Check, LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type SettingsEdit, type SettingsWhich } from "../bindings";
 import { NewPersona } from "../NewPersona";

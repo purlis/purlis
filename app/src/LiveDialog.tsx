@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as AlertDialog from "./overlays/alert-dialog";
 import { Radio } from "lucide-react";
 import { commands, type LivePreview, type PlaneId, type RemoteReaders } from "./bindings";
 import { askSavingTab, tellSaved } from "./saving";

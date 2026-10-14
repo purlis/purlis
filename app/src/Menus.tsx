@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, type KeyboardEvent, type ReactNode } from "react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as ContextMenu from "./overlays/context-menu";
 import { Check, ChevronRight } from "lucide-react";
 import { noteOf, type Catalogued, type MenuOn, type Offer } from "./actions";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";

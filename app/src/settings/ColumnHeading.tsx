@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as Tooltip from "@radix-ui/react-tooltip";
+import * as Tooltip from "../overlays/tooltip";
 
 /**
  * **A settings table's column heading** (DS-9, #1841; spec #1832 stories 20-21): one line, in the

@@ -14,7 +14,7 @@
  * The trigger carries what it holds as `data-value`, for the window's e2e specs to read the way
  * they read a field's value.
  */
-import * as Radix from "@radix-ui/react-select";
+import * as Radix from "../overlays/select";
 import { Check } from "lucide-react";
 
 /** An option: what a pick writes, the words it shows, and whether it can be picked. An option

@@ -205,7 +205,7 @@ describe("what is drawn over the whole window, as a project leaves the front", (
     for (const one of [own, tip, palette, menu]) one.remove();
   });
 
-  it("is said by the view as it leaves, once, and only then", () => {
+  it("is said by the view once the press that made it leave is over, once, and only then", async () => {
     const { own, slot } = aWindow();
     const covered = vi.fn();
     const drawn = (shown: boolean) => <Leaving shown={shown} slot={slot} onLeftCovered={covered} />;
@@ -215,12 +215,16 @@ describe("what is drawn over the whole window, as a project leaves the front", (
     expect(covered).not.toHaveBeenCalled();
 
     rerender(drawn(false));
+    // Not in the middle of the press: a menu closes after the row that switched.
+    expect(covered).not.toHaveBeenCalled();
+    await act(async () => {});
     expect(covered).toHaveBeenCalledTimes(1);
 
     // Coming back, and leaving with nothing asked, says nothing.
     asked.remove();
     rerender(drawn(true));
     rerender(drawn(false));
+    await act(async () => {});
     expect(covered).toHaveBeenCalledTimes(1);
     own.remove();
   });

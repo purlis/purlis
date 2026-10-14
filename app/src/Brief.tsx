@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { ScrollText } from "lucide-react";
 import { commands, type BriefOf, type PlaneId, type TaskBrief } from "./bindings";
 import { AnswerBar } from "./AnswerBar";

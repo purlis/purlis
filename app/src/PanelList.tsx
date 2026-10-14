@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useId, useMemo, useState, type ReactNode } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import * as Popover from "./overlays/popover";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import clsx from "clsx";
 import {

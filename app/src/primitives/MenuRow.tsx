@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import * as Tooltip from "@radix-ui/react-tooltip";
+import * as Tooltip from "../overlays/tooltip";
 
 /**
  * **What is inside a menu's row** (`docs/ui-primitives.md`, "Menus"): its words, the one line

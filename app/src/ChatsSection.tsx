@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import * as Popover from "@radix-ui/react-popover";
+import * as Popover from "./overlays/popover";
 import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
 import {
   besideId,

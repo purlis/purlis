@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { Check, LoaderCircle, Stethoscope, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { Notice } from "./Notice";
 import { landSettingsFocus } from "./settings/entering";

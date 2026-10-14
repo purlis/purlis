@@ -95,13 +95,16 @@ describe("the core's synchronous commands", () => {
     for (const asked of one.asked) expect(asked.ms).toBeGreaterThanOrEqual(30);
   });
 
-  it("are not counted for a switch long over", async () => {
+  it("are not counted for a switch long over, nor measured: a gauge asks for as long as the window is up", async () => {
     mockIPC(() => null);
     startTheSwitchClock();
     switched("/home/dev/one", undefined);
     await vi.advanceTimersByTimeAsync(5_000);
-    await commands.sandboxState("/home/dev/one");
+    const measured = vi.spyOn(performance, "measure");
+    for (let n = 0; n < 50; n++) await commands.chatUsage("/home/dev/one", 1);
     expect((await held())[0].asked).toEqual([]);
+    expect(measured).not.toHaveBeenCalled();
+    measured.mockRestore();
   });
 });
 

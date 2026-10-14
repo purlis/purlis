@@ -15,6 +15,7 @@ import {
   SRC,
   sourceFiles,
   withoutComments,
+  RADIX_FROM,
 } from "./guards.testkit";
 
 /**
@@ -70,9 +71,14 @@ const BUTTON_PARTS = new Set(["Trigger", "Close", "Cancel", "Action"]);
 /** Each Radix namespace a file imports, by the name it uses: `{ Menu: "dropdown-menu" }`. */
 function radixNames(text: string): Map<string, string> {
   return new Map(
-    [...text.matchAll(/import\s+\*\s+as\s+(\w+)\s+from\s+["']@radix-ui\/react-([\w-]+)["']/g)].map(
-      ([, name, pkg]) => [name, pkg],
-    ),
+    [
+      ...text.matchAll(
+        new RegExp(
+          String.raw`import\s+\*\s+as\s+(\w+)\s+from\s+["']${RADIX_FROM}([\w-]+)["']`,
+          "g",
+        ),
+      ),
+    ].map(([, name, pkg]) => [name, pkg]),
   );
 }
 

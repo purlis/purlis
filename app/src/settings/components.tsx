@@ -16,7 +16,7 @@ import * as Checkbox from "@radix-ui/react-checkbox";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import * as Switch from "@radix-ui/react-switch";
-import * as Tooltip from "@radix-ui/react-tooltip";
+import * as Tooltip from "../overlays/tooltip";
 import { Check, Info, ListFilter } from "lucide-react";
 import { Select } from "../primitives/Select";
 import { useTabStop } from "../roving";

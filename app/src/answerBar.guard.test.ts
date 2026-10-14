@@ -4,6 +4,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { RADIX_FROM } from "./guards.testkit";
 
 /**
  * **Every question dialog is answered from one bar** (DS-3e's follow-up, #1210, D-1210-1).
@@ -60,7 +61,7 @@ const divs = (source: string) => [...source.matchAll(/<div\b[^>]*>/g)].map(([tag
 
 /** Whether a file draws a dialog: it imports one of Radix's two. */
 export const drawsADialog = (source: string) =>
-  /from\s+["']@radix-ui\/react-(?:alert-)?dialog["']/.test(source);
+  new RegExp(String.raw`from\s+["']${RADIX_FROM}(?:alert-)?dialog["']`).test(source);
 
 /** What a file builds by hand that the bar draws, as `file: class`. */
 export function handBuilt({ name, text }: { name: string; text: string }): string[] {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 
