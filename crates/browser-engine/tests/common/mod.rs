@@ -9,6 +9,8 @@
 
 #![allow(dead_code)]
 
+pub mod fixture;
+
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};

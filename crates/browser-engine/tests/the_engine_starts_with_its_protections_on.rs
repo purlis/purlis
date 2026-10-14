@@ -10,15 +10,27 @@ use std::ffi::{OsStr, OsString};
 use std::net::SocketAddr;
 use std::path::Path;
 
+mod common;
+
 use purlis_browser_engine::launch::{Launch, ReachProxy};
 use serde_json::Value;
 
 fn launch(data: &Path) -> Launch {
-    Launch {
-        program: "/opt/engine/chrome".into(),
-        data_dir: data.to_owned(),
-        reach_proxy: ReachProxy("127.0.0.1:40123".parse::<SocketAddr>().unwrap()),
-    }
+    launch_via(
+        data,
+        ReachProxy("127.0.0.1:40123".parse::<SocketAddr>().unwrap()),
+    )
+}
+
+fn launch_via(data: &Path, proxy: ReachProxy) -> Launch {
+    // Any file will do as the executable: nothing here starts it.
+    let program = data.join("chrome");
+    std::fs::write(&program, "").unwrap();
+    Launch::new(
+        &common::fixture::chosen(&program),
+        data.join("profile"),
+        proxy,
+    )
 }
 
 fn arguments(data: &Path) -> Vec<String> {
@@ -88,8 +100,7 @@ fn the_reach_proxy_is_the_only_route_and_loopback_is_not_bypassed() {
 #[test]
 fn an_ipv6_reach_proxy_is_written_in_brackets() {
     let data = tempfile::tempdir().unwrap();
-    let mut launch = launch(data.path());
-    launch.reach_proxy = ReachProxy("[::1]:40123".parse().unwrap());
+    let launch = launch_via(data.path(), ReachProxy("[::1]:40123".parse().unwrap()));
     let args: Vec<String> = launch
         .arguments()
         .into_iter()
@@ -131,7 +142,7 @@ fn crash_reports_are_off_and_the_engine_has_no_window_and_its_own_data_folder() 
     ] {
         assert!(args.iter().any(|a| a == on), "{on} missing from {args:?}");
     }
-    let folder = format!("--user-data-dir={}", data.path().display());
+    let folder = format!("--user-data-dir={}", data.path().join("profile").display());
     assert!(args.contains(&folder), "{args:?}");
     assert_eq!(args.last().map(String::as_str), Some("about:blank"));
 }
@@ -140,9 +151,10 @@ fn crash_reports_are_off_and_the_engine_has_no_window_and_its_own_data_folder() 
 fn password_saving_and_autofill_are_off_in_the_data_folder() {
     let data = tempfile::tempdir().unwrap();
     launch(data.path()).prepare_data_dir().unwrap();
-    let prefs: Value =
-        serde_json::from_slice(&std::fs::read(data.path().join("Default/Preferences")).unwrap())
-            .unwrap();
+    let prefs: Value = serde_json::from_slice(
+        &std::fs::read(data.path().join("profile/Default/Preferences")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(prefs["credentials_enable_service"], false);
     assert_eq!(prefs["profile"]["password_manager_enabled"], false);
     assert_eq!(prefs["autofill"]["profile_enabled"], false);
@@ -152,16 +164,17 @@ fn password_saving_and_autofill_are_off_in_the_data_folder() {
 #[test]
 fn a_kept_data_folder_keeps_its_own_preferences_and_still_gets_the_protections() {
     let data = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(data.path().join("Default")).unwrap();
+    std::fs::create_dir_all(data.path().join("profile/Default")).unwrap();
     std::fs::write(
-        data.path().join("Default/Preferences"),
+        data.path().join("profile/Default/Preferences"),
         r#"{"homepage":"https://example.com","profile":{"password_manager_enabled":true,"name":"qa"}}"#,
     )
     .unwrap();
     launch(data.path()).prepare_data_dir().unwrap();
-    let prefs: Value =
-        serde_json::from_slice(&std::fs::read(data.path().join("Default/Preferences")).unwrap())
-            .unwrap();
+    let prefs: Value = serde_json::from_slice(
+        &std::fs::read(data.path().join("profile/Default/Preferences")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(prefs["homepage"], "https://example.com");
     assert_eq!(prefs["profile"]["name"], "qa");
     assert_eq!(prefs["profile"]["password_manager_enabled"], false);

@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 
+use crate::install::Ready;
+
 /// The address of the browser's reach proxy, its only route out. The proxy itself is the
 /// session host's (#2011); the engine is only told where it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,12 +36,9 @@ pub struct ReachProxy(pub SocketAddr);
 /// One engine's start.
 #[derive(Debug, Clone)]
 pub struct Launch {
-    /// The engine's executable, as [`crate::install`] proved it or the person chose it.
-    pub program: PathBuf,
-    /// The browser's own data folder: one per browser, never shared by two running engines.
-    pub data_dir: PathBuf,
-    /// Where the browser's reach proxy listens.
-    pub reach_proxy: ReachProxy,
+    program: PathBuf,
+    data_dir: PathBuf,
+    reach_proxy: ReachProxy,
 }
 
 /// The variables the engine is given from the host's environment, and no others: where home
@@ -50,6 +49,27 @@ pub const ENVIRONMENT_KEPT: &[&str] = &[
 ];
 
 impl Launch {
+    /// The start of the engine `ready` proved, with `data_dir` as the browser's own data
+    /// folder (one per browser, never shared by two running engines), its only route out the
+    /// reach proxy at `reach_proxy`.
+    pub fn new(ready: &Ready, data_dir: impl Into<PathBuf>, reach_proxy: ReachProxy) -> Self {
+        Self {
+            program: ready.program().to_owned(),
+            data_dir: data_dir.into(),
+            reach_proxy,
+        }
+    }
+
+    /// The engine's executable.
+    pub fn program(&self) -> &Path {
+        &self.program
+    }
+
+    /// The browser's data folder.
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
     /// The engine's arguments, the program itself not included.
     pub fn arguments(&self) -> Vec<OsString> {
         let proxy = self.reach_proxy.0;

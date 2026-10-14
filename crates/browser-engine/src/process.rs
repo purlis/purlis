@@ -24,7 +24,7 @@
 
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
-use std::io::{self, PipeReader, PipeWriter};
+use std::io::{self, PipeReader, PipeWriter, Read};
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::CommandExt;
@@ -80,15 +80,26 @@ impl EngineGroup {
             .args(&keeper.args)
             .env_clear()
             .stdin(Stdio::from(lifeline_read))
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .process_group(0)
             .spawn()?;
-        Ok(Self {
+        let mut group = Self {
             keeper,
             lifeline: Some(lifeline),
             ended: false,
-        })
+        };
+        // Nothing joins the group until its keeper says it guards it.
+        let mut said = vec![0_u8; crate::keeper::READY.len()];
+        let ready = group
+            .keeper
+            .stdout
+            .take()
+            .map(|mut out| out.read_exact(&mut said));
+        if !matches!(ready, Some(Ok(()))) || said != crate::keeper::READY {
+            return Err(io::Error::other("the engine's keeper did not start"));
+        }
+        Ok(group)
     }
 
     /// The process group's id, which is the keeper's pid.
@@ -155,7 +166,7 @@ impl Engine {
         let group = EngineGroup::start(keeper).map_err(StartError::Spawn)?;
         let (engine_reads, host_writes) = io::pipe().map_err(StartError::Spawn)?;
         let (host_reads, engine_writes) = io::pipe().map_err(StartError::Spawn)?;
-        let log = File::create(launch.data_dir.join("engine.log")).map_err(StartError::Spawn)?;
+        let log = File::create(launch.data_dir().join("engine.log")).map_err(StartError::Spawn)?;
         let null = File::open("/dev/null").map_err(StartError::Spawn)?;
         let environment = launch.environment(std::env::vars_os());
         let pid = spawn_engine(
@@ -325,7 +336,7 @@ fn spawn_engine(
     )
     .map_err(io::Error::from)?;
 
-    let program = c_string(launch.program.as_os_str())?;
+    let program = c_string(launch.program().as_os_str())?;
     let mut args = vec![program.clone()];
     for arg in launch.arguments() {
         args.push(c_string(&arg)?);

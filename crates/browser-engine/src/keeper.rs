@@ -22,6 +22,9 @@ use std::time::Duration;
 /// How long the engine has to end by itself after its host goes, before the group is killed.
 pub const GRACE: Duration = Duration::from_millis(400);
 
+/// What the keeper writes to its stdout once it guards its group.
+pub const READY: &[u8] = b"ready\n";
+
 /// The keeper's whole program: wait for the lifeline to end, then end the group. Called by
 /// `purlis-engine-keeper`, and by any binary that runs the keeper as a mode of its own.
 #[cfg(unix)]
@@ -46,6 +49,13 @@ pub fn run() -> ! {
         held.add(signal);
     }
     let _ = sigprocmask(SigmaskHow::SIG_BLOCK, Some(&held), None);
+    // Ready: the host waits for this byte before it starts the engine, so there is no moment
+    // when the engine runs and its keeper does not yet guard it.
+    {
+        use std::io::Write;
+        let mut stdout = io::stdout().lock();
+        let _ = stdout.write_all(READY).and_then(|()| stdout.flush());
+    }
     let mut stdin = io::stdin().lock();
     let mut sink = [0_u8; 256];
     loop {

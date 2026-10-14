@@ -51,12 +51,13 @@ fn keeper() -> Keeper {
 }
 
 fn launch(program: PathBuf, data: &std::path::Path) -> Launch {
-    Launch {
-        program,
-        data_dir: data.to_owned(),
-        // Nothing listens here: pages fail to load, and nothing leaves the machine.
-        reach_proxy: ReachProxy("127.0.0.1:9".parse().unwrap()),
-    }
+    // Nothing listens at the proxy's address: pages fail to load, and nothing leaves the
+    // machine.
+    Launch::new(
+        &common::fixture::chosen(&program),
+        data.to_owned(),
+        ReachProxy("127.0.0.1:9".parse().unwrap()),
+    )
 }
 
 /// Starts an engine and opens a page, so its renderer processes run too.
