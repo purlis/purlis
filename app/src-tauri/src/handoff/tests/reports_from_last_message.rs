@@ -99,8 +99,19 @@ fn a_task_that_ends_two_turns_without_a_report_is_asked_once_then_reported_for()
     // Typed once: the made report is not asked for.
     assert_eq!(host.typed(task), vec![the_report_ask()]);
     // Its record says how, and its program runs on: it may still send its own report.
-    let record = crate::finished::task_record(&held, task);
-    assert!(record.is_some(), "it has a record");
+    let (record_id, _) = crate::finished::task_record(&held, task).expect("it has a record");
+    let recorded = |held: &Held| {
+        purlis_core::dispatchrecord::read(held.root(), &record_id)
+            .and_then(|record| record.report)
+            .map(|report| (report.outcome, report.text))
+    };
+    assert_eq!(
+        recorded(&held),
+        Some((
+            purlis_core::dispatchrecord::Outcome::LastMessage,
+            "Checked: 3 errors, all from the cache.".to_owned()
+        ))
+    );
     assert!(open_chats(&held).contains(&task));
 
     // Its own report, sent later, reaches the chat that asked as well.
@@ -114,6 +125,11 @@ fn a_task_that_ends_two_turns_without_a_report_is_asked_once_then_reported_for()
     assert_eq!(
         word[0].task.as_ref().map(|task| task.outcome),
         Some(Outcome::Done)
+    );
+    // And it takes the made one's place on the task's dispatch record.
+    assert_eq!(
+        recorded(&held).map(|(outcome, _)| outcome),
+        Some(purlis_core::dispatchrecord::Outcome::Done)
     );
 }
 
