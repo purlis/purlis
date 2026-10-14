@@ -6132,7 +6132,7 @@ pub(crate) mod tests {
     fn a_port_removed_while_a_chat_runs_is_withdrawn_from_its_proxy_unless_it_still_holds_it() {
         use purlis_core::sandbox::grant::What;
         let plane = a_sandboxed_plane();
-        let (chats, host) = armed_for_opencode(plane.path());
+        let (chats, _host) = armed_for_opencode(plane.path());
         let ready = ready_under(
             Harness::Opencode,
             a_sandbox_for(Harness::Opencode, plane.path()),
