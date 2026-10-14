@@ -1502,10 +1502,17 @@ impl Chats {
         for (number, board) in boards {
             let retry = board.allow(host, level.into());
             if !retry.is_empty() {
-                self.tell_network(
-                    number,
-                    purlis_core::dispatchtalk::NetworkWord::Retry { hosts: retry },
-                );
+                for target in retry {
+                    self.tell_outcome(
+                        number,
+                        purlis_core::askoutcome::Outcome {
+                            about: purlis_core::askoutcome::About::Host { host: target },
+                            answer: purlis_core::askoutcome::Answer::Allowed {
+                                scope: purlis_core::askoutcome::Scope::of(level),
+                            },
+                        },
+                    );
+                }
                 live.told_to_retry.push(number);
             }
             live.reached.push(number);
@@ -1533,29 +1540,25 @@ impl Chats {
     }
 
     /// **The person kept `host` blocked for chat `session`, from the window** (#1666): what its
-    /// proxy holds on it is refused now, and the chat is told, in purlis's fixed words, not to
-    /// try again unless asked (#1411). Nothing is granted.
+    /// proxy holds on it is refused now. Nothing is granted. The chat is told by whoever kept
+    /// it blocked ([`Self::tell_outcome`], #1987).
     pub fn keep_blocked_live(&self, session: u32, host: &purlis_core::sandbox::hosts::Host) {
         if let Some(board) = self.board_of(session) {
             board.keep_blocked(host);
         }
-        self.tell_network(
-            session,
-            purlis_core::dispatchtalk::NetworkWord::KeptBlocked {
-                hosts: vec![host.to_string()],
-            },
-        );
     }
 
-    /// Hands chat `session`'s next turn purlis's word on its held connections (#1666), on the
-    /// road the person's words take: from the app's memory, never a file.
-    fn tell_network(&self, session: u32, word: purlis_core::dispatchtalk::NetworkWord) {
+    /// **Hands chat `session`'s next turn the person's answer to an Ask of its** (#1666,
+    /// #1987), in [`purlis_core::askoutcome::Outcome::line`]'s one line, on the road the
+    /// person's words take: from the app's memory, never a file. Every answer the window gives
+    /// a chat's Ask that does not restart it is told through here.
+    pub fn tell_outcome(&self, session: u32, outcome: purlis_core::askoutcome::Outcome) {
         if let Some(tell) = lock(&self.network_words).clone() {
-            tell(session, word);
+            tell(session, outcome);
         }
     }
 
-    /// Who keeps purlis's word on a chat's held connections for its next turn (#1666).
+    /// Who keeps purlis's word on a chat's Asks for its next turn (#1666, #1987).
     pub fn tell_network_words_to(&self, keep: NetworkWords) {
         *lock(&self.network_words) = Some(keep);
     }
@@ -4254,8 +4257,7 @@ pub struct Live {
 }
 
 /// What keeps purlis's word on a chat's held connections for its next turn (#1666).
-pub type NetworkWords =
-    Arc<dyn Fn(u32, purlis_core::dispatchtalk::NetworkWord) + Send + Sync + 'static>;
+pub type NetworkWords = Arc<dyn Fn(u32, purlis_core::askoutcome::Outcome) + Send + Sync + 'static>;
 
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;

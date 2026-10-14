@@ -1711,9 +1711,10 @@ pub async fn allow_sandbox_block(
 }
 
 /// **Keep blocked** on a block's Notice (#1666, taking over #1411's line): `shown` is the block
-/// the Notice showed. Refused unless the chat is held on that block now (#1538). Nothing is
-/// granted. For a host, what the chat's proxy holds on it is refused now, and the chat is told,
-/// in purlis's fixed words, not to try it again unless the person asks.
+/// the Notice showed, `reason` what the person typed for the chat, if anything. Refused unless
+/// the chat is held on that block now (#1538). Nothing is granted. For a host, what the chat's
+/// proxy holds on it is refused now; for every kind, the chat is told in one line not to retry,
+/// with the reason (#1987).
 #[tauri::command]
 #[specta::specta]
 pub fn keep_sandbox_block(
@@ -1721,9 +1722,10 @@ pub fn keep_sandbox_block(
     plane: PlaneId,
     session: u32,
     shown: crate::taskblocks::BlockShown,
+    reason: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    let block = keep_block(held.chats(), session, &shown)?;
+    let block = keep_block(held.chats(), session, &shown, reason.as_deref())?;
     // The person's no, kept where the Inbox's look back reads it (#1700).
     if block.what == GrantWhat::Host {
         crate::network::record_kept_blocked(
@@ -1742,6 +1744,7 @@ pub(crate) fn keep_block(
     chats: &crate::chats::Chats,
     session: u32,
     shown: &crate::taskblocks::BlockShown,
+    reason: Option<&str>,
 ) -> Result<crate::taskblocks::HeldBlock, String> {
     let block = crate::taskblocks::shown_one(chats.blocks(), session, shown)?;
     chats.blocks().answered(session, &block);
@@ -1750,6 +1753,7 @@ pub(crate) fn keep_block(
     {
         chats.keep_blocked_live(session, &host);
     }
+    crate::askoutcome::kept_blocked(chats, session, (block.what, &shown.target), reason);
     Ok(block)
 }
 

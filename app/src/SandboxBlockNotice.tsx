@@ -532,8 +532,26 @@ function AllowNotice({
     if (busy) return;
     const targets = hosts.length > 0 ? asking : block.target !== null ? [block.target] : [];
     if (keepSaid !== undefined) sayWay(keepSaid, targets);
-    if (what !== "host" || targets.length === 0) {
+    if (targets.length === 0) {
       onDismiss();
+      return;
+    }
+    // Anything but a host: the chat is told in one line not to retry (#1987), then the Notice
+    // goes as it always did, whatever the answer.
+    if (what !== "host") {
+      setBusy(true);
+      void commands
+        .keepSandboxBlock(
+          block.plane,
+          block.session,
+          { operation: block.operation, kind: block.kind, what, target: targets[0] },
+          null,
+        )
+        .catch(() => undefined)
+        .finally(() => {
+          setBusy(false);
+          onDismiss();
+        });
       return;
     }
     setBusy(true);
@@ -541,12 +559,17 @@ function AllowNotice({
     void Promise.all(
       targets.map((one) =>
         commands
-          .keepSandboxBlock(block.plane, block.session, {
-            operation: block.operation,
-            kind: block.kind,
-            what,
-            target: one,
-          })
+          .keepSandboxBlock(
+            block.plane,
+            block.session,
+            {
+              operation: block.operation,
+              kind: block.kind,
+              what,
+              target: one,
+            },
+            null,
+          )
           .then((done) => (done.status === "error" ? done.error : undefined))
           .catch((err: unknown) => `purlis could not keep it blocked: ${String(err)}`),
       ),

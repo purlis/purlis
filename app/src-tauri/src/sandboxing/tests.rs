@@ -72,7 +72,7 @@ fn an_allow_says_whether_the_command_carries_on_or_the_chat_restarts() {
 #[test]
 fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() {
     let chats = crate::chats::Chats::new();
-    let told: std::sync::Arc<std::sync::Mutex<Vec<(u32, purlis_core::dispatchtalk::NetworkWord)>>> =
+    let told: std::sync::Arc<std::sync::Mutex<Vec<(u32, purlis_core::askoutcome::Outcome)>>> =
         std::sync::Arc::default();
     let keep = std::sync::Arc::clone(&told);
     chats.tell_network_words_to(std::sync::Arc::new(move |session, word| {
@@ -85,7 +85,7 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
         target: "paste.example:8443".to_owned(),
     };
     // Not held on it: refused whole, and the chat is told nothing.
-    assert!(keep_block(&chats, 4, &shown).is_err());
+    assert!(keep_block(&chats, 4, &shown, None).is_err());
     assert!(told.lock().unwrap().is_empty());
     chats.blocks().heard(
         4,
@@ -96,18 +96,21 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
             target: "paste.example:8443".to_owned(),
         },
     );
-    keep_block(&chats, 4, &shown).expect("kept blocked");
+    keep_block(&chats, 4, &shown, None).expect("kept blocked");
     assert_eq!(
         *told.lock().unwrap(),
         vec![(
             4,
-            purlis_core::dispatchtalk::NetworkWord::KeptBlocked {
-                hosts: vec!["paste.example:8443".to_owned()],
+            purlis_core::askoutcome::Outcome {
+                about: purlis_core::askoutcome::About::Host {
+                    host: "paste.example:8443".to_owned(),
+                },
+                answer: purlis_core::askoutcome::Answer::KeptBlocked { reason: None },
             },
         )]
     );
     // Answered: a second press finds nothing held.
-    assert!(keep_block(&chats, 4, &shown).is_err());
+    assert!(keep_block(&chats, 4, &shown, None).is_err());
 }
 
 // ---- an administrator's policy (#1343), through the test build's seam ----

@@ -53,7 +53,12 @@ const STANDS: Record<string, { count: number; why: string }> = {
   "ChatsSection.tsx": { count: 1, why: FILTER },
   "Explorer.tsx": { count: 1, why: FILTER },
   "ForgeTokenSignIn.tsx": { count: 1, why: `the token box: ${SECRET}` },
-  "Inbox.tsx": { count: 1, why: "a reply typed into an Inbox row, a stop of the list it is in" },
+  "Inbox.tsx": {
+    count: 2,
+    why:
+      "a reply typed into an Inbox row, and why a sandbox ask is kept blocked (#1987): each a " +
+      "stop of the list it is in",
+  },
   "FindBar.tsx": {
     count: 1,
     why: "the find box, its own bar over a chat's terminal or a file (#1088)",

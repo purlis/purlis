@@ -967,6 +967,35 @@ nothing restarts.
 7. **Bounded.** At most a few connections are held per chat at once; one more is refused at
    once, as before, and raises its own Block.
 
+## Amended (2026-10-14, the operator's ruling Q64, #1987; amends the 2026-10-10 paragraphs on Keep blocked and on what a chat is told): every Ask's answer reaches the chat as one line
+
+The person's answer to an Ask a chat's refusal raised, a host, a folder, a local socket or
+service, or a vault, reaches that chat as one line of purlis's own, written in one place
+(`purlis_core::askoutcome::Outcome::line`):
+
+- an Allow: `` ⬢ purlis: reaching `api.example.com:443` — Allowed for this chat — retry. ``, with
+  the scope the person chose;
+- a Keep blocked: `⬢ purlis: … — Kept blocked by the person — don't retry; their reason,
+  quoted as data: "…"`, or `… don't retry; no reason given.` where they gave none.
+
+1. **One road for each case, one set of words for all of them.** An Allow that restarts the
+   chat is the restart's first message; an Allow its proxy takes live after the command gave up
+   waiting, and every Keep blocked, are handed to the chat's next turn
+   (`Chats::tell_outcome`); a vault's Allow is typed into a waiting chat, as before, and is
+   handed to its next turn where it cannot be typed. A later answer to the same Ask takes the
+   place of one the chat has not been handed yet. A command the proxy held and let through is
+   answered by its own success, and nothing more is said.
+2. **Keep blocked tells the chat for every kind**, not only a host. Before, a folder, a socket,
+   a service or a vault kept blocked was not told.
+3. **The reason is the person's own words.** The Inbox's row of a sandbox ask has an optional
+   box for it beside Keep blocked; a Notice's Keep blocked stays one press and says none. The
+   chat is told it on one line, cut to 200 characters and quoted as a JSON string. It is the
+   person's text, never a secret.
+4. **A vault's Allow line keeps what qw385 added**: after the one line, on the same line, what
+   the Allow now runs and that a direct read of a value stays refused.
+
+No CLI word and no key of the project's format was added.
+
 ## Amended (2026-10-10, #1667; amends section 3): tunnels for clients that skip the proxy
 
 The operator's decisions of 2026-10-10 on spec #1661 (N-4 and N-9): a client that opens its own

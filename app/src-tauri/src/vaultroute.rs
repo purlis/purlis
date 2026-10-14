@@ -35,8 +35,9 @@
 //! - a chat mid-turn has it queued until its turn ends ([`reported`]), because a line typed
 //!   into a turn lands in whatever the harness is doing;
 //! - a chat that is asking the person something (a permission prompt, a question), or whose
-//!   state purlis does not know, is sent nothing, and the Notice says to ask the chat. **An
-//!   Enter never lands on a harness's prompt**: there it would confirm the highlighted choice.
+//!   state purlis does not know, is sent nothing: it is handed the line's first part
+//!   ([`allowed_outcome`], #1987) when its next turn starts. **An Enter never lands on a
+//!   harness's prompt**: there it would confirm the highlighted choice.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -505,10 +506,23 @@ pub fn told_allowed(grant: &sandbox::local::VaultGrant, tooled: bool) -> String 
              command that uses one runs in a terminal outside the chat on this system."
         )
     };
-    format!(
-        "purlis: the person allowed chats opened as {persona} to use vault {vault} on this \
-         machine. Nothing restarted. {opens}"
-    )
+    format!("{} {opens}", allowed_outcome(grant).line())
+}
+
+/// **The Ask an Allow of `grant` answered** (#1987): the line [`told_allowed`] starts with, and
+/// what a chat that is not sent it now is handed at its next turn.
+pub fn allowed_outcome(grant: &sandbox::local::VaultGrant) -> purlis_core::askoutcome::Outcome {
+    use purlis_core::askoutcome::{About, Answer, Outcome, Scope};
+    Outcome {
+        about: About::Vault {
+            vault: grant.vault.clone(),
+        },
+        answer: Answer::Allowed {
+            scope: Scope::Persona {
+                persona: grant.persona.clone(),
+            },
+        },
+    }
 }
 
 /// What the Notice says once a vault is allowed, by what became of the line to the chat.
@@ -520,7 +534,7 @@ pub fn allowed_said(grant: &sandbox::local::VaultGrant, told: Told) -> String {
     let then = match told {
         Told::Sent => "The chat is told what now runs.",
         Told::Queued => "The chat is told what now runs when its turn ends.",
-        Told::NotSent => "Tell the chat it may now use the vault.",
+        Told::NotSent => "The chat is told when it next starts a turn.",
     };
     format!(
         "Allowed. Chats opened as {} can use vault {} in this project on this machine. {then} \
@@ -615,6 +629,10 @@ pub async fn allow_refused_vault(
                     .input(chat, sent_as(text).as_bytes())
             },
         );
+        // Not sent now and not queued: handed to its next turn instead, so it is told (#1987).
+        if told == Told::NotSent {
+            held.chats().tell_outcome(session, allowed_outcome(&grant));
+        }
         Ok(VaultAnswered {
             said: allowed_said(&grant, told),
         })
@@ -622,8 +640,9 @@ pub async fn allow_refused_vault(
     .await
 }
 
-/// **Keep blocked** on a refused vault's Notice: puts it away, and changes nothing. The chat's
-/// next try at the vault raises it again.
+/// **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
+/// next turn is told in one line not to retry, with `reason`, what the person typed for it, if
+/// anything (#1987). Its next try at the vault raises the Notice again.
 #[tauri::command]
 #[specta::specta]
 pub fn keep_vault_blocked(
@@ -631,11 +650,16 @@ pub fn keep_vault_blocked(
     plane: PlaneId,
     session: u32,
     vault: String,
+    reason: Option<String>,
 ) -> Result<(), String> {
-    planes
-        .held(&plane)?
-        .vault_refusals()
-        .put_away(session, &vault);
+    let held = planes.held(&plane)?;
+    held.vault_refusals().put_away(session, &vault);
+    crate::askoutcome::kept_blocked(
+        held.chats(),
+        session,
+        (crate::sandboxing::GrantWhat::Vault, &vault),
+        reason.as_deref(),
+    );
     Ok(())
 }
 
@@ -827,21 +851,22 @@ mod tests {
 
     /// What chat 3 is told once steward is allowed `devops`, where steward declares no tool
     /// with it: what now runs, and nothing else (qw385).
-    const TOLD_DEVOPS: &str = "purlis: the person allowed chats opened as steward to use vault \
-                               devops on this machine. Nothing restarted. `purlis secret list \
-                               devops` now lists its key names here. Reading a value directly \
-                               (`secret get`, `secret cp`) stays refused in a sandboxed chat.";
+    const TOLD_DEVOPS: &str = "⬢ purlis: using vault `devops` — Allowed for chats opened as \
+                               `steward` in this project on this machine — retry. `purlis \
+                               secret list devops` now lists its key names here. Reading a value \
+                               directly (`secret get`, `secret cp`) stays refused in a sandboxed \
+                               chat.";
 
     /// The same, where steward declares a tool with `devops`.
     const TOLD_DEVOPS_TOOLED: &str = if cfg!(target_os = "macos") {
-        "purlis: the person allowed chats opened as steward to use vault devops on this \
-         machine. Nothing restarted. `purlis secret list devops` now lists its key names here, \
+        "⬢ purlis: using vault `devops` — Allowed for chats opened as `steward` in this project \
+         on this machine — retry. `purlis secret list devops` now lists its key names here, \
          and the tools steward declares with it now run (`purlis secret exec devops … -- \
          <tool>`). Reading a value directly (`secret get`, `secret cp`) stays refused in a \
          sandboxed chat."
     } else {
-        "purlis: the person allowed chats opened as steward to use vault devops on this \
-         machine. Nothing restarted. `purlis secret list devops` now lists its key names here. \
+        "⬢ purlis: using vault `devops` — Allowed for chats opened as `steward` in this project \
+         on this machine — retry. `purlis secret list devops` now lists its key names here. \
          Reading a value directly (`secret get`, `secret cp`) stays refused in a sandboxed \
          chat, and a command that uses one runs in a terminal outside the chat on this system."
     };
@@ -1321,11 +1346,11 @@ mod tests {
         );
         assert_eq!(
             allowed_said(&grant, Told::NotSent),
-            format!("{head} Tell the chat it may now use the vault. It does not restart.")
+            format!("{head} The chat is told when it next starts a turn. It does not restart.")
         );
         let sent = sent_as(&told_allowed(&grant, false));
         assert!(
-            sent.starts_with("\x1b[200~purlis: the person allowed"),
+            sent.starts_with("\x1b[200~⬢ purlis: using vault `devops` — Allowed"),
             "{sent:?}"
         );
         assert!(

@@ -873,9 +873,10 @@ pub fn keep_sandbox_block_for_tasks(
     plane: PlaneId,
     session: u32,
     seen: Vec<SeenBlock>,
+    reason: Option<String>,
 ) -> Result<Vec<u32>, String> {
     let held = planes.held(&plane)?;
-    keep_blocked(held.chats(), session, &seen)
+    keep_blocked(held.chats(), session, &seen, reason.as_deref())
 }
 
 /// [`keep_sandbox_block_for_tasks`] on `chats`.
@@ -883,16 +884,21 @@ pub fn keep_blocked(
     chats: &crate::chats::Chats,
     session: u32,
     seen: &[SeenBlock],
+    reason: Option<&str>,
 ) -> Result<Vec<u32>, String> {
     let (tasks, block) = reading(chats, |reading| checked(session, seen, reading))?;
     let_go(chats, seen, &tasks);
-    // Each task is told, and what its proxy holds on the host is refused now (#1666, #1411).
+    // What each task's proxy holds on the host is refused now (#1666, #1411), and each task is
+    // told in one line, with the reason (#1987).
     if block.what == GrantWhat::Host
         && let Ok(host) = grant::host(&block.target)
     {
         for task in &tasks {
             chats.keep_blocked_live(*task, &host);
         }
+    }
+    for task in &tasks {
+        crate::askoutcome::kept_blocked(chats, *task, (block.what, &block.target), reason);
     }
     Ok(tasks)
 }

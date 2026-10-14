@@ -153,7 +153,7 @@ export function VaultRefusedNotice({
   // Allow only where policy leaves it open; Keep blocked always.
   const keep: NoticeAction = {
     label: "Keep blocked",
-    onPress: () => press(() => commands.keepVaultBlocked(plane, session, vault)),
+    onPress: () => press(() => commands.keepVaultBlocked(plane, session, vault, null)),
   };
   // Ask the vault's own persona, where the project defines it: the dialog, and nothing typed
   // for you (see above). Policy that forbids Allow does not forbid this; what it does forbid
@@ -182,7 +182,7 @@ export function VaultRefusedNotice({
                 askPersona(session, newest.dispatch_to, undefined, "notice");
                 // The way forward is taken: the Notice is put away, as Keep blocked puts it
                 // (qw385). The chat's next try at the vault raises it again.
-                press(() => commands.keepVaultBlocked(plane, session, vault));
+                press(() => commands.keepVaultBlocked(plane, session, vault, null));
               },
             },
           ];

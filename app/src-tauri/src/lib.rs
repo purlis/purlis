@@ -24,6 +24,7 @@ mod activity;
 mod alerts;
 mod asking;
 mod asknotify;
+mod askoutcome;
 mod askwrites;
 mod atlimit;
 mod autosave;

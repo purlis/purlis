@@ -772,37 +772,10 @@ impl Audited<'_> {
 }
 
 /// **What the chat is told once a grant reaches it**: its first message when it restarts on the
-/// same conversation, so it retries with nothing typed.
-///
-/// The target is in backticks: it is a host or a path the block named, and the sentence around
-/// it is purlis's own.
+/// same conversation, so it retries with nothing typed. The one line every Ask's answer is told
+/// in ([`crate::askoutcome::Outcome::line`], #1987).
 pub fn told(what: &What, level: Level) -> String {
-    // A host never holds a backtick, and a folder with one is never granted ([`write`]); one is
-    // dropped here all the same, so nothing ever closes the span early.
-    let quoted = |text: String| format!("`{}`", text.replace('`', ""));
-    let allowed = match what {
-        What::Host(host) => format!("reaching {}", quoted(host.to_string())),
-        What::Write(path) => format!(
-            "writing {} and everything in it",
-            quoted(path.display().to_string())
-        ),
-        What::Socket(path) => format!(
-            "connecting to the local socket {}",
-            quoted(path.display().to_string())
-        ),
-        What::Service(name) => format!("reaching the system service {}", quoted(name.clone())),
-    };
-    let whom = match level {
-        Level::Once => "once, for this run of this chat",
-        Level::Chat => "for this chat",
-        Level::You => "for every chat of this project on their machine",
-        Level::Machine => "for every chat of every project on their machine",
-        Level::Project => "for everyone in the project",
-    };
-    format!(
-        "purlis: the person allowed {allowed} {whom}, and this chat restarted on the same \
-         conversation to take it. Retry the command the sandbox blocked."
-    )
+    crate::askoutcome::Outcome::allowed(what, level).line()
 }
 
 #[cfg(test)]

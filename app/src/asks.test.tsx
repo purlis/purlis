@@ -143,11 +143,14 @@ describe("answering through the path an ask names", () => {
     const calls = sent({ allow_sandbox_block: { said: "Allowed.", live: false } });
     await answerThrough(PLANE, HOST, "chat");
     await answerThrough(PLANE, HOST, "keep");
+    await answerTaken(PLANE, HOST, "keep", "  use the mirror ");
     // Keep blocked is `keep_sandbox_block`, as on the block's Notice (#1666): it answers the
-    // block and refuses what the chat's proxy holds on it, so the command waits no longer.
+    // block and refuses what the chat's proxy holds on it, so the command waits no longer. The
+    // reason the person typed goes with it, for the chat's one line (#1987).
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["allow_sandbox_block", { plane: PLANE, session: 5, shown, level: "chat" }],
-      ["keep_sandbox_block", { plane: PLANE, session: 5, shown }],
+      ["keep_sandbox_block", { plane: PLANE, session: 5, shown, reason: null }],
+      ["keep_sandbox_block", { plane: PLANE, session: 5, shown, reason: "use the mirror" }],
     ]);
   });
 

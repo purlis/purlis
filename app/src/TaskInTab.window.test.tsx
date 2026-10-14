@@ -1384,7 +1384,7 @@ describe("a Notice of a chat that is not the one its tab shows", () => {
     await userEvent.click(within(refused).getByRole("button", { name: "Keep blocked" }));
     await waitFor(() =>
       expect(commandsOf(asked, "keep_vault_blocked")).toEqual([
-        { plane: PLANE, session: 5, vault: "prod" },
+        { plane: PLANE, session: 5, vault: "prod", reason: null },
       ]),
     );
   });
@@ -1987,7 +1987,7 @@ describe("what a task asks, on its session's tab (#1508)", () => {
     await userEvent.click(within(question).getByRole("button", { name: "Keep blocked" }));
     await waitFor(() =>
       expect(commandsOf(asked, "keep_sandbox_block_for_tasks")).toEqual([
-        { plane: PLANE, session: 1, seen: [seenOn(4), seenOn(5)] },
+        { plane: PLANE, session: 1, seen: [seenOn(4), seenOn(5)], reason: null },
       ]),
     );
     await waitFor(() => expect(notice("Sandbox block for 2 tasks")).toBeNull());
