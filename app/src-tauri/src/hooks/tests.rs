@@ -2509,9 +2509,10 @@ fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_is_carried_it_by_n
     let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), named);
     assert_eq!(offer, BlockOffer::Port);
     assert_eq!(target.as_deref(), Some("50795"));
-    let why = why.expect("a route");
-    assert!(why.contains(RISK), "{why}");
-    assert!(why.contains(CLAUDE_CODE_PORT_SAID), "{why}");
+    // The route whole: purlis's own two sentences, the risk and how it is reached. Compared,
+    // never printed: it is drawn on the Notice, not logged.
+    let said = format!("Allowing it {RISK}. {CLAUDE_CODE_PORT_SAID}");
+    assert!(why.as_deref() == Some(said.as_str()));
     assert!(CLAUDE_CODE_PORT_SAID.contains("this-mac.internal"));
     assert!(CLAUDE_CODE_PORT_SAID.contains("kubectl"));
 }
