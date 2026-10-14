@@ -131,7 +131,7 @@ impl Kind {
     }
 }
 
-fn kind_of(word: &str) -> Option<&'static Kind> {
+pub(crate) fn kind_of(word: &str) -> Option<&'static Kind> {
     KINDS.iter().find(|k| k.word == word)
 }
 
@@ -213,6 +213,11 @@ pub enum Source {
     /// The profile a project's harness declaration gives (`harnesses/<name>.toml`, ADR 0073):
     /// named after the harness, running its declared program.
     Declared,
+    /// This machine's own (ADR 0095, #2034): made in the window or by `purlis profile create`,
+    /// or a harness folder adopted in place (#2033), kept in purlis's data home
+    /// ([`crate::profilestore`]) and available in every project. It runs the built-in harness's
+    /// own program, with its folder variables set to the profile's folder.
+    Machine,
 }
 
 impl Source {
@@ -221,6 +226,7 @@ impl Source {
             Self::BuiltIn => "built-in",
             Self::Local => LOCAL_FILE,
             Self::Declared => crate::harness_declaration::DIR,
+            Self::Machine => "this machine",
         }
     }
 }
@@ -307,6 +313,35 @@ impl ProfileSet {
     }
 }
 
+/// The profile `record`, one of this machine's, runs: its harness's own program, with each of
+/// its harness's folder variables set to the folder the record names. None for a harness purlis
+/// does not ship, a name a profile cannot have, or a folder that is no absolute UTF-8 path.
+fn of_record(record: &crate::profilestore::Record) -> Option<Profile> {
+    let kind = kind_of(&record.kind)?;
+    let folders = &crate::harness_declaration::builtin(kind.word)?.folders;
+    if !name_ok(&record.name) {
+        return None;
+    }
+    let path = |dir: &Path| {
+        dir.is_absolute()
+            .then(|| dir.to_str().map(str::to_owned))
+            .flatten()
+    };
+    let mut env = vec![(folders.config_env.clone()?, path(&record.config)?)];
+    if let (Some(variable), Some(data)) = (&folders.data_env, &record.data) {
+        env.push((variable.clone(), path(data)?));
+    }
+    env.sort();
+    Some(Profile {
+        name: record.name.clone(),
+        kind: kind.word.to_owned(),
+        harness: kind.registry.to_owned(),
+        command: vec![kind.binary().to_owned()],
+        env,
+        source: Source::Machine,
+    })
+}
+
 /// Whether git would carry the local file: the refusal, and the one fix for its state. Both
 /// empty when the file may be used.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -360,7 +395,11 @@ pub fn derive(root: &Path) -> ProfileSet {
 /// them once judges and runs the same bytes ([`crate::start::ready_in`]).
 pub fn derive_in(root: &Path, declared: &crate::harness_declaration::Declarations) -> ProfileSet {
     let committed = std::fs::read_to_string(crate::names::manifest(root)).ok();
-    derive_declared(committed.as_deref(), read_local(root), declared)
+    // A store that cannot be read gives no profile: the built-ins and the project's still are.
+    let machine = crate::profilestore::Store::to_read()
+        .and_then(|store| store.records().ok())
+        .unwrap_or_default();
+    derive_with(committed.as_deref(), read_local(root), declared, &machine)
 }
 
 /// The local file as [`derive_from`] takes it: its text, `None` when there is none, or the
@@ -402,6 +441,18 @@ pub fn derive_declared(
     local: std::io::Result<Option<String>>,
     declared: &crate::harness_declaration::Declarations,
 ) -> ProfileSet {
+    derive_with(committed, local, declared, &[])
+}
+
+/// [`derive_declared`] with this machine's own profiles (`machine`, [`crate::profilestore`]),
+/// after the built-ins and the project's declarations: a profile `charter.local.toml` declares
+/// under the same name is that project's, and takes its place.
+pub fn derive_with(
+    committed: Option<&str>,
+    local: std::io::Result<Option<String>>,
+    declared: &crate::harness_declaration::Declarations,
+    machine: &[crate::profilestore::Record],
+) -> ProfileSet {
     let mut set = ProfileSet {
         profiles: builtins(),
         ..ProfileSet::default()
@@ -418,6 +469,13 @@ pub fn derive_declared(
                 _ => Source::Declared,
             },
         });
+    }
+    for record in machine {
+        if let Some(profile) = of_record(record)
+            && set.get(&profile.name).is_none()
+        {
+            set.profiles.push(profile);
+        }
     }
     for refused in &declared.refused {
         set.refused.push(Refused {

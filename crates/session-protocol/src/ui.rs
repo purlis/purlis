@@ -233,6 +233,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // starts one or stops one.
     "forge_pkce_sign_in",
     "forge_pkce_sign_in_cancel",
+    // This machine's profiles (#2034, ADR 0095): the list, and the person's make, import and
+    // remove of one, each asked in the window. What a chat runs as is never a chat's to change.
+    "machine_profiles",
+    "machine_profile_create",
+    "machine_profile_import",
+    "machine_profile_removal",
+    "machine_profile_remove",
     // Whether a folder on this machine is in a project (#1822): the welcome's question before
     // it offers to make one. A probe of the person's folders, which no link needs.
     "folder_is_a_project",

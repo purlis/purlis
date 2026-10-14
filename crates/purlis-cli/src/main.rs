@@ -764,6 +764,12 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         // It moves this machine's folders, and asks each project whether it may move its
         // state itself (`renamelocal`), so a read-only project here refuses nothing else.
         | Command::Migrate { .. }
+        // This machine's profiles, in its data home: nothing of a project's.
+        | Command::Profile(
+            ProfileCommand::Create { .. }
+            | ProfileCommand::Import { .. }
+            | ProfileCommand::Remove { .. },
+        )
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
@@ -912,6 +918,31 @@ enum ProfileCommand {
     /// Every profile purlis read, how each signs in, the file it came from, and why any was
     /// refused.
     List,
+    /// Make a profile of this machine's, available in every project: a folder of its own in
+    /// purlis's data home, its settings imported from this machine's harness settings and never
+    /// its sign-in. Its first chat signs in through the harness's own sign-in.
+    Create {
+        /// The profile's name: letters, digits, '-' and '_'.
+        name: String,
+        /// The harness it runs: claude, codex or opencode.
+        #[arg(long)]
+        harness: String,
+    },
+    /// Import a profile's settings again from this machine's harness settings, never its
+    /// sign-in. Its conversations stay.
+    Import {
+        /// The profile's name.
+        name: String,
+    },
+    /// Remove a profile of this machine's. Says what goes, and removes it only with --yes. An
+    /// adopted harness folder is never deleted: purlis only forgets the profile.
+    Remove {
+        /// The profile's name.
+        name: String,
+        /// Remove it, having read what goes.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 /// The two `version` verbs that move a PUBLISHED `charter-cp` release.
@@ -2875,6 +2906,11 @@ fn run(command: Command) -> Result<u8, String> {
         | Command::GitPolicy { .. }
         | Command::Secret(_)
         | Command::Plugin(_)
+        | Command::Profile(
+            ProfileCommand::Create { .. }
+            | ProfileCommand::Import { .. }
+            | ProfileCommand::Remove { .. },
+        )
         | Command::Vault(_) => {
             unreachable!("answered before run")
         }
@@ -3427,6 +3463,117 @@ fn plugin_machine(
     purlis_core::doctor::fix::this_machine(from)
 }
 
+/// `purlis profile create|import|remove` (#2034, ADR 0095): this machine's own profiles, in its
+/// data home ([`purlis_core::profilestore`]). Each is the person's act, so a chat is refused
+/// it, as the window serves the same acts to itself alone. What it did, and a refusal, go to
+/// stderr, as purlis's reports do.
+fn machine_profile(verb: &ProfileCommand) -> ExitCode {
+    use purlis_core::profilestore::{self, MachineSettings, Store};
+    if purlis_core::envvar::var(purlis_core::hookwire::CHAT_ENV)
+        .is_some_and(|chat| !chat.trim().is_empty())
+    {
+        return refused(
+            "a chat may not make, import or remove a profile: that is yours, from Settings › \
+             Profiles in the window or from your own terminal",
+        );
+    }
+    let Some(store) = Store::here() else {
+        return refused(
+            "purlis cannot tell where its data home is, or it is inside a project or a git \
+             work tree, so no profile was changed",
+        );
+    };
+    let home = purlis_core::profiles::home().unwrap_or_default();
+    let env = |name: &str| std::env::var(name).ok();
+    let machine = MachineSettings {
+        home: &home,
+        env: &env,
+    };
+    let now = purlis_core::halt::now();
+    let said = match verb {
+        ProfileCommand::Create { name, harness } => {
+            profilestore::create(&store, name, harness, &machine, now).map(|made| {
+                format!(
+                    "made the profile '{}' ({}) in {}\n{}its first chat signs in through the \
+                     harness's own sign-in.\n",
+                    made.record.name,
+                    made.record.kind,
+                    store.folder_of(&made.record.name).display(),
+                    imported_lines(&made)
+                )
+            })
+        }
+        ProfileCommand::Import { name } => {
+            profilestore::import(&store, name, &machine, now).map(|made| {
+                format!(
+                    "imported the settings of '{}' again\n{}",
+                    made.record.name,
+                    imported_lines(&made)
+                )
+            })
+        }
+        ProfileCommand::Remove { name, yes } => match profilestore::removal(&store, name) {
+            Err(why) => Err(why),
+            Ok(removal) if !yes => {
+                let mut out = format!("{}\n", removal.says());
+                for one in removal.conversations.iter().flatten() {
+                    out.push_str(&format!("  {one}\n"));
+                }
+                out.push_str(&format!(
+                    "nothing was removed: to remove it, run purlis profile remove {} --yes\n",
+                    removal.name
+                ));
+                eprint!("{out}");
+                return ExitCode::FAILURE;
+            }
+            Ok(removal) => profilestore::remove(&store, name, &removal).map(|gone| {
+                if gone.adopted {
+                    format!(
+                        "forgot the profile '{}'; {} stays\n",
+                        gone.name,
+                        gone.folder.display()
+                    )
+                } else {
+                    format!(
+                        "removed the profile '{}' and deleted {}\n",
+                        gone.name,
+                        gone.folder.display()
+                    )
+                }
+            }),
+        },
+        ProfileCommand::List => unreachable!("listed in run"),
+    };
+    match said {
+        Ok(said) => {
+            eprint!("{said}");
+            ExitCode::SUCCESS
+        }
+        Err(why) => refused(&why),
+    }
+}
+
+/// What an import copied and left out, a line each, for `machine_profile`.
+fn imported_lines(made: &purlis_core::profilestore::Made) -> String {
+    let mut out = String::new();
+    match &made.record.imported {
+        Some(imported) if !made.copied.copied.is_empty() => out.push_str(&format!(
+            "imported its settings from {}: {}\n",
+            imported.from.display(),
+            made.copied.copied.join(", ")
+        )),
+        Some(imported) => out.push_str(&format!(
+            "found no settings to import in {}\n",
+            imported.from.display()
+        )),
+        None => {}
+    }
+    for one in &made.copied.skipped {
+        out.push_str(&format!("left out {one}\n"));
+    }
+    out
+}
+
 /// `purlis plugin install|uninstall`: needs no plane, and acts on this machine's harnesses.
 /// `migrate [--undo]`: rename-local on this machine, with the project the current directory is
 /// in among the projects it moves (RN-5). What it did goes to stdout, one line a step; a
@@ -3772,6 +3919,12 @@ fn main() -> ExitCode {
         }
         Command::Migrate { undo } => return migrate(*undo),
         Command::Plugin(verb) => return plugin(verb),
+        // This machine's profiles: no plane is read or written.
+        Command::Profile(
+            verb @ (ProfileCommand::Create { .. }
+            | ProfileCommand::Import { .. }
+            | ProfileCommand::Remove { .. }),
+        ) => return machine_profile(verb),
         // A background refresh and a footer: neither is a plane write, and both choose their
         // own exit status as their Python counterparts do.
         Command::GlRefresh {
