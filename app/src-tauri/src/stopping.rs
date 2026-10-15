@@ -245,6 +245,10 @@ pub struct Facts {
     /// Its harness is one purlis types a line into, whoever's keys are in its pane
     /// (`dispatched::told_by_a_line`). Asked of a cancel only.
     pub measured: bool,
+    /// Its harness ends a turn on one Escape (`dispatched::interrupted_by_escape`, #1981).
+    /// Where it does not, a task's turn is never ended for it: its stop or cancel line waits
+    /// for that turn's own end.
+    pub interrupts: bool,
     /// The chat that dispatched it cancelled it (#1459): its turn goes by [`cancel_turn`].
     pub cancelled: bool,
 }
@@ -262,6 +266,7 @@ impl Facts {
             waiting: self.state == State::Waiting,
             asking: self.asking,
             measured: self.types,
+            interrupts: self.interrupts,
             ask_open: self.ask_open,
         }
         .prompt_showing()
@@ -309,7 +314,7 @@ pub fn last_turn(facts: &Facts) -> LastTurn {
         State::Waiting if facts.prompt_showing() => LastTurn::None,
         State::Waiting => LastTurn::Now,
         State::Running if facts.task && facts.prompt_showing() => LastTurn::None,
-        State::Running if facts.task => LastTurn::Interrupted,
+        State::Running if facts.task && facts.interrupts => LastTurn::Interrupted,
         State::Running => LastTurn::AtTurnEnd,
         State::Unknown | State::Done | State::Failed => LastTurn::None,
     }
@@ -330,7 +335,7 @@ fn cancel_turn(facts: &Facts) -> LastTurn {
         _ if facts.prompt_showing() => LastTurn::AtTurnEnd,
         State::Waiting if facts.types => LastTurn::Now,
         State::Waiting if !facts.measured => LastTurn::None,
-        State::Running if facts.types => LastTurn::Interrupted,
+        State::Running if facts.types && facts.interrupts => LastTurn::Interrupted,
         State::Waiting | State::Running | State::Unknown => LastTurn::AtTurnEnd,
     }
 }
@@ -1135,7 +1140,8 @@ fn facts_of(held: &Held, session: u32) -> Facts {
                     .from
                     .as_ref()
                     .is_some_and(|from| from.report != purlis_core::reopen::Owed::Due);
-            let measured = dispatched::told_by_a_line(held.chats().harness(session));
+            let harness = held.chats().harness(session);
+            let measured = dispatched::told_by_a_line(harness);
             Facts {
                 state: board.state,
                 asking: board.asking,
@@ -1146,6 +1152,7 @@ fn facts_of(held: &Held, session: u32) -> Facts {
                 task,
                 types: measured && !held.tasks().ledger().keyed(session),
                 measured,
+                interrupts: dispatched::interrupted_by_escape(harness),
                 cancelled: held.stopping().is_cancelling(session),
             }
         }
@@ -1159,6 +1166,7 @@ fn facts_of(held: &Held, session: u32) -> Facts {
             task: false,
             types: false,
             measured: false,
+            interrupts: false,
             cancelled: false,
         },
     }
@@ -1619,6 +1627,7 @@ fn end(held: &Held, session: u32, wrote: bool, tell: bool) {
         task: false,
         types: false,
         measured: false,
+        interrupts: false,
         cancelled: false,
     });
     held.stops_carry_on();
@@ -2041,6 +2050,7 @@ pub(crate) fn task_ending_of(held: &Held, session: u32) -> Result<TaskEnding, St
         waiting: board.state == State::Waiting,
         asking: board.asking,
         measured: dispatched::told_by_a_line(held.chats().harness(session)),
+        interrupts: dispatched::interrupted_by_escape(held.chats().harness(session)),
         // An ask of its open in the window is a prompt in front of the person (#1525).
         ask_open: held.asks_open_for(session),
     };
@@ -2182,6 +2192,7 @@ mod tests {
             task: false,
             types: true,
             measured: true,
+            interrupts: true,
             cancelled: false,
         }
     }
@@ -3305,6 +3316,29 @@ mod tests {
             cancelled: true,
             ..a_task(state)
         }
+    }
+
+    #[test]
+    fn a_task_mid_turn_on_a_harness_that_takes_no_single_escape_is_asked_when_its_turn_ends() {
+        // #1981: opencode is typed a line, and ends a turn on a second Escape only. Its turn
+        // is never ended for it: the stop's or the cancel's line waits for its end.
+        let opencode = |facts: Facts| Facts {
+            interrupts: false,
+            ..facts
+        };
+        assert_eq!(
+            last_turn(&opencode(a_task(State::Running))),
+            LastTurn::AtTurnEnd
+        );
+        assert_eq!(
+            last_turn(&opencode(cancelled(State::Running))),
+            LastTurn::AtTurnEnd
+        );
+        assert_eq!(last_turn(&opencode(a_task(State::Waiting))), LastTurn::Now);
+        assert_eq!(
+            last_turn(&opencode(cancelled(State::Waiting))),
+            LastTurn::Now
+        );
     }
 
     #[test]

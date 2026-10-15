@@ -127,6 +127,12 @@ read as shipped code, and its fixtures are reported as if a build carried them. 
 starts this way; an older `mod tests { … }` block or `<module>_tests.rs` file moves when its
 module is next changed, as a move alone, with no test's name or body changed.
 
+A test fixture whose name a sandboxed chat may not write (an agent's `.claude/settings.json`,
+an `opencode.json`, an editor's `.vscode/`) is tracked as `<name>.fixture` and copied to its
+real name at test time (`purlis_core::testfixture`, and `fixtureNames` in the window's e2e
+harness), so a sandboxed chat can always bring a clone up to date. A test fails on any tracked
+path that breaks this.
+
 A code-scanning finding is answered in the code before anything else. Where the code is right
 and only reads wrong, make what it means explicit: a name that says what the value is (a key
 file's name is not a key), a type, a documented constant, or the standard helper in place of a

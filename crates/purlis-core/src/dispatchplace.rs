@@ -40,7 +40,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::chatpiece::{self, Cut, Naming};
+use crate::chatpiece::{self, Cut};
 use crate::dispatchrecord::{self, Record, Removed};
 use crate::worktree::{self, git, name, standing};
 
@@ -500,13 +500,21 @@ pub fn cut(
             repo.repo
         )));
     }
+    // Cut on the asking chat's behalf, from a branch a chat can move: judged as that chat's
+    // own checkout of it would be (qw387).
+    let judged = |clone: &Path, start: &str, folder: &Path| {
+        crate::cloneupdate::judged_cut(clone, start, folder, root, None).map_or(Ok(()), Err)
+    };
     crate::gitbroker::in_a_checked_clone(root, &repo.workspace, &repo.repo, isolation, || {
-        match start_of(root, repo) {
-            Some(from) => {
-                chatpiece::cut_from(root, &repo.workspace, &repo.repo, &piece, Some(&from))
-            }
-            None => chatpiece::cut(root, &repo.workspace, &repo.repo, &Naming::Exactly(piece)),
-        }
+        let from = start_of(root, repo);
+        chatpiece::cut_vetted(
+            root,
+            &repo.workspace,
+            &repo.repo,
+            &piece,
+            from.as_ref(),
+            &judged,
+        )
     })
     .map_err(Refused::Cut)?
     .map_err(|refusal| Refused::Cut(refusal.in_window()))
@@ -525,7 +533,8 @@ fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
         .find(|listed| listed.piece == piece && listed.prunable.is_none())?;
     Some(worktree::Start {
         branch: found.branch?,
-        tree: found.path,
+        tree: Some(found.path),
+        at: None,
     })
 }
 

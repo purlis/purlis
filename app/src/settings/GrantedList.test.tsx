@@ -433,3 +433,25 @@ describe("the Allowed list's answers (#1543)", () => {
     expect(screen.getByText("Nothing is allowed beyond the Open hosts.")).toBeInTheDocument();
   });
 });
+
+describe("a service on this Mac in the Granted list (qw384)", () => {
+  it("says the port it lets every chat of this project connect to", () => {
+    const PORT: SandboxGrant = {
+      id: "you\u001fport\u001f50795",
+      what: "port",
+      target: "50795",
+      persona: null,
+      level: "you",
+      by: null,
+      at: null,
+      chat: null,
+      locked: null,
+      waiting: null,
+      for_no_persona: false,
+      expected: false,
+    };
+    expect(grantSaid(PORT)).toBe(
+      "Connect to the service on this Mac at port 50795 (Codex and opencode chats; Claude Code chats not yet) · This project on this machine · allowed by you",
+    );
+  });
+});

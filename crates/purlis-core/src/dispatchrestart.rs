@@ -658,6 +658,7 @@ pub fn report_of(record: &dispatchrecord::Record) -> Option<Handback> {
         Outcome::Blocked => handback::Outcome::Blocked,
         Outcome::Failed => handback::Outcome::Failed,
         Outcome::Cancelled => handback::Outcome::Cancelled,
+        Outcome::LastMessage => handback::Outcome::LastMessage,
         Outcome::Stopped => return None,
     };
     let summary = crate::handoff::report_summary(&report.text).ok()?;

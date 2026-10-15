@@ -265,6 +265,40 @@ export const PurlisPlugin = async (plugin, options) => {
     }
   }
 
+  // The text of session `sid`'s last assistant message, or "" (#1981): what a task that ends
+  // its turns without a report is reported from. Read through opencode's own client, the way
+  // its TUI reads it, and handed to the stop hook alone. A client that is slow or says
+  // something else costs the turn's end nothing: it is sent without one.
+  const LAST_SAID_AT_MOST = 16 * 1024
+  const lastSaid = async (sid) => {
+    if (typeof client?.session?.messages !== "function") return ""
+    let timer
+    const late = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(undefined), 3000)
+    })
+    try {
+      const got = await Promise.race([
+        client.session.messages({ path: { id: sid }, sessionID: sid }),
+        late,
+      ])
+      const list = Array.isArray(got?.data) ? got.data : Array.isArray(got) ? got : []
+      for (let at = list.length - 1; at >= 0; at--) {
+        const message = list[at]
+        if (message?.info?.role !== "assistant") continue
+        return (Array.isArray(message.parts) ? message.parts : [])
+          .filter((part) => part?.type === "text" && typeof part.text === "string" && !part.synthetic)
+          .map((part) => part.text)
+          .join("\n")
+          .trim()
+          .slice(0, LAST_SAID_AT_MOST)
+      }
+    } catch {
+    } finally {
+      clearTimeout(timer)
+    }
+    return ""
+  }
+
   const asked = async (props) => {
     const id = props?.id
     if (!BINARY || typeof id !== "string" || typeof props?.sessionID !== "string") return
@@ -341,6 +375,10 @@ export const PurlisPlugin = async (plugin, options) => {
         tool_name: route(tool, "name") ?? tool,
         tool_input: input?.args ?? {},
         tool_response: response(tool, output),
+        // A shell command's status, for what the app lists of a task's commands (#1981).
+        ...(tool === "bash" && typeof output?.metadata?.exit === "number"
+          ? { exit_code: output.metadata.exit }
+          : {}),
       }, input?.sessionID)
       const note = context(said)
       if (!note || !EFFECTFUL.includes(tool) || !output) return
@@ -399,7 +437,16 @@ export const PurlisPlugin = async (plugin, options) => {
         case "session.idle": {
           const sid = props?.sessionID
           if (typeof sid !== "string" || parents.has(sid)) return
-          void run("stop", { hook_event_name: "Stop", session_id: sid, cwd: directory }, sid)
+          // With the turn's last message, in the field Claude Code's and Codex's Stop carry
+          // it in (#1981).
+          void lastSaid(sid).then((last) =>
+            run("stop", {
+              hook_event_name: "Stop",
+              session_id: sid,
+              cwd: directory,
+              ...(last ? { last_assistant_message: last } : {}),
+            }, sid),
+          )
           return
         }
         case "permission.asked": {

@@ -312,8 +312,33 @@ export function useDismissals(project: string): {
   return { dismissed, dismiss, settle, showAgain: again };
 }
 
+/**
+ * **Hidden for now** (qw386): a Notice about something that waits on the person, put away by
+ * its Dismiss, which the needs-you list and the tab's hand still say. Kept in memory for this
+ * run alone, by project and cause, and never in the layout file: the wait is this run's. A
+ * Notice is kept by a cause that names one occurrence (a prompt by its ask, a wait by when it
+ * began), so the next occurrence shows by its new cause.
+ */
+const hiddenForNow = new Set<string>();
+
+const forNow = (project: string, cause: string) => `${project}\u0000${cause}`;
+
+/** Hides `cause` in `project` for the rest of this run. */
+export function hideForNow(project: string, cause: string): void {
+  const key = forNow(project, cause);
+  if (hiddenForNow.has(key)) return;
+  hiddenForNow.add(key);
+  for (const listener of listeners) listener();
+}
+
+/** Whether `cause` is hidden for now in `project`, for a component that redraws when it is. */
+export function useHiddenForNow(project: string, cause: string): boolean {
+  return useSyncExternalStore(onDismissals, () => hiddenForNow.has(forNow(project, cause)));
+}
+
 /** Forgets what this launch read and changed, as a new launch would. For tests. */
 export function forgetDismissals(): void {
   now = undefined;
   writing = Promise.resolve();
+  hiddenForNow.clear();
 }

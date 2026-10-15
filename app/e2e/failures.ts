@@ -29,6 +29,8 @@ interface Ran {
 export interface Evidence {
   late?: readonly { command: string; ms: number | undefined }[];
   coreLog?: readonly string[];
+  /** What lay over an element the test could not press or see (`covers.ts`). */
+  covers?: readonly string[];
 }
 
 /** How many of the core's last log lines a failure carries. */
@@ -66,5 +68,6 @@ export function recordFailure(ran: Ran, error: unknown, evidence: Evidence = {})
     stack,
     late: evidence.late,
     coreLog: evidence.coreLog,
+    covers: evidence.covers,
   });
 }

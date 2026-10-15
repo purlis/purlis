@@ -110,7 +110,11 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     let what = match &ask.work {
         GitWork::Create { repos, .. } => format!("workspace create with {}", repos.join(" ")),
         GitWork::Clone { repos } => format!("clone {}", repos.join(" ")),
-        GitWork::WorktreeAdd { repo, piece, .. } => format!("worktree add {repo} {piece}"),
+        GitWork::WorktreeAdd { repo, piece, .. } | GitWork::WorktreeCut { repo, piece, .. } => {
+            format!("worktree add {repo} {piece}")
+        }
+        GitWork::WorktreeUpdate { repo, piece, .. } => format!("worktree update {repo} {piece}"),
+        GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
     };
     let isolation = isolation();
     let answer =

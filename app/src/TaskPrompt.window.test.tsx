@@ -364,11 +364,12 @@ describe("a task stopped on a permission prompt", () => {
     expect(notice.textContent).toContain(
       "“sweep” (a task of “steward 1”) is waiting on you for a permission: “Run purlis persona where”",
     );
-    // It answers nothing: its only way out goes to the task, where the prompt is answered.
+    // It answers nothing: its ways out go to the task, where the prompt is answered, or put
+    // the line away (qw386).
     const buttons = within(notice)
       .getAllByRole("button")
       .map((one) => one.textContent);
-    expect(buttons).toEqual(["Show the task"]);
+    expect(buttons).toEqual(["Show the task", "Dismiss"]);
 
     fireEvent.click(within(notice).getByRole("button", { name: "Show the task" }));
 
@@ -424,13 +425,13 @@ describe("a task stopped on a permission prompt", () => {
     });
     // Without the prompt's words, which only the hold carried.
     expect(notice.textContent).toBe(
-      "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.Show the task",
+      "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.Show the taskDismiss",
     );
     expect(
       within(notice)
         .getAllByRole("button")
         .map((one) => one.textContent),
-    ).toEqual(["Show the task"]);
+    ).toEqual(["Show the task", "Dismiss"]);
     expect(hand("steward 1")).not.toBeNull();
 
     // Answered in its pane: a tool of its came back and the core has it running again.
@@ -492,6 +493,133 @@ describe("a task stopped on a permission prompt", () => {
       within(notice)
         .getAllByRole("button")
         .map((one) => one.textContent),
-    ).toEqual(["Show it"]);
+    ).toEqual(["Show it", "Dismiss"]);
+  });
+});
+
+describe("putting a waiting chat's Notice away (qw386)", () => {
+  it("Dismiss hides the Notice, says what it does, and the chat still needs you", async () => {
+    const { said } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await asks(said, [prompt(5, "Run purlis persona where")]);
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    const dismiss = within(notice).getByRole("button", { name: "Dismiss" });
+    expect(dismiss).toHaveAttribute(
+      "title",
+      "Hides this line. The chat still waits on you, and the needs-you list still shows it.",
+    );
+
+    fireEvent.click(dismiss);
+
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+    // Hidden, not answered: the hand stays on the session's tab.
+    expect(hand("steward 1")).not.toBeNull();
+    // The same prompt said again does not bring it back.
+    await asks(said, [prompt(5, "Run purlis persona where")]);
+    expect(promptNotice(5)).toBeNull();
+  });
+
+  it("a new prompt of the same chat shows again", async () => {
+    const { said } = await drawn(withTasks());
+    await asks(said, [prompt(5, "Run purlis persona where", "ask-a")]);
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    await asks(said, [prompt(5, "Run git status", "ask-b")]);
+
+    await waitFor(() => expect(promptNotice(5)?.textContent).toContain("Run git status"));
+  });
+
+  it("a stopped chat's line is hidden for that wait alone, and shows at the next", async () => {
+    const { move } = await drawn(withTasks());
+    await move(5, "waiting", 1, [5], { asking: true });
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    // Answered in its pane, it goes on; then it stops on a prompt again.
+    await move(5, "running", 2);
+    await move(5, "waiting", 3, [5], { asking: true });
+
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
+  });
+
+  it("a second prompt within one wait shows after the first was put away (#2098)", async () => {
+    // Answered in its own pane, it prompts again before any tool came back: the core stamps
+    // the chat for the second prompt, and that is a wait of its own.
+    const { move } = await drawn(withTasks());
+    await move(5, "waiting", 1, [5], { asking: true });
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    await move(5, "waiting", 2, [5], { asking: true });
+
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
+  });
+
+  it("a dismissed permission keeps the stopped line hidden once the hold ends, for that wait", async () => {
+    const { said, move } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await move(5, "running", 1);
+    await asks(said, [prompt(5, "Run purlis persona where")]);
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    // purlis's hold ends; the harness's own prompt decides in the task's pane: the same wait.
+    await move(5, "waiting", 2, [5], { asking: true });
+    await asks(said, []);
+    expect(promptNotice(5)).toBeNull();
+
+    // Answered, it goes on; its next stop is a new wait and shows.
+    await move(5, "running", 3);
+    await move(5, "waiting", 4, [5], { asking: true });
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
+  });
+
+  it("a new wait shows even where the pane was away while the old one ended", async () => {
+    const { move } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await move(5, "waiting", 1, [5], { asking: true });
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    // Another session's tab: steward 1's pane is not drawn while the wait ends and a new one
+    // begins.
+    fireEvent.click(tab("steward 2"));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
+    await move(5, "running", 2);
+    await move(5, "waiting", 3, [5], { asking: true });
+
+    fireEvent.click(tab("steward 1"));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
   });
 });

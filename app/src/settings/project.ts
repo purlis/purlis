@@ -57,6 +57,13 @@ import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { dispatchGroup } from "./dispatch";
+import {
+  levelsWaitingRow,
+  plainFilesRow,
+  YOUR_LEVEL,
+  yourLevelControls,
+  yourLevelHelp,
+} from "./yourLevel";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import {
   PERSONA_HOSTS_COLLECTION,
@@ -626,6 +633,23 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
                 collection: hostsCollection(read.local, "myHosts"),
                 sub: true,
               },
+        ]
+      : []),
+    // Your own level (#2071): per project and per persona, in this machine's file alone, with
+    // the plain-file vaults a chat with no sandbox could read, each offered a move.
+    ...(localOk
+      ? [
+          {
+            id: YOUR_LEVEL,
+            label: "Your level",
+            help: yourLevelHelp(read.local.file),
+            settings: fromLocal(YOUR_LEVEL, yourLevelControls(read.entries.persona ?? [])),
+            after:
+              read.plane !== undefined
+                ? [...levelsWaitingRow(read.plane, read.local.text), ...plainFilesRow(read.plane)]
+                : [],
+            sub: true,
+          },
         ]
       : []),
     // Each persona's own hosts (#1407): added here, and allowed on each machine on Sandbox.

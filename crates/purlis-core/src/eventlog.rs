@@ -1873,6 +1873,28 @@ impl Recorder {
         Ok(event)
     }
 
+    /// **The audit of a proposed change the person applied** (#1975, PC-4):
+    /// `trust.proposed.apply` under the chat that proposed it, with who applied it (the person,
+    /// in the window), the persona the chat runs as, the file and the hash of what was written.
+    /// Made durable before the file is written, so no change is applied unrecorded.
+    pub fn proposed_applied(
+        &mut self,
+        plane: &Path,
+        number: u32,
+        applied: &crate::proposed::Applied<'_>,
+    ) -> io::Result<Event> {
+        let who = self.identity(plane, number)?;
+        let event = self.log.append(
+            Some(who.chat.as_str()),
+            Some(who.run.as_str()),
+            None,
+            crate::proposed::APPLIED_KIND,
+            applied.body(),
+        )?;
+        self.log.durable().through(event.seq)?;
+        Ok(event)
+    }
+
     /// The audit of a dispatch grant or revoke (#1437, [`crate::dispatchgrant::Audited`]):
     /// under chat `number`'s current run where it was allowed from one, with no chat for one
     /// taken back in Settings. Made durable before it answers, so no grant is in force

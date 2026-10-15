@@ -304,11 +304,23 @@ mod tests {
         let page = drawn("schema = 1\n", "", &Locks::none());
         assert_eq!(page.rows.len(), 1);
         assert_eq!(page.rows[0].scope, "project");
-        assert_eq!(page.rows[0].values, vec![None; 8]);
-        // A session's tokens and a task's time are off until set (#1512).
+        assert_eq!(page.rows[0].values, vec![None; 10]);
+        // A session's tokens and a task's time are off until set (#1512); a quiet task is
+        // noted after 15 minutes, and one command after 30 (#1981).
         assert_eq!(
             page.rows[0].beneath,
-            vec![Some(6), Some(16), Some(3), Some(10), None, None, None, None]
+            vec![
+                Some(6),
+                Some(16),
+                Some(3),
+                Some(10),
+                None,
+                None,
+                None,
+                None,
+                Some(15),
+                Some(30)
+            ]
         );
         assert_eq!(page.locked_by, None);
         assert_eq!(
@@ -324,7 +336,9 @@ mod tests {
                 "May dispatch",
                 "May run at once",
                 "Tokens per session",
-                "Minutes per task"
+                "Minutes per task",
+                "Quiet note after",
+                "One command note after"
             ]
         );
         assert_eq!(page.limits[at(&page, "depth")].most, 8);

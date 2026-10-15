@@ -45,6 +45,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -585,9 +586,25 @@ async function rustHookCall() {
   return { command: "charter hook stop", ...measured, reportsTheAppTook: taken };
 }
 
+/** Gives every `<name>.fixture` under `dir` its real name (#2089): fixtures are tracked neutrally. */
+function fixtureNames(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    let name = entry.name;
+    if (name.endsWith(".fixture") && name.length > ".fixture".length) {
+      const real = name.slice(0, -".fixture".length);
+      renameSync(join(dir, name), join(dir, real));
+      name = real;
+    }
+    if (entry.isDirectory()) fixtureNames(join(dir, name));
+  }
+}
+
 function hookCall() {
   const plane = join(tmpdir(), "charter-bench-plane");
+  // Fresh each run: a copy left by the last one would have its fixtures under their real names.
+  rmSync(plane, { recursive: true, force: true });
   cpSync(join(ROOT, "tests", "fixtures", "planes", "daily"), plane, { recursive: true, force: true });
+  fixtureNames(plane);
   // PINNED, and not left to `cwd`: `$CHARTER_ROOT` beats the walk, charter puts it into every
   // chat it starts, and a benchmark run from inside a chat therefore measured the operator's
   // own plane rather than this copy of the fixture (charter-app#129).

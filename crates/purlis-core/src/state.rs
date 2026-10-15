@@ -417,6 +417,9 @@ pub enum HowFailed {
     Unreported,
     /// It was asked for and never started.
     DidNotStart,
+    /// Its turns ended without a report, and purlis sent its last message in its place
+    /// (#1981): the person reads what it said, since the task did not send it as its report.
+    LastMessage,
 }
 
 impl HowFailed {
@@ -426,6 +429,7 @@ impl HowFailed {
             Self::Failed => "failed",
             Self::Unreported => "unreported",
             Self::DidNotStart => "did_not_start",
+            Self::LastMessage => "last_message",
         }
     }
 }
@@ -1052,9 +1056,15 @@ impl Chat {
     /// **Who asked is kept** (#1644): the chat's own tools coming back say only that its own
     /// prompt was answered ([`Chat::tool_said`]), and a helper's prompt stands until that
     /// helper moves past it. A fresh wait forgets who asked the last one.
+    ///
+    /// **A second prompt within one wait is its own wait** (#2098): where the chat already
+    /// waited on a prompt and this ask changes the prompt or who asked, it is a move a reader
+    /// sees, though no other field of [`Self::seen`] changes. The window keys a line the person
+    /// put away by the move it belongs to, and counts each wait by it.
     fn asked(&mut self, ask: &Ask, waits: Waits, helper: Option<&str>) -> bool {
         let was = self.seen();
         let fresh = !self.waits_on_its_prompt();
+        let before = (self.prompt, self.askers.clone());
         // Asked in the middle of a turn. After one has ended it is only a nudge.
         if self.state == State::Running || !ask.prompt.is_unsaid() {
             self.prompt = ask.prompt;
@@ -1069,7 +1079,10 @@ impl Chat {
             self.askers.add(helper);
         }
         self.nudged(waits);
-        was != self.seen()
+        let another = !fresh
+            && self.waits_on_its_prompt()
+            && (self.prompt != before.0 || self.askers != before.1);
+        was != self.seen() || another
     }
 
     /// Helper `helper` ended (#1644): whatever it asked, it asks no more. The chat goes on once
@@ -1650,6 +1663,16 @@ impl Board {
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.answered_by(asker));
         self.stamp(number, changed)
+    }
+
+    /// **Whether `speaker` is the harness run chat `number` adopted** (#1601, #1981): what a
+    /// line that is not a report is judged by before the app keeps anything it says of the
+    /// chat. A harness nested in the chat, or a job it started, holds the chat's token and sits
+    /// in its process tree, and speaks for nobody.
+    pub fn spoken_by(&self, number: u32, speaker: &crate::hookwire::Speaker) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.spoke(speaker))
     }
 
     /// A tool hook of chat `number`'s own said `said` ([`Chat::tool_said`], #1601): it may have
@@ -3176,6 +3199,37 @@ mod tests {
         board.reported(&asked);
         assert_eq!(board.its_prompt(7), Some(Prompt::Permission));
         assert_eq!(board.its_prompt(9), None, "a chat the board does not have");
+    }
+
+    #[test]
+    fn a_second_prompt_within_one_wait_is_its_own_wait_and_stamps_the_chat() {
+        // #2098: the person answers prompt X in the chat's own pane, and tool Y prompts before
+        // any tool that began after X came back. Y is a wait of its own: the window keys a
+        // dismissed line by the stamp, and counts each wait by it.
+        use crate::harness::model::Prompt;
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        let ask = |board: &mut Board, prompt: Prompt| {
+            let mut asked = report(7, Event::Notification, Some(A));
+            asked.detail.notified = Notified::Asks(prompt);
+            board.reported(&asked)
+        };
+        assert!(ask(&mut board, Prompt::Permission));
+        let first = board.moved_at(7);
+        assert!(board.waits_on_its_prompt(7));
+
+        assert!(
+            ask(&mut board, Prompt::Question),
+            "a different prompt is a move"
+        );
+        let second = board.moved_at(7);
+        assert!(second > first, "{second} > {first}");
+        assert_eq!(board.its_prompt(7), Some(Prompt::Question));
+
+        // The same prompt said again is the same wait.
+        assert!(!ask(&mut board, Prompt::Question));
+        assert_eq!(board.moved_at(7), second);
     }
 
     #[test]

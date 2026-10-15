@@ -675,6 +675,7 @@ fn a_chat_touches_a_file(run: &Path) {
         },
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
         touching: Box::new(move |touching| tx.lock().unwrap().send(touching).unwrap()),
         permission: Box::new(|_| None),
     });

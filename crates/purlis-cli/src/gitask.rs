@@ -72,6 +72,11 @@ fn asked(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Forwarded {
     answered(asking.ask(&of(chat), within))
 }
 
+/// How long the app may take to update or push a branch folder: a fetch and a push each held
+/// to git's network limit, and a rebase and a handful of local calls (qw387).
+pub const A_PIECE_UPDATE_TAKES_AT_MOST: Duration =
+    Duration::from_secs(3 * git::NETWORK.as_secs() + 8 * git::READ.as_secs());
+
 /// How long the app may take to commit: staging and the commit by their own deadlines, and a
 /// handful of local git calls and the scan, each held to [`git::READ`]. Above what the app's
 /// git may take, so the asker never gives up on a commit git is still allowed to finish.
@@ -268,11 +273,15 @@ mod tests {
     }
 
     #[test]
-    fn the_command_has_no_spelling_for_a_reset_or_a_push() {
+    fn the_command_has_no_spelling_for_a_reset_or_a_forced_push() {
         use clap::Parser as _;
         for words in [
             vec!["purlis", "worktree", "reset"],
-            vec!["purlis", "worktree", "push"],
+            vec!["purlis", "worktree", "push", "--force"],
+            vec!["purlis", "worktree", "push", "-f"],
+            vec!["purlis", "worktree", "push", "origin", "main"],
+            vec!["purlis", "worktree", "update", "--continue", "--abort"],
+            vec!["purlis", "worktree", "update", "--base", "main", "--abort"],
             vec![
                 "purlis", "worktree", "commit", "-m", "x", "--all", "--reset",
             ],
@@ -299,6 +308,17 @@ mod tests {
             crate::Cli::try_parse_from(["purlis", "worktree", "commit", "-m", "x", "--", "-n"])
                 .is_ok()
         );
+        for words in [
+            vec!["purlis", "worktree", "push"],
+            vec!["purlis", "worktree", "push", "--force-with-lease"],
+            vec!["purlis", "worktree", "update"],
+            vec!["purlis", "worktree", "update", "--base", "main"],
+            vec!["purlis", "worktree", "update", "--continue"],
+            vec!["purlis", "worktree", "update", "--abort"],
+            vec!["purlis", "worktree", "add", "r", "p", "--base", "HEAD"],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_ok(), "{words:?}");
+        }
     }
 
     #[test]
