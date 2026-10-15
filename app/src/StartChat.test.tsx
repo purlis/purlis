@@ -1274,7 +1274,7 @@ describe("the one-time note on a harness that lacks something (#1134, W10)", () 
 
 describe("a profile its harness says is not signed in (#2035)", () => {
   const refused =
-    "the profile 'work' is not signed in on this Mac. Nothing was started. Sign in runs Claude Code's own sign-in in a terminal tab.";
+    "the profile 'work' is not signed in on this Mac. Nothing was started. Sign in runs Claude Code's own sign-in in a shell tab.";
 
   it("offers Sign in beside the refusal, and signs in the profile it was refused on", async () => {
     const onSignIn = vi.fn();

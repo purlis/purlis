@@ -744,9 +744,10 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
-  /** The profile of this machine's the last start was refused on because its harness says it
-   *  is not signed in here (#2035): the picker offers Sign in for it beside the refusal. */
-  const [pickerSignIn, setPickerSignIn] = useState<string>();
+  /** The profile of this machine's a start was refused on because its harness says it is not
+   *  signed in here (#2035), with that refusal: the picker offers Sign in beside it, and beside
+   *  no other. */
+  const [pickerSignIn, setPickerSignIn] = useState<{ profile: string; refused: string }>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
@@ -3226,7 +3227,7 @@ export const PlaneView = memo(function PlaneView({
             mine.status === "ok" &&
             mine.data.some((one) => one.name === profile && one.standing === "signed-out")
           )
-            setPickerSignIn(profile);
+            setPickerSignIn({ profile, refused });
         }
         return;
       }
@@ -8856,9 +8857,12 @@ export const PlaneView = memo(function PlaneView({
               starting={starting}
               prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
               trouble={pickerTrouble}
-              // Only beside the refusal it was asked for: any other step that clears the trouble
-              // takes the offer with it.
-              signIn={pickerTrouble === undefined ? undefined : pickerSignIn}
+              // Only beside the refusal it was asked for, never beside a later one.
+              signIn={
+                pickerSignIn !== undefined && pickerSignIn.refused === pickerTrouble
+                  ? pickerSignIn.profile
+                  : undefined
+              }
               // Sign in (#2035): the picker closes, as it does for the install, and the shell tab
               // the harness's own sign-in runs in comes to the front. The chat starts after it.
               onSignIn={

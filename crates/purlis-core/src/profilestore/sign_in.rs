@@ -211,8 +211,9 @@ pub fn refusal(profile: &Profile, passed: &[String], look: &dyn Look) -> Option<
     }
     (standing(profile, look) == Standing::SignedOut).then(|| {
         format!(
-            "the profile '{name}' is not signed in on {here}. Nothing was started. Sign in runs {title}'s own sign-in in a terminal tab: press Sign in, or \
-             run purlis profile sign-in {name} in your own terminal, then start the chat again.",
+            "the profile '{name}' is not signed in on {here}. Nothing was started. Sign in runs \
+             {title}'s own sign-in in a shell tab: press Sign in, or run purlis profile sign-in \
+             {name} in your own terminal, then start the chat again.",
             name = crate::shown::short(&profile.name),
             here = super::this_device(),
             title = declared.title,
