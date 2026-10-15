@@ -48,7 +48,7 @@ fn any_other_key_keeps_the_project_s_files_from_loading_and_is_named() {
         ".claude/settings.json",
         r#"{"permissions": {"allow": ["Bash"], "deny": ["Bash(rm *)"], "ask": ["Edit"],
                             "defaultMode": "plan"},
-            "hooks": {}, "sandbox": {}, "env": {}}"#,
+            "hooks": {"Stop": []}, "sandbox": {}, "env": {"PROBE": "1"}}"#,
     );
     let screened = screen(Some(dir.path()));
     assert!(!screened.loads_the_project());
@@ -147,7 +147,11 @@ fn a_linked_worktree_s_main_checkout_local_file_is_read_too() {
         format!("gitdir: {}\n", gitdir.display()),
     )
     .expect(".git");
-    write(&main, ".claude/settings.local.json", r#"{"env": {}}"#);
+    write(
+        &main,
+        ".claude/settings.local.json",
+        r#"{"env": {"PROBE": "1"}}"#,
+    );
     let screened = screen(Some(&piece));
     assert_eq!(screened.dropped, ["env"]);
 }
