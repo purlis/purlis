@@ -1,0 +1,5 @@
+{"nodes":[
+{"nodeId":"1","ignored":false,"role":{"type":"internalRole","value":"RootWebArea"},"chromeRole":{"type":"internalRole","value":144},"name":{"type":"computedString","value":"Pay"},"properties":[{"name":"url","value":{"type":"string","value":"http://other.test/pay.html"}}],"childIds":["2"],"backendDOMNodeId":3,"frameId":"PAYMENT-FRAME"},
+{"nodeId":"2","ignored":false,"role":{"type":"role","value":"generic"},"chromeRole":{"type":"internalRole","value":88},"name":{"type":"computedString","value":""},"properties":[],"parentId":"1","childIds":["3"],"backendDOMNodeId":4,"frameId":"PAYMENT-FRAME"},
+{"nodeId":"3","ignored":false,"role":{"type":"role","value":"button"},"chromeRole":{"type":"internalRole","value":9},"name":{"type":"computedString","value":"Pay now"},"properties":[{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}}],"parentId":"2","childIds":[],"backendDOMNodeId":7,"frameId":"PAYMENT-FRAME"}
+]}
