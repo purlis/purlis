@@ -11,7 +11,8 @@
 # path the sandbox matches, and may differ for a name that is on disk and one that is not yet.
 #
 # Measured here, applied for real, under two kinds of rule:
-#   - plain: one spelling, as Claude Code builds it from a plain glob (reported as a notice);
+#   - plain: one spelling, as Claude Code builds it from a plain glob. Asserted for a name already
+#     on disk (it is matched as it is on disk); for a name not yet on disk, reported as a notice;
 #   - cased: each letter a class of both cases, exactly as purlis's own Seatbelt rules write it
 #     (`vaults_everywhere_rules`, `floor_planted_rules`, `every_project_rules`; a test of the core
 #     holds these lines to what those functions generate). Asserted: the run fails if a spelling
@@ -117,6 +118,11 @@ for kind in plain cased; do
   new_agents=$(tried "$(op_new_agents "$(bare)")" "$@")
   new_manifest=$(tried "$(op_new_manifest "$(bare)")" "$@")
   echo "::notice::seatbelt-case ($kind rule): let through, on disk: read .PURLIS/VAULTS $read_vault, write library/launchagents $write_agents; not yet on disk: new .ZSHRC $new_zshrc, new Library/LAUNCHAGENTS $new_agents, new PURLIS.TOML $new_manifest"
+  # A name already on disk is matched as it is on disk: the one-spelling rule holds it too.
+  if [ "$kind" = plain ]; then
+    expect "$read_vault" no "plain: a read through another case of a name on disk"
+    expect "$write_agents" no "plain: a write through another case of a name on disk"
+  fi
   if [ "$kind" = cased ]; then
     expect "$read_vault" no "cased: a read through another case"
     expect "$write_agents" no "cased: a write through another case"
@@ -125,23 +131,5 @@ for kind in plain cased; do
     expect "$new_manifest" no "cased: a new manifest in another case"
   fi
 done
-
-# Letters outside ASCII that a disk comparing names case-folded may take for ASCII ones, under
-# the cased rules: whether the name is the same file, and whether the rule holds it.
-s_long=$(printf '\305\277')
-k_sign=$(printf '\342\204\252')
-set -- "$cased_zshrc" "$cased_hooks"
-d=$(fresh)
-echo x > "$d/.zshrc"
-mkdir -p "$d/.claude/hooks"
-same_s=$(tried "test -e '$d/.z${s_long}hrc'")
-same_k=$(tried "test -e '$d/.claude/hoo${k_sign}s'")
-held_s=$(tried "echo y >> '$d/.z${s_long}hrc'" "$@")
-held_k=$(tried "touch '$d/.claude/hoo${k_sign}s/x'" "$@")
-d=$(bare)
-new_s=$(tried "touch '$d/.z${s_long}hrc' && test -e '$d/.zshrc'" "$@")
-d=$(bare)
-new_k=$(tried "mkdir '$d/.claude/hoo${k_sign}s' && test -e '$d/.claude/hooks'" "$@")
-echo "::notice::seatbelt-case (other letters): $same_s $same_k $held_s $held_k $new_s $new_k"
 
 exit "$failed"

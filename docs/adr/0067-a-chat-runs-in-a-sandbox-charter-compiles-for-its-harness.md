@@ -1672,7 +1672,7 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   operation under no rule at all: for a name **already on disk**, macOS's sandbox matches the
   path as it is on disk, not as typed. A read through `.PURLIS/VAULTS` and a write through
   `library/launchagents` are refused by a rule that spells them `.purlis/vaults` and
-  `Library/LaunchAgents`. A held name **not yet on disk** (a new `.ZSHRC`, `LAUNCHAGENTS` or
+  `Library/LaunchAgents`, which the step asserts. A held name **not yet on disk** (a new `.ZSHRC`, `LAUNCHAGENTS` or
   `PURLIS.TOML`) is held by the case classes: every held name is written as typed and with a
   class of both cases for each letter, in Claude Code's rules and in the floor's Seatbelt
   regexes, and the step asserts that the classed rules refuse every one of these spellings.
