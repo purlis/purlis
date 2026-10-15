@@ -12,8 +12,11 @@
 //! - Its web tools run in its own process too, and are not held to the sandbox's allowed hosts
 //!   (measured: a fetch of an unlisted host succeeded under `strictAllowlist`). No setting
 //!   limits them to a list of hosts, and an allow cannot outrank a deny, so both are denied.
-//! - `--settings` sits above project settings, and a project file is not honoured on the keys
-//!   that loosen a sandbox.
+//! - `--settings` sits above project settings on each key it names. Whether a sandboxed chat
+//!   loads its project's own settings files at all is decided at its start
+//!   ([`crate::harness::claude::project`], ADR 0067 as amended 2026-10-15): only where they hold
+//!   nothing beyond the narrowing and cosmetic keys it keeps. Otherwise the chat runs on the
+//!   person's settings and these alone, and the person's own are never written by the chat.
 //! - Where a class is held by a service no key in its settings can deny, and the service does not
 //!   hold it either, the chat is refused ([`super::NotStarted::Uncompilable`]) rather than
 //!   started without it. Its sandbox lets a command ask the keychain's service (its profile
@@ -248,6 +251,21 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         let path = path.display().to_string();
         if !allow_write.contains(&path) {
             allow_write.push(path);
+        }
+    }
+    // The person's own Claude Code settings (ADR 0067 as amended 2026-10-15): a sandboxed chat
+    // runs on them, so neither its commands nor its Edit tool write them. The floor holds them
+    // below, with every later-code name in the home.
+    if compiled.level != Level::Floor
+        && let Some(home) = &compiled.homes.home
+    {
+        for file in [".claude/settings.json", ".claude/settings.local.json"] {
+            for name in names_for(home) {
+                for rule in plain_and_cased(&format!("{}/", name.display()), file) {
+                    edit_rules.push(format!("Edit(/{rule})"));
+                    deny_write.push(rule);
+                }
+            }
         }
     }
     // The floor (#2071): no folder limits, so every folder is written but what it holds.
