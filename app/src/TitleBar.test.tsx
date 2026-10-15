@@ -508,7 +508,11 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
    * A core holding two projects, `one` in front, each with a workspace `alpha` and one chat in
    * it. Answers `chat-moved` to every project listening, the way the core pushes one.
    */
-  function core() {
+  function core(
+    chatsOf: (plane: string) => OpenChat[] = (plane) => [
+      chat(plane, 1, `${plane.split("/").pop()}.1`),
+    ],
+  ) {
     const listeners = new Map<string, number[]>();
     mockIPC((cmd, args) => {
       const given = (args ?? {}) as Record<string, unknown>;
@@ -531,14 +535,14 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
               path: `${plane}/workspaces/alpha`,
               vision: "",
               todos: [],
-              chats: [chat(plane, 1, `${plane.split("/").pop()}.1`)],
+              chats: chatsOf(plane),
             },
           ],
           personas: [],
           persona: null,
           unfiled: [],
         };
-      if (cmd === "opened_chats") return [chat(plane, 1, `${plane.split("/").pop()}.1`)];
+      if (cmd === "opened_chats") return chatsOf(plane);
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
@@ -547,6 +551,11 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
       return null;
     });
     return {
+      /** Sends the window `event`, as the core does. */
+      tell(event: string) {
+        for (const handler of listeners.get(event) ?? [])
+          window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload: null });
+      },
       /** Says chat 1 in `plane` is now in `state`, and whether it is asking for you. */
       move(plane: string, state: Moved["state"], sequence: number) {
         const moved: Moved = {
@@ -591,6 +600,38 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
     ).toBeInTheDocument();
     expect(within(bar()).getByRole("tablist", { name: "Projects" }).closest("[data-strip]")).toBe(
       strip(),
+    );
+  });
+
+  it("shows the level of the chat in front, follows the chat brought to the front, and none for a view (#2071)", async () => {
+    const { tell } = core((plane) => [
+      { ...chat(plane, 1, `${plane.split("/").pop()}.1`), sandbox: "full" },
+      {
+        ...chat(plane, 2, `${plane.split("/").pop()}.2`),
+        sandbox: "none",
+        sandbox_why: "your setting",
+      },
+    ]);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    expect(
+      await within(bar()).findByRole("img", { name: "The chat in front: full sandbox" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(within(stripNamed("Tabs")).getByRole("tab", { name: /one\.2/ }));
+    expect(
+      await within(bar()).findByRole("img", {
+        name: "The chat in front: no sandbox: your setting",
+      }),
+    ).toBeInTheDocument();
+
+    // A view in front, such as Settings, is no chat: the bar says no level.
+    tell("settings-asked");
+    await waitFor(() =>
+      expect(within(bar()).queryByRole("img", { name: /The chat in front/ })).toBeNull(),
     );
   });
 

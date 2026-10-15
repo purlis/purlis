@@ -295,5 +295,7 @@ describe("Settings › Sandbox's summary", () => {
     expect(await screen.findByText(/^On for everyone in this project\./)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change your level" })).toBeInTheDocument();
     expect(screen.queryByText(/use that chat's tab/)).toBeNull();
+    // Where the core says no level of yours counts (a policy keeps it), none is said as yours.
+    expect(screen.queryByText(/for you:/)).toBeNull();
   });
 });

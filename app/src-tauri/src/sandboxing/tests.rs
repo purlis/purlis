@@ -2032,3 +2032,36 @@ fn settings_says_your_level_as_it_starts_your_chats_here() {
         })
     );
 }
+
+/// #2071: the page says your level only as a start takes it: a floor a policy that forbids the
+/// opt-out keeps at the full sandbox is not said as yours.
+#[test]
+fn settings_says_no_floor_of_yours_that_policy_keeps_at_the_full_sandbox() {
+    use purlis_core::sandbox::personal::{self, Choice};
+    use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join(purlis_core::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"floor\"\n",
+    )
+    .unwrap();
+    personal::set_by_you(project.path(), None, Some(Choice::Floor)).unwrap();
+    assert_eq!(
+        state_on(project.path(), sandbox::Os::MacOs)
+            .yours
+            .map(|it| it.level),
+        Some("floor".to_owned())
+    );
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#,
+        std::path::Path::new("policy.json"),
+    ));
+    let yours = state_on(project.path(), sandbox::Os::MacOs).yours;
+    set_for_this_test(Locks::none());
+    assert_eq!(yours, None);
+}

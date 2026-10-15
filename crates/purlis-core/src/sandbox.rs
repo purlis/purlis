@@ -4573,6 +4573,13 @@ pub fn for_start_granted(
     for_start_at(harness, root, machine, has, persona, chat, None)
 }
 
+/// Whether a person's own `floor` starts the floor in a project at the full sandbox: not where
+/// a policy forbids them a looser sandbox than the project's ([`policy::Locks::opt_out_refused`]).
+/// What a start does, and what Settings says of their level, both ask this.
+pub fn floor_below_full_allowed(locks: &policy::Locks) -> bool {
+    locks.opt_out_refused().is_none()
+}
+
 /// [`for_start_granted`] at `at`, a level a person's own setting chose ([`decide_granted`]),
 /// or `None` for the project's own: **the full sandbox** where the project turned it on, or with
 /// the defaults its file says where it has not; **the floor** where the project has not turned
@@ -4599,7 +4606,7 @@ fn for_start_at(
     // floor (#2071). A person's level moves it either way (#2071, ADR 0096 §8).
     let locks = policy::Locks::of(root);
     let policy = match (plane.in_force(&locks), at) {
-        (Some(_), Some(Level::Floor)) if locks.opt_out_refused().is_none() => None,
+        (Some(_), Some(Level::Floor)) if floor_below_full_allowed(&locks) => None,
         (Some(policy), _) => Some(policy),
         (None, Some(Level::Full)) => Some(plane.said().unset.unwrap_or_else(Policy::defaults)),
         (None, _) => None,
@@ -4669,13 +4676,14 @@ fn floor_for_start(
     let compiled = Compiled::floor(root, machine, chat);
     let mut applied = applied_of(harness, compile, &compiled, root, machine)?;
     if let Some(name) = persona {
-        // What the file says with the sandbox not turned on: its personas' tools (#1407).
-        let said = plane.said().unset.unwrap_or_else(Policy::defaults);
+        // The personas the project declares, and their tools (#1407): as the file says them with
+        // the sandbox turned on, or not, so a chat at the floor in either runs the same tools.
+        let personas = floor_personas(plane);
         let mut writable = compiled.writable.clone();
         writable.extend(applied.writable());
         if let Some(resolved) = tools::for_chat(
             root,
-            &said.personas,
+            &personas,
             name,
             &policy::Locks::of(root),
             &crate::programs::search_dirs(),
@@ -4695,6 +4703,17 @@ fn floor_for_start(
         }
     }
     Ok(applied)
+}
+
+/// **The personas the project at the floor declares** (#1407, #2071): its own `[sandbox]`, as
+/// the file says it whether or not it turned the full sandbox on, else the defaults. A chat at
+/// the floor in a project at the full sandbox (your level) arms the same tools the full one does.
+pub(crate) fn floor_personas(plane: &Plane) -> std::collections::BTreeMap<String, persona::Grants> {
+    let said = plane.said();
+    said.policy
+        .or(said.unset)
+        .unwrap_or_else(Policy::defaults)
+        .personas
 }
 
 /// `compiled`, compiled by `compile` for a chat of `harness` in the plane at `root` on
@@ -5288,6 +5307,14 @@ pub fn decide_granted(
         if let Some(lifted) = yours_lifted(yours) {
             return Ok(Some(Decided::Unsandboxed(lifted)));
         }
+        let at = yours_at(yours);
+        // **Your `on` is the full sandbox or no start** (#2071): chosen stricter than the floor,
+        // it never ends as a start with no sandbox where the full one cannot be applied here. It
+        // is refused with why, as in a project at the full sandbox, where the person may opt out.
+        if at == Some(Level::Full) {
+            return for_start_at(harness, root, machine, has, persona, chat, at)
+                .map(|applied| applied.map(Decided::Sandboxed));
+        }
         if !machine.os.has_backend() {
             return Ok(Some(Decided::Floorless(
                 "This chat runs with no sandbox: purlis could not apply the floor here, because \
@@ -5296,7 +5323,7 @@ pub fn decide_granted(
             )));
         }
         return Ok(Some(
-            match for_start_at(harness, root, machine, has, persona, chat, yours_at(yours)) {
+            match for_start_at(harness, root, machine, has, persona, chat, at) {
                 Ok(Some(applied)) => Decided::Sandboxed(applied),
                 // The floor is always compiled where no policy is in force, so this is not met;
                 // said all the same rather than started with nothing said.

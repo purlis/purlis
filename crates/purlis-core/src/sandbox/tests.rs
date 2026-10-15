@@ -6265,3 +6265,57 @@ fn a_chat_asked_for_by_one_at_the_full_sandbox_does_not_start_at_the_floor() {
         Some(Level::Full)
     );
 }
+
+#[test]
+fn your_on_that_cannot_be_applied_in_a_project_at_the_floor_never_starts_the_chat_unsandboxed() {
+    // Chosen stricter than the project's floor: where the full sandbox cannot be applied here,
+    // the start is refused with why, as in a project at the full sandbox, and never runs bare.
+    let plane = plane_saying("schema = 1\n[sandbox]\negress = []\n");
+    std::fs::write(
+        plane.path().join(crate::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"on\"\n",
+    )
+    .unwrap();
+    let decided = decide(
+        Harness::ClaudeCode,
+        plane.path(),
+        &machine(Os::Linux),
+        &|_| false,
+        None,
+        None,
+    );
+    assert!(
+        matches!(decided, Err(NotStarted::NoBackend(_))),
+        "{decided:?}"
+    );
+    // Nor where this system has no sandbox at all.
+    let windows = decide(
+        Harness::ClaudeCode,
+        plane.path(),
+        &machine(Os::Windows),
+        &|_| true,
+        None,
+        None,
+    );
+    assert!(
+        matches!(windows, Err(NotStarted::NoBackend(_))),
+        "{windows:?}"
+    );
+}
+
+#[test]
+fn at_the_floor_a_persona_s_tools_are_the_ones_the_project_declares_in_either_kind_of_project() {
+    let tools = |text: &str| {
+        floor_personas(&Plane::of(Some(text)))
+            .get("devops")
+            .map(|grants| grants.tools.len())
+    };
+    let personas = "[sandbox.personas.devops]\n\
+                    tools = { kubectl = { vault = \"devops\", as = \"KUBECONFIG file\", key = \"k\" } }\n";
+    // A project that has not turned the full sandbox on, and one that has.
+    assert_eq!(tools(&format!("[sandbox]\n{personas}")), Some(1));
+    assert_eq!(
+        tools(&format!("[sandbox]\nmode = \"on\"\n{personas}")),
+        Some(1)
+    );
+}
