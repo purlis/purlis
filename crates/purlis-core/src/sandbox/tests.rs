@@ -6112,9 +6112,15 @@ fn in_a_project_at_the_floor_your_confirmed_off_starts_the_chat_without_it_and_n
 fn team_off_accepted(local: &str) -> tempfile::TempDir {
     let plane = plane_saying("[sandbox]\nmode = \"off\"\n");
     std::fs::write(plane.path().join(crate::profiles::LOCAL_FILE), local).expect("local");
+    // The local file is this machine's only where git leaves it alone, as in a real project.
+    std::fs::write(
+        plane.path().join(".gitignore"),
+        format!("{}\n", crate::profiles::LOCAL_FILE),
+    )
+    .expect("gitignore");
     let made = crate::testgit::run(plane.path(), &["init", "-q"]);
     assert!(made.ok(), "{made:?}");
-    crate::testgit::run(plane.path(), &["add", "charter.toml"]);
+    crate::testgit::run(plane.path(), &["add", "charter.toml", ".gitignore"]);
     let ran = crate::testgit::run(
         plane.path(),
         &[
