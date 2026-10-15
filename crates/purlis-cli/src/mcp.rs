@@ -357,15 +357,15 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
     .map_err(|why| in_the_chat(&why))
 }
 
-/// `dispatch_report`: the one operation `purlis dispatch report` performs
-/// ([`crate::dispatch::report`]).
 /// `dispatch_read` (#2084): what task `chat` said last and the commands it ran, as
-/// `purlis dispatch read` prints it.
+/// `purlis dispatch read` prints it ([`crate::dispatch::read`]).
 fn dispatch_read(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let chat = chattools::dispatch_read_args(args)?;
     crate::dispatch::read(chat).map_err(|why| in_the_chat(&why))
 }
 
+/// `dispatch_report`: the one operation `purlis dispatch report` performs
+/// ([`crate::dispatch::report`]).
 fn dispatch_report(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let (outcome, text, changed) = chattools::dispatch_report_args(args)?;
     crate::dispatch::report(&outcome, &text, changed.as_deref()).map_err(|why| in_the_chat(&why))
