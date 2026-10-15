@@ -5209,30 +5209,34 @@ pub fn your_level(
 ) -> Option<personal::Choice> {
     let in_force = personal::in_force(root);
     // What the team's policy and this machine's let a person choose here, and the level of a
-    // chat whose person chose none: the floor, or no sandbox once they accepted the team's off
-    // (#2071 PR C). Every level below is read through it, the chain's included.
+    // chat whose person chose none: the project's own — the full sandbox where it turned it on,
+    // the floor where it has not, no sandbox once they accepted the team's off (#2071 PR C).
+    // Every level below is read through it, the chain's included.
     let bound = team::allowed_levels_under(root, locks);
     let held = |level| bounded(level, &bound);
     let own = held(in_force.for_persona(persona));
     let not_off = |level: Option<personal::Choice>| level.filter(|l| *l != personal::Choice::Off);
-    // Not set reads as the floor, which is what a chat with no level starts at.
-    let floor = personal::Choice::Floor;
+    // Not set reads as the project's own level, which is what a chat with no level starts at.
+    let unset = bound.default;
+    // A start that does not say how it was made, or whose chain purlis cannot read whole, is
+    // never read as a shorter chain: never `off`, and never below the project's own level.
+    let unread = || not_off(own).map(|level| level.min(personal::base(root)));
     match made {
-        Made::Unnamed | Made::Asked { above: None, .. } => not_off(own),
+        Made::Unnamed | Made::Asked { above: None, .. } => unread(),
         Made::Asked {
             above: Some(above), ..
-        } if above.is_empty() => not_off(own),
+        } if above.is_empty() => unread(),
         Made::Asked {
             above: Some(above), ..
         } => {
             // A chat on no persona is kept in the chain under the default persona's name, so
             // an entry naming it is held to the project's level too.
             let default = crate::start::persona_for_a_new_chat(root);
-            let project = held(in_force.for_persona(None)).unwrap_or(floor);
+            let project = held(in_force.for_persona(None)).unwrap_or(unset);
             let theirs = above
                 .iter()
                 .map(|one| {
-                    let level = held(in_force.for_persona(one.as_deref())).unwrap_or(floor);
+                    let level = held(in_force.for_persona(one.as_deref())).unwrap_or(unset);
                     if one.is_some() && *one == default {
                         level.min(project)
                     } else {
@@ -5241,7 +5245,7 @@ pub fn your_level(
                 })
                 .min()
                 .unwrap_or(personal::Choice::On);
-            Some(own.unwrap_or(floor).min(theirs))
+            Some(own.unwrap_or(unset).min(theirs))
         }
         Made::Window | Made::Resume | Made::Relaunch => own,
     }

@@ -29,7 +29,7 @@
 //! Settings on this machine, or a stricter one. The record of those is in this machine's
 //! config home ([`super::local`] `levels_mine`), which no sandboxed chat writes. A lower level
 //! the file alone says waits for your Confirm ([`waiting`]), and meanwhile the start takes what
-//! you confirmed, or the floor. **Never read [`of`] to decide a start.**
+//! you confirmed, or the project's own level ([`base`]). **Never read [`of`] to decide a start.**
 //!
 //! What a level does to a chat's start is the start's ([`super::decide`]); this module reads,
 //! validates and judges the choice, and keeps the record of what you confirmed.

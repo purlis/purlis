@@ -171,7 +171,7 @@ describe("Settings › Sandbox › Your level", () => {
     expect(screen.getByText(/Floor starts the floor even where the project/)).toBeInTheDocument();
     await waitFor(() => expect(picker("As scribe")).toBeInTheDocument());
     expect(await offeredIn(picker("This project"))).toEqual([
-      "not set — the floor",
+      "not set — the project's level (full sandbox)",
       "Full sandbox",
       "Floor",
       "No sandbox",

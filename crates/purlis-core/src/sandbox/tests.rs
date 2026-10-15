@@ -6355,3 +6355,27 @@ fn under_the_project_s_never_your_floor_starts_the_full_sandbox() {
     assert_eq!(level_of(&decided_as(plane.path(), None)), Some(Level::Full));
     assert_eq!(personal::base(plane.path()), personal::Choice::On);
 }
+
+#[test]
+fn a_chat_asked_for_through_a_chain_purlis_cannot_read_never_starts_lower_than_the_project() {
+    // A whole chain holds a dispatch to the asking chat's level; one purlis cannot read whole is
+    // never read as a shorter one, so it holds at least to the project's own.
+    let plane = plane_with_local("[sandbox.personas]\nqa = \"floor\"\n");
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::Floor)).unwrap();
+    let unread = Made::Asked {
+        how: Asking::Dispatch,
+        above: None,
+    };
+    for made in [unread, Made::Unnamed] {
+        assert_eq!(
+            level_of(&decided_made(plane.path(), Some("qa"), &made)),
+            Some(Level::Full),
+            "{made:?}"
+        );
+    }
+    // The person's own start of it is theirs.
+    assert_eq!(
+        level_of(&decided_made(plane.path(), Some("qa"), &Made::Window)),
+        Some(Level::Floor)
+    );
+}

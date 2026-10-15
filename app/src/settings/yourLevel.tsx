@@ -7,6 +7,7 @@ import {
   type LevelWaiting,
   type PlainFileVault,
   type PlaneId,
+  type SandboxState,
   type SettingsStep,
 } from "../bindings";
 import { inTheWindow } from "../personaHostsAllow";
@@ -39,9 +40,9 @@ export function yourLevelHelp(file: string): string {
  * **Your level for the project, and for each persona** (#2071): a choice per row, kept in this
  * machine's `purlis.local.toml` (`[sandbox] level`, `[sandbox.personas]`). A persona's level
  * wins over the project's for a chat started as it; not set, it takes the project's, and the
- * project's not set is the floor.
+ * project's not set is the project's own level (`projectLevel`, as `projectLevelSaid` says it).
  */
-export function yourLevelControls(personas: readonly string[]): Control[] {
+export function yourLevelControls(personas: readonly string[], projectLevel?: string): Control[] {
   const choice = (path: SettingsStep[], label: string, hint: string, unset: string): Control => ({
     ...textAt(path, label, { kind: "choice", hint }),
     choices: [...LEVELS],
@@ -53,7 +54,9 @@ export function yourLevelControls(personas: readonly string[]): Control[] {
       LEVEL_KEY,
       "This project",
       "Your level for every chat of this project, unless its persona has its own below.",
-      "not set — the floor",
+      projectLevel === undefined
+        ? "not set — the project's level"
+        : `not set — the project's level (${projectLevel})`,
     ),
     ...personas.map((persona) =>
       choice(
@@ -249,4 +252,17 @@ export function levelsWaitingRow(plane: PlaneId, text: string): LiveSetting[] {
       }),
     },
   ];
+}
+
+/**
+ * **The level a chat here starts at where you chose none** (#2071), as the core said it: the full
+ * sandbox where the project turned it on or its `policy = "never"` (or a policy on this machine)
+ * holds it, no sandbox where you accepted the team's off, and the floor otherwise. `undefined`
+ * until the core has said.
+ */
+export function projectLevelSaid(sandbox: SandboxState | undefined): string | undefined {
+  if (sandbox === undefined) return undefined;
+  if (sandbox.level_held != null) return "full sandbox";
+  if (sandbox.team_off != null) return sandbox.team_off.answer === true ? "no sandbox" : "floor";
+  return sandbox.on ? "full sandbox" : "floor";
 }

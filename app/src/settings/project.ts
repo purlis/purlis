@@ -61,6 +61,7 @@ import { teamPolicyRow } from "./teamPolicy";
 import {
   levelsWaitingRow,
   plainFilesRow,
+  projectLevelSaid,
   YOUR_LEVEL,
   yourLevelControls,
   yourLevelHelp,
@@ -649,7 +650,10 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
             id: YOUR_LEVEL,
             label: "Your level",
             help: yourLevelHelp(read.local.file),
-            settings: fromLocal(YOUR_LEVEL, yourLevelControls(read.entries.persona ?? [])),
+            settings: fromLocal(
+              YOUR_LEVEL,
+              yourLevelControls(read.entries.persona ?? [], projectLevelSaid(read.sandbox)),
+            ),
             after:
               read.plane !== undefined
                 ? [
