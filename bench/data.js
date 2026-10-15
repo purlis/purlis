@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792023861396,
+  "lastUpdate": 1792024887971,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11466,6 +11466,48 @@ window.BENCHMARK_DATA = {
             "value": 105.474705,
             "unit": "ms",
             "extra": "median of 5 runs: 101.190, 104.149, 105.475, 105.721, 105.931 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "93945919aa909c441422e02389ad1272bf586fad",
+          "message": "dispatch: reading a task is a tool too, and asks nobody (#2101)\n\nThe dispatch_read chat tool reads what a task the chat dispatched said\nlast and ran, as the read command does. Both join the pre-allowed reads\n(ADR 0064, amended), and a helper is still refused either. The\ndispatch_report description says what follows a turn without a report.\nCONTEXT.md names reading a task and a quiet note.\n\nRefs #2084\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T04:23:16+04:00",
+          "tree_id": "a5127c65246a4baf367612bb66a894a5d340d89b",
+          "url": "https://github.com/purlis/purlis/commit/93945919aa909c441422e02389ad1272bf586fad"
+        },
+        "date": 1792024886836,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27481300000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.259, 0.267, 0.275, 0.281, 0.282 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.531349499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.385, 16.401, 16.531, 16.535, 16.723 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6400705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.186, 101.206, 101.640, 101.720, 101.912 ms"
           }
         ]
       }
