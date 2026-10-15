@@ -222,7 +222,8 @@ fn chat_git_hooks<R: tauri::Runtime>(
 /// What the app ships that a chat is armed with, found once at launch.
 ///
 /// A property of this build and not of a project, so every plane arms with the same one.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(test), derive(Default))]
 pub(crate) struct Shipped {
     /// The `charter` every hook runs ([`charter_binary`]).
     pub binary: Option<PathBuf>,
@@ -234,6 +235,48 @@ pub(crate) struct Shipped {
     /// The git hooks every harness chat commits through (SQ-16), written at launch under the
     /// app's data directory — none where they could not be written, or off unix.
     pub git_hooks: Option<purlis_core::githooks::GitHooks>,
+}
+
+/// **In the tests, a build that ships its binary and plugin**: a stand-in `purlis` that does
+/// nothing, and an empty plugin folder.
+///
+/// A Claude Code chat starts sandboxed in every project, at the floor where the project has not
+/// turned the full sandbox on (#2071), and a sandboxed chat is refused where the app cannot arm
+/// its harness with its own binary. Every build the person runs ships one; so does every test's,
+/// unless a test says otherwise by naming its own `Shipped`. The stand-in is never the test
+/// binary itself: a hook run with it would start the tests again.
+#[cfg(test)]
+impl Shipped {
+    /// A build that ships nothing: no binary, no plugin, no shims and no git hooks.
+    pub(crate) fn nothing() -> Self {
+        Self {
+            binary: None,
+            plugin: None,
+            shims: None,
+            git_hooks: None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for Shipped {
+    fn default() -> Self {
+        static SHIPPED: std::sync::OnceLock<(tempfile::TempDir, PathBuf, PathBuf)> =
+            std::sync::OnceLock::new();
+        let (_, binary, plugin) = SHIPPED.get_or_init(|| {
+            let dir = tempfile::tempdir().expect("a folder for the stand-in binary");
+            let binary = stand_in::program(dir.path(), "purlis", "#!/bin/sh\nexit 0\n");
+            let plugin = dir.path().join("plugin");
+            std::fs::create_dir_all(&plugin).expect("a folder for the stand-in plugin");
+            (dir, binary, plugin)
+        });
+        Self {
+            binary: Some(binary.clone()),
+            plugin: Some(plugin.clone()),
+            shims: None,
+            git_hooks: None,
+        }
+    }
 }
 
 /// What rename-local moves the harness plugin with at launch (RN-8): this app's `charter` and
@@ -550,6 +593,14 @@ async fn close_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<(), String
 #[derive(serde::Serialize, specta::Type)]
 struct OpenChat {
     session: u32,
+    /// How much its sandbox holds (#2071): `full`, `floor`, or `none` for a chat that runs
+    /// with no sandbox; `null` for a shell, or a chat still to start. Its tab draws it.
+    #[specta(optional)]
+    sandbox: Option<String>,
+    /// Why it runs with no sandbox where the floor could not be applied here (#2071, Q2): what
+    /// its tab's sandbox mark says beside `none`. `null` for any other chat.
+    #[specta(optional)]
+    sandbox_why: Option<String>,
     /// Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
     /// window keys what it keeps of a chat beyond this launch by, such as the Chats list's
     /// folds (#1687). `null` for a chat that has no id yet.
@@ -2365,6 +2416,15 @@ impl From<chats::Open> for OpenChat {
     fn from(open: chats::Open) -> Self {
         Self {
             session: open.session,
+            sandbox: open.harness.map(|_| {
+                match open.sandbox {
+                    Some(purlis_core::sandbox::Level::Full) => "full",
+                    Some(purlis_core::sandbox::Level::Floor) => "floor",
+                    None => "none",
+                }
+                .to_owned()
+            }),
+            sandbox_why: open.floorless,
             // The store's record of it, which `drawn_of` reads: not part of what opened.
             id: None,
             name: open.name,

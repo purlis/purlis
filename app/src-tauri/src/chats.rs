@@ -153,6 +153,12 @@ pub struct Open {
     /// The chat whose tab it has a pane in, where it is not its tab's own chat (#1489):
     /// [`purlis_core::reopen::Chat::beside`].
     pub beside: Option<u32>,
+    /// How much its sandbox holds as it started (#2071): the full sandbox or the floor, and
+    /// `None` for a chat that runs with no sandbox.
+    pub sandbox: Option<purlis_core::sandbox::Level>,
+    /// Why it runs with no sandbox where the floor could not be applied here (#2071, Q2): what
+    /// its tab's sandbox mark says. `None` for any other chat.
+    pub floorless: Option<String>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -417,6 +423,9 @@ pub struct Chats {
     /// What a start found to say on a chat's tab after the core's start had spoken: that its
     /// trust event could not be written. Taken by the window's start ([`Self::start_notes`]).
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// Why each chat that runs with no sandbox where the floor could not be applied does
+    /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
+    floorless: Mutex<HashMap<u32, String>>,
     /// The older Claude Code a chat's late notes say it is on (#1699): marked said once the
     /// window takes them ([`Self::start_notes`]), not before.
     older_in_notes: Mutex<HashMap<u32, purlis_core::sandbox::ClaudeCodeVersion>>,
@@ -779,6 +788,8 @@ type Armed = (Vec<String>, Vec<(String, String)>);
 type Decided = (
     Option<(purlis_core::sandbox::Applied, String)>,
     Option<purlis_core::sandbox::Lifted>,
+    // Where the floor could not be applied, the sentence its tab says (#2071, Q2).
+    Option<String>,
 );
 
 /// What a chat that was closed was, kept for a start in its place
@@ -841,6 +852,7 @@ impl Chats {
             beginning: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            floorless: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             let_go: Mutex::new(HashMap::new()),
@@ -1100,7 +1112,7 @@ impl Chats {
         opt_out: Option<&purlis_core::sandbox::OptOut>,
     ) -> Result<Decided, String> {
         let Some(harness) = chat.harness() else {
-            return Ok((None, None));
+            return Ok((None, None, None));
         };
         let root = &self.project;
         let decided = project_sandbox(
@@ -1112,10 +1124,13 @@ impl Chats {
             opt_out,
             grants,
         )?;
-        let (applied, lifted) = match decided {
-            Some(purlis_core::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None),
-            Some(purlis_core::sandbox::Decided::Unsandboxed(lifted)) => (None, Some(lifted)),
-            None => (None, None),
+        let (applied, lifted, floorless) = match decided {
+            Some(purlis_core::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None, None),
+            Some(purlis_core::sandbox::Decided::Unsandboxed(lifted)) => (None, Some(lifted), None),
+            // Where the floor cannot be applied the chat starts as before, and says why (#2071,
+            // Q2).
+            Some(purlis_core::sandbox::Decided::Floorless(why)) => (None, None, Some(why)),
+            None => (None, None, None),
         };
         // Ruling V87g: the program is the harness the sandbox was compiled for, and not a file
         // a sandboxed chat could have changed. The real file it names is what the check asks;
@@ -1127,7 +1142,10 @@ impl Chats {
                 .map_err(|gone| format!("{} Nothing was started.", gone.said()))?;
             let cwd = chat.cwd.clone().unwrap_or_else(|| root.clone());
             let mut writable = applied.writable();
-            writable.extend(purlis_core::sandbox::program::temp_roots(&[]));
+            // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+            if applied.level() == purlis_core::sandbox::Level::Full {
+                writable.extend(purlis_core::sandbox::program::temp_roots(&[]));
+            }
             let (checked, said) = purlis_core::sandbox::program::checked_answering(
                 harness,
                 &words,
@@ -1146,9 +1164,11 @@ impl Chats {
             if let Some(said) = said {
                 applied.answered(&said);
             }
-            return Ok((Some((applied, checked[0].clone())), None));
+            // At the floor, the program it starts is never written by the chat (#2071, Q4).
+            applied.hold_programs(&checked);
+            return Ok((Some((applied, checked[0].clone())), None, None));
         }
-        Ok((None, lifted))
+        Ok((None, lifted, floorless))
     }
 
     /// Starts a chat the core has already worked out the launch for — a chat on a profile.
@@ -1251,7 +1271,7 @@ impl Chats {
         size: Size,
         why: Why,
     ) -> Result<u32, String> {
-        self.open_it(
+        let session = self.open_it(
             chat,
             ready.program.clone(),
             ready.command.clone(),
@@ -1268,7 +1288,19 @@ impl Chats {
             // A chat on a profile is an agent, never the operator's shell.
             false,
             why,
-        )
+        )?;
+        self.floorless_at(session, ready.floorless.clone());
+        Ok(session)
+    }
+
+    /// Says why chat `session` runs with no sandbox where the floor could not be applied
+    /// (#2071, Q2), or that it does not: each start of a session says it again.
+    fn floorless_at(&self, session: u32, why: Option<String>) {
+        let mut floorless = lock(&self.floorless);
+        match why {
+            Some(why) => floorless.insert(session, why),
+            None => floorless.remove(&session),
+        };
     }
 
     /// [`Self::put_back`], kept by the name the tests know it by.
@@ -1965,7 +1997,7 @@ impl Chats {
             };
             let now = match decided {
                 Some(Decided::Sandboxed(applied)) => Some(Settled::of(applied.confines())),
-                Some(Decided::Unsandboxed(_)) | None => None,
+                Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None => None,
             };
             if now != started {
                 // Policy is the cause where the chat runs unconfined and policy requires the
@@ -2049,7 +2081,7 @@ impl Chats {
         };
         #[cfg(not(test))]
         let decided = self.sandbox_off_profile(chat, &grants, opt_out);
-        let (sandboxed, unsandboxed) = decided?;
+        let (sandboxed, unsandboxed, floorless) = decided?;
         let mut launch = chat.launch();
         let sandbox = sandboxed.map(|(applied, program)| {
             launch.program = program;
@@ -2086,6 +2118,8 @@ impl Chats {
             operator_shell,
             why,
         )
+        // Where the floor could not be applied, its tab's sandbox mark says why (#2071, Q2).
+        .inspect(|session| self.floorless_at(*session, floorless))
     }
 
     /// What a shell tab's shell is started with beyond `args`, the chat's own words: charter's
@@ -3417,6 +3451,8 @@ impl Chats {
         // In the strip's order (`in_order`), so the window comes back with its tabs the way
         // they were left. Asked before `open` is held: it takes `order` itself.
         let ordered = self.in_order();
+        // Read out before `open` is held, as `order` is: no lock here is taken under another.
+        let floorless = lock(&self.floorless).clone();
         let open = lock(&self.open);
         let front = *lock(&self.front);
         ordered
@@ -3445,6 +3481,8 @@ impl Chats {
                     tab: chat.has_tab(),
                     shows: chat.shows,
                     beside: chat.beside,
+                    sandbox: running.confines.as_ref().map(|confines| confines.level),
+                    floorless: floorless.get(&session).cloned(),
                 })
             })
             .collect()
@@ -3896,6 +3934,9 @@ impl Chats {
                 tab: one.chat.has_tab(),
                 shows: one.chat.shows,
                 beside: one.chat.beside,
+                // How it is sandboxed is its start's to say.
+                sandbox: None,
+                floorless: None,
             })
             .collect()
     }
@@ -5218,7 +5259,7 @@ pub(crate) mod tests {
         let seen = std::sync::Arc::clone(&compiled);
         let chats = Chats::new().deciding_by(Box::new(move |chat, grants, _| {
             lock(&seen).push((chat.name.clone(), grants.clone()));
-            Ok((None, None))
+            Ok((None, None, None))
         }));
         let size = Size {
             columns: 80,
@@ -5459,13 +5500,11 @@ pub(crate) mod tests {
             let _ = tx.send((session, harness, conversation));
         }));
 
-        // `/bin/echo` named `claude` is what `Harness::of_command` reads, and it is the file
-        // name that decides — so this is a Claude Code chat as far as the app is concerned.
-        // Copied through `stand_in::copy_of`, not `fs::copy`: this chat runs it the moment it
-        // is written, and a program this process copied through its own descriptor can lose
-        // to `ETXTBSY` (charter-app#81).
+        // A program named `claude` is what `Harness::of_command` reads, and it is the file
+        // name that decides — so this is a Claude Code chat as far as the app is concerned. It
+        // answers `--version` as Claude Code does, which the floor's start asks (#2071).
         let dir = tempfile::tempdir().expect("a directory");
-        let claude = stand_in::copy_of(std::path::Path::new("/bin/echo"), dir.path(), "claude");
+        let claude = stand_in::claude_code(dir.path(), "claude", "#!/bin/sh\necho \"$@\"\n");
 
         chats
             .start(
@@ -5518,8 +5557,20 @@ pub(crate) mod tests {
     /// A conversation the chat is not in: a nested harness's.
     const OTHER: &str = "66666666-7777-4888-9999-000000000000";
 
+    /// A program called `name` that is there, beside every test's project and never in one, and
+    /// answers `--version` as Claude Code does: a harness chat starts at the floor (#2071), which
+    /// checks the program it starts even where a pretend host runs nothing.
+    fn standing(name: &str) -> String {
+        static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        let dir = DIR.get_or_init(|| tempfile::tempdir().expect("a folder for the stand-ins"));
+        stand_in::claude_code(dir.path(), name, "#!/bin/sh\nexec sleep 600\n")
+            .display()
+            .to_string()
+    }
+
     /// A directory holding a program called `claude` that prints the arguments it was given
-    /// and then waits, so a test can see what the app actually put on its command line.
+    /// and then waits, so a test can see what the app actually put on its command line. It
+    /// answers `--version` as Claude Code does, which a sandboxed start asks (#2071).
     fn a_claude(dir: &std::path::Path) -> String {
         // Through `stand_in::program`, which holds both halves of this. The rename is what
         // charter-app#39 needed: the stand-in ends in `sleep 600`, so an earlier chat still
@@ -5527,7 +5578,7 @@ pub(crate) mod tests {
         // 2 failures in 5 runs, and because this binary runs first, `cargo test` stopped and
         // every later test binary was SKIPPED. The write from a child is what charter-app#81
         // needed, in the other direction: a chat runs this the moment it is written.
-        stand_in::program(
+        stand_in::claude_code(
             dir,
             "claude",
             "#!/bin/sh\nprintf 'argv:'\nfor word in \"$@\"; do printf ' %s' \"$word\"; done\nprintf '\\n'\nexec sleep 600\n",
@@ -6254,7 +6305,7 @@ pub(crate) mod tests {
         let chats = chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(plane.path(), "/nowhere/opencode"), SIZE)
+            .start(&a_chat_in(plane.path(), &standing("opencode")), SIZE)
             .expect_err("not started");
 
         // Refused for one reason or another on every system — no compiler here, no wrap there,
@@ -6332,7 +6383,7 @@ pub(crate) mod tests {
                 .start(
                     &Chat {
                         cwd: Some(below),
-                        ..chat("/nowhere/opencode", "off-profile", None)
+                        ..chat(&standing("opencode"), "off-profile", None)
                     },
                     SIZE,
                 )
@@ -6388,7 +6439,7 @@ pub(crate) mod tests {
                 use purlis_core::sandbox::Decided;
                 // A shell is the person's own, as in the start this stands in for.
                 let Some(harness) = chat.harness() else {
-                    return Ok((None, None));
+                    return Ok((None, None, None));
                 };
                 let decided = purlis_core::sandbox::decide_granted(
                     harness,
@@ -6402,10 +6453,11 @@ pub(crate) mod tests {
                 .map_err(|not| not.to_string())?;
                 Ok(match decided {
                     Some(Decided::Sandboxed(applied)) => {
-                        (Some((applied, chat.program.clone())), None)
+                        (Some((applied, chat.program.clone())), None, None)
                     }
-                    Some(Decided::Unsandboxed(lifted)) => (None, Some(lifted)),
-                    None => (None, None),
+                    Some(Decided::Unsandboxed(lifted)) => (None, Some(lifted), None),
+                    Some(Decided::Floorless(why)) => (None, None, Some(why)),
+                    None => (None, None, None),
                 })
             }),
         );
@@ -6426,7 +6478,7 @@ pub(crate) mod tests {
     fn a_chat_in_with(plane: &std::path::Path, resume: Option<&str>) -> Chat {
         Chat {
             cwd: Some(plane.to_path_buf()),
-            ..chat("/nowhere/claude", "restarted", resume)
+            ..chat(&standing("claude"), "restarted", resume)
         }
     }
 
@@ -7019,6 +7071,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: Some(sandbox),
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         }
@@ -7106,7 +7159,7 @@ pub(crate) mod tests {
         let chats = chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(plane.path(), "/nowhere/codex"), SIZE)
+            .start(&a_chat_in(plane.path(), &standing("codex")), SIZE)
             .expect_err("not started");
 
         assert!(!refused.contains("#1123"), "{refused}");
@@ -7138,7 +7191,7 @@ pub(crate) mod tests {
 
         let refused = chats
             .start(
-                &a_chat_in(&plane.path().join("workspaces/w"), "/nowhere/opencode"),
+                &a_chat_in(&plane.path().join("workspaces/w"), &standing("opencode")),
                 SIZE,
             )
             .expect_err("not started");
@@ -7160,7 +7213,7 @@ pub(crate) mod tests {
         let chats = pretend_chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(elsewhere.path(), "/nowhere/opencode"), SIZE)
+            .start(&a_chat_in(elsewhere.path(), &standing("opencode")), SIZE)
             .expect_err("not started");
         assert_eq!(
             refused,
@@ -7169,7 +7222,7 @@ pub(crate) mod tests {
         );
 
         let refused = chats
-            .start(&chat("/nowhere/opencode", "no folder", None), SIZE)
+            .start(&chat(&standing("opencode"), "no folder", None), SIZE)
             .expect_err("not started");
         assert_eq!(
             refused,
@@ -7190,7 +7243,7 @@ pub(crate) mod tests {
         let chats = pretend_chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(&planted, "/nowhere/opencode"), SIZE)
+            .start(&a_chat_in(&planted, &standing("opencode")), SIZE)
             .expect_err("not started");
 
         assert!(
@@ -7218,7 +7271,7 @@ pub(crate) mod tests {
         };
 
         let agent = chats
-            .start(&a_chat_in(elsewhere.path(), "/nowhere/claude"), SIZE)
+            .start(&a_chat_in(elsewhere.path(), &standing("claude")), SIZE)
             .expect("starts");
         let opening = host.openings().pop().expect("opened");
         assert_eq!(root_of(&opening), [project.display().to_string()]);
@@ -7239,7 +7292,7 @@ pub(crate) mod tests {
         let chats = pretend_chats_of(gone.path());
 
         let refused = chats
-            .start(&a_chat_in(gone.path(), "/nowhere/claude"), SIZE)
+            .start(&a_chat_in(gone.path(), &standing("claude")), SIZE)
             .expect_err("not started");
 
         assert_eq!(
@@ -7263,14 +7316,14 @@ pub(crate) mod tests {
         };
 
         let refused = chats
-            .start(&a_chat_in(plane.path(), "/nowhere/claude"), SIZE)
+            .start(&a_chat_in(plane.path(), &standing("claude")), SIZE)
             .expect_err("not started");
         assert!(says_why(&refused), "{refused}");
         assert!(chats.in_order().is_empty(), "a chat was opened");
 
         let record = Record {
             chats: vec![a_resumable_chat_in(plane.path())],
-            ..one_recorded("/nowhere/claude")
+            ..one_recorded(&standing("claude"))
         };
         chats.put_back_here(&record, SIZE);
         let waiting = chats.would_not_start();
@@ -8218,12 +8271,13 @@ pub(crate) mod tests {
 
     /// A plane at `dir/plane` declaring the profile `work` (kind `claude`) in its local file,
     /// running a stand-in that waits, with `extra` after its program in its command. Nothing is
-    /// approved. Answers the plane's root.
+    /// approved. Answers the plane's root. The stand-in is beside the plane, not in it: the
+    /// floor starts no program the chat could have written (#2071).
     fn a_plane_with_work(dir: &std::path::Path, extra: &str) -> std::path::PathBuf {
         let root = dir.join("plane");
         std::fs::create_dir_all(&root).expect("the plane");
         std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
-        let program = a_claude(&root);
+        let program = a_claude(dir);
         std::fs::write(
             root.join(purlis_core::profiles::LOCAL_FILE),
             format!("[harness.work]\nkind = \"claude\"\ncommand = [{program:?}{extra}]\n"),
@@ -9391,6 +9445,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: None,
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         }
@@ -10218,6 +10273,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: None,
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         };
@@ -10294,6 +10350,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: None,
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         };
@@ -10329,8 +10386,10 @@ pub(crate) mod tests {
         std::fs::write(root.join(purlis_core::plane::MANIFEST), shared).expect("charter.toml");
         let argv = root.join("argv");
         let running = root.join("running");
-        let program = stand_in::program(
-            &root,
+        // Beside the plane, not in it, and answering as Claude Code: the floor starts no program
+        // the chat could have written, and asks the one it starts what it is (#2071).
+        let program = stand_in::claude_code(
+            dir.path(),
             command[0],
             &format!(
                 "#!/bin/sh\n: > {running:?}\n\

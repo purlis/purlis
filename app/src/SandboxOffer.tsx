@@ -74,9 +74,11 @@ export function SandboxOffer({ plane }: { plane: PlaneId }) {
       ]}
     >
       <p>
-        This project runs its chats without the sandbox. Turned on, every new chat runs sandboxed:
-        it reaches only model providers, your forges and package registries, and never your vaults.
-        You can still start one chat without it from the new-chat picker.
+        This project runs its chats at the floor: a chat reaches any host and writes any folder, but
+        never reads your vaults or purlis&apos;s keys, and never writes what a program runs later.
+        Turned on, the sandbox holds every new chat to model providers, your forges and package
+        registries, and to its own project. You can still start one chat without it from the
+        new-chat picker.
       </p>
       {never.length > 0 && (
         <p>

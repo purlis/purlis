@@ -423,6 +423,7 @@ import { WorkspaceStrip } from "./WorkspaceStrip";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import { type FirstChat, type PlaneReport, type WindowDoing } from "./planeReport";
 import { Doer, Pin } from "./StripMarks";
+import type { SandboxSaid } from "./SandboxMark";
 import {
   type RestartAct,
   type RestartSaid,
@@ -1662,6 +1663,19 @@ export const PlaneView = memo(function PlaneView({
       for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
         const found = chats.find((chat) => chat.session === session);
         if (found) return found.persona ?? null;
+      }
+      return null;
+    },
+    [sidebar],
+  );
+  /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
+  const sandboxOf = useCallback(
+    (session: number | undefined): SandboxSaid | null => {
+      if (session === undefined || sidebar === undefined) return null;
+      for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
+        const found = chats.find((chat) => chat.session === session);
+        if (found)
+          return found.sandbox == null ? null : { level: found.sandbox, why: found.sandbox_why };
       }
       return null;
     },
@@ -8223,6 +8237,7 @@ export const PlaneView = memo(function PlaneView({
                 stopping={stopping}
                 shells={shells}
                 personaOf={personaOf}
+                sandboxOf={sandboxOf}
                 taskNameOf={taskNameOf}
                 taskTabOf={taskTabOf}
                 tabHasTasks={tabHasTasks}

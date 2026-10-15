@@ -859,7 +859,7 @@ mod tests {
     #[test]
     fn plugin_install_from_an_app_that_ships_no_charter_is_refused() {
         let (_dir, root) = plane();
-        let done = fixed(&root, "plugin-install", &crate::Shipped::default())
+        let done = fixed(&root, "plugin-install", &crate::Shipped::nothing())
             .expect("a fix the registry has");
         assert!(!done.complete, "{done:?}");
         assert!(

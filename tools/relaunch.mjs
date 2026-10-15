@@ -88,6 +88,10 @@ function aPlane() {
 /**
  * A program called `claude`, so the app treats it as the harness it is standing in for, which
  * writes down the arguments it was given and then waits to be ended.
+ *
+ * It answers `--version` as Claude Code does, first and with nothing written down, and it lives
+ * beside the project, not in it: a chat starts at the floor (#2071), which asks the program
+ * whether it is Claude Code and starts none the chat could have written.
  */
 function aClaude(where, argvFile) {
   const dir = join(where, "bin");
@@ -97,6 +101,7 @@ function aClaude(where, argvFile) {
     claude,
     [
       "#!/bin/sh",
+      `for word in "$@"; do [ "$word" = --version ] && { echo '2.1.300 (Claude Code)'; exit 0; }; done`,
       `printf '%s\\n' "$*" >> ${JSON.stringify(argvFile)}`,
       // Short sleeps, so that if anything ever does outlive its parent it is gone in a
       // second rather than sitting on the machine for ten minutes.
@@ -257,7 +262,7 @@ function argvSeen(file) {
 
 const plane = aPlane();
 const argvFile = join(plane, "argv.txt");
-const claude = aClaude(plane, argvFile);
+const claude = aClaude(`${plane}.programs`, argvFile);
 const record = join(plane, ".charter", "app", "reopen.json");
 /** When the test says the record was written. Nothing asserts on it; it is there because a
  *  record nobody can date is one nobody can debug. */

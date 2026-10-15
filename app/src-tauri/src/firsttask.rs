@@ -244,6 +244,7 @@ mod tests {
     /// profile `work` of `kind` running a stand-in harness that waits on its input.
     struct Project {
         _dir: tempfile::TempDir,
+        _bin: tempfile::TempDir,
         root: std::path::PathBuf,
         clone: std::path::PathBuf,
     }
@@ -260,8 +261,12 @@ mod tests {
             std::fs::write(clone.join("README.md"), "# shop\n").unwrap();
             git(&clone, &["add", "-A"]);
             git(&clone, &["commit", "-q", "-m", "start"]);
-            let program = stand_in::program(
-                &root,
+            // Outside the project, and answering as Claude Code where it stands in for it: the floor
+            // starts no program the chat could have written, and asks the one it starts what it is
+            // (#2071).
+            let bin = tempfile::tempdir().expect("a folder for the program");
+            let program = stand_in::claude_code(
+                bin.path(),
                 "harness-stand-in",
                 "#!/bin/sh\nstty raw -echo\nexec cat > /dev/null\n",
             );
@@ -284,6 +289,7 @@ mod tests {
             .expect("approved");
             Self {
                 _dir: dir,
+                _bin: bin,
                 root,
                 clone,
             }

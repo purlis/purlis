@@ -16,6 +16,7 @@ import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
 import {
   built,
+  CLAUDE_CODE_VERSION,
   READY,
   singleQuoted,
   THE_RUNS_GIT_CONFIG,
@@ -110,7 +111,7 @@ function theStandIn(): string {
     "#!/bin/sh",
     "# Written by the scenario tests: Claude Code, as far as the first task needs it.",
     // A sandboxed start asks the program whether it is Claude Code before it runs it.
-    'for word in "$@"; do [ "$word" = "--version" ] && { echo "2.1.0 (Claude Code)"; exit 0; }; done',
+    `for word in "$@"; do [ "$word" = "--version" ] && { echo '${CLAUDE_CODE_VERSION}'; exit 0; }; done`,
     'while [ $# -gt 0 ]; do [ "$1" = "--session-id" ] && CLAUDE_CODE_SESSION_ID=$2; shift; done',
     "export CLAUDE_CODE_SESSION_ID",
     `exec ${singleQuoted(built("fake-harness"))} --sentinel ${singleQuoted(READY)} \\`,

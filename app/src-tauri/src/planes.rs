@@ -7902,7 +7902,7 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("a directory");
         let ready = dir.join("ready");
         let typed = dir.join("typed");
-        let program = stand_in::program(
+        let program = stand_in::claude_code(
             &dir,
             "claude",
             &format!(
@@ -9260,7 +9260,7 @@ mod tests {
         let held = planes.held(&planes.open(&root)).expect("it is held");
         // A chat whose program is a harness, standing at the project's top.
         let ready = base.join("claude.ready");
-        let program = stand_in::program(
+        let program = stand_in::claude_code(
             &base,
             "claude",
             &format!("#!/bin/sh\n: > '{}'\nexec sleep 600\n", ready.display()),
@@ -10037,7 +10037,11 @@ mod tests {
         std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
         let claude = dir.path().join("bin/claude");
         std::fs::create_dir_all(claude.parent().unwrap()).unwrap();
-        std::fs::write(&claude, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::write(
+            &claude,
+            stand_in::answering_as_claude_code("#!/bin/sh\nexec sleep 30\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
         let (planes, _told) = planes_telling();
         let plane = planes.open(&root);
@@ -11186,7 +11190,13 @@ mod tests {
     /// A chat on a stand-in called `harness` that says nothing and waits, so the chat stays
     /// open while a test reports on its behalf.
     fn a_chat_on_a_stand_in(held: &Held, dir: &Path, harness: &str) -> u32 {
-        let program = stand_in::program(dir, harness, "#!/bin/sh\nexec sleep 600\n");
+        // A stand-in Claude Code answers `--version` as the real one, which its start asks.
+        let write = if harness == "claude" {
+            stand_in::claude_code
+        } else {
+            stand_in::program
+        };
+        let program = write(dir, harness, "#!/bin/sh\nexec sleep 600\n");
         held.chats()
             .start(
                 &one_chat_on(&program.display().to_string()).chats[0],
@@ -11246,7 +11256,7 @@ mod tests {
         // and a commit below that one would be stamped as the chat's.
         let dir = tempfile::tempdir().expect("a directory");
         let (planes, root, held) = a_plane_writing_its_record(dir.path());
-        let program = stand_in::program(dir.path(), "claude", "#!/bin/sh\nsleep 2\n");
+        let program = stand_in::claude_code(dir.path(), "claude", "#!/bin/sh\nsleep 2\n");
         let session = held
             .chats()
             .start(

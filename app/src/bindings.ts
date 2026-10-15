@@ -6622,6 +6622,16 @@ export type OnboardingStep = "welcome" | "sign-in" | "project" | "git" | "harnes
 export type OpenChat = {
 	session: number,
 	/**
+	 *  How much its sandbox holds (#2071): `full`, `floor`, or `none` for a chat that runs
+	 *  with no sandbox; `null` for a shell, or a chat still to start. Its tab draws it.
+	 */
+	sandbox?: string | null,
+	/**
+	 *  Why it runs with no sandbox where the floor could not be applied here (#2071, Q2): what
+	 *  its tab's sandbox mark says beside `none`. `null` for any other chat.
+	 */
+	sandbox_why?: string | null,
+	/**
 	 *  Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
 	 *  window keys what it keeps of a chat beyond this launch by, such as the Chats list's
 	 *  folds (#1687). `null` for a chat that has no id yet.

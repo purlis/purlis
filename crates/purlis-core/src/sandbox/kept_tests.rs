@@ -486,6 +486,8 @@ fn the_refusal_comes_before_any_compiler_is_asked() {
         registry: Some(PathBuf::from("/plane/vaults.json")),
     };
     let compiled = Compiled {
+        level: Level::Full,
+        held: Vec::new(),
         denied: Denied {
             untold: Some(untold.clone()),
             services: vec![Service::CredentialStore],
@@ -847,9 +849,20 @@ fn a_project_that_has_not_turned_the_sandbox_on_starts_whatever_its_registry_say
     let (_dir, root) = project();
     std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("charter.toml");
     committed(&root, "{ not json");
+    // #2071: the floor cannot say what it keeps, so the chat starts as before and says why.
     for harness in HARNESSES {
-        let started = for_start(harness, &root, &machine(Os::MacOs, &root), &|_| true);
-        assert_eq!(started.map(|it| it.is_some()), Ok(false), "{harness:?}");
+        let started = decide(
+            harness,
+            &root,
+            &machine(Os::MacOs, &root),
+            &|_| true,
+            None,
+            None,
+        );
+        assert!(
+            matches!(started, Ok(Some(Decided::Floorless(_)))),
+            "{harness:?}: {started:?}"
+        );
     }
     assert!(!in_force_at(&root));
 }

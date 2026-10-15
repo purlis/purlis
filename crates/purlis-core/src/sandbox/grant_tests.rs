@@ -189,8 +189,12 @@ fn a_folder_off_the_allowlist_gets_no_allow_and_says_why() {
         "opt/tools/homebrew",
         "home/.claude/hooks",
     ] {
+        // Refused either way: off the allowlist, or (#2071) a later-code name of its own.
         assert!(
-            matches!(write(&m.path(typed), &here), Err(Refused::Outside(_))),
+            matches!(
+                write(&m.path(typed), &here),
+                Err(Refused::Outside(_) | Refused::Never(_))
+            ),
             "{typed}: {:?}",
             write(&m.path(typed), &here)
         );
@@ -245,7 +249,10 @@ fn a_link_is_judged_as_where_it_points_and_only_that_is_granted() {
         "opt/tools/agents",
     ] {
         assert!(
-            matches!(write(&m.path(typed), &here), Err(Refused::Outside(_))),
+            matches!(
+                write(&m.path(typed), &here),
+                Err(Refused::Outside(_) | Refused::Never(_))
+            ),
             "{typed}: {:?}",
             write(&m.path(typed), &here)
         );
@@ -285,11 +292,11 @@ fn a_folder_you_listed_is_compared_as_listed_and_a_link_in_its_place_widens_noth
     // What a block names through it is judged where it really is: LaunchAgents, off the list.
     assert!(matches!(
         write(&m.path("plane/workspaces/beta/tools/x.plist"), &here),
-        Err(Refused::Outside(_))
+        Err(Refused::Outside(_) | Refused::Never(_))
     ));
     assert!(matches!(
         write(&m.path("home/Library/LaunchAgents"), &here),
-        Err(Refused::Outside(_))
+        Err(Refused::Outside(_) | Refused::Never(_))
     ));
 }
 

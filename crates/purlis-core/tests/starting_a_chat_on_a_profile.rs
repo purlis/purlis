@@ -23,6 +23,9 @@ use purlis_core::start::{self, Start};
 /// chat itself, so these tests are about starting and nothing else.
 struct Plane {
     dir: tempfile::TempDir,
+    /// Where its stand-ins are: beside the plane, never in it, as a chat starts at the floor
+    /// (#2071) and the floor starts no program the chat could have written.
+    bin: tempfile::TempDir,
 }
 
 impl Plane {
@@ -35,7 +38,10 @@ impl Plane {
             "# steward\n",
         )
         .unwrap();
-        Self { dir }
+        Self {
+            dir,
+            bin: tempfile::tempdir().unwrap(),
+        }
     }
 
     /// The program a profile points at.
@@ -51,8 +57,9 @@ impl Plane {
     /// it is run straight away (charter-app#81). Never `exec claude "$@"`: a test that needs a
     /// harness on the PATH is a test about the machine it runs on.
     fn harness_as(&self, program: &str) -> PathBuf {
-        stand_in::program(
-            self.root(),
+        // It answers `--version` as Claude Code does, first and leaving no trace: a start asks.
+        stand_in::claude_code(
+            self.bin.path(),
             program,
             &format!(
                 "#!/bin/sh\ntouch {:?}\n",
@@ -1042,15 +1049,21 @@ fn a_chat_started_outside_the_plane_is_pinned_to_nothing() {
 // -------------------------------------------------------------------------------------
 
 #[test]
-fn a_chat_in_a_plane_that_says_nothing_of_the_sandbox_starts_unsandboxed_as_before() {
+fn a_chat_in_a_plane_that_says_nothing_of_the_sandbox_starts_at_the_floor() {
     purlis_core::unsteered!();
+    // #2071: the floor is the default where a project has not turned the sandbox on. Where it
+    // cannot be applied (no backend here), the chat starts as before and says why.
     let plane = Plane::new();
     let bin = plane.harness();
     plane.profile("claude", &bin, "");
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
-    assert_eq!(ready.sandbox, None);
+    match &ready.sandbox {
+        Some(applied) => assert_eq!(applied.level(), purlis_core::sandbox::Level::Floor),
+        None => assert!(ready.floorless.is_some(), "no floor, and no word why"),
+    }
+    assert_eq!(ready.unsandboxed, None, "nothing was lifted");
 }
 
 #[test]
@@ -1273,10 +1286,19 @@ fn a_claude_code_profile_whose_program_is_not_claude_code_is_not_started_sandbox
 
     let refused = start::ready(&plane.start("work"), plane.root()).expect_err("not started");
 
+    // It names the program, says what it answered, and how to fix it (#2071).
+    assert!(
+        refused.contains(&format!(
+            "this profile's program {} does not answer as Claude Code, whose sandbox it was \
+             given",
+            bin.canonicalize().expect("real").display()
+        )),
+        "{refused}"
+    );
     assert!(
         refused.ends_with(
-            "this profile's program does not answer as Claude Code, whose sandbox it was \
-             given, so it was not started sandboxed."
+            "so it was not started sandboxed. Point the profile at Claude Code itself, or at a \
+             wrapper that hands `--version` on to it."
         ),
         "{refused}"
     );

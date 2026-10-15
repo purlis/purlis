@@ -1343,6 +1343,8 @@ fn this_machine_s_hosts_in_a_file_git_would_commit_grant_nothing() {
 
 fn compiled(denied: Denied, os: Os) -> Compiled {
     Compiled {
+        level: Level::Full,
+        held: Vec::new(),
         denied,
         hosts: vec!["github.com".to_owned()],
         reach: reach::Reach::open(vec!["github.com".to_owned()]),
@@ -1464,7 +1466,7 @@ fn deny_write(settings: &claude::Settings) -> Vec<String> {
         .as_array()
         .expect("a list")
         .iter()
-        .map(|it| it.as_str().expect("a path").to_owned())
+        .map(|it| claude::uncased(it.as_str().expect("a path")))
         .collect()
 }
 
@@ -1726,12 +1728,22 @@ const ON_WITHOUT_CACHES: &str =
     "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n";
 
 #[test]
-fn a_chat_in_a_plane_that_says_nothing_starts_as_it_always_has() {
+fn a_chat_in_a_plane_that_says_nothing_starts_at_the_floor_or_as_before_where_it_cannot() {
+    // #2071: the floor is the default. Where it cannot be applied (no backend here), the chat
+    // starts as it always has, and says why.
     let plane = plane_saying("schema = 1\n");
-    let started = for_start(Harness::Codex, plane.path(), &machine(Os::Windows), &|_| {
-        false
-    });
-    assert_eq!(started, Ok(None));
+    let decided = decide(
+        Harness::Codex,
+        plane.path(),
+        &machine(Os::Windows),
+        &|_| false,
+        None,
+        None,
+    );
+    assert!(
+        matches!(decided, Ok(Some(Decided::Floorless(_)))),
+        "{decided:?}"
+    );
 }
 
 #[test]
@@ -1863,21 +1875,14 @@ fn on_linux_a_keyring_vault_refusal_offers_the_opt_out_and_moving_the_vault() {
 fn claude_code_is_denied_submodule_git_config_and_hook_managers_at_any_depth() {
     // Measured on 2.1.288: a `**` in the middle of a `denyWrite` glob holds at any depth.
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
-    let write = &settings.sandbox["filesystem"]["denyWrite"];
+    let write = deny_write(&settings);
     for glob in [
         "**/.git/modules/**/config",
         "**/.git/modules/**/hooks",
         "**/.husky",
         "**/.githooks",
     ] {
-        assert!(
-            write
-                .as_array()
-                .expect("a list")
-                .iter()
-                .any(|it| it == glob),
-            "{glob} in {write}"
-        );
+        assert!(write.iter().any(|it| it == glob), "{glob} in {write:?}");
         assert!(settings.deny.contains(&format!("Edit({glob})")), "{glob}");
     }
 }
@@ -1887,10 +1892,7 @@ fn a_clone_the_app_made_for_a_chat_keeps_its_git_config_hooks_and_editor_setting
     // #1335: the app writes a sandboxed chat's clone and worktree for it, and the chat's own
     // writes to what they carry stay refused — `git config` included, at any depth.
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
-    let write = settings.sandbox["filesystem"]["denyWrite"]
-        .as_array()
-        .expect("a list")
-        .clone();
+    let write = deny_write(&settings);
     for glob in [
         "**/.git/config",
         "**/.git/hooks",
@@ -2075,12 +2077,12 @@ fn a_charter_toml_that_cannot_be_read_starts_no_chat_rather_than_one_unsandboxed
              chat again."
         );
     }
-    // No file at all says nothing, as before.
+    // No file at all says nothing, so the chat would start at the floor (#2071); a start
+    // refuses it first ([`decide`], D-1410e).
     let none = tempfile::tempdir().expect("a directory");
-    assert_eq!(
-        for_start(Harness::Codex, none.path(), &machine(Os::MacOs), &|_| true),
-        Ok(None)
-    );
+    let started =
+        for_start(Harness::Codex, none.path(), &machine(Os::MacOs), &|_| true).expect("a start");
+    assert_eq!(started.map(|applied| applied.level()), Some(Level::Floor));
 }
 
 #[test]
@@ -2676,7 +2678,7 @@ fn the_opt_out_is_what_lets_a_chat_start_where_the_sandbox_cannot_be_applied() {
 }
 
 #[test]
-fn a_project_that_has_not_turned_the_sandbox_on_has_nothing_to_opt_out_of() {
+fn a_project_that_has_not_turned_the_sandbox_on_opts_out_of_the_floor() {
     let plane = plane_saying("schema = 1\n");
     let decided = decide(
         Harness::ClaudeCode,
@@ -2686,7 +2688,14 @@ fn a_project_that_has_not_turned_the_sandbox_on_has_nothing_to_opt_out_of() {
         Some(&off(Some("why not"))),
         None,
     );
-    assert_eq!(decided, Ok(None), "no lift, so nothing to audit");
+    // #2071: the floor is on, so a person's opt-out lifts it, audited.
+    assert_eq!(
+        decided,
+        Ok(Some(Decided::Unsandboxed(Lifted {
+            by: By::Person,
+            reason: Some("why not".to_owned()),
+        })))
+    );
 }
 
 #[test]
@@ -3114,7 +3123,11 @@ fn the_picker_shows_every_refusal_of_the_program_check() {
         NotStarted::ProgramWritable(plane.path().join("bin/claude")),
         NotStarted::WordWritable(plane.path().join("bin/run.sh").display().to_string()),
         NotStarted::WordTooLong,
-        NotStarted::NotTheHarness(Harness::ClaudeCode),
+        NotStarted::NotTheHarness(
+            Harness::ClaudeCode,
+            "/usr/local/bin/claude".to_owned(),
+            None,
+        ),
     ] {
         let said = refusal.to_string();
         let check = |_: &Applied| Err(refusal.clone());
@@ -5115,7 +5128,8 @@ fn a_chats_confines_keep_the_layers_its_sandbox_was_compiled_with() {
 /// (`require-all`) is left out, so this answers for an ordinary file.
 pub(super) fn writes(profile: &str, path: &std::path::Path) -> bool {
     let path = path.display().to_string();
-    let mut verdict = false;
+    // A floor profile starts from everything allowed (#2071).
+    let mut verdict = profile.contains("(allow default)");
     for form in forms(profile) {
         let allow = form.starts_with("(allow ");
         if !(allow || form.starts_with("(deny ")) || form.contains("require-all") {
@@ -5574,5 +5588,35 @@ fn the_windows_list_is_refused_where_a_vaults_storage_cannot_be_told() {
     assert!(
         kept.contains(&plane.path().join("secrets/dev.json")),
         "{kept:?}"
+    );
+}
+
+#[test]
+fn claude_codes_held_names_match_in_either_case() {
+    // A disk that compares names case-folded opens `.GIT/HOOKS` as `.git/hooks`: each name
+    // Claude Code holds by glob is written with a class of both cases for every letter.
+    let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
+    let raw: Vec<String> = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(|it| it.as_str().expect("a path").to_owned())
+        .collect();
+    assert!(
+        raw.contains(&"**/.[gG][iI][tT]/[hH][oO][oO][kK][sS]".to_owned()),
+        "{raw:?}"
+    );
+    assert!(
+        raw.contains(&"/**/.[pP][uU][rR][lL][iI][sS]/[vV][aA][uU][lL][tT][sS]/**".to_owned()),
+        "{raw:?}"
+    );
+    assert_eq!(claude::either_case("a.B"), "[aA].[Bb]");
+    assert_eq!(
+        claude::uncased(&claude::either_case("Library/LaunchAgents")),
+        "Library/LaunchAgents"
+    );
+    assert_eq!(
+        claude::uncased(&claude::either_case(".git/hooks")),
+        ".git/hooks"
     );
 }

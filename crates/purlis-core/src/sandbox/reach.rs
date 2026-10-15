@@ -133,6 +133,10 @@ pub struct Reach {
     /// The ports of this machine whose grant was removed while the chat runs ([`Self::withdraw`]):
     /// shared by every copy, so the proxy's copy hears it.
     withdrawn: Withdrawn,
+    /// At the floor (#2071): every host is carried as an Open host, and none is asked about.
+    /// This machine, a link-local address and a metadata service stay refused, and so does a
+    /// host policy pins as never allowed.
+    anything: bool,
 }
 
 /// [`Reach::withdrawn`]: one set, shared by every copy of a reach.
@@ -179,7 +183,22 @@ impl Reach {
             listed,
             never: Vec::new(),
             withdrawn: Withdrawn::default(),
+            anything: false,
         }
+    }
+
+    /// **The floor's reach** (#2071): every host, but what [`Self::decide`] refuses whatever is
+    /// listed.
+    pub fn anything() -> Self {
+        Self {
+            anything: true,
+            ..Self::default()
+        }
+    }
+
+    /// Whether every host is carried ([`Self::anything`]).
+    pub fn is_anything(&self) -> bool {
+        self.anything
     }
 
     /// This, refusing `hosts` outright where nothing lists them: the hosts an administrator's
@@ -200,6 +219,7 @@ impl Reach {
             mut listed,
             never,
             withdrawn,
+            anything,
         } = self;
         for one in more {
             if !listed.contains(&one) {
@@ -209,6 +229,7 @@ impl Reach {
         Self {
             never,
             withdrawn,
+            anything,
             ..Self::of(listed)
         }
     }
@@ -258,6 +279,7 @@ impl Reach {
             Ok(parsed) if self.never.iter().any(|pinned| pinned.covers(&parsed)) => {
                 Decision::Refused(Refused::Policy)
             }
+            Ok(_) if self.anything => Decision::Open,
             Ok(_) => Decision::Ask,
         }
     }

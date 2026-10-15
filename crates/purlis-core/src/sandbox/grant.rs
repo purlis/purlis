@@ -407,16 +407,26 @@ impl Ground {
                     .collect()
             })
             .unwrap_or_default();
+        let mut allowed: Vec<PathBuf> = super::local::grantable_folders(root)
+            .into_iter()
+            .filter(|listed| still_itself(listed))
+            .collect();
+        // At the floor (#2071, the operator's ruling SO-10) a folder the floor holds, the
+        // person's `PATH` and the packages it leads to, is a block like any other, whose Allow
+        // lets the chat write it: allowed here, and no longer refused for being on `PATH`.
+        let locks = super::policy::Locks::of(root);
+        if super::Plane::read(root).in_force(&locks).is_none() {
+            let held = super::floor_held(root, machine, &[]);
+            refused.retain(|dir| !held.contains(&super::real(dir)) && !held.contains(dir));
+            allowed.extend(held);
+        }
         refused.extend(harness_homes(machine, &homes));
         Self {
             root: root.to_path_buf(),
             chat: chat.to_path_buf(),
             home: machine.home.clone(),
             denied,
-            allowed: super::local::grantable_folders(root)
-                .into_iter()
-                .filter(|listed| still_itself(listed))
-                .collect(),
+            allowed,
             refused,
             harness_temp: harness_temp(),
             folded: machine.os == super::Os::MacOs,

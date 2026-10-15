@@ -174,6 +174,9 @@ pub struct Ready {
     /// `trust.sandbox.off` event records. `None` for a sandboxed chat, and for every chat in a
     /// project that has not turned the sandbox on.
     pub unsandboxed: Option<crate::sandbox::Lifted>,
+    /// Why it starts with no sandbox in a project that has not turned it on, where the floor
+    /// cannot be applied here (#2071, Q2): what its tab's sandbox mark says. `None` otherwise.
+    pub floorless: Option<String>,
     /// What the window says on this chat's tab as it starts, one line each, non-modal: why its
     /// `AGENTS.md` was not written, and every `AGENTS.md` that charter's exclude line hides
     /// and charter did not write (V35, ADR 0085). Empty for nearly every start.
@@ -350,6 +353,7 @@ fn ready_given(
     // gate below exists for: this writes charter's own documents into a tree charter owns,
     // and it is idempotent, so doing it for a start that is then refused costs nothing.
     let mut notices = layered_or_refusal(&here, root, persona.as_deref())?;
+    let mut floorless = None;
     let hidden = hidden_agents_md_in(&here);
     notices.extend(hidden.said(|p| p.display().to_string()));
     let agents_md = hidden
@@ -403,6 +407,12 @@ fn ready_given(
             Some(crate::sandbox::Decided::Unsandboxed(lifted)) => {
                 notices.push(lifted.notice());
                 (None, Some(lifted))
+            }
+            // The floor could not be applied here (#2071): the chat starts as before, and its
+            // tab's sandbox mark says why.
+            Some(crate::sandbox::Decided::Floorless(why)) => {
+                floorless = Some(why);
+                (None, None)
             }
             None => (None, None),
         },
@@ -469,7 +479,10 @@ fn ready_given(
             .chain(argv.iter().cloned())
             .collect();
         let mut writable = applied.writable();
-        writable.extend(crate::sandbox::program::temp_roots(&env));
+        // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+        if applied.level() == crate::sandbox::Level::Full {
+            writable.extend(crate::sandbox::program::temp_roots(&env));
+        }
         let (checked, said) = crate::sandbox::program::checked_answering(
             harness,
             &words,
@@ -483,6 +496,8 @@ fn ready_given(
         )
         .map_err(|refused| refused.to_string())?;
         program = checked[0].clone();
+        // At the floor, the program it starts is never written by the chat (#2071, Q4).
+        applied.hold_programs(&checked);
         // Claude Code goes through purlis's proxy from the version that takes its ports, and an
         // older one says once, on its tab, that it keeps its own (#1665).
         if let Some(said) = said {
@@ -537,6 +552,7 @@ fn ready_given(
         plugins,
         sandbox,
         unsandboxed,
+        floorless,
         notices,
         agents_md,
     })
@@ -587,7 +603,10 @@ pub fn sandbox_ahead(
         };
         let env = environment(profile, root, None, false, &Standing::of(root, root));
         let mut writable = applied.writable();
-        writable.extend(crate::sandbox::program::temp_roots(&env));
+        // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+        if applied.level() == crate::sandbox::Level::Full {
+            writable.extend(crate::sandbox::program::temp_roots(&env));
+        }
         crate::sandbox::program::checked(
             harness,
             &words,

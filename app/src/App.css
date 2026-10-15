@@ -6735,6 +6735,24 @@ h2.sidebar-title .node-icon {
   font-variant-numeric: tabular-nums;
 }
 
+/* A chat's sandbox level after its name (#2071): drawn as the tab's other marks are. In a tab
+   squeezed to its floor (`.tab-tasks`) it gives way before the name does, so the name, which is
+   what the tab is, keeps its room; the level is still in the mark's title and the window's other
+   places that say it. */
+.tab-sandbox {
+  display: inline-flex;
+  flex: 0 1000 auto;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  /* The row's gap before it is its own room, so a mark that has given way takes none. */
+  margin-inline-start: calc(-1 * var(--space-2));
+}
+
+.tab-sandbox > .tab-mark {
+  margin-inline-start: var(--space-2);
+}
+
 /* The mark a view's tab carries in place of a chat's state: what kind of thing the tab holds. */
 .tab-mark {
   flex: none;

@@ -819,6 +819,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Whether macOS's sandbox matches a name as typed or as it is on disk, measured, and that the
+      # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107).
+      - name: macOS's sandbox and a name spelled in another case
+        if: runner.os == 'macOS' && matrix.extras
+        run: tools/seatbelt-case.sh
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
       # purlis makes runs its chats sandboxed (ADR 0067 §1).
       # Cached and bounded, as the `rust` job's (#1477): this is the step that took 1,285 s on

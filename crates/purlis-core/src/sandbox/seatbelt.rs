@@ -415,11 +415,258 @@ pub fn profile(
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
+    // Last, so nothing given back reaches them: no project's vaults are read (#2071).
+    for rule in vaults_everywhere_rules()? {
+        line(rule);
+    }
     if out.len() > MOST_PROFILE {
         return Err(TOO_LARGE);
     }
     Ok(out)
 }
+
+/// **The floor's profile** (#2071): files and the network as with no sandbox, but the denial
+/// classes and the floor's `held` folders, and what the harness keeps for itself (`own.deny`,
+/// `own.after`). Seatbelt takes the last rule that matches, so each denial follows the
+/// `(allow default)` it narrows. What else stays held ([`FLOOR_HELD`]):
+///
+/// - nothing is started outside the profile: no Apple Event is sent, nothing is opened through
+///   Launch Services, and no program that hands a job to launchd, cron or at is run;
+/// - no unix socket but the chat's hook socket and the ones a person allowed it (the operator's
+///   ruling Q1), whose folder is never written, and no port of this machine but the chat's own
+///   proxy's `proxy_ports`, through which every host is reached;
+/// - every denied path held as the full profile holds it: under each name the kernel may give it
+///   (#1336, #1356), and every folder above it pinned as an entry up to `/`, so it is never moved
+///   aside with what it holds; every name a later program runs ([`PLANTED`]) never written at any
+///   depth anywhere, and no directory made under a `.git/modules`.
+pub fn floor_profile(
+    denied: &[Denial],
+    held: &[PathBuf],
+    own: &Own,
+    proxy_ports: &[u16],
+    hook_socket: Option<&Path>,
+) -> Result<String, &'static str> {
+    let mut out = String::from(FLOOR_BASE);
+    out.push_str(FLOOR_HELD);
+    let mut line = |text: String| {
+        out.push_str(&text);
+        out.push('\n');
+    };
+    for port in proxy_ports {
+        line(format!(
+            "(allow network-outbound (remote ip \"localhost:{port}\"))"
+        ));
+    }
+    let mut all: Vec<Denial> = denied.to_vec();
+    if let Some(socket) = hook_socket {
+        line(format!(
+            "(allow network-outbound (remote unix-socket (path-literal {})))",
+            quote(socket)?
+        ));
+        // Its folder is never written, so the socket is never replaced (#1408).
+        if let Some(folder) = socket.parent() {
+            all.push(Denial {
+                class: super::Class::Integrity,
+                path: folder.to_path_buf(),
+                access: Access::Write,
+                named: None,
+            });
+        }
+    }
+    all.extend(held.iter().map(|path| Denial {
+        class: super::Class::LaterCode,
+        path: path.clone(),
+        access: Access::Write,
+        named: None,
+    }));
+    let named = |path: &Path| -> Result<Vec<String>, &'static str> {
+        super::kernel_names(path)
+            .iter()
+            .map(|name| string(&name.display().to_string()))
+            .collect()
+    };
+    for denial in &all {
+        let what = match denial.access {
+            Access::ReadWrite => "file-read* file-write*",
+            Access::Write => "file-write*",
+        };
+        let mut names: Vec<PathBuf> = Vec::new();
+        for held in held_names(&denial.path) {
+            for name in super::both_firmlink_names(held) {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+        for name in names {
+            line(format!(
+                "(deny {what} (subpath {}))",
+                string(&name.display().to_string())?
+            ));
+        }
+    }
+    // Every folder above a denied path, as an entry: never moved away with it, nor replaced.
+    let mut pinned = std::collections::BTreeSet::new();
+    for denial in &all {
+        for path in super::kernel_names(&denial.path) {
+            for ancestor in path.ancestors().skip(1) {
+                if ancestor.parent().is_none() {
+                    continue;
+                }
+                for name in named(ancestor)? {
+                    if pinned.insert(name.clone()) {
+                        line(format!("(deny file-write* (literal {name}))"));
+                    }
+                }
+            }
+        }
+    }
+    for rule in floor_planted_rules()? {
+        line(rule);
+    }
+    line(
+        "(deny file-write-create (require-all (vnode-type DIRECTORY) (regex #\"^/(.*/)?\\.git/modules/.+\")))"
+            .to_owned(),
+    );
+    for rule in every_project_rules()? {
+        line(rule);
+    }
+    for rule in own.deny.iter().chain(&own.after) {
+        line(rule.clone());
+    }
+    // Last, so nothing given back reaches them: no project's vaults are read (#2071).
+    for rule in vaults_everywhere_rules()? {
+        line(rule);
+    }
+    if out.len() > MOST_PROFILE {
+        return Err(TOO_LARGE);
+    }
+    Ok(out)
+}
+
+/// **What the floor keeps from being written in every project on this machine** (#2071): its
+/// state folder, under every spelling, and its manifests, under every name, wherever they are
+/// and however a name is spelled. The full sandbox writes no project but the chat's own, and
+/// none of these in it; at the floor every folder is written, so each is held by name.
+pub fn every_project_rules() -> Result<Vec<String>, &'static str> {
+    let mut rules = Vec::new();
+    for state in crate::names::STATE_DIR.spellings() {
+        let regex = format!("^/(.*/)?{}(/.*)?$", either_case(&escaped(state)));
+        rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
+    }
+    for manifest in super::MANIFESTS {
+        let regex = format!("^/(.*/)?{}$", either_case(&escaped(manifest)));
+        rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
+    }
+    Ok(rules)
+}
+
+/// **No project's vaults are read, at either level** (#2071): the vaults and the fingerprint key
+/// under every spelling of a state folder, wherever it is and however it is spelled. The
+/// chat's own project's are denied by path besides ([`super::Denied::of`]).
+pub fn vaults_everywhere_rules() -> Result<Vec<String>, &'static str> {
+    let mut rules = Vec::new();
+    for state in crate::names::STATE_DIR.spellings() {
+        for (kept, tail) in [
+            ("vaults", "(/.*)?$"),
+            (crate::secrets::fingerprint::KEY_FILE, "$"),
+        ] {
+            let regex = format!(
+                "^/(.*/)?{}{tail}",
+                either_case(&format!("{}/{}", escaped(state), escaped(kept)))
+            );
+            rules.push(format!(
+                "(deny file-read* file-write* (regex {}))",
+                string(&regex)?
+            ));
+        }
+    }
+    Ok(rules)
+}
+
+/// What the floor holds besides files ([`floor_profile`]): nothing started outside the profile,
+/// no unix socket and no port of this machine. The hook socket, the proxy's ports and what a
+/// person allowed are given back after it.
+pub const FLOOR_HELD: &str = "(deny appleevent-send)
+(deny lsopen)
+(deny job-creation)
+(deny mach-lookup
+  (global-name \"com.apple.coreservices.launchservicesd\")
+  (global-name \"com.apple.coreservices.appleevents\"))
+(deny process-exec
+  (literal \"/bin/launchctl\")
+  (literal \"/usr/bin/osascript\")
+  (literal \"/usr/bin/open\")
+  (literal \"/usr/bin/crontab\")
+  (literal \"/usr/bin/at\")
+  (literal \"/usr/bin/batch\"))
+(deny network-outbound (remote unix-socket))
+(deny network-outbound (remote ip \"localhost:*\"))
+";
+
+/// The rules that keep every [`PLANTED`] name from being written, at any depth anywhere: the
+/// floor lets a chat write every folder, so each name is held wherever it is.
+pub fn floor_planted_rules() -> Result<Vec<String>, &'static str> {
+    PLANTED
+        .iter()
+        .map(|planted| {
+            let tail = match planted.reach {
+                Reach::Itself => "$",
+                Reach::AndBelow => "(/.*)?$",
+            };
+            let mut body = String::new();
+            let parts: Vec<&str> = planted.path.split('/').collect();
+            for (at, part) in parts.iter().enumerate() {
+                if *part == "**" {
+                    body.push_str("(.*/)?");
+                    continue;
+                }
+                body.push_str(&escaped(part));
+                if at + 1 < parts.len() {
+                    body.push('/');
+                }
+            }
+            // Each letter either case: the disk compares names case-folded, so a name spelled
+            // another way is the same file.
+            let regex = format!("^/(.*/)?{}{tail}", either_case(&body));
+            Ok(format!("(deny file-write* (regex {}))", string(&regex)?))
+        })
+        .collect()
+}
+
+/// `pattern` with each ASCII letter as a class of both its cases (`a` as `[aA]`), so a name
+/// matches however it is spelled on a disk that compares names case-folded.
+pub fn either_case(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len() * 4);
+    let mut escaped = false;
+    for c in pattern.chars() {
+        if escaped {
+            out.push(c);
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' => {
+                out.push(c);
+                escaped = true;
+            }
+            c if c.is_ascii_alphabetic() => {
+                out.push('[');
+                out.push(c.to_ascii_lowercase());
+                out.push(c.to_ascii_uppercase());
+                out.push(']');
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// What the floor's profile starts from (#2071): everything a process may do, as with no
+/// sandbox, narrowed after it by [`floor_profile`].
+const FLOOR_BASE: &str = "(version 1)
+(allow default)
+";
 
 /// The profile a program answers `--version` inside, before a sandboxed chat starts on it
 /// (D-88k): no network at all, and nothing written but `tmp`, the probe's own temp directory,

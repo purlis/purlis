@@ -635,7 +635,22 @@ newline = "\n"
 
 /// A profile that runs Claude Code as `true`, so a start needs no harness installed, and this
 /// machine's replacement of Claude Code's facts.
-const CLAUDE_AS_TRUE: &str = "[harness.work]\nkind = \"claude\"\ncommand = [\"true\"]\n";
+/// A `work` profile of Claude Code's kind on a stand-in that answers `--version` as Claude Code
+/// does, beside every project: a chat starts at the floor (#2071), which asks the program it
+/// starts what it is and starts none the chat could have written.
+fn claude_as_stand_in() -> String {
+    static ONE: std::sync::OnceLock<(tempfile::TempDir, String)> = std::sync::OnceLock::new();
+    let (_, said) = ONE.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("a folder for the stand-in");
+        let bin = stand_in::claude_code(dir.path(), "claude-stand-in", "#!/bin/sh\nexit 0\n");
+        let said = format!(
+            "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\n",
+            bin.display().to_string()
+        );
+        (dir, said)
+    });
+    said.clone()
+}
 const NEWER_CLAUDE: &str = r#"
 [harnesses.claude]
 program = "claude"
@@ -744,10 +759,10 @@ fn a_local_harness_resumes_by_its_own_template_with_the_id_handed_over_bare() {
 fn a_local_replacement_of_a_built_in_changes_its_facts_and_not_its_arming() {
     purlis_core::unsteered!();
     let plain = Project::new();
-    plain.local(CLAUDE_AS_TRUE);
+    plain.local(&claude_as_stand_in());
     plain.launched("work");
     let replaced = Project::new();
-    replaced.local(&format!("{CLAUDE_AS_TRUE}{NEWER_CLAUDE}"));
+    replaced.local(&format!("{}{NEWER_CLAUDE}", claude_as_stand_in()));
     replaced.launched("work");
 
     let was = start::ready(&plain.start("work"), plain.root()).expect("it starts");
@@ -796,8 +811,9 @@ fn a_local_replacement_that_would_change_arming_leaves_the_built_in_standing() {
     purlis_core::unsteered!();
     let project = Project::new();
     project.local(&format!(
-        "{CLAUDE_AS_TRUE}[harnesses.claude]\nprogram = \"claude\"\n\
-         [harnesses.claude.levels]\nhooks = false\n"
+        "{}[harnesses.claude]\nprogram = \"claude\"\n\
+         [harnesses.claude.levels]\nhooks = false\n",
+        claude_as_stand_in()
     ));
     project.launched("work");
 
@@ -823,7 +839,7 @@ fn a_local_replacement_that_would_change_arming_leaves_the_built_in_standing() {
 fn a_local_replacement_in_a_file_git_would_carry_changes_nothing() {
     purlis_core::unsteered!();
     let project = Project::new();
-    project.local(&format!("{CLAUDE_AS_TRUE}{NEWER_CLAUDE}"));
+    project.local(&format!("{}{NEWER_CLAUDE}", claude_as_stand_in()));
     project.launched("work");
     let declared = harness_declaration::read(project.root());
     // The launch's own read, with the answer git gives for a file it would carry.

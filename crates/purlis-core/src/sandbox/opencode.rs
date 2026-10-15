@@ -63,6 +63,12 @@ use crate::harness::Harness;
 /// What an opencode chat is wrapped in, before the place it opens is known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wrap {
+    /// How much it holds ([`super::Level`]): at the floor every folder is written and the
+    /// network is open, but what [`Self::denied`] and [`Self::held`] name.
+    pub level: super::Level,
+    /// At the floor, the folders the chat may not write that no class names
+    /// ([`super::Compiled::held`]).
+    pub held: Vec<PathBuf>,
     /// Every path the chat is denied, with the keychain files among them.
     pub denied: Vec<Denial>,
     /// The hosts its proxy carries.
@@ -102,6 +108,8 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
     denied.extend(seatbelt::keychains(compiled.homes.home.as_deref()));
     let own = |dir: &Option<PathBuf>| dir.as_ref().map(|dir| dir.join("opencode"));
     Ok(Wrap {
+        level: compiled.level,
+        held: compiled.held.clone(),
         denied,
         hosts: compiled.hosts.clone(),
         widened: Box::new(compiled.widened.clone()),
@@ -152,11 +160,31 @@ pub fn profile(
     proxy_ports: &[u16],
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
+    if wrap.level == super::Level::Floor {
+        return floor_profile(wrap, proxy_ports, hook_socket);
+    }
     seatbelt::profile(
         &wrap.denied,
         &own(wrap)?,
         cwd,
         tmp,
+        proxy_ports,
+        hook_socket,
+    )
+}
+
+/// The floor's profile (#2071): every folder written and every host reached through the chat's
+/// own proxy's `proxy_ports`, but what the wrap denies and holds, and what the harness keeps for
+/// itself ([`seatbelt::floor_profile`]); reporting on `hook_socket`.
+pub fn floor_profile(
+    wrap: &Wrap,
+    proxy_ports: &[u16],
+    hook_socket: Option<&Path>,
+) -> Result<String, &'static str> {
+    seatbelt::floor_profile(
+        &wrap.denied,
+        &wrap.held,
+        &own(wrap)?,
         proxy_ports,
         hook_socket,
     )
@@ -194,6 +222,12 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     if let Some(config) = &wrap.config {
         own.allow
             .push(format!("(literal {})", quote(&config.join(".gitignore"))?));
+        // Given back after the later-code names, which at the floor hold opencode's config
+        // folder wherever it is (#2071): the one file a turn writes there.
+        own.after.push(format!(
+            "(allow file-write* (literal {}))",
+            quote(&config.join(".gitignore"))?
+        ));
     }
     if let Some(data) = &wrap.data {
         for file in CREDENTIALS {

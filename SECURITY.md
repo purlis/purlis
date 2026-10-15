@@ -102,8 +102,20 @@ scanning, where maintainers read them. They are not yet published to the public 
 
 A plane can put every chat purlis starts in a sandbox ([ADR 0067](docs/adr/0067-a-chat-runs-in-a-sandbox-charter-compiles-for-its-harness.md)):
 `[sandbox]` with `mode = "on"` in its `charter.toml` ([the plane format](docs/plane-format.md)).
-A project purlis makes has it on. A project made before the sandbox existed keeps running as
-it did, and purlis offers once to turn it on.
+A project purlis makes has it on. A project that has not turned it on runs its chats at **the
+floor** (#2071): each reaches every host through its own proxy and writes every folder but what
+the floor holds. The floor holds the same five classes below; the names a later program runs at
+every depth and in either case, the person's own among them (git's and ssh's config, launch
+agents, shell startup files, each harness's and editor's user settings); the folders a person
+runs programs from (the `PATH`, the packages its links lead to, Homebrew's prefix, npm's global
+packages, the person's Python site folders), which a block's Allow can lift for that chat; every
+project's purlis state folder and manifests, wherever they are; and for Codex and opencode, no program started outside it (Apple Events, Launch Services, launchd
+jobs, cron, at), no local socket but its hook's and what a person allowed, and no port of this
+machine but its proxy's. It does not hold what a chat may read outside those classes, what a
+program it runs does with the network, or code a later program loads from a place it does not
+name. Where the floor cannot be applied (Codex and opencode off macOS, no sandbox backend),
+the chat starts with no sandbox and says so on its tab. Every chat's tab shows its level. At
+every level, the vault files of every project are unreadable.
 
 **What it covers.** Chats that purlis starts, on a harness purlis compiles the policy for.
 Today those are Claude Code, through its own sandbox, and opencode and Codex on macOS.

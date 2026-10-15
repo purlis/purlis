@@ -7,7 +7,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { menuNames, pressMenuPath, ROW } from "../menus.js";
-import { built, READY, singleQuoted } from "../harness.js";
+import { answeringAsClaudeCode, built, READY, singleQuoted } from "../harness.js";
 import { harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
@@ -1221,7 +1221,10 @@ describe("the explorer", () => {
     const local = join(plane, "charter.local.toml");
     const declared = readFileSync(local, "utf8");
     const payload = join(plane, ".charter", "scenario-touch.json");
-    const program = join(plane, "touching-harness");
+    // Beside the project, not in it: a sandboxed start, the floor included, runs no program the
+    // chat could have written (#2071).
+    const program = join(`${plane}.programs`, "touching-harness");
+    mkdirSync(`${plane}.programs`, { recursive: true });
     rmSync(payload, { force: true });
     // Waits for the payload (two minutes at most), then hands it to the hook a real Claude Code
     // runs before a Read. `CHARTER_HOOK_BINARY` is the binary the app armed the chat with.
@@ -1231,14 +1234,14 @@ describe("the explorer", () => {
     ].join(" ");
     writeFileSync(
       program,
-      [
+      answeringAsClaudeCode([
         "#!/bin/sh",
         // A Claude Code chat is started with purlis's own flags, which the fake harness has none of.
         "while [ $# -gt 0 ]; do shift; done",
         `exec ${singleQuoted(built("fake-harness"))} --sentinel ${singleQuoted(READY)} \\`,
         `  --hook ${singleQuoted(touch)} --interactive`,
         "",
-      ].join("\n"),
+      ]).join("\n"),
     );
     chmodSync(program, 0o755);
     writeFileSync(
@@ -1714,7 +1717,9 @@ function declareTheRawPrompt(plane: string): void {
   const local = join(plane, "charter.local.toml");
   const declared = readFileSync(local, "utf8");
   if (declared.includes(`[harness.${RAW_PROMPT}]`)) return;
-  const program = join(plane, "raw-prompt-harness");
+  // Beside the project, not in it, as the touching harness above (#2071).
+  const program = join(`${plane}.programs`, "raw-prompt-harness");
+  mkdirSync(`${plane}.programs`, { recursive: true });
   // `SessionStart`, reported by the real `charter hook` with the conversation charter chose
   // (`--session-id`) and the harness's own pid, as `writeAPluginHookingShell` reports it.
   const sessionStart = [
@@ -1724,14 +1729,14 @@ function declareTheRawPrompt(plane: string): void {
   ].join(" ");
   writeFileSync(
     program,
-    [
+    answeringAsClaudeCode([
       "#!/bin/sh",
       'while [ $# -gt 0 ]; do [ "$1" = "--session-id" ] && CLAUDE_CODE_SESSION_ID=$2; shift; done',
       "export CLAUDE_CODE_SESSION_ID",
       `exec ${singleQuoted(built("fake-harness"))} --sentinel ${singleQuoted(READY)} \\`,
       `  --hook ${singleQuoted(sessionStart)} --interactive --raw`,
       "",
-    ].join("\n"),
+    ]).join("\n"),
   );
   chmodSync(program, 0o755);
   writeFileSync(
@@ -1781,7 +1786,18 @@ async function startARawPromptChat(plane: string): Promise<void> {
           .map((el) => (el as HTMLElement).innerText)
           .join(" | "),
       );
-      throw new Error(`${String(err)}; panes: ${(await paneRows()).join("|")}; said: ${said}`);
+      // What the window holds, so a red run says where the chat went: its frames, the tab in
+      // front, and the core's own view of the chat.
+      const frames = await browser.execute(() => ({
+        frames: document.querySelectorAll(".pane-frame").length,
+        terminals: document.querySelectorAll(".pane-frame .xterm").length,
+        front: document.querySelector('[data-strip="Tabs"] [aria-selected="true"]')?.textContent,
+      }));
+      const chats = JSON.stringify(await rawPromptChats(plane));
+      throw new Error(
+        `${String(err)}; panes: ${(await paneRows()).join("|")}; window: ${JSON.stringify(frames)}; ` +
+          `chats: ${chats}; said: ${said}`,
+      );
     });
 }
 
