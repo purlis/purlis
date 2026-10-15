@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792088386148,
+  "lastUpdate": 1792089876136,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12852,6 +12852,48 @@ window.BENCHMARK_DATA = {
             "value": 102.36343749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.324, 102.099, 102.363, 102.670, 103.385 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c2f8e626345d8de0e753be3b958c6136f4edd495",
+          "message": "ci: run Claude Code's own sandbox on the settings purlis writes (#2211) (#2214)\n\nClaude Code builds its sandbox itself from the --settings purlis hands a\nchat. A core test now builds those settings for a chat at the full\nsandbox and at the floor, and starts the real Claude Code with them\nagainst a stand-in Messages server on a loopback port it binds. The\nstand-in answers with one Bash call that runs\ntools/seatbelt-case.sh --here, the same probes the emitted Seatbelt\nprofiles get, and the test asserts every answer.\n\nThe macOS scenario job (part 1) installs the pinned Claude Code build\nfrom npm with install scripts off and runs it. The emitted-profile test\nsays why it passes no hook socket, and its probes now check that a held\nfolder written as named is refused.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T22:43:17+04:00",
+          "tree_id": "8faef3753e7aab4372d67fa4bb2cc1dcf89e3e26",
+          "url": "https://github.com/purlis/purlis/commit/c2f8e626345d8de0e753be3b958c6136f4edd495"
+        },
+        "date": 1792089874913,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5074434999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.483, 0.507, 0.507, 0.511, 0.544 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.05364,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.770, 16.987, 17.054, 17.177, 17.320 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.15448849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.479, 103.834, 104.154, 104.207, 106.906 ms"
           }
         ]
       }
