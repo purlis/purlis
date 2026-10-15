@@ -45,7 +45,7 @@ pub struct Launch {
 /// and temporary files are, how to find programs, and the language and time zone pages see.
 /// A token, a socket, a proxy setting or a purlis variable never reaches the engine.
 pub const ENVIRONMENT_KEPT: &[&str] = &[
-    "HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "USER", "LOGNAME",
+    "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "USER", "LOGNAME",
 ];
 
 impl Launch {
@@ -68,6 +68,11 @@ impl Launch {
     /// The browser's data folder.
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    /// The browser's own home, inside its data folder.
+    fn home(&self) -> PathBuf {
+        self.data_dir.join("home")
     }
 
     /// The engine's arguments, the program itself not included.
@@ -118,6 +123,18 @@ impl Launch {
             .into_iter()
             .filter(|(name, _)| ENVIRONMENT_KEPT.iter().any(|kept| name == kept))
             .collect();
+        // A home of the browser's own, inside its data folder: on Linux the engine keeps its
+        // certificate database under $HOME whatever its data folder, and the person's home is
+        // not the browser's to write.
+        let home = self.home();
+        for (name, under) in [
+            ("XDG_CONFIG_HOME", ".config"),
+            ("XDG_CACHE_HOME", ".cache"),
+            ("XDG_DATA_HOME", ".local/share"),
+        ] {
+            env.push((name.into(), home.join(under).into_os_string()));
+        }
+        env.push(("HOME".into(), home.into_os_string()));
         // The person's desktop bus is none of the engine's business, and on a machine with no
         // session bus the engine waits for one at every start.
         env.push(("DBUS_SESSION_BUS_ADDRESS".into(), "disabled:".into()));
@@ -128,6 +145,7 @@ impl Launch {
     /// saving and autofill off, keeping every other preference a kept folder already has.
     pub fn prepare_data_dir(&self) -> io::Result<()> {
         private_dir(&self.data_dir)?;
+        private_dir(&self.home())?;
         let default = self.data_dir.join("Default");
         private_dir(&default)?;
         let path = default.join("Preferences");
@@ -176,14 +194,11 @@ fn merge(prefs: &mut Map<String, Value>, protections: Value) {
 }
 
 fn private_dir(dir: &Path) -> io::Result<()> {
+    // Made 0700, or, when there, refused unless a directory (not a link) of this user's, and
+    // then set to 0700.
     #[cfg(unix)]
     {
-        use std::os::unix::fs::DirBuilderExt;
-        match fs::DirBuilder::new().mode(0o700).create(dir) {
-            Ok(()) => Ok(()),
-            Err(why) if why.kind() == io::ErrorKind::AlreadyExists && dir.is_dir() => Ok(()),
-            Err(why) => Err(why),
-        }
+        purlis_same_user::private_directory(dir)
     }
     #[cfg(not(unix))]
     {

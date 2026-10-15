@@ -27,6 +27,9 @@ pub enum NotWebAddress {
     /// `http://` or `https://` with nothing after it.
     #[error("the address names no host")]
     NoHost,
+    /// A name or password before the host, which hides which host is meant.
+    #[error("the address carries a name or password before its host")]
+    UserInfo,
     /// Whitespace, a control character or a backslash, which the engine would rewrite.
     #[error("the address carries a space, a control character or a backslash")]
     Unreadable,
@@ -55,7 +58,10 @@ impl WebAddress {
             return Err(NotWebAddress::NoHost);
         };
         let authority = after.split(['/', '?', '#']).next().unwrap_or_default();
-        let host = authority.rsplit('@').next().unwrap_or_default();
+        if authority.contains('@') {
+            return Err(NotWebAddress::UserInfo);
+        }
+        let host = authority;
         if host.is_empty() || host.starts_with(':') {
             return Err(NotWebAddress::NoHost);
         }

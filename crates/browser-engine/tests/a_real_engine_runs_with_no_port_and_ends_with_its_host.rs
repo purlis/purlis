@@ -139,10 +139,7 @@ fn no_port_listens_while_a_real_engine_runs() {
 
     let data = tempfile::tempdir().unwrap();
     let engine = start(program, data.path());
-    let version = engine
-        .devtools()
-        .call("Browser.getVersion", serde_json::json!({}), None)
-        .unwrap();
+    let version = engine.version().unwrap();
     assert!(version["product"].as_str().is_some(), "{version}");
     let pids = processes_of(engine.process_group(), engine.pid());
     assert!(

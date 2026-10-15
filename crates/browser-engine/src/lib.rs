@@ -15,7 +15,8 @@
 //! - [`process`]: one process group per browser, led by its [`keeper`], with DevTools on an
 //!   inherited pipe and no port; the group ends with its host, however the host ends.
 //! - [`cdp`]: DevTools over that pipe, one NUL-ended JSON message at a time.
-//! - [`WebAddress`]: the only addresses a browser opens, http and https.
+//! - [`WebAddress`]: the only addresses purlis sends a browser to, http and https; every call
+//!   that opens a page takes one, and nothing outside this crate speaks DevTools to the engine.
 //!
 //! Driving pages (snapshots, actions), the reach proxy itself and the broker that owns
 //! browsers are other parts of the session host (#2010, #2011, #2012).

@@ -168,6 +168,7 @@ fn a_newer_manifest_signed_by_the_trusted_key_is_installed_and_runs_from_then_on
         .update(
             text.as_bytes(),
             &keys.sign(&text),
+            &EngineSettings::default(),
             &served,
             at("2026-10-20T09:00:00Z"),
         )
@@ -206,7 +207,13 @@ fn a_manifest_signed_by_another_key_altered_after_signing_or_unsigned_is_refused
         (text.clone(), "untrusted comment: nothing\nRWQ\n".to_owned()),
     ] {
         let refused = engines
-            .update(manifest.as_bytes(), &signature, &served, at(NOW))
+            .update(
+                manifest.as_bytes(),
+                &signature,
+                &EngineSettings::default(),
+                &served,
+                at(NOW),
+            )
             .unwrap_err();
         assert!(matches!(refused, Refused::Signature(_)), "{refused:?}");
     }
@@ -230,7 +237,13 @@ fn a_build_that_trusts_no_update_key_refuses_every_update_and_keeps_its_pinned_e
     let engines = engines(root.path(), &sha256(&old), Box::new(NoSigner));
     let text = manifest_text(NEWER, NEWER_ISSUED, &sha256(&new));
     let refused = engines
-        .update(text.as_bytes(), &keys.sign(&text), &served, at(NOW))
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at(NOW),
+        )
         .unwrap_err();
     assert!(matches!(refused, Refused::Signature(_)), "{refused:?}");
     let ready = engines
@@ -248,7 +261,13 @@ fn a_signed_manifest_older_than_the_one_in_use_is_refused() {
     let engines = engines(root.path(), &sha256(&old), keys.signer());
     let text = manifest_text("150.0.1.1", "2026-09-01T00:00:00Z", &sha256(&old));
     let refused = engines
-        .update(text.as_bytes(), &keys.sign(&text), &served, at(NOW))
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at(NOW),
+        )
         .unwrap_err();
     assert!(matches!(refused, Refused::Older { .. }), "{refused:?}");
 }
@@ -262,7 +281,13 @@ fn a_stored_update_that_no_longer_verifies_is_ignored_for_the_pinned_engine() {
     served.files.insert(url(NEWER), new.clone());
     let text = manifest_text(NEWER, NEWER_ISSUED, &sha256(&new));
     engines(root.path(), &sha256(&old), keys.signer())
-        .update(text.as_bytes(), &keys.sign(&text), &served, at(NOW))
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at(NOW),
+        )
         .unwrap();
     // The same folder, read by a build that trusts another key.
     let other = engines(root.path(), &sha256(&old), Keys::new().signer());
@@ -295,4 +320,118 @@ fn the_machines_own_chrome_runs_as_chosen_with_nothing_downloaded() {
     let refused = engines.prepare(&missing, &served, at(NOW)).unwrap_err();
     assert!(matches!(refused, Refused::MachineChrome(_)), "{refused:?}");
     let _ = fixture::VERSION;
+}
+
+#[test]
+fn a_signed_manifest_issued_later_but_naming_an_older_version_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let old = archive("pinned");
+    let served = Served::with(url(VERSION), old.clone());
+    let engines = engines(root.path(), &sha256(&old), keys.signer());
+    let text = manifest_text("150.0.1.1", NEWER_ISSUED, &sha256(&old));
+    let refused = engines
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at(NOW),
+        )
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Older { .. }), "{refused:?}");
+}
+
+#[test]
+fn an_update_reports_its_age_by_the_persons_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let (old, new) = (archive("pinned"), archive("newer"));
+    let mut served = Served::with(url(VERSION), old.clone());
+    served.files.insert(url(NEWER), new.clone());
+    let engines = engines(root.path(), &sha256(&old), keys.signer());
+    let text = manifest_text(NEWER, NEWER_ISSUED, &sha256(&new));
+    let settings = EngineSettings {
+        warn_after: std::time::Duration::from_secs(3600),
+        ..EngineSettings::default()
+    };
+    let ready = engines
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &settings,
+            &served,
+            at("2026-10-21T09:00:00Z"),
+        )
+        .unwrap();
+    assert_eq!(
+        ready.age(),
+        purlis_browser_engine::install::Age::Behind { days: 1 }
+    );
+}
+
+#[test]
+fn settings_that_refuse_no_later_than_they_warn_are_refused_naming_them() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes = archive("pinned");
+    let served = Served::with(url(VERSION), bytes.clone());
+    let engines = engines(root.path(), &sha256(&bytes), Box::new(NoSigner));
+    let settings = EngineSettings {
+        warn_after: std::time::Duration::from_secs(10 * 86_400),
+        refuse_after: std::time::Duration::from_secs(10 * 86_400),
+        ..EngineSettings::default()
+    };
+    let refused = engines.prepare(&settings, &served, at(NOW)).unwrap_err();
+    assert!(matches!(refused, Refused::Settings(_)), "{refused:?}");
+    assert!(refused.to_string().contains("Settings"), "{refused}");
+    assert!(served.asked.borrow().is_empty());
+}
+
+#[test]
+fn an_archive_with_a_link_out_of_its_folder_is_refused_and_nothing_of_it_is_kept() {
+    for target in [
+        "/etc/passwd",
+        "../../outside",
+        "../chrome-linux64/../../outside",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let bytes = fixture::archive_with_link("chrome-linux64/lib", target);
+        let served = Served::with(url(VERSION), bytes.clone());
+        let engines = engines(root.path(), &sha256(&bytes), Box::new(NoSigner));
+        let refused = engines
+            .prepare(&EngineSettings::default(), &served, at(NOW))
+            .unwrap_err();
+        assert!(
+            matches!(refused, Refused::Archive(_)),
+            "{target}: {refused:?}"
+        );
+        assert_eq!(leftovers(root.path()), Vec::<String>::new(), "{target}");
+    }
+}
+
+#[test]
+fn an_archive_with_a_link_inside_its_folder_is_unpacked_with_the_link() {
+    // macOS's engine is an app bundle, whose frameworks are linked within it.
+    let root = tempfile::tempdir().unwrap();
+    let bytes = fixture::archive_with_link("chrome-linux64/current", "resources.pak");
+    let served = Served::with(url(VERSION), bytes.clone());
+    let engines = engines(root.path(), &sha256(&bytes), Box::new(NoSigner));
+    let ready = engines
+        .prepare(&EngineSettings::default(), &served, at(NOW))
+        .unwrap();
+    let link = ready.program().parent().unwrap().join("current");
+    assert_eq!(std::fs::read(link).unwrap(), b"resources");
+}
+
+#[test]
+fn an_archive_that_names_the_install_record_itself_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes = fixture::archive_with_link("installed.json", "chrome-linux64/resources.pak");
+    let served = Served::with(url(VERSION), bytes.clone());
+    let engines = engines(root.path(), &sha256(&bytes), Box::new(NoSigner));
+    let refused = engines
+        .prepare(&EngineSettings::default(), &served, at(NOW))
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Archive(_)), "{refused:?}");
+    assert_eq!(leftovers(root.path()), Vec::<String>::new());
 }

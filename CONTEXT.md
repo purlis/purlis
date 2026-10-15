@@ -551,6 +551,14 @@ browser profile (that is the **profile**)
 One of a browser's open documents. Pages of one browser share its cookies and logins.
 _Avoid_: tab (that is the window's), frame, document
 
+**Engine**:
+The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
+downloads on first use, checks against its manifest before it runs, and keeps current apart from
+purlis's own releases, or the machine's own Chrome when the person chooses it in Settings. The
+session host drives it only over a pipe it holds, never a port, and it ends with its host.
+_Avoid_: Chromium (unless that project is meant), headless Chrome, driver (that is who acts on a
+browser)
+
 **Driver**:
 Who may act on a browser now: the chat's agent, the person, or purlis itself while it performs a
 login. Exactly one at a time. While the person drives, the agent's browser tools are refused in
@@ -1150,32 +1158,6 @@ by policy". It never loosens what a project or a person sets. One that forbids t
 requires the sandbox in every project on that machine, which Settings shows as "On, required by
 policy" (ADR 0067 §1, §4 as amended).
 _Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings
-
-### Browsers
-
-**Browser**:
-One isolated world of cookies, storage and logins that a session host runs for a chat, a task or
-the person, and that only purlis drives. A chat has one by default and may ask for another; a
-task gets its own. It is watched as a **browser view** and never as a window of its own. It
-belongs to **Chat**, or to **Workspace** once pinned.
-_Avoid_: browser session (session is the process), instance, window, context, headless browser
-
-**Page**:
-One of a browser's open documents. Pages of one browser share its cookies and logins.
-_Avoid_: tab (that is the window's), frame, document
-
-**Engine**:
-The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
-downloads on first use, checks against its manifest before it runs, and keeps current apart from
-purlis's own releases, or the machine's own Chrome when the person chooses it in Settings. The
-session host drives it only over a pipe it holds, never a port, and it ends with its host.
-_Avoid_: Chromium (unless that project is meant), headless Chrome, driver (that is who acts on a
-browser)
-
-**Reach** (of a browser):
-The sites and local ports a browser may open and the ones its agent may write to. A browser's
-reach is its own, apart from its chat's sandbox.
-_Avoid_: egress (that is the chat's sandbox's), allowlist (in UI text), network access
 
 ### Core and extensions
 

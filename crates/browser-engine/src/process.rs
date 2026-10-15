@@ -11,9 +11,11 @@
 //!
 //! **The pipe.** The engine is started with `posix_spawn`, whose file actions put the read end
 //! of one pipe at descriptor 3 and the write end of another at descriptor 4, which is where
-//! `--remote-debugging-pipe` looks. Every other descriptor of the host's is close-on-exec (the
-//! standard library opens all of its own that way), so the engine inherits only those two and
-//! its standard streams. No port is opened: nothing else on the machine can reach DevTools.
+//! `--remote-debugging-pipe` looks. The engine inherits those two and its standard streams and
+//! nothing else, whatever the host holds open: on macOS `POSIX_SPAWN_CLOEXEC_DEFAULT` closes
+//! every descriptor the file actions do not place, and on Linux the file actions close each
+//! descriptor the host has open (`/proc/self/fd`). No port is opened: nothing else on the
+//! machine can reach DevTools.
 //!
 //! **The end.** [`Engine::stop`] asks the engine to close, gives it a moment, then kills the
 //! group. Dropping an [`Engine`] kills the group at once. When the host itself ends, however it
@@ -200,11 +202,18 @@ impl Engine {
         Ok(engine)
     }
 
-    /// DevTools over the engine's pipe.
-    pub fn devtools(&self) -> &Connection {
+    /// DevTools over the engine's pipe, for this crate only: what reaches the engine from
+    /// outside goes through typed calls, and every one that opens a page takes a
+    /// [`WebAddress`].
+    pub(crate) fn devtools(&self) -> &Connection {
         self.connection
             .as_ref()
             .expect("the connection lives as long as the engine")
+    }
+
+    /// The engine's product and version, as DevTools reports them (`Browser.getVersion`).
+    pub fn version(&self) -> Result<Value, CallError> {
+        self.devtools().call("Browser.getVersion", json!({}), None)
     }
 
     /// The engine's events, once: the broker takes them to read on its own thread.
@@ -297,8 +306,10 @@ fn spawn_engine(
     // Each source goes to a number above every descriptor involved before it goes to 3 or 4,
     // so no dup2 overwrites a source still to be moved, and none is a dup2 onto itself (which
     // would leave it close-on-exec).
+    let open_now = open_descriptors()?;
     let above = [fd_in, fd_out, null.as_raw_fd(), log.as_raw_fd(), 4]
         .into_iter()
+        .chain(open_now.iter().copied())
         .max()
         .unwrap_or(4)
         + 1;
@@ -317,6 +328,10 @@ fn spawn_engine(
     actions
         .add_dup2(log.as_raw_fd(), 2)
         .map_err(io::Error::from)?;
+    // Everything else the host holds goes (Linux; macOS closes it by the spawn's flag below).
+    for fd in open_now.iter().copied().filter(|&fd| fd > 2) {
+        actions.add_close(fd).map_err(io::Error::from)?;
+    }
     actions.add_dup2(spare_in, 3).map_err(io::Error::from)?;
     actions.add_dup2(spare_out, 4).map_err(io::Error::from)?;
     actions.add_close(spare_in).map_err(io::Error::from)?;
@@ -335,7 +350,8 @@ fn spawn_engine(
     attr.set_flags(
         PosixSpawnFlags::POSIX_SPAWN_SETPGROUP
             | PosixSpawnFlags::POSIX_SPAWN_SETSIGDEF
-            | PosixSpawnFlags::POSIX_SPAWN_SETSIGMASK,
+            | PosixSpawnFlags::POSIX_SPAWN_SETSIGMASK
+            | close_the_rest(),
     )
     .map_err(io::Error::from)?;
 
@@ -352,6 +368,36 @@ fn spawn_engine(
         env.push(c_string(&pair)?);
     }
     posix_spawn(program.as_c_str(), &actions, &attr, &args, &env).map_err(io::Error::from)
+}
+
+/// macOS's own way to start a program with only the descriptors its file actions place.
+#[cfg(target_os = "macos")]
+fn close_the_rest() -> PosixSpawnFlags {
+    PosixSpawnFlags::from_bits_retain(nix::libc::POSIX_SPAWN_CLOEXEC_DEFAULT)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn close_the_rest() -> PosixSpawnFlags {
+    PosixSpawnFlags::empty()
+}
+
+/// The descriptors this process holds open, for the file actions to close in the engine. On
+/// macOS the spawn's flag closes them, so none are listed. A close of one that is no longer open
+/// by the time of the spawn is passed over by the C library.
+#[cfg(target_os = "macos")]
+fn open_descriptors() -> io::Result<Vec<i32>> {
+    Ok(Vec::new())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_descriptors() -> io::Result<Vec<i32>> {
+    let mut open = Vec::new();
+    for entry in std::fs::read_dir("/proc/self/fd")? {
+        if let Some(fd) = entry?.file_name().to_str().and_then(|n| n.parse().ok()) {
+            open.push(fd);
+        }
+    }
+    Ok(open)
 }
 
 fn c_string(text: &OsStr) -> io::Result<CString> {

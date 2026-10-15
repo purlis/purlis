@@ -200,7 +200,7 @@ fn the_engine_gets_only_the_environment_it_needs() {
     .collect();
     let env = launch(data.path()).environment(host);
     let names: Vec<&OsStr> = env.iter().map(|(k, _)| k.as_os_str()).collect();
-    for kept in ["HOME", "PATH", "LANG", "TMPDIR"] {
+    for kept in ["PATH", "LANG", "TMPDIR"] {
         assert!(
             names.contains(&OsStr::new(kept)),
             "{kept} missing from {names:?}"
@@ -210,6 +210,10 @@ fn the_engine_gets_only_the_environment_it_needs() {
         env.iter()
             .any(|(k, v)| k == "DBUS_SESSION_BUS_ADDRESS" && v == "disabled:"),
         "{env:?}"
+    );
+    assert!(
+        !env.iter().any(|(_, v)| v == "/Users/someone"),
+        "the person's home reached the engine: {env:?}"
     );
     for dropped in [
         "GITHUB_TOKEN",
@@ -223,4 +227,57 @@ fn the_engine_gets_only_the_environment_it_needs() {
             "{dropped} passed in {names:?}"
         );
     }
+}
+
+#[test]
+fn each_browser_has_a_home_of_its_own_inside_its_data_folder() {
+    // On Linux the engine keeps a certificate database under $HOME whatever its data folder:
+    // a home of its own keeps that database the browser's alone, and out of the person's.
+    let data = tempfile::tempdir().unwrap();
+    let launch = launch(data.path());
+    let env = launch.environment([(OsString::from("HOME"), OsString::from("/Users/someone"))]);
+    let value = |name: &str| {
+        let found: Vec<&OsString> = env
+            .iter()
+            .filter(|(k, _)| k == name)
+            .map(|(_, v)| v)
+            .collect();
+        assert_eq!(found.len(), 1, "{name} once in {env:?}");
+        std::path::PathBuf::from(found[0])
+    };
+    let home = value("HOME");
+    assert_eq!(home, data.path().join("profile").join("home"));
+    for xdg in ["XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"] {
+        assert!(value(xdg).starts_with(&home), "{xdg}");
+    }
+    launch.prepare_data_dir().unwrap();
+    assert!(home.is_dir());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_data_folder_that_is_a_link_is_refused_and_one_open_to_others_is_made_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let data = tempfile::tempdir().unwrap();
+    let elsewhere = data.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, data.path().join("profile")).unwrap();
+    assert!(
+        launch(data.path()).prepare_data_dir().is_err(),
+        "a link was used as the data folder"
+    );
+
+    let open = tempfile::tempdir().unwrap();
+    std::fs::create_dir(open.path().join("profile")).unwrap();
+    std::fs::set_permissions(
+        open.path().join("profile"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    launch(open.path()).prepare_data_dir().unwrap();
+    let mode = std::fs::metadata(open.path().join("profile"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700);
 }

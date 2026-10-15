@@ -384,6 +384,9 @@ pub enum Refused {
     /// The machine's own Chrome is not where Settings says.
     #[error("the Chrome chosen in Settings is not at {}", .0.display())]
     MachineChrome(PathBuf),
+    /// The warning and refusal ages in Settings do not make sense together.
+    #[error("{0}")]
+    Settings(String),
     /// The engines' folder could not be read or written.
     #[error("the browser engines' folder could not be used: {0}")]
     Store(#[source] io::Error),
@@ -435,6 +438,12 @@ impl Engines {
                 age: Age::Unknown,
             });
         }
+        if settings.refuse_after <= settings.warn_after {
+            return Err(Refused::Settings(
+                "The browser engine's refusal age in Settings must be later than its warning age."
+                    .to_owned(),
+            ));
+        }
         let manifest = self.trusted();
         let age = age(&manifest, settings, now);
         if let Age::Behind { days } = age
@@ -458,6 +467,7 @@ impl Engines {
         &self,
         manifest: &[u8],
         signature: &str,
+        settings: &EngineSettings,
         fetch: &dyn Fetch,
         now: DateTime<Utc>,
     ) -> Result<Ready, Refused> {
@@ -465,16 +475,17 @@ impl Engines {
             .verify(manifest, signature)
             .map_err(Refused::Signature)?;
         let update = Manifest::parse(manifest)?;
-        if update.issued <= self.trusted().issued {
+        let current = self.trusted();
+        if update.issued <= current.issued || !newer_version(&update.version, &current.version) {
             return Err(Refused::Older {
                 version: update.version,
             });
         }
         let program = self.install(&update, fetch)?;
-        fs::create_dir_all(&self.root).map_err(Refused::Store)?;
+        private_dir(&self.root).map_err(Refused::Store)?;
         write_replacing(&self.root.join(UPDATE_SIGNATURE), signature.as_bytes())?;
         write_replacing(&self.root.join(UPDATE), manifest)?;
-        let age = age(&update, &EngineSettings::default(), now);
+        let age = age(&update, settings, now);
         Ok(Ready {
             program,
             version: Some(update.version),
@@ -509,7 +520,7 @@ impl Engines {
         {
             return Ok(program);
         }
-        fs::create_dir_all(&self.root).map_err(Refused::Store)?;
+        private_dir(&self.root).map_err(Refused::Store)?;
         let archive = Scratch(self.root.join(scratch_name("download")));
         let got = save_hashing(fetch, &download.url, &archive.0)?;
         if got != download.sha256 {
@@ -523,17 +534,31 @@ impl Engines {
         zip::ZipArchive::new(file)
             .and_then(|mut zip| zip.extract(&unpacked.0))
             .map_err(|why| Refused::Archive(why.to_string()))?;
+        links_stay_inside(&unpacked.0)?;
+        if fs::symlink_metadata(unpacked.0.join(INSTALLED)).is_ok() {
+            return Err(Refused::Archive(format!(
+                "it holds {INSTALLED}, a name purlis keeps for itself"
+            )));
+        }
         if !unpacked.0.join(platform.executable()).is_file() {
             return Err(Refused::Archive(format!(
                 "it has no {}",
                 platform.executable().display()
             )));
         }
-        fs::write(
-            unpacked.0.join(INSTALLED),
-            serde_json::json!({ "sha256": download.sha256 }).to_string(),
-        )
-        .map_err(Refused::Store)?;
+        // A new file, never one already there, so no link of the archive's is followed.
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(unpacked.0.join(INSTALLED))
+            .and_then(|mut record| {
+                record.write_all(
+                    serde_json::json!({ "sha256": download.sha256 })
+                        .to_string()
+                        .as_bytes(),
+                )
+            })
+            .map_err(Refused::Store)?;
         match fs::remove_dir_all(&home) {
             Ok(()) => {}
             Err(why) if why.kind() == io::ErrorKind::NotFound => {}
@@ -541,6 +566,59 @@ impl Engines {
         }
         fs::rename(&unpacked.0, &home).map_err(Refused::Store)?;
         Ok(program)
+    }
+}
+
+/// Whether dotted version `a` is later than `b`, part by part as numbers.
+fn newer_version(a: &str, b: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
+    parts(a) > parts(b)
+}
+
+/// Refuses an unpacked tree holding a link that is absolute or leads out of the tree.
+fn links_stay_inside(root: &Path) -> Result<(), Refused> {
+    use std::path::Component;
+    let mut folders = vec![PathBuf::new()];
+    while let Some(folder) = folders.pop() {
+        let entries = fs::read_dir(root.join(&folder)).map_err(Refused::Store)?;
+        for entry in entries {
+            let entry = entry.map_err(Refused::Store)?;
+            let inside = folder.join(entry.file_name());
+            let kind = entry.file_type().map_err(Refused::Store)?;
+            if kind.is_dir() {
+                folders.push(inside);
+            } else if kind.is_symlink() {
+                let target = fs::read_link(root.join(&inside)).map_err(Refused::Store)?;
+                let mut at: Vec<_> = folder.components().collect();
+                let mut escapes = false;
+                for part in target.components() {
+                    match part {
+                        Component::Normal(_) => at.push(part),
+                        Component::CurDir => {}
+                        Component::ParentDir => escapes |= at.pop().is_none(),
+                        Component::RootDir | Component::Prefix(_) => escapes = true,
+                    }
+                }
+                if escapes {
+                    return Err(Refused::Archive(format!(
+                        "it holds a link out of its folder, {}",
+                        inside.display()
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn private_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        purlis_same_user::private_directory(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(dir)
     }
 }
 

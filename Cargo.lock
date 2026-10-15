@@ -5233,6 +5233,7 @@ dependencies = [
  "minisign",
  "minisign-verify",
  "nix 0.31.3",
+ "purlis-same-user",
  "serde",
  "serde_json",
  "sha2 0.11.0",

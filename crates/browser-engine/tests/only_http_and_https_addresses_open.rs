@@ -77,3 +77,21 @@ fn an_address_carrying_whitespace_a_control_character_or_a_backslash_is_refused(
         );
     }
 }
+
+#[test]
+fn an_address_carrying_a_name_or_password_before_its_host_is_refused() {
+    // What reads as the host before `@` is not the host the engine would open.
+    for address in [
+        "https://example.com@evil.test/",
+        "https://user:secret@example.com/",
+        "http://@example.com/",
+    ] {
+        let why = WebAddress::parse(address).expect_err(address);
+        assert!(
+            why.to_string().contains("name or password"),
+            "{address}: {why}"
+        );
+    }
+    // An `@` after the host is part of the path or query, and is fine.
+    assert!(WebAddress::parse("https://example.com/people/@someone?to=a@b").is_ok());
+}

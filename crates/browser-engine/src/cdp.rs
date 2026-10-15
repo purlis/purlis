@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -25,6 +25,9 @@ use serde_json::{Value, json};
 /// The longest message read from the engine, NUL excluded: 64 MiB, room for a full-page
 /// screenshot in base64.
 pub const MAX_MESSAGE_BYTES: usize = 64 << 20;
+
+/// How many events wait for the broker before more are dropped (and counted).
+pub const MAX_QUEUED_EVENTS: usize = 1024;
 
 /// How long [`Connection::call`] waits for an answer.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -67,6 +70,8 @@ type Answer = Result<Value, CallError>;
 struct Shared {
     /// `None` once the engine's side has ended: every later call is refused at once.
     pending: Mutex<Option<HashMap<u64, SyncSender<Answer>>>>,
+    /// Events dropped because [`MAX_QUEUED_EVENTS`] were already waiting.
+    dropped: AtomicU64,
 }
 
 /// One DevTools connection over the engine's pipe.
@@ -78,8 +83,9 @@ pub struct Connection {
 
 impl Connection {
     /// Starts reading `from_engine` on a thread of its own, and returns the connection and the
-    /// receiver of the engine's events. Events queue until read; dropping the receiver discards
-    /// them.
+    /// receiver of the engine's events. At most [`MAX_QUEUED_EVENTS`] wait to be read; past
+    /// that an event is dropped and counted ([`Connection::dropped_events`]), and answers to
+    /// calls are never held up by events nobody reads. Dropping the receiver discards them.
     pub fn new<R, W>(from_engine: R, to_engine: W) -> (Self, Receiver<Event>)
     where
         R: Read + Send + 'static,
@@ -87,8 +93,9 @@ impl Connection {
     {
         let shared = Arc::new(Shared {
             pending: Mutex::new(Some(HashMap::new())),
+            dropped: AtomicU64::new(0),
         });
-        let (events, receiver) = mpsc::channel();
+        let (events, receiver) = mpsc::sync_channel(MAX_QUEUED_EVENTS);
         let reading = shared.clone();
         thread::Builder::new()
             .name("engine-devtools-reader".to_owned())
@@ -151,6 +158,11 @@ impl Connection {
         }
     }
 
+    /// How many events were dropped because the queue was full.
+    pub fn dropped_events(&self) -> u64 {
+        self.shared.dropped.load(Ordering::Relaxed)
+    }
+
     fn forget(&self, id: u64) {
         if let Some(pending) = lock(&self.shared.pending).as_mut() {
             pending.remove(&id);
@@ -166,7 +178,7 @@ fn lock<T: ?Sized>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// Reads messages until the pipe ends or carries something that is not one, then fails every
 /// waiting call and refuses every later one.
-fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &Sender<Event>) {
+fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender<Event>) {
     let mut frames = Frames::new(from_engine);
     while let Some(Ok(message)) = frames.next_message() {
         let Ok(Value::Object(mut message)) = serde_json::from_slice::<Value>(&message) else {
@@ -204,8 +216,12 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &Sender<Eve
                         .remove("sessionId")
                         .and_then(|s| s.as_str().map(str::to_owned)),
                 };
-                // Nobody listening is not an error: the event is discarded.
-                let _ = events.send(event);
+                match events.try_send(event) {
+                    Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => {}
+                    Err(mpsc::TrySendError::Full(_)) => {
+                        shared.dropped.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
             }
         }
     }

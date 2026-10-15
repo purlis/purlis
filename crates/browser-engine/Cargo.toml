@@ -28,10 +28,12 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
 
 [target."cfg(unix)".dependencies]
+# A data folder is this user's alone: the repo's one copy of that check.
+purlis-same-user.workspace = true
 # posix_spawn with dup2 file actions puts the DevTools pipe at descriptors 3 and 4 without a
 # `pre_exec` (the workspace denies `unsafe`); killpg ends the engine's process group. The
 # version purlis-same-user already links, so the tree gains no crate.
-nix = { version = "0.31", default-features = false, features = ["process", "signal"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "process", "signal"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write};
 use std::thread;
 use std::time::Duration;
 
-use purlis_browser_engine::cdp::{CallError, Connection, MAX_MESSAGE_BYTES};
+use purlis_browser_engine::cdp::{CallError, Connection, MAX_MESSAGE_BYTES, MAX_QUEUED_EVENTS};
 use serde_json::{Value, json};
 
 /// The engine's end: what the connection wrote, and a way to answer.
@@ -172,4 +172,24 @@ fn a_message_past_the_bound_without_its_nul_ends_the_connection() {
         .unwrap_err();
     assert!(matches!(error, CallError::Ended), "{error:?}");
     drop(flood.join().unwrap());
+}
+
+#[test]
+fn events_nobody_reads_are_held_to_a_bound_and_the_ones_past_it_are_counted() {
+    let (connection, events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        for n in 0..MAX_QUEUED_EVENTS + 50 {
+            engine.send(json!({"method": "Page.frameNavigated", "params": {"n": n}}));
+        }
+        let call = engine.read();
+        engine.send(json!({"id": call["id"], "result": {}}));
+        engine
+    });
+    // Calls are still answered while the events wait.
+    connection
+        .call("Browser.getVersion", json!({}), None)
+        .unwrap();
+    assert_eq!(connection.dropped_events(), 50);
+    assert_eq!(events.try_iter().count(), MAX_QUEUED_EVENTS);
+    drop(engine.join().unwrap());
 }

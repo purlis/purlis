@@ -34,6 +34,18 @@ pub fn archive(marker: &str) -> Vec<u8> {
     out.into_inner()
 }
 
+/// [`archive`], with one more entry: a link at `name` to `target`.
+pub fn archive_with_link(name: &str, target: &str) -> Vec<u8> {
+    let mut out = Cursor::new(archive("pinned"));
+    {
+        let mut zip = zip::ZipWriter::new_append(&mut out).unwrap();
+        zip.add_symlink(name, target, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.finish().unwrap();
+    }
+    out.into_inner()
+}
+
 pub fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()

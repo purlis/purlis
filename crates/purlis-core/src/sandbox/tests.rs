@@ -5432,6 +5432,35 @@ fn no_chat_sandbox_writes_the_event_log_beside_the_cache_homes_it_may_write() {
     }
 }
 
+/// #2009: no chat sandbox writes the browser engines purlis installed,
+/// `<data>/engines/chrome-for-testing/`, which the session host runs outside every sandbox, though
+/// the cache homes it may write live in the same data home (ADR 0067 §5 class 2).
+#[test]
+fn no_chat_sandbox_writes_the_browser_engines_beside_the_cache_homes_it_may_write() {
+    let machine = mac_with(&[]);
+    let data = Homes::charter_data(&machine).expect("a data home");
+    let engine = data
+        .join("engines/chrome-for-testing/155.0.8059.79-mac-arm64")
+        .join("chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing");
+    let update = data.join("engines/chrome-for-testing/update.json");
+    let cache = cache_home(&machine, StdPath::new(PROJECT)).join("npm/x");
+    for harness in [Harness::ClaudeCode, Harness::Opencode, Harness::Codex] {
+        let applied = under_presets(harness, &Preset::ALL, &machine);
+        let writable = applied.writable();
+        assert!(
+            writable.iter().any(|dir| cache.starts_with(dir)),
+            "{harness:?}: the cache home is not written: {writable:?}"
+        );
+        for engine_file in [&engine, &update] {
+            assert!(
+                !writable.iter().any(|dir| engine_file.starts_with(dir)),
+                "{harness:?}: {} is written: {writable:?}",
+                engine_file.display()
+            );
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------------
 // What no chat reads is what the window's own file reads leave out (issue 1916, ruling F1)
 // -------------------------------------------------------------------------------------
