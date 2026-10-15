@@ -528,12 +528,14 @@ pub fn detect_with_record(
     // program only reads or prints merely printed what it handed back, and raises nothing
     // from it; any other line may have met the refusal its programs said.
     let runs = runs_a_program(payload);
-    let may_run = may_run_a_program(payload, place);
-    let said = if bash_output_failed(payload) || (read_back_failed && !may_run) {
+    // Read only where the answer is asked: it may read the repository's config (#2212).
+    let may_run = std::cell::OnceCell::new();
+    let may_run = || *may_run.get_or_init(|| may_run_a_program(payload, place));
+    let said = if bash_output_failed(payload) || (read_back_failed && !may_run()) {
         Said::Failed
     } else if client {
         Said::Client
-    } else if may_run {
+    } else if may_run() {
         Said::Unsaid
     } else {
         Said::Printed
@@ -984,10 +986,10 @@ fn reads_past_readers(line: &str, shells: usize, reading: Reading<'_>) -> bool {
             continue;
         }
         let base = crate::shellwrap::base_lower(&call.prog);
-        if base == "cd"
+        if matches!(base.as_str(), "cd" | "pushd")
             && let (Some(place), Some(seen)) = (place, folders.as_mut())
         {
-            let target = call.argv.get(1).map(String::as_str);
+            let target = cd_target(&call.argv[1..]);
             let moved = seen
                 .last()
                 .and_then(|from| moved_to(from, target, place.home));
@@ -1033,6 +1035,26 @@ fn reads_past_readers(line: &str, shells: usize, reading: Reading<'_>) -> bool {
         }
     }
     false
+}
+
+/// The folder word `cd` or `pushd` is given, past its options (`-L`, `-P`, `-e`, `-@`, and
+/// `--`), or `None` for none; `Some("-")` for a word that is not read (`pushd +1`).
+fn cd_target(args: &[String]) -> Option<&str> {
+    let mut words = args.iter().map(String::as_str);
+    while let Some(word) = words.next() {
+        if word == "--" {
+            return words.next();
+        }
+        if word.len() > 1 && word.starts_with('-') && word[1..].chars().all(|c| "LPe@".contains(c))
+        {
+            continue;
+        }
+        if word.starts_with('+') || (word.starts_with('-') && word.len() > 1) {
+            return Some("-");
+        }
+        return Some(word);
+    }
+    None
 }
 
 /// The folder `cd` with `target` moves to from `from`, or `None` for one that is not read: a
