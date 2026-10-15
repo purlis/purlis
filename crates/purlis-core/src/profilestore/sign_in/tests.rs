@@ -87,6 +87,17 @@ fn profile(kind: &str) -> Profile {
     crate::profiles::of_record(&made(kind)).expect("a made profile runs")
 }
 
+/// A profile purlis made of `kind`, in a folder of the test's own: what a harness says of it
+/// is remembered by its folder, so no other test's answer is.
+fn profile_in(kind: &str, folder: &str) -> Profile {
+    let mut record = made(kind);
+    record.folders.config = PathBuf::from(format!("/profiles/{folder}/config"));
+    if record.folders.data.is_some() {
+        record.folders.data = Some(PathBuf::from(format!("/profiles/{folder}/data")));
+    }
+    crate::profiles::of_record(&record).expect("a made profile runs")
+}
+
 fn ran(args: &[&str], env: &[(&str, &str)]) -> Asked {
     Asked::Ran {
         args: args.iter().map(|a| (*a).to_owned()).collect(),
@@ -193,7 +204,7 @@ fn opencodes_credential_file_is_seen_by_its_name_and_never_opened() {
 fn a_chat_on_a_made_profile_its_harness_says_is_signed_out_is_refused_with_sign_in() {
     let look = Recorded::answering(Some(1));
 
-    let why = refusal(&profile("claude"), &[], &look).expect("refused");
+    let why = refusal(&profile_in("claude", "refused"), &[], &look).expect("refused");
 
     assert!(why.contains("'work' is not signed in"), "{why}");
     assert!(why.contains("Sign in"), "{why}");
@@ -203,12 +214,17 @@ fn a_chat_on_a_made_profile_its_harness_says_is_signed_out_is_refused_with_sign_
 
 #[test]
 fn a_chat_is_never_refused_where_the_harness_cannot_tell() {
-    for status in [Some(0), None, Some(3)] {
+    for (at, status) in [Some(0), None, Some(3)].into_iter().enumerate() {
         let look = Recorded::answering(status);
-        assert_eq!(refusal(&profile("codex"), &[], &look), None, "{status:?}");
+        let profile = profile_in("codex", &format!("cannot-tell-{at}"));
+        assert_eq!(refusal(&profile, &[], &look), None, "{status:?}");
     }
     assert_eq!(
-        refusal(&profile("opencode"), &[], &Recorded::answering(None)),
+        refusal(
+            &profile_in("opencode", "cannot-tell-oc"),
+            &[],
+            &Recorded::answering(None)
+        ),
         None
     );
 }
@@ -234,7 +250,7 @@ fn an_adopted_profile_is_signed_in_by_the_persons_own_sign_in_and_never_asked() 
         variables: Vec::new(),
     });
 
-    let why = login_of(&record).expect_err("nothing to sign in");
+    let why = login_of(&record, None).expect_err("nothing to sign in");
 
     assert!(why.contains("own sign-in"), "{why}");
 }
@@ -250,9 +266,9 @@ fn a_profile_signed_in_by_a_key_it_is_handed_is_not_asked() {
 
 #[test]
 fn signing_in_runs_each_harnesss_own_sign_in_in_the_profiles_folder() {
-    let claude = login_for(&profile("claude"), "/bin/claude");
-    let codex = login_for(&profile("codex"), "/bin/codex");
-    let opencode = login_for(&profile("opencode"), "/bin/opencode");
+    let claude = login_for(&profile("claude"), "/bin/claude", None).unwrap();
+    let codex = login_for(&profile("codex"), "/bin/codex", None).unwrap();
+    let opencode = login_for(&profile("opencode"), "/bin/opencode", Some("openai")).unwrap();
 
     assert_eq!(claude.args, ["auth", "login"]);
     assert_eq!(
@@ -263,7 +279,7 @@ fn signing_in_runs_each_harnesss_own_sign_in_in_the_profiles_folder() {
         )]
     );
     assert_eq!(codex.args, ["login"]);
-    assert_eq!(opencode.args, ["auth", "login"]);
+    assert_eq!(opencode.args, ["auth", "login", "--provider", "openai"]);
     assert_eq!(
         opencode.env,
         [
@@ -278,7 +294,7 @@ fn signing_in_runs_each_harnesss_own_sign_in_in_the_profiles_folder() {
 
 #[test]
 fn the_line_a_shell_runs_sets_the_folders_and_runs_the_program_it_names() {
-    let login = login_for(&profile("claude"), "/Users/me/.local/bin/claude");
+    let login = login_for(&profile("claude"), "/Users/me/.local/bin/claude", None).unwrap();
 
     assert_eq!(
         login.line().unwrap(),
@@ -287,22 +303,174 @@ fn the_line_a_shell_runs_sets_the_folders_and_runs_the_program_it_names() {
 }
 
 #[test]
-fn a_folder_with_a_quote_or_a_space_is_one_word_of_the_line() {
+fn a_folder_with_a_space_is_one_word_of_the_line() {
     let mut record = made("codex");
-    record.folders.config = PathBuf::from("/Users/o'neil/my profiles/work/config");
-    let login = login_for(&crate::profiles::of_record(&record).unwrap(), "/bin/codex");
+    record.folders.config = PathBuf::from("/Users/my profiles/work/config");
+    let login = login_for(
+        &crate::profiles::of_record(&record).unwrap(),
+        "/bin/codex",
+        None,
+    )
+    .unwrap();
 
     assert_eq!(
         login.line().unwrap(),
-        "env 'CODEX_HOME=/Users/o'\"'\"'neil/my profiles/work/config' /bin/codex login\n"
+        "env 'CODEX_HOME=/Users/my profiles/work/config' /bin/codex login\n"
     );
+}
+
+#[test]
+fn a_folder_with_a_quote_or_a_backslash_is_never_typed_into_a_shell() {
+    for folder in ["/Users/o'neil/work/config", "/Users/a\\b/work/config"] {
+        let mut record = made("codex");
+        record.folders.config = PathBuf::from(folder);
+        let login = login_for(
+            &crate::profiles::of_record(&record).unwrap(),
+            "/bin/codex",
+            None,
+        )
+        .unwrap();
+
+        assert!(login.line().is_err(), "{folder}");
+    }
+}
+
+#[test]
+fn no_sign_in_is_typed_into_a_shell_on_windows() {
+    let login = login_for(&profile("codex"), "codex", None).unwrap();
+
+    let why = login
+        .line_on(crate::sandbox::Os::Windows)
+        .expect_err("no line on Windows");
+
+    assert!(why.contains("on Windows"), "{why}");
+    assert!(why.contains("codex login"), "{why}");
+}
+
+#[test]
+fn opencode_is_signed_in_only_to_a_provider_purlis_names_and_never_to_anthropic() {
+    let opencode = profile("opencode");
+
+    let copilot = login_for(&opencode, "/bin/opencode", Some("github-copilot")).unwrap();
+    assert_eq!(
+        copilot.args,
+        ["auth", "login", "--provider", "github-copilot"]
+    );
+    for refused in [None, Some("anthropic"), Some("")] {
+        let why = login_for(&opencode, "/bin/opencode", refused).expect_err("refused");
+        assert!(why.contains("never"), "{why}");
+    }
+    assert!(providers("opencode").iter().all(|p| p.id != "anthropic"));
+    assert!(providers("claude").is_empty());
+    assert!(login_for(&profile("claude"), "/bin/claude", Some("openai")).is_err());
+}
+
+#[test]
+fn what_a_harness_said_is_remembered_for_a_minute_and_forgotten_on_sign_in() {
+    struct Counted(std::cell::Cell<u32>);
+    impl Look for Counted {
+        fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+            self.0.set(self.0.get() + 1);
+            Some(1)
+        }
+        fn is_there(&self, _: &Path) -> bool {
+            false
+        }
+    }
+    let look = Counted(std::cell::Cell::new(0));
+    let profile = profile_in("claude", "remembered");
+    let now = Instant::now();
+
+    for _ in 0..5 {
+        assert_eq!(standing_at(&profile, &look, now), Standing::SignedOut);
+    }
+    assert_eq!(look.0.get(), 1, "five starts asked the harness once");
+    standing_at(&profile, &look, now + REMEMBERED + Duration::from_secs(1));
+    assert_eq!(look.0.get(), 2, "asked again after a minute");
+    forget(&profile);
+    standing_at(&profile, &look, now + REMEMBERED + Duration::from_secs(2));
+    assert_eq!(look.0.get(), 3, "asked again after Sign in");
+}
+
+#[test]
+fn a_refused_start_leaves_one_wait_until_the_harness_says_it_is_signed_in() {
+    let root = Path::new("/projects/waiting");
+    let profile = profile_in("claude", "waits");
+    let now = Instant::now();
+    standing_at(&profile, &Recorded::answering(Some(1)), now);
+    waits_on(root, &profile);
+    waits_on(root, &profile);
+
+    let waits = waiting(root);
+    assert_eq!(waits.len(), 1, "one wait however many starts");
+    assert_eq!(waits[0].profile.name, "work");
+    assert_eq!(waits[0].harness, "Claude Code");
+    assert!(waiting(Path::new("/projects/other")).is_empty());
+
+    forget(&profile);
+    assert_eq!(waiting(root).len(), 1, "not asked lately: it still waits");
+    standing_at(&profile, &Recorded::answering(Some(0)), Instant::now());
+    assert!(waiting(root).is_empty(), "signed in, and let go");
+    standing_at(
+        &profile,
+        &Recorded::answering(Some(1)),
+        Instant::now() + REMEMBERED * 2,
+    );
+    assert!(waiting(root).is_empty(), "gone for good");
+}
+
+#[test]
+fn a_watch_after_sign_in_lets_the_wait_go_once_the_harness_says_signed_in() {
+    struct Then(std::sync::atomic::AtomicU32);
+    impl Look for Then {
+        fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+            let asked = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(if asked < 2 { 1 } else { 0 })
+        }
+        fn is_there(&self, _: &Path) -> bool {
+            false
+        }
+    }
+    let root = Path::new("/projects/watched");
+    let profile = profile_in("codex", "watched");
+    waits_on(root, &profile);
+    let (tell, told) = std::sync::mpsc::channel();
+
+    watch(
+        profile,
+        Then(std::sync::atomic::AtomicU32::new(0)),
+        Duration::from_millis(1),
+        Duration::from_secs(5),
+        move || tell.send(()).unwrap(),
+    )
+    .join()
+    .unwrap();
+
+    told.try_recv().expect("the window was told");
+    assert!(waiting(root).is_empty());
+}
+
+#[test]
+fn a_dismissed_wait_is_gone() {
+    let root = Path::new("/projects/dismissed");
+    let profile = profile_in("codex", "dismissed");
+    waits_on(root, &profile);
+
+    dismiss(root, "work");
+
+    assert!(waiting(root).is_empty());
 }
 
 #[test]
 fn a_folder_with_a_line_break_is_never_typed_into_a_shell() {
     let mut record = made("codex");
     record.folders.config = PathBuf::from("/profiles/a\nb/config");
-    let login = login_for(&crate::profiles::of_record(&record).unwrap(), "/bin/codex");
+    let login = login_for(
+        &crate::profiles::of_record(&record).unwrap(),
+        "/bin/codex",
+        None,
+    )
+    .unwrap();
 
     assert!(login.line().is_err());
 }

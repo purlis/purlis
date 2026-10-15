@@ -242,6 +242,18 @@ const listed = (plane: string | undefined): LiveSetting => ({
                           Open a project to sign in from its window, or run{" "}
                           <code>purlis profile sign-in {profile.name}</code> in your terminal.
                         </span>
+                      ) : profile.plans.length > 0 ? (
+                        // A harness that serves several plans is signed in to the one purlis
+                        // names (opencode: ChatGPT or GitHub Copilot, never a Claude plan).
+                        profile.plans.map((plan) => (
+                          <EntryButton
+                            key={plan.id}
+                            label={`Sign in to ${plan.title}`}
+                            spoken={`Sign ${profile.name} in to ${plan.title}`}
+                            disabled={now.busy}
+                            onClick={() => askProfileSignIn(plane, profile.name, plan.id)}
+                          />
+                        ))
                       ) : (
                         <EntryButton
                           label={profile.standing === "signed-in" ? "Sign in again" : "Sign in"}

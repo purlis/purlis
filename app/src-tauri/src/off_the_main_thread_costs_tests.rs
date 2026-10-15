@@ -388,6 +388,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "keep_vault_blocked",
             "put_away_refused_vault",
             "keep_asked_workspace",
+            "dismiss_sign_in",
             "keep_sandbox_block_for_tasks",
             "choose_sandbox_block_target",
             "take_up_sandbox_block",

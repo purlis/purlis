@@ -222,12 +222,24 @@ the operator:
 How a subscription is signed in and how purlis knows (§3, #2035) was not ruled beyond §3 above.
 The implementer decided it on 2026-10-15, to be confirmed by the operator:
 
-- **The sign-in runs in a shell tab the person drives.** Sign in opens a shell tab at the
-  project's root, and the core types the harness's own sign-in into it (`claude auth login`,
-  `codex login`, `opencode auth login`) with the profile's folder variables set; `purlis profile
-  sign-in <name>` runs the same in the person's own terminal. Either way it runs as the person,
-  outside every chat's sandbox, and purlis reads none of what it prints. The browser page or code
-  the harness shows is shown by the terminal, not read out of it.
+- **A start refused because its profile is signed out raises one Ask**, "Sign in <profile>",
+  in the Inbox, one per project and profile however many starts were refused, dispatched and
+  unattended starts included; the picker's refusal points to it. It is about no chat, so it is
+  listed under the profile. **The Ask's action is a shell tab**, so purlis never reads the flow:
+  Sign in opens a shell tab at the project's root, and the core types the harness's own sign-in
+  into it (`claude auth login`, `codex login`, `opencode auth login --provider <plan>`) with the
+  profile's folder variables set; `purlis profile sign-in <name>` runs the same in the person's
+  own terminal. Either way it runs as the person, outside every chat's sandbox, and purlis reads
+  none of what it prints. The browser page or code the harness shows is seen in that tab, not
+  read out of it. The Ask leaves the Inbox once the harness says the profile is signed in (it is
+  asked again every few seconds after Sign in), or when the person dismisses it.
+- **opencode is signed in to a plan purlis names**: the Ask and the profile page offer ChatGPT
+  and GitHub Copilot, passed as opencode's own `--provider`, and never Anthropic, so a Claude
+  plan is never signed in through opencode (#2039).
+- **What a harness says is remembered for a minute**, and forgotten by Sign in, so reopening many
+  chats on one profile asks it once.
+- **No sign-in is typed on Windows**, whose shells have no `env`; a word with a quote, a
+  backslash or a control character in it is never typed into any shell.
 - **Signed in is the harness's own answer, and purlis opens no file to get it**: how its status
   command exits (`claude auth status`, `codex login status`: 0 signed in, 1 signed out), with
   nothing it prints read; where a harness has none that says signed out, whether its credential

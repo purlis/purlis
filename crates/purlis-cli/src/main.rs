@@ -999,6 +999,10 @@ enum ProfileCommand {
         /// Only say whether its harness says it is signed in on this device.
         #[arg(long)]
         check: bool,
+        /// For an opencode profile, the plan it signs in to: openai (ChatGPT) or
+        /// github-copilot. A Claude plan is never signed in through opencode.
+        #[arg(long)]
+        provider: Option<String>,
     },
 }
 
@@ -3538,8 +3542,8 @@ fn plugin_machine(
 
 /// `purlis profile create|import|remove|sign-in` (#2034, #2035, ADR 0095): this machine's own
 /// profiles, in its data home ([`purlis_core::profilestore`]). Each is the person's act, so a
-/// chat is refused it, as the window serves the same acts to itself alone. What it did, and a refusal, go to
-/// stderr, as purlis's reports do.
+/// chat is refused it, as the window serves the same acts to itself alone. What it did, and a
+/// refusal, go to stderr, as purlis's reports do.
 fn machine_profile(verb: &ProfileCommand) -> ExitCode {
     use purlis_core::profilestore::{self, Homes, MachineSettings};
     if purlis_core::envvar::var(purlis_core::hookwire::CHAT_ENV)
@@ -3616,8 +3620,12 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 }
             }),
         },
-        ProfileCommand::Authenticate { name, check } => {
-            return profile_sign_in(&store, name, *check);
+        ProfileCommand::Authenticate {
+            name,
+            check,
+            provider,
+        } => {
+            return profile_sign_in(&store, name, *check, provider.as_deref());
         }
         ProfileCommand::List => unreachable!("listed in run"),
     };
@@ -3630,11 +3638,16 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
     }
 }
 
-/// What an import copied and left out, a line each, for `machine_profile`.
 /// `purlis profile sign-in <name>` (#2035, ADR 0095 §3): the harness's own sign-in, run in this
-/// terminal with the profile's folder variables set, its input and output the person's own and
-/// none of it read; or, with `check`, whether its harness says it is signed in here.
-fn profile_sign_in(store: &purlis_core::profilestore::Homes, name: &str, check: bool) -> ExitCode {
+/// terminal with the profile's folder variables set, to `provider` for opencode, its input and
+/// output the person's own and none of it read; or, with `check`, whether its harness says it
+/// is signed in here.
+fn profile_sign_in(
+    store: &purlis_core::profilestore::Homes,
+    name: &str,
+    check: bool,
+    provider: Option<&str>,
+) -> ExitCode {
     use purlis_core::profilestore::{self, sign_in};
     let record = match profilestore::list(store.config_root()) {
         Ok(records) => records.into_iter().find(|p| p.name == name),
@@ -3672,7 +3685,7 @@ fn profile_sign_in(store: &purlis_core::profilestore::Homes, name: &str, check: 
         eprintln!("{said}");
         return ExitCode::SUCCESS;
     }
-    let login = match sign_in::login_of(&record) {
+    let login = match sign_in::login_of(&record, provider) {
         Ok(login) => login,
         Err(why) => return refused(&why),
     };
@@ -3699,6 +3712,7 @@ fn profile_sign_in(store: &purlis_core::profilestore::Homes, name: &str, check: 
     }
 }
 
+/// What an import copied and left out, a line each, for `machine_profile`.
 fn imported_lines(made: &purlis_core::profilestore::Made) -> String {
     let mut out = String::new();
     match &made.record.imported {

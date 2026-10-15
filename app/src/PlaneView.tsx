@@ -405,6 +405,7 @@ import {
 } from "./chatState";
 import { fitting, LEAST, LEAST_CHIP, LEAST_ROOT, leastAt, useRoom, useWidth } from "./fits";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
+import { asksMoved } from "./asks";
 import { useTextSizes } from "./textSize";
 import { focusStands } from "./Cockpit";
 import {
@@ -471,7 +472,13 @@ type Typed =
     }
   | { installer: string; line?: undefined; sandboxInstall?: undefined; signIn?: undefined }
   | { sandboxInstall: true; line?: undefined; installer?: undefined; signIn?: undefined }
-  | { signIn: string; line?: undefined; installer?: undefined; sandboxInstall?: undefined };
+  | {
+      signIn: string;
+      provider?: string;
+      line?: undefined;
+      installer?: undefined;
+      sandboxInstall?: undefined;
+    };
 
 /**
  * One project, with everything that belongs to it.
@@ -2823,7 +2830,7 @@ export const PlaneView = memo(function PlaneView({
           // sign-in with the profile's folder set, and the person drives it in this tab.
           else if (typed?.signIn !== undefined)
             void commands
-              .typeProfileSignIn(plane, session, typed.signIn)
+              .typeProfileSignIn(plane, session, typed.signIn, typed.provider ?? null)
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
@@ -3036,15 +3043,15 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile });
+    (profile: string, provider?: string) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile);
+      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
@@ -3216,8 +3223,10 @@ export const PlaneView = memo(function PlaneView({
         // cannot see beside the rows is one they cannot act on.
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
-        // A profile of this machine's its harness says is not signed in here offers Sign in
-        // as the way out (#2035): asked of the core, never read from the refusal's words.
+        // The refusal left an Ask to sign the profile in (#2035): the Inbox reads it now.
+        asksMoved(plane);
+        // A profile of this machine's its harness says is not signed in here points to that
+        // Ask (#2035): asked of the core, never read from the refusal's words.
         const row = picking.options.profiles.find((one) => one.name === profile);
         if (row?.source === "this machine") {
           const mine = await commands
@@ -3235,7 +3244,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
     },
-    [picking, startOn],
+    [picking, plane, startOn],
   );
 
   /** The approval IS this click. After it, the whole chain of checks runs again from the
@@ -8863,18 +8872,14 @@ export const PlaneView = memo(function PlaneView({
                   ? pickerSignIn.profile
                   : undefined
               }
-              // Sign in (#2035): the picker closes, as it does for the install, and the shell tab
-              // the harness's own sign-in runs in comes to the front. The chat starts after it.
-              onSignIn={
-                root === undefined
-                  ? undefined
-                  : (profile) => {
-                      setPicking(undefined);
-                      setPickerTrouble(undefined);
-                      setPickerSignIn(undefined);
-                      signIn(profile);
-                    }
-              }
+              // The Ask to sign it in (#2035): the picker closes, and the Inbox, where it waits,
+              // comes to the front. The person starts the chat again once it is signed in.
+              onShowSignIn={() => {
+                setPicking(undefined);
+                setPickerTrouble(undefined);
+                setPickerSignIn(undefined);
+                showInbox();
+              }}
               onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
                 void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
               }

@@ -124,13 +124,15 @@ export function askSettingsAction(plane: string, action: string): void {
  */
 export const PROFILE_SIGN_IN = "charter-profile-sign-in";
 
-/** What Sign in asked of a project's window: which project, and the profile's name. */
-export type ProfileSignInAsk = { plane: string; profile: string };
+/** What Sign in asked of a project's window: which project, the profile's name, and the plan's
+ *  provider where purlis names one (opencode's). */
+export type ProfileSignInAsk = { plane: string; profile: string; provider?: string };
 
-/** Asks the window of the project `plane` to sign the profile `profile` in. */
-export function askProfileSignIn(plane: string, profile: string): void {
+/** Asks the window of the project `plane` to sign the profile `profile` in, to `provider`'s
+ *  plan where its harness serves several. */
+export function askProfileSignIn(plane: string, profile: string, provider?: string): void {
   window.dispatchEvent(
-    new CustomEvent<ProfileSignInAsk>(PROFILE_SIGN_IN, { detail: { plane, profile } }),
+    new CustomEvent<ProfileSignInAsk>(PROFILE_SIGN_IN, { detail: { plane, profile, provider } }),
   );
 }
 

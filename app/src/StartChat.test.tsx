@@ -1274,16 +1274,16 @@ describe("the one-time note on a harness that lacks something (#1134, W10)", () 
 
 describe("a profile its harness says is not signed in (#2035)", () => {
   const refused =
-    "the profile 'work' is not signed in on this Mac. Nothing was started. Sign in runs Claude Code's own sign-in in a shell tab.";
+    "the profile 'work' is not signed in on this Mac. Nothing was started. It waits in the Inbox as Sign in work.";
 
-  it("offers Sign in beside the refusal, and signs in the profile it was refused on", async () => {
-    const onSignIn = vi.fn();
+  it("points to the Ask that signs it in, in the Inbox", async () => {
+    const onShowSignIn = vi.fn();
     render(
       <StartChat
         options={ONE}
         trouble={refused}
         signIn="work"
-        onSignIn={onSignIn}
+        onShowSignIn={onShowSignIn}
         onStart={vi.fn()}
         onApprove={vi.fn()}
         onCancel={vi.fn()}
@@ -1291,23 +1291,24 @@ describe("a profile its harness says is not signed in (#2035)", () => {
     );
 
     expect(screen.getByRole("alert").textContent).toBe(refused);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Sign in" }));
+    expect(screen.getByText(/Sign in work waits in the Inbox/)).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Go to the Inbox" }));
 
-    expect(onSignIn).toHaveBeenCalledWith("work");
+    expect(onShowSignIn).toHaveBeenCalledOnce();
   });
 
-  it("offers no Sign in for a refusal of anything else", () => {
+  it("points nowhere for a refusal of anything else", () => {
     render(
       <StartChat
         options={ONE}
         trouble="the sandbox could not be applied. Nothing was started."
-        onSignIn={vi.fn()}
+        onShowSignIn={vi.fn()}
         onStart={vi.fn()}
         onApprove={vi.fn()}
         onCancel={vi.fn()}
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Go to the Inbox" })).toBeNull();
   });
 });

@@ -32,6 +32,7 @@ function row(name: string, more: Partial<MachineProfileRow> = {}): MachineProfil
     imported_from: "/home/dev/.claude",
     signs_in: "through Claude Code's own sign-in, on this Mac",
     standing: "signed-in",
+    plans: [],
     ...more,
   };
 }
@@ -233,5 +234,33 @@ describe("Settings › You › Profiles", () => {
     render(<Row at={0} plane={null} />);
     expect(await screen.findByText("purlis profile sign-in work")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sign work in" })).toBeNull();
+  });
+
+  it("signs an opencode profile in to the plan picked, and offers no Claude plan", async () => {
+    profiles = [
+      row("oc", {
+        kind: "opencode",
+        harness: "opencode",
+        standing: "cannot-tell",
+        plans: [
+          { id: "openai", title: "ChatGPT" },
+          { id: "github-copilot", title: "GitHub Copilot" },
+        ],
+      }),
+    ];
+    const asked: ProfileSignInAsk[] = [];
+    const hear = (event: Event) => asked.push((event as CustomEvent<ProfileSignInAsk>).detail);
+    window.addEventListener(PROFILE_SIGN_IN, hear);
+    try {
+      render(<Row at={0} plane="/projects/p" />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign oc in to GitHub Copilot" }),
+      );
+      expect(asked).toEqual([{ plane: "/projects/p", profile: "oc", provider: "github-copilot" }]);
+      expect(screen.queryByRole("button", { name: "Sign oc in" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Claude/ })).toBeNull();
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, hear);
+    }
   });
 });

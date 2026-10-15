@@ -376,11 +376,13 @@ fn ready_given(
     // A profile this machine made, whose harness says it is not signed in here, does not
     // start: Sign in is the way out (#2035, ADR 0095 §3). Asked after the gate, so only a
     // program the person approved is run, and only its status words.
+    // The refusal leaves one wait for the project and profile, the Ask the window shows.
     if let Some(why) = crate::profilestore::sign_in::refusal(
         profile,
         &crate::chatenv::read(root),
         &crate::profilestore::sign_in::ThisMachine,
     ) {
+        crate::profilestore::sign_in::waits_on(root, profile);
         return Err(why);
     }
 

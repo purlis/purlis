@@ -30,6 +30,7 @@ impl Machine {
         for (harness, status_words, variable) in [
             ("claude", "auth status", "CLAUDE_CONFIG_DIR"),
             ("codex", "login status", "CODEX_HOME"),
+            ("opencode", "no status", "XDG_DATA_HOME"),
         ] {
             stand_in::program(
                 &dir.path().join("bin"),
@@ -62,6 +63,8 @@ impl Machine {
             .env("PURLIS_CONFIG_HOME", self.path("config-home"))
             .env_remove("CLAUDE_CONFIG_DIR")
             .env_remove("CODEX_HOME")
+            .env_remove("XDG_DATA_HOME")
+            .env_remove("XDG_CONFIG_HOME")
             .env_remove("PURLIS_CHAT")
             .env_remove("CHARTER_CHAT")
             .output()
@@ -166,5 +169,29 @@ fn a_profile_this_machine_does_not_have_is_named_as_missing() {
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("no profile named 'nobody'"),
         "{out:?}"
+    );
+}
+
+#[test]
+fn an_opencode_profile_signs_in_to_the_plan_named_and_never_without_one() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
+
+    let refused = machine.purlis(&["profile", "sign-in", "oc"]);
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("never"),
+        "{refused:?}"
+    );
+    let anthropic = machine.purlis(&["profile", "sign-in", "oc", "--provider", "anthropic"]);
+    assert!(!anthropic.status.success());
+    assert_eq!(machine.ran(), None, "no sign-in ran");
+
+    machine.said(&["profile", "sign-in", "oc", "--provider", "github-copilot"]);
+
+    let data = machine.path("data/profiles/oc/data");
+    assert_eq!(
+        machine.ran().as_deref(),
+        Some(format!("auth login --provider github-copilot\n{}\n", data.display()).as_str())
     );
 }

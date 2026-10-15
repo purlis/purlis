@@ -1318,8 +1318,10 @@ export const commands = {
 	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
 	/**
 	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
-	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, which
-	 *  the person then drives in that tab.
+	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the
+	 *  plan `provider` names where purlis names one, which the person then drives in that tab. What
+	 *  its harness said of it is forgotten, and it is asked again every few seconds until it says
+	 *  the profile is signed in, when its Ask leaves the Inbox.
 	 * 
 	 *  **The window names the profile, never the command.** The line is the core's, made from this
 	 *  machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
@@ -1327,7 +1329,12 @@ export const commands = {
 	 *  project root, the one the window opened for it, never into a chat's pane. An adopted
 	 *  profile is refused: it is signed in by the person's own sign-in.
 	 */
-	typeProfileSignIn: (plane: PlaneId, session: number, name: string) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name })),
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider })),
+	/**
+	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
+	 *  next start on it asks again while its harness says it is signed out.
+	 */
+	dismissSignIn: (plane: PlaneId, profile: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile })),
 	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
@@ -3324,6 +3331,12 @@ export type AnswerPath =
  *  proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
  */
 { via: "proposed-change"; id: number; path: string } | 
+/**
+ *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
+ *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
+ *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ */
+{ via: "sign-in"; profile: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3436,7 +3449,12 @@ export type AskSource =
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
-"question";
+"question" | 
+/**
+ *  A profile a chat could not start on, because its harness says it is not signed in on
+ *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
+ */
+"sign-in";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -6287,6 +6305,11 @@ export type MachineProfileRow = {
 	 *  never asked.
 	 */
 	standing: string | null,
+	/**
+	 *  The plans Sign in offers, where purlis names the provider (opencode's ChatGPT and GitHub
+	 *  Copilot, never a Claude plan); empty where the harness signs in to its own.
+	 */
+	plans: PlanRow[],
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -7476,6 +7499,12 @@ export type PlaneContribution = {
 	 *  where the persona ships one. The persona tool gate smooths only what is approved here.
 	 */
 	grants: ([string, string])[],
+};
+
+/**  A plan a profile is signed in to, by the provider id its harness takes. */
+export type PlanRow = {
+	id: string,
+	title: string,
 };
 
 /**

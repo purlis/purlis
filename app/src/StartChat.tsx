@@ -96,7 +96,7 @@ export function StartChat({
   prefer,
   trouble,
   signIn,
-  onSignIn,
+  onShowSignIn,
   onStart,
   onApprove,
   onInstall,
@@ -121,11 +121,11 @@ export function StartChat({
   /** Why the last attempt did not start, if it did not. */
   trouble?: string;
   /** The profile that last attempt was refused on because its harness says it is not signed
-   *  in on this device (#2035, ADR 0095 §3): Sign in is offered beside the refusal. */
+   *  in on this device (#2035, ADR 0095 §3): the refusal points to its Ask in the Inbox. */
   signIn?: string;
-  /** Sign in: the window runs the profile's harness's own sign-in in a shell tab. Absent, the
-   *  refusal's own words say how. */
-  onSignIn?: (profile: string) => void;
+  /** Opens the Inbox, where the Ask to sign the profile in waits. Absent, the refusal's own
+   *  words say where. */
+  onShowSignIn?: () => void;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
    *  box, and `false` when there is none to tick. `withoutSandbox` is the person's opt-out for
    *  this chat, with the reason typed, or `null` for a sandboxed start. */
@@ -536,16 +536,13 @@ export function StartChat({
               {trouble}
             </p>
           )}
-          {trouble && signIn !== undefined && onSignIn && (
+          {trouble && signIn !== undefined && onShowSignIn && (
             <p className="honest">
-              {/* The harness's own sign-in, in a shell tab the person drives (#2035). */}
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                onClick={() => onSignIn(signIn)}
-              >
-                Sign in
+              {/* One Ask per profile, in the Inbox: its Sign in runs the harness's own sign-in in
+                  a shell tab the person drives (#2035). */}
+              Sign in {signIn} waits in the Inbox.{" "}
+              <button className="ui-button" type="button" tabIndex={0} onClick={onShowSignIn}>
+                Go to the Inbox
               </button>
             </p>
           )}

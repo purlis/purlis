@@ -650,6 +650,7 @@ export const commands = {
 	machineProfileRemoval: __WINDOW_ONLY_RESULT,
 	machineProfileRemove: __WINDOW_ONLY_RESULT,
 	typeProfileSignIn: __WINDOW_ONLY_RESULT,
+	dismissSignIn: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -1995,6 +1996,12 @@ export type AnswerPath =
  *  proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
  */
 { via: "proposed-change"; id: number; path: string } | 
+/**
+ *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
+ *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
+ *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ */
+{ via: "sign-in"; profile: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2107,7 +2114,12 @@ export type AskSource =
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
-"question";
+"question" | 
+/**
+ *  A profile a chat could not start on, because its harness says it is not signed in on
+ *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
+ */
+"sign-in";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4958,6 +4970,11 @@ export type MachineProfileRow = {
 	 *  never asked.
 	 */
 	standing: string | null,
+	/**
+	 *  The plans Sign in offers, where purlis names the provider (opencode's ChatGPT and GitHub
+	 *  Copilot, never a Claude plan); empty where the harness signs in to its own.
+	 */
+	plans: PlanRow[],
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -6147,6 +6164,12 @@ export type PlaneContribution = {
 	 *  where the persona ships one. The persona tool gate smooths only what is approved here.
 	 */
 	grants: ([string, string])[],
+};
+
+/**  A plan a profile is signed in to, by the provider id its harness takes. */
+export type PlanRow = {
+	id: string,
+	title: string,
 };
 
 /**

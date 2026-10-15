@@ -243,6 +243,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Typing a profile's sign-in into the person's own shell tab (#2035): the harness's own
     // sign-in, run as the person, never a chat's to start.
     "type_profile_sign_in",
+    "dismiss_sign_in",
     // Whether a folder on this machine is in a project (#1822): the welcome's question before
     // it offers to make one. A probe of the person's folders, which no link needs.
     "folder_is_a_project",

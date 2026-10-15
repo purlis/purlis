@@ -556,15 +556,17 @@ folder is only forgotten, and its folder stays. A chat may not make, import, rem
 in a profile.
 
 A made profile is signed in through its harness's own sign-in (ADR 0095 §3): **Sign in**, on
-its row in Settings or beside the picker's refusal, opens a shell tab that runs
-`claude auth login`, `codex login` or `opencode auth login` with the profile's folder set, and
-`purlis profile sign-in <name>` runs the same in your own terminal. You drive the harness's own
+its row in Settings or on its Ask in the Inbox, opens a shell tab that runs `claude auth login`,
+`codex login` or `opencode auth login --provider <plan>` with the profile's folder set, and
+`purlis profile sign-in <name>` runs the same in your own terminal (`--provider openai` or
+`--provider github-copilot` for opencode, which is never signed in to a Claude plan). You drive the harness's own
 browser page or code there; the harness keeps the result in the profile's folder, and purlis
 reads none of what it prints and opens no file it writes. Whether a profile is signed in on
 this device is the harness's own answer: how `claude auth status` or `codex login status`
 exits, or whether opencode's `auth.json` is there, by its name. A chat on a made profile its
-harness says is signed out is refused before it starts, with Sign in as the way out; where the
-harness cannot say, the chat starts. `purlis profile sign-in <name> --check` says which. A
+harness says is signed out is refused before it starts and leaves one Ask, Sign in <profile>,
+in the Inbox, which goes once the harness says it is signed in; where the harness cannot say,
+the chat starts. What the harness says is remembered for a minute. `purlis profile sign-in <name> --check` says which. A
 profile adopted from the harness's own folder is signed in by your own sign-in and never asked.
 
 ### Kept out of git, and checked

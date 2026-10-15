@@ -43,6 +43,16 @@ pub struct MachineProfileRow {
     /// `cannot-tell`. Null for an adopted profile, signed in by the person's own sign-in and
     /// never asked.
     pub standing: Option<String>,
+    /// The plans Sign in offers, where purlis names the provider (opencode's ChatGPT and GitHub
+    /// Copilot, never a Claude plan); empty where the harness signs in to its own.
+    pub plans: Vec<PlanRow>,
+}
+
+/// A plan a profile is signed in to, by the provider id its harness takes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PlanRow {
+    pub id: String,
+    pub title: String,
 }
 
 impl From<&profilestore::MachineProfile> for MachineProfileRow {
@@ -69,6 +79,13 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
                 .map(|i| i.from.display().to_string()),
             signs_in: signs_in(record),
             standing: None,
+            plans: sign_in::providers(&record.harness)
+                .iter()
+                .map(|plan| PlanRow {
+                    id: plan.id.to_owned(),
+                    title: plan.title.to_owned(),
+                })
+                .collect(),
         }
     }
 }
@@ -246,9 +263,16 @@ pub async fn machine_profile_remove(
     blocking(move || profilestore::remove(&store()?, &name, &shown.into()).map(|_| ())).await
 }
 
+/// How often, and for how long, a profile's harness is asked again after its Sign in, so its
+/// Ask leaves the Inbox once it is signed in.
+const WATCHED_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+const WATCHED_FOR: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
 /// Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
-/// 0095 §3): its harness's own sign-in command, with the profile's folder variables set, which
-/// the person then drives in that tab.
+/// 0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the
+/// plan `provider` names where purlis names one, which the person then drives in that tab. What
+/// its harness said of it is forgotten, and it is asked again every few seconds until it says
+/// the profile is signed in, when its Ask leaves the Inbox.
 ///
 /// **The window names the profile, never the command.** The line is the core's, made from this
 /// machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
@@ -262,6 +286,7 @@ pub fn type_profile_sign_in(
     plane: PlaneId,
     session: u32,
     name: String,
+    provider: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     if !held.chats().is_shell_at(session, held.root()) {
@@ -278,6 +303,32 @@ pub fn type_profile_sign_in(
                 purlis_core::shown::short(&name)
             )
         })?;
-    let line = sign_in::login_of(&record)?.line()?;
-    held.operator_input(session, line.as_bytes())
+    let line = sign_in::login_of(&record, provider.as_deref())?.line()?;
+    held.operator_input(session, line.as_bytes())?;
+    sign_in::forget_of(&record);
+    if let Some(profile) = purlis_core::profiles::of_record(&record) {
+        sign_in::watch(
+            profile,
+            sign_in::ThisMachine,
+            WATCHED_EVERY,
+            WATCHED_FOR,
+            held.hooks().asks_teller(),
+        );
+    }
+    Ok(())
+}
+
+/// Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
+/// next start on it asks again while its harness says it is signed out.
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_sign_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    profile: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    sign_in::dismiss(held.root(), &profile);
+    held.hooks().asks_teller()();
+    Ok(())
 }

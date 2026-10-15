@@ -133,6 +133,9 @@ pub enum AskSource {
     Terminal,
     /// A chat whose turn ended with the next move the person's.
     Question,
+    /// A profile a chat could not start on, because its harness says it is not signed in on
+    /// this device (#2035): answered by running the harness's own sign-in in a shell tab.
+    SignIn,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -164,6 +167,10 @@ pub enum AnswerPath {
     /// `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
     /// proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
     ProposedChange { id: u32, path: String },
+    /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
+    /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
+    /// the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+    SignIn { profile: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -841,6 +848,56 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
     }
 }
 
+/// The option id of Sign in on a profile's Ask (#2035), and its prefix where a provider is
+/// named: `sign-in:<provider>`.
+pub const SIGN_IN: &str = "sign-in";
+
+/// **The sign-in adapter** (#2035, ADR 0095 §3): a profile a start was refused on because its
+/// harness says it is not signed in here, as one Ask per profile, about no chat: its chain is
+/// the profile. It offers Sign in, once per plan where purlis names the provider (opencode's
+/// ChatGPT and GitHub Copilot, never a Claude plan), and Dismiss.
+pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
+    use purlis_core::profilestore::sign_in;
+    let name = &wait.profile.name;
+    let plans = sign_in::providers(&wait.profile.kind);
+    let mut options: Vec<Offered> = if plans.is_empty() {
+        vec![Offered {
+            id: SIGN_IN.to_owned(),
+            label: "Sign in".to_owned(),
+            allows: true,
+        }]
+    } else {
+        plans
+            .iter()
+            .map(|plan| Offered {
+                id: format!("{SIGN_IN}:{}", plan.id),
+                label: format!("Sign in to {}", plan.title),
+                allows: true,
+            })
+            .collect()
+    };
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: 0,
+        ask: format!("sign-in:{name}"),
+        says: said_inertly(&format!(
+            "{name} is not signed in on {}: a chat on it does not start until it is. Sign in \
+             runs {}'s own sign-in in a shell tab",
+            purlis_core::profilestore::this_device(),
+            wait.harness
+        )),
+        options,
+        source: AskSource::SignIn,
+        chain: vec![said_inertly(&format!("Profile {name}"))],
+        answer: AnswerPath::SignIn {
+            profile: name.clone(),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -896,6 +953,8 @@ pub struct Waiting<'a> {
     pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
+    /// The profiles a start was refused on because they are not signed in here (#2035).
+    pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -943,6 +1002,9 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .map(|(one, now)| proposed_change(one, now)),
     );
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
+    // About no chat: a profile that waits to be signed in (#2035).
+    let signing = asks.len();
+    asks.extend(waiting.sign_ins.iter().map(sign_in));
     asks.extend(
         waiting
             .queue
@@ -970,8 +1032,12 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         }
         Some(ask)
     }));
-    for ask in &mut asks {
-        ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
+    for (at, ask) in asks.iter_mut().enumerate() {
+        // A profile's Ask is about no chat: its chain is the profile, as its adapter said.
+        let profiles = signing..signing + waiting.sign_ins.len();
+        if !profiles.contains(&at) {
+            ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
+        }
         ask.since = (waiting.since)(&ask.ask);
     }
     asks
@@ -1086,7 +1152,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             since.insert(proposal_key(one.id), one.since);
         })
         .collect();
+    let sign_ins = purlis_core::profilestore::sign_in::waiting(root);
+    for one in &sign_ins {
+        since.insert(format!("sign-in:{}", one.profile.name), one.since);
+    }
     let waiting = Waiting {
+        sign_ins,
         removals,
         proposals,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),

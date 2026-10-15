@@ -9,6 +9,7 @@ import { emit } from "@tauri-apps/api/event";
 import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./asks";
 import type { Shown } from "./bindings";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
+import { PROFILE_SIGN_IN } from "./settings/links";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -93,6 +94,19 @@ const HOST: Shown = {
     via: "sandbox-block",
     shown: { operation: "connect", kind: "host", what: "host", target: "api.example.com" },
   },
+};
+
+const SIGN_IN: Shown = {
+  session: 0,
+  ask: "sign-in:oc",
+  says: "oc is not signed in on this Mac: a chat on it does not start until it is.",
+  options: [
+    { id: "sign-in:openai", label: "Sign in to ChatGPT", allows: true },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ],
+  source: "sign-in",
+  chain: ["Profile oc"],
+  answer: { via: "sign-in", profile: "oc" },
 };
 
 const QUESTION: Shown = {
@@ -192,6 +206,31 @@ describe("answering through the path an ask names", () => {
     }
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["keep_asked_workspace", { plane: PLANE, session: 6, workspace: "alpha" }],
+    ]);
+  });
+
+  it("signs a profile in by opening its shell tab, sending nothing, and puts it away by Dismiss (#2035)", async () => {
+    const calls = sent({ dismiss_sign_in: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(PROFILE_SIGN_IN, heard);
+    try {
+      expect(await answerTaken(PLANE, SIGN_IN, "sign-in:openai")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, profile: "oc", provider: "openai" }]);
+      expect(calls).toEqual([]);
+      expect(await answerTaken(PLANE, SIGN_IN, "dismiss")).toEqual({
+        refused: undefined,
+        live: false,
+      });
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["dismiss_sign_in", { plane: PLANE, profile: "oc" }],
     ]);
   });
 

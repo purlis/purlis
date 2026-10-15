@@ -103,8 +103,13 @@ fn a_claude_chat_on_a_made_profile_claude_says_is_signed_out_is_refused_with_sig
         .expect_err("a profile that is not signed in does not start");
 
     assert!(why.contains("'work' is not signed in"), "{why}");
-    assert!(why.contains("Sign in"), "{why}");
+    assert!(why.contains("Sign in work"), "{why}");
     assert!(why.contains("purlis profile sign-in work"), "{why}");
+    // One Ask waits for the profile, however many starts were refused.
+    start::ready(&start_on("work", plane.path()), plane.path()).expect_err("refused again");
+    let waits = purlis_core::profilestore::sign_in::waiting(plane.path());
+    assert_eq!(waits.len(), 1, "{waits:?}");
+    assert_eq!(waits[0].profile.name, "work");
 }
 
 #[test]
