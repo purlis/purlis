@@ -57,6 +57,16 @@ pub fn base_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
 
 /// `<data>` as the environment `env` answers it. An empty value names nothing.
 pub fn root_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    root_with(env, dirs::data_dir())
+}
+
+/// [`root_in`], with `system` the OS data directory to use where neither variable names one:
+/// the one ladder the store and a chat's sandbox both read (`sandbox::Homes::charter_data`),
+/// which knows the machine it compiles for.
+pub(crate) fn root_with(
+    env: &dyn Fn(&str) -> Option<String>,
+    system: Option<PathBuf>,
+) -> Option<PathBuf> {
     let named = |name: &str| {
         env(name)
             .filter(|value| !value.is_empty())
@@ -64,7 +74,7 @@ pub fn root_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     };
     let found = named(HOME_VAR)
         .or_else(|| named("XDG_DATA_HOME").map(|xdg| in_base(&xdg)))
-        .or_else(|| dirs::data_dir().map(|dir| in_base(&dir)))?;
+        .or_else(|| system.map(|dir| in_base(&dir)))?;
     // A relative value is taken from the directory charter was started in, so the answer is
     // always an absolute path.
     std::path::absolute(found).ok()

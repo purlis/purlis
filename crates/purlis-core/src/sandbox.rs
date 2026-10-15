@@ -2364,24 +2364,14 @@ impl Homes {
     /// charter's data home on `machine` ([`crate::datahome`]'s ladder, read from `machine`): the
     /// variable, else `$XDG_DATA_HOME/charter`, else the system's data directory under its home.
     pub(crate) fn charter_data(machine: &Machine) -> Option<PathBuf> {
-        let named = |name: &str| {
-            machine
-                .env
-                .get(name)
-                .map(PathBuf::from)
-                .filter(|dir| dir.is_absolute())
-        };
-        named(crate::datahome::HOME_VAR)
-            .or_else(|| named("XDG_DATA_HOME").map(|xdg| crate::names::DATA_HOME.folder_at(&xdg)))
-            .or_else(|| {
-                let home = machine.home.as_ref()?;
-                let base = match machine.os {
-                    Os::MacOs => home.join("Library/Application Support"),
-                    Os::Linux | Os::Windows | Os::Other => home.join(".local/share"),
-                };
-                // The folder rename-local moved it to, once it has (RN-5).
-                Some(crate::names::DATA_HOME.folder_at(&base))
-            })
+        let system = machine.home.as_ref().map(|home| match machine.os {
+            Os::MacOs => home.join("Library/Application Support"),
+            Os::Linux | Os::Windows | Os::Other => home.join(".local/share"),
+        });
+        // The same ladder as the store's ([`crate::datahome::root_in`]), so a relative variable
+        // names the same folder for both, and the folder rename-local moved it to, once it has
+        // (RN-5).
+        crate::datahome::root_with(&|name: &str| machine.env.get(name), system)
     }
 
     /// The Codex home of the project at `root`'s sandboxed chats on `machine` (D-88q): a folder

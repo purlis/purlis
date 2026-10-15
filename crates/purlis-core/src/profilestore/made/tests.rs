@@ -230,6 +230,8 @@ fn an_import_copies_no_sign_in_through_a_link_inside_the_settings_folder() {
     std::os::unix::fs::symlink(".credentials.json", source.join("settings.json")).unwrap();
     fs::create_dir_all(source.join("skills")).unwrap();
     std::os::unix::fs::symlink("../auth.json", source.join("skills/notes.md")).unwrap();
+    write(&machine.home.join("elsewhere/id_ed25519"), "not imported\n");
+    std::os::unix::fs::symlink(machine.home.join("elsewhere"), source.join("skills/keys")).unwrap();
     write(&source.join("CLAUDE.md"), "Be brief.\n");
 
     let made = machine.create("work", "claude", 100).unwrap();
@@ -574,4 +576,29 @@ fn a_wildcard_matches_a_conversations_file_name() {
     assert!(!wildcard("rollout-*-{id}.jsonl", "history.jsonl"));
     assert!(wildcard("*", "2026"));
     assert!(!wildcard("{id}.jsonl", "é"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn an_import_reads_nothing_through_a_folder_swapped_for_a_link_while_it_runs() {
+    let mut machine = Machine::new();
+    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
+    write(&source.join("skills/notes.md"), "Notes.\n");
+    write(&machine.home.join("elsewhere/id_ed25519"), "not imported\n");
+    machine.create("work", "claude", 1).unwrap();
+    let config = machine.store.folder_of("work").join(CONFIG);
+    let root = source.canonicalize().unwrap();
+
+    crate::held::racer::while_swapped(
+        &root,
+        "skills",
+        "../elsewhere",
+        || machine.import("work", 2),
+        |_| {
+            assert!(
+                !config.join("skills/id_ed25519").exists(),
+                "a file behind a link was copied"
+            );
+        },
+    );
 }

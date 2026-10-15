@@ -470,146 +470,182 @@ fn settings_dest(allowed: &Allowed, config: &Path) -> PathBuf {
 
 /// Copies `allowed`'s settings from `from` into the profile folder `folder`, whose
 /// `config_env` is `config`. A missing settings folder imports nothing.
+///
+/// **Read by descriptor, never by path** below the settings folder: the folder is opened once,
+/// and each listed name, and each name in a listed folder, is opened relative to the descriptor
+/// of the folder it was listed in, with `O_NOFOLLOW`, and judged by `fstat` on what was opened.
+/// A link is never followed, wherever it is in the walk, and a name swapped for a link while the
+/// import runs fails to open rather than leading somewhere else.
+#[cfg(unix)]
 fn import_into(allowed: &Allowed, from: &Path, folder: &Path, config: &Path) -> io::Result<Copied> {
+    use rustix::fs::{Mode, OFlags};
     let mut copied = Copied::default();
     let Ok(source) = from.canonicalize() else {
         return Ok(copied);
     };
+    let root = match rustix::fs::open(
+        &source,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::NOENT | rustix::io::Errno::NOTDIR) => return Ok(copied),
+        Err(e) => return Err(e.into()),
+    };
     let dest = settings_dest(allowed, config);
     crate::contain::no_link_on_the_way(folder, &dest)?;
     private_dirs_within(folder, &dest)?;
+    let mut place = Place {
+        folder,
+        copied: &mut copied,
+    };
     for name in allowed.files {
         entry(
-            folder,
-            &source.join(name),
+            &mut place,
+            std::os::fd::AsFd::as_fd(&root),
+            name,
             &dest.join(name),
             name,
             false,
             0,
-            &mut copied,
         )?;
     }
     for name in allowed.folders {
         entry(
-            folder,
-            &source.join(name),
+            &mut place,
+            std::os::fd::AsFd::as_fd(&root),
+            name,
             &dest.join(name),
             name,
             true,
             0,
-            &mut copied,
         )?;
     }
     Ok(copied)
 }
 
-/// Copies one entry of the settings: a file, or (where `folder_ok`) a folder's files. A link
-/// is never followed, and a file that has another name on the disk (a hard link) is never
-/// copied, so what is copied is only ever a file of the name the list or the folder gives.
+/// No import where there is no descriptor-relative open to read the settings with safely.
+#[cfg(not(unix))]
+fn import_into(
+    _allowed: &Allowed,
+    _from: &Path,
+    _folder: &Path,
+    _config: &Path,
+) -> io::Result<Copied> {
+    Ok(Copied {
+        copied: Vec::new(),
+        skipped: vec!["every settings file: an import needs a Unix system".to_owned()],
+    })
+}
+
+/// Where an import writes, and what it has done so far.
+#[cfg(unix)]
+struct Place<'a> {
+    folder: &'a Path,
+    copied: &'a mut Copied,
+}
+
+/// Copies the entry `name` of the folder `dir` holds: a file, or (where `folder_ok`) a folder's
+/// files. Opened relative to `dir` without following a link; a file with another name on the
+/// disk (a hard link) is never copied.
+#[cfg(unix)]
 fn entry(
-    folder: &Path,
-    from: &Path,
+    place: &mut Place<'_>,
+    dir: std::os::fd::BorrowedFd<'_>,
+    name: &str,
     to: &Path,
     shown: &str,
     folder_ok: bool,
     depth: usize,
-    copied: &mut Copied,
 ) -> io::Result<()> {
-    let meta = match std::fs::symlink_metadata(from) {
-        Ok(meta) => meta,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e),
-    };
-    if meta.file_type().is_symlink() {
-        copied
-            .skipped
-            .push(format!("{shown}: a link, which an import never follows"));
-        return Ok(());
-    }
-    if meta.is_file() {
-        // Opened without following a link, and judged by what was opened: a name swapped for
-        // a link since the look above is refused by the open itself.
-        let mut file =
-            match crate::contain::nofollow(std::fs::OpenOptions::new().read(true)).open(from) {
-                Ok(file) => file,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-                Err(_) => {
-                    copied
-                        .skipped
-                        .push(format!("{shown}: a link, which an import never follows"));
-                    return Ok(());
-                }
-            };
-        let opened = file.metadata()?;
-        if !opened.is_file() {
-            copied.skipped.push(format!("{shown}: not a settings file"));
+    use rustix::fs::{FileType, Mode, OFlags};
+    use rustix::io::Errno;
+    let fd = match rustix::fs::openat(
+        dir,
+        name,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT) => return Ok(()),
+        Err(Errno::LOOP | Errno::MLINK) => {
+            place
+                .copied
+                .skipped
+                .push(format!("{shown}: a link, which an import never follows"));
             return Ok(());
         }
-        if other_names(&opened) {
-            copied
+        Err(e) => {
+            place.copied.skipped.push(format!(
+                "{shown}: not read ({})",
+                crate::rewrite::os_words(&e.into())
+            ));
+            return Ok(());
+        }
+    };
+    let stat = rustix::fs::fstat(&fd)?;
+    let kind = FileType::from_raw_mode(stat.st_mode);
+    if kind == FileType::RegularFile {
+        if stat.st_nlink > 1 {
+            place
+                .copied
                 .skipped
                 .push(format!("{shown}: a file with another name on this disk"));
             return Ok(());
         }
         let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut file, &mut bytes)?;
-        crate::rewrite::replace(folder, to, &bytes, crate::rewrite::Mode::Private)?;
-        copied.copied.push(shown.to_owned());
+        std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes)?;
+        crate::rewrite::replace(place.folder, to, &bytes, crate::rewrite::Mode::Private)?;
+        place.copied.copied.push(shown.to_owned());
         return Ok(());
     }
-    if !meta.is_dir() || !folder_ok {
-        copied.skipped.push(format!("{shown}: not a settings file"));
+    if kind != FileType::Directory || !folder_ok {
+        place
+            .copied
+            .skipped
+            .push(format!("{shown}: not a settings file"));
         return Ok(());
     }
     if depth >= DEEPEST {
-        copied
+        place
+            .copied
             .skipped
             .push(format!("{shown}: more than {DEEPEST} folders deep"));
         return Ok(());
     }
-    private_dir_within(folder, to)?;
-    let mut names: Vec<_> = std::fs::read_dir(from)?
-        .filter_map(Result::ok)
-        .map(|e| e.file_name())
-        .collect();
-    names.sort();
-    for name in names {
-        let Some(text) = name.to_str() else {
+    private_dir_within(place.folder, to)?;
+    let mut names = Vec::new();
+    let mut listing = rustix::fs::Dir::read_from(&fd)?;
+    while let Some(one) = listing.read() {
+        let one = one?;
+        let Ok(text) = one.file_name().to_str() else {
             continue;
         };
+        if text != "." && text != ".." {
+            names.push(text.to_owned());
+        }
+    }
+    names.sort();
+    for text in names {
         let inner = format!("{shown}/{text}");
-        if text.starts_with('.') || credential_shaped(text) {
-            copied
+        if text.starts_with('.') || credential_shaped(&text) {
+            place
+                .copied
                 .skipped
                 .push(format!("{inner}: not imported, by its name"));
             continue;
         }
         entry(
-            folder,
-            &from.join(text),
-            &to.join(text),
+            place,
+            std::os::fd::AsFd::as_fd(&fd),
+            &text,
+            &to.join(&text),
             &inner,
             true,
             depth + 1,
-            copied,
         )?;
     }
     Ok(())
-}
-
-/// Whether the file `meta` describes has another name on its disk: a hard link, which may be a
-/// sign-in under a settings file's name.
-fn other_names(meta: &std::fs::Metadata) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        meta.nlink() > 1
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = meta;
-        false
-    }
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.
