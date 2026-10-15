@@ -34,6 +34,11 @@ purlis secret set <vault> <key> --from-file <path>    # multi-line or verbatim: 
 An argument list is not private. It shows up in `ps`, in shell history and in this
 transcript. Ask the user to supply the value by stdin or a file, or to set it themselves.
 
+**In a sandboxed chat these are the user's:** `secret set`, `secret rm`, `secret audit`,
+`vault add`, `vault remove` and `vault verify` are refused before anything is read, with a
+sentence naming the vault's tab in the app or the command for their own terminal. Pass that
+sentence on and wait; do not look for another way in.
+
 ## A vault's own token is the person's to give, never yours
 
 A 1Password vault is read with a credential of its own: a service-account token, or the

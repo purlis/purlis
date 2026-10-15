@@ -1256,11 +1256,13 @@ fn inside_a_chat_vault_add_reads_no_token_and_says_where_one_is_given() {
         let code = vaultcmd::add(&set.ctx, &add_request("team"), &mut rec);
 
         assert_eq!(code, 1, "{mark}");
-        assert!(
-            rec.said().contains("never given from inside a chat"),
-            "{mark}: {}",
-            rec.said()
-        );
+        // A sandboxed chat is refused every `vault add` first, as the person's (#1969).
+        let said_so = if mark == "PURLIS_SANDBOXED" {
+            "a sandboxed chat does not change a vault"
+        } else {
+            "never given from inside a chat"
+        };
+        assert!(rec.said().contains(said_so), "{mark}: {}", rec.said());
         // Standard input was not read, and nobody was asked to type.
         assert_eq!(rec.stdin, GOOD, "{mark}");
         assert!(rec.prompts.is_empty(), "{mark}");

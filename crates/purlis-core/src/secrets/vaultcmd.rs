@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 
 use super::cmd::{self, Io, Say};
+use super::persons_own::{Verb, refused_in_a_sandboxed_chat as person_only};
 use super::registry::{self, Vault};
 use super::{Ctx, onepassword};
 
@@ -482,6 +483,11 @@ fn token_for_a_registered_vault(
 
 /// `cmd_vault_add`.
 pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
+    // The person's, in a sandboxed chat: refused before a token or the registry is read (#1969).
+    if let Some(why) = person_only(ctx, Verb::VaultAdd { name: &req.name }) {
+        io.say(Say::Err(why));
+        return 1;
+    }
     if req.token_stdin {
         return add_with_a_token(ctx, req, io);
     }
@@ -898,6 +904,10 @@ fn verify_vault(ctx: &Ctx, v: &Vault) -> Vec<(String, Option<String>)> {
 
 /// `cmd_vault_verify`: every vault (or one), resolved for real. Non-zero when anything fails.
 pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
+    if let Some(why) = person_only(ctx, Verb::VaultVerify { name }) {
+        io.say(Say::Err(why));
+        return 1;
+    }
     let names: Vec<String> = match name.filter(|n| !n.is_empty()) {
         Some(n) => vec![n.to_string()],
         None => match registry::load_registry(ctx) {
@@ -1067,6 +1077,10 @@ fn resolved(path: &Path) -> PathBuf {
 
 /// `cmd_vault_remove`: unregister; the file it pointed at stays on disk.
 pub fn remove(ctx: &Ctx, name: &str, io: &mut dyn Io) -> i32 {
+    if let Some(why) = person_only(ctx, Verb::VaultRemove { name }) {
+        io.say(Say::Err(why));
+        return 1;
+    }
     // Read before it goes: a keyring vault's items outlive its registration, and registering
     // the name again finds them through the index, which is worth saying.
     let keyring = registry::vault(ctx, name)
