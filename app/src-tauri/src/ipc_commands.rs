@@ -103,6 +103,8 @@ macro_rules! app_commands {
                 silence::task_quiet,
                 silence::put_away_task_quiet,
                 dispatchlimits::dispatch_limits,
+                yoursandbox::plain_file_vaults,
+                yoursandbox::move_vault_to_keychain,
                 dispatchgrants::dispatch_grants_needed,
                 dispatchgrants::allow_dispatch,
                 dispatchgrants::keep_dispatch_blocked,

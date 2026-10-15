@@ -488,6 +488,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // The plain-file vaults offered to move into the keychain before a person turns their
+    // sandbox down (#2071): read in their window alone.
+    "plain_file_vaults",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -540,6 +543,8 @@ pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
     "vault_identity_put",
     "vault_identity_move",
     "finish_moving_vaults",
+    // A plain-file vault's values moved into the keychain (#2071).
+    "move_vault_to_keychain",
     "vault_setup_accounts",
     "vault_setup_begin",
     "vault_setup_test",

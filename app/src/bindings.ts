@@ -641,6 +641,10 @@ export const commands = {
 	 *  On a blocking thread: the Local file's check asks git whether it is ignored.
 	 */
 	dispatchLimits: (plane: PlaneId) => typedError<DispatchLimits, string>(__TAURI_INVOKE("dispatch_limits", { plane })),
+	/**  The plain-file vaults the project registers. Never a value. */
+	plainFileVaults: (plane: PlaneId) => typedError<PlainFileVault[], string>(__TAURI_INVOKE("plain_file_vaults", { plane })),
+	/**  Moves plain-file vault `name` into the system keychain, or says why it was not moved. */
+	moveVaultToKeychain: (plane: PlaneId, name: string) => typedError<string, string>(__TAURI_INVOKE("move_vault_to_keychain", { plane, name })),
 	/**
 	 *  The dispatches of chat `session` waiting on the person, for the Notice on its tab.
 	 * 
@@ -7163,6 +7167,13 @@ export type Pins = {
 	 *  let go only on a certain answer (NO-2, D-NO2-10).
 	 */
 	certain: boolean,
+};
+
+/**  A plain-file vault, and whether this machine may move it. */
+export type PlainFileVault = {
+	name: string,
+	/**  `false` for one the team's file registers, which is the team's to move. */
+	movable: boolean,
 };
 
 /**  One open project's alerts. */
