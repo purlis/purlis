@@ -874,6 +874,26 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
         working-directory: app
+      # **Claude Code's own sandbox, on the settings purlis writes** (#2211). Claude Code builds its
+      # sandbox itself, so the real one is run: the version purlis supports
+      # (`tests/fixtures/harness-versions/claude.txt`), this machine's build of it from npm with no
+      # install scripts run, started with a full-sandbox chat's settings and a floor chat's against
+      # a stand-in model on a loopback port the test binds. Its Bash tool runs the same probes as
+      # the step above, and a wrong answer fails the step. No model is called, and no credential
+      # is used.
+      - name: Claude Code's own sandbox on the settings purlis writes
+        if: runner.os == 'macOS' && matrix.extras
+        run: |
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64 ;;
+            X64) arch=x64 ;;
+            *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
+          esac
+          package="@anthropic-ai/claude-code-darwin-$arch"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
+            cargo test --locked -p purlis-core --test claude_codes_own_sandbox_holds_the_settings_purlis_writes -- --nocapture
       # **The app as it ships, on macOS** (`app builds (macos-latest)`, `app-macos-checks`): the
       # `app` job's steps, here in part 1 so a pull request holds one macOS runner fewer. Before
       # the scenario build, which rewrites the same binary and `app/dist`.

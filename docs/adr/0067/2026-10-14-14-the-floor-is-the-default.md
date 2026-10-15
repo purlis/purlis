@@ -59,6 +59,9 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   sandbox and at the floor, built by the core as a start builds them (#2128): in each, a read
   of the vault and a write of a held folder through another case, a new held leaf in another
   case and a write of the manifest are refused, and a file nothing holds is written and read.
+  Claude Code's own sandbox is run on the same probes in the same job (#2211): the version
+  purlis supports, started with the settings purlis writes for a chat at each level, against a
+  stand-in model on a loopback port, whose one Bash call runs them.
   Whether Claude Code's Linux sandbox honours a bracket class is not measured on Linux; Linux
   compares names as written.
 - **No folder to confine to.** The floor confines a chat to no folder, so a chat with no folder

@@ -54,6 +54,9 @@ fn emitted(harness: Harness, root: &Path, tmp: &Path, machine: &Machine) -> (Lev
     let Decided::Sandboxed(applied) = decided else {
         panic!("not sandboxed: {decided:?}");
     };
+    // No hook socket (the last argument): no app listens in this test, and a socket only adds
+    // that one path to what a command may connect to, beside what the profile already holds,
+    // which no probe of `tools/seatbelt-case.sh` touches.
     let profile = match applied.form() {
         Form::Codex(wrap) => sandbox::codex::profile(wrap, root, tmp, &[4040], None),
         Form::Opencode(wrap) => sandbox::opencode::profile(wrap, root, tmp, &[4040], None),
