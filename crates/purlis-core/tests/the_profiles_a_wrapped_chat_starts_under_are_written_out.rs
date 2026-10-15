@@ -65,6 +65,7 @@ fn emitted(harness: Harness, root: &Path, tmp: &Path, machine: &Machine) -> (Lev
 
 #[test]
 fn the_profiles_a_wrapped_chat_starts_under_are_written_out() {
+    purlis_core::unsteered!();
     let kept = std::env::var_os("PURLIS_SEATBELT_OUT").map(PathBuf::from);
     let scratch = tempfile::tempdir().expect("a folder");
     let out = kept.clone().unwrap_or_else(|| scratch.path().to_path_buf());
