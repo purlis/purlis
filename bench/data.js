@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792104613058,
+  "lastUpdate": 1792105644094,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13272,6 +13272,48 @@ window.BENCHMARK_DATA = {
             "value": 103.7085685,
             "unit": "ms",
             "extra": "median of 5 runs: 102.373, 103.242, 103.709, 103.843, 105.201 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a5242b21ac2c4f8af2bc8e50a854e01783d5ee1f",
+          "message": "Runners: the link between session hosts (#2193)\n\nThe link of ADR 0078 §3 between two session hosts (`hostlink`): its own\nversion (one major) with both hellos bound into the prologue, Noise XX\n(25519_ChaChaPoly_BLAKE2s, through `snow`, ruled 2026-10-15) checking the\none pinned peer, the answering host's sealed word, sealed frames with the\nlink's own ping and deadline, and a dialer that links again on its own and\nrenews ahead of a stream's limit. Link keys are zeroised on drop, never\nprinted, and a kept pair is checked before it loads.\n\nThe desktop host relays its window to a runner's host (`purlis_host::Relay`):\nholds, the window's launch and its replies to hook lines cross as relayed\nfor a local-ui client alone (ruled 2026-10-15); a start marked as opting\nout of the sandbox is refused from every scope but local-ui on every host.\nThe behaviour suite gains `through_a_link`; the three confinement\nbehaviours wait for #2217.\n\nRefs #2042\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T02:54:20+04:00",
+          "tree_id": "58de7763ad9b282d3c2dda037d8dde6c22c69ee8",
+          "url": "https://github.com/purlis/purlis/commit/a5242b21ac2c4f8af2bc8e50a854e01783d5ee1f"
+        },
+        "date": 1792105643165,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.419079,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.399, 0.415, 0.419, 0.419, 0.437 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3762125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.343, 16.376, 16.412, 16.497 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.634401,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.143, 101.594, 101.634, 102.143, 102.898 ms"
           }
         ]
       }
