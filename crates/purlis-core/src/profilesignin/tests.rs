@@ -266,7 +266,7 @@ mod billed {
 
         assert_eq!(
             billed(&profile("work", Source::Machine), &machine, &[]).as_deref(),
-            Some("your key · work key")
+            Some("your key · work key · waits for the key proxy")
         );
         assert_eq!(
             billed(&profile("claude", Source::BuiltIn), &machine, &[]).as_deref(),
@@ -278,5 +278,127 @@ mod billed {
             Some("whatever Claude Code is signed in with · work"),
             "a profile the project declares under the name is not the machine's"
         );
+    }
+}
+
+/// The operator's ruling of 2026-10-15 (#2151): a cloud's credentials reach its chat's harness
+/// in its process environment now; a key waits for the key proxy (#822).
+mod handing {
+    use super::*;
+    use crate::profiles::{Profile, Source};
+    use crate::profilestore::{Folders, MachineProfile};
+
+    fn signed_in(harness: &str, sign_in: SignIn) -> (Profile, Vec<MachineProfile>) {
+        let profile = Profile {
+            name: "work".to_owned(),
+            kind: harness.to_owned(),
+            harness: harness.to_owned(),
+            command: vec![harness.to_owned()],
+            env: Vec::new(),
+            source: Source::Machine,
+        };
+        let record = MachineProfile {
+            name: "work".to_owned(),
+            harness: harness.to_owned(),
+            title: "work".to_owned(),
+            folders: Folders {
+                config: "/profiles/work/config".into(),
+                data: None,
+            },
+            adopted: None,
+            imported: None,
+            sign_in: Some(sign_in),
+            rest: Default::default(),
+        };
+        (profile, vec![record])
+    }
+
+    fn cloud(credentials: &[(&str, &str)]) -> SignIn {
+        SignIn {
+            kind: "cloud".to_owned(),
+            label: Some("team account".to_owned()),
+            credentials: credentials
+                .iter()
+                .map(|(v, r)| ((*v).to_owned(), (*r).to_owned()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_bedrock_profiles_chat_starts_with_each_reference_and_no_value() {
+        let (profile, machine) = signed_in(
+            "claude",
+            cloud(&[
+                ("CLAUDE_CODE_USE_BEDROCK", "vault:aws/use"),
+                ("AWS_REGION", "vault:aws/region"),
+                ("AWS_ACCESS_KEY_ID", "vault:aws/id"),
+                ("AWS_SECRET_ACCESS_KEY", "vault:aws/secret"),
+            ]),
+        );
+
+        let at = at_start(&profile, &machine, &[])
+            .expect("a cloud profile starts")
+            .expect("its sign-in is known");
+
+        assert_eq!(at.kind, SignInKind::Cloud);
+        let names: Vec<&str> = at.credentials.iter().map(|(v, _)| v.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "AWS_ACCESS_KEY_ID",
+                "AWS_REGION",
+                "AWS_SECRET_ACCESS_KEY",
+                "CLAUDE_CODE_USE_BEDROCK"
+            ]
+        );
+        assert_eq!(at.credentials[0].1.vault, "aws");
+    }
+
+    #[test]
+    fn a_key_profiles_chat_waits_for_the_key_proxy_and_says_so() {
+        let (profile, machine) = signed_in(
+            "claude",
+            key_sign_in("ANTHROPIC_API_KEY", "vault:providers/anthropic"),
+        );
+
+        let why = at_start(&profile, &machine, &[]).unwrap_err();
+
+        assert!(why.contains("waits for the key proxy"), "{why}");
+        assert_eq!(
+            billed(&profile, &machine, &[]).as_deref(),
+            Some("your key · work key · waits for the key proxy"),
+            "the picker says it before the start does"
+        );
+    }
+
+    #[test]
+    fn a_cloud_that_signs_in_with_more_than_variables_is_refused_in_words() {
+        for (harness, credentials, said) in [
+            (
+                "claude",
+                vec![
+                    ("CLAUDE_CODE_USE_VERTEX", "vault:gcp/use"),
+                    ("ANTHROPIC_VERTEX_PROJECT_ID", "vault:gcp/project"),
+                ],
+                "credentials file",
+            ),
+            (
+                "opencode",
+                vec![("GOOGLE_CLOUD_PROJECT", "vault:gcp/project")],
+                "credentials file",
+            ),
+            (
+                "codex",
+                vec![("AZURE_OPENAI_API_KEY", "vault:azure/key")],
+                "configuration",
+            ),
+        ] {
+            let (profile, machine) = signed_in(harness, cloud(&credentials));
+
+            let why = at_start(&profile, &machine, &[]).unwrap_err();
+
+            assert!(why.contains(said), "{harness}: {why}");
+            assert!(why.contains("#2151"), "{harness}: {why}");
+        }
     }
 }

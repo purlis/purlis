@@ -175,3 +175,43 @@ fn a_sign_in_its_harness_cannot_take_is_refused_when_it_is_kept() {
         "a refused sign-in leaves the one it had"
     );
 }
+
+#[test]
+fn a_chat_on_a_cloud_profile_starts_carrying_its_references_and_never_a_value() {
+    purlis_core::unsteered!();
+    let Some(_data) = in_a_data_home_of_its_own(
+        "a_chat_on_a_cloud_profile_starts_carrying_its_references_and_never_a_value",
+    ) else {
+        return;
+    };
+    work_signed_in(SignIn {
+        kind: "cloud".to_owned(),
+        label: Some("team account".to_owned()),
+        credentials: [
+            ("CLAUDE_CODE_USE_BEDROCK", "vault:aws/use"),
+            ("AWS_REGION", "vault:aws/region"),
+            ("AWS_ACCESS_KEY_ID", "vault:aws/id"),
+            ("AWS_SECRET_ACCESS_KEY", "vault:aws/secret"),
+        ]
+        .map(|(v, r)| (v.to_owned(), r.to_owned()))
+        .into(),
+    });
+    let plane = project();
+
+    let ready = start::ready(&start_on("work", plane.path()), plane.path()).expect("it starts");
+
+    let sign_in = ready
+        .sign_in
+        .clone()
+        .expect("the start says how it signs in");
+    assert_eq!(sign_in.kind, SignInKind::Cloud);
+    assert_eq!(sign_in.billed_to, "your cloud account · team account");
+    assert_eq!(sign_in.credentials.len(), 4);
+    assert!(
+        ready
+            .env
+            .iter()
+            .all(|(name, _)| !sign_in.credentials.iter().any(|(v, _)| v == name)),
+        "no credential is in the start's own environment: the program alone is handed it"
+    );
+}

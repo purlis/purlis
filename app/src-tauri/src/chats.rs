@@ -10439,6 +10439,69 @@ pub(crate) mod tests {
         let _ = chats.close(session);
     }
     #[test]
+    fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_nothing_else_holds_them() {
+        // #2036, as ruled on 2026-10-15 (#2151): a cloud's credentials reach its chat's
+        // program at start, read from a vault its persona may use, and nowhere else.
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let ctx = purlis_core::secrets::Ctx::new(&root, purlis_core::secrets::Env::of(&[]));
+        let file = ctx.vaults_dir().join("aws.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, r#"{"id": "the-aws-id-for-this-test"}"#).unwrap();
+        std::fs::create_dir_all(ctx.local_registry().parent().unwrap()).unwrap();
+        std::fs::write(
+            ctx.local_registry(),
+            serde_json::json!({"vaults": {"aws": {
+                "provider": "plain-file",
+                "persona": "dev",
+                "config": {"file": file.to_string_lossy()},
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+        let host = Pretend::default();
+        let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), root.clone());
+        let ready = purlis_core::start::Ready {
+            env: vec![(
+                purlis_core::active::PERSONA_ENV.to_owned(),
+                "dev".to_owned(),
+            )],
+            sign_in: Some(purlis_core::profilesignin::AtStart {
+                kind: purlis_core::harness_declaration::SignInKind::Cloud,
+                billed_to: "your cloud account · team".to_owned(),
+                credentials: vec![(
+                    "AWS_ACCESS_KEY_ID".to_owned(),
+                    purlis_core::profilesignin::Reference::parse("vault:aws/id").unwrap(),
+                )],
+            }),
+            ..a_claude_ready()
+        };
+
+        chats
+            .start_ready(&chat("/bin/sh", "dev 1", None), &ready, SIZE)
+            .expect("it starts");
+
+        let opening = host.openings().pop().expect("opened");
+        assert_eq!(opening.handed.names(), ["AWS_ACCESS_KEY_ID"]);
+        assert_eq!(
+            purlis_core::profilesignin::handed_onto(Vec::new(), &opening.handed),
+            [(
+                std::ffi::OsString::from("AWS_ACCESS_KEY_ID"),
+                std::ffi::OsString::from("the-aws-id-for-this-test")
+            )],
+            "the program is handed the value"
+        );
+        assert!(
+            !format!("{opening:?}").contains("the-aws-id-for-this-test"),
+            "nothing that shows the opening holds it"
+        );
+        assert!(
+            !format!("{:?}", chats.record()).contains("the-aws-id-for-this-test"),
+            "nor the chat's record"
+        );
+    }
+
+    #[test]
     fn a_chat_whose_profile_names_a_key_in_a_vault_its_persona_may_not_read_starts_nothing() {
         // #2036: a profile never widens who reads a vault. The read is made before anything
         // is opened, so a refused one leaves no session, no tab and no value anywhere.

@@ -412,9 +412,14 @@ model."* With ADR 0095, which makes every sign-in a profile's:
   into a shell tab, a file, a log, the event log or the hook socket. The vault opens to the chat
   only as it opens to the chat's persona today (ADR 0068, D-1430-1): a chat on no persona, or on
   one the vault is not open to, does not start, and says which vault and how to open it.
-- **§7's path decides how a value reaches the harness.** Where §7 sends a key through the proxy
-  (V36), the chat waits for the proxy (#822): it does not start, and says so. The harness's
-  process environment is used only where §7 allows it.
+- **How a value reaches the harness: ruled 2026-10-15 (#2151).** A cloud's credentials
+  (Bedrock, Vertex, Azure) are handed in the harness's process environment now, as §7 allows
+  where no proxy can carry them: a cloud signs its requests in ways a proxy that swaps one
+  header cannot. Only where variables alone sign the harness in: Vertex's credentials file and
+  Codex's Azure provider, which is set in its configuration, are refused in words until #2151
+  hands them. A key still goes through the proxy (V36): a chat on an `api-key` profile waits
+  for it (#822), does not start, and says so, and the picker says *waits for the key proxy* on
+  its row.
 
 ## ADR 0066, amended
 

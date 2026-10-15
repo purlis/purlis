@@ -328,8 +328,20 @@ pub fn billed(
     passed: &[String],
 ) -> Option<String> {
     let seen = Seen::of(profile, machine, passed)?;
-    Some(billed_to(seen.kind, &seen.label, &seen.declaration.title))
+    let said = billed_to(seen.kind, &seen.label, &seen.declaration.title);
+    // A key a kept sign-in names waits for the key proxy, and the picker says so first.
+    let waits = seen.kept.as_ref().is_some_and(|kept| {
+        kept.kind() == Some(SignInKind::ApiKey) && !kept.credentials.is_empty()
+    });
+    Some(if waits {
+        format!("{said} · {WAITS_FOR_THE_PROXY}")
+    } else {
+        said
+    })
 }
+
+/// What a key profile's row and refusal say until the key proxy is there (#822).
+pub const WAITS_FOR_THE_PROXY: &str = "waits for the key proxy";
 
 /// What purlis sees of how a chat on a profile signs in.
 struct Seen {
@@ -423,7 +435,7 @@ pub fn at_start(
         .filter_map(|(variable, reference)| Some((variable.clone(), Reference::parse(reference)?)))
         .collect();
     if !credentials.is_empty() {
-        handing(&profile.kind, kind).map_err(|why| {
+        handing(&profile.kind, kind, &credentials).map_err(|why| {
             format!(
                 "profile '{}' signs in with {why}. Nothing was started.",
                 crate::shown::short(&profile.name)
@@ -437,20 +449,48 @@ pub fn at_start(
     }))
 }
 
-/// How a credential of `kind` reaches a `harness` chat (ADR 0087 §7): through purlis's key
-/// proxy wherever the harness takes a base URL (ruling V36), and in its process environment
-/// only where it takes none. Every harness purlis ships takes one, and this version has no
-/// proxy yet (#822), so a chat on such a profile does not start, and says why.
-fn handing(harness: &str, kind: SignInKind) -> Result<(), String> {
+/// How the `credentials` of a `kind` sign-in reach a `harness` chat, as the operator ruled on
+/// 2026-10-15 (#2151, amending how ADR 0095 §4 applies ADR 0087 §7):
+///
+/// - **A cloud's credentials are handed in the harness's process environment, now.** A cloud
+///   signs its requests (Bedrock's signature, Vertex's and Azure's tokens) in ways a proxy that
+///   swaps one header cannot carry. Only where variables alone sign the harness in: Vertex
+///   signs in with a credentials file, which purlis never writes for a chat, and Codex reaches
+///   Azure through a provider set in its configuration, so both are refused in words.
+/// - **A key waits for the key proxy** (#822, ruling V36), wherever the harness takes a base
+///   URL, which every harness purlis ships does: the chat does not start, and says so.
+fn handing(
+    harness: &str,
+    kind: SignInKind,
+    credentials: &[(String, Reference)],
+) -> Result<(), String> {
     let title = crate::harness_declaration::builtin(harness)
         .map_or_else(|| harness.to_owned(), |d| d.title.clone());
-    let what = match kind {
-        SignInKind::Cloud => "cloud credentials",
-        _ => "a key",
+    let names = |wanted: &[&str]| {
+        credentials
+            .iter()
+            .any(|(v, _)| wanted.contains(&v.as_str()))
     };
-    Err(format!(
-        "{what} from your vault, and {title} is handed such a credential only through \
-         purlis's key proxy, which this version of purlis does not have, so a chat on it \
-         does not start (#2151)"
-    ))
+    match kind {
+        SignInKind::Cloud if harness == "codex" => Err(format!(
+            "cloud credentials from your vault, and {title} reaches Azure through a provider set              in its own configuration, which purlis does not write for a chat yet (#2151)"
+        )),
+        SignInKind::Cloud
+            if names(&[
+                "CLAUDE_CODE_USE_VERTEX",
+                "CLOUD_ML_REGION",
+                "ANTHROPIC_VERTEX_PROJECT_ID",
+                "GOOGLE_CLOUD_PROJECT",
+                "VERTEX_LOCATION",
+            ]) =>
+        {
+            Err(format!(
+                "Vertex credentials from your vault, and {title} signs in to Vertex with a                  credentials file, which purlis does not write for a chat yet (#2151)"
+            ))
+        }
+        SignInKind::Cloud => Ok(()),
+        _ => Err(format!(
+            "a key from your vault, and {title} is handed a key only through purlis's key              proxy, which this version of purlis does not have, so a chat on it              {WAITS_FOR_THE_PROXY} (#822)"
+        )),
+    }
 }
