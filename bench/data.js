@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792055741714,
+  "lastUpdate": 1792058167459,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12180,6 +12180,48 @@ window.BENCHMARK_DATA = {
             "value": 104.6682955,
             "unit": "ms",
             "extra": "median of 5 runs: 102.122, 103.690, 104.668, 104.956, 105.924 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6c85b7dc05b2b95a7d296faae4a96109a6f14499",
+          "message": "The team's policy bounds each person's sandbox level, and its off reaches them on their Accept (#2071, PR C) (#2139)\n\n* feat(sandbox): the team's policy bounds each person's level, and its off reaches them on their Accept (#2071, PR C)\n\ncharter.toml's [sandbox] gains policy = \"never\" | \"local\" (absent: local), and mode = \"off\"\nis the team's off instead of a refusal (the operator's ruling of 2026-10-15).\n\n- sandbox::team::allowed_levels(root) is the bound a start clamps a person's level to, and\n  level_for(root, persona) the level a chat runs at: the person's confirmed level within it.\n- never: nobody runs below the full sandbox. Locks::of(root) carries it, so Start without the\n  sandbox is refused everywhere the administrator's opt-out lock refuses it, with a sentence\n  naming the project's policy; a lower personal level is refused when set; mode = \"off\"\n  beside it is refused. A policy that cannot be read is never.\n- mode = \"off\" under local: the default becomes no sandbox for a person once they accept the\n  commit that turned it off, kept in this machine's config home where no chat writes; until\n  then their own level or the floor. A working-tree off asks nobody; a later off asks again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(app): the project's sandbox off is asked once, and Settings shows the team's policy (#2071, PR C)\n\n- TeamSandboxOffNotice: \"Your project turned the sandbox off (commit <sha> by <author>)\" with\n  Accept and Keep it on for me, answered by answer_team_sandbox_off (window-only, written to\n  this machine's sandbox-grants record, in the sandbox lane).\n- Settings › Sandbox › Your level: The project's policy row says why no level goes below the\n  full sandbox under policy = \"never\", or shows the answer to the team's off and the other one.\n- SandboxState gains team_off and level_held.\n- Docs: plane-format [sandbox].mode and .policy, ADR 0067's 2026-10-15 section citing the\n  operator's rulings, a changes fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(sandbox): the never policy's sentence names the manifest through names\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(sandbox): a chat's start reads the team's bound through the one seam (#2071, PR C)\n\nsandbox::bounded clamps a person's level to team::allowed_levels: the team's default where\nthey chose none (the floor, or no sandbox once they accepted the team's off), and never below\nthe full sandbox under policy = \"never\" or an administrator's opt-out lock. your_level reads\nevery level of the chain through it, so #2122's strictest-across-the-chain rule still holds:\nan on asker keeps the chat it dispatched sandboxed under an accepted team off, and a start\nthat cannot say who asked never takes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(sandbox): the team-off fixture keeps its local file out of git, as a project does\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw391c): only [sandbox].mode says when the team's off arrived; ADR 0096 says the bound lifts the floor too\n\nThe arrival is read from the manifest's history by what its [sandbox] says, commit by commit,\nnever by a mode line in any table. ADR 0096 section 8: an administrator's no-opt-out lock or\npolicy = \"never\" holds every level at the full sandbox, the floor included.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T13:54:40+04:00",
+          "tree_id": "ea9b63f449d4ca29fd0b5923c398d1699302c4d7",
+          "url": "https://github.com/purlis/purlis/commit/6c85b7dc05b2b95a7d296faae4a96109a6f14499"
+        },
+        "date": 1792058166370,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.377672,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.371, 0.376, 0.378, 0.392, 0.394 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6605825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.322, 16.601, 16.661, 16.669, 16.695 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7636465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.450, 101.631, 101.764, 102.637, 102.800 ms"
           }
         ]
       }
