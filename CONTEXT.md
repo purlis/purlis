@@ -427,8 +427,10 @@ which creates the machine)
 **Link**:
 The encrypted, mutually authenticated stream between the desktop's session host and a runner's,
 carried by a connector. Each end proves itself with its device's link key, pinned when the runner
-was added, in a Noise `XX` handshake. The desktop always opens it. It belongs to **Project**,
-with the two devices it joins (ADR 0072 §2, ADR 0078).
+was added, in a Noise `XX` handshake. The desktop always opens it, keeps it alive with the
+link's own ping, and links again on its own when it drops. Its protocol has a version of its
+own, apart from the session protocol's. It belongs to **Project**, with the two devices it joins
+(ADR 0072 §2, ADR 0078).
 _Avoid_: connection (unqualified), session (that is the process), pairing (that is how the keys
 were pinned)
 

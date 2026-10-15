@@ -36,5 +36,6 @@ pub async fn read_frame(io: &mut (impl AsyncRead + Unpin)) -> serde_json::Value 
     serde_json::from_slice(&body).unwrap()
 }
 
+pub mod hosts;
 pub mod netsim;
 pub mod programs;

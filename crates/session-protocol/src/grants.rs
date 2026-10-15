@@ -22,15 +22,17 @@
 //! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes |
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
-//! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | |
+//! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | relayed |
 //! | `stop_all` (1.5) | yes | yes | yes | yes | | yes |
 //! | `kill_switch`, the switch's state (1.5) | yes | yes | yes | yes | | yes |
 //! | `rearm` (1.5) | yes | | | | | |
-//! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | |
-//! | `deal`, `dealt_already` (1.3) | yes | | | | | |
-//! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | |
+//! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | relayed |
+//! | `deal`, `dealt_already` (1.3) | yes | | | | | relayed |
+//! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | relayed |
+//! | a start's sandbox opt-out (`without_sandbox`) | yes | | | | | |
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
+//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.7) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -52,13 +54,31 @@
 //!   host's machine, and only the window, whose projects they are, says so or lets go.
 //! - **A project's numbers are dealt for the window alone** (1.3), as its holds are: `deal`
 //!   and `dealt_already` go with the `hold_project` row.
-//! - **A held project's hook lines are heard and answered by the window alone** (1.3). The host
-//!   pushes each line only to the links that hold the project, which only `local-ui` may, and
-//!   only `local-ui` replies: a reply can carry an ask's answer, which no other scope gives here.
+//! - **"Relayed": a runner's host takes the window's own commands from its desktop's host**
+//!   (ruled 2026-10-15, #2042; ADR 0078 and ADR 0068 amended). Over the link between hosts,
+//!   `remote-link` may hold a project, deal its numbers, start with the window's `launch`, and
+//!   reply to a held project's hook lines, whose lines it is pushed. **"Relayed" is enforced by
+//!   the desktop's relay alone** (`purlis_host::Relay`), which sends these on for its own
+//!   `local-ui` client only. The runner's host cannot tell a relayed command from one its peer
+//!   composed, so a runner trusts its peer as it trusts the window: to compose the programs it
+//!   starts and their environment, and to answer its chats' asks. That is why a runner admits
+//!   one peer, the desktop that relays to it (`crate::hostlink::answer`). An interim, until the
+//!   host composes a start itself (#2171).
+//! - **A held project's hook lines are heard and answered by the window** (1.3), on its own
+//!   host or relayed. The host pushes each line to the links that hold the project, which only
+//!   `local-ui` and a relayed `remote-link` may, and only they reply: a reply can carry an ask's
+//!   answer.
+//! - **A start marked as opting out of the sandbox is the window's alone, on every host** (ADR
+//!   0078 §4, ADR 0068 amended 2026-10-15). It is refused from every other scope before the
+//!   host hears of it, `remote-link` included: an opt-out is asked again on the device a chat
+//!   moves to. What a relayed start runs is what the runner's trusted peer composed.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
 //!   a view of one, `remote-link` included; a stop of one, like every stop, only removes power.
+//! - **Saving a held project is the window's alone** (1.7): the project's commits and pushes
+//!   are the person's, and the host's question of who is mid-turn goes only to the window's
+//!   links, which alone answer it. A hold relayed over a link does not carry it.
 //! - **Only a human scope answers an ask, and a secret's ask only in the window** (V16, V75):
 //!   `local-ui` and `approval`. Whether an ask elicits a secret is the host's to say
 //!   ([`crate::session::Host::elicits_a_secret`]), and a host that does not say is taken to
@@ -76,10 +96,11 @@
 //!   chat.
 //! - **`editor` has none of these commands.** Its four (`resolve`, `reveal`, `place`,
 //!   `changes`) are ED-2's, and are its alone (ADR 0081).
-//! - **`terminal` and `remote-link` are the session protocol without answers, pending a
-//!   ruling.** ADR 0078 lets `terminal` answer and a runner's `remote-link` carry an answer a
-//!   desktop human scope sent; V75, ruled later, names only `local-ui` and `approval` as
-//!   answerers. Both are refused until the operator rules, which fails closed.
+//! - **`terminal` and `remote-link` send no `answer`, pending a ruling.** ADR 0078 lets
+//!   `terminal` answer and a runner's `remote-link` carry an answer a desktop human scope sent;
+//!   V75, ruled later, names only `local-ui` and `approval` as answerers. Both are refused the
+//!   `answer` command until the operator rules, which fails closed; `remote-link`'s relayed
+//!   `reply_heard` is the one way an ask's answer reaches a runner (ruled 2026-10-15).
 
 use crate::auth::Scope;
 
@@ -109,6 +130,9 @@ pub enum Power {
     UiRpc,
     /// `hold_project` and `let_go_of_project` (1.2): where a project is on the host's machine.
     Hold,
+    /// `start_saving`, `stop_saving`, `fetch_project` and `mid_turn` (1.7): whether and how the
+    /// host saves a held project. The window's alone: a relayed hold does not carry it.
+    Save,
     /// A start's `launch` (1.2): a program, its words and its environment as the window composed
     /// them.
     Launch,
@@ -122,6 +146,8 @@ pub enum Power {
     /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
     /// person, and what it shows.
     Browser,
+    /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
+    OptOut,
 }
 
 impl Scope {
@@ -131,9 +157,22 @@ impl Scope {
         use Scope as S;
         match self {
             S::LocalUi => true,
-            S::Terminal | S::RemoteLink => matches!(
+            S::Terminal => matches!(
                 power,
                 P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
+            ),
+            S::RemoteLink => matches!(
+                power,
+                P::List
+                    | P::View
+                    | P::Write
+                    | P::Resize
+                    | P::Stop
+                    | P::Start
+                    | P::Subscribe
+                    | P::Hold
+                    | P::Launch
+                    | P::Heard
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),
@@ -159,18 +198,20 @@ mod tests {
     }
 
     #[test]
-    fn only_the_window_hands_the_host_a_composed_launch_or_holds_a_project() {
+    fn only_the_window_or_its_hosts_relay_hands_a_host_a_composed_launch_or_holds_a_project() {
         for scope in Scope::ALL {
             assert_eq!(scope.may(Power::Rearm), scope == Scope::LocalUi, "{scope}");
-            assert_eq!(scope.may(Power::Launch), scope == Scope::LocalUi, "{scope}");
-            assert_eq!(scope.may(Power::Hold), scope == Scope::LocalUi, "{scope}");
+            let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+            assert_eq!(scope.may(Power::Launch), windows, "{scope}");
+            assert_eq!(scope.may(Power::Hold), windows, "{scope}");
         }
     }
 
     #[test]
-    fn only_the_window_replies_to_what_a_projects_hooks_wrote() {
+    fn only_the_window_or_its_hosts_relay_replies_to_what_a_projects_hooks_wrote() {
         for scope in Scope::ALL {
-            assert_eq!(scope.may(Power::Heard), scope == Scope::LocalUi, "{scope}");
+            let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+            assert_eq!(scope.may(Power::Heard), windows, "{scope}");
         }
     }
 
@@ -193,6 +234,20 @@ mod tests {
                 scope == Scope::LocalUi,
                 "{scope}"
             );
+        }
+    }
+
+    #[test]
+    fn only_the_window_saves_a_held_project() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Save), scope == Scope::LocalUi, "{scope}");
+        }
+    }
+
+    #[test]
+    fn only_the_window_opts_a_chat_out_of_the_sandbox() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::OptOut), scope == Scope::LocalUi, "{scope}");
         }
     }
 

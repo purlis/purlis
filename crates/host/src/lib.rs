@@ -49,6 +49,8 @@ mod hosting;
 #[cfg(unix)]
 mod killswitch;
 #[cfg(unix)]
+mod relay;
+#[cfg(unix)]
 mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
@@ -61,14 +63,16 @@ pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfin
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
-    Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting, Run, Running, Terminals,
-    ToCompose,
+    ASK_WITHIN, AskTheWindow, Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting,
+    Looked, Poke, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
 };
 #[cfg(unix)]
 pub use killswitch::KILL_SWITCH;
 /// The session protocol this host speaks, for a binary's [`Compose`].
 #[cfg(unix)]
 pub use purlis_session_protocol as protocol;
+#[cfg(unix)]
+pub use relay::{Dial, Relay};
 #[cfg(unix)]
 pub use serving::{HostError, LOCK, Place, Window, serve};
 
