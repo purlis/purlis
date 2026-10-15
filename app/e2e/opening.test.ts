@@ -104,6 +104,15 @@ describe("a dialog that offers an answer, as a spec waits for it", () => {
     expect(aDialogOffers("alertdialog", "", "Close and end", true)).toBe(true);
   });
 
+  it("is still up while the button pressed says it is working, by its Cancel", () => {
+    // How `theDialogHasGone` asks: the pressed button's words change, Cancel's do not.
+    const starting = offering("dialog", "Start a chat", ["Starting…", "Cancel"]);
+    expect(aDialogOffers("dialog", "Start a chat", "Start", false)).toBe(false);
+    expect(aDialogOffers("dialog", "Start a chat", "Cancel", false)).toBe(true);
+    starting.remove();
+    expect(aDialogOffers("dialog", "Start a chat", "Cancel", false)).toBe(false);
+  });
+
   it("is gone once the dialog has gone", () => {
     offering("alertdialog", "End chat one?", ["Close"]).remove();
     expect(aDialogOffers("alertdialog", "End chat one", "Close", false)).toBe(false);

@@ -22,7 +22,7 @@ export async function pickAndStart(): Promise<void> {
   await browser.waitUntil(
     async () => {
       for (const words of ["Approve and start", "Start"])
-        if (await browser.execute(aDialogOffers, "dialog", "", words, false)) {
+        if (await browser.execute(aDialogOffers, "dialog", PICKER, words, false)) {
           pressing = words;
           return true;
         }
@@ -33,8 +33,11 @@ export async function pickAndStart(): Promise<void> {
   const start = await $(`button=${pressing}`);
   await start.waitForClickable({ timeout: 20_000 });
   await start.click();
-  await theDialogHasGone("dialog", "", pressing, false, "the picker never went");
+  await theDialogHasGone("dialog", PICKER, "the picker never went");
 }
+
+/** The picker's title (`StartChat`). */
+const PICKER = "Start a chat";
 
 /**
  * Whether the page shows a `role` dialog whose text holds `text` and which offers a button
@@ -65,16 +68,14 @@ export function aDialogOffers(
   return false;
 }
 
-/** Waits until no dialog {@link aDialogOffers} would find is left, asking the page each time. */
-async function theDialogHasGone(
-  role: string,
-  text: string,
-  button: string,
-  partly: boolean,
-  timeoutMsg: string,
-): Promise<void> {
+/**
+ * Waits until no `role` dialog saying `text` is left, asking the page each time. **By its Cancel**,
+ * which each of these dialogs keeps while it works: the button that was pressed changes its words
+ * ("Starting…") while the dialog is still up, so it cannot say the dialog went.
+ */
+async function theDialogHasGone(role: string, text: string, timeoutMsg: string): Promise<void> {
   await browser.waitUntil(
-    async () => !(await browser.execute(aDialogOffers, role, text, button, partly)),
+    async () => !(await browser.execute(aDialogOffers, role, text, "Cancel", false)),
     { timeout: 20_000, timeoutMsg },
   );
 }
@@ -183,13 +184,7 @@ export async function answerTheAsk(ending: string): Promise<void> {
   const answer = await $('[role="alertdialog"]').$("button=Close");
   await answer.waitForClickable({ timeout: 20_000 });
   await answer.click();
-  await theDialogHasGone(
-    "alertdialog",
-    ending,
-    "Close",
-    false,
-    `the question about ${ending} never went`,
-  );
+  await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);
 }
 
 /** Ends the chat a control named `name` belongs to, and answers the question it asks. */
@@ -236,13 +231,7 @@ export async function closeProject(closer: string): Promise<void> {
     const answer = await $('[role="alertdialog"]').$("button*=Close and end");
     await answer.waitForClickable({ timeout: 20_000 });
     await answer.click();
-    await theDialogHasGone(
-      "alertdialog",
-      "",
-      "Close and end",
-      true,
-      "the question about closing the project never went",
-    );
+    await theDialogHasGone("alertdialog", "", "the question about closing the project never went");
   }
   await everyCloseHasLetGo();
 }
