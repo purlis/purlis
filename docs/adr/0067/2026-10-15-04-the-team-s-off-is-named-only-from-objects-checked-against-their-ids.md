@@ -16,6 +16,9 @@ word:
   manifest, and its first parent's, are read through the trees from the commit's root tree down
   to the file and through the file itself, each checked against its id: the commit's own turns
   the sandbox off and its parent's does not.
+- **The upstream still has it off.** The manifest of the upstream commit purlis's own fetch
+  found, read the same way, turns the sandbox off too. An off the upstream has since turned back
+  on is local.
 - An object on the way that is missing or reads as anything else, and a repository whose ids are
   not SHA-1, leave the off local: "This project's sandbox off is local: it is not on the upstream
   purlis fetched."

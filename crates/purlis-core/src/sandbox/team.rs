@@ -372,42 +372,57 @@ fn batch_record(answer: &[u8]) -> Option<(Option<Record<'_>>, &[u8])> {
     }
 }
 
-/// **Who wrote `commit`, where it turned the sandbox off as written**: the author its own bytes
-/// name, where those bytes are the ones its id names, the manifest it holds (every tree on the
-/// way to it and the file itself read as written) turns the sandbox off, and its first parent's,
-/// read the same way, does not. None otherwise.
+/// **Who wrote `commit`, where it turned the sandbox off as written and the upstream still has
+/// it off**: the author its own bytes name, where those bytes are the ones its id names, the
+/// manifest it holds (every tree on the way to it and the file itself read as written) turns the
+/// sandbox off, its first parent's, read the same way, does not, and the manifest of the upstream
+/// commit purlis's own fetch found, read the same way, still does. None otherwise, and for a
+/// repository whose ids are not SHA-1.
 fn written_arrival(root: &Path, commit: &str) -> Option<String> {
     let commit = gix::ObjectId::from_hex(commit.as_bytes()).ok()?;
-    let path = manifest_path(root)?;
-    let (tree, parent, author) = {
-        let read = written(root, &[commit])?;
-        let (object, bytes) = read.get(&commit)?;
-        if *object != gix::objs::Kind::Commit {
-            return None;
-        }
-        let read = gix::objs::CommitRef::from_bytes(bytes, commit.kind()).ok()?;
-        let author = String::from_utf8_lossy(read.author().ok()?.name)
-            .trim()
-            .to_owned();
-        (read.tree(), read.parents().next(), author)
-    };
-    if !written_off(root, tree, &path)? {
+    if commit.kind() != gix::hash::Kind::Sha1 {
         return None;
     }
-    if let Some(parent) = parent {
-        let read = written(root, &[parent])?;
-        let (object, bytes) = read.get(&parent)?;
-        if *object != gix::objs::Kind::Commit {
-            return None;
-        }
-        let tree = gix::objs::CommitRef::from_bytes(bytes, parent.kind())
-            .ok()?
-            .tree();
-        if written_off(root, tree, &path)? {
-            return None;
-        }
+    let upstream = super::local::fetched_upstream(root)?;
+    let upstream = gix::ObjectId::from_hex(upstream.as_bytes()).ok()?;
+    let path = manifest_path(root)?;
+    let arrived = written_commit(root, commit)?;
+    if !written_off(root, arrived.tree, &path)? {
+        return None;
     }
-    Some(author)
+    if let Some(parent) = arrived.parent
+        && written_off(root, written_commit(root, parent)?.tree, &path)?
+    {
+        return None;
+    }
+    if !written_off(root, written_commit(root, upstream)?.tree, &path)? {
+        return None;
+    }
+    Some(arrived.author)
+}
+
+/// A commit read as written: its tree, first parent and author.
+struct WrittenCommit {
+    tree: gix::ObjectId,
+    parent: Option<gix::ObjectId>,
+    author: String,
+}
+
+/// The commit `id` names, read as written ([`written`]). None where it is not, or is no commit.
+fn written_commit(root: &Path, id: gix::ObjectId) -> Option<WrittenCommit> {
+    let read = written(root, &[id])?;
+    let (object, bytes) = read.get(&id)?;
+    if *object != gix::objs::Kind::Commit {
+        return None;
+    }
+    let read = gix::objs::CommitRef::from_bytes(bytes, id.kind()).ok()?;
+    Some(WrittenCommit {
+        tree: read.tree(),
+        parent: read.parents().next(),
+        author: String::from_utf8_lossy(read.author().ok()?.name)
+            .trim()
+            .to_owned(),
+    })
 }
 
 /// The manifest's path from the top of the repository, one name per directory.
