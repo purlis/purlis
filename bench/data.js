@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792071891988,
+  "lastUpdate": 1792073023548,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12432,6 +12432,48 @@ window.BENCHMARK_DATA = {
             "value": 103.9912105,
             "unit": "ms",
             "extra": "median of 5 runs: 103.235, 103.661, 103.991, 105.141, 105.219 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "69d1d88802290b9e938c93663b125c7747d08147",
+          "message": "Profiles: personas, teammates and the rules that stay (#2169)\n\n* Profiles: a persona's tab offers to create the profile it names (#2039)\n\nA persona whose definition names a profile this machine does not have\nsays so on its tab, as a Notice whose fix, Create profile <name>...,\nopens a form with the name fixed and the harness to pick. Create runs\nmachine_profile_create, the command Add profile runs; nothing is made\nuntil it is pressed, and the persona's view is asked again after.\n\nRegression tests hold a profile made here to the project's dispatch\nlist, to the approval of a clone's own profile of the same name, and\nto the refusal of a command that switches permission prompts off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2039): [sign_in] plans in harness declarations; X12 is #2168's\n\n- A harness declaration lists the plans a subscription signs in to,\n  [sign_in] plans = [{ provider, title }], an allow-list; a harness\n  declaring subscription with no plans signs in to its own vendor's\n  plan. anthropic is refused in any declaration but Claude Code's own,\n  when the declaration is read. opencode's ChatGPT and GitHub Copilot\n  move from OPENCODE_PLANS into opencode.toml, and the sign-in Ask, a\n  profile's row and purlis profile sign-in --provider read it. Key\n  confirmed by the operator on 2026-10-15 (ADR 0073, amended;\n  docs/plane-format.md).\n- ADR 0095's What changes where gives X12 and its store to #2168.\n- The persona's Notice no longer repeats its Profile line, and Create\n  says what it made and imported, as Add profile does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T17:49:40+04:00",
+          "tree_id": "74d9ba560e859a7151418925116ab2493be1e5e9",
+          "url": "https://github.com/purlis/purlis/commit/69d1d88802290b9e938c93663b125c7747d08147"
+        },
+        "date": 1792073021856,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3020865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.275, 0.284, 0.302, 0.313, 0.314 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.598121499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.450, 16.570, 16.598, 16.603, 16.783 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.26683,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.030, 101.202, 101.267, 101.355, 101.825 ms"
           }
         ]
       }
