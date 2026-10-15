@@ -79,6 +79,12 @@ pub struct MachineProfile {
     /// The harness version its chats run on, from its first chat on (#2038, [`pin`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<pin::Pinned>,
+    /// **A profile purlis made for sandboxed chats only** (#2037, ruled 2026-10-15): only a
+    /// sandboxed chat starts on it, and a sandboxed Codex chat starts on no other. Signed in
+    /// through its harness's own sign-in, never from a copy; its settings are purlis's, so
+    /// nothing is imported into it. Written only where true.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sandbox_only: bool,
     /// Every field of the record this build does not know, written back as it was read.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -480,6 +486,7 @@ pub fn adopt(
                 imported: None,
                 sign_in: None,
                 pinned: None,
+                sandbox_only: false,
                 rest: Map::new(),
             };
             store.profiles.push(profile.clone());
@@ -503,6 +510,7 @@ mod made;
 pub use made::*;
 
 pub mod pin;
+pub mod sandbox_only;
 pub mod sign_in;
 
 #[cfg(test)]

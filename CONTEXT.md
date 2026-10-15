@@ -346,7 +346,9 @@ sign-in, its conversations and the browser logins kept under it. It is the perso
 names one, a chat runs on one, and it lives on its device and is never committed. A
 subscription is signed in once per device through the harness's own flow, and purlis never
 holds it. Every sign-in a chat uses is a profile's (ADR 0095). One browser writes a profile's
-kept logins at a time, and a second chat that wants them is offered a copy.
+kept logins at a time, and a second chat that wants them is offered a copy. A profile purlis
+makes **for sandboxed chats only** runs no chat outside the sandbox, and a sandboxed Codex chat
+runs on no other (#2037).
 _Avoid_: browser profile, kept profile (both are the profile), harness folder (that is where a
 profile is kept), harness login, login (for its sign-in: a login is a browser's, or a **browser
 login**), account (that is who a model is billed to), credentials (that is what a

@@ -1589,7 +1589,8 @@ fn start_chat_in(
         // The person's new chat, from the window's picker (#2071).
         made: purlis_core::sandbox::Made::Window,
     };
-    let ready = purlis_core::start::ready(&start, root)?;
+    let ready = purlis_core::start::ready(&start, root)
+        .map_err(|why| crate::asking::start_refused(held, why))?;
     let chat = Chat {
         program: ready.program.clone(),
         // What the RECORD keeps: the profile's own words, without charter's. A resume

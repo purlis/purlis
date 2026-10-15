@@ -109,6 +109,11 @@ A subscription (a Claude plan, ChatGPT, Copilot and their like) is the harness's
 - **Where a harness cannot keep its commands apart from itself**, its declaration says so
   (`kept_from_commands`, #2031) and the profile page says plainly that commands can read its
   sign-in.
+- *Amended 2026-10-15 (#2037), by the operator's ruling:* a sandboxed Codex chat's profile is
+  one purlis made **for sandboxed chats only**, signed in once through Codex's own sign-in in its
+  folder and started by no chat outside the sandbox; a sandboxed Codex chat on any other profile
+  is refused with the way out. So the person's own Codex home, adopted in place, is never written
+  by a sandboxed chat (ADR 0067, D-88q, as amended).
 
 ### 6. Unattended runs still ask once
 

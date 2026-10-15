@@ -109,6 +109,19 @@ const SIGN_IN: Shown = {
   answer: { via: "sign-in", profile: "oc" },
 };
 
+const SANDBOX_ONLY: Shown = {
+  session: 0,
+  ask: "sandbox-only:codex",
+  says: "Codex needs a sandbox-only profile here: a sandboxed Codex chat runs only on one.",
+  options: [
+    { id: "make", label: "Make one", allows: true },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ],
+  source: "sandbox-only",
+  chain: ["Codex"],
+  answer: { via: "sandbox-only" },
+};
+
 const QUESTION: Shown = {
   session: 6,
   ask: "question:6",
@@ -231,6 +244,31 @@ describe("answering through the path an ask names", () => {
     }
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["dismiss_sign_in", { plane: PLANE, profile: "oc" }],
+    ]);
+  });
+
+  it("makes a sandbox-only Codex profile, then opens its sign-in, and puts it away by Dismiss (#2037)", async () => {
+    const calls = sent({ make_sandbox_only_profile: "codex-sandbox", dismiss_sandbox_only: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(PROFILE_SIGN_IN, heard);
+    try {
+      expect(await answerTaken(PLANE, SANDBOX_ONLY, "make")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, profile: "codex-sandbox", provider: undefined }]);
+      expect(await answerTaken(PLANE, SANDBOX_ONLY, "dismiss")).toEqual({
+        refused: undefined,
+        live: false,
+      });
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["make_sandbox_only_profile", { plane: PLANE }],
+      ["dismiss_sandbox_only", { plane: PLANE }],
     ]);
   });
 

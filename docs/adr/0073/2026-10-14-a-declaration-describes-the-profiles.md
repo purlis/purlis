@@ -34,8 +34,8 @@ folder under each XDG folder (its `packages/util/src/global-roots.ts`), where Cl
 Codex keep theirs in the folder the variable names; `OPENCODE_CONFIG_DIR` only adds a folder it
 searches, so it is not the one set. The XDG variables reach the commands a chat runs as well, as
 every variable set on the harness does. Codex and opencode answer `kept_from_commands` no: each
-is wrapped with its commands in one sandbox. **Claude Code answers unknown until #2037 measures
-it.**
+is wrapped with its commands in one sandbox. Claude Code answers no as well (#2037,
+[2026-10-15](2026-10-15-a-profile-s-sign-in-files-are-denied-to-the-agent-s-commands.md)).
 
 A local replacement of a built-in's facts (#968) keeps these four as the built-in's: they are how
 purlis runs a harness it ships.

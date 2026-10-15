@@ -1013,6 +1013,11 @@ enum ProfileCommand {
         /// The harness it runs: claude, codex or opencode.
         #[arg(long)]
         harness: String,
+        /// Make it for sandboxed chats only, with nothing imported: only a sandboxed chat starts
+        /// on it, and a sandboxed Codex chat starts on no other. Sign it in through the
+        /// harness's own sign-in.
+        #[arg(long)]
+        sandbox_only: bool,
     },
     /// Copy this machine's harness settings files into a profile again, as they are. Its
     /// sign-in and conversations stay.
@@ -3608,8 +3613,17 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
     };
     let now = purlis_core::halt::now();
     let said = match verb {
-        ProfileCommand::Create { name, harness } => {
-            profilestore::create(&store, name, harness, &machine, now).map(|made| {
+        ProfileCommand::Create {
+            name,
+            harness,
+            sandbox_only,
+        } => {
+            let made = if *sandbox_only {
+                profilestore::create_sandbox_only(&store, name, harness, now)
+            } else {
+                profilestore::create(&store, name, harness, &machine, now)
+            };
+            made.map(|made| {
                 format!(
                     "made the profile '{}' ({}) in {}\n{}sign it in through its harness's own \
                      sign-in with purlis profile sign-in {}\n",

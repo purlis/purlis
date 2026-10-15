@@ -22,17 +22,19 @@
 //!   changed and moved back; the temp folder or the chat's folder swapped for a link), and what
 //!   its own sandbox refused is refused too (writing outside the chat's folder and temp folder,
 //!   a direct connection past the proxy).
-//! - **A Codex home of the project's own** (D-88q, tightening V73 and V73a). Codex keeps state
-//!   that every one of its threads shares and a later resume hands the model: each thread's
-//!   goals, its queue, the threads' table and the sessions a resume reads. A chat that could
-//!   write the operator's own home could plant instructions in a thread the operator later
-//!   resumes outside any sandbox (measured: a planted goal reached the model on a resume). So a
-//!   sandboxed project's Codex chats run with a home of their own under charter's data home
-//!   ([`super::Homes::codex_project`]), which only those chats, inside this wrap, ever use, and
-//!   the operator's own home is neither read nor written by them (only Codex's installed
-//!   program in it is read, to run it). Charter seeds the project's home before the wrap
-//!   ([`prepare`]): the operator's login, copied when the project's is missing or older, and a
-//!   config charter writes itself.
+//! - **A Codex home only sandboxed chats use** (D-88q, as amended 2026-10-15 by the operator's
+//!   ruling on #2037). Codex keeps state that every one of its threads shares and a later resume
+//!   hands the model: each thread's goals, its queue, the threads' table and the sessions a
+//!   resume reads. A chat that could write the operator's own home could plant instructions in a
+//!   thread the operator later resumes outside any sandbox (measured: a planted goal reached the
+//!   model on a resume). So a sandboxed Codex chat runs on a profile purlis made for sandboxed
+//!   chats only (`sandbox_only`, [`crate::start::profile_refusal`]), with that profile's folder as
+//!   Codex's home ([`Wrap::on_profile`]), which no unsandboxed run uses, and the operator's own
+//!   home is neither read nor written by it (only Codex's installed program in it is read, to run
+//!   it). The profile is signed in through Codex's own sign-in, in its folder, and no sign-in is
+//!   ever copied into it. Before the wrap charter makes the home ready ([`prepare`]): its folders,
+//!   a config charter writes itself, and, once, the conversations of the home the project's
+//!   sandboxed chats had before ([`super::Homes::codex_project`]), never its sign-in.
 //! - **What a turn writes in that home**: its sessions (a folder for each day, which a resume
 //!   reads), its threads' state, history, shell snapshots (which Codex sources before a
 //!   thread's commands), writer locks, log, its installation id, and its login, where a refresh
@@ -42,12 +44,12 @@
 //!   servers, hooks and what it trusts), its skills, plugins and helper links. No link is made
 //!   in it, and no folder but a day's sessions; a folder moved in under a date-shaped name is
 //!   taken out, with any link, at the next start ([`prepare`]).
-//! - **The residual** (D-88s). Every one of those stores is shared by the project's sandboxed
-//!   chats: one of them can change what a later sandboxed chat of the same project loads (its
+//! - **The residual** (D-88s). Every one of those stores is shared by the sandboxed chats on
+//!   the same profile: one of them can change what a later sandboxed chat on it loads (its
 //!   memories, goals and queue, its sessions, shell snapshots and history), inside this wrap
-//!   only. It never reaches an unsandboxed run's Codex state: the operator's own home and other
-//!   projects' homes are neither read nor written. Per-chat isolation of the shared stores is
-//!   #1150.
+//!   only. It never reaches an unsandboxed run's Codex state: the operator's own home, every
+//!   other profile's folder and the homes projects had before are neither read nor written.
+//!   Per-chat isolation of the shared stores is #1150.
 //! - **Trust.** The config charter writes marks the chat's folder and every folder above it
 //!   untrusted, so Codex asks nothing it could not save and loads no project-local config,
 //!   hooks or exec policies (measured: a persisted `untrusted` starts the TUI without asking).
@@ -88,11 +90,19 @@ pub struct Wrap {
     /// The folders a person let this chat write besides its own (#1342), each a root the
     /// later-code names are denied in, and each under every denial that follows it.
     pub granted: Vec<PathBuf>,
-    /// The project's own Codex home (D-88q), of which only what a turn writes is writable.
+    /// The Codex home the chat runs in, of which only what a turn writes is writable: the
+    /// folder of its profile for sandboxed chats only ([`Self::on_profile`]). None until it is
+    /// known, and a chat with none is not started.
     pub home: Option<PathBuf>,
-    /// The operator's own Codex home, which the project's is seeded from and a chat never
-    /// reaches.
+    /// The operator's own Codex home, which a chat never reaches but for Codex's installed
+    /// program.
     pub operator: Option<PathBuf>,
+    /// The Codex home the project's sandboxed chats had before (D-88q), whose conversations are
+    /// brought to the profile's folder once ([`prepare`]) and which a chat never reads.
+    pub former: Option<PathBuf>,
+    /// The folders of this machine's profiles (`<data>/profiles`), denied to a chat but its own
+    /// profile's.
+    pub profiles: Option<PathBuf>,
 }
 
 /// The folders in the project's Codex home a turn writes into, each everything under it and
@@ -148,13 +158,45 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         hosts: compiled.hosts.clone(),
         widened: Box::new(compiled.widened.clone()),
         granted: compiled.writable.clone(),
-        home: compiled.homes.codex_project.clone(),
+        home: None,
         operator: compiled.homes.codex.clone(),
+        former: compiled.homes.codex_project.clone(),
+        profiles: compiled.homes.profiles.clone(),
     })
 }
 
 impl Wrap {
-    /// What the wrap lets a chat write in the project's Codex home, besides its state databases.
+    /// This wrap for a chat on the sandbox-only profile `name`, whose Codex folder its
+    /// environment names `folder`: Codex's home, where that is the folder purlis made for that
+    /// profile ([`crate::profilestore::sandbox_home`]: `<profiles>/<name>/config`, no `..`, no
+    /// link, this user's), as the kernel names it. Anything else leaves the chat with no home,
+    /// and it is not started.
+    pub fn on_profile(&mut self, name: &str, folder: &Path) {
+        let Some(profiles) = &self.profiles else {
+            return;
+        };
+        self.home = crate::profilestore::sandbox_home(profiles, name, folder);
+    }
+
+    /// Every path the chat is denied, as the profile is written: the folders of this machine's
+    /// profiles left out where the chat's own is among them, since [`own`] denies them but that
+    /// one.
+    fn denied_here(&self) -> Vec<Denial> {
+        let carved = self.carved();
+        self.denied
+            .iter()
+            .filter(|denial| carved.is_none_or(|profiles| denial.path != profiles))
+            .cloned()
+            .collect()
+    }
+
+    /// The folder of this machine's profiles, where the chat's home is one of them.
+    fn carved(&self) -> Option<&Path> {
+        let (home, profiles) = (self.home.as_deref()?, self.profiles.as_deref()?);
+        (home.starts_with(profiles) || home.starts_with(super::real(profiles))).then_some(profiles)
+    }
+
+    /// What the wrap lets a chat write in its Codex home, besides its state databases.
     pub fn writable(&self) -> Vec<PathBuf> {
         let Some(home) = &self.home else {
             return Vec::new();
@@ -167,16 +209,18 @@ impl Wrap {
     }
 }
 
-/// The project's Codex home, made ready before the wrap for a chat in `cwd` armed with
-/// `armed`, which lets a chat make none of it, and only once the chat's line is built:
+/// The chat's Codex home, made ready before the wrap for a chat in `cwd` armed with `armed`,
+/// which lets a chat make none of it, and only once the chat's line is built:
 /// - its folders, empty, where missing, and the home itself readable by its owner alone;
 /// - in its folders, every link and every folder that is not a day's sessions taken out, so
 ///   nothing a chat moved in under a date-shaped name stays;
-/// - the operator's login, copied where the project's is missing, older, dated in the future,
-///   or of another account ([`seed_login`]);
+/// - once, the conversations of the home the project's sandboxed chats had before
+///   ([`Wrap::former`]), each where the home has none of that name, and never its sign-in
+///   ([`bring_conversations`]);
 /// - its config, written by charter alone: `cwd` and every folder above it untrusted, and
 ///   trust for exactly the hooks charter armed ([`hook_trust`]).
 ///
+/// No sign-in is copied: the profile is signed in through Codex's own sign-in, in its folder.
 /// What cannot be made is left to Codex, which then stops.
 pub fn prepare(wrap: &Wrap, cwd: &Path, armed: &[String]) {
     let Some(home) = &wrap.home else { return };
@@ -192,10 +236,119 @@ pub fn prepare(wrap: &Wrap, cwd: &Path, armed: &[String]) {
         let depth = if DAY_DIRS.contains(&dir) { 3 } else { 0 };
         tidy(&home.join(dir), depth);
     }
-    if let Some(operator) = &wrap.operator {
-        seed_login(&operator.join("auth.json"), &home.join("auth.json"));
+    if let Some(former) = &wrap.former {
+        bring_conversations(former, home);
     }
     write_config(&home.join("config.toml"), cwd, hook_trust(armed));
+}
+
+/// The file left in a project's former Codex home once its conversations were brought to a
+/// profile's folder, naming that folder: they are brought once.
+pub const BROUGHT: &str = "conversations-brought-to";
+
+/// **The conversations of `former`**, a project's Codex home from before its chats ran on a
+/// profile for sandboxed chats only, brought to `home` once, so each of those chats resumes
+/// there: every regular file in its days' sessions (and archived sessions) that `home` has no
+/// file of at the same place, copied, never through a link and never over a file. Its sign-in,
+/// config and every other file stay where they are. Once done, [`BROUGHT`] in `former` names
+/// `home`, and nothing is brought again.
+#[cfg(unix)]
+pub fn bring_conversations(former: &Path, home: &Path) {
+    use rustix::fs::{Mode, OFlags};
+    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let Ok(root) = rustix::fs::open(former, folder, Mode::empty()) else {
+        return;
+    };
+    if rustix::fs::statat(&root, BROUGHT, rustix::fs::AtFlags::SYMLINK_NOFOLLOW).is_ok() {
+        return;
+    }
+    for dir in DAY_DIRS {
+        if let Ok(days) = rustix::fs::openat(&root, dir, folder, Mode::empty()) {
+            copy_days(&days, &home.join(dir), 3);
+        }
+    }
+    replace(
+        &former.join(BROUGHT),
+        format!("{}\n", home.display()).as_bytes(),
+        0o600,
+    );
+}
+
+/// Nothing is brought where there is no descriptor-relative open to read it with safely; no
+/// Codex chat is wrapped there either.
+#[cfg(not(unix))]
+pub fn bring_conversations(_former: &Path, _home: &Path) {}
+
+#[cfg(unix)]
+/// Below the folder open at `from`, read by descriptor and never through a link: each regular
+/// file copied to the same place below `to` where none is there, in folders `folders` deep in
+/// a day's tree (`YYYY/MM/DD`). Every name is opened relative to its folder with `O_NOFOLLOW`
+/// and judged by `fstat` on what was opened, so a name swapped for a link meanwhile fails to
+/// open rather than leading anywhere.
+fn copy_days(from: &std::os::fd::OwnedFd, to: &Path, folders: usize) {
+    use rustix::fs::{FileType, Mode, OFlags};
+    let Ok(listed) = rustix::fs::Dir::read_from(from) else {
+        return;
+    };
+    let width = [4, 2, 2];
+    let level = 3 - folders.min(3);
+    for entry in listed.flatten() {
+        let name = entry.file_name().to_owned();
+        let Ok(text) = name.to_str() else { continue };
+        if text == "." || text == ".." {
+            continue;
+        }
+        let Ok(fd) = rustix::fs::openat(
+            from,
+            name.as_c_str(),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) else {
+            continue;
+        };
+        let Ok(stat) = rustix::fs::fstat(&fd) else {
+            continue;
+        };
+        let target = to.join(text);
+        match FileType::from_raw_mode(stat.st_mode) {
+            FileType::RegularFile => {
+                if std::fs::symlink_metadata(&target).is_err()
+                    && std::fs::create_dir_all(to).is_ok()
+                {
+                    let mut bytes = Vec::new();
+                    if std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes).is_ok()
+                    {
+                        write_new(&target, &bytes);
+                    }
+                }
+            }
+            FileType::Directory
+                if folders > 0
+                    && text.len() == width[level]
+                    && text.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                copy_days(&fd, &target, folders - 1);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `bytes` written to a new file at `path`, never through a link and never over a file there.
+fn write_new(path: &Path, bytes: &[u8]) {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    if let Ok(mut file) = options.open(path)
+        && file.write_all(bytes).is_err()
+    {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// The folders of the project's Codex home that hold a folder for each day.
@@ -229,131 +382,6 @@ fn tidy(dir: &Path, folders: usize) {
             }
         }
     }
-}
-
-/// Who a Codex login at `path` signs in as: its API key, or the identity the claims of its
-/// tokens name (review R2-F1), or `None` where it says neither or a token does not decode, which
-/// reseeds the project's login (fail closed).
-///
-/// The claims are decoded, never verified: what counts is that the tokens are the same account's
-/// as the operator's. A plain field beside them (`tokens.account_id`) is not asked, since a chat
-/// that writes the project's login could copy the operator's into a file holding another
-/// account's tokens.
-fn account_of(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let login: serde_json::Value = serde_json::from_str(&text).ok()?;
-    if let Some(key) = login
-        .get("OPENAI_API_KEY")
-        .and_then(serde_json::Value::as_str)
-        .filter(|key| !key.is_empty())
-    {
-        return Some(format!("key:{key}"));
-    }
-    let tokens = login.get("tokens")?;
-    let mut identity = vec![format!(
-        "access:{}",
-        claimed(tokens.get("access_token")?.as_str()?)?
-    )];
-    if let Some(id) = tokens.get("id_token").filter(|id| !id.is_null()) {
-        identity.push(format!("id:{}", claimed(id.as_str()?)?));
-    }
-    Some(identity.join(" "))
-}
-
-/// The identity a token's claims name: its subject, email and every `*_account_id` or
-/// `*_user_id` claim at its top level or in a namespaced object (OpenAI's tokens keep the
-/// ChatGPT account and user under `https://api.openai.com/auth`), as one string; `None` where
-/// the token is not a JWT whose claims decode or name no one.
-fn claimed(token: &str) -> Option<String> {
-    let mut parts = token.split('.');
-    let (_, payload, _) = (parts.next()?, parts.next()?, parts.next()?);
-    let claims: serde_json::Value = serde_json::from_slice(&base64url(payload)?).ok()?;
-    let claims = claims.as_object()?;
-    let mut named: Vec<String> = Vec::new();
-    let mut take = |scope: &str, map: &serde_json::Map<String, serde_json::Value>| {
-        for (key, value) in map {
-            let names = key == "sub"
-                || key == "email"
-                || key.ends_with("_account_id")
-                || key.ends_with("_user_id");
-            if let (true, Some(value)) = (names, value.as_str()) {
-                named.push(format!("{scope}{key}={value}"));
-            }
-        }
-    };
-    take("", claims);
-    for (scope, value) in claims {
-        if let Some(inner) = value.as_object() {
-            take(&format!("{scope}/"), inner);
-        }
-    }
-    named.sort();
-    (!named.is_empty()).then(|| named.join(","))
-}
-
-/// `text` decoded as unpadded base64url, as a JWT's parts are written, or `None`.
-fn base64url(text: &str) -> Option<Vec<u8>> {
-    let value = |c: u8| -> Option<u32> {
-        Some(match c {
-            b'A'..=b'Z' => c - b'A',
-            b'a'..=b'z' => c - b'a' + 26,
-            b'0'..=b'9' => c - b'0' + 52,
-            b'-' | b'+' => 62,
-            b'_' | b'/' => 63,
-            _ => return None,
-        } as u32)
-    };
-    let text = text.trim_end_matches('=');
-    let mut out = Vec::with_capacity(text.len() * 3 / 4);
-    let (mut bits, mut held) = (0u32, 0u32);
-    for c in text.bytes() {
-        bits = (bits << 6) | value(c)?;
-        held += 6;
-        if held >= 8 {
-            held -= 8;
-            out.push(u8::try_from((bits >> held) & 0xff).ok()?);
-        }
-    }
-    Some(out)
-}
-
-/// The operator's login at `from` copied to `to`, where `to` is missing, older, dated in the
-/// future, or of another account than `from` (a chat may write the project's login, which a
-/// refresh rewrites, and so could put another account there and date it ahead). Neither is
-/// followed if it is a link: a regular file is copied over a regular file, or nothing is done.
-fn seed_login(from: &Path, to: &Path) {
-    let regular = |path: &Path| {
-        std::fs::symlink_metadata(path)
-            .ok()
-            .filter(std::fs::Metadata::is_file)
-    };
-    let Some(source) = regular(from) else { return };
-    let stale = match std::fs::symlink_metadata(to) {
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
-        Ok(target) if target.is_file() => {
-            let now = std::time::SystemTime::now();
-            match (source.modified(), target.modified()) {
-                (Ok(source), Ok(target)) => {
-                    target < source
-                        || target > now
-                        || match (account_of(from), account_of(to)) {
-                            (Some(ours), Some(theirs)) => ours != theirs,
-                            _ => true,
-                        }
-                }
-                _ => true,
-            }
-        }
-        // A link, or anything else, in its place: replaced by a regular file.
-        _ => true,
-    };
-    if !stale {
-        return;
-    }
-    let Ok(text) = std::fs::read(from) else {
-        return;
-    };
-    replace(to, &text, 0o600);
 }
 
 /// `bytes` put at `path` whole: written to a temp file of this start's own, made fresh and
@@ -508,7 +536,7 @@ fn hook_hash(event: &str, matcher: Option<&str>, hook: &toml::Value) -> Option<S
     Some(format!("sha256:{hex}"))
 }
 
-/// The config charter writes into the project's Codex home: the folders it marked before, as
+/// The config charter writes into the chat's Codex home: the folders it marked before, as
 /// charter wrote them, with `cwd` and every folder above it marked untrusted, and `trust` as
 /// the hooks' trust records, replacing any before.
 fn write_config(path: &Path, cwd: &Path, trust: toml::Table) {
@@ -537,7 +565,7 @@ fn write_config(path: &Path, cwd: &Path, trust: toml::Table) {
         top.insert("hooks".to_owned(), toml::Value::Table(hooks));
     }
     let text = format!(
-        "# Written by purlis for this project's sandboxed Codex chats; rewritten at every \
+        "# Written by purlis for the sandboxed Codex chats on this profile; rewritten at every \
          start.\n{top}"
     );
     replace(path, text.as_bytes(), 0o600);
@@ -570,7 +598,7 @@ pub fn profile(
         return floor_profile(wrap, proxy_ports, hook_socket);
     }
     seatbelt::profile(
-        &wrap.denied,
+        &wrap.denied_here(),
         &own(wrap)?,
         cwd,
         tmp,
@@ -588,7 +616,7 @@ pub fn floor_profile(
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     seatbelt::floor_profile(
-        &wrap.denied,
+        &wrap.denied_here(),
         &wrap.held,
         &own(wrap)?,
         proxy_ports,
@@ -616,18 +644,35 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
         return Ok(own);
     };
     own.dirs.push(home.clone());
-    // No other project's Codex home is read: their sessions are their own. The folder of homes
-    // itself is looked up, never listed (measured: without its metadata no path below it
-    // resolves).
-    if let Some(homes) = home.parent() {
+    // No project's former Codex home is read: their sessions are brought to the profile before
+    // the wrap ([`prepare`]).
+    if let Some(homes) = wrap.former.as_deref().and_then(Path::parent) {
         own.deny
             .push(format!("(deny file-read* (subpath {}))", quote(homes)?));
-        own.after.push(format!(
-            "(allow file-read-metadata (literal {}))",
-            quote(homes)?
-        ));
-        own.after
-            .push(format!("(allow file-read* (subpath {}))", quote(home)?));
+    }
+    // No other profile's folder is read or written, and the chat's own is reached through
+    // the folders above it, looked up and never listed.
+    if let Some(profiles) = wrap.carved() {
+        for (all, own_home) in super::kernel_names(profiles)
+            .iter()
+            .zip(super::kernel_names(home))
+        {
+            own.deny.push(format!(
+                "(deny file-read* file-write* (require-all (subpath {}) (require-not (subpath \
+                 {}))))",
+                string(&all.display().to_string())?,
+                string(&own_home.display().to_string())?
+            ));
+            for above in own_home.ancestors().skip(1) {
+                if !above.starts_with(all) {
+                    break;
+                }
+                own.after.push(format!(
+                    "(allow file-read-metadata (literal {}))",
+                    string(&above.display().to_string())?
+                ));
+            }
+        }
     }
     own.allow.push(format!(
         "(regex {})",

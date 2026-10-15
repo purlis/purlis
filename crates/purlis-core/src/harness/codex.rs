@@ -223,11 +223,13 @@ impl HarnessAdapter for Codex {
                  was started."
             ));
         };
-        // D-88q: a Codex home of the project's own, never the operator's.
+        // D-88q, as amended 2026-10-15 (#2037): the folder of a profile for sandboxed chats
+        // only, never the operator's own Codex home.
         let Some(home) = &wrap.home else {
             return Err(format!(
-                "{lead} purlis has no data folder on this machine to keep this project's Codex \
-                 home in, so nothing was started."
+                "{lead} a sandboxed Codex chat runs in the folder of a profile for sandboxed \
+                 chats only, and this chat is on no such profile, so nothing was started. Make \
+                 or choose a sandbox-only Codex profile in Settings › You › Profiles."
             ));
         };
         let profile = crate::sandbox::codex::profile(
@@ -238,7 +240,7 @@ impl HarnessAdapter for Codex {
             at.hook_socket,
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
-        // Only now, with the line known to start (review F6): a refused chat seeds no home.
+        // Only now, with the line known to start (review F6): a refused chat readies no home.
         crate::sandbox::codex::prepare(wrap, cwd, &armed);
         let mut charters = charters;
         let tail =
