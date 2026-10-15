@@ -77,7 +77,7 @@ fn unsafe_at(doing: &'static str, at: &Path) -> impl FnOnce(std::io::Error) -> H
 /// Serve the session protocol at `place` until `until` resolves, then end every program it
 /// runs and remove the socket. `ready` is called once the host accepts. `window` is the window
 /// that started this host, when one did: its chats, in its process or in this one, run below it.
-/// `hosting` holds the programs.
+/// `hosting` holds the programs, and the kill switch as it read it when it was made.
 pub async fn serve(
     place: &Place,
     window: Option<Window>,

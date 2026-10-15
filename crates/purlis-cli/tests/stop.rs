@@ -91,3 +91,26 @@ fn stop_without_all_is_refused_and_stops_nothing() {
     assert!(!said.status.success(), "{said:?}");
     assert!(!purlis_core::halt::stopped_on_disk(&config));
 }
+
+#[test]
+fn the_command_line_cannot_re_arm_what_it_stopped() {
+    // ADR 0071, as amended for #2001: the command line stops, and only the window re-arms. Any
+    // agent can run a command, so no spelling of a re-arm is one.
+    let (dir, config) = outside_any_plane();
+    let stopped = charter(dir.path(), &config, &["stop", "--all"]);
+    assert!(stopped.status.success(), "{stopped:?}");
+
+    for asked in [
+        &["rearm"][..],
+        &["re-arm"],
+        &["stop", "--rearm"],
+        &["stop", "--all", "--undo"],
+    ] {
+        let said = charter(dir.path(), &config, asked);
+
+        assert!(!said.status.success(), "{asked:?} re-armed: {said:?}");
+        assert!(purlis_core::halt::stopped_on_disk(&config), "{asked:?}");
+    }
+    let journal = purlis_core::halt::journal(&config);
+    assert_eq!(journal.len(), 1, "only the stop: {journal:?}");
+}

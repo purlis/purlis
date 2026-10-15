@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import process from "node:process";
 import { LOGS } from "./processes.js";
 
@@ -550,6 +550,15 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
   mkdirSync(dirname(wrapper), { recursive: true });
   writeFileSync(wrapper, theProfilesProgram(program));
   chmodSync(wrapper, 0o755);
+  // On macOS a Codex chat runs at the floor, so only on a sandbox-only profile (#2037): the
+  // state run's machine store has one, `scenario` (`declareTheStateRunsProfile`), and a
+  // project of a state spec's own makes it its default rather than declaring a Codex of its own.
+  // That profile runs the program the state run gave it, so `program` is not used here: every
+  // state spec passes the same reporting harness the run does.
+  if (kind === "codex" && process.platform === "darwin") {
+    writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
+    return;
+  }
   writeFileSync(
     join(plane, "charter.local.toml"),
     [
@@ -566,6 +575,88 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
       "",
     ].join("\n"),
   );
+}
+
+/**
+ * **The state run's profile** for `plane`, running `program` as Codex: on macOS, where Codex
+ * runs at the floor, a sandbox-only profile in the run's machine store, whose folder of programs
+ * is put first on `environment`'s `PATH` (#2037); elsewhere, where no floor wraps Codex, the
+ * project's own declared profile, as before.
+ */
+export function declareTheStateRunsProfile(
+  plane: string,
+  program: string,
+  environment: Record<string, string>,
+): void {
+  if (process.platform !== "darwin") {
+    declareAProfile(plane, program, "codex");
+    return;
+  }
+  const programs = declareASandboxOnlyCodexProfile(
+    plane,
+    program,
+    environment.CHARTER_CONFIG_HOME,
+    environment.CHARTER_DATA_HOME,
+  );
+  environment.PATH = [programs, process.env.PATH ?? ""].join(delimiter);
+}
+
+/**
+ * **A sandbox-only Codex profile that runs `program`** (#2037, the operator's ruling of
+ * 2026-10-15): a sandboxed Codex chat, the floor's included, runs only on a profile this machine
+ * keeps for sandboxed chats only. So the run's machine store (`configHome`, `dataHome`) gets one,
+ * named `scenario`, with its folder made as the store makes it, and `plane`'s local settings make
+ * it the default. Its program is `codex` on the folder this answers, which goes first on the
+ * app's `PATH`: it answers Codex's `login status` as signed in, and runs the profile's command
+ * (`theProfilesProgram`) for everything else. Beside the plane, never in it, as
+ * `declareAProfile`'s program is.
+ */
+export function declareASandboxOnlyCodexProfile(
+  plane: string,
+  program: string,
+  configHome: string,
+  dataHome: string,
+): string {
+  const wrapper = theProfilesWrapper(plane);
+  mkdirSync(dirname(wrapper), { recursive: true });
+  writeFileSync(wrapper, theProfilesProgram(program));
+  chmodSync(wrapper, 0o755);
+  const bin = join(`${plane}.programs`, "bin");
+  mkdirSync(bin, { recursive: true });
+  const codex = join(bin, "codex");
+  writeFileSync(
+    codex,
+    [
+      "#!/bin/sh",
+      "# Written by the scenario tests: Codex, as a sandbox-only profile runs it.",
+      'case "$1" in login) exit 0 ;; esac',
+      `exec ${JSON.stringify(wrapper)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(codex, 0o755);
+  const folder = join(dataHome, "profiles", "scenario", "config");
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const store = join(configHome, "charter");
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(store, "profiles.json"),
+    JSON.stringify({
+      version: 1,
+      profiles: [
+        {
+          name: "scenario",
+          harness: "codex",
+          title: "scenario",
+          folders: { config: folder },
+          sandbox_only: true,
+        },
+      ],
+    }) + "\n",
+    { mode: 0o600 },
+  );
+  writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
+  return bin;
 }
 
 /**

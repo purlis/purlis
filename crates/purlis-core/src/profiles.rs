@@ -313,6 +313,16 @@ impl ProfileSet {
     }
 }
 
+/// **Whether `profile` is one this machine keeps for sandboxed chats only** (#2037, ruled
+/// 2026-10-15): a profile purlis made here whose record says `sandbox_only`. A profile a clone
+/// declares, or a built-in, never is.
+pub fn sandbox_only(profile: &Profile) -> bool {
+    profile.source == Source::Machine
+        && crate::profilestore::listed_here()
+            .iter()
+            .any(|record| record.name == profile.name && record.sandbox_only)
+}
+
 /// The profile `record`, one purlis made on this machine, runs: its harness's own program, with
 /// each of its harness's folder variables set to the folder the record names. None for a
 /// harness purlis does not ship, a name a profile cannot have, a folder that is no absolute

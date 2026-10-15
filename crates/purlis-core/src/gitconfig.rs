@@ -102,6 +102,40 @@ pub fn configured_work_tree(cwd: &str, git_dir: Option<&str>) -> Option<String> 
 /// string before `Path.parents` walks up, so `<dir>/link/..` ascends from `<dir>` whatever `link`
 /// points at. That is the oracle's answer and it is kept.
 pub fn git_dir_at(cwd: &str) -> Option<String> {
+    match discover(cwd) {
+        Discovered::Repository { git_dir, .. } => Some(git_dir),
+        Discovered::Nothing | Discovered::Unknown => None,
+    }
+}
+
+/// What [`discover`] found up from a folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Discovered {
+    /// A `.git` folder, or the folder a `.git` file names (`git_dir`), at `top`.
+    Repository { git_dir: String, top: String },
+    /// No `.git` up to the root.
+    Nothing,
+    /// The walk could not finish: an error other than a missing path, or a `.git` file that
+    /// names no folder. [`git_dir_at`] answers `None` for it, as it always has; a caller that
+    /// must not take "could not tell" for "no repository" tells the two apart here.
+    Unknown,
+}
+
+/// [`git_dir_at`]'s walk, with where the `.git` was found and with "could not tell" apart from
+/// "no repository" ([`Discovered`]).
+pub fn discover(cwd: &str) -> Discovered {
+    let Some((found, top)) = discover_from(cwd) else {
+        return Discovered::Unknown;
+    };
+    match found {
+        Some(git_dir) => Discovered::Repository { git_dir, top },
+        None => Discovered::Nothing,
+    }
+}
+
+/// `Some((Some(git dir), top))` for a repository, `Some((None, _))` for none up to the root,
+/// and `None` where the walk could not tell.
+fn discover_from(cwd: &str) -> Option<(Option<String>, String)> {
     // `Path(os.path.abspath(Path(cwd)))`.
     let pure = pure_path(cwd);
     let start = if is_abs(&pure) {
@@ -115,15 +149,18 @@ pub fn git_dir_at(cwd: &str) -> Option<String> {
     loop {
         let dot = path_div(&directory, ".git");
         match kind_of(&dot) {
-            Ok(Kind::Dir) => return Some(dot),
-            Ok(Kind::File) => return pointer_target(&dot, &directory),
+            Ok(Kind::Dir) => return Some((Some(dot), directory)),
+            Ok(Kind::File) => {
+                let target = pointer_target(&dot, &directory)?;
+                return Some((Some(target), directory));
+            }
             Ok(Kind::Other) => {}
             // `except OSError: return None` — an error `pathlib` does not swallow stops the walk.
             Err(()) => return None,
         }
         let parent = parent_of(&directory);
         if parent == directory {
-            return None;
+            return Some((None, directory));
         }
         directory = parent;
     }

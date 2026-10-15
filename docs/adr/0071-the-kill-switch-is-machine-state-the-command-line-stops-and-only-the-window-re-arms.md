@@ -77,11 +77,9 @@ directory (V16). That is follow-up work, not this record's.
 Headless agents, triggered chats, and chats a `purlisd` hosts are OV-2. Revoking tokens on
 a stop is OV-4. A policy that throws the switch is OV-5.
 
-## Ruled (V22, 2026-09-30)
+## Amendments
 
-1. **The CLI stops, and only the window re-arms.**
-2. **Tampering is journaled and never re-arms.**
-3. **The operator may open a new shell while stopped.**
-4. **The stop state is its own file**, not a field in `machine.json`.
-5. **Stop asks for no confirmation.**
-6. **Re-arming restarts nothing.**
+The amendments to this decision are files of their own in [`0071/`](0071/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

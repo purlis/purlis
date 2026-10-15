@@ -65,9 +65,16 @@
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"reached","by":"you","times":40}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"asked","targets":["tracker.example.com:443","cdn.tracker.example.com:443"]}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"timed_out","target":"tracker.example.com:443"}}}
-{"call":{"id":34,"command":"start_saving","project":"01J9PRJCT00000000000000000"}}
-{"call":{"id":35,"command":"stop_saving","project":"01J9PRJCT00000000000000000"}}
-{"call":{"id":36,"command":"fetch_project","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":34,"command":"stop_all"}}
+{"call":{"id":35,"command":"kill_switch"}}
+{"call":{"id":36,"command":"rearm"}}
+{"reply":{"re":34,"ok":{"kill_switch":{"stopped":true}}}}
+{"reply":{"re":35,"ok":{"kill_switch":{"stopped":true,"why":"the kill switch's state could not be read (permission denied), so every agent is held stopped until purlis's window re-arms it"}}}}
+{"reply":{"re":19,"refused":{"code":"stopped","why":"every agent is stopped by the kill switch; nothing starts until it is re-armed in purlis's window"}}}
+{"reply":{"re":36,"refused":{"code":"not_allowed","why":"re-arming the kill switch is done in purlis's window only; a `terminal` link may stop every agent, never re-arm"}}}
+{"call":{"id":40,"command":"start_saving","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":41,"command":"stop_saving","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":42,"command":"fetch_project","project":"01J9PRJCT00000000000000000"}}
 {"pushed":{"saving":{"project":"01J9PRJCT00000000000000000","saved":true,"moved_tree":false}}}
-{"call":{"id":37,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
+{"call":{"id":43,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
 {"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}

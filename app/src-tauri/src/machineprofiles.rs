@@ -55,6 +55,11 @@ pub struct MachineProfileRow {
     /// would not start on it (another major, or an older one). Null where its chats run on the
     /// version installed, or follow it.
     pub offered: Option<String>,
+    /// Whether it is for sandboxed chats only (#2037): only a sandboxed chat starts on it.
+    pub sandbox_only: bool,
+    /// Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
+    /// page's warning, in the core's words; null where its harness keeps the sign-in from them.
+    pub commands_can_read_sign_in: Option<String>,
 }
 
 /// A plan a profile is signed in to, by the provider id its harness takes.
@@ -98,6 +103,10 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
             pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             installed: None,
             offered: None,
+            sandbox_only: record.sandbox_only,
+            commands_can_read_sign_in: purlis_core::sandbox::signin::commands_can_read(
+                &record.harness,
+            ),
         }
     }
 }
@@ -280,21 +289,32 @@ pub async fn machine_profile_pin(
     .await
 }
 
-/// Makes the profile `name` of the harness `kind`, its settings imported from this machine's.
+/// Makes the profile `name` of the harness `kind`, its settings imported from this machine's;
+/// or, `sandbox_only`, one for sandboxed chats only, with nothing imported (#2037).
 #[tauri::command]
 #[specta::specta]
 pub async fn machine_profile_create(
+    planes: tauri::State<'_, Planes>,
     name: String,
     kind: String,
+    sandbox_only: bool,
 ) -> Result<MachineProfileImported, String> {
-    blocking(move || {
+    let made = blocking(move || {
         let store = store()?;
-        settings_here(|machine| {
-            profilestore::create(&store, &name, &kind, machine, purlis_core::halt::now())
-        })
+        let now = purlis_core::halt::now();
+        if sandbox_only {
+            profilestore::create_sandbox_only(&store, &name, &kind, now)
+        } else {
+            settings_here(|machine| profilestore::create(&store, &name, &kind, machine, now))
+        }
         .map(MachineProfileImported::from)
     })
-    .await
+    .await?;
+    // A sandbox-only Codex profile clears every project's wait for one (#2037).
+    if sandbox_only {
+        crate::asking::every_projects_asks_may_have_moved(&planes);
+    }
+    Ok(made)
 }
 
 /// Imports `name`'s settings again from this machine's.
@@ -394,6 +414,43 @@ pub fn dismiss_sign_in(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     sign_in::dismiss(held.root(), &profile);
+    held.hooks().asks_teller()();
+    Ok(())
+}
+
+/// **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*** (#2037, the
+/// operator's ruling of 2026-10-15): makes a sandbox-only Codex profile, with nothing imported,
+/// and puts the Ask away. The window then opens Codex's own sign-in for it in a shell tab
+/// ([`type_profile_sign_in`]). The profile's name.
+#[tauri::command]
+#[specta::specta]
+pub async fn make_sandbox_only_profile(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let teller = held.hooks().asks_teller();
+    let made = blocking(move || {
+        let made = profilestore::sandbox_only::make(&store()?, purlis_core::halt::now())?;
+        profilestore::sandbox_only::dismiss(&root);
+        Ok(made)
+    })
+    .await?;
+    teller();
+    Ok(made.record.name)
+}
+
+/// Puts away project `plane`'s Ask *Codex needs a sandbox-only profile here* (#2037): Dismiss. A
+/// sandboxed Codex chat's next start asks again while this machine has no such profile.
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_sandbox_only(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    profilestore::sandbox_only::dismiss(held.root());
     held.hooks().asks_teller()();
     Ok(())
 }

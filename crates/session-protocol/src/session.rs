@@ -93,6 +93,10 @@ use crate::view::{Limits, Views};
 /// answered `reach`; `let_go_of_confinement` ends one; and the pushed notice `sandbox` tells
 /// the window what each proxy refused, carried and asks about.
 ///
+/// 1.5 added the kill switch held by the host (#2001, ADR 0071): `stop_all`, `rearm` (the
+/// window's alone) and `kill_switch`, each answered with the switch's state (`kill_switch`), and
+/// the `stopped` refusal of a start while every agent is stopped.
+///
 /// 1.7 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
 /// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
 /// project's auto-save did; and the host's question to the window of who is mid-turn in a
@@ -141,6 +145,9 @@ pub const NOT_ALLOWED: &str = "not_allowed";
 /// The host cannot carry this out now, for a reason its `why` gives (1.2): a start the host
 /// cannot compose, or a program it could not run.
 pub const NOT_STARTED: &str = "not_started";
+/// Every agent is stopped by the kill switch, and nothing starts until the window re-arms it
+/// (1.5, ADR 0071); or a re-arm that could not be kept, so every agent stays stopped.
+pub const STOPPED: &str = "stopped";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -151,6 +158,7 @@ pub const REFUSALS: &[&str] = &[
     NO_SUCH_PROJECT,
     NOT_ALLOWED,
     NOT_STARTED,
+    STOPPED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -266,6 +274,16 @@ pub enum Command {
     },
     /// What a confinement's board of live asks holds now (1.4): answered [`Answer::Reach`].
     ReachOf { confinement: String },
+    /// Throw the kill switch (1.5, ADR 0071): end every program the host runs, in every
+    /// project, and start none until the window re-arms it. The host keeps the stop across its
+    /// own restart. Answered [`Answer::KillSwitch`].
+    StopAll,
+    /// Let programs start again (1.5): the window's alone, on a `local-ui` link
+    /// ([`crate::grants::Power::Rearm`]). Nothing that was stopped is started again. Answered
+    /// [`Answer::KillSwitch`].
+    Rearm,
+    /// Whether every agent is stopped (1.5): answered [`Answer::KillSwitch`].
+    KillSwitch,
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -602,10 +620,24 @@ pub enum Answer {
     ReachChanged { retry: Vec<String> },
     /// What a confinement's board holds now: [`Command::ReachOf`] (1.4).
     Reach(ReachNow),
+    /// The kill switch as it stands: [`Command::StopAll`], [`Command::Rearm`] and
+    /// [`Command::KillSwitch`] (1.5).
+    KillSwitch(KillSwitch),
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
     Done,
+}
+
+/// The kill switch as the host holds it (1.5, ADR 0071).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KillSwitch {
+    /// Every agent is stopped, and nothing starts until the window re-arms.
+    pub stopped: bool,
+    /// What the host has to say of the switch, when it has something: a stop it could not keep
+    /// across its restart, or a state it could not read and so holds as stopped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
 }
 
 /// What a host said of a program it started ([`Client::start_program_told`]).
@@ -790,6 +822,9 @@ wire_words!(Command {
     LetGoOfConfinement => "let_go_of_confinement",
     ChangeReach => "change_reach",
     ReachOf => "reach_of",
+    StopAll => "stop_all",
+    Rearm => "rearm",
+    KillSwitch => "kill_switch",
     StartSaving => "start_saving",
     StopSaving => "stop_saving",
     FetchProject => "fetch_project",
@@ -802,7 +837,7 @@ impl Command {
     /// [`serve`] asks the host whether it is a secret's.
     pub fn power(&self) -> Power {
         match self {
-            Command::List | Command::Readiness { .. } => Power::List,
+            Command::List | Command::Readiness { .. } | Command::KillSwitch => Power::List,
             Command::Attach { .. }
             | Command::Detach { .. }
             | Command::AttachView { .. }
@@ -810,7 +845,8 @@ impl Command {
             Command::Write { .. } => Power::Write,
             Command::Resize { .. } => Power::Resize,
             Command::Answer { .. } => Power::Answer,
-            Command::Stop { .. } | Command::Close { .. } => Power::Stop,
+            Command::Stop { .. } | Command::Close { .. } | Command::StopAll => Power::Stop,
+            Command::Rearm => Power::Rearm,
             Command::Start(_) | Command::StartProgram(_) => Power::Start,
             Command::HoldProject { .. }
             | Command::LetGoOfProject { .. }
@@ -840,6 +876,7 @@ wire_words!(Answer {
     Confined => "confined",
     ReachChanged => "reach_changed",
     Reach => "reach",
+    KillSwitch => "kill_switch",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -1248,6 +1285,9 @@ impl Lane {
             | Command::LetGoOfProject { .. }
             | Command::Deal { .. }
             | Command::DealtAlready { .. }
+            | Command::StopAll
+            | Command::Rearm
+            | Command::KillSwitch
             | Command::MidTurn { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
@@ -1344,6 +1384,17 @@ impl Calls {
 async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Refusal> {
     let scope = peer.scope();
     let word = command.word();
+    if let Command::Rearm = command
+        && !scope.may(Power::Rearm)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "re-arming the kill switch is done in purlis's window only; a `{scope}` link may \
+                 stop every agent, never re-arm"
+            ),
+        });
+    }
     if !scope.may(command.power()) {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
@@ -1699,6 +1750,29 @@ impl Client {
             .await?
         {
             Answer::Dealt { number } => Ok(number),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Throw the kill switch: every program the host runs ends, and none starts until the
+    /// window re-arms (1.5).
+    pub async fn stop_all(&self) -> Result<KillSwitch, CallError> {
+        self.kill_switch_after(Command::StopAll).await
+    }
+
+    /// Let programs start again (1.5): refused on every link but the window's.
+    pub async fn rearm(&self) -> Result<KillSwitch, CallError> {
+        self.kill_switch_after(Command::Rearm).await
+    }
+
+    /// Whether every agent is stopped (1.5).
+    pub async fn kill_switch(&self) -> Result<KillSwitch, CallError> {
+        self.kill_switch_after(Command::KillSwitch).await
+    }
+
+    async fn kill_switch_after(&self, command: Command) -> Result<KillSwitch, CallError> {
+        match self.call(command).await? {
+            Answer::KillSwitch(switch) => Ok(switch),
             other => Err(unexpected(&other)),
         }
     }

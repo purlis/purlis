@@ -390,48 +390,9 @@ host: the app leaves its controlling terminal as it starts (`charter_core::noter
 - **A charter-written ACP adapter program for Claude Code.** It would stand in for the harness's
   program, and it would break the operator's standing rule on languages.
 
-## Ruled (V28, 2026-10-01)
+## Amendments
 
-1. **purlis offers ACP agents no `fs` and no `terminal` client methods.** A harness whose ACP
-   adapter program can't work without them waits for level 3 (V28a).
-2. **A level-3 chat opened in a tab shows its transcript as a view tab.** *Continue in terminal*
-   is an explicit `switch`, disabled with the reason shown when the harness lacks
-   `resumes_by_id`. New tab chats still start in their terminal (V24a) (V28b).
-3. **"Allow always" is shown only where the ACP adapter program keeps it for the session.** Where
-   it persists into the worktree's harness settings, as `claude-agent-acp` does into
-   `.claude/settings.local.json`, purlis hides it and offers allow-once only, saying why. A policy
-   can hide it everywhere (C9) (V28c).
-4. **An ACP ask has no deadline.** It stays in needs you until answered, cancelled or stopped
-   (V28d).
-
-## Ruled (V77, 2026-10-03, the HP-2 review)
-
-5. **A level-3 agent leads its own process group, not its own session, and the host never has
-   a controlling terminal.** `process_group(0)` stays; no new `unsafe`. The app and `purlisd`
-   leave their terminal as they start, with a test that a host started in a terminal has none
-   afterwards, and none after it opens a terminal pair. §1 is amended to say so.
-
-## Amended 2026-10-14: every harness's tool server reaches the app on the chat's own socket and token (#1996)
-
-Ruled 2026-10-14 (round 2 of the browser-flow grill): *"Every harness's tool server gets the
-chat's socket and token; browser tools ride the hook socket on a framed byte stream."*
-
-- **The chat's existing token and hook socket reach every harness's tool server**, the ACP
-  agent's included. The server is handed the four variables that connect the chat's hooks to the
-  app (`PURLIS_HOOK_SOCKET`, `PURLIS_CHAT`, `PURLIS_CHAT_TOKEN`, `PURLIS_HARNESS`;
-  `chattools::CONNECTION_ENV`) beside the chat's place. It is the token minted at the chat's
-  `exec` for its hooks: nothing is minted for the server, no scope is widened, and no value is
-  written to a file or a command line. Claude Code and opencode hand it on in the environment
-  they give a stdio server; Codex by the names in `env_vars`; an ACP agent in `session/new`'s
-  `mcpServers[].env`, over its own stdio, from the environment it already runs in.
-- **The hook socket carries a framed byte stream beside its lines**, chosen by the client with a
-  hello line and accepted by the app on one line; an app from before it is asked again in lines.
-  Every framed ask is admitted as a line is (the token, then the sending process), so an answer
-  may be larger than a line and may carry bytes without a second way in. The wire is recorded in
-  `docs/plane-format.md` (`app/hooks.sock`).
-- **To be confirmed** (D-1996, the implementation's choices, recorded in PR #2067): the hello as a
-  line of its own kind rather than a preamble or a second socket; a frame as a four-byte
-  big-endian length and a kind byte (JSON or bytes), a reply as a JSON head and one bytes frame
-  per attachment; Codex given names, never values; an ask's frame held to a line's bound and a
-  reply's frames to 16 MiB; an attachment that is not an image passed to MCP as an embedded blob
-  resource; `persona_where` the first tool to ask over frames.
+The amendments to this decision are files of their own in [`0080/`](0080/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

@@ -65,6 +65,14 @@ impl Host for Board {
                 rows: 24,
                 kind: Some(kind),
             }),
+            Command::StopAll | Command::KillSwitch => Answer::KillSwitch(session::KillSwitch {
+                stopped: true,
+                why: None,
+            }),
+            Command::Rearm => Answer::KillSwitch(session::KillSwitch {
+                stopped: false,
+                why: None,
+            }),
             _ => Answer::Done,
         })
     }
@@ -236,6 +244,11 @@ fn every_command() -> Vec<Command> {
         Command::LetGoOfConfinement {
             confinement: CONFINEMENT.into(),
         },
+        // The kill switch (1.5, ADR 0071): any scope that may stop stops every program, and
+        // only the window re-arms.
+        Command::StopAll,
+        Command::KillSwitch,
+        Command::Rearm,
     ]
 }
 
@@ -273,6 +286,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "change_reach",
             "reach_of",
             "let_go_of_confinement",
+            "stop_all",
+            "kill_switch",
+            "rearm",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",
@@ -289,6 +305,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "unsubscribe",
             "close",
             "readiness",
+            "stop_all",
+            "kill_switch",
         ],
         Scope::FleetMcp => &[
             "list",
@@ -297,6 +315,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "unsubscribe",
             "close",
             "readiness",
+            "stop_all",
+            "kill_switch",
         ],
         Scope::Approval => &[
             "list",
@@ -306,6 +326,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "unsubscribe",
             "close",
             "readiness",
+            "stop_all",
+            "kill_switch",
         ],
         Scope::Editor => &[],
     }
@@ -371,6 +393,36 @@ async fn editor_may_call_none_of_the_session_commands() {
 #[tokio::test]
 async fn remote_link_may_drive_a_chat_but_never_answer_its_asks() {
     check_the_row(Scope::RemoteLink).await;
+}
+
+#[tokio::test]
+async fn every_scope_that_may_stop_stops_all_and_is_told_in_words_that_only_the_window_re_arms() {
+    for scope in [
+        Scope::Terminal,
+        Scope::FleetMcp,
+        Scope::Approval,
+        Scope::RemoteLink,
+    ] {
+        let board = Board::new(false);
+        let client = linked(scope, board.clone()).await;
+
+        let stopped = client.stop_all().await.expect("a stop needs no human");
+        let refused = client.rearm().await.unwrap_err();
+
+        assert!(stopped.stopped, "{scope}");
+        let refusal = refused.refusal().expect("refused by the host");
+        assert_eq!(refusal.code, session::NOT_ALLOWED, "{scope}");
+        assert!(
+            refusal.why.contains("purlis's window"),
+            "{scope}: the refusal does not say where a re-arm is made: {}",
+            refusal.why
+        );
+        assert_eq!(
+            board.heard(),
+            ["stop_all"],
+            "{scope}: the re-arm never reached the host"
+        );
+    }
 }
 
 #[tokio::test]

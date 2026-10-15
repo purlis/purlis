@@ -4,7 +4,9 @@ Read the spec before changing behaviour: [`docs/spec.md`](docs/spec.md). The dec
 reasons are in [`docs/adr/`](docs/adr/), starting at ADR 0025; the plane on disk is
 [`docs/plane-format.md`](docs/plane-format.md). ADRs 0001 to 0024 are the Python charter's and stay
 in `purlis/purlis-plane` as history (ADR 0044). A new decision is the next number in
-`docs/adr/`.
+`docs/adr/`. An amendment to a decision is a file of its own,
+`docs/adr/<NNNN>/<yyyy-mm-dd>-<slug>.md`, never a section added to the record, so pull requests
+amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
 
 ## Priorities, in order
 

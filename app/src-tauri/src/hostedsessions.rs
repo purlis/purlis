@@ -28,6 +28,10 @@
 //! plans a chat's egress proxy from the sandbox it compiled, and the host starts and holds it,
 //! so it outlives the window's link.
 //!
+//! **The kill switch is the host's too** (#2001, ADR 0071): the window's switch reaches it over
+//! the same link ([`Connection`] is its [`crate::killswitch::Authority`]), so a stop ends every
+//! program the host runs and holds across the host's restart, and only the window re-arms.
+//!
 //! **One link for every project.** The window's link to its host ([`HostLink`]) carries every
 //! project's chats: their views come on it, word that a program ended, and their hooks' lines.
 //!
@@ -135,6 +139,46 @@ impl Connection {
                 .wait_timeout(state, left)
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
+        }
+    }
+}
+
+/// The window's switch reaches the host's over the window's link, as `local-ui`: the one link
+/// whose `rearm` the host takes.
+impl crate::killswitch::Authority for Connection {
+    fn stop(&self) -> Result<Option<String>, String> {
+        let switch = self.kill_switch_after(Command::StopAll)?;
+        if !switch.stopped {
+            return Err(switch
+                .why
+                .unwrap_or_else(|| "it does not hold every agent stopped".into()));
+        }
+        Ok(switch.why)
+    }
+
+    fn rearm(&self) -> Result<(), String> {
+        let switch = self.kill_switch_after(Command::Rearm)?;
+        if switch.stopped {
+            return Err(switch
+                .why
+                .unwrap_or_else(|| "it still holds every agent stopped".into()));
+        }
+        Ok(())
+    }
+
+    fn stopped(&self) -> Result<bool, String> {
+        Ok(self.kill_switch_after(Command::KillSwitch)?.stopped)
+    }
+}
+
+impl Connection {
+    /// Sends one of the kill switch's commands, and answers the switch as the host holds it.
+    fn kill_switch_after(&self, command: Command) -> Result<session::KillSwitch, String> {
+        match self.wait(LINK_WITHIN)?.call(command)? {
+            Answer::KillSwitch(switch) => Ok(switch),
+            other => Err(format!(
+                "the session host answered the kill switch with {other:?}"
+            )),
         }
     }
 }
@@ -902,6 +946,19 @@ impl Drop for SavedInTheHost {
     }
 }
 
+/// What kind of program the host is asked to start: a shell is the operator's, or the person's
+/// own login shell with no harness in it; anything else, a profile's own command among them, is
+/// a harness. The host lets the window's shell through the kill switch (ADR 0071, ruled 3), and
+/// the window refuses, before it asks, every shell that is not the operator's.
+fn kind_of(opening: &Opening) -> ProgramKind {
+    let the_persons_shell = opening.harness.is_none() && opening.program.is_none();
+    if opening.operator_shell || the_persons_shell {
+        ProgramKind::Shell
+    } else {
+        ProgramKind::Harness
+    }
+}
+
 /// The window's own start, as the host is handed it. Where the chat's hooks report is the
 /// host's to say (#2000), so the launch says nothing of it.
 fn launch_of(opening: &Opening, program: String) -> Launch {
@@ -951,13 +1008,7 @@ impl SessionHost for HostedSessions {
             cols: Some(opening.size.columns),
             rows: Some(opening.size.rows),
             launch: Some(launch_of(opening, program)),
-            ..StartProgram::of(
-                project,
-                match opening.harness {
-                    Some(_) => ProgramKind::Harness,
-                    None => ProgramKind::Shell,
-                },
-            )
+            ..StartProgram::of(project, kind_of(opening))
         };
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);

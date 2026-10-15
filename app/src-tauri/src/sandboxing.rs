@@ -99,7 +99,14 @@ fn ahead_with(
         None,
     )?)?;
     let row = SandboxAhead {
-        locked: sandbox::policy::Locks::of(root).opt_out_refused(),
+        // Policy's lock first; a profile for sandboxed chats only is never started without it
+        // either (#2037).
+        locked: sandbox::policy::Locks::of(root)
+            .opt_out_refused()
+            .or_else(|| {
+                purlis_core::profiles::sandbox_only(profile)
+                    .then(|| purlis_core::start::SANDBOX_ONLY_LOCK.to_owned())
+            }),
         ..row
     };
     Some(if !approved && row.state == "sandboxed" {

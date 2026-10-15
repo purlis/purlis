@@ -25,6 +25,13 @@
 //! them is refused every person's scope (ADR 0068 §5, FD-27's item 2). Each program's pid is
 //! listed too, so one that left the host's tree and kept its session is refused as well.
 //!
+//! **The kill switch is the host's** (#2001, ADR 0071): `stop_all` ends every program it runs
+//! and starts none until the window re-arms, and the stop is kept in the host's own folder
+//! ([`crate::killswitch`]), so a host started again while stopped starts nothing either. The
+//! one start let through while stopped is a shell the window opens: looking at what the agents
+//! did is the operator's act (ADR 0071, ruled 3), and the window, which alone may re-arm, says
+//! which shell is the operator's.
+//!
 //! **A held project is saved here when the window asks** (#2002): the host runs the binary's
 //! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
 //! is composed, and tells every subscriber what each look did. One saver per project, however
@@ -39,6 +46,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::StreamExt;
+use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
@@ -52,6 +60,7 @@ use tokio::sync::mpsc;
 
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
+use crate::killswitch::Switch;
 use crate::serving::Window;
 
 /// A start, as the host hands it to its [`Compose`]: the project it is in, the number the chat
@@ -289,6 +298,7 @@ struct Inner {
     state: Mutex<State>,
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
+    switch: Switch,
 }
 
 #[derive(Default)]
@@ -367,36 +377,77 @@ struct Hosted {
 }
 
 impl Hosting {
-    /// A host whose starts `compose` composes, each run in a terminal of its own.
+    /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
+    /// switch kept in memory only: a test's.
     pub fn new(compose: impl Compose) -> Hosting {
         Hosting::running_with(compose, Terminals)
     }
 
     /// A host whose starts `compose` composes and `run` runs, which hears no hooks and starts no
-    /// chat's confinement.
+    /// chat's confinement, its kill switch kept in memory only: a test's.
     pub fn running_with(compose: impl Compose, run: impl Run) -> Hosting {
         Hosting::with(compose, run, HearsNothing, ConfinesNothing)
     }
 
     /// A host whose starts `compose` composes and `run` runs, and whose held projects' hooks
-    /// `hear` hears (#2000).
+    /// `hear` hears (#2000), its kill switch kept in memory only: a test's.
     pub fn hearing_with(compose: impl Compose, run: impl Run, hear: impl Hear) -> Hosting {
         Hosting::with(compose, run, hear, ConfinesNothing)
     }
 
     /// A host whose starts `compose` composes and `run` runs, and whose chats' confinements
-    /// `confine` starts (#1999).
+    /// `confine` starts (#1999), its kill switch kept in memory only: a test's.
     pub fn confining(compose: impl Compose, confine: impl Confine, run: impl Run) -> Hosting {
         Hosting::with(compose, run, HearsNothing, confine)
     }
 
     /// A host whose starts `compose` composes and `run` runs, whose held projects' hooks `hear`
-    /// hears (#2000), and whose chats' confinements `confine` starts (#1999).
+    /// hears (#2000), and whose chats' confinements `confine` starts (#1999), its kill switch
+    /// kept in memory only: a test's.
     pub fn with(
         compose: impl Compose,
         run: impl Run,
         hear: impl Hear,
         confine: impl Confine,
+    ) -> Hosting {
+        Hosting::built(compose, run, hear, confine, Switch::in_memory())
+    }
+
+    /// A host whose starts `compose` composes, each run in a terminal of its own, which hears
+    /// no hooks and starts no confinement, with its kill switch kept in `folder`, its own, and
+    /// read from there now: a host started again while stopped starts nothing until the window
+    /// re-arms (ADR 0071). What `purlis serve` runs.
+    pub fn keeping_its_switch_in(folder: &Path, compose: impl Compose) -> Hosting {
+        Hosting::kept(folder, compose, Terminals, HearsNothing, ConfinesNothing)
+    }
+
+    /// [`Hosting::keeping_its_switch_in`], each start run by `run`.
+    pub fn running_with_its_switch_in(
+        folder: &Path,
+        compose: impl Compose,
+        run: impl Run,
+    ) -> Hosting {
+        Hosting::kept(folder, compose, run, HearsNothing, ConfinesNothing)
+    }
+
+    /// [`Hosting::with`], with its kill switch kept in `folder`, its own, and read from there
+    /// now (ADR 0071): what the window's host runs.
+    pub fn kept(
+        folder: &Path,
+        compose: impl Compose,
+        run: impl Run,
+        hear: impl Hear,
+        confine: impl Confine,
+    ) -> Hosting {
+        Hosting::built(compose, run, hear, confine, Switch::kept_in(folder))
+    }
+
+    fn built(
+        compose: impl Compose,
+        run: impl Run,
+        hear: impl Hear,
+        confine: impl Confine,
+        switch: Switch,
     ) -> Hosting {
         Hosting {
             inner: Arc::new(Inner {
@@ -407,6 +458,7 @@ impl Hosting {
                 hear: Box::new(hear),
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
+                switch,
             }),
         }
     }
@@ -674,7 +726,37 @@ impl Hosting {
         drop(gone);
     }
 
+    /// Whether `start`, from `peer`, is let through the kill switch: nothing is while it is
+    /// thrown, but a shell the window opens.
+    fn let_through(&self, start: &StartProgram, peer: &Peer) -> Result<(), Refusal> {
+        let the_operators_shell =
+            start.kind == ProgramKind::Shell && peer.scope() == Scope::LocalUi;
+        if self.inner.switch.is_stopped() && !the_operators_shell {
+            return Err(Refusal {
+                code: session::STOPPED.into(),
+                why: self.inner.switch.refusal(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Throws the kill switch: kept first, so nothing starts from here on, then every program
+    /// the host runs is ended, all at once. Each stays, with its last screen, until closed.
+    async fn stop_all(&self) -> Answer {
+        let switch = self.inner.switch.stop();
+        let programs: Vec<Arc<dyn Running>> = self
+            .state()
+            .programs
+            .values()
+            .filter(|hosted| !hosted.ended)
+            .map(|hosted| Arc::clone(&hosted.running))
+            .collect();
+        let _ = tokio::task::spawn_blocking(move || stop_together(programs)).await;
+        Answer::KillSwitch(switch)
+    }
+
     async fn start(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
+        self.let_through(&start, peer)?;
         let size = Size {
             columns: start.cols.unwrap_or(80),
             rows: start.rows.unwrap_or(24),
@@ -809,6 +891,12 @@ impl Hosting {
                 ended: false,
             },
         );
+        // A stop thrown while this one was being started: it is listed by now, so either the
+        // stop's sweep reached it or this check sees the switch thrown.
+        if self.let_through(&start, peer).is_err() {
+            let stopping = Arc::clone(&running);
+            let _ = tokio::task::spawn_blocking(move || stopping.stop()).await;
+        }
         let hosting = self.clone();
         let ended = program.clone();
         let run = start.run.clone();
@@ -1295,6 +1383,18 @@ impl session::Host for Hosting {
             Command::ReachOf { confinement } => {
                 Ok(Answer::Reach(self.confinement(&confinement)?.now()))
             }
+            Command::StopAll => Ok(self.stop_all().await),
+            // Only the window's link reaches this: the grants refuse every other.
+            Command::Rearm => self
+                .inner
+                .switch
+                .rearm()
+                .map(Answer::KillSwitch)
+                .map_err(|why| Refusal {
+                    code: session::STOPPED.into(),
+                    why,
+                }),
+            Command::KillSwitch => Ok(Answer::KillSwitch(self.inner.switch.state())),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -1428,22 +1528,28 @@ impl Hosting {
                 .collect();
             (hosted, confinements)
         };
-        let ending: Vec<_> = hosted
-            .into_iter()
-            .filter_map(|hosted| {
-                std::thread::Builder::new()
-                    .name("purlisd-ending".into())
-                    .spawn(move || hosted.running.stop())
-                    .ok()
-            })
-            .collect();
-        let deadline = std::time::Instant::now() + ENDS_WITHIN;
-        for thread in ending {
-            while !thread.is_finished() && std::time::Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
+        stop_together(hosted.into_iter().map(|hosted| hosted.running).collect());
         // Each chat's proxy ends with the programs: no chat reaches anything once the host has.
         drop(confinements);
+    }
+}
+
+/// Stops every one of `programs` at once, and returns once they are gone or [`ENDS_WITHIN`]
+/// has passed.
+fn stop_together(programs: Vec<Arc<dyn Running>>) {
+    let ending: Vec<_> = programs
+        .into_iter()
+        .filter_map(|running| {
+            std::thread::Builder::new()
+                .name("purlisd-ending".into())
+                .spawn(move || running.stop())
+                .ok()
+        })
+        .collect();
+    let deadline = std::time::Instant::now() + ENDS_WITHIN;
+    for thread in ending {
+        while !thread.is_finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }

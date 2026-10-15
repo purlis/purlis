@@ -269,11 +269,10 @@ fn a_shell_commands_result_goes_to_the_block_hook_as_claude_codes_does() {
 #[test]
 fn a_failed_shell_commands_one_stream_is_read_as_its_standard_error() {
     // opencode hands back a shell command's standard output and error as one text, with its
-    // exit status in `metadata.exit` (read off opencode 1.18.33's bash tool). A command that
-    // failed is read as standard error is, marked mixed so no host or path it printed is named
-    // for a grant (`sandboxblock`); one that did not is one mixed text, of which the detector
-    // reads only a sandbox's own violation lines, so a `cat` that prints a refusal's words
-    // raises nothing.
+    // exit status in `metadata.exit` (read off opencode 1.18.33's bash tool). A command whose
+    // status is a number other than 0 is read as standard error is, marked mixed, so what it
+    // names for a grant follows the mixed stream's rule (`sandboxblock`); any other is one
+    // text, read as Codex's is, so a `cat` that prints a refusal's words raises nothing.
     let text = shim(Arming::Session);
     assert!(
         text.contains(

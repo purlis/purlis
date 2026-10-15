@@ -81,6 +81,7 @@ fn made(kind: &str) -> MachineProfile {
         imported: None,
         sign_in: None,
         pinned: None,
+        sandbox_only: false,
         rest: Default::default(),
     }
 }

@@ -61,3 +61,22 @@ test("a page synced earlier and since deleted from docs/ is removed", () => {
   assert.ok(!existsSync(join(to, "gone.md")));
   assert.ok(existsSync(join(to, "kept.md")));
 });
+
+test("an ADR's page lists its amendments' files, in the order of their names (#1982)", () => {
+  const from = tree({
+    "adr/0067-a-sandbox.md": "# A sandbox\n\n## Amendments\n\nIn [`0067/`](0067/).\n",
+    "adr/0067/2026-10-10-b-later.md": "# Amended (2026-10-10): later\n",
+    "adr/0067/2026-10-06-a-first.md": "# Amended (2026-10-06): first\n",
+    "adr/0068-no-folder.md": "# No folder\n",
+  });
+  const to = mkdtempSync(join(tmpdir(), "sync-out-"));
+  syncDocs({ from, to });
+  assert.equal(
+    readFileSync(join(to, "adr/0067-a-sandbox.md"), "utf8"),
+    '---\ntitle: "A sandbox"\n---\n\n## Amendments\n\nIn [`0067/`](0067/).\n\n' +
+      "- [Amended (2026-10-06): first](0067/2026-10-06-a-first.md)\n" +
+      "- [Amended (2026-10-10): later](0067/2026-10-10-b-later.md)\n",
+  );
+  assert.equal(readFileSync(join(to, "adr/0068-no-folder.md"), "utf8"), '---\ntitle: "No folder"\n---\n');
+  assert.ok(existsSync(join(to, "adr/0067/2026-10-06-a-first.md")));
+});

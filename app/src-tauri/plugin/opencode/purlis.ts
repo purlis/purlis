@@ -113,11 +113,13 @@ const context = (said) => {
 
 // What a tool came back with, in the shape a Claude Code hook is handed it. opencode hands back
 // a shell command's standard output and error as one text, with its exit status beside it
-// (`metadata.exit`). A command that failed is read for a block as standard error is, marked
-// `mixed`: it holds what the command printed too, so purlis names no host or path from it for a
-// grant, and the person types one. One that did not fail is one mixed text, of which purlis
-// reads only a sandbox's own violation lines, so a `cat` that prints a refusal's words raises
-// nothing.
+// (`metadata.exit`). A command whose status is a number other than 0 is passed as standard
+// error marked `mixed`, read as a failed command's error; since it holds what the command
+// printed too, what it names for a grant follows the mixed stream's rule (`sandboxblock`). Any
+// other, one that exited 0 or that has no status, is passed as the one text, read as Codex's
+// is: a sandbox's violation line, and a refusal of the network only where the line runs a
+// program other than a reader, so a `cat` that prints a refusal's words raises nothing. The
+// status also goes beside the result as `exit_code`.
 const response = (tool, output) => {
   const said = String(output?.output ?? "")
   if (tool !== "bash") return { output: said }

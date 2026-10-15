@@ -76,7 +76,7 @@ export function PersonaProfileMissing({
     setBusy(true);
     setRefused(undefined);
     const done = await commands
-      .machineProfileCreate(named, kind)
+      .machineProfileCreate(named, kind, false)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
     setBusy(false);
     if (done.status === "error") {

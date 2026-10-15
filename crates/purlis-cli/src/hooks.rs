@@ -245,7 +245,7 @@ pub fn blocks(
     payload: &serde_json::Value,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<(purlis_core::sandboxblock::Block, Option<String>)> {
-    use purlis_core::sandboxblock::{CHAT_DIR_ENV, Place, detect_with_targets as detect};
+    use purlis_core::sandboxblock::{CHAT_DIR_ENV, Place, background, detect_with_record};
     if !purlis_core::sandbox::chat_is_sandboxed_in(env) {
         return Vec::new();
     }
@@ -260,7 +260,10 @@ pub fn blocks(
     let harness = env(purlis_core::hookwire::HARNESS_ENV);
     // A wrapped harness's sandbox writes no violation report: one in its result is printed.
     let reported = purlis_core::sandboxblock::as_its_harness_reports(payload, harness.as_deref());
-    let found = detect(
+    // A background command's output read back by file is read by how Claude Code's own
+    // record of the task says it ended (#2203).
+    let ended = background::how_it_ended(&reported);
+    let found = detect_with_record(
         &reported,
         &Place {
             root: &here.root,
@@ -268,6 +271,7 @@ pub fn blocks(
             cwd: &cwd,
             home: home.as_deref(),
         },
+        ended,
     );
     // A chat purlis wraps has its refused hosts told by purlis's own proxy, by name (#1663).
     purlis_core::sandboxblock::the_hooks_own(found, harness.as_deref())

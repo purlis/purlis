@@ -284,6 +284,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
         AskSource::SignIn => "Asks you to sign a profile in",
+        AskSource::SandboxOnly => "Asks you to make a sandbox-only profile",
     }
 }
 

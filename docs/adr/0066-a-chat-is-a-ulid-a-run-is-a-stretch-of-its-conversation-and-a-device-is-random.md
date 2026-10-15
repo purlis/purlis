@@ -322,16 +322,6 @@ tickets after it, change:
 - **Chat and run lifecycle states in this record.** They are FD-23's, which lands after this one
   and can only be written once a run exists.
 
-## Ruled (V21, 2026-09-30)
-
-The three calls that went beyond the words of V1 were each ruled yes:
-
-1. **`chat` is in the envelope**, beside V1's seven fields: chat-level events have no run.
-2. **The device id is committed in session records** as a random pseudonym; the principal never
-   is. "Never leaves the machine" means purlis never sends it to a service.
-3. **A mid-chat persona adoption or model switch starts a new run**, and `purlis persona use`
-   tells the host on the hook channel.
-
 ## ADR 0066, amended
 
 **Settled by V43** (operator, 2026-10-02): *"a copied project's chats get new ids, and a moved
@@ -402,31 +392,9 @@ amendment only makes the ids they will write trustworthy. It does not bump the r
 no decision of another area, so it is recorded here, where that sentence is read. This record
 already carries its ruling in place (*Ruled (V21)*, above).
 
-## ADR 0066, amended by FD-26 (2026-10-03, V76)
+## Amendments
 
-*"A cursor older than what the host still keeps gets a fresh snapshot and a marker saying events
-were missed"* is built as the marker alone. The session protocol's `missed` frame names the
-device, the last `seq` the client held and the `seq` the stream resumes at, and it carries no
-snapshot. A client that held state built from the missed events rebuilds it from what follows.
-A client that shows a chat's terminal attaches it again, and the view's stream opens with the
-terminal's snapshot (ADR 0068 §4, as amended by FD-26). That is the client's duty, and it is the
-same path a view that fell behind takes.
-
-## ADR 0066, amended by #1435 (2026-10-07): a chat's persona never changes
-
-**Ruled by the operator on 2026-10-07**, with the acceptance of [ADR 0090](0090-agents-work-together-as-chats-that-are-listed-observable-and-stoppable-and-no-agents-word-is-consent.md)
-as amended: a persona is a role a chat runs as for its whole life. That takes back the persona
-half of V21's third call, *"A mid-chat persona adoption or model switch starts a new run, and
-`purlis persona use` tells the host on the hook channel."*
-
-- **No persona is adopted mid-chat.** `purlis persona use` inside a chat the app started is
-  refused and writes nothing, so it has nothing to tell the host. Work for another persona goes
-  to a chat of its own, by dispatch.
-- **A chat's runs all have one persona.** `persona` stays a field of a run, because the run is
-  who an action is attributed to, and its value is the chat's for every run of that chat.
-- **The `switch` cause keeps its other rows:** another harness or profile, and a model a hook
-  reports. *"a persona adopted mid-chat"* no longer happens. The cost this record names, *"Adopting
-  a persona in the middle of a conversation starts a new run"*, goes with it.
-- **A model switch still starts a new run**, as V21 ruled.
-
-The text above is left as it was written, and this section is the amendment.
+The amendments to this decision are files of their own in [`0066/`](0066/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
