@@ -93,6 +93,8 @@ import { ACTIVITY_VIEW, activitySession, isActivity } from "./activity";
 import { DispatchesTab } from "./DispatchesTab";
 import { TaskChangesTab } from "./TaskChangesTab";
 import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } from "./taskChanges";
+import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
+import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import {
   SAVING_VIEW,
@@ -290,6 +292,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   "piece-diff": GitCompare,
   /** What one task changed (#1511, `taskChanges.ts`). */
   [TASK_CHANGES_VIEW]: GitCompare,
+  /** A change a chat proposed, whole (#1975, `proposedChangeOpen.ts`). */
+  [PROPOSED_CHANGE_VIEW]: GitCompare,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -489,6 +493,14 @@ export function ViewPane({
               </button>
             }
             testid="view-waits"
+          />
+        ) : view.from === null && view.view === PROPOSED_CHANGE_VIEW ? (
+          /* A change a chat proposed to purlis's own configuration, whole, with Apply (#1975,
+             PC-7). Keyed by the proposal, which is the project's. */
+          <ProposedChangeTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            id={Number(view.key)}
           />
         ) : isRepoInstructions(view) ? (
           /* The agent instructions a workspace's repo carries, offered to its memory (FR-18a):

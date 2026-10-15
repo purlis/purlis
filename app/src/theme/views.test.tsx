@@ -1202,6 +1202,22 @@ const STATES: State[] = [
     drawn: /^added line$/,
   },
   {
+    name: "a change a chat proposed, whole (#1975)",
+    view: { from: null, view: "proposed-change", key: "7" },
+    answers: {
+      proposed_change: {
+        path: "purlis.toml",
+        session: 3,
+        before: "[plane]\n",
+        after: '[plane]\nmode = "pr"\n',
+        hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 }],
+        applies: true,
+        why: null,
+      },
+    },
+    drawn: /proposes this change to/,
+  },
+  {
     name: "an extension's view, its action refused",
     view: EXTENSION,
     answers: {

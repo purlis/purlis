@@ -24,6 +24,7 @@ import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
+import { askOpenProposal } from "./proposedChangeOpen";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a chat
@@ -240,7 +241,13 @@ export async function answerTaken(
       case "proposed-change":
         // Apply writes the change the window showed, as the person; Dismiss writes nothing
         // (#1975). Both tell the chat on its next turn.
-        if (option === "apply") return commands.applyProposedChange(plane, path.id);
+        if (option === "apply") return commands.applyProposedChange(plane, path.id, "row");
+        // Too long for a row: its own tab shows it whole, and Apply is pressed there (PC-7).
+        if (option === "open") {
+          askOpenProposal(plane, path.id, path.path);
+          opened = true;
+          return { status: "ok" };
+        }
         if (option === "dismiss") return commands.dismissProposedChange(plane, path.id);
         break;
       case "workspace-removal":

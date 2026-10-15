@@ -162,8 +162,8 @@ pub enum AnswerPath {
         todos: u32,
     },
     /// `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
-    /// proposal `id` (#1975).
-    ProposedChange { id: u32 },
+    /// proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
+    ProposedChange { id: u32, path: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -771,6 +771,9 @@ pub fn workspace_removal(
 pub const APPLY: &str = "apply";
 /// The id of Dismiss on a proposed change.
 pub const DISMISS: &str = "dismiss";
+/// The id of Open on a proposed change too long for a row (PC-7): it opens the change's own
+/// tab, and answers nothing.
+pub const OPEN: &str = "open";
 
 /// The key of chat `session`'s proposal `id`.
 fn proposal_key(id: u32) -> String {
@@ -784,10 +787,12 @@ fn proposal_key(id: u32) -> String {
 pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals::Now) -> Shown {
     use crate::proposals::Now;
     let path = &one.path;
+    let mut opens = false;
     let (says, writes, applies) = match now {
         Now::Made { before, after } => {
             let writes = crate::askwrites::proposed(path, before, after);
             let whole = matches!(writes, crate::askwrites::WritesShown::Whole { .. });
+            opens = crate::askwrites::proposed_too_long(before, after);
             (
                 format!("Proposes a change to {path}, which only you apply"),
                 Some(writes),
@@ -815,6 +820,9 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
             allows: true,
         });
     }
+    if opens {
+        options.push(refuses(OPEN, "Open"));
+    }
     options.push(refuses(DISMISS, "Dismiss"));
     Shown {
         session: one.session,
@@ -823,7 +831,10 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         options,
         source: AskSource::ProposedChange,
         chain: Vec::new(),
-        answer: AnswerPath::ProposedChange { id: one.id },
+        answer: AnswerPath::ProposedChange {
+            id: one.id,
+            path: one.path.clone(),
+        },
         since: None,
         held_until: None,
         writes,

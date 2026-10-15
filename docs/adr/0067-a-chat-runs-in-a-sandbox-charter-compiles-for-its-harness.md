@@ -1625,8 +1625,10 @@ the person applies.
 - **The chat hears fixed words** (PC-10): applied, dismissed or stale, on its next turn. Its
   proposals end with it.
 - **Shown whole** (PC-7): Apply is offered only beside a change the window shows whole. A change
-  too long to show in a row offers Dismiss; a comparison tab that shows it whole, with Apply, is
-  follow-up work.
+  too long for a row offers **Open**, which opens its own tab: the change whole in the comparison
+  view, with Apply there. Apply is judged again by the rules of where it was pressed: from a row,
+  only a change a row shows whole; from the tab, also one too long for a row. A change not shown
+  for anything but its length (a credential's shape, bytes) is applied from nowhere.
 - **Never "always apply"** (PC-13).
 - **Policy** (PC-14): `sandbox.proposed-changes = "off"` holds none, and a chat's edit is refused
   as before.

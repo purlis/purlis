@@ -148,7 +148,14 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
     assert_eq!(
-        apply_in(&root, &one, Some("devops"), &refused, &Mutex::new(())),
+        apply_in(
+            &root,
+            &one,
+            Some("devops"),
+            &refused,
+            &Mutex::new(()),
+            From::Row
+        ),
         Err(Refusal::Not("the event log is not open".to_owned()))
     );
     assert_eq!(manifest(&root), "[plane]\n", "nothing written unaudited");
@@ -158,7 +165,15 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         audited.borrow_mut().push(applied.body());
         Ok(())
     };
-    let said = apply_in(&root, &one, Some("devops"), &audit, &Mutex::new(())).expect("applied");
+    let said = apply_in(
+        &root,
+        &one,
+        Some("devops"),
+        &audit,
+        &Mutex::new(()),
+        From::Row,
+    )
+    .expect("applied");
     assert!(said.starts_with("Applied to purlis.toml"), "{said}");
     assert_eq!(manifest(&root), "[plane]\nmode = \"pr\"\n");
     let bodies: Vec<serde_json::Value> = audited.borrow_mut().drain(..).collect();
@@ -179,7 +194,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
 
     // The file is not what it was proposed against any more: stale, nothing written.
     assert_eq!(
-        apply_in(&root, &one, None, &audit, &Mutex::new(())),
+        apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row),
         Err(Refusal::Stale)
     );
     assert_eq!(manifest(&root), "[plane]\nmode = \"pr\"\n");
@@ -190,7 +205,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         ..one
     };
     assert_eq!(
-        apply_in(&root, &marked, None, &audit, &Mutex::new(())),
+        apply_in(&root, &marked, None, &audit, &Mutex::new(()), From::Row),
         Err(Refusal::Stale)
     );
 }
@@ -222,7 +237,10 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
     assert_eq!(made.source, crate::asking::AskSource::ProposedChange);
     assert_eq!(
         made.answer,
-        crate::asking::AnswerPath::ProposedChange { id: 7 }
+        crate::asking::AnswerPath::ProposedChange {
+            id: 7,
+            path: "purlis.toml".to_owned()
+        }
     );
     assert!(matches!(
         made.writes,
@@ -237,7 +255,8 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
             after: format!("{long}more\n"),
         },
     );
-    assert_eq!(ids(&too_long), ["dismiss"]);
+    // PC-7: too long for a row, it opens its own tab, where Apply is pressed.
+    assert_eq!(ids(&too_long), ["open", "dismiss"]);
     assert!(matches!(
         too_long.writes,
         Some(crate::askwrites::WritesShown::NotShown { .. })
@@ -270,7 +289,7 @@ fn apply_never_writes_a_change_not_shown_whole() {
         panic!("nothing is recorded for a change never written")
     };
     assert_eq!(
-        apply_in(&root, &one, None, &audit, &Mutex::new(())),
+        apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row),
         Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()))
     );
     assert_eq!(manifest(&root), "[plane]\n");
@@ -304,7 +323,7 @@ fn two_applies_against_the_same_file_as_it_was_never_both_write() {
     .into_iter()
     .map(|one| {
         let (root, lock) = (root.clone(), std::sync::Arc::clone(&lock));
-        std::thread::spawn(move || apply_in(&root, &one, None, &|_| Ok(()), &lock))
+        std::thread::spawn(move || apply_in(&root, &one, None, &|_| Ok(()), &lock, From::Row))
     })
     .collect();
     let results: Vec<_> = handles.into_iter().map(|one| one.join().unwrap()).collect();
@@ -344,7 +363,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
         audited.borrow_mut().push(applied.body());
         Ok(())
     };
-    let result = apply_in(&root, &one, None, &audit, &Mutex::new(()));
+    let result = apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row);
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).expect("writable");
     assert!(matches!(result, Err(Refusal::Not(_))), "{result:?}");
     let outcomes: Vec<String> = audited
@@ -354,4 +373,87 @@ fn a_write_that_fails_is_recorded_as_failed() {
         .collect();
     assert_eq!(outcomes, ["intent", "failed"]);
     assert_eq!(manifest(&root), "[plane]\n");
+}
+
+/// PC-7: a change too long for a row is shown whole on its own tab, with Apply there; one not
+/// shown for anything but its length (a credential's shape) is shown nowhere, and offers no
+/// Apply; a stale one says why.
+#[test]
+fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
+    let one = Proposal {
+        id: 7,
+        session: 3,
+        path: "personas/devops/persona.md".to_owned(),
+        base: None,
+        change: mode_pr(),
+        since: 1,
+        stale: false,
+    };
+    let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
+    let whole = whole_of(
+        &one,
+        &Now::Made {
+            before: long.clone(),
+            after: format!("{long}more\n"),
+        },
+    );
+    assert!(whole.applies);
+    assert_eq!(whole.why, None);
+    assert_eq!(whole.after.lines().count(), long.lines().count() + 1);
+
+    let secret = whole_of(
+        &one,
+        &Now::Made {
+            before: String::new(),
+            after: format!("token = \"{}\"\n", token()),
+        },
+    );
+    assert!(!secret.applies);
+    assert_eq!(secret.after, "");
+    assert!(secret.why.is_some());
+
+    let stale = whole_of(&one, &Now::Stale);
+    assert!(!stale.applies);
+    assert_eq!(stale.why.as_deref(), Some(STALE_SAID));
+}
+
+/// PC-7: a change too long for a row is applied only from its own tab, where it is shown whole;
+/// one not shown for anything else (a credential's shape) is refused from anywhere.
+#[test]
+fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
+    let (_dir, root) = project();
+    let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
+    std::fs::write(root.join("purlis.toml"), &long).expect("a long manifest");
+    let one = Proposal {
+        id: 1,
+        session: 3,
+        path: "purlis.toml".to_owned(),
+        base: base_of(Some(long.as_bytes())),
+        change: Change::Whole {
+            content: format!("{long}more\n"),
+        },
+        since: 1,
+        stale: false,
+    };
+    // Too long a whole content to travel: made here, as the app would hold it.
+    let ok = |_: &proposed::Applied<'_>| Ok(());
+    assert_eq!(
+        apply_in(&root, &one, None, &ok, &Mutex::new(()), From::Row),
+        Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()))
+    );
+    assert!(apply_in(&root, &one, None, &ok, &Mutex::new(()), From::Tab).is_ok());
+    assert_eq!(manifest(&root), format!("{long}more\n"));
+
+    std::fs::write(root.join("purlis.toml"), "[plane]\n").expect("a manifest");
+    let secret = Proposal {
+        base: base_of(Some(b"[plane]\n")),
+        change: Change::Whole {
+            content: format!("token = \"{}\"\n", token()),
+        },
+        ..one
+    };
+    assert_eq!(
+        apply_in(&root, &secret, None, &ok, &Mutex::new(()), From::Tab),
+        Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()))
+    );
 }
