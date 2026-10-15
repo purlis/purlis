@@ -11,15 +11,21 @@
 //! window's own process (ADR 0068, Ruled 3).
 //!
 //! **Above the seam nothing changes.** The window composes a chat's start as it always has (its
-//! sandbox and proxy, its hooks, its `PATH`), deals its number and issues its token, and hands
-//! the host that start as its [`Launch`]; the host composes the chat's environment from it with
-//! the same code the window's own path runs (`purlis_core::chatspec`), against the environment
-//! the window started it with. The host runs the program in a terminal of its own and the
-//! window draws it through a view, types into it, resizes and stops it over the session
-//! protocol.
+//! sandbox and proxy, its hooks, its `PATH`), and hands the host that start as its [`Launch`];
+//! the host composes the chat's environment from it with the same code the window's own path
+//! runs (`purlis_core::chatspec`), against the environment the window started it with. The host
+//! runs the program in a terminal of its own and the window draws it through a view, types into
+//! it, resizes and stops it over the session protocol.
+//!
+//! **The host owns each project's hook channel** (#2000). It deals each chat's number, which the
+//! window asks for before the start so the board knows the chat before its first hook; it binds
+//! the project's hook socket, issues each chat its token as it starts it, and admits each line
+//! as the window did. Every line it admits comes to the window on the link and is heard with the
+//! window's own hearing ([`crate::hooks::Relayed`]), so the board, Needs you and the asks move
+//! as before; the reply goes back the same way. The token never reaches the window.
 //!
 //! **One link for every project.** The window's link to its host ([`HostLink`]) carries every
-//! project's chats: their views come on it, and so does word that a program ended.
+//! project's chats: their views come on it, word that a program ended, and their hooks' lines.
 //!
 //! **The host saves the project too** (#2002): the window asks it to as the project opens
 //! ([`HostedSessions`]'s `keep_saving`), and starts no auto-save of its own, so exactly one
@@ -36,13 +42,16 @@ use std::time::{Duration, Instant};
 use purlis_core::engine::Size;
 use purlis_session_protocol::link::{Acceptor, Link};
 use purlis_session_protocol::session::{
-    self, Answer, Client, Command, Events, Exit, Launch, ProgramKind, Pushed, Reporting as Reports,
-    StartProgram, Told, ViewKind,
+    self, Answer, Client, Command, Events, Exit, Launch, ProgramKind, Pushed, StartProgram, Told,
+    ViewKind,
 };
 use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 
+use purlis_core::hookwire::relay::{Heard, Replied, Reply};
+
+use crate::hooks::Relayed;
 use crate::host::{Ends, Opening, Readiness, SessionHost, Sink, Watching};
-use crate::sessions::{ENDED, Reporting, STOPPED, Utf8Stream};
+use crate::sessions::{ENDED, STOPPED, Utf8Stream};
 
 /// The variable that turns the switch on: chats run in the session host. Read once, as the app
 /// starts; internal to the migration, and gone with it (spec #1974).
@@ -159,12 +168,18 @@ struct Shared {
     views: Mutex<Views>,
     /// Who is told as each program ends, by its id.
     ends: Mutex<HashMap<String, TellEnd>>,
+    /// What hears each held project's hook lines, by the project's stable id (#2000).
+    hearing: Mutex<HashMap<String, Arc<Relayed>>>,
     /// Who is told what each look of a project's auto-save did, by the project's id (#2002).
     savings: Mutex<HashMap<String, crate::autosave::Told>>,
     /// Who says which chats are mid-turn in a workspace of a project the host saves, by the
     /// project's id: its plane's board (#2002).
     turns: Mutex<HashMap<String, Turns>>,
 }
+
+/// The most a reply to a hook line may be on the link, its frame's envelope aside: a larger
+/// answer is refused with a sentence rather than sent.
+const A_REPLY_IS_AT_MOST: usize = purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES - 4096;
 
 /// Which chats are mid-turn in a workspace, or `None` where the window cannot say.
 type Turns = Arc<dyn Fn(&str) -> Option<Vec<String>> + Send + Sync>;
@@ -197,7 +212,15 @@ impl HostLink {
             .map_err(|why| format!("the session host refused to tell of its programs: {why}"))?;
         let shared = Arc::new(Shared::default());
         runtime.spawn(take_views(views, Arc::clone(&shared)));
-        let hearing = hear(events, Arc::clone(&client), Arc::clone(&shared));
+        let hearing = hear(
+            events,
+            Arc::clone(&client),
+            Arc::clone(&shared),
+            HookLines {
+                client: Arc::clone(&client),
+                runtime: runtime.clone(),
+            },
+        );
         runtime.spawn(async move {
             hearing.await;
             ended();
@@ -274,6 +297,79 @@ impl HostLink {
     fn when_it_ends(&self, program: &str, tell: TellEnd) {
         lock(&self.shared.ends).insert(program.to_owned(), tell);
     }
+
+    /// Hear the lines `project`'s hooks write with `relayed`, from now on.
+    fn hear_project(&self, project: &str, relayed: Arc<Relayed>) {
+        lock(&self.shared.hearing).insert(project.to_owned(), relayed);
+    }
+}
+
+/// Where the hook lines the host pushes are heard: each by what hears its project's lines
+/// ([`Relayed::take`]), each reply going back on the link in the order it was made.
+struct HookLines {
+    client: Arc<Client>,
+    runtime: tokio::runtime::Handle,
+}
+
+impl HookLines {
+    /// Hear line `id` that `project`'s hooks wrote, with what hears that project's lines.
+    fn hear(&self, shared: &Shared, project: String, id: u64, line: serde_json::Value) {
+        let Some(relayed) = lock(&shared.hearing).get(&project).cloned() else {
+            tracing::warn!("purlis: the session host told a hook line of a project not open here");
+            return;
+        };
+        let heard: Heard = match serde_json::from_value(line) {
+            Ok(heard) => heard,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: a hook line the session host told could not be read: {why}"
+                );
+                return;
+            }
+        };
+        let reply = self.reply(project, id);
+        relayed.take(id, heard, reply);
+    }
+
+    /// What replies to line `id` of `project`: each reply sent at once, behind the one before.
+    fn reply(&self, project: String, id: u64) -> Reply {
+        let client = Arc::clone(&self.client);
+        let runtime = self.runtime.clone();
+        Arc::new(move |replied: Replied| {
+            let reply = within_a_frame(replied);
+            let sent = client.call_now(Command::ReplyHeard {
+                project: project.clone(),
+                heard: id,
+                reply,
+            });
+            runtime.spawn(async move {
+                if let Err(why) = sent.await {
+                    tracing::warn!("purlis: the session host refused a hook line's reply: {why}");
+                }
+            });
+        })
+    }
+}
+
+/// `replied`, as JSON no larger than the link carries: an answer too large is refused in a
+/// sentence instead.
+fn within_a_frame(replied: Replied) -> serde_json::Value {
+    let too_large = |replied: &Replied| {
+        serde_json::to_vec(replied).map_or(true, |said| said.len() > A_REPLY_IS_AT_MOST)
+    };
+    let replied = if too_large(&replied) {
+        let why = format!(
+            "the answer was larger than the session host's link carries ({A_REPLY_IS_AT_MOST} \
+             bytes)"
+        );
+        match replied {
+            Replied::Answer(_) => Replied::Answer(purlis_core::hookwire::Answer::No { why }),
+            _ => Replied::NotTaken { why },
+        }
+    } else {
+        replied
+    };
+    serde_json::to_value(replied).unwrap_or(serde_json::Value::Null)
 }
 
 /// Take each view's stream the host opens, and hand it to its pane, or keep it until the pane
@@ -361,10 +457,15 @@ fn finish_view(shared: &Shared, view: u32) {
     }
 }
 
-/// What the host pushes: a program's end, and a view's.
-async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>) {
+/// What the host pushes: a program's end, a view's, and its projects' hook lines.
+async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, lines: HookLines) {
     while let Some(told) = events.recv().await {
         match told {
+            Told::Pushed(Pushed::Heard {
+                project,
+                heard,
+                line,
+            }) => lines.hear(&shared, project, heard, line),
             Told::Pushed(Pushed::Ended { program, exit, .. }) => {
                 let tell = lock(&shared.ends).remove(&program);
                 if let Some(tell) = tell {
@@ -442,33 +543,57 @@ pub struct HostedSessions {
     root: PathBuf,
     /// The project's stable id, once the host holds it.
     held: Arc<Mutex<Option<String>>>,
-    reporting: Option<Reporting>,
+    /// What hears the lines the host hands on from the project's hook channel (#2000).
+    relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     running: Arc<Mutex<HashMap<u32, Program>>>,
-    /// The highest number dealt so far: it only rises ([`crate::sessions::Sessions`]).
-    opened: AtomicU32,
+    /// The highest number the window knows went out: the host deals them (#2000), and this is
+    /// what the window's record keeps and what it tells the host went out before it held the
+    /// project. It only rises.
+    opened: Arc<AtomicU32>,
     ended: Mutex<Option<Ends>>,
     kill_switch: Arc<crate::killswitch::KillSwitch>,
 }
 
 impl HostedSessions {
-    /// The chats of the project at `root`, run in the host `connection` reaches, reporting to
-    /// `reporting`'s socket.
-    pub fn new(connection: Arc<Connection>, root: &Path, reporting: Option<Reporting>) -> Self {
+    /// The chats of the project at `root`, run in the host `connection` reaches.
+    pub fn new(connection: Arc<Connection>, root: &Path) -> Self {
         HostedSessions {
             connection,
             root: root.to_path_buf(),
             held: Arc::default(),
-            reporting,
+            relayed: Arc::default(),
             running: Arc::default(),
-            opened: AtomicU32::new(0),
+            opened: Arc::default(),
             ended: Mutex::new(None),
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
         }
     }
 
+    fn relayed(&self) -> Option<Arc<Relayed>> {
+        lock(&self.relayed).clone()
+    }
+
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
-        held_on(&self.connection, &self.held, &self.root)
+        held_on(
+            &self.connection,
+            &self.held,
+            &self.relayed,
+            &self.opened,
+            &self.root,
+        )
+    }
+
+    /// The next number the host deals in this project.
+    fn dealt_by_the_host(&self) -> Result<u32, String> {
+        let (link, project) = self.link()?;
+        match link.call(Command::Deal { project })? {
+            Answer::Dealt { number } => {
+                self.opened.fetch_max(number, Ordering::Relaxed);
+                Ok(number)
+            }
+            other => Err(format!("the session host answered a deal with {other:?}")),
+        }
     }
 
     /// The link, and the host's id of chat `id`.
@@ -480,21 +605,16 @@ impl HostedSessions {
         Ok((self.connection.wait(LINK_WITHIN)?, program))
     }
 
-    /// The number a chat opens under: `wanted` where it can still be had, else the next
-    /// (`crate::sessions::Sessions`'s rule).
-    fn number_for(&self, wanted: Option<u32>) -> u32 {
-        let running = lock(&self.running);
-        let id = match wanted {
-            Some(wanted) if wanted > 0 && !running.contains_key(&wanted) => wanted,
-            _ => self.opened.load(Ordering::Relaxed) + 1,
-        };
-        self.opened.fetch_max(id, Ordering::Relaxed);
-        id
-    }
-
-    fn forget_token(&self, id: u32) {
-        if let Some(reporting) = &self.reporting {
-            reporting.tokens.forget(id);
+    /// The number a chat opens under: `wanted` where it can still be had, else the next the
+    /// host deals (`crate::sessions::Sessions`'s rule, the host dealing).
+    fn number_for(&self, wanted: Option<u32>) -> Result<u32, String> {
+        let free = wanted.filter(|wanted| *wanted > 0 && !lock(&self.running).contains_key(wanted));
+        match free {
+            Some(wanted) => {
+                self.opened.fetch_max(wanted, Ordering::Relaxed);
+                Ok(wanted)
+            }
+            None => self.dealt_by_the_host(),
         }
     }
 
@@ -534,10 +654,13 @@ impl HostedSessions {
 }
 
 /// The link `connection` reaches, with the project at `root` held on it: `held` keeps its id
-/// once it is.
+/// once it is. Before the hold the host's lines for the project are heard through `relayed`,
+/// and after it the host is told the numbers `opened` has dealt (#2000).
 fn held_on(
     connection: &Connection,
     held: &Mutex<Option<String>>,
+    relayed: &Mutex<Option<Arc<Relayed>>>,
+    opened: &AtomicU32,
     root: &Path,
 ) -> Result<(Arc<HostLink>, String), String> {
     let link = connection.wait(LINK_WITHIN)?;
@@ -547,12 +670,33 @@ fn held_on(
     }
     let project = purlis_core::scaffold::planefile::ensure_project_id(root)
         .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
+    // Before the hold, so the host's first line for the project is heard.
+    if let Some(relayed) = lock(relayed).clone() {
+        link.hear_project(&project, relayed);
+    }
     link.call(Command::HoldProject {
         project: project.clone(),
         project_path: root.display().to_string(),
     })?;
+    // The numbers that went out before the host held the project are never dealt again.
+    let dealt = opened.load(Ordering::Relaxed);
+    if dealt > 0 {
+        link.call(Command::DealtAlready {
+            project: project.clone(),
+            dealt,
+        })?;
+    }
     *held = Some(project.clone());
     Ok((link, project))
+}
+
+/// What holds a project on the window's link, for a thread of its own: [`held_on`]'s.
+struct Holding {
+    connection: Arc<Connection>,
+    held: Arc<Mutex<Option<String>>>,
+    relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
+    opened: Arc<AtomicU32>,
+    root: PathBuf,
 }
 
 /// A project the session host saves for the window (#2002): asked for once the link is ready,
@@ -575,12 +719,14 @@ struct Asked {
 }
 
 impl SavedInTheHost {
-    fn start(
-        connection: Arc<Connection>,
-        held: Arc<Mutex<Option<String>>>,
-        root: PathBuf,
-        told: crate::autosave::Told,
-    ) -> SavedInTheHost {
+    fn start(holding: Holding, told: crate::autosave::Told) -> SavedInTheHost {
+        let Holding {
+            connection,
+            held,
+            relayed,
+            opened,
+            root,
+        } = holding;
         let asked: Arc<Mutex<Asked>> = Arc::default();
         let (poke, poked) = std::sync::mpsc::channel();
         let asking = Arc::clone(&asked);
@@ -589,7 +735,7 @@ impl SavedInTheHost {
         let started = std::thread::Builder::new()
             .name("saved in the session host".into())
             .spawn(move || {
-                let (link, project) = match held_on(&connection, &held, &root) {
+                let (link, project) = match held_on(&connection, &held, &relayed, &opened, &root) {
                     Ok(held) => held,
                     Err(why) => {
                         tracing::warn!(
@@ -734,8 +880,9 @@ impl Drop for SavedInTheHost {
     }
 }
 
-/// The window's own start, as the host is handed it.
-fn launch_of(opening: &Opening, program: String, token: Option<(&Path, &str)>) -> Launch {
+/// The window's own start, as the host is handed it. Where the chat's hooks report is the
+/// host's to say (#2000), so the launch says nothing of it.
+fn launch_of(opening: &Opening, program: String) -> Launch {
     Launch {
         program,
         args: opening.args.clone(),
@@ -749,10 +896,7 @@ fn launch_of(opening: &Opening, program: String, token: Option<(&Path, &str)>) -
             .git_hooks
             .as_ref()
             .map(|hooks| hooks.dir().display().to_string()),
-        reporting: token.map(|(socket, token)| Reports {
-            socket: socket.display().to_string(),
-            token: token.to_owned(),
-        }),
+        reporting: None,
     }
 }
 
@@ -777,28 +921,12 @@ impl SessionHost for HostedSessions {
             .program
             .clone()
             .unwrap_or_else(crate::sessions::shell);
-        let id = self.number_for(wanted);
-        let token = match &self.reporting {
-            Some(reporting) => Some(
-                reporting
-                    .tokens
-                    .issue(id)
-                    .map_err(|err| format!("no token for the chat: {err}"))?,
-            ),
-            None => None,
-        };
+        let id = self.number_for(wanted)?;
         let start = StartProgram {
             number: Some(id),
             cols: Some(opening.size.columns),
             rows: Some(opening.size.rows),
-            launch: Some(launch_of(
-                opening,
-                program,
-                self.reporting
-                    .as_ref()
-                    .zip(token.as_ref())
-                    .map(|(reporting, token)| (reporting.socket.as_path(), token.expose())),
-            )),
+            launch: Some(launch_of(opening, program)),
             ..StartProgram::of(
                 project,
                 match opening.harness {
@@ -815,7 +943,6 @@ impl SessionHost for HostedSessions {
             Ok(Answer::ProgramStarted {
                 program, number, ..
             }) if number != Some(id) => {
-                self.forget_token(id);
                 link.send(Command::Close { program });
                 return Err(format!(
                     "the session host started this chat as number {}, not {id}, so it was \
@@ -827,32 +954,19 @@ impl SessionHost for HostedSessions {
                 program, process, ..
             }) => (program, process),
             Ok(other) => {
-                self.forget_token(id);
                 return Err(format!("the session host answered a start with {other:?}"));
             }
-            Err(why) => {
-                self.forget_token(id);
-                return Err(why);
-            }
+            Err(why) => return Err(why),
         };
         let (program, pid) = started;
-        // Its program, which every line for the chat must come from or from inside (D-1407-6),
-        // as the window's own path binds it.
-        if let (Some(reporting), Some(pid)) = (&self.reporting, pid) {
-            match purlis_core::hookwire::Program::of(pid) {
-                Some(bound) => reporting.tokens.bind(id, bound),
-                None => tracing::warn!(
-                    "purlis: chat {id}'s program (pid {pid}) could not be confirmed as it \
-                     started, so none of its lines will be read until it is restarted"
-                ),
-            }
+        // Its program, which the host reads every line for the chat from: what a caller that
+        // waited compares (qw381).
+        let relayed = self.relayed();
+        if let (Some(relayed), Some(pid)) = (&relayed, pid) {
+            relayed.started(id, pid);
         }
         // No hook reports a program dying: the host says so, as the operating system told it.
         let tell = lock(&self.ended).clone();
-        let tokens = self
-            .reporting
-            .as_ref()
-            .map(|reporting| Arc::clone(&reporting.tokens));
         let running = Arc::clone(&self.running);
         let ended = program.clone();
         link.when_it_ends(
@@ -864,8 +978,8 @@ impl SessionHost for HostedSessions {
                     Some(chat) if chat.id == ended => chat.process = None,
                     _ => return,
                 }
-                if let (Some(tokens), Some(pid)) = (&tokens, pid) {
-                    tokens.program_ended(id, pid);
+                if let Some(relayed) = &relayed {
+                    relayed.ended(id, pid);
                 }
                 if let Some(tell) = &tell {
                     tell(
@@ -950,7 +1064,9 @@ impl SessionHost for HostedSessions {
     }
 
     fn close(&self, id: u32) -> Result<(), String> {
-        self.forget_token(id);
+        if let Some(relayed) = self.relayed() {
+            relayed.ended(id, None);
+        }
         let program = lock(&self.running).remove(&id).ok_or_else(|| gone(id))?;
         if let Ok(link) = self.connection.wait(Duration::ZERO) {
             for view in &program.views {
@@ -1009,22 +1125,38 @@ impl SessionHost for HostedSessions {
         }
     }
 
+    /// The host deals it (#2000). With no host there is no chat to start under it, so a
+    /// number past every one the window knows is taken, and the start says why it cannot run.
     fn deal(&self) -> u32 {
-        self.opened.fetch_add(1, Ordering::Relaxed) + 1
+        self.dealt_by_the_host().unwrap_or_else(|why| {
+            tracing::warn!("purlis: the session host dealt no number ({why})");
+            // Never wrapped round to a chat's that runs: past the last number, the last.
+            self.opened
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .map_or(u32::MAX, |was| was + 1)
+        })
     }
 
     fn dealt(&self) -> u32 {
         self.opened.load(Ordering::Relaxed)
     }
 
+    /// Kept, and told to the host as it holds the project: a project the host holds already
+    /// is told now.
     fn already_dealt(&self, dealt: u32) {
         self.opened.fetch_max(dealt, Ordering::Relaxed);
+        let project = lock(&self.held).clone();
+        if let (Some(project), Ok(link)) = (project, self.connection.wait(Duration::ZERO)) {
+            link.send(Command::DealtAlready { project, dealt });
+        }
     }
 
     fn reports_to(&self) -> Option<PathBuf> {
-        self.reporting
-            .as_ref()
-            .map(|reporting| reporting.socket.clone())
+        self.relayed().map(|relayed| relayed.socket().to_path_buf())
+    }
+
+    fn hear_through(&self, relayed: Arc<Relayed>) {
+        *lock(&self.relayed) = Some(relayed);
     }
 
     /// Saved in the session host, where this project's chats run: the window starts no worker
@@ -1035,9 +1167,13 @@ impl SessionHost for HostedSessions {
         told: crate::autosave::Told,
     ) -> Box<dyn crate::autosave::Saver> {
         Box::new(SavedInTheHost::start(
-            Arc::clone(&self.connection),
-            Arc::clone(&self.held),
-            root.to_path_buf(),
+            Holding {
+                connection: Arc::clone(&self.connection),
+                held: Arc::clone(&self.held),
+                relayed: Arc::clone(&self.relayed),
+                opened: Arc::clone(&self.opened),
+                root: root.to_path_buf(),
+            },
             told,
         ))
     }

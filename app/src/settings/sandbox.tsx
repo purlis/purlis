@@ -11,6 +11,7 @@ import {
   type SandboxState,
   type SettingsEdit,
   type SettingsFile,
+  type YourLevel,
 } from "../bindings";
 import {
   allowLabel,
@@ -150,10 +151,11 @@ function capitalised(said: string): string {
 
 /**
  * **The mode as a status line** (#1340): a project's sandbox is on for everyone or not set, and
- * the only way to run one chat without it is that chat's own tab (ADR 0067 §7). Turn the sandbox
- * on writes `mode = "on"`; nothing here takes it back off, and it has no Undo (D-SE17g).
+ * the line says the level your chats start at (#2071). Turn the sandbox
+ * on writes `mode = "on"`, which has no Undo (D-SE17g); a person turns it down for their own
+ * chats with their level (Change your level, ADR 0096), and a team with a commit of its own.
  */
-function modeStatus(sandbox: SandboxState | undefined): Control {
+function modeStatus(sandbox: SandboxState | undefined, yourLevel?: () => void): Control {
   // A project whose manifest is gone or unreadable refuses every chat (#1411, D-1410e): that is
   // its state, never "off", and turning the sandbox on would write a manifest in its place.
   const manifest = sandbox?.manifest ?? null;
@@ -172,22 +174,45 @@ function modeStatus(sandbox: SandboxState | undefined): Control {
     kind: "status",
     hint:
       required === null
-        ? "Settings can turn it on, never off."
+        ? "Settings turns it on for everyone here. Your own level turns it down for your chats alone."
         : "Policy on this machine turns it on for every project.",
     // Any `mode` reads as on: one that is not "on" is refused and read as on (ADR 0067).
-    status: (value) =>
-      required !== null || value !== ""
-        ? [
-            required ??
-              "On for everyone in this project. To run one chat without it, use that chat's tab.",
-            // The opt-out count is this machine's, and is never sent (ADR 0067 §7, V78 d).
-            ...(sandbox?.on === true && sandbox.said !== null
-              ? [`${capitalised(sandbox.said)}. Counted on this machine only, and never sent.`]
-              : []),
-          ].join(" ")
-        : "Off in this project.",
+    status: (value) => {
+      const on = required !== null || value !== "";
+      return [
+        on
+          ? (required ?? "On for everyone in this project.")
+          : "Not turned on in this project, so chats here start at the floor.",
+        // Your own level, where it starts your chats here otherwise (#2071).
+        ...yoursSaid(sandbox?.yours ?? null, on),
+        // The opt-out count is this machine's, and is never sent (ADR 0067 §7, V78 d).
+        ...(on && sandbox?.on === true && sandbox.said !== null
+          ? [`${capitalised(sandbox.said)}. Counted on this machine only, and never sent.`]
+          : []),
+      ].join(" ");
+    },
     ...(required === null ? { turnOn: { label: "Turn the sandbox on", value: "on" } } : {}),
+    // Straight to the page where you set your own level (#2071).
+    ...(yourLevel === undefined
+      ? {}
+      : { goTo: { label: "Change your level", onPress: yourLevel } }),
   };
+}
+
+/** What your own level makes of the project's for your chats, where it changes it (#2071). */
+function yoursSaid(yours: YourLevel | null, on: boolean): string[] {
+  if (yours === null) return [];
+  const how = yours.confirmed ? "your level, confirmed on this machine" : "your level";
+  switch (yours.level) {
+    case "off":
+      return [`Off for you: ${how}.`];
+    case "floor":
+      return on ? [`Floor for you: ${how}.`] : [];
+    case "on":
+      return on ? [] : [`On for you: ${how}.`];
+    default:
+      return [];
+  }
 }
 
 /**
@@ -295,9 +320,12 @@ function certificateChecks(sandbox: SandboxState | undefined): Control {
 }
 
 /** The sandbox's settings kept in the committed file, in the order the page draws them. */
-export function sandboxControls(sandbox: SandboxState | undefined): Control[] {
+export function sandboxControls(
+  sandbox: SandboxState | undefined,
+  yourLevel?: () => void,
+): Control[] {
   return [
-    modeStatus(sandbox),
+    modeStatus(sandbox, yourLevel),
     internetAccess(sandbox?.presets ?? [], sandbox?.policy ?? null),
     certificateChecks(sandbox),
   ];

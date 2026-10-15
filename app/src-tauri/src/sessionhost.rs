@@ -27,7 +27,7 @@
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use purlis_session_protocol::auth::{Credential, Scope};
@@ -109,6 +109,106 @@ pub fn launched(
         number,
         size,
     )
+}
+
+/// What hears each held project's hooks in the window's session host (#2000): the host's
+/// [`purlis_host::Hear`] for the window's binary.
+///
+/// **The project's hook channel, as the window bound it before.** At the same place
+/// ([`crate::hooks::socket_for`]), with the same listener and every one of its checks: the
+/// token, the process that sent it, each framed ask again, the spool's keys beside it. Only who
+/// listens changes, and the host is each chat's ancestor, so a hook admits it. Each line it
+/// admits is handed on to the window ([`purlis_core::hookwire::relay`]).
+pub struct HookChannels;
+
+impl purlis_host::Hear for HookChannels {
+    fn open(
+        &self,
+        _project: &str,
+        path: &Path,
+        hand_on: purlis_host::HandOn,
+    ) -> Result<Option<Arc<dyn purlis_host::Channel>>, String> {
+        use purlis_core::hookwire::relay::Relaying;
+        let at = crate::hooks::socket_for(Some(path));
+        let listener = purlis_core::hookwire::Listener::bind(&at.within, &at.socket)
+            .map_err(|why| format!("its hook socket at {} ({why})", at.socket.display()))?;
+        let socket = listener.path().to_path_buf();
+        let tokens = listener.tokens();
+        let relaying = Relaying::new(Box::new(move |id, heard| {
+            serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line))
+        }));
+        let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
+        Ok(Some(Arc::new(HookChannel {
+            socket,
+            tokens,
+            relaying,
+            reading: Mutex::new(Some(reading)),
+        })))
+    }
+}
+
+/// One held project's hook channel in the host.
+struct HookChannel {
+    socket: PathBuf,
+    tokens: Arc<purlis_core::hookwire::ChatTokens>,
+    relaying: Arc<purlis_core::hookwire::relay::Relaying>,
+    reading: Mutex<Option<purlis_core::hookwire::Reading>>,
+}
+
+impl purlis_host::Channel for HookChannel {
+    fn report_to(&self, number: u32) -> Result<session::Reporting, String> {
+        let token = self.tokens.issue(number).map_err(|why| why.to_string())?;
+        Ok(session::Reporting {
+            socket: self.socket.display().to_string(),
+            token: token.expose().to_owned(),
+        })
+    }
+
+    fn bind(&self, number: u32, pid: u32) {
+        match purlis_core::hookwire::Program::of(pid) {
+            Some(program) => self.tokens.bind(number, program),
+            None => purlis_host_says(&format!(
+                "chat {number}'s program (pid {pid}) could not be confirmed as it started, so \
+                 none of its lines will be read until it is restarted"
+            )),
+        }
+    }
+
+    fn ended(&self, number: u32, pid: u32) {
+        self.tokens.program_ended(number, pid);
+    }
+
+    fn forget(&self, number: u32) {
+        self.tokens.forget(number);
+    }
+
+    fn replied(&self, id: u64, reply: serde_json::Value) {
+        match serde_json::from_value(reply) {
+            Ok(replied) => self.relaying.replied(id, replied),
+            Err(why) => {
+                purlis_host_says(&format!("a reply the window sent could not be read: {why}"))
+            }
+        }
+    }
+}
+
+/// The channel stops: every line still waiting on the window is let go of, then the socket.
+impl Drop for HookChannel {
+    fn drop(&mut self) {
+        self.relaying.let_go();
+        drop(
+            self.reading
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(),
+        );
+    }
+}
+
+/// One line in the host's log, which the window keeps.
+fn purlis_host_says(line: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "purlisd: {line}");
 }
 
 /// The window's session host, while it runs.

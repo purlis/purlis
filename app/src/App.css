@@ -5672,6 +5672,23 @@ h2.sidebar-title .node-icon {
   align-items: center;
 }
 
+/* The level of the chat in front (#2071), the mark its tab carries, here whole: the bar keeps
+   its room, so it never gives way as a squeezed tab's does. */
+.title-bar-sandbox {
+  display: inline-flex;
+  align-items: center;
+}
+
+.title-bar-sandbox > .tab-sandbox {
+  overflow: visible;
+  margin-inline-start: 0;
+}
+
+.title-bar-sandbox > .tab-sandbox > .tab-mark {
+  margin-inline-start: 0;
+  color: var(--text-secondary);
+}
+
 /* About charter, in the same chrome as the update item beside it — one row, one shape. */
 .title-about {
   display: flex;

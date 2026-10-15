@@ -2921,11 +2921,14 @@ fn refuse_beside_the_old_app() {
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
-    purlis_host::serve_for_the_window_if_asked(
-        sessionhost::place,
-        || purlis_host::FromTheWindow(sessionhost::launched),
-        || hostsaving::InTheHost,
-    )
+    purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
+        purlis_host::Hosting::hearing_with(
+            purlis_host::FromTheWindow(sessionhost::launched),
+            purlis_host::Terminals,
+            sessionhost::HookChannels,
+        )
+        .saving_with(hostsaving::InTheHost)
+    })
 }
 
 /// Where every project's chats run, chosen once as the app starts: in the window's own
@@ -2938,18 +2941,20 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
         tracing::info!("purlis: chats run in the session host on this launch");
         let host = app.state::<sessionhost::SessionHost>();
         let connection = host.connection();
-        // The host saves the projects too (#2002): a quit it does not answer in time ends it
-        // before the save at quit.
-        let planes = planes.ending_the_host_with(host.ender());
-        return planes.running_sessions_on(std::sync::Arc::new(
-            move |reporting, root: &std::path::Path| {
-                Box::new(hostedsessions::HostedSessions::new(
-                    std::sync::Arc::clone(&connection),
-                    root,
-                    reporting,
-                ))
-            },
-        ));
+        // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
+        return planes
+            .running_sessions_on(std::sync::Arc::new(
+                move |_reporting, root: &std::path::Path| {
+                    Box::new(hostedsessions::HostedSessions::new(
+                        std::sync::Arc::clone(&connection),
+                        root,
+                    ))
+                },
+            ))
+            .hearing_hooks_through_the_host()
+            // The host saves the projects too (#2002): a quit it does not answer in time ends
+            // it before the save at quit.
+            .ending_the_host_with(host.ender());
     }
     let _ = app;
     planes

@@ -1897,6 +1897,9 @@ pub struct Planes {
     /// Makes each plane's session host (FD-3): [`Sessions`] in the app, told where its chats
     /// report.
     hosting: Hosting,
+    /// Whether the session host owns each plane's hook channel, where the window would bind
+    /// it (#2000): the window then hears what the host hands on.
+    hooks_in_the_host: bool,
     /// The host's event log (FD-9), shared by every project: one writer per device. None until
     /// the app opens it, and on a machine that has no data home.
     events: Option<hooks::Events>,
@@ -2136,6 +2139,7 @@ impl Planes {
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
             hosting: Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting))),
+            hooks_in_the_host: false,
             events: None,
             sweep: Arc::new(|root| {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
@@ -2215,6 +2219,14 @@ impl Planes {
     /// the session host, behind the start-time switch (`crate::hostedsessions`, #1998).
     pub fn running_sessions_on(mut self, hosting: Hosting) -> Self {
         self.hosting = hosting;
+        self
+    }
+
+    /// Hears every plane's hooks through the session host, which owns each plane's hook channel
+    /// (#2000): nothing is bound in this process, and each plane's session host is told what
+    /// hears the lines it hands on ([`SessionHost::hear_through`]).
+    pub fn hearing_hooks_through_the_host(mut self) -> Self {
+        self.hooks_in_the_host = true;
         self
     }
 
@@ -3363,13 +3375,22 @@ impl Planes {
         // up with every chat `unknown` and says so, which is a working project with one
         // feature missing rather than no project at all.
         let at = hooks::socket_for(Some(&root));
-        let hooks = Hooks::listening_on(
-            id.clone(),
-            &at,
-            Arc::clone(&self.tell),
-            Arc::clone(&self.by_hand),
-        )
-        .unwrap_or_else(|why| {
+        let hooks = if self.hooks_in_the_host {
+            Ok(Hooks::relayed(
+                id.clone(),
+                &at,
+                Arc::clone(&self.tell),
+                Arc::clone(&self.by_hand),
+            ))
+        } else {
+            Hooks::listening_on(
+                id.clone(),
+                &at,
+                Arc::clone(&self.tell),
+                Arc::clone(&self.by_hand),
+            )
+        };
+        let hooks = hooks.unwrap_or_else(|why| {
             tracing::warn!(
                 "purlis: no hook channel at {} ({why}); every chat in {} will show as \
                      unknown",
@@ -3412,6 +3433,10 @@ impl Planes {
         };
         // The project every chat started here is of, sandbox and all (#1410).
         let mut chats = Chats::on_host(recorder, (self.hosting)(reporting, &root), root.clone());
+        // What the session host hands on from the hook channel it owns for this plane (#2000).
+        if let Some(relayed) = hooks.relayed_from_the_host() {
+            chats.sessions().hear_through(relayed);
+        }
         chats.arming_with(self.shipped.clone());
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);

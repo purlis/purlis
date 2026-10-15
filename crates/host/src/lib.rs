@@ -38,12 +38,16 @@
 //! socket.
 
 #[cfg(unix)]
+mod hearing;
+#[cfg(unix)]
 mod hosting;
 #[cfg(unix)]
 mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
 
+#[cfg(unix)]
+pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
     ASK_WITHIN, AskTheWindow, Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting,
@@ -63,19 +67,18 @@ pub const SERVE_FOR_THE_WINDOW: &str = "purlis-serve-for-the-window";
 pub const READY: &str = "ready";
 
 /// When the window's binary was started as its session host ([`SERVE_FOR_THE_WINDOW`]), serve
-/// at the place `place` names until the window closes this process's standard input, composing
-/// each start with what `compose` gives and saving each project the window asks it to with what
-/// `save` gives, and give the code to exit with; otherwise `None`, before anything is read or
-/// opened.
+/// at the place `place` names until the window closes this process's standard input, holding
+/// its programs and projects in what `hosting` gives (which composes each start and hears each
+/// held project's hooks), and give the code to exit with; otherwise `None`, before anything is
+/// read or opened.
 ///
 /// The window is this process's parent, and every chat it runs is below it, so a peer below it
 /// is inside a chat ([`Window`]). The ready line goes to standard output and what the host has
 /// to say to standard error, which the window keeps in its log.
 #[cfg(unix)]
-pub fn serve_for_the_window_if_asked<C: Compose, S: Save>(
+pub fn serve_for_the_window_if_asked(
     place: impl FnOnce() -> Option<Place>,
-    compose: impl FnOnce() -> C,
-    save: impl FnOnce() -> S,
+    hosting: impl FnOnce() -> Hosting,
 ) -> Option<i32> {
     if std::env::args_os().nth(1)? != SERVE_FOR_THE_WINDOW {
         return None;
@@ -85,7 +88,7 @@ pub fn serve_for_the_window_if_asked<C: Compose, S: Save>(
         Some(place) => run(
             &place,
             Some(window),
-            Hosting::new(compose()).saving_with(save()),
+            hosting(),
             until_the_window_closes_its_end(),
         ),
         None => {

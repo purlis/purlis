@@ -23,8 +23,10 @@
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
 //! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | |
-//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.3) | yes | | | | | |
 //! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | |
+//! | `deal`, `dealt_already` (1.3) | yes | | | | | |
+//! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | |
+//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.4) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -40,7 +42,14 @@
 //!   with the row it is like.
 //! - **Holding a project is the window's alone** (1.2): a hold says where the project is on the
 //!   host's machine, and only the window, whose projects they are, says so or lets go.
-//!   Saving one goes with that row (1.3): the project's commits and pushes are the person's.
+//! - **A project's numbers are dealt for the window alone** (1.3), as its holds are: `deal`
+//!   and `dealt_already` go with the `hold_project` row.
+//! - **A held project's hook lines are heard and answered by the window alone** (1.3). The host
+//!   pushes each line only to the links that hold the project, which only `local-ui` may, and
+//!   only `local-ui` replies: a reply can carry an ask's answer, which no other scope gives here.
+//! - **Saving a held project is the window's alone** (1.4), with the `hold_project` row: the
+//!   project's commits and pushes are the person's, and the host's question of who is
+//!   mid-turn goes only to the window's links, which alone answer it.
 //! - **Only a human scope answers an ask, and a secret's ask only in the window** (V16, V75):
 //!   `local-ui` and `approval`. Whether an ask elicits a secret is the host's to say
 //!   ([`crate::session::Host::elicits_a_secret`]), and a host that does not say is taken to
@@ -86,12 +95,14 @@ pub enum Power {
     /// The UI RPC: the app's own commands, vault values and settings writes among them.
     UiRpc,
     /// `hold_project` and `let_go_of_project` (1.2): where a project is on the host's machine.
-    /// And `start_saving`, `stop_saving`, `fetch_project` and `mid_turn` (1.3): whether and how
+    /// And `start_saving`, `stop_saving`, `fetch_project` and `mid_turn` (1.4): whether and how
     /// the host saves it.
     Hold,
     /// A start's `launch` (1.2): a program, its words and its environment as the window composed
     /// them.
     Launch,
+    /// `reply_heard` (1.3): the window's reply to a line a held project's hooks wrote.
+    Heard,
 }
 
 impl Scope {
@@ -133,6 +144,13 @@ mod tests {
         for scope in Scope::ALL {
             assert_eq!(scope.may(Power::Launch), scope == Scope::LocalUi, "{scope}");
             assert_eq!(scope.may(Power::Hold), scope == Scope::LocalUi, "{scope}");
+        }
+    }
+
+    #[test]
+    fn only_the_window_replies_to_what_a_projects_hooks_wrote() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Heard), scope == Scope::LocalUi, "{scope}");
         }
     }
 

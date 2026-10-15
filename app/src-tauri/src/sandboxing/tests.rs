@@ -1730,6 +1730,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             expects: None,
             team_off: None,
             level_held: None,
+            yours: None,
         }
     );
 
@@ -1762,6 +1763,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             expects: None,
             team_off: None,
             level_held: None,
+            yours: None,
         }
     );
 }
@@ -1794,6 +1796,7 @@ fn keeping_it_off_leaves_the_project_as_it_was_and_asks_no_more() {
             expects: None,
             team_off: None,
             level_held: None,
+            yours: None,
         }
     );
     assert_eq!(
@@ -2003,4 +2006,62 @@ fn under_a_never_policy_the_state_says_why_no_level_goes_lower() {
     let held = state.level_held.expect("held");
     assert!(held.contains("policy = \"never\""), "{held}");
     assert_eq!(state.team_off, None);
+}
+
+/// #2071: the Sandbox page says your own level, as a chat you start here would take it, and
+/// whether you confirmed it; a level the file alone says, lower than the project's, is not one.
+#[test]
+fn settings_says_your_level_as_it_starts_your_chats_here() {
+    use purlis_core::sandbox::personal::{self, Choice};
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    let local = project.path().join(purlis_core::profiles::LOCAL_FILE);
+    assert_eq!(state_on(project.path(), sandbox::Os::MacOs).yours, None);
+    std::fs::write(&local, "[sandbox]\nlevel = \"off\"\n").unwrap();
+    assert_eq!(state_on(project.path(), sandbox::Os::MacOs).yours, None);
+    personal::set_by_you(project.path(), None, Some(Choice::Off)).unwrap();
+    assert_eq!(
+        state_on(project.path(), sandbox::Os::MacOs).yours,
+        Some(YourLevel {
+            level: "off".to_owned(),
+            confirmed: true
+        })
+    );
+}
+
+/// #2071: the page says your level only as a start takes it: a floor a policy that forbids the
+/// opt-out keeps at the full sandbox is not said as yours.
+#[test]
+fn settings_says_no_floor_of_yours_that_policy_keeps_at_the_full_sandbox() {
+    use purlis_core::sandbox::personal::{self, Choice};
+    use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join(purlis_core::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"floor\"\n",
+    )
+    .unwrap();
+    personal::set_by_you(project.path(), None, Some(Choice::Floor)).unwrap();
+    assert_eq!(
+        state_on(project.path(), sandbox::Os::MacOs)
+            .yours
+            .map(|it| it.level),
+        Some("floor".to_owned())
+    );
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#,
+        std::path::Path::new("policy.json"),
+    ));
+    let yours = state_on(project.path(), sandbox::Os::MacOs).yours;
+    set_for_this_test(Locks::none());
+    assert_eq!(yours, None);
 }

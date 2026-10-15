@@ -1161,6 +1161,11 @@ impl StandIn {
                 .map(purlis_core::dispatchgrant::grants_for_a_dispatched_chat),
             asking.profile.clone().unwrap_or_default(),
             STARTED.to_string(),
+            // Asked for by the asking chat, through the chain its record keeps (#2071).
+            purlis_core::sandbox::Made::Asked {
+                how: purlis_core::sandbox::Asking::Dispatch,
+                above: asked.above.clone(),
+            },
         );
         let started = Chat {
             program: "claude".to_owned(),

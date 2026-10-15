@@ -81,11 +81,15 @@ use crate::view::{Limits, Views};
 /// program's number and process, a listed chat's number and run, and two pushed notices: a
 /// program `ended`, and a view `view_ended` for good.
 ///
-/// 1.3 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
+/// 1.3 added what moves a chat's hooks into the host (#2000): the host deals each chat's
+/// number (`deal`, answered `dealt`, and `dealt_already` for numbers that went out before), and
+/// each line a held project's hooks write is pushed to the window that holds it (`heard`) and
+/// answered from there (`reply_heard`).
+/// 1.4 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
 /// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
 /// project's auto-save did; and the host's question to the window of who is mid-turn in a
 /// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
-pub const VERSION: Version = Version { major: 1, minor: 3 };
+pub const VERSION: Version = Version { major: 1, minor: 4 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -205,18 +209,33 @@ pub enum Command {
     /// Whether a hosted program is ready to be typed at, as its terminal and the clock say it,
     /// never what it wrote (1.2): answered [`Answer::Readiness`].
     Readiness { program: String },
+    /// Deal the next number in a held project, for a chat about to be started with it: one no
+    /// chat of the project has had, so a client may name the chat by it first (1.3). Answered
+    /// [`Answer::Dealt`].
+    Deal { project: String },
+    /// The numbers up to `dealt` went out in a held project before this host dealt any, so none
+    /// of them is dealt again (1.3).
+    DealtAlready { project: String, dealt: u32 },
+    /// The reply to the line a held project's hooks wrote that the host pushed as `heard`
+    /// ([`Pushed::Heard`]): what the window answered it with, in the shape the line's kind takes
+    /// (1.3).
+    ReplyHeard {
+        project: String,
+        heard: u64,
+        reply: serde_json::Value,
+    },
     /// Save a held project from now on: the host runs its watcher and its auto-save, as the
-    /// project's settings say, until [`Command::StopSaving`] or the host ends (1.3). A link
+    /// project's settings say, until [`Command::StopSaving`] or the host ends (1.4). A link
     /// that ends does not stop it, so the project goes on being saved while the window is
     /// gone. A project the host already saves is not saved twice. Each look that did something
     /// is pushed as [`Pushed::Saving`].
     StartSaving { project: String },
-    /// Stop saving a project, and answer once its auto-save has been told to stop (1.3).
+    /// Stop saving a project, and answer once its auto-save has been told to stop (1.4).
     StopSaving { project: String },
     /// Fetch what came in for a project the host saves, unless it fetched a moment ago: the
-    /// window came back into focus (1.3).
+    /// window came back into focus (1.4).
     FetchProject { project: String },
-    /// The window's answer to [`Pushed::WhoIsMidTurn`] (1.3): the chats mid-turn that could be
+    /// The window's answer to [`Pushed::WhoIsMidTurn`] (1.4): the chats mid-turn that could be
     /// writing the workspace, by the names the window shows, or none said where the window
     /// cannot tell, which the host takes as every chat it runs there.
     MidTurn {
@@ -412,6 +431,8 @@ pub enum Answer {
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
+    /// The number dealt: [`Command::Deal`] (1.3).
+    Dealt { number: u32 },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -541,7 +562,15 @@ pub enum Pushed {
         view: u32,
         why: ViewEnd,
     },
-    /// One look of a project's auto-save did something (1.3): it `saved` the project, or only
+    /// A line a held project's chat's hooks wrote, admitted by the host (1.3): pushed, numbered
+    /// `heard`, to the subscribed links that hold the project, which reply with
+    /// [`Command::ReplyHeard`] where its kind takes a reply. It never carries the chat's token.
+    Heard {
+        project: String,
+        heard: u64,
+        line: serde_json::Value,
+    },
+    /// One look of a project's auto-save did something (1.4): it `saved` the project, or only
     /// fetched, pushed or looked at a request; `moved_tree` when what it did moved files in the
     /// tree (a fast-forward, a save's rebase), so a client reads everything again, and only the
     /// git standing otherwise.
@@ -551,7 +580,7 @@ pub enum Pushed {
         moved_tree: bool,
     },
     /// The host asks the window which chats are mid-turn in a workspace of a project it saves
-    /// (1.3): a repo's auto-save waits for them (ADR 0051), and the turns are on the window's
+    /// (1.4): a repo's auto-save waits for them (ADR 0051), and the turns are on the window's
     /// board. Pushed to the window's links only; answered with [`Command::MidTurn`].
     WhoIsMidTurn {
         question: u64,
@@ -578,6 +607,9 @@ wire_words!(Command {
     LetGoOfProject => "let_go_of_project",
     Close => "close",
     Readiness => "readiness",
+    Deal => "deal",
+    DealtAlready => "dealt_already",
+    ReplyHeard => "reply_heard",
     StartSaving => "start_saving",
     StopSaving => "stop_saving",
     FetchProject => "fetch_project",
@@ -602,10 +634,13 @@ impl Command {
             Command::Start(_) | Command::StartProgram(_) => Power::Start,
             Command::HoldProject { .. }
             | Command::LetGoOfProject { .. }
+            | Command::Deal { .. }
+            | Command::DealtAlready { .. }
             | Command::StartSaving { .. }
             | Command::StopSaving { .. }
             | Command::FetchProject { .. }
             | Command::MidTurn { .. } => Power::Hold,
+            Command::ReplyHeard { .. } => Power::Heard,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -617,6 +652,7 @@ wire_words!(Answer {
     Started => "started",
     ProgramStarted => "program_started",
     Readiness => "readiness",
+    Dealt => "dealt",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -638,6 +674,7 @@ wire_words!(Pushed {
     Missed => "missed",
     Ended => "ended",
     ViewEnded => "view_ended",
+    Heard => "heard",
     Saving => "saving",
     WhoIsMidTurn => "who_is_mid_turn",
 });
@@ -980,7 +1017,9 @@ enum Lane {
     Program(String),
     /// `subscribe` and `unsubscribe`.
     Subscription,
-    /// The commands about one project's saving (1.3): a stop is never overtaken by the start
+    /// The replies to one line a held project's hooks wrote (1.3).
+    Heard(u64),
+    /// The commands about one project's saving (1.4): a stop is never overtaken by the start
     /// before it.
     Saving(String),
 }
@@ -995,6 +1034,8 @@ impl Lane {
             | Command::StartProgram(_)
             | Command::HoldProject { .. }
             | Command::LetGoOfProject { .. }
+            | Command::Deal { .. }
+            | Command::DealtAlready { .. }
             | Command::MidTurn { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
@@ -1007,6 +1048,8 @@ impl Lane {
             | Command::Close { program }
             | Command::Readiness { program } => Some(Lane::Program(program.clone())),
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
+            // The replies to one line keep their order: a command's frames, one after another.
+            Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
             Command::StartSaving { project }
             | Command::StopSaving { project }
             | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
@@ -1385,7 +1428,7 @@ impl Client {
         .await
     }
 
-    /// Save `project` from now on, in the host (1.3).
+    /// Save `project` from now on, in the host (1.4).
     pub async fn start_saving(&self, project: &str) -> Result<(), CallError> {
         self.done(Command::StartSaving {
             project: project.into(),
@@ -1393,7 +1436,7 @@ impl Client {
         .await
     }
 
-    /// Stop saving `project` in the host (1.3).
+    /// Stop saving `project` in the host (1.4).
     pub async fn stop_saving(&self, project: &str) -> Result<(), CallError> {
         self.done(Command::StopSaving {
             project: project.into(),
@@ -1401,7 +1444,7 @@ impl Client {
         .await
     }
 
-    /// Fetch what came in for `project`, which the host saves (1.3).
+    /// Fetch what came in for `project`, which the host saves (1.4).
     pub async fn fetch_project(&self, project: &str) -> Result<(), CallError> {
         self.done(Command::FetchProject {
             project: project.into(),
@@ -1427,6 +1470,36 @@ impl Client {
         {
             Answer::Readiness(readiness) => Ok(readiness),
             other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Deal the next number in `project` (1.3).
+    pub async fn deal(&self, project: &str) -> Result<u32, CallError> {
+        match self
+            .call(Command::Deal {
+                project: project.into(),
+            })
+            .await?
+        {
+            Answer::Dealt { number } => Ok(number),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Send `command` now, behind every command sent before it on this client, and answer with
+    /// a future of its answer: what keeps the order of commands sent from one thread without
+    /// waiting for each answer (a host keeps the order of those of one lane).
+    pub fn call_now(
+        &self,
+        command: Command,
+    ) -> impl Future<Output = Result<Answer, CallError>> + Send + 'static {
+        let (reply, answer) = oneshot::channel();
+        let sent = self.asks.send(Ask::Session(command, reply));
+        async move {
+            sent.map_err(|_| CallError::Closed("the link is closed".into()))?;
+            answer
+                .await
+                .map_err(|_| CallError::Closed("the link is closed".into()))?
         }
     }
 
@@ -1551,9 +1624,10 @@ impl Subscribed {
                     self.cursor
                         .insert(device.clone(), resumes_at.saturating_sub(1));
                 }
-                // Neither is an event of the log: the cursor stays where it is.
+                // None is an event of the log: the cursor stays where it is.
                 Pushed::Ended { .. }
                 | Pushed::ViewEnded { .. }
+                | Pushed::Heard { .. }
                 | Pushed::Saving { .. }
                 | Pushed::WhoIsMidTurn { .. } => {}
             };
