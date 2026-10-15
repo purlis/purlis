@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use super::{FrameAx, NodeKey, Query, View, build};
+use super::{FrameAx, NodeKey, Query, View, build, scrubbed_address};
 
 /// `Accessibility.getFullAXTree` as the engine answered it for the fixture site's frames page.
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
@@ -332,16 +332,12 @@ fn a_blanked_element_the_engine_ignores_is_still_blanked() {
 fn text_blanked_before_is_taken_out_of_the_title_the_lines_and_the_addresses_whatever_its_case() {
     let mut frames = frames();
     frames[1].url = "http://other.test/pay.html?q=OPEN+SESAME".into();
-    let blanked = [
-        "open sesame".to_owned(),
-        "frames and".to_owned(),
-        "q=open+sesame".to_owned(),
-    ];
+    let blanked = ["open sesame".to_owned(), "frames and".to_owned()];
     let snapshot = build(&frames, &HashSet::new(), &blanked);
     assert_eq!(snapshot.title(), "(blanked) fields");
     let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
     assert!(!text.to_lowercase().contains("sesame"), "{text}");
-    assert!(text.contains("pay.html?(blanked)"), "{text}");
+    assert!(text.contains("pay.html?q=(blanked)"), "{text}");
     assert!(text.contains("- heading \"(blanked) fields\""), "{text}");
 }
 
@@ -364,5 +360,68 @@ fn an_echo_longer_than_a_line_shows_is_blanked_before_it_is_cut() {
 #[test]
 fn the_focused_element_is_known_so_the_field_typed_into_can_be_blanked() {
     let snapshot = build(&frames(), &HashSet::new(), &[]);
-    assert_eq!(snapshot.focused(), Some(&key("MAIN-FRAME", 20)));
+    assert_eq!(snapshot.focused(), &[key("MAIN-FRAME", 20)]);
+}
+
+fn find_pay(frames: &[FrameAx], blanked: &[String]) -> String {
+    build(frames, &HashSet::new(), blanked)
+        .find(
+            &Query {
+                text: Some("Pay now".into()),
+                role: None,
+            },
+            None,
+            &mut Refs::default().of(),
+        )
+        .unwrap()
+}
+
+#[test]
+fn an_unnamed_frame_labelled_by_an_address_holding_blanked_text_shows_none_of_it() {
+    let mut frames = frames();
+    frames[1].name = String::new();
+    frames[1].url = "http://other.test/pay.html?q=open%20sesame".into();
+    let Value::Array(nodes) = &mut frames[0].nodes else {
+        panic!()
+    };
+    let holder = nodes.iter_mut().find(|n| n["nodeId"] == "20").unwrap();
+    holder["name"]["value"] = Value::from("");
+    let found = find_pay(&frames, &["open sesame".to_owned()]);
+    assert_eq!(
+        found,
+        "- button \"Pay now\" [e1] (line 9, in frame \"http://other.test/pay.html?q=(blanked)\")\n"
+    );
+}
+
+#[test]
+fn a_frame_named_with_blanked_text_shows_none_of_it() {
+    let mut frames = frames();
+    frames[1].name = "Open Sesame".into();
+    let found = find_pay(&frames, &["open sesame".to_owned()]);
+    assert!(found.contains("in frame \"(blanked)\""), "{found}");
+    assert!(!found.to_lowercase().contains("sesame"), "{found}");
+}
+
+#[test]
+fn blanked_text_is_found_in_an_address_however_the_address_encodes_it() {
+    let cases = [
+        ("hunter2~", "http://fixture.test/login?p=hunter2%7E"),
+        ("hunter2~", "http://fixture.test/login?p=hunter2~"),
+        ("pass word!", "http://fixture.test/login?p=pass%20word!"),
+        ("pass word!", "http://fixture.test/login?p=pass+word%21"),
+        ("a*b*c", "http://fixture.test/login?p=a%2Ab%2Ac"),
+        ("a*b*c", "http://fixture.test/login?p=a*b*c"),
+    ];
+    for (value, address) in cases {
+        assert_eq!(
+            scrubbed_address(address, &[value]),
+            "http://fixture.test/login?p=(blanked)",
+            "{value} in {address}"
+        );
+    }
+    // An address that holds nothing blanked is given back as written.
+    assert_eq!(
+        scrubbed_address("http://fixture.test/a%20b?c=d+e", &["zzz"]),
+        "http://fixture.test/a%20b?c=d+e"
+    );
 }

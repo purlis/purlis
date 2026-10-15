@@ -115,8 +115,8 @@ pub(crate) struct Snapshot {
     lines: Vec<Line>,
     /// What the blanked elements held when this was built, to keep out of every later answer.
     blanked_text: Vec<String>,
-    /// The element that has the focus, in the innermost frame that has one.
-    focused: Option<NodeKey>,
+    /// Every element the engine says has the focus.
+    focused: Vec<NodeKey>,
 }
 
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
@@ -127,7 +127,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
             title: String::new(),
             lines: Vec::new(),
             blanked_text: Vec::new(),
-            focused: None,
+            focused: Vec::new(),
         };
     };
     let mut builder = Builder {
@@ -136,7 +136,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         used: HashSet::from([0]),
         lines: Vec::new(),
         blanked_text: Vec::new(),
-        focused: None,
+        focused: Vec::new(),
     };
     let tree = FrameNodes::new(&main.nodes);
     let mut title = tree
@@ -169,7 +169,11 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
             *value = cut(&scrubbed(value, &all));
         }
         if let Some(address) = &mut line.address {
-            *address = scrubbed(address, &all);
+            *address = scrubbed_address(address, &all);
+        }
+        if let Some(frame) = &mut line.frame {
+            // A frame's label is its name, or its address when it has none.
+            *frame = cut(&scrubbed_address(frame, &all));
         }
     }
     Snapshot {
@@ -178,6 +182,46 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         blanked_text,
         focused: builder.focused,
     }
+}
+
+/// `address` with every one of `blanked` taken out of it as a reader of the address would read
+/// it: percent-decoded, and in its query a `+` read as a space. An address that held none is
+/// given back as it was written.
+pub(crate) fn scrubbed_address(address: &str, blanked: &[&str]) -> String {
+    let decoded = decoded_address(address);
+    let out = scrubbed(&decoded, blanked);
+    if out == decoded {
+        scrubbed(address, blanked)
+    } else {
+        out
+    }
+}
+
+/// `address` percent-decoded (as UTF-8, any byte that is not read as `?`), with `+` read as a
+/// space after its `?`.
+fn decoded_address(address: &str) -> String {
+    let query_at = address.find('?').unwrap_or(address.len());
+    let bytes = address.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        let hex = |b: u8| char::from(b).to_digit(16);
+        match byte {
+            b'%' if at + 2 < bytes.len() => match (hex(bytes[at + 1]), hex(bytes[at + 2])) {
+                (Some(high), Some(low)) => {
+                    out.push(u8::try_from(high * 16 + low).unwrap_or(b'?'));
+                    at += 3;
+                    continue;
+                }
+                _ => out.push(byte),
+            },
+            b'+' if at > query_at => out.push(b' '),
+            _ => out.push(byte),
+        }
+        at += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// `text` with every one of `blanked` (at least [`SHORTEST_SCRUBBED`] characters) taken out,
@@ -242,9 +286,9 @@ impl Snapshot {
         &self.blanked_text
     }
 
-    /// The element that has the focus, if any.
-    pub(crate) fn focused(&self) -> Option<&NodeKey> {
-        self.focused.as_ref()
+    /// Every element the engine says has the focus: one, when it is plain which.
+    pub(crate) fn focused(&self) -> &[NodeKey] {
+        &self.focused
     }
 
     /// The lines `view` asks for, each element with the reference `refer` deals it, and a last
@@ -531,7 +575,7 @@ struct Builder<'f> {
     lines: Vec<Line>,
     /// Text of blanked elements, to take out of every other line.
     blanked_text: Vec<String>,
-    focused: Option<NodeKey>,
+    focused: Vec<NodeKey>,
 }
 
 impl Builder<'_> {
@@ -630,7 +674,7 @@ impl Builder<'_> {
         if let Some(key) = &key
             && is_true(property(node, "focused"))
         {
-            self.focused = Some(key.clone());
+            self.focused.push(key.clone());
         }
         // A blanked element is blanked whatever the engine says of it, ignored or a wrapper.
         if let Some(key) = &key

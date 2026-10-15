@@ -288,6 +288,8 @@ pub enum Refusal {
     NoPage,
     #[error("nothing on the page has the focus")]
     NothingFocused,
+    #[error("the page cannot tell which field has the focus")]
+    FocusUnclear,
     #[error(
         "the call acted in part, so the page's state is not known ({done}): {why}. Take a snapshot"
     )]

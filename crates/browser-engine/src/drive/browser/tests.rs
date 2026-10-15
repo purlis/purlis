@@ -1173,3 +1173,54 @@ fn a_snapshot_gives_no_more_lines_than_the_most_allowed() {
         "{text}"
     );
 }
+
+/// Moves the focus in the stand-in's trees: off the Name field, and onto each of `onto`
+/// (frame, node id).
+fn focus_on(engine: &Engine, onto: &[(&str, &str)]) {
+    let mut model = super::lock(&engine.model);
+    for nodes in model.ax.values_mut() {
+        for node in nodes.as_array_mut().unwrap() {
+            if let Some(props) = node.get_mut("properties").and_then(Value::as_array_mut) {
+                props.retain(|p| p["name"] != "focused");
+            }
+        }
+    }
+    for (frame, id) in onto {
+        let nodes = model.ax.get_mut(*frame).unwrap().as_array_mut().unwrap();
+        let node = nodes.iter_mut().find(|n| n["nodeId"] == *id).unwrap();
+        node["properties"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"focused","value":{"type":"booleanOrUndefined","value":true}}));
+    }
+}
+
+#[test]
+fn the_focused_element_in_a_frame_is_blanked_there() {
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAYMENT-FRAME", "3")]);
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    assert!(text.contains("  - button ["), "{text}");
+    assert!(text.contains("(blanked)"), "{text}");
+    assert!(!text.contains("Pay now"), "{text}");
+}
+
+#[test]
+fn the_focused_element_in_shadow_content_is_blanked() {
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "21")]);
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("Inside the shadow"), "{text}");
+    assert!(text.contains("- textbox \"Name\""), "{text}");
+}
+
+#[test]
+fn blanking_the_focus_is_refused_when_more_than_one_element_says_it_has_it() {
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAYMENT-FRAME", "3")]);
+    assert_eq!(browser.blank_focused(None), Err(Refusal::FocusUnclear));
+    focus_on(&engine, &[]);
+    assert_eq!(browser.blank_focused(None), Err(Refusal::NothingFocused));
+}

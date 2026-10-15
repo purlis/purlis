@@ -18,7 +18,7 @@ use super::blank::{Rect, paint_over};
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::settle::{Activity, Settle, activity};
-use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed};
+use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
 use super::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Ref, Refusal, Settled,
     lock,
@@ -125,15 +125,17 @@ impl Page {
         scrubbed(text, &blanked)
     }
 
+    /// [`Page::shown`] for an address, read as its reader would read it (decoded).
+    fn shown_address(&self, address: &str) -> String {
+        let blanked: Vec<&str> = self.scrubbed.iter().map(String::as_str).collect();
+        scrubbed_address(address, &blanked)
+    }
+
     /// Keeps `held` out of every later answer about this page.
-    /// Also as it is written in an address (percent-encoded, and a form's `+` for a space).
     fn keep_out(&mut self, held: &[String]) {
         for text in held {
-            let encoded = percent_encoded(text);
-            for form in [text.clone(), encoded.replace("%20", "+"), encoded] {
-                if !self.scrubbed.iter().any(|t| t.eq_ignore_ascii_case(&form)) {
-                    self.scrubbed.push(form);
-                }
+            if !self.scrubbed.iter().any(|t| t.eq_ignore_ascii_case(text)) {
+                self.scrubbed.push(text.clone());
             }
         }
     }
@@ -235,7 +237,7 @@ impl State {
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
-            address: p.shown(&p.url),
+            address: p.shown_address(&p.url),
             title: p.shown(&p.title),
             current: self.current.as_deref() == Some(target),
         })
@@ -487,7 +489,11 @@ impl Browser {
     pub fn blank_focused(&self, page: Option<&PageId>) -> Result<(), Refusal> {
         let target = self.target(page)?;
         let snapshot = self.snapshot_of(&target)?;
-        let key = snapshot.focused().cloned().ok_or(Refusal::NothingFocused)?;
+        let key = match snapshot.focused() {
+            [] => return Err(Refusal::NothingFocused),
+            [one] => one.clone(),
+            _ => return Err(Refusal::FocusUnclear),
+        };
         self.blank_node(&target, key)
     }
 
@@ -942,7 +948,7 @@ impl Browser {
                 "page {} \"{}\" {}\n{body}",
                 page.id,
                 title.replace('"', "\\\""),
-                page.shown(&page.url)
+                page.shown_address(&page.url)
             )
         };
         Ok(self.answer(target, settled, opened, Content::Text(text), None))
@@ -1827,19 +1833,6 @@ fn centre(answer: &Value) -> Option<(f64, f64)> {
         (width > 0.0 && height > 0.0)
             .then(|| (xs.iter().sum::<f64>() / 4.0, ys.iter().sum::<f64>() / 4.0))
     })
-}
-
-/// `text` as an address writes it: every byte but letters, digits and `-._~` as `%XX`.
-fn percent_encoded(text: &str) -> String {
-    let mut out = String::new();
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
 }
 
 /// How a page's CSS pixels map to its screenshot's pixels.
