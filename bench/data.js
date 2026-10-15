@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792073023548,
+  "lastUpdate": 1792074137035,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12474,6 +12474,48 @@ window.BENCHMARK_DATA = {
             "value": 101.26683,
             "unit": "ms",
             "extra": "median of 5 runs: 101.030, 101.202, 101.267, 101.355, 101.825 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "63089dee4c5274b9d10a10861966cffae6e22e36",
+          "message": "Profiles: API key and cloud profiles; a model choice is a profile plus a model (#2152)\n\n* Profiles: a key or cloud profile names its vault entries; the picker shows who pays (#2036)\n\nA profile of this machine's keeps its sign-in in its record: its kind, the\nlabel it is billed to, and for api-key or cloud each variable its harness's\nadapter is handed, by vault reference, never a value. A start carries the\nreferences; the values are read where the program is spawned, under the\nvault's rules for the chat's persona, and set on that program's\nenvironment alone. Where ADR 0087 section 7 sends a key through the proxy,\na chat on such a profile does not start and says so.\n\nThe picker shows every profile's model (the harness's default) and what a\nchat on it is billed to; a run's model source is its profile's sign-in\nkind. ADR 0087 amended, CONTEXT and plane-format updated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: the app's starts carry the sign-in; a vault the persona may not read starts nothing (#2036)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2036): the proxy refusal names the ticket that opens it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a cloud profile's chat is handed its credentials; a key waits for the proxy (#2036)\n\nThe operator ruled on 2026-10-15 (#2151): cloud credentials go into the\nchat's harness environment now, since a proxy that swaps one header\ncannot carry a cloud's signed requests; a key keeps waiting for the key\nproxy (#822). profilesignin::handing opens for cloud kinds where\nvariables alone sign the harness in; Vertex's credentials file and\nCodex's Azure provider configuration are refused in words and stay with\n#2151. A key profile's row and refusal say it waits for the key proxy.\nADR 0087 and 0095 record the ruling.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: #2148's start check asks only a profile on the harness's own sign-in (#2036)\n\nA profile kept as signing in with a key, a cloud or a local model is not\nasked whether its harness's subscription is signed in; #2148's test\nrecord carries the sign-in field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2036): every row says how its chat would start; the read comes before anything is recorded\n\n- handing() decides both the start and the picker's row: a key waits\n  for the key proxy, Vertex and Codex on Azure are refused in words,\n  and this version hands no cloud's credentials (#2151); a row whose\n  credentials would go into the environment says the commands it runs\n  can read them (ADR 0087 section 7).\n- The refusal strings keep their line continuations; a test holds every\n  refusal and row free of double spaces.\n- The vault is read before the sandbox's trust event and the state\n  hooks, so a chat that never starts leaves nothing recorded.\n- A chat its profile hands credentials is never started in the session\n  host: the values are set only on a program the window starts.\n- SignIn keeps the fields this build does not know.\n- A cloud profile whose harness is signed out is not asked to sign in;\n  a kept subscription profile that is signed out still is.\n- ADR 0087: the run's model_source values, the residual stated, and\n  D-2036-1..7 as decided in implementation, to be confirmed;\n  plane-format's run.started row matches.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2036): the signed-out cloud test opens unsteered\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T18:10:37+04:00",
+          "tree_id": "2af40a1c1e266c535215ac960ed0c3116507a094",
+          "url": "https://github.com/purlis/purlis/commit/63089dee4c5274b9d10a10861966cffae6e22e36"
+        },
+        "date": 1792074136133,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.535327,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.527, 0.535, 0.537, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1272055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.656, 16.850, 17.127, 17.151, 17.546 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.5061665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.576, 105.008, 105.506, 105.692, 107.216 ms"
           }
         ]
       }
