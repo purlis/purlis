@@ -13,7 +13,9 @@ import { askProfileSignIn } from "./links";
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
  * project here. **Add profile** makes one, with a folder of its own in purlis's data home and
  * this machine's harness settings files copied in as they are, and no sign-in file; each made
- * profile says when they were imported and offers **Import again**. **Remove…** asks first,
+ * profile says when they were imported and offers **Import again**. Each says the harness version it
+ * is pinned to (#2038), and a profile whose next chat would not start on the version installed
+ * (another major) offers **Update the pin**. **Remove…** asks first,
  * naming the conversations that go, and an adopted harness folder is never deleted: purlis only
  * forgets the profile, and the question says so.
  *
@@ -180,6 +182,25 @@ function signedIn(profile: MachineProfileRow): string {
   }
 }
 
+/** What a profile's row says about its harness version (#2038): the one it is pinned to, and the
+ *  one installed where that is another: one its next chat follows, or one only Update the pin
+ *  moves it to. */
+function pinNote(profile: MachineProfileRow): string {
+  if (profile.pinned === null) return "Pinned by its first chat";
+  if (profile.installed === null || profile.installed === profile.pinned) {
+    return `Pinned to ${profile.pinned}`;
+  }
+  return profile.offered === null
+    ? `Pinned to ${profile.pinned}, its next chat follows ${profile.installed}`
+    : `Pinned to ${profile.pinned}, ${profile.installed} installed`;
+}
+
+/** The version a profile is offered to pin to: the one installed, where its next chat would not
+ *  start on it. The core says which (another major, or an older version). */
+function offeredVersion(profile: MachineProfileRow): string | undefined {
+  return profile.offered ?? undefined;
+}
+
 /** An entry's button. `tabIndex={0}`: WebKit leaves a button out of the Tab order without it
  *  (#190). */
 function EntryButton({
@@ -210,7 +231,7 @@ function EntryButton({
 const listed = (plane: string | undefined): LiveSetting => ({
   id: "you.profiles.list",
   label: "This machine's profiles",
-  help: "Import again takes the harness's settings from this machine once more; its conversations stay. Remove asks first and names what goes.",
+  help: "Import again takes the harness's settings from this machine once more; its conversations stay. A profile's chats run on the harness version it is pinned to and follow its minor and patch updates; Update the pin moves them, and the conversations they resume, to another major version installed. Remove asks first and names what goes.",
   writes: "this machine",
   useControl: function useProfiles() {
     const now = useSyncExternalStore(subscribe, () => held);
@@ -262,6 +283,22 @@ const listed = (plane: string | undefined): LiveSetting => ({
                           onClick={() => askProfileSignIn(plane, profile.name)}
                         />
                       ))}
+                    <span className="ui-setting-badge">{pinNote(profile)}</span>
+                    {offeredVersion(profile) !== undefined && (
+                      <EntryButton
+                        label="Update the pin"
+                        spoken={`Update the pin of ${profile.name} to ${offeredVersion(profile)}`}
+                        disabled={now.busy}
+                        onClick={() => {
+                          const version = offeredVersion(profile) ?? "";
+                          void acting(
+                            () => commands.machineProfilePin(profile.name, version),
+                            () =>
+                              `${profile.name}: its chats run on ${profile.harness} ${version} from now on.`,
+                          );
+                        }}
+                      />
+                    )}
                     {profile.origin === "made" && (
                       <EntryButton
                         label="Import again"

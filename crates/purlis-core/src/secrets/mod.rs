@@ -37,6 +37,7 @@ pub mod keyhold;
 pub mod keyring;
 pub mod mcpstart;
 pub mod onepassword;
+pub mod persons_own;
 pub mod plain_file;
 pub mod program;
 pub mod reference;
