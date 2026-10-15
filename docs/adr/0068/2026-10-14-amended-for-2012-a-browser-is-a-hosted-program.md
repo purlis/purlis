@@ -8,10 +8,10 @@ ends every browser) is the operator's ruling of 2026-10-14 (spec #2008's grill, 
 §4 and the amendments above are left as accepted, and this note adds to them. Items 1 to 7 are
 **decided in implementation, to be confirmed** (D-2012-1 to D-2012-7).
 
-1. **Session protocol 1.5, a minor.** It adds the program kind `browser` and the view kind
+1. **Session protocol 1.6, a minor.** It adds the program kind `browser` and the view kind
    `browser`; on `attach_view`, a browser view's `role` (`focused` or `thumbnail`) and `rate`
    (the most frames a second it wants), each optional; and a listed program's `kind`, given
-   for a browser. A browser is listed only to a link that speaks 1.5, so a client one version
+   for a browser. A browser is listed only to a link that speaks 1.6, so a client one version
    behind never takes one for a chat. Each is recorded in the protocol's fixture. FD-27's table
    gains a row: starting a browser and attaching a browser view are `local-ui`'s alone, since a
    browser is started as the person and shows what is theirs; `remote-link` gains it with
@@ -49,10 +49,10 @@ ends every browser) is the operator's ruling of 2026-10-14 (spec #2008's grill, 
    and pins (#2024, #2022; #2205), a browser lives as long as a tab shows it: when the last such
    tab closes it ends, and letting go of its project ends every browser the window started in
    it. Chats get browser tools later (#2013). *D-2012-5, to be confirmed.*
-6. **Stop all ends every browser.** The window's stop, and `purlis stop --all` as the window
-   hears it, stop each browser its host runs, which ends the engine's whole process group; while
-   stopped, no browser starts. Until the kill switch's authority moves into the host (#2001),
-   the window carries this. *D-2012-6, to be confirmed.*
+6. **Stop all ends every browser.** A browser is a hosted program, so the host's kill switch
+   (#2001) ends it with every other program, which ends the engine's whole process group, and
+   refuses a browser's start while it is thrown. The window also stops each browser its host
+   lists when it throws the switch or hears `purlis stop --all`. *D-2012-6, to be confirmed.*
 7. **One table of hosted programs.** A browser is a row of the same table as the host's chats
    and shells (#1998's `Hosting`): listed, stopped, closed and ended with the host by the same
    code. A hosted program gives a view of a kind, and the size its views are drawn at, where it

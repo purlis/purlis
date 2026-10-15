@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A browser view's bytes: whole frames, one after another (1.5, #2012).
+//! A browser view's bytes: whole frames, one after another (1.6, #2012).
 //!
 //! **On the wire,** each frame is its length (a big-endian `u32`, counting what follows it), its
 //! format (one byte: [`JPEG`]) and the image. A browser view's snapshot is the browser's latest

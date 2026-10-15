@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A browser view's bytes are whole frames (1.5, #2012): each one says how long it is, so a
+//! A browser view's bytes are whole frames (1.6, #2012): each one says how long it is, so a
 //! reader handed the stream in pieces of any size tells where one frame ends and the next
 //! begins, and a frame larger than the bound is refused rather than held.
 

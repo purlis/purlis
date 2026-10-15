@@ -30,7 +30,7 @@
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | |
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
-//! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.5) | yes | | | | | |
+//! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -55,7 +55,7 @@
 //! - **A held project's hook lines are heard and answered by the window alone** (1.3). The host
 //!   pushes each line only to the links that hold the project, which only `local-ui` may, and
 //!   only `local-ui` replies: a reply can carry an ask's answer, which no other scope gives here.
-//! - **A browser is started and watched in the window alone** (1.5, #2012). A browser is a
+//! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
 //!   a view of one, `remote-link` included; a stop of one, like every stop, only removes power.

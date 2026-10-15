@@ -338,3 +338,26 @@ async fn a_browser_is_listed_as_one_to_a_link_that_knows_browsers() {
     assert_eq!(browser.kind, Some(ProgramKind::Browser));
     assert_eq!(browser.number, None, "a browser has no chat's number");
 }
+
+#[tokio::test]
+async fn stop_all_ends_every_browser_and_no_browser_starts_until_the_window_rearms() {
+    let linked = linked().await;
+    let (_, one) = linked.browser().await;
+
+    linked.client.stop_all().await.expect("stopped");
+
+    assert!(one.shown().stopped, "its engine is ended");
+    let refused = linked
+        .client
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Browser))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::STOPPED)
+    );
+    assert_eq!(linked.browsers.started().len(), 1, "nothing more started");
+
+    linked.client.rearm().await.expect("re-armed");
+    linked.browser().await;
+}

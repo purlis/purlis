@@ -100,7 +100,7 @@ use crate::view::{Limits, Views};
 /// 1.6 added browsers (#2012): the program kind `browser`, the view kind `browser` whose stream
 /// carries whole frames ([`crate::view::frames`]), a view's `role` and `rate` on `attach_view`,
 /// and a listed program's `kind`.
-pub const VERSION: Version = Version { major: 1, minor: 5 };
+pub const VERSION: Version = Version { major: 1, minor: 6 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -201,7 +201,7 @@ pub enum Command {
     /// Open a view of `kind` on a hosted program: the host opens a stream for it
     /// ([`crate::view::Views::open`]), whose snapshot then live bytes follow, and answers
     /// [`Answer::Attached`] with the view's `kind`. A browser view is also given its `role` and
-    /// the most frames a second it wants (1.5); a terminal view takes neither.
+    /// the most frames a second it wants (1.6); a terminal view takes neither.
     AttachView {
         program: String,
         kind: ViewKind,
@@ -563,7 +563,7 @@ pub enum ProgramKind {
     Harness,
     /// A shell, with no harness.
     Shell,
-    /// A browser, which only purlis drives, watched through browser views (1.5).
+    /// A browser, which only purlis drives, watched through browser views (1.6).
     Browser,
 }
 
@@ -574,13 +574,13 @@ pub enum ProgramKind {
 pub enum ViewKind {
     /// A terminal's bytes: the snapshot draws its scrollback, screen, cursor and modes.
     Terminal,
-    /// A browser's frames (1.5): the snapshot is its latest frame, and the live bytes the frames
+    /// A browser's frames (1.6): the snapshot is its latest frame, and the live bytes the frames
     /// after it, each one whole ([`crate::view::frames`]). Frames are made only while a browser
     /// view is attached.
     Browser,
 }
 
-/// What a browser view is to the person (1.5): it decides how many frames a second it is sent
+/// What a browser view is to the person (1.6): it decides how many frames a second it is sent
 /// when the attach names no `rate`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -679,8 +679,8 @@ pub struct Chat {
     /// The run it is in (ADR 0066, 1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
-    /// What kind of hosted program it is, where it is not a chat's (1.5): a browser. Listed only
-    /// to a link that speaks 1.5, so a client one version behind never takes one for a chat.
+    /// What kind of hosted program it is, where it is not a chat's (1.6): a browser. Listed only
+    /// to a link that speaks 1.6, so a client one version behind never takes one for a chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ProgramKind>,
 }
@@ -1778,7 +1778,7 @@ impl Client {
     }
 
     /// Attach a browser view of `program` as `role`, at most `rate` frames a second when given
-    /// (1.5): its stream of whole frames comes on the [`Acceptor`] [`Client::new`] gave.
+    /// (1.6): its stream of whole frames comes on the [`Acceptor`] [`Client::new`] gave.
     pub async fn attach_browser_view(
         &self,
         program: &str,

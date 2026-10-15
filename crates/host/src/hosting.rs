@@ -481,10 +481,10 @@ impl Hosting {
             .ok_or_else(|| no_such_program(program))
     }
 
-    /// The programs it holds, as `version` lists them: a browser only from 1.5 on, so a client
+    /// The programs it holds, as `version` lists them: a browser only from 1.6 on, so a client
     /// one version behind never takes one for a chat.
     fn list(&self, version: Version) -> Vec<Chat> {
-        let knows_browsers = version >= Version { major: 1, minor: 5 };
+        let knows_browsers = version >= Version { major: 1, minor: 6 };
         let state = self.state();
         let mut chats: Vec<Chat> = state
             .programs
@@ -801,7 +801,9 @@ impl Hosting {
 
     /// Start a browser (#2012): in a project this host holds, with a fresh data folder of its
     /// own under the host's store, removed once it has ended.
-    async fn start_browser(&self, start: StartProgram) -> Result<Answer, Refusal> {
+    async fn start_browser(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
+        // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
+        self.let_through(&start, peer)?;
         let program = {
             let state = self.state();
             if !state.projects.contains_key(&start.project) {
@@ -1181,7 +1183,7 @@ impl session::Host for Hosting {
             Command::LetGoOfProject { project } => self.let_go(&project, peer),
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
-                ProgramKind::Browser => self.start_browser(*start).await,
+                ProgramKind::Browser => self.start_browser(*start, peer).await,
             },
             Command::AttachView {
                 program,
