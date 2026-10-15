@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792054515565,
+  "lastUpdate": 1792057763009,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5136,6 +5136,42 @@ window.BENCHMARK_DATA = {
             "value": 469.7,
             "unit": "MB",
             "extra": "median of 6 samples: 446.3, 459.7, 466.9, 472.6, 473.3, 606.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "31538baec8b747ba737519beed6cdcfecd27e511",
+          "message": "test: a chat started on a profile made here says how it was made (#2149)\n\nThe start in #2096's test, which landed beside #2122's new field.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T12:33:20+04:00",
+          "tree_id": "02e272b8fdb97df935264f291d8ceb1d7ad74de5",
+          "url": "https://github.com/purlis/purlis/commit/31538baec8b747ba737519beed6cdcfecd27e511"
+        },
+        "date": 1792057762015,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1417.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1276.4, 1417.5, 1490.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 440.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 412.1, 427.2, 432, 448.3, 448.7, 593.6 MB"
           }
         ]
       }
