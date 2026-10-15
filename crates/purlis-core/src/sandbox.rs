@@ -5076,6 +5076,22 @@ pub(crate) fn applied_for(
     let compile = compiler(harness).expect("a harness with a compiler");
     let compiled = Compiled::of(policy, plane, root, machine, None);
     applied_of(harness, compile, &compiled, root, machine)
+        .map(|applied| on_a_profile(applied, machine))
+}
+
+/// `applied` as a start applies it to a chat on a profile: a Codex chat on a profile for
+/// sandboxed chats only, whose folder is Codex's home (#2037); every other harness as compiled.
+#[cfg(test)]
+pub(crate) fn on_a_profile(mut applied: Applied, machine: &Machine) -> Applied {
+    if applied.harness == Harness::Codex {
+        applied.on_profile(&signin::ProfileFolders {
+            config: Homes::of(machine)
+                .profiles
+                .map(|profiles| profiles.join("codex-sandbox/config")),
+            data: None,
+        });
+    }
+    applied
 }
 
 /// [`for_start`] without asking this machine for a backend, for a test of a compiler alone.
@@ -5093,6 +5109,7 @@ pub(crate) fn compiled_anyway(
     let compile = compiler(harness).ok_or(NotStarted::NoCompiler(harness))?;
     let compiled = Compiled::of(&policy, &plane, root, machine, None);
     applied_of(harness, compile, &compiled, root, machine)
+        .map(|applied| on_a_profile(applied, machine))
 }
 
 /// A person's choice, in the window, to start one chat without the sandbox (ADR 0067 §7,
