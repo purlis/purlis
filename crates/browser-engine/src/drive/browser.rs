@@ -371,8 +371,10 @@ pub struct Browser {
     acting: Mutex<()>,
     /// Input events sent to pages, for an answer that says how far an action got.
     inputs: AtomicU64,
+    /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
+    /// call in flight.
     #[cfg(unix)]
-    engine: Option<crate::process::Engine>,
+    engine: Mutex<Option<crate::process::Engine>>,
 }
 
 impl Browser {
@@ -382,7 +384,7 @@ impl Browser {
         let events = engine.take_events().ok_or(Refusal::Ended)?;
         let devtools: Arc<dyn DevTools> = engine.devtools_shared();
         let mut browser = Self::over(devtools, events, limits)?;
-        browser.engine = Some(engine);
+        browser.engine = Mutex::new(Some(engine));
         Ok(browser)
     }
 
@@ -449,14 +451,16 @@ impl Browser {
             acting: Mutex::new(()),
             inputs: AtomicU64::new(0),
             #[cfg(unix)]
-            engine: None,
+            engine: Mutex::new(None),
         })
     }
 
-    /// Asks the engine to close, waits up to `grace`, then ends it.
+    /// Asks the engine to close, waits up to `grace`, then ends it. A call in flight then
+    /// answers that the browser has ended.
     #[cfg(unix)]
-    pub fn stop(mut self, grace: Duration) {
-        if let Some(engine) = self.engine.take() {
+    pub fn stop(&self, grace: Duration) {
+        let engine = lock(&self.engine).take();
+        if let Some(engine) = engine {
             engine.stop(grace);
         }
     }
@@ -490,7 +494,7 @@ impl Browser {
     /// The engine's own pid, while this browser holds its engine.
     #[cfg(unix)]
     pub fn process(&self) -> Option<u32> {
-        self.engine.as_ref().map(crate::process::Engine::pid)
+        lock(&self.engine).as_ref().map(crate::process::Engine::pid)
     }
 
     /// Calls `tell` once the engine has ended, however it ended: at once if it has.

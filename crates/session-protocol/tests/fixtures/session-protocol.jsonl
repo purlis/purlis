@@ -83,3 +83,11 @@
 {"pushed":{"saving":{"project":"01J9PRJCT00000000000000000","saved":true,"moved_tree":false}}}
 {"call":{"id":43,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
 {"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}
+{"call":{"id":90,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","reach":{"listed":[{"host":"docs.example.com","layer":"open"},{"host":"127.0.0.1:5173","layer":"you"}],"never":["tracker.example.com"],"open_web":true}}}
+{"call":{"id":91,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-7","act":{"do":"click","target":"e12"}}}
+{"call":{"id":92,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-8","act":{"do":"type","fields":[{"into":"e4","text":"hello","replace":true},{"text":"!"}]}}}
+{"call":{"id":93,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-9","act":{"do":"drag","from":"e3","to":{"offset":{"x":40,"y":-8}}}}}
+{"call":{"id":94,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-10","act":{"do":"screenshot","page":"p2"}}}
+{"reply":{"re":91,"ok":{"browsed":{"page":{"page":"p1","address":"https://docs.example.com/","title":"Docs","current":true},"settled":true,"opened":[{"page":"p2","address":"https://docs.example.com/new","title":"New","current":true}]}}}}
+{"reply":{"re":94,"ok":{"browsed":{"page":{"page":"p2","address":"https://docs.example.com/new","title":"New","current":true},"settled":false,"waiting_for":["a request still open"],"png":"iVBORw0KGgo=","note":"the screenshot was halved to 640×400 to fit"}}}}
+{"reply":{"re":92,"refused":{"code":"browser_refused","why":"e4 is from an earlier document of its page: take a new snapshot"}}}

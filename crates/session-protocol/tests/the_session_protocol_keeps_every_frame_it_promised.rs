@@ -6,7 +6,8 @@
 //! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says: 1.0's, 1.1's
 //! hosted programs and views of a kind (#1994), 1.2's chats in the host (#1998), 1.3's hooks in
 //! the host (#2000), 1.4's chat confinement in the host (#1999), 1.5's kill switch in the host
-//! (#2001), 1.6's browsers (#2012), and 1.7's saving in the host (#2002). Each must read back
+//! (#2001), 1.6's browsers (#2012), 1.7's saving in the host (#2002), and 1.9's browsers for chats
+//! (#2013). Each must read back
 //! as it was recorded, by this build and so by every later one, which is what lets a client and
 //! a host one version apart talk. A frame kind added without being recorded fails here, so the
 //! promise grows on purpose. The UI RPC is not in it: it is private to one build of the app,

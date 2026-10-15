@@ -45,6 +45,14 @@ impl Screen for Slow {
     fn stop(&self) {}
 
     fn when_it_ends(&self, _tell: Box<dyn FnOnce(Exit) + Send>) {}
+
+    fn act(
+        &self,
+        _call_id: &str,
+        _act: purlis_session_protocol::browsing::Act,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, String> {
+        Err("a stand-in".into())
+    }
 }
 
 #[test]

@@ -105,7 +105,11 @@ use crate::view::{Limits, Views};
 /// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
 /// project's auto-save did; and the host's question to the window of who is mid-turn in a
 /// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
-pub const VERSION: Version = Version { major: 1, minor: 7 };
+///
+/// 1.9 added browsers for chats (#2013): `browse` carries one act to a browser
+/// ([`crate::browsing::Act`]), answered `browsed` or refused `browser_refused` in the driver's
+/// words; a browser's start may say what it reaches (`reach`, [`crate::browsing::BrowserReach`]).
+pub const VERSION: Version = Version { major: 1, minor: 9 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -152,6 +156,9 @@ pub const NOT_STARTED: &str = "not_started";
 /// Every agent is stopped by the kill switch, and nothing starts until the window re-arms it
 /// (1.5, ADR 0071); or a re-arm that could not be kept, so every agent stays stopped.
 pub const STOPPED: &str = "stopped";
+/// A browser's driver refused an act, or could not tell whether it acted (1.9): its `why` is
+/// the driver's sentence, which says what to do.
+pub const BROWSER_REFUSED: &str = "browser_refused";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -163,6 +170,7 @@ pub const REFUSALS: &[&str] = &[
     NOT_ALLOWED,
     NOT_STARTED,
     STOPPED,
+    BROWSER_REFUSED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -296,6 +304,15 @@ pub enum Command {
     Rearm,
     /// Whether every agent is stopped (1.5): answered [`Answer::KillSwitch`].
     KillSwitch,
+    /// One act of a browser's (1.9, #2013), carried out by its driver: answered
+    /// [`Answer::Browsed`], or refused [`BROWSER_REFUSED`] in the driver's words. `call_id` is
+    /// the act's own id: a retry with the same id answers again and acts on nothing. The
+    /// window's alone ([`crate::grants::Power::Browser`]).
+    Browse {
+        program: String,
+        call_id: String,
+        act: crate::browsing::Act,
+    },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -497,6 +514,10 @@ pub struct StartProgram {
     /// host (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch: Option<Launch>,
+    /// For a [`ProgramKind::Browser`], what it may reach (1.9): absent, nothing listed and
+    /// every site new to the project refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reach: Option<crate::browsing::BrowserReach>,
 }
 
 impl StartProgram {
@@ -518,6 +539,7 @@ impl StartProgram {
             first_message: None,
             without_sandbox: false,
             launch: None,
+            reach: None,
         }
     }
 }
@@ -652,6 +674,8 @@ pub enum Answer {
     /// The kill switch as it stands: [`Command::StopAll`], [`Command::Rearm`] and
     /// [`Command::KillSwitch`] (1.5).
     KillSwitch(KillSwitch),
+    /// What a browser answered an act with: [`Command::Browse`] (1.9).
+    Browsed(Box<crate::browsing::Browsed>),
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -862,6 +886,7 @@ wire_words!(Command {
     StopSaving => "stop_saving",
     FetchProject => "fetch_project",
     MidTurn => "mid_turn",
+    Browse => "browse",
 });
 
 impl Command {
@@ -895,6 +920,7 @@ impl Command {
             | Command::ChangeReach { .. }
             | Command::ReachOf { .. } => Power::Confine,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
+            Command::Browse { .. } => Power::Browser,
         }
     }
 }
@@ -910,6 +936,7 @@ wire_words!(Answer {
     ReachChanged => "reach_changed",
     Reach => "reach",
     KillSwitch => "kill_switch",
+    Browsed => "browsed",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -1306,6 +1333,9 @@ enum Lane {
     /// The commands about one project's saving (1.7): a stop is never overtaken by the start
     /// before it.
     Saving(String),
+    /// The acts asked of one browser (1.9): in order among themselves, and never ahead of or
+    /// behind its views, so a long wait for text holds up no view of it.
+    Browsing(String),
 }
 
 impl Lane {
@@ -1345,6 +1375,7 @@ impl Lane {
             Command::StartSaving { project }
             | Command::StopSaving { project }
             | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
+            Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
         }
     }
 }
@@ -1875,6 +1906,27 @@ impl Client {
         };
         match self.call(attach).await? {
             Answer::Attached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// One act of browser `program`'s, under the act's own id `call_id` (1.9): what the browser
+    /// answered, or its driver's refusal ([`BROWSER_REFUSED`]).
+    pub async fn browse(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: crate::browsing::Act,
+    ) -> Result<crate::browsing::Browsed, CallError> {
+        match self
+            .call(Command::Browse {
+                program: program.into(),
+                call_id: call_id.into(),
+                act,
+            })
+            .await?
+        {
+            Answer::Browsed(browsed) => Ok(*browsed),
             other => Err(unexpected(&other)),
         }
     }

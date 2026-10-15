@@ -287,6 +287,12 @@ impl NewSites {
         Self::new(|_| false)
     }
 
+    /// Carries every new site (#2013): a browser the person let reach the open web. What it
+    /// carries is still connected to only at public addresses ([`route`]).
+    pub fn carrying() -> Self {
+        Self::new(|_| true)
+    }
+
     /// Whether `site` is carried.
     pub fn carries(&self, site: &NewSite) -> bool {
         (self.0)(site)

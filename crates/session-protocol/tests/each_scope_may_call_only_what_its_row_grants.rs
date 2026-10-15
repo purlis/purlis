@@ -262,6 +262,12 @@ fn every_command() -> Vec<Command> {
             role: Some(session::ViewRole::Focused),
             rate: None,
         },
+        // A browser driven for a chat: the window's alone (1.9).
+        Command::Browse {
+            program: CHAT.into(),
+            call_id: "c-1".into(),
+            act: purlis_session_protocol::browsing::Act::Pages,
+        },
     ]
 }
 
@@ -304,6 +310,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "rearm",
             "start_program",
             "attach_view",
+            "browse",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",

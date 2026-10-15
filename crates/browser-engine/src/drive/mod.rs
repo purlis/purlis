@@ -30,6 +30,7 @@
 
 mod blank;
 mod browser;
+pub mod fit;
 mod keys;
 mod ledger;
 mod screencast;

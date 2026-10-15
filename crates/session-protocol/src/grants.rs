@@ -126,7 +126,8 @@ pub enum Power {
     /// `rearm` (1.5): lets programs start again after the kill switch.
     Rearm,
     /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
-    /// person, and what it shows.
+    /// person, and what it shows; and `browse` (1.9), an act of a chat's browser, which the
+    /// window hands on once it has decided the chat may have one.
     Browser,
 }
 
