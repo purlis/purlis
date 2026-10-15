@@ -226,3 +226,37 @@ fn outside_a_sandboxed_chat_each_verb_runs_as_before() {
         rec.said()
     );
 }
+
+#[test]
+fn a_persona_secret_verb_names_the_persona_command_and_no_vault() {
+    let (plane, _file) = chat_plane();
+    let refusal =
+        |verb| crate::secrets::persons_own::refused_in_a_sandboxed_chat(&plane.ctx, verb).unwrap();
+    use crate::secrets::persons_own::Verb;
+    let set = refusal(Verb::PersonaSecretSet {
+        persona: Some("devops"),
+        key: "TOKEN",
+    });
+    assert!(
+        set.contains("`purlis persona secret set TOKEN --persona devops`"),
+        "{set}"
+    );
+    let rm = refusal(Verb::PersonaSecretRm {
+        persona: None,
+        key: "TOKEN",
+    });
+    assert!(rm.contains("`purlis persona secret rm TOKEN`"), "{rm}");
+    let audit = refusal(Verb::PersonaSecretAudit { persona: None });
+    assert!(audit.contains("`purlis persona secret audit`"), "{audit}");
+    assert!(audit.contains("purlis persona secret list"), "{audit}");
+
+    // Outside a sandboxed chat none is refused.
+    let person = Plane::new(&[]);
+    assert_eq!(
+        crate::secrets::persons_own::refused_in_a_sandboxed_chat(
+            &person.ctx,
+            Verb::PersonaSecretAudit { persona: None }
+        ),
+        None
+    );
+}

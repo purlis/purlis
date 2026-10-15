@@ -162,16 +162,16 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   names and `secret exec` through a declared tool for a value (a terminal outside the chat on
   Linux).
 - **The rest of the vault verbs are yours, and a sandboxed chat is told so before anything is
-  read** (#1969). `secret set`, `secret rm`, `vault add` and `vault remove` (and the `persona
-  secret` forms of the first two) change a vault or the registry, and the app takes no write
-  for a chat: in a sandboxed chat each is refused before the registry, the vault or standard
-  input is read, with a sentence naming your two ways to do it, the vault's tab (or New vault…
+  read** (#1969). `secret set`, `secret rm`, `vault add` and `vault remove` change a vault or
+  the registry, and the app takes no write for a chat: in a sandboxed chat each is refused
+  before the registry, the vault or standard input is read, with a sentence naming your two ways to do it, the vault's tab (or New vault…
   and Delete vault… in the palette) and the same command in your own terminal. `secret audit`
   and `vault verify` print no value, but read each key's age from the vault's storage and
   resolve every value, which a sandboxed chat does not; they are refused the same way, naming
   `secret list` and `vault list` for what the chat can see, the Vaults panel for each vault's
-  health, and your terminal for the full check. Outside a sandboxed chat every verb runs as
-  before.
+  health, and your terminal for the full check. `persona secret set`, `rm` and `audit` are
+  refused the same way before the persona's vault is looked up, naming the same `persona
+  secret` command. Outside a sandboxed chat every verb runs as before.
 - **A persona's tools: a plain `kubectl` that runs through `secret exec`** (#1407). The
   project's `charter.toml` can name the programs a persona's chats run with a vault's value:
 

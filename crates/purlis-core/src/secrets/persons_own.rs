@@ -22,16 +22,56 @@
 //! Outside a sandboxed chat every verb runs as it always did.
 
 use super::Ctx;
+use super::cmd::{Io, Say};
 
 /// A verb that is the person's in a sandboxed chat, with what it was asked of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verb<'a> {
-    SecretSet { vault: &'a str, key: &'a str },
-    SecretRm { vault: &'a str, key: &'a str },
-    SecretAudit { vault: &'a str },
-    VaultAdd { name: &'a str },
-    VaultRemove { name: &'a str },
-    VaultVerify { name: Option<&'a str> },
+    SecretSet {
+        vault: &'a str,
+        key: &'a str,
+    },
+    SecretRm {
+        vault: &'a str,
+        key: &'a str,
+    },
+    SecretAudit {
+        vault: &'a str,
+    },
+    VaultAdd {
+        name: &'a str,
+    },
+    VaultRemove {
+        name: &'a str,
+    },
+    VaultVerify {
+        name: Option<&'a str>,
+    },
+    /// `persona secret set`, `rm` and `audit`: decided before the persona's vault is looked
+    /// up, so they name the persona (as `--persona` gave it, if it did) and not a vault.
+    PersonaSecretSet {
+        persona: Option<&'a str>,
+        key: &'a str,
+    },
+    PersonaSecretRm {
+        persona: Option<&'a str>,
+        key: &'a str,
+    },
+    PersonaSecretAudit {
+        persona: Option<&'a str>,
+    },
+}
+
+/// Says why `verb` is refused in this process and answers `true`, or answers `false` where it
+/// runs here. The caller returns status 1 on `true`.
+pub fn refused(ctx: &Ctx, verb: Verb<'_>, io: &mut dyn Io) -> bool {
+    match refused_in_a_sandboxed_chat(ctx, verb) {
+        Some(why) => {
+            io.say(Say::Err(why));
+            true
+        }
+        None => false,
+    }
 }
 
 /// What `verb` is refused with in this process, or `None` where it runs here: outside a chat
@@ -75,6 +115,23 @@ pub fn refused_in_a_sandboxed_chat(ctx: &Ctx, verb: Verb<'_>) -> Option<String> 
              holds: purlis secret list {vault}\n  For their ages, ask the person to run \
              `purlis secret audit {vault}` in their own terminal."
         ),
+        Verb::PersonaSecretSet { persona, key } => written(
+            "the persona's vault",
+            &format!("set '{key}' in that vault's tab in the app"),
+            &format!("purlis persona secret set {key}{}", flag(persona)),
+        ),
+        Verb::PersonaSecretRm { persona, key } => written(
+            "the persona's vault",
+            &format!("remove '{key}' in that vault's tab in the app"),
+            &format!("purlis persona secret rm {key}{}", flag(persona)),
+        ),
+        Verb::PersonaSecretAudit { persona } => format!(
+            "a sandboxed chat does not read a vault's storage, and `persona secret audit` reads \
+             each key's age there, so purlis read nothing.\n  To check which keys it holds: \
+             purlis persona secret list{flag}\n  For their ages, ask the person to run `purlis \
+             persona secret audit{flag}` in their own terminal.",
+            flag = flag(persona)
+        ),
         Verb::VaultVerify { name } => {
             let run = match name.filter(|n| !n.is_empty()) {
                 Some(name) => format!("purlis vault verify {name}"),
@@ -88,6 +145,14 @@ pub fn refused_in_a_sandboxed_chat(ctx: &Ctx, verb: Verb<'_>) -> Option<String> 
             )
         }
     })
+}
+
+/// ` --persona <name>` where the command named one, so the command named back is the same.
+fn flag(persona: Option<&str>) -> String {
+    persona
+        .filter(|p| !p.is_empty())
+        .map(|p| format!(" --persona {p}"))
+        .unwrap_or_default()
 }
 
 /// The sentence a write is refused with: what it would have changed, and the person's two

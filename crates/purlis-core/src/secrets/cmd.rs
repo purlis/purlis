@@ -18,7 +18,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::persons_own::{Verb, refused_in_a_sandboxed_chat as person_only};
+use super::persons_own::{self, Verb};
 use super::registry::{self, Vault};
 use super::{Ctx, VaultError, fingerprint, keyring, onepassword, plain_file, reference};
 
@@ -380,8 +380,7 @@ pub fn get(ctx: &Ctx, vault: &str, key: &str, reveal: bool, force: bool, io: &mu
 /// keyring vault track ages (the sidecar, the keys index); the others manage rotation
 /// externally.
 pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
-    if let Some(why) = person_only(ctx, Verb::SecretAudit { vault }) {
-        io.say(Say::Err(why));
+    if persons_own::refused(ctx, Verb::SecretAudit { vault }, io) {
         return 1;
     }
     let v = match provider(ctx, vault) {
@@ -510,8 +509,7 @@ pub fn plaintext_refusal(ctx: &Ctx, v: &Vault) -> Result<(), VaultError> {
 
 /// `cmd_secret_set`: store a value, refusing an empty one unless `--allow-empty`.
 pub fn set(ctx: &Ctx, vault: &str, key: &str, from: &SetFrom, io: &mut dyn Io) -> i32 {
-    if let Some(why) = person_only(ctx, Verb::SecretSet { vault, key }) {
-        io.say(Say::Err(why));
+    if persons_own::refused(ctx, Verb::SecretSet { vault, key }, io) {
         return 1;
     }
     let outcome = (|| -> Result<(String, bool), VaultError> {
@@ -557,8 +555,7 @@ pub fn set(ctx: &Ctx, vault: &str, key: &str, from: &SetFrom, io: &mut dyn Io) -
 
 /// `cmd_secret_rm`.
 pub fn rm(ctx: &Ctx, vault: &str, key: &str, io: &mut dyn Io) -> i32 {
-    if let Some(why) = person_only(ctx, Verb::SecretRm { vault, key }) {
-        io.say(Say::Err(why));
+    if persons_own::refused(ctx, Verb::SecretRm { vault, key }, io) {
         return 1;
     }
     match provider(ctx, vault).and_then(|v| delete(ctx, &v, key)) {
