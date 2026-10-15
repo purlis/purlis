@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792040227906,
+  "lastUpdate": 1792041358608,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11802,6 +11802,48 @@ window.BENCHMARK_DATA = {
             "value": 101.663262,
             "unit": "ms",
             "extra": "median of 5 runs: 101.234, 101.364, 101.663, 101.824, 102.358 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b7a2f169fb4734620feb840983ed3a6126695c62",
+          "message": "feat(proposed): a long proposed change opens in its own tab (#1975, part C) (#2116)\n\nPC-7: a change too long for a row offers Open, which opens a view tab with\nthe whole change in the comparison view and Apply there.\n\n- proposed_change (window-only) reads a proposal whole for its tab: the\n  file before and after and the hunk, or why it is not shown.\n- Apply says where it was pressed (row or tab) and is judged again by that\n  place's rules: a row applies only what it shows whole; the tab also one\n  too long for a row; a credential-shaped or otherwise unshowable change is\n  applied from nowhere.\n- The asks registry offers Open beside such a change; the window opens the\n  tab on it, and Apply there counts only once the change is drawn.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T09:00:56+04:00",
+          "tree_id": "98009ea7b40689c60a39c4a7b296f767fdfcdb99",
+          "url": "https://github.com/purlis/purlis/commit/b7a2f169fb4734620feb840983ed3a6126695c62"
+        },
+        "date": 1792041357834,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5252485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.522, 0.525, 0.525, 0.535 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.112251,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.441, 17.071, 17.112, 17.178, 17.181 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.4479375,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.013, 104.627, 105.448, 105.758, 105.838 ms"
           }
         ]
       }
