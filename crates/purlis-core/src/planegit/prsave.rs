@@ -637,8 +637,12 @@ fn fetch_after_merge(
 /// Push HEAD to `save`, leased against the commit this clone last pushed there (`kept`).
 ///
 /// - **Nothing kept** — the first push from this clone — leases the branch as absent. A
-///   branch that is there anyway is pushed over only when its tip is already in HEAD's
-///   history, so nothing is lost; otherwise it is somebody else's, and the plane is blocked.
+///   branch that is there anyway is pushed over only when HEAD already has every commit on
+///   it ([`tip_is_in_head`]): in its history, or under another sha as a history rewritten
+///   with the same changes leaves them. Nothing is lost; otherwise it is somebody else's, and
+///   the plane is blocked.
+/// - **A tip other than the one kept** is held to the same rule, and the push that follows
+///   is leased against the tip that was seen, so a commit landing in between still blocks.
 /// - **A branch that is gone** — deleted after its PR merged, even between a first push and
 ///   the listing after it — is leased again as absent.
 fn push_save_branch(
@@ -704,9 +708,12 @@ fn push_save_branch(
             // its next save would do anyway, and blocking would only stop auto-save over a race
             // (D-HY8g, amended after review).
             None => Some(String::new()),
-            // Already in HEAD's history — this clone's own earlier push, unrecorded — so
-            // nothing of anybody's is lost. The tip has to be here to be asked about.
+            // Every commit on it is already in HEAD — this clone's own earlier push, unrecorded,
+            // or that push's commits under new shas after the history was rewritten — so
+            // nothing of anybody's is lost. Leased against this tip, not the one kept. The tip
+            // has to be here to be asked about.
             Some(tip) if tip_is_in_head(root, https, helper, save, tip) => Some(tip.clone()),
+            // A commit on it that HEAD has under no sha: somebody else's, never overwritten.
             _ => None,
         };
         if let Some(again) = again {
@@ -733,8 +740,13 @@ fn push_save_branch(
     Err(failed(tail(&pushed), say))
 }
 
-/// Whether the remote save branch's `tip` is in HEAD's history, fetching it first if this
-/// clone does not have it.
+/// Whether HEAD already has every commit on the remote save branch's `tip`, fetching it first
+/// if this clone does not have it: the tip is in HEAD's history, or each commit on it that
+/// HEAD's history lacks is one HEAD has under another sha — the same change, as `git cherry`
+/// reads it. On 2026-10-13 the plane's history was rewritten with the same trees and new
+/// dates, which left every commit on the save branch under an old sha, and every save
+/// blocked. A `git cherry` that did not run is a no: nothing is pushed over what could not be
+/// read.
 fn tip_is_in_head(root: &Path, https: &str, helper: &str, save: &str, tip: &str) -> bool {
     if resolve(root, &format!("{tip}^{{commit}}")).is_none() {
         let _ = git::run_network(
@@ -749,7 +761,14 @@ fn tip_is_in_head(root: &Path, https: &str, helper: &str, save: &str, tip: &str)
             ],
         );
     }
-    is_ancestor(root, tip, "HEAD")
+    is_ancestor(root, tip, "HEAD") || nothing_but_equivalents(root, tip)
+}
+
+/// Whether every commit `tip` has that HEAD lacks is patch-equivalent to one HEAD has: `git
+/// cherry HEAD <tip>` ran and marked none of them `+`.
+fn nothing_but_equivalents(root: &Path, tip: &str) -> bool {
+    git::run(root, &["cherry", "HEAD", tip], git::READ)
+        .is_ok_and(|r| r.ok() && !r.out.lines().any(|line| line.starts_with('+')))
 }
 
 /// The request's title and body: what the save branch carries that the target lacks, in the
