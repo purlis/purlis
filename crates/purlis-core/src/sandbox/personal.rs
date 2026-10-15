@@ -210,11 +210,11 @@ pub fn read(table: &toml::Table, file: &str) -> (Personal, Vec<Refused>) {
 
 /// What the person chose for the project at `root`: read from this machine's own
 /// `purlis.local.toml`, and nothing from one git would carry ([`crate::settings::LayerText`]).
+///
+/// Read at every chat start, so git is asked whether it would carry the file only where the file
+/// holds a `[sandbox]` table at all ([`crate::settings::local_layer_holding`]).
 pub fn of(root: &Path) -> Personal {
-    of_layer(&crate::settings::layer_text(
-        root,
-        crate::settings::Which::Local,
-    ))
+    of_layer(&crate::settings::local_layer_holding(root, super::TABLE))
 }
 
 /// [`of`], from the local file as its layer was read: only a file that is this machine's own

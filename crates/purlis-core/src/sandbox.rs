@@ -5235,16 +5235,27 @@ pub fn bounded(level: Option<personal::Choice>, bound: &team::Bound) -> Option<p
     Some(bound.clamp(level))
 }
 
-/// What `person`'s own level lifts at this start: every class where it is `off`
-/// ([`your_level`]), named by how the start was made; nothing otherwise. The level is read for
-/// the chat's own persona ([`Person::level_as`]), never for whose grants it holds.
-fn yours_lifted(root: &Path, person: &Person<'_>, locks: &policy::Locks) -> Option<Lifted> {
-    let off = your_level(root, person.level_as, locks, person.made) == Some(personal::Choice::Off);
+/// `person`'s own level at this start, read once ([`your_level`]): for the chat's own persona
+/// ([`Person::level_as`]), never for whose grants it holds. `None` for a start that does not
+/// say how it was made, which takes the project's own level.
+fn yours(
+    root: &Path,
+    person: &Person<'_>,
+    locks: &policy::Locks,
+) -> Option<(personal::Choice, Via)> {
     let via = person.made.via()?;
-    off.then_some(Lifted {
-        by: By::YourLevel(via),
-        reason: None,
-    })
+    Some((your_level(root, person.level_as, locks, person.made)?, via))
+}
+
+/// What it lifts: every class where it is `off`, named by how the start was made.
+fn yours_lifted(yours: Option<(personal::Choice, Via)>) -> Option<Lifted> {
+    match yours? {
+        (personal::Choice::Off, via) => Some(Lifted {
+            by: By::YourLevel(via),
+            reason: None,
+        }),
+        _ => None,
+    }
 }
 
 /// [`decide`], for a chat a person let do `chat` besides (#1342).
@@ -5273,7 +5284,8 @@ pub fn decide_granted(
             })));
         }
         // Your own level, through the one seam as in a project at the full sandbox.
-        if let Some(lifted) = yours_lifted(root, person, &locks) {
+        let yours = yours(root, person, &locks);
+        if let Some(lifted) = yours_lifted(yours) {
             return Ok(Some(Decided::Unsandboxed(lifted)));
         }
         if !machine.os.has_backend() {
@@ -5284,15 +5296,7 @@ pub fn decide_granted(
             )));
         }
         return Ok(Some(
-            match for_start_at(
-                harness,
-                root,
-                machine,
-                has,
-                persona,
-                chat,
-                yours_at(root, person, &locks),
-            ) {
+            match for_start_at(harness, root, machine, has, persona, chat, yours_at(yours)) {
                 Ok(Some(applied)) => Decided::Sandboxed(applied),
                 // The floor is always compiled where no policy is in force, so this is not met;
                 // said all the same rather than started with nothing said.
@@ -5316,7 +5320,8 @@ pub fn decide_granted(
     }
     // Your own level (#2071): a confirmed `off` starts the chat as the opt-out does; `on` and
     // `floor` start it at that level below ([`yours_at`]).
-    if let Some(lifted) = yours_lifted(root, person, &locks) {
+    let yours = yours(root, person, &locks);
+    if let Some(lifted) = yours_lifted(yours) {
         return Ok(Some(Decided::Unsandboxed(lifted)));
     }
     if !machine.os.has_backend() {
@@ -5333,17 +5338,14 @@ pub fn decide_granted(
     if plane.missing() {
         return Err(NotStarted::PlaneMissing);
     }
-    let at = yours_at(root, person, &locks);
-    for_start_at(harness, root, machine, has, persona, chat, at)
+    for_start_at(harness, root, machine, has, persona, chat, yours_at(yours))
         .map(|applied| applied.map(Decided::Sandboxed))
 }
 
 /// The level `person`'s own setting starts the chat at, where it chose one: `on` the full
 /// sandbox, `floor` the floor ([`your_level`]); `off` is [`yours_lifted`]'s.
-fn yours_at(root: &Path, person: &Person<'_>, locks: &policy::Locks) -> Option<Level> {
-    // A start that does not say how it was made takes the project's own level.
-    person.made.via()?;
-    match your_level(root, person.level_as, locks, person.made)? {
+fn yours_at(yours: Option<(personal::Choice, Via)>) -> Option<Level> {
+    match yours?.0 {
         personal::Choice::On => Some(Level::Full),
         personal::Choice::Floor => Some(Level::Floor),
         personal::Choice::Off => None,
