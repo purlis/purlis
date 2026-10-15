@@ -106,18 +106,36 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
     if !ours {
         return Err(not_proposable(path));
     }
-    // No link anywhere from the root down: judged on the disk, each folder that is there.
+    // No link anywhere from the root down: judged on the disk, each folder that is there. And
+    // no folder made but below a skills folder: a proposal never makes a persona or a
+    // workspace, which purlis's own ways make.
     let mut at = root.to_path_buf();
-    for part in &parts {
+    for (index, part) in parts.iter().enumerate() {
         at.push(part);
         match std::fs::symlink_metadata(&at) {
             Ok(meta) if meta.file_type().is_symlink() => return Err(not_proposable(path)),
             Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let a_folder = index + 1 < parts.len();
+                if a_folder && !below_skills_at(&parts, index) {
+                    return Err(NO_NEW_FOLDER.to_owned());
+                }
+                break;
+            }
             Err(_) => return Err(not_proposable(path)),
         }
     }
     Ok(rel)
+}
+
+/// What a proposal to a file in a persona or a workspace that is not there is refused with.
+pub const NO_NEW_FOLDER: &str = "a proposed change does not make a new persona or workspace: make \
+     it with purlis first (a new persona or a new workspace), then propose the change.";
+
+/// Whether the folder at `index` of `parts` is a `.claude/skills` folder or below one: the one
+/// place a proposal makes a folder (a new skill's, and the skills folder itself).
+fn below_skills_at(parts: &[&str], index: usize) -> bool {
+    (0..=index).any(|at| parts.get(at) == Some(&".claude") && parts.get(at + 1) == Some(&"skills"))
 }
 
 /// Names never proposed below `.claude/skills` (PC-1): what a program runs as its own.
@@ -322,13 +340,43 @@ pub fn from_edit(root: &Path, payload: &Value, cwd: &Path) -> Option<Result<Prop
 pub const APPLIED_KIND: &str = "trust.proposed.apply";
 
 /// **A proposed change the person applied, as the audit records it** (PC-4): who (the person,
-/// in the window), the persona the chat that proposed it runs as, the file and the SHA-256 of
-/// what was written. Which chat, when and on which machine are the envelope's.
+/// in the window), the persona the chat that proposed it runs as, the file, the SHA-256 of what
+/// is written, and how far it went ([`Outcome`]): one record before the file is written, and
+/// one after, so no record says a file holds what was never written. Which chat, when and on
+/// which machine are the envelope's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Applied<'a> {
     pub persona: Option<&'a str>,
     pub path: &'a str,
     pub written: &'a str,
+    pub outcome: Outcome,
+    /// Why it failed, in purlis's words, for [`Outcome::Failed`].
+    pub why: Option<&'a str>,
+}
+
+/// How far an Apply went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Pressed, and about to be written: recorded before the file is touched.
+    Intent,
+    /// Written.
+    Applied,
+    /// Not written: the file changed since.
+    Stale,
+    /// Not written, for [`Applied::why`].
+    Failed,
+}
+
+impl Outcome {
+    /// The word the record keeps it by.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Intent => "intent",
+            Self::Applied => "applied",
+            Self::Stale => "stale",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 impl Applied<'_> {
@@ -341,6 +389,8 @@ impl Applied<'_> {
             "persona": self.persona,
             "file": self.path,
             "written": self.written,
+            "outcome": self.outcome.word(),
+            "why": self.why,
         })
     }
 }
@@ -507,10 +557,14 @@ pub fn write_pinned(
     let (leaf, folders) = parts.split_last().ok_or(NotMade::Unprepared)?;
     let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
     let mut at = openat(CWD, root, folder, Mode::empty()).map_err(unprepared)?;
-    for name in folders {
+    let names: Vec<&str> = folders
+        .iter()
+        .map(|one| one.to_str().unwrap_or(""))
+        .collect();
+    for (index, name) in folders.iter().enumerate() {
         at = match openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()) {
             Ok(next) => next,
-            Err(rustix::io::Errno::NOENT) if base.is_none() => {
+            Err(rustix::io::Errno::NOENT) if base.is_none() && below_skills_at(&names, index) => {
                 mkdirat(&at, *name, Mode::from_raw_mode(0o755)).map_err(unprepared)?;
                 openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()).map_err(unprepared)?
             }
@@ -544,18 +598,35 @@ pub fn write_pinned(
             stat.st_mode as u32 & 0o7777
         }
     };
-    let temp = format!(
-        ".{}.purlis-apply-{}",
-        leaf.to_string_lossy(),
-        std::process::id()
-    );
-    let written = openat(
-        &at,
-        temp.as_str(),
-        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::from_raw_mode(mode as _),
-    )
-    .map_err(unprepared)?;
+    // A name no one can guess, made new: a name already there (left by a crash, or put there)
+    // is never written through and never blocks; another is drawn.
+    let mut made = None;
+    for _ in 0..TEMP_TRIES {
+        let mut random = [0u8; 8];
+        getrandom::fill(&mut random).map_err(|_| NotMade::Unprepared)?;
+        let temp = format!(
+            ".{}.purlis-apply-{}",
+            leaf.to_string_lossy(),
+            random
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        );
+        match openat(
+            &at,
+            temp.as_str(),
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_raw_mode(mode as _),
+        ) {
+            Ok(file) => {
+                made = Some((temp, file));
+                break;
+            }
+            Err(rustix::io::Errno::EXIST) => {}
+            Err(_) => return Err(NotMade::Unprepared),
+        }
+    }
+    let (temp, written) = made.ok_or(NotMade::Unprepared)?;
     let mut file = std::fs::File::from(written);
     let done = file
         .write_all(after.as_bytes())
@@ -567,6 +638,10 @@ pub fn write_pinned(
     }
     done
 }
+
+/// How many names [`write_pinned`] draws for its new file before it gives up.
+#[cfg(unix)]
+const TEMP_TRIES: usize = 8;
 
 /// [`write_pinned`] where no folder can be opened without following a link: never.
 #[cfg(not(unix))]

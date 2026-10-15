@@ -383,3 +383,67 @@ fn the_app_makes_and_writes_the_change_only_while_the_file_is_what_it_was() {
     // One a chat made since it was proposed as new: stale.
     assert_eq!(write_pinned(&root, skill, None, "x"), Err(NotMade::Stale));
 }
+
+/// A proposal never makes a persona or a workspace (the dispatcher's decision, to be
+/// confirmed): a file in one that is not there is refused, and a new skill folder is made.
+#[test]
+fn a_proposal_makes_no_new_persona_or_workspace() {
+    let (_dir, root) = project();
+    for no in [
+        "personas/newcomer/persona.md",
+        "personas/newcomer/mcp.json",
+        "workspaces/newcomer/purlis.toml",
+        "personas/newcomer/.claude/skills/x/SKILL.md",
+    ] {
+        assert_eq!(
+            proposable(&root, &root.join(no)),
+            Err(NO_NEW_FOLDER.to_owned()),
+            "{no}"
+        );
+    }
+    for yes in [
+        "personas/devops/persona.md",
+        ".claude/skills/new-skill/SKILL.md",
+        "workspaces/alpha/.claude/skills/new/SKILL.md",
+        "personas/devops/.claude/skills/new/scripts/run.py",
+    ] {
+        assert!(proposable(&root, &root.join(yes)).is_ok(), "{yes}");
+    }
+}
+
+/// The app's write makes no folder but a skill's, and its new file's name is drawn new each
+/// time: one left behind never blocks it.
+#[cfg(unix)]
+#[test]
+fn the_app_s_write_makes_no_persona_and_is_not_blocked_by_a_leftover() {
+    let (_dir, root) = project();
+    assert_eq!(
+        write_pinned(&root, Path::new("personas/newcomer/persona.md"), None, "x"),
+        Err(NotMade::Stale)
+    );
+    assert!(!root.join("personas/newcomer").exists());
+    // A leftover of the old, guessable name beside the file changes nothing.
+    std::fs::write(
+        root.join("personas/devops/.persona.md.purlis-apply-1"),
+        "left",
+    )
+    .expect("a leftover");
+    write_pinned(
+        &root,
+        Path::new("personas/devops/persona.md"),
+        None,
+        "# Devops\n",
+    )
+    .expect("written");
+    assert_eq!(
+        std::fs::read_to_string(root.join("personas/devops/persona.md")).expect("read"),
+        "# Devops\n"
+    );
+    let left: Vec<_> = std::fs::read_dir(root.join("personas/devops"))
+        .expect("a folder")
+        .filter_map(Result::ok)
+        .map(|one| one.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains("purlis-apply") && name != ".persona.md.purlis-apply-1")
+        .collect();
+    assert!(left.is_empty(), "no new file left behind: {left:?}");
+}

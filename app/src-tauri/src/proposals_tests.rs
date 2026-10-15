@@ -33,6 +33,11 @@ fn ask(chat: u32, base: Option<String>, change: Change) -> ProposeAsk {
     }
 }
 
+/// A token-shaped value, built where it is used so no source file holds one.
+fn token() -> String {
+    ["ghp", "_0123456789abcdefABCDEFghij0123456789"].concat()
+}
+
 fn manifest(root: &Path) -> String {
     std::fs::read_to_string(root.join("purlis.toml")).expect("the manifest")
 }
@@ -143,7 +148,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
     assert_eq!(
-        apply_in(&root, &one, Some("devops"), &refused),
+        apply_in(&root, &one, Some("devops"), &refused, &Mutex::new(())),
         Err(Refusal::Not("the event log is not open".to_owned()))
     );
     assert_eq!(manifest(&root), "[plane]\n", "nothing written unaudited");
@@ -153,10 +158,18 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         audited.borrow_mut().push(applied.body());
         Ok(())
     };
-    let said = apply_in(&root, &one, Some("devops"), &audit).expect("applied");
+    let said = apply_in(&root, &one, Some("devops"), &audit, &Mutex::new(())).expect("applied");
     assert!(said.starts_with("Applied to purlis.toml"), "{said}");
     assert_eq!(manifest(&root), "[plane]\nmode = \"pr\"\n");
-    let body = audited.borrow_mut().pop().expect("audited");
+    let bodies: Vec<serde_json::Value> = audited.borrow_mut().drain(..).collect();
+    // One record before the write, one after it, so none says a file holds what was never
+    // written.
+    let outcomes: Vec<&str> = bodies
+        .iter()
+        .map(|one| one["outcome"].as_str().unwrap())
+        .collect();
+    assert_eq!(outcomes, ["intent", "applied"]);
+    let body = &bodies[1];
     assert_eq!(body["persona"], "devops");
     assert_eq!(body["file"], "purlis.toml");
     assert_eq!(
@@ -165,7 +178,10 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     );
 
     // The file is not what it was proposed against any more: stale, nothing written.
-    assert_eq!(apply_in(&root, &one, None, &audit), Err(Refusal::Stale));
+    assert_eq!(
+        apply_in(&root, &one, None, &audit, &Mutex::new(())),
+        Err(Refusal::Stale)
+    );
     assert_eq!(manifest(&root), "[plane]\nmode = \"pr\"\n");
     // One marked stale is never applied.
     let marked = Proposal {
@@ -173,7 +189,10 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         base: base_of(Some(b"[plane]\nmode = \"pr\"\n")),
         ..one
     };
-    assert_eq!(apply_in(&root, &marked, None, &audit), Err(Refusal::Stale));
+    assert_eq!(
+        apply_in(&root, &marked, None, &audit, &Mutex::new(())),
+        Err(Refusal::Stale)
+    );
 }
 
 /// PC-7, PC-8, PC-13: Apply is offered only beside a change shown whole that still applies;
@@ -229,4 +248,110 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
             ["dismiss"]
         );
     }
+}
+
+/// PC-7, S3: Apply judges again that the change is shown whole; one that is not (a
+/// credential's shape here) is never written, whatever asked for it.
+#[test]
+fn apply_never_writes_a_change_not_shown_whole() {
+    let (_dir, root) = project();
+    let one = Proposal {
+        id: 1,
+        session: 3,
+        path: "purlis.toml".to_owned(),
+        base: base_of(Some(b"[plane]\n")),
+        change: Change::Whole {
+            content: format!("token = \"{}\"\n", token()),
+        },
+        since: 1,
+        stale: false,
+    };
+    let audit = |_: &proposed::Applied<'_>| -> Result<(), String> {
+        panic!("nothing is recorded for a change never written")
+    };
+    assert_eq!(
+        apply_in(&root, &one, None, &audit, &Mutex::new(())),
+        Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()))
+    );
+    assert_eq!(manifest(&root), "[plane]\n");
+}
+
+/// PC-8: two Applies against the file as it was, at once: one writes, the other finds it
+/// changed and is stale. Never both.
+#[test]
+fn two_applies_against_the_same_file_as_it_was_never_both_write() {
+    let (_dir, root) = project();
+    let lock = std::sync::Arc::new(Mutex::new(()));
+    let proposal = |id: u32, line: &str| Proposal {
+        id,
+        session: id,
+        path: "purlis.toml".to_owned(),
+        base: base_of(Some(b"[plane]\n")),
+        change: Change::Edits {
+            edits: vec![Edit {
+                old: "[plane]".to_owned(),
+                new: format!("[plane]\n{line}"),
+                every: false,
+            }],
+        },
+        since: 1,
+        stale: false,
+    };
+    let handles: Vec<_> = [
+        proposal(1, "mode = \"pr\""),
+        proposal(2, "mode = \"local\""),
+    ]
+    .into_iter()
+    .map(|one| {
+        let (root, lock) = (root.clone(), std::sync::Arc::clone(&lock));
+        std::thread::spawn(move || apply_in(&root, &one, None, &|_| Ok(()), &lock))
+    })
+    .collect();
+    let results: Vec<_> = handles.into_iter().map(|one| one.join().unwrap()).collect();
+    assert_eq!(
+        results.iter().filter(|one| one.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|one| **one == Err(Refusal::Stale))
+            .count(),
+        1,
+        "{results:?}"
+    );
+}
+
+/// PC-4: a write that fails is recorded as failed, after the intent; nothing says applied.
+#[cfg(unix)]
+#[test]
+fn a_write_that_fails_is_recorded_as_failed() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, root) = project();
+    let one = Proposal {
+        id: 1,
+        session: 3,
+        path: "purlis.toml".to_owned(),
+        base: base_of(Some(b"[plane]\n")),
+        change: mode_pr(),
+        since: 1,
+        stale: false,
+    };
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).expect("read-only");
+    let audited = std::cell::RefCell::new(Vec::new());
+    let audit = |applied: &proposed::Applied<'_>| {
+        audited.borrow_mut().push(applied.body());
+        Ok(())
+    };
+    let result = apply_in(&root, &one, None, &audit, &Mutex::new(()));
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).expect("writable");
+    assert!(matches!(result, Err(Refusal::Not(_))), "{result:?}");
+    let outcomes: Vec<String> = audited
+        .borrow()
+        .iter()
+        .map(|one| one["outcome"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(outcomes, ["intent", "failed"]);
+    assert_eq!(manifest(&root), "[plane]\n");
 }

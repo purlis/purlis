@@ -61,6 +61,8 @@ pub struct Proposal {
 #[derive(Debug, Default)]
 pub struct Proposals {
     held: Mutex<(u32, Vec<Proposal>)>,
+    /// Held by an Apply from its read of the file to its rename ([`apply_in`]).
+    applying: Mutex<()>,
 }
 
 impl Proposals {
@@ -96,6 +98,11 @@ impl Proposals {
             stale: false,
         });
         Some(id)
+    }
+
+    /// The project's Apply lock ([`apply_in`]).
+    pub fn applying(&self) -> &Mutex<()> {
+        &self.applying
     }
 
     /// Every proposal that waits, oldest first.
@@ -313,7 +320,13 @@ pub fn applied(held: &Held, id: u32) -> Result<String, String> {
         .and_then(|chat| chat.persona);
     let audit =
         |applied: &proposed::Applied<'_>| held.hooks().record_proposed(root, one.session, applied);
-    match apply_in(root, &one, persona.as_deref(), &audit) {
+    match apply_in(
+        root,
+        &one,
+        persona.as_deref(),
+        &audit,
+        held.proposals().applying(),
+    ) {
         Ok(said) => {
             held.proposals().take(id);
             for session in held.proposals().others_stale(&one.path) {
@@ -363,12 +376,19 @@ pub enum Refusal {
     Not(String),
 }
 
-/// Applies `one` in the project at `root`: judged again, audited by `audit`, then written.
+/// What Apply says of a change that is not shown whole: never applied, whatever asked.
+pub const NOT_SHOWN_SAID: &str = "This change is not shown whole, so nothing was written.";
+
+/// **Applies `one` in the project at `root`**: judged again, shown whole, audited, written, and
+/// the outcome audited. `lock` is the project's: held from the read of the file to its
+/// rename, so two Applies against the same file as it was cannot both pass the check; the
+/// second finds the file changed and is stale.
 pub fn apply_in(
     root: &Path,
     one: &Proposal,
     persona: Option<&str>,
     audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+    lock: &Mutex<()>,
 ) -> Result<String, Refusal> {
     if one.stale {
         return Err(Refusal::Stale);
@@ -377,28 +397,52 @@ pub fn apply_in(
         return Err(Refusal::Not(why));
     }
     let rel: PathBuf = proposed::proposable(root, &root.join(&one.path)).map_err(Refusal::Not)?;
+    let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let made = match proposed::prepare(root, &rel, Some(one.base.as_deref()), &one.change) {
         Ok(made) => made,
         Err(NotMade::Stale) => return Err(Refusal::Stale),
         Err(NotMade::Unprepared) => return Err(Refusal::Not(proposed::UNPREPARED.to_owned())),
     };
+    // Only what the window shows whole is applied (PC-7, S3): the same judgement its row makes,
+    // made again here, so no caller writes a change never shown.
+    let shown =
+        crate::askwrites::proposed(&one.path, made.before.as_deref().unwrap_or(""), &made.after);
+    if !matches!(shown, crate::askwrites::WritesShown::Whole { .. }) {
+        return Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()));
+    }
     let written = proposed::base_of(Some(made.after.as_bytes())).unwrap_or_default();
-    audit(&proposed::Applied {
-        persona,
-        path: &one.path,
-        written: &written,
-    })
-    .map_err(Refusal::Not)?;
-    match proposed::write_pinned(root, &rel, one.base.as_deref(), &made.after) {
+    let record = |outcome, why: Option<&str>| {
+        audit(&proposed::Applied {
+            persona,
+            path: &one.path,
+            written: &written,
+            outcome,
+            why,
+        })
+    };
+    record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
+    let result = proposed::write_pinned(root, &rel, one.base.as_deref(), &made.after);
+    let couldnt = format!(
+        "purlis could not write {}, so nothing was written.",
+        purlis_core::shown::short(&one.path)
+    );
+    let (outcome, why) = match &result {
+        Ok(()) => (proposed::Outcome::Applied, None),
+        Err(NotMade::Stale) => (proposed::Outcome::Stale, None),
+        Err(NotMade::Unprepared) => (proposed::Outcome::Failed, Some(couldnt.as_str())),
+    };
+    // What happened is recorded whatever it was; a record that fails now is said in the log,
+    // since the file is as it is either way.
+    if let Err(why) = record(outcome, why) {
+        tracing::warn!("purlis: a proposed change's outcome was not recorded ({why})");
+    }
+    match result {
         Ok(()) => Ok(format!(
             "Applied to {}. It rides your next save.",
             purlis_core::shown::short(&one.path)
         )),
         Err(NotMade::Stale) => Err(Refusal::Stale),
-        Err(NotMade::Unprepared) => Err(Refusal::Not(format!(
-            "purlis could not write {}, so nothing was written.",
-            purlis_core::shown::short(&one.path)
-        ))),
+        Err(NotMade::Unprepared) => Err(Refusal::Not(couldnt)),
     }
 }
 

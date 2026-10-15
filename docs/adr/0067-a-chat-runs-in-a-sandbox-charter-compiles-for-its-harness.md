@@ -1568,8 +1568,15 @@ the person applies.
   regular file its name says, makes the change to it, shows the file before and after, and on
   **Apply** writes exactly that, as the person, only while the file is still what the proposal
   was worked out against. Nothing the chat sent is taken for what the file holds.
-- **Audited** (PC-4): `trust.proposed.apply`, before the file is written. The file then rides
-  the person's next save (PC-12: git history and Changes' discard undo it).
+- **Audited** (PC-4): `trust.proposed.apply`, once before the file is written (`intent`) and once
+  after (`applied`, `stale`, or `failed` with why). The file then rides the person's next save
+  (PC-12: git history and Changes' discard undo it).
+- **Apply judges again**: the change is made to the file as the app reads it, shown whole by the
+  row's own rules, and written under one lock per project held from the read to the rename, so
+  of two Applies against the file as it was, the second is stale.
+- **No new persona or workspace** (the dispatcher's decision, to be confirmed): a proposal makes
+  no folder but a skill's (`.claude/skills` and below). A file in a persona or a workspace that
+  is not there is refused; a new persona or workspace is made with purlis's own ways first.
 - **Allows nothing** (PC-5): a tool or host the change declares still asks its own Allow.
 - **Stale** (PC-8): a file changed since its proposal is not written; the proposal offers
   Dismiss alone and the chat is told to read it again and propose again. Never merged.
