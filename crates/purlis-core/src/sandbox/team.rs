@@ -204,18 +204,25 @@ fn is_commit_id(said: &str) -> bool {
 
 /// **Where the team's off came from**: [`Arrival::Upstream`] where the commit it arrived in
 /// ([`arrived`]) is in the history of the upstream commit purlis's own fetch found, read as
-/// written; [`Arrival::Local`] otherwise. None where no commit turns it off.
+/// written, and turned the sandbox off as written ([`written_arrival`], which also names its
+/// author); [`Arrival::Local`] otherwise. None where no commit turns it off.
 fn arrival(root: &Path) -> Option<Arrival> {
     let arrived = arrived(root)?;
-    Some(if on_fetched_upstream(root, &arrived.commit) {
-        Arrival::Upstream(arrived)
-    } else {
-        Arrival::Local
+    if !on_fetched_upstream(root, &arrived.commit) {
+        return Some(Arrival::Local);
+    }
+    Some(match written_arrival(root, &arrived.commit) {
+        Some(author) => Arrival::Upstream(Arrived {
+            commit: arrived.commit,
+            author,
+        }),
+        None => Arrival::Local,
     })
 }
 
 /// Whether `commit` is in the history of the upstream commit purlis's own fetch kept for
-/// `root`. Never where nothing was kept, the repository has grafts, or git does not answer.
+/// `root`, read as written ([`written_ancestor`]). Never where nothing was kept, the repository
+/// has grafts, or git does not answer.
 fn on_fetched_upstream(root: &Path, commit: &str) -> bool {
     let Some(upstream) = super::local::fetched_upstream(root) else {
         return false;
@@ -238,7 +245,234 @@ fn on_fetched_upstream(root: &Path, commit: &str) -> bool {
     if grafts.exists() {
         return false;
     }
-    git(&[AS_WRITTEN, "merge-base", "--is-ancestor", commit, &upstream]).is_some_and(|run| run.ok())
+    written_ancestor(root, commit, &upstream)
+}
+
+/// Whether `commit` is in the history of `upstream` as that history was written, not as the
+/// clone's store holds it: every commit on the way from `upstream` down to `commit` is read back
+/// and hashed, kept only where its bytes are the ones its id names, and the way is walked
+/// through the parents those checked bytes name. git lists the commits on the way; it is never
+/// taken at its word on what they say. Never for a repository whose ids are not SHA-1.
+fn written_ancestor(root: &Path, commit: &str, upstream: &str) -> bool {
+    use std::collections::HashMap;
+    let kind = gix::hash::Kind::Sha1;
+    let Ok(upstream) = gix::ObjectId::from_hex(upstream.as_bytes()) else {
+        return false;
+    };
+    let Ok(commit) = gix::ObjectId::from_hex(commit.as_bytes()) else {
+        return false;
+    };
+    if upstream.kind() != kind || commit.kind() != kind {
+        return false;
+    }
+    let range = format!("{commit}..{upstream}");
+    let Some(listed) = crate::worktree::git::run(
+        root,
+        &[AS_WRITTEN, "rev-list", "--ancestry-path", &range],
+        GIT_WAIT,
+    )
+    .ok()
+    .filter(crate::worktree::git::Run::ok) else {
+        return false;
+    };
+    let mut asked: Vec<gix::ObjectId> = listed
+        .out
+        .lines()
+        .filter_map(|line| gix::ObjectId::from_hex(line.trim().as_bytes()).ok())
+        .collect();
+    asked.push(commit);
+    let Some(read) = written(root, &asked) else {
+        return false;
+    };
+    // Each commit read back as written, by the parents its bytes name.
+    let mut parents = HashMap::new();
+    for (id, (object, bytes)) in &read {
+        if *object != gix::objs::Kind::Commit {
+            continue;
+        }
+        let Ok(read) = gix::objs::CommitRef::from_bytes(bytes, kind) else {
+            continue;
+        };
+        parents.insert(*id, read.parents().collect::<Vec<_>>());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut ahead = vec![upstream];
+    while let Some(at) = ahead.pop() {
+        if !seen.insert(at) {
+            continue;
+        }
+        let Some(of) = parents.get(&at) else { continue };
+        if at == commit {
+            return true;
+        }
+        ahead.extend(of.iter().copied());
+    }
+    false
+}
+
+/// **The objects `ids` name, read as written**: each read back from the clone's store and kept
+/// only where its bytes hash to its id, by its kind and bytes. An object missing, or whose bytes
+/// are not the ones its id names, is left out. None where git does not answer.
+fn written(
+    root: &Path,
+    ids: &[gix::ObjectId],
+) -> Option<std::collections::HashMap<gix::ObjectId, (gix::objs::Kind, Vec<u8>)>> {
+    let mut asked = String::new();
+    for id in ids {
+        asked.push_str(&format!("{id}\n"));
+    }
+    let read = crate::worktree::git::run_with_input(
+        root,
+        &[AS_WRITTEN, "cat-file", "--batch"],
+        asked.into_bytes(),
+        GIT_WAIT,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0))?;
+    let mut kept = std::collections::HashMap::new();
+    let mut rest = read.out.as_slice();
+    while !rest.is_empty() {
+        let (record, after) = batch_record(rest)?;
+        rest = after;
+        let Some((id, object, bytes)) = record else {
+            continue;
+        };
+        let hashed = gix::objs::compute_hash(id.kind(), object, bytes);
+        if hashed.ok() == Some(id) {
+            kept.insert(id, (object, bytes.to_vec()));
+        }
+    }
+    Some(kept)
+}
+
+/// An object read back: its id, kind and bytes.
+type Record<'a> = (gix::ObjectId, gix::objs::Kind, &'a [u8]);
+
+/// One record of `git cat-file --batch`'s answer: the object's id, kind and bytes (none for an
+/// object that is missing), and what follows it. None where the answer is not one.
+fn batch_record(answer: &[u8]) -> Option<(Option<Record<'_>>, &[u8])> {
+    let end = answer.iter().position(|&b| b == b'\n')?;
+    let header = std::str::from_utf8(&answer[..end]).ok()?;
+    let after = &answer[end + 1..];
+    let mut words = header.split(' ');
+    let id = words.next()?;
+    match (words.next(), words.next(), words.next()) {
+        (Some("missing" | "ambiguous"), None, None) => Some((None, after)),
+        (Some(kind), Some(size), None) => {
+            let size: usize = size.parse().ok()?;
+            let bytes = after.get(..size)?;
+            let after = after.get(size..)?.strip_prefix(b"\n")?;
+            let record = gix::ObjectId::from_hex(id.as_bytes())
+                .ok()
+                .zip(gix::objs::Kind::from_bytes(kind.as_bytes()).ok())
+                .map(|(id, kind)| (id, kind, bytes));
+            Some((record, after))
+        }
+        _ => None,
+    }
+}
+
+/// **Who wrote `commit`, where it turned the sandbox off as written and the upstream still has
+/// it off**: the author its own bytes name, where those bytes are the ones its id names, the
+/// manifest it holds (every tree on the way to it and the file itself read as written) turns the
+/// sandbox off, its first parent's, read the same way, does not, and the manifest of the upstream
+/// commit purlis's own fetch found, read the same way, still does. None otherwise, and for a
+/// repository whose ids are not SHA-1.
+fn written_arrival(root: &Path, commit: &str) -> Option<String> {
+    let commit = gix::ObjectId::from_hex(commit.as_bytes()).ok()?;
+    if commit.kind() != gix::hash::Kind::Sha1 {
+        return None;
+    }
+    let upstream = super::local::fetched_upstream(root)?;
+    let upstream = gix::ObjectId::from_hex(upstream.as_bytes()).ok()?;
+    let path = manifest_path(root)?;
+    let arrived = written_commit(root, commit)?;
+    if !written_off(root, arrived.tree, &path)? {
+        return None;
+    }
+    if let Some(parent) = arrived.parent
+        && written_off(root, written_commit(root, parent)?.tree, &path)?
+    {
+        return None;
+    }
+    if !written_off(root, written_commit(root, upstream)?.tree, &path)? {
+        return None;
+    }
+    Some(arrived.author)
+}
+
+/// A commit read as written: its tree, first parent and author.
+struct WrittenCommit {
+    tree: gix::ObjectId,
+    parent: Option<gix::ObjectId>,
+    author: String,
+}
+
+/// The commit `id` names, read as written ([`written`]). None where it is not, or is no commit.
+fn written_commit(root: &Path, id: gix::ObjectId) -> Option<WrittenCommit> {
+    let read = written(root, &[id])?;
+    let (object, bytes) = read.get(&id)?;
+    if *object != gix::objs::Kind::Commit {
+        return None;
+    }
+    let read = gix::objs::CommitRef::from_bytes(bytes, id.kind()).ok()?;
+    Some(WrittenCommit {
+        tree: read.tree(),
+        parent: read.parents().next(),
+        author: String::from_utf8_lossy(read.author().ok()?.name)
+            .trim()
+            .to_owned(),
+    })
+}
+
+/// The manifest's path from the top of the repository, one name per directory.
+fn manifest_path(root: &Path) -> Option<Vec<String>> {
+    let manifest = crate::names::manifest(root);
+    let name = manifest.file_name()?.to_str()?.to_owned();
+    let prefix = crate::worktree::git::run(root, &["rev-parse", "--show-prefix"], GIT_WAIT)
+        .ok()
+        .filter(crate::worktree::git::Run::ok)?;
+    let mut path: Vec<String> = prefix
+        .out
+        .trim_end_matches(['\n', '\r'])
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    path.push(name);
+    Some(path)
+}
+
+/// Whether the file at `path` under `tree` turns the sandbox off, read as written: every tree on
+/// the way and the file itself are kept only where their bytes are the ones their ids name. A
+/// path that holds no file turns nothing off. None where an object on the way is not as written.
+fn written_off(root: &Path, tree: gix::ObjectId, path: &[String]) -> Option<bool> {
+    let mut at = tree;
+    for (depth, name) in path.iter().enumerate() {
+        let read = written(root, &[at])?;
+        let (object, bytes) = read.get(&at)?;
+        if *object != gix::objs::Kind::Tree {
+            return None;
+        }
+        let entries = gix::objs::TreeRef::from_bytes(bytes, at.kind()).ok()?;
+        let Some(entry) = entries.entries.iter().find(|entry| {
+            let named: &[u8] = entry.filename;
+            named == name.as_bytes()
+        }) else {
+            return Some(false);
+        };
+        let last = depth + 1 == path.len();
+        match (last, entry.mode.is_tree(), entry.mode.is_blob()) {
+            (false, true, _) | (true, _, true) => at = entry.oid.to_owned(),
+            _ => return Some(false),
+        }
+    }
+    let read = written(root, &[at])?;
+    let (object, bytes) = read.get(&at)?;
+    if *object != gix::objs::Kind::Blob {
+        return None;
+    }
+    Some(Team::of_text(&String::from_utf8_lossy(bytes)).off)
 }
 
 /// **The commit the team's off arrived in**: of the commits that changed the manifest, newest
