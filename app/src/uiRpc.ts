@@ -650,6 +650,8 @@ export const commands = {
 	machineProfileImport: __WINDOW_ONLY_RESULT,
 	machineProfileRemoval: __WINDOW_ONLY_RESULT,
 	machineProfileRemove: __WINDOW_ONLY_RESULT,
+	typeProfileSignIn: __WINDOW_ONLY_RESULT,
+	dismissSignIn: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -1995,6 +1997,12 @@ export type AnswerPath =
  *  proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
  */
 { via: "proposed-change"; id: number; path: string } | 
+/**
+ *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
+ *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
+ *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ */
+{ via: "sign-in"; profile: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2107,7 +2115,12 @@ export type AskSource =
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
-"question";
+"question" | 
+/**
+ *  A profile a chat could not start on, because its harness says it is not signed in on
+ *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
+ */
+"sign-in";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4950,6 +4963,19 @@ export type MachineProfileRow = {
 	imported_at: number | null,
 	/**  The folder they were imported from. */
 	imported_from: string | null,
+	/**  How it signs in, and where: *through Claude Code's own sign-in, on this Mac*. */
+	signs_in: string,
+	/**
+	 *  Whether its harness says it is signed in on this device: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null for an adopted profile, signed in by the person's own sign-in and
+	 *  never asked.
+	 */
+	standing: string | null,
+	/**
+	 *  The plans Sign in offers, where purlis names the provider (opencode's ChatGPT and GitHub
+	 *  Copilot, never a Claude plan); empty where the harness signs in to its own.
+	 */
+	plans: PlanRow[],
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -6030,6 +6056,12 @@ export type PlainFileVault = {
 	name: string,
 	/**  `false` for one the team's file registers, which is the team's to move. */
 	movable: boolean,
+};
+
+/**  A plan a profile is signed in to, by the provider id its harness takes. */
+export type PlanRow = {
+	id: string,
+	title: string,
 };
 
 /**  One open project's alerts. */
@@ -7220,9 +7252,9 @@ export type SandboxState = {
 	 */
 	expects?: ProjectExpects | null,
 	/**
-	 *  **The project's sandbox off** (#2071 PR C): its committed `[sandbox] mode = "off"`, the
-	 *  commit it arrived in, and how the person on this machine answered it. `null` where the
-	 *  project does not turn the sandbox off in a commit.
+	 *  **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
+	 *  "off"`, where it came from as far as purlis verified it, and how the person on this
+	 *  machine answered it. `null` where the project does not turn the sandbox off in a commit.
 	 */
 	team_off?: TeamOffState | null,
 	/**
@@ -8118,15 +8150,22 @@ export type TasksUsed = {
 };
 
 /**
- *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8): once,
- *  "Your project turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on
- *  for me; Settings offers the other answer after.
+ *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8; #2156):
+ *  once, with Accept and Keep it on for me; Settings offers the other answer after. It names
+ *  the commit and its author only where purlis verified them on the upstream it fetched, and
+ *  otherwise says the off is local.
  */
 export type TeamOffState = {
-	/**  The commit that turned it off, whole: what an answer is sent back with. */
-	commit: string,
-	/**  Who made that commit, as git names them. Written by a repository: drawn inertly. */
-	author: string,
+	/**
+	 *  The commit that turned it off, whole, where purlis verified it on the upstream it
+	 *  fetched; `null` where the off is local.
+	 */
+	commit: string | null,
+	/**
+	 *  Who made that commit, as git names them, where verified as `commit` is. Written by a
+	 *  repository: drawn inertly.
+	 */
+	author: string | null,
 	/**  The ask's sentence, in purlis's words. */
 	said: string,
 	/**  `null` until answered; `true` accepted (no sandbox by default), `false` kept on. */

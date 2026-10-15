@@ -514,6 +514,8 @@ type Shape = {
   reason: boolean;
   /** It has the queue's Ignore. */
   ignore: boolean;
+  /** It has Go to chat: every ask but a profile's, which is about no chat (#2035). */
+  go: boolean;
 };
 
 function shapeOf(
@@ -546,6 +548,7 @@ function shapeOf(
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
     ignore: waits && onIgnore !== undefined,
+    go: ask.source !== "sign-in",
   };
 }
 
@@ -556,7 +559,8 @@ function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): s
     ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
-    `${key}:go`,
+    // A profile's Ask is about no chat (#2035): there is no chat to go to.
+    ...(shape.go ? [`${key}:go`] : []),
     ...(shape.ignore ? [`${key}:ignore`] : []),
   ];
 }
@@ -606,6 +610,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "sandbox-local": "Asks to reach a service on this machine",
   "workspace-removal": "Asks you to remove a workspace",
   "proposed-change": "Proposes a change for you to apply",
+  "sign-in": "Asks you to sign a profile in",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };
@@ -814,16 +819,18 @@ function Ask({
         )}
         {/* Its ways on, side by side at its foot: one line, never one each. */}
         <div className="inbox-acts ui-button-row">
-          <Stop id={`${key}:go`}>
-            <button
-              type="button"
-              className="ui-button ui-button-ghost ui-button-sm inbox-go"
-              aria-label={`Go to chat ${who}`}
-              onClick={onGo}
-            >
-              Go to chat
-            </button>
-          </Stop>
+          {shape.go && (
+            <Stop id={`${key}:go`}>
+              <button
+                type="button"
+                className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                aria-label={`Go to chat ${who}`}
+                onClick={onGo}
+              >
+                Go to chat
+              </button>
+            </Stop>
+          )}
           {shape.ignore && onIgnore !== undefined && (
             <Stop id={`${key}:ignore`}>
               <button

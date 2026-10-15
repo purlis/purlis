@@ -283,6 +283,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::ProposedChange => "Proposes a change for you to apply",
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
+        AskSource::SignIn => "Asks you to sign a profile in",
     }
 }
 

@@ -234,6 +234,28 @@ describe("the asks, grouped by chat", () => {
     ]);
   });
 
+  it("draws a profile's Ask to sign it in under the profile, with no chat to go to (#2035)", () => {
+    core();
+    const signIn: Shown = {
+      session: 0,
+      ask: "sign-in:work",
+      says: "work is not signed in on this Mac: a chat on it does not start until it is",
+      options: [
+        { id: "sign-in", label: "Sign in", allows: true },
+        { id: "dismiss", label: "Dismiss", allows: false },
+      ],
+      source: "sign-in",
+      chain: ["Profile work"],
+      answer: { via: "sign-in", profile: "work" },
+    };
+    draw([signIn]);
+    expect(chats()).toEqual(["Profile work"]);
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Sign in",
+      "Dismiss",
+    ]);
+  });
+
   it("cuts a run of stacked combining marks to a few, and then offers no Allow (#1146)", () => {
     core();
     const zalgo = `Run rm -rf build${"́".repeat(40)}`;

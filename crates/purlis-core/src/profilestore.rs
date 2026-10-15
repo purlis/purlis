@@ -469,5 +469,7 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
 mod made;
 pub use made::*;
 
+pub mod sign_in;
+
 #[cfg(test)]
 mod tests;

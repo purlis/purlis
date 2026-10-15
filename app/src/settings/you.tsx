@@ -26,14 +26,15 @@ import { profilesGroup } from "./profiles";
  * **The You level's groups** (V89h): Text and Editor, which were the Preferences tab's
  * (charter-app#283, RC-20), Notifications (#1989), This machine (ST-2), which is the machine
  * store's, Accounts (#1814), this machine's forge accounts, and Profiles (#2034), this machine's
- * own profiles. Nothing here is a project's: each value is this machine's, kept in
+ * own profiles, which `plane`, the project whose window Settings is in, signs in from. Nothing
+ * here is a project's: each value is this machine's, kept in
  * its layout file (`charter/layout.json`, beside `machine.json`), so it is the same in every
  * project and reaches no clone.
  *
  * **Every change applies as it is made**, as it did on Preferences: the window's text the
  * moment the slider moves, the terminals refitted to theirs, the editor the moment it is picked.
  */
-export function youGroups(): SettingsGroup[] {
+export function youGroups(plane?: string): SettingsGroup[] {
   return [
     {
       id: "you.text",
@@ -56,7 +57,7 @@ export function youGroups(): SettingsGroup[] {
     notificationsGroup(),
     thisMachineGroup(),
     accountsGroup(),
-    profilesGroup(),
+    profilesGroup(plane),
   ];
 }
 

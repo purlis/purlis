@@ -851,7 +851,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Profile(
             ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
-            | ProfileCommand::Remove { .. },
+            | ProfileCommand::Remove { .. }
+            | ProfileCommand::Authenticate { .. },
         )
         | Command::Update { .. }
         | Command::Version { .. }
@@ -1003,7 +1004,7 @@ enum ProfileCommand {
     List,
     /// Make a profile of this machine's, available in every project: a folder of its own in
     /// purlis's data home, with this machine's harness settings files copied in as they are.
-    /// Its first chat signs in through the harness's own sign-in.
+    /// Sign it in with `purlis profile sign-in`.
     Create {
         /// The profile's name: letters, digits, '-' and '_'.
         name: String,
@@ -1025,6 +1026,21 @@ enum ProfileCommand {
         /// Remove it, having read what goes.
         #[arg(long)]
         yes: bool,
+    },
+    /// Sign a profile of this machine's in on this device, through its harness's own sign-in,
+    /// run here in this terminal with the profile's folder set. The harness keeps what it
+    /// signs in with in that folder; purlis reads none of it.
+    #[command(name = "sign-in")]
+    Authenticate {
+        /// The profile's name.
+        name: String,
+        /// Only say whether its harness says it is signed in on this device.
+        #[arg(long)]
+        check: bool,
+        /// For an opencode profile, the plan it signs in to: openai (ChatGPT) or
+        /// github-copilot. A Claude plan is never signed in through opencode.
+        #[arg(long)]
+        provider: Option<String>,
     },
 }
 
@@ -3000,7 +3016,8 @@ fn run(command: Command) -> Result<u8, String> {
         | Command::Profile(
             ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
-            | ProfileCommand::Remove { .. },
+            | ProfileCommand::Remove { .. }
+            | ProfileCommand::Authenticate { .. },
         )
         | Command::Vault(_) => {
             unreachable!("answered before run")
@@ -3561,18 +3578,18 @@ fn plugin_machine(
     purlis_core::doctor::fix::this_machine(from)
 }
 
-/// `purlis profile create|import|remove` (#2034, ADR 0095): this machine's own profiles, in its
-/// data home ([`purlis_core::profilestore`]). Each is the person's act, so a chat is refused
-/// it, as the window serves the same acts to itself alone. What it did, and a refusal, go to
-/// stderr, as purlis's reports do.
+/// `purlis profile create|import|remove|sign-in` (#2034, #2035, ADR 0095): this machine's own
+/// profiles, in its data home ([`purlis_core::profilestore`]). Each is the person's act, so a
+/// chat is refused it, as the window serves the same acts to itself alone. What it did, and a
+/// refusal, go to stderr, as purlis's reports do.
 fn machine_profile(verb: &ProfileCommand) -> ExitCode {
     use purlis_core::profilestore::{self, Homes, MachineSettings};
     if purlis_core::envvar::var(purlis_core::hookwire::CHAT_ENV)
         .is_some_and(|chat| !chat.trim().is_empty())
     {
         return refused(
-            "a chat may not make, import or remove a profile: that is yours, from Settings › \
-             Profiles in the window or from your own terminal",
+            "a chat may not make, import, remove or sign in a profile: that is yours, from \
+             Settings › Profiles in the window or from your own terminal",
         );
     }
     let Some(store) = Homes::here() else {
@@ -3592,12 +3609,13 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         ProfileCommand::Create { name, harness } => {
             profilestore::create(&store, name, harness, &machine, now).map(|made| {
                 format!(
-                    "made the profile '{}' ({}) in {}\n{}its first chat signs in through the \
-                     harness's own sign-in.\n",
+                    "made the profile '{}' ({}) in {}\n{}sign it in through its harness's own \
+                     sign-in with purlis profile sign-in {}\n",
                     made.record.name,
                     made.record.harness,
                     store.folder_of(&made.record.name).display(),
-                    imported_lines(&made)
+                    imported_lines(&made),
+                    made.record.name
                 )
             })
         }
@@ -3640,6 +3658,13 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 }
             }),
         },
+        ProfileCommand::Authenticate {
+            name,
+            check,
+            provider,
+        } => {
+            return profile_sign_in(&store, name, *check, provider.as_deref());
+        }
         ProfileCommand::List => unreachable!("listed in run"),
     };
     match said {
@@ -3648,6 +3673,80 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(why) => refused(&why),
+    }
+}
+
+/// `purlis profile sign-in <name>` (#2035, ADR 0095 §3): the harness's own sign-in, run in this
+/// terminal with the profile's folder variables set, to `provider` for opencode, its input and
+/// output the person's own and none of it read; or, with `check`, whether its harness says it
+/// is signed in here.
+fn profile_sign_in(
+    store: &purlis_core::profilestore::Homes,
+    name: &str,
+    check: bool,
+    provider: Option<&str>,
+) -> ExitCode {
+    use purlis_core::profilestore::{self, sign_in};
+    let record = match profilestore::list(store.config_root()) {
+        Ok(records) => records.into_iter().find(|p| p.name == name),
+        Err(why) => return refused(&why),
+    };
+    let Some(record) = record else {
+        return refused(&format!(
+            "this machine has no profile named '{}'. purlis profile list names the ones it has.",
+            shown::short(name)
+        ));
+    };
+    let here = profilestore::this_device();
+    if check {
+        let said = match sign_in::standing_of(&record, &sign_in::ThisMachine) {
+            None => format!(
+                "'{}' is signed in by {}'s own sign-in on {here}",
+                record.name, record.title
+            ),
+            Some(sign_in::Standing::SignedIn) => {
+                format!("'{}' is signed in on {here}", record.name)
+            }
+            Some(sign_in::Standing::SignedOut) => {
+                eprintln!(
+                    "'{}' is not signed in on {here}: purlis profile sign-in {} signs it in",
+                    record.name, record.name
+                );
+                return ExitCode::FAILURE;
+            }
+            Some(sign_in::Standing::CannotTell) => format!(
+                "its harness cannot tell whether '{}' is signed in on {here}; a chat on it \
+                 starts, and purlis profile sign-in {} signs it in",
+                record.name, record.name
+            ),
+        };
+        eprintln!("{said}");
+        return ExitCode::SUCCESS;
+    }
+    let login = match sign_in::login_of(&record, provider) {
+        Ok(login) => login,
+        Err(why) => return refused(&why),
+    };
+    eprintln!(
+        "signing '{}' in on {here} through its harness's own sign-in; it keeps what it signs \
+         in with in {}",
+        record.name,
+        record.folders.config.display()
+    );
+    let ran = std::process::Command::new(&login.program)
+        .args(&login.args)
+        .envs(login.env.iter().map(|(n, v)| (n, v)))
+        .status();
+    match ran {
+        Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(status) => {
+            eprintln!(
+                "purlis: the harness's sign-in ended without signing '{}' in ({status})",
+                record.name
+            );
+            ExitCode::FAILURE
+        }
+        Err(e) => refused(&format!("{} could not be run: {e}", login.program)),
     }
 }
 
@@ -4025,7 +4124,8 @@ fn main() -> ExitCode {
         Command::Profile(
             verb @ (ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
-            | ProfileCommand::Remove { .. }),
+            | ProfileCommand::Remove { .. }
+            | ProfileCommand::Authenticate { .. }),
         ) => return machine_profile(verb),
         // A background refresh and a footer: neither is a plane write, and both choose their
         // own exit status as their Python counterparts do.

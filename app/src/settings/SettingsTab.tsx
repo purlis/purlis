@@ -110,7 +110,7 @@ export function SettingsTab({
   return at === "project" && plane !== undefined ? (
     <ProjectLevelTab key={plane} plane={plane} levels={offered} onLevelChange={change} />
   ) : (
-    <YouLevel levels={offered} onLevelChange={change} />
+    <YouLevel plane={plane} levels={offered} onLevelChange={change} />
   );
 }
 
@@ -119,8 +119,8 @@ type Switcher = {
   onLevelChange: (level: string) => void;
 };
 
-function YouLevel({ levels, onLevelChange }: Switcher) {
-  const groups = useMemo(() => youGroups(), []);
+function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId }) {
+  const groups = useMemo(() => youGroups(plane), [plane]);
   const where = atCreation().layout.path || "the layout file";
   return (
     <Shown

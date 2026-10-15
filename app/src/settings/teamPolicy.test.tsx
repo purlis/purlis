@@ -62,7 +62,7 @@ describe("the team's policy beside Your level", () => {
     expect(await screen.findByText(/Each person chooses their own level/)).toBeTruthy();
   });
 
-  it("lets a person who accepted the team's off change their mind, with the commit it showed", async () => {
+  it("lets a person who accepted the team's off change their mind", async () => {
     const sent = core(
       { ...QUIET, team_off: OFF },
       { ...QUIET, team_off: { ...OFF, answer: false } },
@@ -71,9 +71,7 @@ describe("the team's policy beside Your level", () => {
     expect(await screen.findByText(/You accepted it/)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Keep it on for me" }));
     await waitFor(() =>
-      expect(sent("answer_team_sandbox_off")).toEqual([
-        { plane: PLANE, commit: OFF.commit, accept: false },
-      ]),
+      expect(sent("answer_team_sandbox_off")).toEqual([{ plane: PLANE, accept: false }]),
     );
     expect(await screen.findByText(/You kept it on/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();

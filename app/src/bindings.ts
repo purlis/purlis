@@ -450,12 +450,12 @@ export const commands = {
 	 */
 	declineProjectExpects: (plane: PlaneId, shown: ExpectedShown[]) => typedError<SandboxState, string>(__TAURI_INVOKE("decline_project_expects", { plane, shown })),
 	/**
-	 *  **The person's answer to the project's sandbox off** (#2071, SO-8): Accept (`accept`) or
-	 *  Keep it on for me, for `commit`, the one the ask showed; refused where the off stands at
-	 *  another commit now. Kept in this machine's config home, where no chat writes; it takes
-	 *  effect at each chat's next start. The window's alone.
+	 *  **The person's answer to the project's sandbox off** (#2071, SO-8; #2156): Accept
+	 *  (`accept`) or Keep it on for me, for the off as it stands; refused where no committed off
+	 *  stands. Kept in this machine's config home, where no chat writes, until purlis sees the off
+	 *  leave; it takes effect at each chat's next start. The window's alone.
 	 */
-	answerTeamSandboxOff: (plane: PlaneId, commit: string, accept: boolean) => typedError<SandboxState, string>(__TAURI_INVOKE("answer_team_sandbox_off", { plane, commit, accept })),
+	answerTeamSandboxOff: (plane: PlaneId, accept: boolean) => typedError<SandboxState, string>(__TAURI_INVOKE("answer_team_sandbox_off", { plane, accept })),
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -1323,6 +1323,25 @@ export const commands = {
 	machineProfileRemoval: (name: string) => typedError<MachineProfileRemoval, string>(__TAURI_INVOKE("machine_profile_removal", { name })),
 	/**  Removes `name`, only if `shown` is what removing it takes away now. */
 	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
+	/**
+	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
+	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the
+	 *  plan `provider` names where purlis names one, which the person then drives in that tab. What
+	 *  its harness said of it is forgotten, and it is asked again every few seconds until it says
+	 *  the profile is signed in, when its Ask leaves the Inbox.
+	 * 
+	 *  **The window names the profile, never the command.** The line is the core's, made from this
+	 *  machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
+	 *  plane or the window reaches the shell through here. It is typed only into a shell at the
+	 *  project root, the one the window opened for it, never into a chat's pane. An adopted
+	 *  profile is refused: it is signed in by the person's own sign-in.
+	 */
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider })),
+	/**
+	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
+	 *  next start on it asks again while its harness says it is signed out.
+	 */
+	dismissSignIn: (plane: PlaneId, profile: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile })),
 	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
@@ -3319,6 +3338,12 @@ export type AnswerPath =
  *  proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
  */
 { via: "proposed-change"; id: number; path: string } | 
+/**
+ *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
+ *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
+ *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ */
+{ via: "sign-in"; profile: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3431,7 +3456,12 @@ export type AskSource =
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
-"question";
+"question" | 
+/**
+ *  A profile a chat could not start on, because its harness says it is not signed in on
+ *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
+ */
+"sign-in";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -6274,6 +6304,19 @@ export type MachineProfileRow = {
 	imported_at: number | null,
 	/**  The folder they were imported from. */
 	imported_from: string | null,
+	/**  How it signs in, and where: *through Claude Code's own sign-in, on this Mac*. */
+	signs_in: string,
+	/**
+	 *  Whether its harness says it is signed in on this device: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null for an adopted profile, signed in by the person's own sign-in and
+	 *  never asked.
+	 */
+	standing: string | null,
+	/**
+	 *  The plans Sign in offers, where purlis names the provider (opencode's ChatGPT and GitHub
+	 *  Copilot, never a Claude plan); empty where the harness signs in to its own.
+	 */
+	plans: PlanRow[],
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -7354,6 +7397,12 @@ export type PlainFileVault = {
 	name: string,
 	/**  `false` for one the team's file registers, which is the team's to move. */
 	movable: boolean,
+};
+
+/**  A plan a profile is signed in to, by the provider id its harness takes. */
+export type PlanRow = {
+	id: string,
+	title: string,
 };
 
 /**  One open project's alerts. */
@@ -8544,9 +8593,9 @@ export type SandboxState = {
 	 */
 	expects?: ProjectExpects | null,
 	/**
-	 *  **The project's sandbox off** (#2071 PR C): its committed `[sandbox] mode = "off"`, the
-	 *  commit it arrived in, and how the person on this machine answered it. `null` where the
-	 *  project does not turn the sandbox off in a commit.
+	 *  **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
+	 *  "off"`, where it came from as far as purlis verified it, and how the person on this
+	 *  machine answered it. `null` where the project does not turn the sandbox off in a commit.
 	 */
 	team_off?: TeamOffState | null,
 	/**
@@ -9442,15 +9491,22 @@ export type TasksUsed = {
 };
 
 /**
- *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8): once,
- *  "Your project turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on
- *  for me; Settings offers the other answer after.
+ *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8; #2156):
+ *  once, with Accept and Keep it on for me; Settings offers the other answer after. It names
+ *  the commit and its author only where purlis verified them on the upstream it fetched, and
+ *  otherwise says the off is local.
  */
 export type TeamOffState = {
-	/**  The commit that turned it off, whole: what an answer is sent back with. */
-	commit: string,
-	/**  Who made that commit, as git names them. Written by a repository: drawn inertly. */
-	author: string,
+	/**
+	 *  The commit that turned it off, whole, where purlis verified it on the upstream it
+	 *  fetched; `null` where the off is local.
+	 */
+	commit: string | null,
+	/**
+	 *  Who made that commit, as git names them, where verified as `commit` is. Written by a
+	 *  repository: drawn inertly.
+	 */
+	author: string | null,
 	/**  The ask's sentence, in purlis's words. */
 	said: string,
 	/**  `null` until answered; `true` accepted (no sandbox by default), `false` kept on. */

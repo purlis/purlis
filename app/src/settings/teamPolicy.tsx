@@ -37,7 +37,7 @@ export function TeamPolicy({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
     setBusy(true);
     setSaid(undefined);
     void commands
-      .answerTeamSandboxOff(plane, off.commit, accept)
+      .answerTeamSandboxOff(plane, accept)
       .then((done) => {
         if (done.status !== "ok") setSaid(done.error);
         else {

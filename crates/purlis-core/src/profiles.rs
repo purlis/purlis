@@ -317,7 +317,7 @@ impl ProfileSet {
 /// each of its harness's folder variables set to the folder the record names. None for a
 /// harness purlis does not ship, a name a profile cannot have, a folder that is no absolute
 /// UTF-8 path, or a folder adopted in place, which starts as its built-in did (#2033).
-fn of_record(record: &crate::profilestore::MachineProfile) -> Option<Profile> {
+pub fn of_record(record: &crate::profilestore::MachineProfile) -> Option<Profile> {
     if record.adopted.is_some() {
         return None;
     }
