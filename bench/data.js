@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792085278136,
+  "lastUpdate": 1792087176602,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12768,6 +12768,48 @@ window.BENCHMARK_DATA = {
             "value": 104.7997355,
             "unit": "ms",
             "extra": "median of 5 runs: 103.589, 103.620, 104.800, 105.571, 108.372 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cbb00c53b2e9be6b0130720ba671d1b093677e31",
+          "message": "A failed background command's output read back by file raises its Block (#2203) (#2210)\n\nA background command's output read with the file tool, cat or tail is read\nby how the command ended where Claude Code's own record of the task, its\nnotification in the session's transcript, says: one that failed is that\ncommand's own error. The notification must name the output file by its\nwhole path, and any of its own records saying failed counts, since a task\nends once. rg --pre, sort --compress-program, less and more, git given\nconfiguration on its line, an external diff, and git grep -O are read as\nrunning a program, a long option by any prefix the program takes for it.\nCodex's PostToolUse carries no exit status in rust-v0.147.0 (#2202),\nrecorded in ADR 0093's amendment file; the opencode shim's comment says\nwhat it passes.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T21:58:14+04:00",
+          "tree_id": "adfdd2ae4c78611301711b0e0f0ee8e1800c74e0",
+          "url": "https://github.com/purlis/purlis/commit/cbb00c53b2e9be6b0130720ba671d1b093677e31"
+        },
+        "date": 1792087175601,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.556728,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.551, 0.557, 0.557, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.043285500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.591, 16.856, 17.043, 17.121, 17.433 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.990351,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.661, 103.295, 103.990, 105.534, 105.921 ms"
           }
         ]
       }
