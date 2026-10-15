@@ -8,6 +8,8 @@ use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
+pub mod project;
+
 /// Claude Code's adapter.
 pub struct ClaudeCode;
 
@@ -30,6 +32,11 @@ impl HarnessAdapter for ClaudeCode {
     /// 2.1.280). It carries the plugin pins, the project's plugin choice, the status line where
     /// charter may fill it, Smart close's allow and the allows for charter's five read-only
     /// tools, and the sandbox where the plane turned it on.
+    ///
+    /// **A sandboxed chat loads its project's own Claude Code settings only where they hold
+    /// nothing but what [`project::KEPT`] names** (ADR 0067 as amended 2026-10-15). Otherwise it
+    /// is started on the person's settings and purlis's alone (`--setting-sources user`), and
+    /// the project's deny and ask rules ride on `--settings` instead ([`project`]).
     fn arm_under(
         &self,
         kit: Kit<'_>,
@@ -49,24 +56,36 @@ impl HarnessAdapter for ClaudeCode {
             Some(crate::sandbox::Form::ClaudeCode(settings)) => Some(settings),
             Some(_) => return StateHooks::None,
         };
+        // Read for a sandboxed chat alone: one that is not keeps loading what it always did.
+        let screened = sandbox.map(|_| project::screen(cwd));
+        let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
+        args.extend(
+            screened
+                .as_ref()
+                .map(project::Screened::setting_sources)
+                .unwrap_or_default(),
+        );
         StateHooks::ThisSessionOnly {
-            args: words([
-                "--plugin-dir",
-                &plugin.display().to_string(),
-                // charter's MCP server (HP-7), before `--settings`: `--mcp-config` takes every
-                // word up to the next flag, and the chat's own words end the line.
-                "--mcp-config",
-                &mcp_config(kit),
-                "--settings",
-                &settings(
-                    kit.binary,
-                    cwd,
-                    crate::footerclaim::status_line(cwd).free(),
-                    plugins,
-                    sandbox,
-                    &denied_tools(kit),
-                ),
-            ]),
+            args: [
+                args,
+                words([
+                    // charter's MCP server (HP-7), before `--settings`: `--mcp-config` takes every
+                    // word up to the next flag, and the chat's own words end the line.
+                    "--mcp-config",
+                    &mcp_config(kit),
+                    "--settings",
+                    &settings(
+                        kit.binary,
+                        cwd,
+                        crate::footerclaim::status_line(cwd).free(),
+                        plugins,
+                        sandbox,
+                        &denied_tools(kit),
+                        screened.as_ref(),
+                    ),
+                ]),
+            ]
+            .concat(),
             env: vec![(
                 crate::plugin::BINARY_ENV.to_owned(),
                 kit.binary.display().to_string(),
@@ -157,8 +176,9 @@ impl HarnessAdapter for ClaudeCode {
     }
 
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
-    /// `armed`), which a project's settings cannot loosen (ADR 0067 §2), and there it is
-    /// allowed the chat's hook socket, which only the place the chat opens knows (`at`).
+    /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
+    /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
+    /// place the chat opens knows (`at`).
     /// Its own flags are not asked about yet.
     fn sandboxed_line(
         &self,
@@ -263,6 +283,7 @@ fn settings(
     plugins: &crate::harness_plugin::Chosen,
     sandbox: Option<&crate::sandbox::claude::Settings>,
     denied_tools: &[String],
+    screened: Option<&project::Screened>,
 ) -> String {
     let mut settings = serde_json::Map::new();
     // The project's own choice of Claude Code's plugins first (charter-app#274, ADR 0050): a
@@ -368,6 +389,23 @@ fn settings(
             .unwrap_or_default();
         rules.extend(denied_tools.iter().cloned().map(serde_json::Value::String));
         permissions["deny"] = serde_json::Value::Array(rules);
+    }
+    // **The project's own deny and ask rules, where its files are not loaded** (ADR 0067 as
+    // amended 2026-10-15): they can only make the chat refuse or ask more, so they still apply,
+    // after the compiled rules, which lead the list.
+    if let Some(screened) = screened.filter(|screened| !screened.loads_the_project()) {
+        for (bucket, rules) in [("deny", &screened.deny), ("ask", &screened.ask)] {
+            if rules.is_empty() {
+                continue;
+            }
+            let mut had: Vec<serde_json::Value> = permissions
+                .get(bucket)
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            had.extend(rules.iter().cloned().map(serde_json::Value::String));
+            permissions[bucket] = serde_json::Value::Array(had);
+        }
     }
     // **The operator's ask and deny on charter's tools, under the server's new name**
     // (D-RN8-12). The server is `purlis` now (#1266), so a project's or a layer's rule on
@@ -951,6 +989,136 @@ mod tests {
             "purlis commit -m one",
         ] {
             assert!(!bash_allowed(&allow, asks), "{asks:?}");
+        }
+    }
+
+    /// What a Claude Code chat in a project laid out with `manifest` and, when there is one, a
+    /// `.claude/settings.json` holding `project`, starts with: its arguments, and its
+    /// `--settings` parsed. Sandboxed as a start decides, at the level the manifest gives.
+    fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json::Value) {
+        let dir = tempfile::tempdir().expect("a project");
+        let root = dir.path().canonicalize().expect("a real folder");
+        std::fs::write(root.join("charter.toml"), manifest).expect("charter.toml");
+        if let Some(project) = project {
+            std::fs::create_dir_all(root.join(".claude")).expect(".claude");
+            std::fs::write(root.join(".claude/settings.json"), project).expect("settings");
+        }
+        let machine = crate::sandbox::Machine {
+            env: crate::secrets::Env::of(&[("PATH", "/opt/none")]),
+            home: None,
+            os: crate::sandbox::Os::MacOs,
+        };
+        let applied = match crate::sandbox::decide(
+            Harness::ClaudeCode,
+            &root,
+            &machine,
+            &|_| true,
+            None,
+            None,
+        ) {
+            Ok(Some(crate::sandbox::Decided::Sandboxed(applied))) => Some(applied),
+            _ => None,
+        };
+        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+            Kit {
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+            },
+            Some(&root),
+            &crate::harness_plugin::Chosen::new(),
+            applied.as_ref(),
+        ) else {
+            panic!("armed per session");
+        };
+        let at = args
+            .iter()
+            .position(|arg| arg == "--settings")
+            .expect("--settings");
+        let settings = serde_json::from_str(&args[at + 1]).expect("JSON");
+        (args, settings)
+    }
+
+    const ON: &str = "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n";
+    const FLOOR: &str = "schema = 1\n";
+    const OFF: &str = "[sandbox]\nmode = \"off\"\n";
+
+    /// A project file holding keys beyond what a sandboxed chat keeps, beside rules it does.
+    const BEYOND: &str = r#"{
+        "permissions": {
+            "allow": ["Bash(make *)"],
+            "deny": ["Bash(rm -rf *)"],
+            "ask": ["Bash(git push *)"]
+        },
+        "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true"}]}]},
+        "sandbox": {"enabled": false}
+    }"#;
+
+    fn limited_to_the_person_s_settings(args: &[String]) -> bool {
+        args.windows(2)
+            .any(|pair| pair[0] == "--setting-sources" && pair[1] == "user")
+    }
+
+    #[test]
+    fn a_sandboxed_chat_loads_no_project_settings_beyond_what_it_keeps() {
+        // ADR 0067 as amended 2026-10-15, at the full sandbox and at the floor.
+        for manifest in [ON, FLOOR] {
+            let (args, _) = started_in(manifest, Some(BEYOND));
+            assert!(
+                limited_to_the_person_s_settings(&args),
+                "{manifest}: {args:?}"
+            );
+            // Before `--mcp-config`, which takes every word up to the next flag.
+            let sources = args.iter().position(|a| a == "--setting-sources");
+            let mcp = args.iter().position(|a| a == "--mcp-config");
+            assert!(sources < mcp, "{args:?}");
+        }
+        // A chat at `off` is not sandboxed, and loads what it always did.
+        let (args, _) = started_in(OFF, Some(BEYOND));
+        assert!(
+            !args.iter().any(|arg| arg == "--setting-sources"),
+            "{args:?}"
+        );
+    }
+
+    #[test]
+    fn a_sandboxed_chat_in_a_project_holding_only_what_it_keeps_loads_the_project() {
+        for manifest in [ON, FLOOR, OFF] {
+            for project in [
+                None,
+                Some(r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}, "model": "sonnet"}"#),
+            ] {
+                let (args, _) = started_in(manifest, project);
+                assert!(
+                    !args.iter().any(|arg| arg == "--setting-sources"),
+                    "{manifest} {project:?}: {args:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_project_s_deny_and_ask_rules_are_carried_and_nothing_else_of_it() {
+        for manifest in [ON, FLOOR] {
+            let (_, settings) = started_in(manifest, Some(BEYOND));
+            let rules = |bucket: &str| -> Vec<String> {
+                settings["permissions"][bucket]
+                    .as_array()
+                    .map(|rules| {
+                        rules
+                            .iter()
+                            .filter_map(|rule| rule.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            assert!(rules("deny").contains(&"Bash(rm -rf *)".to_owned()));
+            assert!(rules("ask").contains(&"Bash(git push *)".to_owned()));
+            assert!(!rules("allow").contains(&"Bash(make *)".to_owned()));
+            // purlis's own hook only, and its own sandbox as compiled.
+            let hooks = settings["hooks"].as_object().expect("hooks");
+            assert_eq!(hooks.keys().collect::<Vec<_>>(), ["PermissionRequest"]);
+            assert_eq!(settings["sandbox"]["enabled"], true);
         }
     }
 

@@ -20,6 +20,11 @@
 //! Claude Code is started there with them. Every probe of the script is asserted: what nothing
 //! holds is written and read, and a held name, as written and in another case, is refused.
 //!
+//! The sample project also holds a `.claude/settings.json` of its own with keys beyond what a
+//! sandboxed chat keeps (ADR 0067 as amended 2026-10-15), and Claude Code is started with the
+//! setting sources purlis's start decides for it ([`purlis_core::harness::claude::project`]),
+//! so the probes answer for what a chat in such a project runs under.
+//!
 //! Without `PURLIS_CLAUDE_CODE` (the path to the `claude` program) the settings are built and
 //! checked, and no Claude Code is started. CI sets it on the macOS runner to the version in
 //! `tests/fixtures/harness-versions/claude.txt`, which this test holds it to.
@@ -66,9 +71,19 @@ const LEVELS: [(Level, &str, &str); 2] = [
 /// listens there: no probe reaches the network.
 const PROXY_PORTS: [u16; 2] = [4040, 4041];
 
+/// A project settings file with keys a sandboxed chat does not load, beside a deny rule it
+/// does.
+const PROJECT_SETTINGS: &str = r#"{
+    "permissions": {"allow": ["Bash"], "deny": ["Bash(rm -rf /)"], "defaultMode": "acceptEdits"},
+    "sandbox": {"enabled": false},
+    "env": {"PROBE": "1"}
+}"#;
+
 /// A sample project at `root` with `manifest`: a vault, a folder of what macOS starts at login
-/// and one beside it, and a file nothing holds.
+/// and one beside it, a file nothing holds, and Claude Code settings of its own.
 fn lay_out(root: &Path, manifest: &str) {
+    fs::create_dir_all(root.join(".claude")).expect("the project's .claude");
+    fs::write(root.join(".claude/settings.json"), PROJECT_SETTINGS).expect("project settings");
     fs::create_dir_all(root.join(".purlis/vaults")).expect("the vaults folder");
     fs::create_dir_all(root.join("Library/LaunchAgents")).expect("a held folder");
     fs::create_dir_all(root.join("Library/LaunchAgentz")).expect("a folder beside it");
@@ -258,6 +273,7 @@ fn probed(
     tmp: &Path,
     root: &Path,
     settings: &Path,
+    sources: &[String],
     what: &str,
 ) -> String {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -296,7 +312,9 @@ fn probed(
         .current_dir(root)
         .env("ANTHROPIC_BASE_URL", server.uri())
         .env("ANTHROPIC_API_KEY", NOT_A_CREDENTIAL)
-        .args(["-p", "Run the sandbox probes.", "--bare", "--settings"])
+        .args(["-p", "Run the sandbox probes.", "--bare"])
+        .args(sources)
+        .arg("--settings")
         .arg(settings)
         .args([
             "--allowedTools",
@@ -368,13 +386,21 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         let (at, settings) = settings_for(&root, &machine);
         assert_eq!(at, level, "Claude Code in the {name} project");
         assert_eq!(settings["sandbox"]["enabled"], true, "{name}: {settings}");
+        // As a start decides it for a chat in this project.
+        let screened = purlis_core::harness::claude::project::screen(Some(&root));
+        let sources = screened.setting_sources();
+        assert_eq!(
+            sources,
+            ["--setting-sources", "user"],
+            "{name}: {screened:?}"
+        );
         let file = out.join(format!("claude-{name}.json"));
         fs::write(&file, settings.to_string()).expect("the settings");
         let Some(program) = &program else {
             continue;
         };
         let what = format!("claude-code at {name}");
-        let result = probed(program, &home, &tmp, &root, &file, &what);
+        let result = probed(program, &home, &tmp, &root, &file, &sources, &what);
         // Each wrong answer as the script wrote it, so the run's annotations name it.
         for line in result.lines().filter(|line| line.starts_with("::error::")) {
             println!("{line}");
