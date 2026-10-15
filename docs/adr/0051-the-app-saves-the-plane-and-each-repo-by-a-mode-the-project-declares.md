@@ -482,8 +482,7 @@ failures first), or the failed jobs of a GitLab pipeline
 (`GET projects/{id}/pipelines/{id}/jobs?scope[]=failed`), the first ten of each. The checks
 are read again at the pushed commit for this; what a file keeps of them is their names.
 
-Decided in implementation, and ruled by the operator, 2026-10-15 (Merge as it stands is refused where the
-checks cannot be read; a Fix chat may commit):
+Decided in implementation, and ruled by the operator, 2026-10-15:
 
 - A wait's state stays `waiting`. What ends it is a field beside it, `needs`: `person` or
   `sign-in`. Checks purlis cannot read at the commit count as a wait with no bound.

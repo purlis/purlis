@@ -1574,10 +1574,10 @@ the person applies.
 - **Apply judges again**: the change is made to the file as the app reads it, shown whole by the
   row's own rules, and written under one lock per project held from the read to the rename, so
   of two Applies against the file as it was, the second is stale.
-- **No new persona or workspace** (the dispatcher's decision, ruled by the operator, 2026-10-15; new skill folders
-  only): a proposal makes
-  no folder but a skill's (`.claude/skills` and below). A file in a persona or a workspace that
-  is not there is refused; a new persona or workspace is made with purlis's own ways first.
+- **No new persona or workspace** (the dispatcher's decision, ruled by the operator, 2026-10-15;
+  new skill folders only): a proposal makes no folder but a skill's (`.claude/skills` and
+  below). A file in a persona or a workspace that is not there is refused; a new persona or
+  workspace is made with purlis's own ways first.
 - **Allows nothing** (PC-5): a tool or host the change declares still asks its own Allow.
 - **Stale** (PC-8): a file changed since its proposal is not written; the proposal offers
   Dismiss alone and the chat is told to read it again and propose again. Never merged.
