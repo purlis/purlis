@@ -1271,3 +1271,44 @@ describe("the one-time note on a harness that lacks something (#1134, W10)", () 
     expect(onStart).toHaveBeenCalled();
   });
 });
+
+describe("a profile its harness says is not signed in (#2035)", () => {
+  const refused =
+    "the profile 'work' is not signed in on this Mac. Nothing was started. It waits in the Inbox as Sign in work.";
+
+  it("points to the Ask that signs it in, in the Inbox", async () => {
+    const onShowSignIn = vi.fn();
+    render(
+      <StartChat
+        options={ONE}
+        trouble={refused}
+        signIn="work"
+        onShowSignIn={onShowSignIn}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(refused);
+    expect(screen.getByText(/Sign in work waits in the Inbox/)).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Go to the Inbox" }));
+
+    expect(onShowSignIn).toHaveBeenCalledOnce();
+  });
+
+  it("points nowhere for a refusal of anything else", () => {
+    render(
+      <StartChat
+        options={ONE}
+        trouble="the sandbox could not be applied. Nothing was started."
+        onShowSignIn={vi.fn()}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Go to the Inbox" })).toBeNull();
+  });
+});

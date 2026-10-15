@@ -1884,6 +1884,17 @@ impl Hooks {
             .unwrap_or_else(PoisonError::into_inner) = Some(teller);
     }
 
+    /// What tells the window this project's asks may have moved, from any thread: a profile's
+    /// sign-in watch (#2035) calls it once the harness says the profile is signed in.
+    pub fn asks_teller(&self) -> impl FnOnce() + Send + 'static {
+        let (plane, asks, told) = (
+            self.plane.clone(),
+            Arc::clone(&self.asks),
+            Arc::clone(&self.asks_told),
+        );
+        move || crate::asking::tell(&plane, &asks, &told)
+    }
+
     /// Answers chat `session`'s ask `ask` with `option`, as the operator in the window, on the
     /// hook that waits on it; then tells the window the asks as they now are, answered or not.
     pub fn answer(&self, session: u32, ask: &str, option: &str) -> Result<(), String> {

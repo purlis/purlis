@@ -100,6 +100,8 @@ struct World {
     held: Vec<(u32, &'static str, u32)>,
     /// When each ask began, by its key (#1700).
     since: Vec<(&'static str, u32)>,
+    /// The profiles waiting to be signed in (#2035).
+    sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
 }
 
 impl World {
@@ -118,6 +120,7 @@ impl World {
             only_updates: Vec::new(),
             held: Vec::new(),
             since: Vec::new(),
+            sign_ins: Vec::new(),
         }
     }
 
@@ -142,6 +145,7 @@ impl World {
                 .map(|(_, asker)| *asker)
         };
         derive(&Waiting {
+            sign_ins: self.sign_ins.clone(),
             proposals: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
@@ -1013,4 +1017,71 @@ fn a_refused_port_on_this_mac_offers_this_chat_and_this_project_here_bound_to_th
     );
     let typed = sandbox_block(5, &block(""), &Locks::none()).expect("an ask");
     assert_eq!(typed.answer, AnswerPath::InItsPane);
+}
+
+// The sign-in adapter (#2035).
+
+/// A profile of `kind` named `work`, a start was refused on in `/p`.
+fn waits_to_sign_in(kind: &str, harness: &str) -> purlis_core::profilestore::sign_in::Wait {
+    purlis_core::profilestore::sign_in::Wait {
+        root: "/p".into(),
+        profile: purlis_core::profiles::Profile {
+            name: "work".to_owned(),
+            kind: kind.to_owned(),
+            harness: kind.to_owned(),
+            command: vec![kind.to_owned()],
+            env: Vec::new(),
+            source: purlis_core::profiles::Source::Machine,
+        },
+        harness: harness.to_owned(),
+        since: 7,
+    }
+}
+
+#[test]
+fn a_profile_not_signed_in_is_one_ask_about_no_chat_that_signs_it_in() {
+    let mut world = World::new();
+    world.queue = vec![3];
+    world.names = vec![(3, "steward 3")];
+    world.sign_ins = vec![waits_to_sign_in("claude", "Claude Code")];
+    world.since = vec![("sign-in:work", 7)];
+
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::SignIn)
+        .expect("the profile asks");
+
+    assert_eq!(ask.session, 0);
+    assert_eq!(ask.chain, ["Profile work"]);
+    assert_eq!(ids(ask), ["sign-in", "dismiss"]);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::SignIn {
+            profile: "work".to_owned()
+        }
+    );
+    assert!(
+        ask.says
+            .contains("Claude Code's own sign-in in a shell tab"),
+        "{}",
+        ask.says
+    );
+    assert_eq!(ask.since, Some(7));
+    assert!(
+        asks.iter()
+            .any(|one| one.session == 3 && one.chain == ["steward 3"]),
+        "the chats keep their own chains"
+    );
+}
+
+#[test]
+fn an_opencode_profile_is_signed_in_to_a_plan_named_and_never_to_claude() {
+    let ask = sign_in(&waits_to_sign_in("opencode", "opencode"));
+
+    assert_eq!(
+        ids(&ask),
+        ["sign-in:openai", "sign-in:github-copilot", "dismiss"]
+    );
+    assert!(ask.options.iter().all(|one| !one.label.contains("Claude")));
 }

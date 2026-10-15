@@ -25,6 +25,7 @@ import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenProposal } from "./proposedChangeOpen";
+import { askProfileSignIn } from "./settings/links";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a chat
@@ -249,6 +250,18 @@ export async function answerTaken(
           return { status: "ok" };
         }
         if (option === "dismiss") return commands.dismissProposedChange(plane, path.id);
+        break;
+      case "sign-in":
+        // Sign in sends nothing (#2035): the project's window opens a shell tab where the core
+        // types the harness's own sign-in, to the plan the option names where it names one. The
+        // Ask waits until the harness says the profile is signed in. Dismiss puts it away.
+        if (option === "dismiss") return commands.dismissSignIn(plane, path.profile);
+        if (option === "sign-in" || option.startsWith("sign-in:")) {
+          const provider = option.startsWith("sign-in:") ? option.slice("sign-in:".length) : "";
+          askProfileSignIn(plane, path.profile, provider === "" ? undefined : provider);
+          opened = true;
+          return { status: "ok" };
+        }
         break;
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

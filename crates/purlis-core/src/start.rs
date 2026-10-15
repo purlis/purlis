@@ -19,9 +19,11 @@
 //! 4. [`crate::wiring::refusal`] — the kind is startable, the file is not one git would
 //!    carry, and the operator approved the command. Nothing is installed: the app arms the
 //!    chat itself ([`crate::plugin`]);
-//! 5. [`crate::sandbox::for_start`] — where the plane turned the sandbox on, it is compiled for
+//! 5. [`crate::profilestore::sign_in::refusal`] — a profile this machine made is not one its
+//!    harness says is signed out (ADR 0095 §3);
+//! 6. [`crate::sandbox::for_start`] — where the plane turned the sandbox on, it is compiled for
 //!    the harness, or the chat does not start (ADR 0067);
-//! 6. only then are the arguments and the environment built.
+//! 7. only then are the arguments and the environment built.
 //!
 //! **The harness comes from the DECLARED kind**, never from the program's name.
 //! [`crate::harness::Harness::of_command`] cannot tell a shell from a harness charter has
@@ -369,6 +371,18 @@ fn ready_given(
     // The gate. Startable kind, ignored file, approved command — one call, so no caller can
     // start a chat past a check another caller makes.
     if let Some(why) = crate::wiring::refusal_in(profile, root, declared) {
+        return Err(why);
+    }
+    // A profile this machine made, whose harness says it is not signed in here, does not
+    // start: Sign in is the way out (#2035, ADR 0095 §3). Asked after the gate, so only a
+    // program the person approved is run, and only its status words.
+    // The refusal leaves one wait for the project and profile, the Ask the window shows.
+    if let Some(why) = crate::profilestore::sign_in::refusal(
+        profile,
+        &crate::chatenv::read(root),
+        &crate::profilestore::sign_in::ThisMachine,
+    ) {
+        crate::profilestore::sign_in::waits_on(root, profile);
         return Err(why);
     }
 
