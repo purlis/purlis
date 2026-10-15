@@ -74,6 +74,8 @@ mod behaviour;
 mod hostedconfinement;
 #[cfg(unix)]
 mod hostedsessions;
+#[cfg(unix)]
+mod hostsaving;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -2933,13 +2935,16 @@ fn refuse_beside_the_old_app() {
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
-        purlis_core::browsers::given_to(purlis_host::Hosting::kept(
-            &place.credentials,
-            purlis_host::FromTheWindow(sessionhost::launched),
-            purlis_host::Terminals,
-            sessionhost::HookChannels,
-            hostedconfinement::ConfinesHere,
-        ))
+        purlis_core::browsers::given_to(
+            purlis_host::Hosting::kept(
+                &place.credentials,
+                purlis_host::FromTheWindow(sessionhost::launched),
+                purlis_host::Terminals,
+                sessionhost::HookChannels,
+                hostedconfinement::ConfinesHere,
+            )
+            .saving_with(hostsaving::InTheHost),
+        )
     })
 }
 
@@ -2951,7 +2956,8 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     #[cfg(unix)]
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
-        let connection = app.state::<sessionhost::SessionHost>().connection();
+        let host = app.state::<sessionhost::SessionHost>();
+        let connection = host.connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);
         // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
         return planes
@@ -2963,7 +2969,10 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
                     ))
                 },
             ))
-            .hearing_hooks_through_the_host();
+            .hearing_hooks_through_the_host()
+            // The host saves the projects too (#2002): a quit it does not answer in time ends
+            // it before the save at quit.
+            .ending_the_host_with(host.ender());
     }
     let _ = app;
     planes
