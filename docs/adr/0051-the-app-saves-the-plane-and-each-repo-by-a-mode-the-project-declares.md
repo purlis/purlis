@@ -396,9 +396,10 @@ Decided under delegation, and recorded for the operator's ruling.
   plane pushes the commits its upstream lacks even when `[plane] mode` is unset, so the window
   never says "nothing to save" while there are some. `purlis save` keeps its recorded answer.
 
-## Noted (2026-10-14, qw382b): a save's conflict is resolved from the window — to be confirmed
+## Noted (2026-10-14, qw382b): a save's conflict is resolved from the window — ruled by the operator, 2026-10-15
 
-Decided under delegation (the dispatcher's call), and recorded for the operator's ruling.
+Decided under delegation (the dispatcher's call), and ruled by the operator, 2026-10-15 (#1961: confirmed as
+built).
 
 - **Resolve** is offered where a save's replay onto the remote conflicted. It is the person's
   press in the window: the window fetches the target branch from the remote recorded for the
@@ -481,14 +482,14 @@ failures first), or the failed jobs of a GitLab pipeline
 (`GET projects/{id}/pipelines/{id}/jobs?scope[]=failed`), the first ten of each. The checks
 are read again at the pushed commit for this; what a file keeps of them is their names.
 
-Decided in implementation, to be confirmed:
+Decided in implementation, and ruled by the operator, 2026-10-15:
 
 - A wait's state stays `waiting`. What ends it is a field beside it, `needs`: `person` or
   `sign-in`. Checks purlis cannot read at the commit count as a wait with no bound.
 - The buttons say **Fix in a chat** and **Merge as it stands…** (`docs/ui-copy.md`: a verb and
   what it acts on; an ellipsis where it asks first).
 - A repo's Fix chat may commit in the clone and does not push (decided by the dispatcher,
-  flagged for the operator).
+  ruled by the operator, 2026-10-15).
 - A failure of any kind is handed to the chat in one shape (`purlis_core::savefix`), so a
   failing step of a save can use the same button with its own text (ruling P6). The app's
   entry that starts the chat stays private to its module until that lands.

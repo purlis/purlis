@@ -388,7 +388,7 @@ the note above that the handoff command keeps its prompt is superseded.
 
 ### Amended 2026-10-15: `purlis dispatch read` and `dispatch_read` are pre-allowed (#2084)
 
-Decided in implementation under delegation and flagged for the operator, on the rules of the
+Decided in implementation under delegation and ruled by the operator, 2026-10-15, on the rules of the
 amendment below: `Bash(purlis dispatch read *)` joins
 `harness::claude::DISPATCH_TASK_ALLOW`, and the matching chat tool `mcp__purlis__dispatch_read`
 joins `chattools::PRE_ALLOWED` (an `allow` only, by its full name, for Claude Code only, and an
