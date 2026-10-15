@@ -8,6 +8,7 @@ import {
   type BlockReport,
   type GrantLevel,
   type GrantWhat,
+  type KubeContext,
   type Offered,
   type OpenChat,
   type Shown,
@@ -349,6 +350,103 @@ function RanWith({ vault }: { vault: string | null | undefined }) {
       {" "}
       while running a command with vault <code className="block-vault">{vault}</code>
     </>
+  );
+}
+
+/**
+ * **What Use <context> gives the chat** (#2097 review), said before any press: the copy holds
+ * the context's credentials, as the person's kubeconfig does, and the chat can read it.
+ */
+export const KUBECTL_COPY_SAID =
+  "This chat gets its own copy of the context you choose, its credentials included: this chat can read them. Your own kubeconfig is not changed.";
+
+/** The harness word a Claude Code chat's blocks carry. */
+const CLAUDE_CODE = "claude";
+
+/**
+ * **Point kubectl at it** (qw384b): after a Claude Code chat is allowed a service on this Mac,
+ * its kubectl still connects to `127.0.0.1` or `localhost` itself, which never reaches the
+ * chat's proxy. On the person's press, the contexts of their kubeconfig are listed, and one on
+ * this Mac is copied for this chat alone, its server named as the proxy carries it. Nothing is
+ * read before the press; a context elsewhere is listed with why, never pressable; and the
+ * person's own kubeconfig is never written. The chat restarts to take it, as after an Allow.
+ */
+function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () => void }) {
+  const id = useId();
+  const [contexts, setContexts] = useState<readonly KubeContext[]>();
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [pointed, setPointed] = useState(false);
+  if (!inTheWindow(commands, "kubeContexts") || !inTheWindow(commands, "pointKubectl")) return null;
+  const list = () => {
+    setBusy(true);
+    void commands
+      .kubeContexts()
+      .then((answer) => {
+        if (answer.status === "error") setSaid(answer.error);
+        else setContexts(answer.data);
+      })
+      .finally(() => setBusy(false));
+  };
+  const point = (context: string) => {
+    setBusy(true);
+    void commands
+      .pointKubectl(block.plane, block.session, context)
+      .then((answer) => {
+        if (answer.status === "error") setSaid(answer.error);
+        else {
+          setSaid(answer.data);
+          setPointed(true);
+          sandboxCommandReturned();
+          onPointed();
+        }
+      })
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="block-kubectl ui-inline-surface" id={id}>
+      {pointed ? null : contexts === undefined ? (
+        <div className="ui-button-row">
+          <button
+            type="button"
+            className="ui-button ui-button-sm"
+            tabIndex={0}
+            disabled={busy}
+            onClick={list}
+          >
+            Point kubectl at it…
+          </button>
+        </div>
+      ) : contexts.length === 0 ? (
+        <p>Your kubeconfig holds no context.</p>
+      ) : (
+        <>
+          <p>{KUBECTL_COPY_SAID}</p>
+          <ul className="block-kubectl-contexts">
+            {contexts.map((context) => (
+              <li key={context.name}>
+                {context.refused === null ? (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-sm"
+                    tabIndex={0}
+                    disabled={busy}
+                    onClick={() => point(context.name)}
+                  >
+                    Use {inertly(context.name)}
+                  </button>
+                ) : (
+                  <>
+                    <code>{inertly(context.name)}</code>: {inertly(context.refused)}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {said !== undefined && <p>{said}</p>}
+    </div>
   );
 }
 
@@ -773,6 +871,9 @@ function AllowNotice({
         )}
         {allowed.said}
         {said !== undefined && ` ${said}`}
+        {what === "port" && block.harness === CLAUDE_CODE && (
+          <PointKubectl block={block} onPointed={onAllowed} />
+        )}
       </>
     );
     return owedRetry ? (

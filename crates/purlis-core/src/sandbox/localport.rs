@@ -29,6 +29,42 @@ use std::sync::{Mutex, PoisonError};
 
 use super::grant::Refused;
 
+/// **The name a chat reaches a service on this Mac by, through its proxy** (qw384b):
+/// `this-mac.internal:<port>`, carried to that port of the loopback interface while the chat
+/// holds it ([`super::reach::Reach::decide_by_name`]). A client that never sends this
+/// machine's own addresses to a proxy (Claude Code's `NO_PROXY`, every Go client) still sends a
+/// name. Under `.internal`, which no public name is ever given.
+pub const THIS_MAC: &str = "this-mac.internal";
+
+/// **The names of this Mac a chat's proxy carries a granted port by** (qw384b, #2097 review): a
+/// fixed list, never looked up. [`THIS_MAC`], purlis's own; `kubernetes.docker.internal`, which
+/// Docker Desktop's cluster is named by; and `host.docker.internal`, which a container names this
+/// machine by. Each is this machine's loopback to the proxy whatever a resolver would say, and no
+/// other name is ever sent to a resolver on this account.
+pub const NAMES_OF_THIS_MAC: [&str; 3] = [
+    THIS_MAC,
+    "kubernetes.docker.internal",
+    "host.docker.internal",
+];
+
+/// Whether `host` is one of [`NAMES_OF_THIS_MAC`], in any case, a trailing dot or none.
+pub fn is_a_name_of_this_mac(host: &str) -> bool {
+    let named = host.strip_suffix('.').unwrap_or(host);
+    NAMES_OF_THIS_MAC
+        .iter()
+        .any(|name| named.eq_ignore_ascii_case(name))
+}
+
+/// What a chat whose commands send no address of this machine to a proxy (Claude Code's) is
+/// told of `port` once it is allowed (qw384b): the name its proxy carries it by.
+pub fn reached_by_name(port: u16) -> String {
+    format!(
+        "Its commands reach it through this chat's proxy as `{THIS_MAC}:{port}`, never as \
+         127.0.0.1 or localhost: `curl https://{THIS_MAC}:{port}`. A program that uses no proxy \
+         cannot reach it."
+    )
+}
+
 /// What allowing a service on this Mac means, in one honest line.
 pub const RISK: &str = "lets this chat connect to whatever listens on that port on this Mac, as \
                         you; a container engine's or a cluster's port can reach much of your \
@@ -183,7 +219,8 @@ pub fn seatbelt_rule(port: u16) -> String {
 
 /// **The port of a service on this Mac that `target` names**, where it names one on the
 /// loopback interface as the profile and the proxy carry it: `127.0.0.1:50795`, `[::1]:50795`,
-/// `localhost:50795`. None for any other address, a name, or no port.
+/// `localhost:50795`, and a name of this Mac such as `this-mac.internal:50795` (qw384b). None for
+/// any other address, a name, or no port.
 pub fn loopback_port(target: &str) -> Option<u16> {
     let target = target.trim().trim_end_matches(['.', ',', ';']);
     let (host, port) = if let Some(rest) = target.strip_prefix('[') {
@@ -195,12 +232,21 @@ pub fn loopback_port(target: &str) -> Option<u16> {
     let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
     // Exactly the names the profile and the proxy carry ([`reach_entries`]): never another
     // address of the loopback block, which neither carries.
-    let loopback = host.eq_ignore_ascii_case("localhost")
+    let named = host.strip_suffix('.').unwrap_or(host);
+    let loopback = named.eq_ignore_ascii_case("localhost")
+        || is_a_name_of_this_mac(named)
         || host.parse::<IpAddr>().is_ok_and(|ip| {
             ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
                 || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
         });
     loopback.then_some(port)
+}
+
+/// **The port of this Mac a target the proxy refused as this machine names** (qw384b): what
+/// [`loopback_port`] names, a name of this Mac ([`NAMES_OF_THIS_MAC`]) included. No name is
+/// looked up.
+pub fn named_port(target: &str) -> Option<u16> {
+    loopback_port(target)
 }
 
 /// **The port a program's own refusal of a connection on this machine names** (qw384): Go's

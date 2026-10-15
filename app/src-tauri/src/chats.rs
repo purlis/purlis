@@ -485,6 +485,9 @@ pub struct Chats {
     /// conversation keeps it and no other chat ever gets it. **In memory only**: a grant for
     /// one chat ends with the app.
     grants: Mutex<HashMap<String, Vec<ChatGrant>>>,
+    /// The copy of a kube context each chat was pointed at (qw384b), by the chat's id: written
+    /// into that chat's own folder at each of its starts alone. **In memory only**.
+    kubeconfigs: Mutex<HashMap<String, String>>,
     /// The sandbox block each open chat is held on now, as the app heard it (#1508): what an
     /// answer to several tasks is checked against. **In memory only**, and gone with the chat.
     blocks: Arc<crate::taskblocks::Blocks>,
@@ -857,6 +860,7 @@ impl Chats {
             ending: AtomicBool::new(false),
             most_at_once: MOST_AT_ONCE,
             grants: Mutex::new(HashMap::new()),
+            kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
             refused: Arc::new(Mutex::new(None)),
@@ -1427,6 +1431,64 @@ impl Chats {
             }),
         }
         Ok(())
+    }
+
+    /// **Points chat `session`'s kubectl at a cluster on this Mac** (qw384b): `config` is the
+    /// copy of one context made for it (`purlis_core::sandbox::kubeconfig::for_this_chat`),
+    /// kept by the chat's id for as long as the app holds it, so a restart on its conversation
+    /// keeps it and no other chat ever gets it. Owes the chat a restart that tells it `told`:
+    /// each start writes the copy into the chat's own folder and names it by `KUBECONFIG`.
+    /// **In memory only**, as a grant for one chat is.
+    pub fn point_kubectl(&self, session: u32, config: String, told: String) -> Result<(), String> {
+        let id = {
+            let open = lock(&self.open);
+            let running = open.get(&session).ok_or_else(|| {
+                format!("chat {session} is not open, so kubectl was pointed at nothing")
+            })?;
+            running.chat.identity.id.clone().ok_or_else(|| {
+                "that chat has no id yet, so kubectl was pointed at nothing".to_owned()
+            })?
+        };
+        lock(&self.kubeconfigs).insert(id, config);
+        self.owe_restart(session, told);
+        Ok(())
+    }
+
+    /// The copy of a context the chat with id `id` was pointed at ([`Self::point_kubectl`]).
+    pub fn kubeconfig_of(&self, id: &str) -> Option<String> {
+        lock(&self.kubeconfigs).get(id).cloned()
+    }
+
+    /// **Withdraws `port` of this Mac from running chats' proxies** (qw384b): its grant was
+    /// removed, and a chat's proxy carries it no longer, whatever name it is reached by. `chat`
+    /// names the one chat it was removed for; none, every open chat but one that holds the port
+    /// for itself. `chat` is the chat's id. The chats it was withdrawn from, by number.
+    pub fn withdraw_port(&self, chat: Option<&str>, port: u16) -> Vec<u32> {
+        let what = purlis_core::sandbox::grant::What::Port(port);
+        let holding: Vec<String> = lock(&self.grants)
+            .iter()
+            .filter(|(_, made)| made.iter().any(|one| one.what == what))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let open = lock(&self.open);
+        let mut withdrawn: Vec<u32> = open
+            .iter()
+            .filter(|(_, running)| match chat {
+                Some(one) => running.chat.identity.id.as_deref() == Some(one),
+                None => !running
+                    .chat
+                    .identity
+                    .id
+                    .as_ref()
+                    .is_some_and(|id| holding.contains(id)),
+            })
+            .filter_map(|(number, running)| {
+                running.confinement.as_ref()?.withdraw_port(port);
+                Some(*number)
+            })
+            .collect();
+        withdrawn.sort_unstable();
+        withdrawn
     }
 
     /// Owes chat `session` a restart on its conversation that tells it `told` (#1342): a grant
@@ -2242,7 +2304,7 @@ impl Chats {
                     self.project.clone(),
                 )
             });
-        let confinement = match sandbox {
+        let mut confinement = match sandbox {
             Some(applied) => applied.confine_asking(refusals, Some(reached), asks).map_err(|err| {
                 purlis_core::sandbox::under_policy(
                     &purlis_core::sandbox::policy::Locks::of(&self.project),
@@ -2291,6 +2353,23 @@ impl Chats {
         // pairs in order and two of one name would leave the later one standing.
         env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
         env.extend(wrapped);
+        // A cluster on this Mac the person pointed this chat's kubectl at (qw384b): its own
+        // copy, in its own folder, named for it alone and ahead of any kubeconfig of theirs.
+        if let (Some(config), Some(confinement)) = (
+            identity.id.as_deref().and_then(|id| self.kubeconfig_of(id)),
+            confinement.as_mut(),
+        ) {
+            match confinement.keep_own(purlis_core::sandbox::kubeconfig::FILE, &config) {
+                Ok(path) => {
+                    env.retain(|(key, _)| key != purlis_core::sandbox::kubeconfig::ENV);
+                    env.push((
+                        purlis_core::sandbox::kubeconfig::ENV.to_owned(),
+                        path.display().to_string(),
+                    ));
+                }
+                Err(err) => tracing::warn!("purlis: a chat's kubeconfig was not written ({err})"),
+            }
+        }
         what_its_hooks_read(
             &mut env,
             chat.cwd.as_deref(),
@@ -4241,28 +4320,30 @@ fn refused_by_the_proxy(
             // names the port, which its Notice offers to allow. Any other local address (a
             // link-local address, a metadata service) is never a host to allow (#1664), so its
             // Block names none, and its Notice offers what a local socket's does.
-            let local = purlis_core::sandbox::localport::loopback_port(
-                &purlis_core::sandbox::egress::host_and_port(host, port),
-            );
-            let block = purlis_core::hookwire::SandboxBlocked {
-                chat,
-                sandbox_blocked: Block {
-                    operation: Operation::Connect,
-                    kind: if local.is_some() {
-                        Kind::LocalService
-                    } else {
-                        Kind::LocalSocket
-                    },
-                    ours: false,
-                },
-                harness: harness.map(|harness| harness.name().to_owned()),
-                target: local.map(|port| port.to_string()),
-                read_back: false,
-                suggested: None,
-            };
+            // A name of this Mac is that port too (qw384b), from a fixed list, never looked up.
+            let target = purlis_core::sandbox::egress::host_and_port(host, port);
             let _ = std::thread::Builder::new()
                 .name("purlis-refused".into())
-                .spawn(move || told(block));
+                .spawn(move || {
+                    let local = purlis_core::sandbox::localport::named_port(&target);
+                    let block = purlis_core::hookwire::SandboxBlocked {
+                        chat,
+                        sandbox_blocked: Block {
+                            operation: Operation::Connect,
+                            kind: if local.is_some() {
+                                Kind::LocalService
+                            } else {
+                                Kind::LocalSocket
+                            },
+                            ours: false,
+                        },
+                        harness: harness.map(|harness| harness.name().to_owned()),
+                        target: local.map(|port| port.to_string()),
+                        read_back: false,
+                        suggested: None,
+                    };
+                    told(block);
+                });
         })
     })
 }
@@ -5902,6 +5983,172 @@ pub(crate) mod tests {
             std::net::TcpStream::connect(("127.0.0.1", port)).is_err(),
             "the proxy outlived its chat"
         );
+    }
+
+    // --- qw384b: a chat's own kubeconfig for a cluster on this Mac ------------------------ //
+
+    #[test]
+    fn a_chat_pointed_at_a_cluster_on_this_mac_is_owed_a_restart_and_only_it_holds_the_copy() {
+        let chats = Chats::new();
+        let size = Size {
+            columns: 80,
+            rows: 24,
+        };
+        let chat = Chat {
+            program: "/bin/sleep".to_owned(),
+            args: vec!["5".to_owned()],
+            name: "kube".to_owned(),
+            ..Default::default()
+        };
+        let session = chats.start(&chat, size).expect("started");
+        let other = chats.start(&chat, size).expect("started");
+        chats
+            .point_kubectl(
+                session,
+                "{\"kind\": \"Config\"}".to_owned(),
+                "told".to_owned(),
+            )
+            .expect("pointed");
+        assert_eq!(chats.owed_restarts(), [session]);
+        assert_eq!(lock(&chats.owed)[&session], ["told"]);
+        let id = |n: u32| {
+            lock(&chats.open)[&n]
+                .chat
+                .identity
+                .id
+                .clone()
+                .expect("an id")
+        };
+        assert_eq!(
+            chats.kubeconfig_of(&id(session)).as_deref(),
+            Some("{\"kind\": \"Config\"}")
+        );
+        assert_eq!(chats.kubeconfig_of(&id(other)), None);
+        // A chat that is not open is pointed at nothing.
+        assert!(
+            chats
+                .point_kubectl(9999, "{}".to_owned(), "x".to_owned())
+                .is_err()
+        );
+        chats.close(session).expect("closed");
+        chats.close(other).expect("closed");
+    }
+
+    /// Chats on a pretend host armed to hand a sandbox to an opencode chat in `plane`, as the
+    /// app ships it.
+    fn armed_for_opencode(plane: &std::path::Path) -> (Chats, Pretend) {
+        let plugin = plane.join("plugin");
+        let shim = purlis_core::opencode::shim_in(&plugin);
+        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("the bundle");
+        std::fs::write(&shim, "export default {}\n").expect("the shim");
+        let host = Pretend::default();
+        host.reporting_on(plane.join(".charter/app/hooks.sock"));
+        let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+        chats.arming_with(crate::Shipped {
+            binary: Some(plane.join("charter")),
+            plugin: Some(plugin),
+            shims: None,
+            git_hooks: None,
+        });
+        (chats, host)
+    }
+
+    #[test]
+    fn a_sandboxed_chat_pointed_at_a_cluster_starts_with_kubeconfig_naming_its_own_copy() {
+        let plane = a_sandboxed_plane();
+        let (chats, host) = armed_for_opencode(plane.path());
+        let ready = purlis_core::start::Ready {
+            // A kubeconfig of the person's own, from the app's environment: the chat's copy
+            // wins.
+            env: vec![(
+                "KUBECONFIG".to_owned(),
+                "/Users/someone/.kube/config".to_owned(),
+            )],
+            ..ready_under(
+                Harness::Opencode,
+                a_sandbox_for(Harness::Opencode, plane.path()),
+            )
+        };
+        let chat = Chat {
+            cwd: Some(plane.path().to_path_buf()),
+            ..chat("/bin/sh", "c", None)
+        };
+        let first = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+        let started = lock(&chats.open)[&first].chat.clone();
+        let config = "{\"kind\": \"Config\", \"current-context\": \"kind\"}";
+        chats
+            .point_kubectl(first, config.to_owned(), "told".to_owned())
+            .expect("pointed");
+        chats.close(first).expect("closed");
+
+        let session = chats
+            .start_ready(&started, &ready, SIZE)
+            .expect("starts again");
+
+        let opening = host.openings().pop().expect("opened");
+        let named: Vec<&String> = opening
+            .env
+            .iter()
+            .filter(|(key, _)| key == "KUBECONFIG")
+            .map(|(_, value)| value)
+            .collect();
+        let [path] = named.as_slice() else {
+            panic!("KUBECONFIG {named:?}")
+        };
+        let path = std::path::PathBuf::from(path);
+        assert_ne!(path, std::path::Path::new("/Users/someone/.kube/config"));
+        assert!(
+            path.ends_with(purlis_core::sandbox::kubeconfig::FILE),
+            "{path:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).expect("written"), config);
+        // Another chat, never pointed, is started with the person's own, untouched.
+        let plain = chats
+            .start_ready(&chat, &ready, SIZE)
+            .expect("another starts");
+        let opening = host.openings().pop().expect("opened");
+        assert!(
+            opening
+                .env
+                .iter()
+                .any(|(key, value)| key == "KUBECONFIG" && value == "/Users/someone/.kube/config"),
+            "{:?}",
+            opening.env
+        );
+        chats.close(plain).expect("closed");
+        chats.close(session).expect("closed");
+        assert!(!path.exists(), "the copy outlived its chat");
+    }
+
+    #[test]
+    fn a_port_removed_while_a_chat_runs_is_withdrawn_from_its_proxy_unless_it_still_holds_it() {
+        use purlis_core::sandbox::grant::What;
+        let plane = a_sandboxed_plane();
+        let (chats, _host) = armed_for_opencode(plane.path());
+        let ready = ready_under(
+            Harness::Opencode,
+            a_sandbox_for(Harness::Opencode, plane.path()),
+        );
+        let chat = Chat {
+            cwd: Some(plane.path().to_path_buf()),
+            ..chat("/bin/sh", "c", None)
+        };
+        let held = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+        let other = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+        chats.hold_grant(held, What::Port(50795), 1).expect("held");
+        // Removed for every chat of this project on this machine: the chat that holds it for
+        // itself keeps it; the other's proxy carries it no longer.
+        assert_eq!(chats.withdraw_port(None, 50795), [other]);
+        // Removed for the one chat: withdrawn from it.
+        let id = lock(&chats.open)[&held]
+            .chat
+            .identity
+            .id
+            .clone()
+            .expect("an id");
+        assert_eq!(chats.withdraw_port(Some(&id), 50795), [held]);
+        chats.close(held).expect("closed");
+        chats.close(other).expect("closed");
     }
 
     #[test]

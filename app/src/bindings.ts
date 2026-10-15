@@ -536,6 +536,17 @@ export const commands = {
 	 */
 	keepSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<null, string>(__TAURI_INVOKE("keep_sandbox_block", { plane, session, shown })),
 	/**
+	 *  **The contexts of the person's kubeconfig** (qw384b), as kubectl reads it (every file
+	 *  `KUBECONFIG` names), each with whether a chat can be pointed at it. Data a context holds
+	 *  (keys, certificates) is left out by kubectl itself.
+	 */
+	kubeContexts: () => typedError<KubeContext[], string>(__TAURI_INVOKE("kube_contexts")),
+	/**
+	 *  **Points chat `session`'s kubectl at `context`** (qw384b): a cluster on this Mac only, any
+	 *  other refused with why. What the Notice says once it is done.
+	 */
+	pointKubectl: (plane: PlaneId, session: number, context: string) => typedError<string, string>(__TAURI_INVOKE("point_kubectl", { plane, session, context })),
+	/**
 	 *  **What the person may choose from** for the unnamed block `shown` of chat `session` (#1884):
 	 *  the sockets purlis finds on this machine that a grant may name, or the services it can
 	 *  allow. The app's own discovery, in its own order; nothing a chat sent is in it. The
@@ -5940,6 +5951,18 @@ export type KeptBlocked = {
 	chat: string | null,
 	/**  When, in seconds since 1970. */
 	at: number,
+};
+
+/**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
+export type KubeContext = {
+	/**  Its name, as kubectl knows it. */
+	name: string,
+	/**  Its cluster's server, as the kubeconfig names it. */
+	server: string,
+	/**  The port of this Mac it reaches, where purlis can point a chat at it. */
+	port: number | null,
+	/**  Why purlis would not point a chat at it, where it would not: never pressable then. */
+	refused: string | null,
 };
 
 /**
