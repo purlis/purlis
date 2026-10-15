@@ -375,28 +375,9 @@ the rulings.
   stores that are not there. The document test is exact about the document, and review covers
   the code.
 
-## Ruled (V22, 2026-09-30)
+## Amendments
 
-1. **A fifth answer, `None`**, for paths purlis records but does not own.
-2. **The marks `transient` and `legacy`**, beside V2's `rebuildable`.
-3. **`machine.json` is device-bound as a whole.**
-4. **A plain-file vault is Clone state and is not backed up**; a restore marks it "file missing".
-5. **A restore keeps device-bound state only when the operator says this machine replaces the old
-   one.**
-6. **`$PURLIS_HOME` moves all clone state or none** ([#750](https://github.com/diazoxide/charter/issues/750)).
-7. **Review drafts and private memory are Machine and syncable.**
-8. **The hook spool is transient**, and is drained before any backup.
-9. **Runner binaries live under the machine store**, at `<config>/server/<ver>/`.
-10. **The tier test checks the document**, and "names its tier" is a review question on every PR
-    that adds a store.
-
-## Amendment, 2026-10-01: the Tauri log directory also holds the diagnostic log (#647)
-
-§1 says the Tauri application-data and log directories hold only the shims and the git hooks,
-rebuilt at every launch, and the panic log. **The log directory now also holds the app's
-diagnostic log**, `<app log>/charter.<YYYY-MM-DD>.log`, written by `charter_core::applog`
-(FD-8, #647). It is **Machine, device-bound, transient**, as `panics.log` (row 57) is, and
-`docs/plane-format.md` has its row. A new file starts each day and the newest seven are kept.
-FR-10 does not back it up: it records what happened on this machine, and only a person
-reads it. It is neither the audit nor telemetry (O1, ADR 0075). Nothing else in this record
-changes.
+The amendments to this decision are files of their own in [`0069/`](0069/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

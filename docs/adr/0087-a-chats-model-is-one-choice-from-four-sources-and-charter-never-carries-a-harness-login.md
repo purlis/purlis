@@ -571,15 +571,9 @@ recorded in DECISIONS.md as D-0087:
   comes only from the chat's picker, `charter.local.toml` or org policy, and waits for GT-CLOUD."*
   Applied in §1 and §3.
 
-## Ruled (V36, 2026-10-01)
+## Amendments
 
-The operator chose option (a), as recommended:
-
-1. **V36: a key reaches the harness through a proxy in `purlisd`.** The harness gets a loopback base
-   URL and a per-chat token, never the key, and the host swaps in the credential header and passes
-   bytes through. Every harness that accepts a base URL uses it, which includes Claude Code, Codex
-   and opencode. Environment injection is only for the rest, with the residual stated. The proxy
-   shares a crate with M8's passthrough. ADR 0073 §4's "proxy that edits its traffic" is narrowed to
-   exclude a credential-header swap. The proxy is never used for `login`. Rejected: environment
-   injection everywhere with a hardening ticket, which would have given up the claim that the model
-   never sees the key.
+The amendments to this decision are files of their own in [`0087/`](0087/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

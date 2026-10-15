@@ -460,12 +460,9 @@ DECISIONS.md as D-0079:
 - **D-0079c:** *"Rebuild budget: resumable, starting at ≤60 s per 1,000 archived chats; KN-22
   measures it."* Applied in §4's budgets.
 
-## Ruled (V33, 2026-10-01)
+## Amendments
 
-The operator accepted the one question as recommended:
-
-1. **V33: a chat reaches transcripts only through a `chat`-scope search, limited to its own
-   `<clone-key>`.** The host derives the key from the chat and never from the request (ADR 0068,
-   amended). **ADR 0067 §5 gains a read denial of the machine index and the transcript archive**,
-   the first denial about one project reaching another. That denial pre-empts KN-31 for the
-   archive.
+The amendments to this decision are files of their own in [`0079/`](0079/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

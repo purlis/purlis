@@ -583,17 +583,9 @@ The code does not change with this record.
 - **Mosh, Eternal Terminal or a UDP transport.** The host owns the sessions, so a reconnect with
   a snapshot gives the same result.
 
-## Ruled (V29, 2026-10-01)
+## Amendments
 
-The operator accepted all four questions as recommended:
-
-1. **V29a: the link uses a separate X25519 link key per device**, held in the same tier and
-   backend as AU-3's key. LW-1 and LW-2 build on it, so there is no third key.
-2. **V29b: a runner may be re-armed over the link, from the desktop's window (`local-ui`) only.**
-   It amends V22d, which now reads *"only a window re-arms: this machine's, or, for a runner, its
-   desktop's"*.
-3. **V29c: a runner never stops itself after a silence.** The window names every runner a stop
-   has not reached and keeps trying, and `purlis stop --all` on the runner is the fallback.
-4. **V29d: this record merges before LW-1 and LW-19 exist.** LW-1 and RR-2 must reuse the same
-   two pinned records over the same Noise `XX` link, and LW-19 must pin its bundle hash beside
-   them.
+The amendments to this decision are files of their own in [`0078/`](0078/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
