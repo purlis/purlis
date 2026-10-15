@@ -217,6 +217,7 @@ macro_rules! app_commands {
                 machineprofiles::machine_profile_remove,
                 machineprofiles::type_profile_sign_in,
                 machineprofiles::dismiss_sign_in,
+                machineprofiles::machine_profile_pin,
                 thismachine::forget_project,
                 thismachine::locate_project,
                 thismachine::revoke_approval,

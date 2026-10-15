@@ -316,7 +316,7 @@ fn a_field_this_purlis_does_not_know_survives_a_change_to_its_record() {
     fs::create_dir_all(path(&machine.config).parent().unwrap()).unwrap();
     fs::write(
         path(&machine.config),
-        r#"{"version":1,"profiles":[{"name":"work","harness":"claude","title":"Work","folders":{"config":"/w"},"pinned":{"at":5}}],"later":true}"#,
+        r#"{"version":1,"profiles":[{"name":"work","harness":"claude","title":"Work","folders":{"config":"/w"},"kept_logins":{"at":5}}],"later":true}"#,
     )
     .unwrap();
 
@@ -327,7 +327,7 @@ fn a_field_this_purlis_does_not_know_survives_a_change_to_its_record() {
 
     let text = fs::read_to_string(path(&machine.config)).unwrap();
     let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(doc["profiles"][0]["pinned"]["at"], 5, "{text}");
+    assert_eq!(doc["profiles"][0]["kept_logins"]["at"], 5, "{text}");
     assert_eq!(doc["profiles"][0]["title"], "Work (this Mac)");
     assert_eq!(doc["later"], true, "{text}");
 }

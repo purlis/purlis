@@ -39,6 +39,7 @@ fn made_here(name: &str, folder: &Path) -> MachineProfile {
             from: PathBuf::from("/home/dev/.claude"),
         }),
         sign_in: None,
+        pinned: None,
         rest: serde_json::Map::new(),
     }
 }

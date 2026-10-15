@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Settings › You › Profiles** (#2034, ADR 0095): this machine's own profiles, listed, added,
-//! imported into again and removed. A profile here is available in every project on this
+//! imported into again, pinned to a harness version (#2038) and removed. A profile here is available in every project on this
 //! machine; it lives in purlis's data home, never in a project.
 //!
 //! All of it is the core's ([`purlis_core::profilestore`]); this file only carries it to the
@@ -46,6 +46,15 @@ pub struct MachineProfileRow {
     /// The plans Sign in offers, where purlis names the provider (opencode's ChatGPT and GitHub
     /// Copilot, never a Claude plan); empty where the harness signs in to its own.
     pub plans: Vec<PlanRow>,
+    /// The harness version its chats run on (#2038); null until its first chat pins it.
+    pub pinned: Option<String>,
+    /// The version of its harness installed on this machine, as its program answers
+    /// `--version`; null where purlis could not read one.
+    pub installed: Option<String>,
+    /// The version **Update the pin** offers: the one installed, where the profile's next chat
+    /// would not start on it (another major, or an older one). Null where its chats run on the
+    /// version installed, or follow it.
+    pub offered: Option<String>,
 }
 
 /// A plan a profile is signed in to, by the provider id its harness takes.
@@ -86,6 +95,9 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
                     title: plan.title.clone(),
                 })
                 .collect(),
+            pinned: record.pinned.as_ref().map(|p| p.version.clone()),
+            installed: None,
+            offered: None,
         }
     }
 }
@@ -109,15 +121,47 @@ fn rows(records: &[profilestore::MachineProfile]) -> Vec<MachineProfileRow> {
             .iter()
             .map(|record| scope.spawn(move || sign_in::standing_of(record, &sign_in::ThisMachine)))
             .collect();
+        // Each harness asked its version once (#2038), beside the sign-ins.
+        let mut harnesses: Vec<&str> = records.iter().map(|r| r.harness.as_str()).collect();
+        harnesses.sort_unstable();
+        harnesses.dedup();
+        let versions: Vec<_> = harnesses
+            .iter()
+            .map(|&harness| {
+                (
+                    harness,
+                    scope.spawn(move || profilestore::pin::installed_here(harness)),
+                )
+            })
+            .collect();
+        let installed: std::collections::BTreeMap<&str, profilestore::pin::Version> = versions
+            .into_iter()
+            .filter_map(|(harness, asked)| Some((harness, asked.join().ok().flatten()?)))
+            .collect();
         records
             .iter()
             .zip(asked)
             .map(|(record, asked)| MachineProfileRow {
                 standing: asked.join().ok().flatten().map(|s| s.word().to_owned()),
-                ..MachineProfileRow::from(record)
+                ..pinned_row(record, installed.get(record.harness.as_str()))
             })
             .collect()
     })
+}
+
+/// `record`'s row with the version of its harness installed here, `here`, beside its pin, and
+/// the version Update the pin offers where its next chat would not start on `here` (#2038).
+fn pinned_row(
+    record: &profilestore::MachineProfile,
+    here: Option<&profilestore::pin::Version>,
+) -> MachineProfileRow {
+    MachineProfileRow {
+        offered: here
+            .and_then(|here| profilestore::pin::offered(record, here))
+            .map(|v| v.to_string()),
+        installed: here.map(ToString::to_string),
+        ..MachineProfileRow::from(record)
+    }
 }
 
 /// A profile made or imported into, and what its import did.
@@ -204,13 +248,34 @@ async fn blocking<T: Send + 'static>(
         .map_err(|err| format!("this machine's profiles did not answer: {err}"))?
 }
 
-/// This machine's profiles, in the order they were made.
+/// This machine's profiles, in the order they were made, each with the version of its harness
+/// installed here beside its pin (#2038): each harness asked `--version` once.
 #[tauri::command]
 #[specta::specta]
 pub async fn machine_profiles() -> Result<Vec<MachineProfileRow>, String> {
     blocking(|| {
         let records = profilestore::list(store()?.config_root())?;
         Ok(rows(&records))
+    })
+    .await
+}
+
+/// **Update the pin** (#2038): pins `name` to `version`, the one the page showed installed, so
+/// its chats run, and its conversations resume, on that version from now on.
+#[tauri::command]
+#[specta::specta]
+pub async fn machine_profile_pin(
+    name: String,
+    version: String,
+) -> Result<MachineProfileRow, String> {
+    blocking(move || {
+        profilestore::pin::update_pin(
+            store()?.config_root(),
+            &name,
+            &version,
+            purlis_core::halt::now(),
+        )
+        .map(|record| MachineProfileRow::from(&record))
     })
     .await
 }
