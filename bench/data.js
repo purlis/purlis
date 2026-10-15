@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792042461991,
+  "lastUpdate": 1792043596470,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11886,6 +11886,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5737005,
             "unit": "ms",
             "extra": "median of 5 runs: 101.078, 101.297, 101.574, 101.778, 101.983 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc3f42f04c2ffe1f5c581bf295af240eff8a5e5a",
+          "message": "docs(adr): the items the operator ruled on 2026-10-15 say so (#2120)\n\n* docs(adr): the items the operator ruled on 2026-10-15 say so\n\nEach \"to be confirmed\" marker for an item the operator confirmed on\n2026-10-15 now says ruled by the operator, 2026-10-15, in ADRs 0051,\n0061, 0064 and 0067. Other open markers are left as they are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw398): the 0051 note says only that it is ruled; one bullet re-wrapped\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T09:47:58+04:00",
+          "tree_id": "6ea85c7319e3a882cb6dbf523a410361f45549b4",
+          "url": "https://github.com/purlis/purlis/commit/fc3f42f04c2ffe1f5c581bf295af240eff8a5e5a"
+        },
+        "date": 1792043594293,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.544562,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.514, 0.545, 0.547, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.9350795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.678, 16.804, 16.935, 17.335, 17.475 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.3048465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.625, 103.573, 104.305, 105.352, 106.288 ms"
           }
         ]
       }
