@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792101055767,
+  "lastUpdate": 1792102538707,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13188,6 +13188,48 @@ window.BENCHMARK_DATA = {
             "value": 101.910794,
             "unit": "ms",
             "extra": "median of 5 runs: 100.959, 101.570, 101.911, 102.150, 102.386 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "00ff5c9c9cd984c2ca9867f6b8edb91dc6b364d5",
+          "message": "The watcher and auto-save live in the session host (#2196)\n\n* Session protocol 1.3: a held project is saved in the host by one saver\n\nThe window may ask its session host to save a project it holds\n(`start_saving`, `stop_saving`, `fetch_project`, the window's alone), and the\nhost pushes `saving`, what each look of the project's auto-save did. The host\nruns its binary's saver (`purlis_host::Save`), one per project however often it\nis asked; a link that ends without a word leaves it saving, and the window's\nstop, or every window letting go of the project, ends it. A program's end in\nthe project pokes its saver, which can ask who works in the project. Each frame\nis recorded in the protocol's fixture.\n\nRefs #2002\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The watcher and auto-save live in the session host, behind the switch\n\nWith PURLIS_CHATS_IN_THE_HOST=1 the window asks its session host to save\neach project it opens, and starts no auto-save of its own: the host runs the\nplane's watch and the same auto-save worker, as the window's binary, and\npushes what each look did, which the window reads its standing again on.\nWhere a project is saved is chosen at the seam that chooses where its chats\nrun (SessionHost::keep_saving), so exactly one saver runs per project. A quit\nstops the host's saving and waits for its answer before the save at quit; a\nwindow gone without a quit leaves the project being saved.\n\nThe behaviour suite gains a save after a quiet period, told to the window,\nand exactly one saver, on both targets; a test drops the window's link with\nno stop, writes a file and sees the host save it. ADR 0068 is amended for\n#2002, and ADR 0051 says where auto-save runs with the switch on.\n\nRefs #2002\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The host's saver hands nothing over in a fenced test build\n\nAs window_git does: the machine's store is outside a test's fence.\n\nRefs #2002\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A save's claim on a plane holds against every other process\n\nplanegit::Claim also locks <git dir>/purlis-save.lock, so the window's Save,\na resolve, a repo's save, the rename fix, `purlis save` in a terminal and the\nsession host's auto-save never run a save or a fetch of one repository at\nonce: the second is refused in the same words as in one process, or waits\nwhere it may. A folder that is no repository has nothing to lock. The plane\nformat names the lock and its tier.\n\nRefs #2002\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Review fixes: the host asks the window's board, and a quit is bounded\n\n- The host's stop of a project's saving answers once its worker has let go of\n  the plane, a save it was in the middle of included, for at most two\n  seconds.\n- While a window is linked, the host asks it who is mid-turn in a workspace\n  (`who_is_mid_turn`, answered `mid_turn`), and the window answers from its\n  board. Only with no window linked, or none answering in two seconds, does\n  every chat the host runs there count as mid-turn.\n- A quit stops every project's saving at once, against one three-second\n  deadline, and ends a host that did not answer before the save at quit.\n- The saver's hooks into the host hold it weakly.\n- ADR 0068's amendment for #2002 says so (D-2002-3, D-2002-6, D-2002-7);\n  ADR 0051's note sits outside the list and is to be confirmed.\n\nRefs #2002\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A save's lock is shared within a process and let go of explicitly\n\nThe save lock is between processes. Within one, two claims of a repository\nunder two spellings share it, as they shared nothing before there was a lock,\nand it is held until the last lets go. It is let go of with flock(LOCK_UN)\n(`filelock::Held`), so a copy of its descriptor in a child the process is\nforking at that moment no longer keeps it held, which refused the fetch that\nfollowed a save in a pr-mode test.\n\nRefs #2002\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T02:14:16+04:00",
+          "tree_id": "9af57609173706132198826cb1db94b6fe30ad1d",
+          "url": "https://github.com/purlis/purlis/commit/00ff5c9c9cd984c2ca9867f6b8edb91dc6b364d5"
+        },
+        "date": 1792102537223,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5285340000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.509, 0.523, 0.529, 0.536, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.115595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.774, 17.090, 17.116, 17.168, 17.346 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.647293,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.550, 104.411, 104.647, 105.678, 106.977 ms"
           }
         ]
       }
