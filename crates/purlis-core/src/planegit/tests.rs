@@ -3151,6 +3151,79 @@ fn a_claim_holds_the_plane_against_every_other_process_until_it_is_let_go_of() {
     other.try_lock().expect("let go of with the claim");
 }
 
+/// Whether another process could take the plane's save lock now: a lock taken through a file
+/// of its own, as `flock` sees another process's, and let go of at once.
+fn free_elsewhere(root: &Path) -> bool {
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(root.join(".git").join(SAVE_LOCK))
+        .expect("the lock file opens");
+    let free = lock.try_lock().is_ok();
+    if free {
+        lock.unlock().expect("let go of");
+    }
+    free
+}
+
+#[test]
+fn two_claims_of_one_repository_in_one_process_share_its_lock_until_the_last_lets_go() {
+    // A claim nested in another, of the same repository reached by another spelling, is this
+    // process's own rule to settle, as it was before the lock: the two share it.
+    let fixture = Fixture::plane();
+    let link = fixture
+        .root
+        .parent()
+        .unwrap()
+        .join("the-plane-through-a-link");
+    std::os::unix::fs::symlink(&fixture.root, &link).unwrap();
+    let outer = Claim::of(&fixture.root).expect("nobody holds it");
+
+    let nested = Claim::of(&link).expect("the nested claim shares this process's lock");
+    assert!(!free_elsewhere(&fixture.root));
+
+    drop(nested);
+    assert!(
+        !free_elsewhere(&fixture.root),
+        "the nested claim let go of the outer one's lock"
+    );
+    drop(outer);
+    assert!(
+        free_elsewhere(&fixture.root),
+        "the lock outlived its claims"
+    );
+}
+
+#[test]
+fn a_fetch_that_fails_lets_go_of_the_plane_for_every_other_process() {
+    // No remote to fetch from: the fetch answers an error, and its claim goes with it.
+    let fixture = Fixture::plane();
+
+    assert!(fetch(&fixture.root, true).is_err());
+
+    assert!(
+        free_elsewhere(&fixture.root),
+        "the failed fetch kept the lock"
+    );
+    assert!(Claim::of(&fixture.root).is_some());
+}
+
+#[test]
+fn a_save_then_a_fetch_in_one_process_each_take_the_plane_in_turn() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote();
+    std::fs::write(fixture.root.join("work.md"), "work").unwrap();
+
+    let (code, said) = fixture.just_save();
+    assert_eq!(code, 0, "{said}");
+
+    assert!(
+        fetch(&fixture.root, true).is_ok(),
+        "the save kept the plane"
+    );
+}
+
 #[test]
 fn a_fetch_waits_its_turn_behind_a_running_save() {
     let fixture = Fixture::plane();

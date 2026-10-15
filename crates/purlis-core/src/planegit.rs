@@ -2188,9 +2188,17 @@ pub const SAVE_LOCK: &str = "purlis-save.lock";
 #[derive(Debug)]
 pub struct Claim {
     root: PathBuf,
-    /// The lock other processes see, held while the claim is.
-    across: Option<std::fs::File>,
+    /// The repository's lock this claim shares in this process, while it is held.
+    across: Option<PathBuf>,
 }
+
+/// The [`SAVE_LOCK`]s this process holds, by the git directory, with how many claims share
+/// each (#2002). The lock is between processes: within one, a claim's rule is [`RUNNING`]'s, as
+/// it was before there was a lock, so two claims of one repository under two spellings (a
+/// nested one, reaching it through a link) share the lock rather than refuse each other.
+static ACROSS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, (usize, crate::filelock::Held)>>,
+> = std::sync::LazyLock::new(Default::default);
 
 impl Claim {
     /// The plane at `root`, unless something already holds it, in this process or another.
@@ -2203,7 +2211,6 @@ impl Claim {
         if !running().insert(root.to_path_buf()) {
             return None;
         }
-        // The file is opened with no lock of this process's held: it is a read of the disk.
         match across_processes(root) {
             Ok(across) => Some(Self {
                 root: root.to_path_buf(),
@@ -2234,12 +2241,12 @@ impl Claim {
 /// Another process holds the plane's [`SAVE_LOCK`].
 struct HeldElsewhere;
 
-/// The lock on the [`SAVE_LOCK`] of the repository at `root`, or [`HeldElsewhere`] when
-/// another process holds it. A folder that is no repository has no git directory to lock and
-/// nothing a save could race on, and a lock file that cannot be made or locked for another
-/// reason leaves the claim to this process alone, as it was before there was a lock: neither is
-/// a refusal.
-fn across_processes(root: &Path) -> Result<Option<std::fs::File>, HeldElsewhere> {
+/// A share of the lock on the [`SAVE_LOCK`] of the repository at `root`, by its git directory,
+/// or [`HeldElsewhere`] when another process holds it. A folder that is no repository has no
+/// git directory to lock and nothing a save could race on, and a lock file that cannot be made
+/// or locked for another reason leaves the claim to this process alone, as it was before there
+/// was a lock: neither is a refusal.
+fn across_processes(root: &Path) -> Result<Option<PathBuf>, HeldElsewhere> {
     let Some(git_dir) = root
         .to_str()
         .and_then(crate::gitconfig::git_dir_at)
@@ -2247,6 +2254,14 @@ fn across_processes(root: &Path) -> Result<Option<std::fs::File>, HeldElsewhere>
     else {
         return Ok(None);
     };
+    let git_dir = git_dir.canonicalize().unwrap_or(git_dir);
+    let mut across = ACROSS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((shares, _)) = across.get_mut(&git_dir) {
+        *shares += 1;
+        return Ok(Some(git_dir));
+    }
     let Ok(lock) = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -2256,7 +2271,10 @@ fn across_processes(root: &Path) -> Result<Option<std::fs::File>, HeldElsewhere>
         return Ok(None);
     };
     match lock.try_lock() {
-        Ok(()) => Ok(Some(lock)),
+        Ok(()) => {
+            across.insert(git_dir.clone(), (1, crate::filelock::Held::locked(lock)));
+            Ok(Some(git_dir))
+        }
         Err(std::fs::TryLockError::WouldBlock) => Err(HeldElsewhere),
         Err(std::fs::TryLockError::Error(_)) => Ok(None),
     }
@@ -2264,8 +2282,21 @@ fn across_processes(root: &Path) -> Result<Option<std::fs::File>, HeldElsewhere>
 
 impl Drop for Claim {
     fn drop(&mut self) {
-        // Other processes first: once this process lets go, a save of its own may start.
-        drop(self.across.take());
+        // Other processes first, once no claim here shares the lock: the lock is let go of
+        // explicitly (`filelock::Held`), so a copy of its descriptor in a child this process is
+        // forking does not keep it held.
+        if let Some(git_dir) = self.across.take() {
+            let mut across = ACROSS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let last = across.get_mut(&git_dir).is_some_and(|(shares, _)| {
+                *shares -= 1;
+                *shares == 0
+            });
+            if last {
+                across.remove(&git_dir);
+            }
+        }
         RUNNING
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
