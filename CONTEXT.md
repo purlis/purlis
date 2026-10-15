@@ -551,6 +551,26 @@ browser profile (that is the **profile**)
 One of a browser's open documents. Pages of one browser share its cookies and logins.
 _Avoid_: tab (that is the window's), frame, document
 
+**Snapshot** (of a page):
+The agent's reading of a **page**: its elements as a tree of lines, each with its **reference**,
+its frames named and placed under the element that holds them. It is read in parts, from a line,
+or within one element, and a find answers the lines that match. Not a picture of the page (that
+is a screenshot), and not a **view**'s snapshot (a **browser view**'s is its latest frame).
+_Avoid_: DOM, page source, accessibility tree (that is what it is made from)
+
+**Reference** (to an element):
+The name a **snapshot** gives one element of a page, such as `e12`, by which the agent acts on
+it. It names the same element in every snapshot of that document, and dies when its frame loads
+another document.
+_Avoid_: selector, handle, node id, ref (in prose)
+
+**Blanked**:
+Said of an element of a page whose content no answer to the agent shows: the field purlis filled
+for a **browser login**, and every field the person typed into. A snapshot shows it by its role
+and reference only, a screenshot has it painted over, and what it held is kept out of every answer
+about its page for as long as the page is open.
+_Avoid_: masked, redacted, hidden (a page hides elements of its own)
+
 **Engine**:
 The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
 downloads on first use, checks against its manifest before it runs, and keeps current apart from

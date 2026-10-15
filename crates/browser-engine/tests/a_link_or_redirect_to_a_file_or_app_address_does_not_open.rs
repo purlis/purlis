@@ -4,7 +4,7 @@
 //! Every navigation the agent asks for takes a `WebAddress`, so it can name only http and https.
 //! A page can still offer other addresses: a link or a redirect to a `file:` address or to an
 //! app's own scheme. Followed in a real engine, none of them opens, in the page or in a new
-//! window, and the browser lists no page at such an address.
+//! page, and the browser lists no page at such an address.
 //!
 //! Like every test of a real engine, this runs where `PURLIS_TEST_ENGINE` names a Chrome, and on
 //! CI against the runner's own Chrome; anywhere else it says why it did not run and passes.
@@ -59,8 +59,8 @@ fn a_link_or_redirect_a_page_offers_to_a_file_or_an_apps_own_scheme_does_not_ope
         "App link",
         "Redirect to a file",
         "Redirect to an app",
-        "File in a new window",
-        "App in a new window",
+        "File in a new page",
+        "App in a new page",
     ] {
         let found = browser
             .call(
@@ -90,7 +90,7 @@ fn a_link_or_redirect_a_page_offers_to_a_file_or_an_apps_own_scheme_does_not_ope
                 },
             )
             .unwrap();
-        // A window the engine made for the address is empty at most: it never reached it.
+        // A page the engine made for the address is empty at most: it never reached it.
         for opened in &clicked.opened {
             assert!(blank(&opened.address), "{link} opened {clicked:?}");
         }

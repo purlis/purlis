@@ -221,6 +221,20 @@ pub enum Call {
     },
 }
 
+impl Call {
+    /// Whether the call only reads (and so acts on nothing a retry could act on twice).
+    pub fn only_reads(&self) -> bool {
+        matches!(
+            self,
+            Call::Snapshot { .. }
+                | Call::Find { .. }
+                | Call::WaitForText { .. }
+                | Call::Pages
+                | Call::Screenshot { .. }
+        )
+    }
+}
+
 /// Whether a page had settled when its call answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Settled {
@@ -272,6 +286,17 @@ pub struct Answer {
 pub enum Refusal {
     #[error("the browser has no page open: open one")]
     NoPage,
+    #[error("nothing on the page has the focus")]
+    NothingFocused,
+    #[error(
+        "the call acted in part, so the page's state is not known ({done}): {why}. Take a snapshot"
+    )]
+    Partly {
+        /// What was done before it stopped.
+        done: String,
+        /// Why it stopped.
+        why: String,
+    },
     #[error("there is no page {0}: list the pages to see them")]
     NoSuchPage(PageId),
     #[error("{0} is not a reference this browser dealt: take a snapshot")]
@@ -319,9 +344,12 @@ pub struct Limits {
     pub settle_within: Duration,
     /// How many lines a snapshot gives when the call does not say.
     pub snapshot_lines: usize,
+    /// The most lines a snapshot gives, whatever the call says.
+    pub most_snapshot_lines: usize,
     /// The longest a wait for text may wait.
     pub longest_wait: Duration,
-    /// How many answers are kept by call id for retries.
+    /// How many answers to actions are kept by call id for retries (an action's answer holds
+    /// no page content, so each is small).
     pub answers_kept: usize,
 }
 
@@ -331,6 +359,7 @@ impl Default for Limits {
             quiet: Duration::from_millis(500),
             settle_within: Duration::from_secs(10),
             snapshot_lines: 300,
+            most_snapshot_lines: 2000,
             longest_wait: Duration::from_secs(60),
             answers_kept: 256,
         }

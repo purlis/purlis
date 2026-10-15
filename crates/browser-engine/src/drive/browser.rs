@@ -5,6 +5,7 @@
 //! frames, and each call made into the engine's own calls.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -17,7 +18,7 @@ use super::blank::{Rect, paint_over};
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::settle::{Activity, Settle, activity};
-use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build};
+use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed};
 use super::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Ref, Refusal, Settled,
     lock,
@@ -111,10 +112,32 @@ struct Page {
     url: String,
     title: String,
     settle: Settle,
+    /// What blanked elements of this page held, kept out of every answer while the page lasts,
+    /// whatever became of the elements.
+    scrubbed: Vec<String>,
     frames: HashMap<String, Frame>,
 }
 
 impl Page {
+    /// `text` with what this page's blanked elements held taken out.
+    fn shown(&self, text: &str) -> String {
+        let blanked: Vec<&str> = self.scrubbed.iter().map(String::as_str).collect();
+        scrubbed(text, &blanked)
+    }
+
+    /// Keeps `held` out of every later answer about this page.
+    /// Also as it is written in an address (percent-encoded, and a form's `+` for a space).
+    fn keep_out(&mut self, held: &[String]) {
+        for text in held {
+            let encoded = percent_encoded(text);
+            for form in [text.clone(), encoded.replace("%20", "+"), encoded] {
+                if !self.scrubbed.iter().any(|t| t.eq_ignore_ascii_case(&form)) {
+                    self.scrubbed.push(form);
+                }
+            }
+        }
+    }
+
     /// The frames between this page and `frame` (itself included) that have sessions of their
     /// own, outermost first: each one's id and its parent's session.
     fn boundaries(&self, frame: &str) -> Vec<(String, String)> {
@@ -212,8 +235,8 @@ impl State {
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
-            address: p.url.clone(),
-            title: p.title.clone(),
+            address: p.shown(&p.url),
+            title: p.shown(&p.title),
             current: self.current.as_deref() == Some(target),
         })
     }
@@ -339,6 +362,8 @@ pub struct Browser {
     ledger: Ledger<Call, Result<Answer, Refusal>>,
     /// One call acts at a time.
     acting: Mutex<()>,
+    /// Input events sent to pages, for an answer that says how far an action got.
+    inputs: AtomicU64,
     #[cfg(unix)]
     engine: Option<crate::process::Engine>,
 }
@@ -408,6 +433,7 @@ impl Browser {
             inner,
             ledger: Ledger::new(limits.answers_kept),
             acting: Mutex::new(()),
+            inputs: AtomicU64::new(0),
             #[cfg(unix)]
             engine: None,
         })
@@ -424,6 +450,12 @@ impl Browser {
     /// Answers `call`. A call whose `id` was answered before answers the same again and acts on
     /// nothing; an `id` given to a different call is refused.
     pub fn call(&self, id: &CallId, call: Call) -> Result<Answer, Refusal> {
+        // A call that only reads acts on nothing, so a retry of it reads again; only what acts
+        // is kept by id.
+        if call.only_reads() {
+            let _one = lock(&self.acting);
+            return self.run(call);
+        }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
                 let answer = {
@@ -442,13 +474,27 @@ impl Browser {
     }
 
     /// Adds the element `target` names to the blanked set: from now on no snapshot, find, wait
-    /// or screenshot shows what it holds, while its document lasts. The hook a login, and the
-    /// person's typing, fill.
+    /// or screenshot shows it while it exists, and what it holds is kept out of every answer
+    /// about its page while the page lasts. The hook a login, and the person's typing, fill.
     pub fn blank(&self, target: &Ref) -> Result<(), Refusal> {
-        let mut state = lock(&self.inner.state);
-        let key = live_ref(&state, target)?.1;
-        state.excluded.insert(key);
-        Ok(())
+        let (page, key) = live_ref(&lock(&self.inner.state), target)?;
+        self.blank_node(&page, key)
+    }
+
+    /// [`Browser::blank`] for the element that has the focus on `page` (the current page when
+    /// `None`), whatever it is: the field the person is typing into, even one that is no form
+    /// field and has no reference.
+    pub fn blank_focused(&self, page: Option<&PageId>) -> Result<(), Refusal> {
+        let target = self.target(page)?;
+        let snapshot = self.snapshot_of(&target)?;
+        let key = snapshot.focused().cloned().ok_or(Refusal::NothingFocused)?;
+        self.blank_node(&target, key)
+    }
+
+    fn blank_node(&self, target: &str, key: NodeKey) -> Result<(), Refusal> {
+        lock(&self.inner.state).excluded.insert(key);
+        // Read the page now, so what the element holds is kept out from this moment.
+        self.snapshot_of(target).map(|_| ())
     }
 
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
@@ -466,7 +512,9 @@ impl Browser {
                 lines,
             } => {
                 let target = self.target(page.as_ref())?;
-                let lines = lines.unwrap_or(self.inner.limits.snapshot_lines);
+                let lines = lines
+                    .unwrap_or(self.inner.limits.snapshot_lines)
+                    .clamp(1, self.inner.limits.most_snapshot_lines);
                 self.reading(&target, |snapshot, state| {
                     let scope = within
                         .as_ref()
@@ -533,9 +581,7 @@ impl Browser {
                 }
                 self.acting_on(&target, || {
                     for event in events {
-                        self.devtools()
-                            .call("Input.dispatchKeyEvent", event, Some(&session))
-                            .map_err(refusal)?;
+                        self.input("Input.dispatchKeyEvent", event, &session)?;
                     }
                     Ok(None)
                 })
@@ -698,7 +744,22 @@ impl Browser {
     ) -> Result<Answer, Refusal> {
         let before = self.targets();
         let dropped = self.devtools().dropped_events();
-        let note = act()?;
+        let inputs = self.inputs.load(Ordering::SeqCst);
+        let note = match act() {
+            Ok(note) => note,
+            // Once input has reached the page, a failure leaves it acted on in part.
+            Err(why) => {
+                let sent = self.inputs.load(Ordering::SeqCst) - inputs;
+                return Err(match why {
+                    Refusal::Partly { .. } => why,
+                    why if sent > 0 => Refusal::Partly {
+                        done: format!("{sent} input events reached the page"),
+                        why: why.to_string(),
+                    },
+                    why => why,
+                });
+            }
+        };
         let (settled, opened) = self.settle(
             target,
             &before,
@@ -873,7 +934,7 @@ impl Browser {
             let body = read(&snapshot, &mut state)?;
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             let title = if snapshot.title().is_empty() {
-                page.title.clone()
+                page.shown(&page.title)
             } else {
                 snapshot.title().to_owned()
             };
@@ -881,7 +942,7 @@ impl Browser {
                 "page {} \"{}\" {}\n{body}",
                 page.id,
                 title.replace('"', "\\\""),
-                page.url
+                page.shown(&page.url)
             )
         };
         Ok(self.answer(target, settled, opened, Content::Text(text), None))
@@ -890,7 +951,7 @@ impl Browser {
     /// `target`'s tree as it is now, every frame in it.
     fn snapshot_of(&self, target: &str) -> Result<Snapshot, Refusal> {
         let session = self.page_session(target)?;
-        let (frames, excluded) = {
+        let (frames, excluded, scrub) = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             let mut ordered: Vec<(String, &Frame)> = Vec::new();
@@ -929,7 +990,7 @@ impl Browser {
                     },
                 })
                 .collect();
-            (frames, state.excluded.clone())
+            (frames, state.excluded.clone(), page.scrubbed.clone())
         };
         let frames = if frames.is_empty() {
             vec![ToRead {
@@ -970,7 +1031,11 @@ impl Browser {
             };
             trees.push(frame);
         }
-        Ok(build(&trees, &excluded))
+        let snapshot = build(&trees, &excluded, &scrub);
+        if let Some(page) = lock(&self.inner.state).page_mut(target) {
+            page.keep_out(snapshot.blanked_text());
+        }
+        Ok(snapshot)
     }
 
     /// Where `target` is, for acting on it.
@@ -1075,8 +1140,15 @@ impl Browser {
         if clicks > 0 {
             event["clickCount"] = clicks.into();
         }
+        self.input("Input.dispatchMouseEvent", event, session)
+    }
+
+    /// Sends one input event (or text) to the page on `session`, counted for an answer that says
+    /// how far an action got.
+    fn input(&self, method: &str, event: Value, session: &str) -> Result<(), Refusal> {
+        self.inputs.fetch_add(1, Ordering::SeqCst);
         self.devtools()
-            .call("Input.dispatchMouseEvent", event, Some(session))
+            .call(method, event, Some(session))
             .map(|_| ())
             .map_err(refusal)
     }
@@ -1110,42 +1182,57 @@ impl Browser {
             });
         }
         self.acting_on(&target, || {
-            for (field, at) in fields.iter().zip(&located) {
-                if let Some((r, at)) = at {
-                    self.devtools()
-                        .call(
-                            "DOM.focus",
-                            json!({ "backendNodeId": at.backend }),
-                            Some(&at.node_session),
-                        )
-                        .map_err(|why| match why {
-                            CallError::Engine { .. } => Refusal::NotShown(r.clone()),
-                            other => refusal(other),
-                        })?;
-                }
-                if field.replace {
-                    let mut keys = key_events("Control+a").expect("a known chord");
-                    if field.text.is_empty() {
-                        keys.extend(key_events("Delete").expect("a known key"));
+            let total = fields.len();
+            for (done, (field, at)) in fields.iter().zip(&located).enumerate() {
+                let typed = self.type_field(field, at.as_ref(), &session);
+                match typed {
+                    Ok(()) => {}
+                    Err(why) if done > 0 => {
+                        return Err(Refusal::Partly {
+                            done: format!(
+                                "typed into {done} of {total} fields, and maybe part of the next"
+                            ),
+                            why: why.to_string(),
+                        });
                     }
-                    for event in keys {
-                        self.devtools()
-                            .call("Input.dispatchKeyEvent", event, Some(&session))
-                            .map_err(refusal)?;
-                    }
-                }
-                if !field.text.is_empty() {
-                    self.devtools()
-                        .call(
-                            "Input.insertText",
-                            json!({ "text": field.text }),
-                            Some(&session),
-                        )
-                        .map_err(refusal)?;
+                    Err(why) => return Err(why),
                 }
             }
             Ok(None)
         })
+    }
+
+    fn type_field(
+        &self,
+        field: &Field,
+        at: Option<&(Ref, Located)>,
+        session: &str,
+    ) -> Result<(), Refusal> {
+        if let Some((r, at)) = at {
+            self.devtools()
+                .call(
+                    "DOM.focus",
+                    json!({ "backendNodeId": at.backend }),
+                    Some(&at.node_session),
+                )
+                .map_err(|why| match why {
+                    CallError::Engine { .. } => Refusal::NotShown(r.clone()),
+                    other => refusal(other),
+                })?;
+        }
+        if field.replace {
+            let mut keys = key_events("Control+a").expect("a known chord");
+            if field.text.is_empty() {
+                keys.extend(key_events("Delete").expect("a known key"));
+            }
+            for event in keys {
+                self.input("Input.dispatchKeyEvent", event, session)?;
+            }
+        }
+        if !field.text.is_empty() {
+            self.input("Input.insertText", json!({ "text": field.text }), session)?;
+        }
+        Ok(())
     }
 
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
@@ -1277,16 +1364,14 @@ impl Browser {
                 }
             };
             if x != 0.0 || y != 0.0 {
-                self.devtools()
-                    .call(
-                        "Input.dispatchMouseEvent",
-                        json!({
-                            "type": "mouseWheel", "x": point.0, "y": point.1,
-                            "deltaX": x, "deltaY": y, "modifiers": 0,
-                        }),
-                        Some(&session),
-                    )
-                    .map_err(refusal)?;
+                self.input(
+                    "Input.dispatchMouseEvent",
+                    json!({
+                        "type": "mouseWheel", "x": point.0, "y": point.1,
+                        "deltaX": x, "deltaY": y, "modifiers": 0,
+                    }),
+                    &session,
+                )?;
             }
             Ok(None)
         })
@@ -1379,31 +1464,18 @@ impl Browser {
             .and_then(Value::as_str)
             .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok())
             .ok_or_else(|| Refusal::Engine("the screenshot came back empty".into()))?;
-        let scale = if boxes.is_empty() {
-            1.0
+        let rects: Vec<Rect> = if boxes.is_empty() {
+            Vec::new()
         } else {
             let metrics = self
                 .devtools()
                 .call("Page.getLayoutMetrics", json!({}), Some(&session))
                 .map_err(|why| Refusal::Withheld(why.to_string()))?;
-            let css_width = metrics
-                .pointer("/cssVisualViewport/clientWidth")
-                .and_then(Value::as_f64)
-                .unwrap_or_default();
-            match png_width(&png) {
-                Some(width) if css_width > 0.0 => f64::from(width) / css_width,
-                _ => return Err(Refusal::Withheld("the picture's size is not known".into())),
-            }
+            let place = Placing::from_metrics(&metrics).ok_or_else(|| {
+                Refusal::Withheld("the page's scale on the picture is not known".into())
+            })?;
+            boxes.iter().map(|r| place.on_picture(r)).collect()
         };
-        let rects: Vec<Rect> = boxes
-            .iter()
-            .map(|r| Rect {
-                x: r.x * scale - 2.0,
-                y: r.y * scale - 2.0,
-                width: r.width * scale + 4.0,
-                height: r.height * scale + 4.0,
-            })
-            .collect();
         let painted = paint_over(&png, &rects).map_err(|why| Refusal::Withheld(why.to_string()))?;
         Ok(self.answer(&target, settled, opened, Content::Image(painted), None))
     }
@@ -1501,6 +1573,7 @@ impl Inner {
                                 url: url.clone(),
                                 title: String::new(),
                                 settle: Settle::new(now),
+                                scrubbed: Vec::new(),
                                 frames: HashMap::new(),
                             });
                         }
@@ -1756,6 +1829,61 @@ fn centre(answer: &Value) -> Option<(f64, f64)> {
     })
 }
 
+/// `text` as an address writes it: every byte but letters, digits and `-._~` as `%XX`.
+fn percent_encoded(text: &str) -> String {
+    let mut out = String::new();
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// How a page's CSS pixels map to its screenshot's pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Placing {
+    /// Device pixels a CSS pixel takes, the visual viewport's zoom included.
+    scale: f64,
+    /// Where the visual viewport sits in the layout viewport, in CSS pixels.
+    offset: (f64, f64),
+}
+
+impl Placing {
+    /// From `Page.getLayoutMetrics`: the layout viewport in device pixels over the same in CSS
+    /// pixels (the device pixel ratio, scrollbars left out of both), and the visual viewport's
+    /// zoom and offset.
+    pub(crate) fn from_metrics(metrics: &Value) -> Option<Self> {
+        let number = |path: &str| metrics.pointer(path).and_then(Value::as_f64);
+        let device = number("/layoutViewport/clientWidth")?;
+        let css = number("/cssLayoutViewport/clientWidth")?;
+        let zoom = number("/cssVisualViewport/zoom").unwrap_or(1.0);
+        if !(device > 0.0 && css > 0.0 && zoom > 0.0) {
+            return None;
+        }
+        Some(Self {
+            scale: device / css * zoom,
+            offset: (
+                number("/cssVisualViewport/offsetX").unwrap_or_default(),
+                number("/cssVisualViewport/offsetY").unwrap_or_default(),
+            ),
+        })
+    }
+
+    /// `css`, a box in CSS pixels of the layout viewport, on the picture, with a margin of two
+    /// pixels.
+    pub(crate) fn on_picture(&self, css: &Rect) -> Rect {
+        Rect {
+            x: (css.x - self.offset.0) * self.scale - 2.0,
+            y: (css.y - self.offset.1) * self.scale - 2.0,
+            width: css.width * self.scale + 4.0,
+            height: css.height * self.scale + 4.0,
+        }
+    }
+}
+
 /// The box around every quad.
 fn bounds(answer: &Value) -> Option<Rect> {
     let all = quads(answer);
@@ -1777,13 +1905,6 @@ fn bounds(answer: &Value) -> Option<Rect> {
         width: right - left,
         height: bottom - top,
     })
-}
-
-/// A PNG's width, from its header.
-fn png_width(png: &[u8]) -> Option<u32> {
-    let header = png.get(16..20)?;
-    (png.get(12..16)? == b"IHDR")
-        .then(|| u32::from_be_bytes([header[0], header[1], header[2], header[3]]))
 }
 
 #[cfg(test)]

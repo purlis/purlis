@@ -43,6 +43,7 @@ struct Model {
     screenshot: Vec<u8>,
     select: Value,
     pages: u32,
+    pixel_ratio: f64,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -163,10 +164,14 @@ impl Engine {
             "Page.captureScreenshot" => Ok(json!({
                 "data": base64::engine::general_purpose::STANDARD.encode(&super::lock(&self.model).screenshot)
             })),
-            "Page.getLayoutMetrics" => Ok(json!({
-                "cssLayoutViewport":{"pageX":0,"pageY":0,"clientWidth":800,"clientHeight":600},
-                "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":0,"clientWidth":10,"clientHeight":10,"scale":1,"zoom":1}
-            })),
+            "Page.getLayoutMetrics" => {
+                let ratio = super::lock(&self.model).pixel_ratio;
+                Ok(json!({
+                    "layoutViewport":{"pageX":0,"pageY":0,"clientWidth":800.0 * ratio,"clientHeight":600.0 * ratio},
+                    "cssLayoutViewport":{"pageX":0,"pageY":0,"clientWidth":800,"clientHeight":600},
+                    "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":0,"clientWidth":800,"clientHeight":600,"scale":1,"zoom":1}
+                }))
+            }
             "DOM.resolveNode" => {
                 Ok(json!({"object":{"type":"object","subtype":"node","objectId":"OBJECT-1"}}))
             }
@@ -260,6 +265,7 @@ fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),
             pages: 1,
+            pixel_ratio: 1.0,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
@@ -998,4 +1004,172 @@ fn a_wait_for_text_sees_text_that_shows_later() {
         )
         .unwrap();
     assert_eq!(answer.content, Content::Seen(true));
+}
+
+#[test]
+fn a_screenshot_on_a_screen_of_two_pixels_to_the_point_paints_the_whole_field() {
+    let (browser, engine) = browser();
+    super::lock(&engine.model).pixel_ratio = 2.0;
+    let name = ref_of(&snapshot(&browser, 1), "- textbox \"Name\"");
+    browser.blank(&name).unwrap();
+    let shot = browser
+        .call(&id(2), Call::Screenshot { page: None })
+        .unwrap();
+    let Content::Image(shot) = shot.content else {
+        panic!()
+    };
+    // The Name field's box (0, 0) to (4, 2) is (0, 0) to (8, 4) on the picture, and a margin.
+    assert_eq!(pixel(&shot, 9, 5), vec![128, 128, 128]);
+    assert_eq!(pixel(&shot, 9, 7), vec![255, 255, 255]);
+}
+
+#[test]
+fn a_screenshot_whose_scale_is_not_known_is_withheld() {
+    let (browser, engine) = browser();
+    let name = ref_of(&snapshot(&browser, 1), "- textbox \"Name\"");
+    browser.blank(&name).unwrap();
+    engine.on(|sent, _| {
+        (sent.method == "Page.getLayoutMetrics")
+            .then(|| Ok(json!({"cssVisualViewport":{"clientWidth":10}})))
+    });
+    let shot = browser.call(&id(2), Call::Screenshot { page: None });
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+}
+
+#[test]
+fn what_a_blanked_field_held_stays_out_of_every_answer_after_the_field_is_gone() {
+    let (browser, engine) = browser();
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    browser.blank(&secret).unwrap();
+    // The page takes the field away and puts what it held in its title and an address.
+    {
+        let mut model = super::lock(&engine.model);
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        nodes.retain(|n| n["nodeId"] != "12" && n["nodeId"] != "13");
+        nodes[0]["name"]["value"] = json!("Welcome, OPEN SESAME");
+    }
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-1","type":"page","title":"Open Sesame","url":"http://fixture.test/frames.html?w=open%20sesame&v=Open+Sesame"}}),
+        None,
+    );
+    std::thread::sleep(Duration::from_millis(50));
+    let text = snapshot(&browser, 2);
+    assert!(!text.to_lowercase().contains("sesame"), "{text}");
+    let found = browser
+        .call(
+            &id(3),
+            Call::Find {
+                page: None,
+                text: Some("SESAME".into()),
+                role: None,
+                within: None,
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(&found.content, Content::Text(t) if t.ends_with("Nothing on the page matches.\n")),
+        "{found:?}"
+    );
+    let listed = browser.call(&id(4), Call::Pages).unwrap();
+    let page = listed.page.unwrap();
+    assert!(!page.title.to_lowercase().contains("sesame"), "{page:?}");
+    assert!(!page.address.to_lowercase().contains("sesame"), "{page:?}");
+}
+
+#[test]
+fn the_element_that_has_the_focus_can_be_blanked_without_a_reference() {
+    let (browser, _engine) = browser();
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    assert!(text.contains("- textbox [e3] (blanked)"), "{text}");
+    assert!(!text.contains("Ada"), "{text}");
+}
+
+#[test]
+fn typing_that_stops_part_way_says_how_far_it_got_and_that_the_state_is_not_known() {
+    let (browser, engine) = browser();
+    let text = snapshot(&browser, 1);
+    let name = ref_of(&text, "- textbox \"Name\"");
+    let more = ref_of(&text, "- link \"Read more\"");
+    engine.on(|sent, _| {
+        (sent.method == "Input.insertText" && sent.params["text"] == "second")
+            .then_some(Err(CallError::TimedOut))
+    });
+    let typed = browser.call(
+        &id(2),
+        Call::Type {
+            page: None,
+            fields: vec![
+                Field {
+                    into: Some(name),
+                    text: "first".into(),
+                    replace: false,
+                },
+                Field {
+                    into: Some(more),
+                    text: "second".into(),
+                    replace: false,
+                },
+            ],
+        },
+    );
+    let Err(Refusal::Partly { done, .. }) = typed else {
+        panic!("{typed:?}")
+    };
+    assert_eq!(done, "typed into 1 of 2 fields, and maybe part of the next");
+}
+
+#[test]
+fn a_click_cut_off_after_the_press_says_it_acted_in_part() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    engine.on(|sent, _| {
+        (sent.method == "Input.dispatchMouseEvent" && sent.params["type"] == "mouseReleased")
+            .then_some(Err(CallError::TimedOut))
+    });
+    let clicked = browser.call(&id(2), Call::Click { target: more });
+    assert!(
+        matches!(clicked, Err(Refusal::Partly { .. })),
+        "{clicked:?}"
+    );
+}
+
+#[test]
+fn a_call_that_only_reads_reads_again_when_retried() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    snapshot(&browser, 1);
+    let reads = engine
+        .sent("Accessibility.getFullAXTree")
+        .iter()
+        .filter(|s| s.params["frameId"] == "PAGE-1")
+        .count();
+    assert_eq!(reads, 2);
+}
+
+#[test]
+fn a_snapshot_gives_no_more_lines_than_the_most_allowed() {
+    let (browser, _engine) = browser_with(Limits {
+        most_snapshot_lines: 3,
+        ..limits()
+    });
+    let answer = browser
+        .call(
+            &id(1),
+            Call::Snapshot {
+                page: None,
+                within: None,
+                from: 1,
+                lines: Some(1_000_000),
+            },
+        )
+        .unwrap();
+    let Content::Text(text) = answer.content else {
+        panic!()
+    };
+    assert!(
+        text.contains("(lines 1 to 3 of 11; the next page starts at line 4)"),
+        "{text}"
+    );
 }

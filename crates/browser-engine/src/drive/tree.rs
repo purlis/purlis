@@ -113,15 +113,21 @@ struct Line {
 pub(crate) struct Snapshot {
     title: String,
     lines: Vec<Line>,
+    /// What the blanked elements held when this was built, to keep out of every later answer.
+    blanked_text: Vec<String>,
+    /// The element that has the focus, in the innermost frame that has one.
+    focused: Option<NodeKey>,
 }
 
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
 /// `excluded`.
-pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>) -> Snapshot {
+pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[String]) -> Snapshot {
     let Some(main) = frames.first() else {
         return Snapshot {
             title: String::new(),
             lines: Vec::new(),
+            blanked_text: Vec::new(),
+            focused: None,
         };
     };
     let mut builder = Builder {
@@ -130,9 +136,10 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>) -> Snapshot
         used: HashSet::from([0]),
         lines: Vec::new(),
         blanked_text: Vec::new(),
+        focused: None,
     };
     let tree = FrameNodes::new(&main.nodes);
-    let title = tree
+    let mut title = tree
         .root()
         .map(|root| text_of(root.get("name")))
         .unwrap_or_default();
@@ -145,28 +152,99 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>) -> Snapshot
         }
     }
     let mut lines = builder.lines;
-    let scrubbed: Vec<String> = builder
+    let blanked_text: Vec<String> = builder
         .blanked_text
         .into_iter()
         .filter(|text| text.chars().count() >= SHORTEST_SCRUBBED)
         .collect();
-    if !scrubbed.is_empty() {
-        for line in &mut lines {
-            for text in &scrubbed {
-                line.name = line.name.replace(text.as_str(), "(blanked)");
-                if let Some(value) = &mut line.value {
-                    *value = value.replace(text.as_str(), "(blanked)");
-                }
-            }
+    let all: Vec<&str> = blanked_text
+        .iter()
+        .map(String::as_str)
+        .chain(scrub.iter().map(String::as_str))
+        .collect();
+    title = cut(&scrubbed(&title, &all));
+    for line in &mut lines {
+        line.name = cut(&scrubbed(&line.name, &all));
+        if let Some(value) = &mut line.value {
+            *value = cut(&scrubbed(value, &all));
+        }
+        if let Some(address) = &mut line.address {
+            *address = scrubbed(address, &all);
         }
     }
-    Snapshot { title, lines }
+    Snapshot {
+        title,
+        lines,
+        blanked_text,
+        focused: builder.focused,
+    }
+}
+
+/// `text` with every one of `blanked` (at least [`SHORTEST_SCRUBBED`] characters) taken out,
+/// ignoring case.
+pub(crate) fn scrubbed(text: &str, blanked: &[&str]) -> String {
+    let mut out = text.to_owned();
+    for needle in blanked {
+        if needle.chars().count() < SHORTEST_SCRUBBED {
+            continue;
+        }
+        out = replace_ignoring_case(&out, needle, "(blanked)");
+    }
+    out
+}
+
+fn replace_ignoring_case(text: &str, needle: &str, with: &str) -> String {
+    let wanted: Vec<char> = needle.chars().flat_map(char::to_lowercase).collect();
+    let mut out = String::new();
+    let mut rest = text;
+    'outer: while !rest.is_empty() {
+        let mut matched = Vec::new();
+        for (at, c) in rest.char_indices() {
+            matched.extend(c.to_lowercase());
+            if matched.len() >= wanted.len() {
+                if matched == wanted {
+                    out.push_str(with);
+                    rest = &rest[at + c.len_utf8()..];
+                    continue 'outer;
+                }
+                break;
+            }
+            if !wanted.starts_with(&matched) {
+                break;
+            }
+        }
+        let first = rest.chars().next().expect("not empty");
+        out.push(first);
+        rest = &rest[first.len_utf8()..];
+    }
+    out
+}
+
+/// `text` cut at [`LONGEST_TEXT`] characters.
+fn cut(text: &str) -> String {
+    if text.chars().count() > LONGEST_TEXT {
+        let mut cut: String = text.chars().take(LONGEST_TEXT).collect();
+        cut.push('…');
+        cut
+    } else {
+        text.to_owned()
+    }
 }
 
 impl Snapshot {
     /// The page's title, as its accessibility tree names it.
     pub(crate) fn title(&self) -> &str {
         &self.title
+    }
+
+    /// What the blanked elements held (each at least [`SHORTEST_SCRUBBED`] characters).
+    pub(crate) fn blanked_text(&self) -> &[String] {
+        &self.blanked_text
+    }
+
+    /// The element that has the focus, if any.
+    pub(crate) fn focused(&self) -> Option<&NodeKey> {
+        self.focused.as_ref()
     }
 
     /// The lines `view` asks for, each element with the reference `refer` deals it, and a last
@@ -371,7 +449,7 @@ fn role_of(node: &Value) -> &str {
         .unwrap_or_default()
 }
 
-/// A name or value as one line: whitespace collapsed, cut at [`LONGEST_TEXT`] characters.
+/// A name or value as one line: whitespace collapsed.
 fn text_of(field: Option<&Value>) -> String {
     match field.and_then(|f| f.get("value")) {
         Some(Value::String(s)) => one_line(s),
@@ -381,16 +459,9 @@ fn text_of(field: Option<&Value>) -> String {
     }
 }
 
-/// `raw` with its whitespace collapsed, cut at [`LONGEST_TEXT`] characters.
+/// `raw` with its whitespace collapsed (cut only once blanked text is out of it).
 fn one_line(raw: &str) -> String {
-    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.chars().count() > LONGEST_TEXT {
-        let mut cut: String = collapsed.chars().take(LONGEST_TEXT).collect();
-        cut.push('…');
-        cut
-    } else {
-        collapsed
-    }
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn property<'a>(node: &'a Value, name: &str) -> Option<&'a Value> {
@@ -460,6 +531,7 @@ struct Builder<'f> {
     lines: Vec<Line>,
     /// Text of blanked elements, to take out of every other line.
     blanked_text: Vec<String>,
+    focused: Option<NodeKey>,
 }
 
 impl Builder<'_> {
@@ -554,13 +626,13 @@ impl Builder<'_> {
                 backend,
             });
         let name = text_of(node.get("name"));
-        if ignored || role == "RootWebArea" || (name.is_empty() && PASS_THROUGH.contains(&role)) {
-            for child in children {
-                self.node(at, tree, child, depth, parent, label, seen);
-            }
-            return;
-        }
         let value = Some(text_of(node.get("value"))).filter(|v| !v.is_empty());
+        if let Some(key) = &key
+            && is_true(property(node, "focused"))
+        {
+            self.focused = Some(key.clone());
+        }
+        // A blanked element is blanked whatever the engine says of it, ignored or a wrapper.
         if let Some(key) = &key
             && self.excluded.contains(key)
         {
@@ -578,6 +650,12 @@ impl Builder<'_> {
                 frame: label.map(str::to_owned),
                 end: index + 1,
             });
+            return;
+        }
+        if ignored || role == "RootWebArea" || (name.is_empty() && PASS_THROUGH.contains(&role)) {
+            for child in children {
+                self.node(at, tree, child, depth, parent, label, seen);
+            }
             return;
         }
         if role == "StaticText" {

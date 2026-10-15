@@ -3,8 +3,8 @@
 
 //! The fixture site's hard pages, driven through a real engine with the agent's calls only: a
 //! page longer than one snapshot, a double-click edit, a drag by an offset, nested frames,
-//! shadow content, a new window and late-loading data; and a retried call that does not act
-//! twice.
+//! shadow content, a link that opens a page and late-loading data; a retried call that does
+//! not act twice; and a blanked field painted over in a screenshot.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port (the
 //! site's stand-in reach proxy), which a sandboxed agent does not have. They run where
@@ -224,12 +224,12 @@ fn shadow_content_is_in_the_snapshot_and_acted_on() {
 }
 
 #[test]
-fn an_action_that_opens_a_window_answers_with_the_new_page() {
+fn an_action_that_opens_a_page_answers_with_the_new_page() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
-    open(&browser, "window.html");
-    let link = ref_on(&snapshot(&browser), "Open in a new window");
+    open(&browser, "opens-a-page.html");
+    let link = ref_on(&snapshot(&browser), "Open in a new page");
     let clicked = call(&browser, Call::Click { target: link });
     assert_eq!(clicked.opened.len(), 1, "{clicked:?}");
     let opened = &clicked.opened[0];
@@ -272,4 +272,60 @@ fn a_retried_click_with_the_same_id_clicks_once() {
     assert!(again.repeated);
     let tree = snapshot(&browser);
     assert!(tree.contains("Count: 1"), "{tree}");
+}
+
+/// How many pixels of a PNG are the fixture's pure red.
+fn red_pixels(png_bytes: &[u8]) -> usize {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().unwrap();
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buf).unwrap();
+    let channels = info.color_type.samples();
+    buf[..info.line_size * info.height as usize]
+        .chunks(channels)
+        .filter(|p| p.len() >= 3 && p[0] > 200 && p[1] < 60 && p[2] < 60)
+        .count()
+}
+
+fn screenshot(browser: &Browser) -> Vec<u8> {
+    match call(browser, Call::Screenshot { page: None }).content {
+        Content::Image(png) => png,
+        other => panic!("a screenshot is an image: {other:?}"),
+    }
+}
+
+#[test]
+fn a_blanked_field_at_the_edge_of_a_scrolling_page_is_painted_over_whole() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "blanked.html");
+    let card = ref_on(&find(&browser, "Card number"), "Card number");
+    assert!(
+        red_pixels(&screenshot(&browser)) > 1000,
+        "the field shows before"
+    );
+    browser.blank(&card).unwrap();
+    let shot = screenshot(&browser);
+    assert_eq!(
+        red_pixels(&shot),
+        0,
+        "every pixel of the field is painted over"
+    );
+    let tree = snapshot(&browser);
+    assert!(!tree.contains("4000 1234"), "{tree}");
+    let found = browser.call(
+        &next_id(),
+        Call::Find {
+            page: None,
+            text: Some("5678".into()),
+            role: None,
+            within: None,
+        },
+    );
+    assert!(
+        matches!(&found, Ok(a) if matches!(&a.content, Content::Text(t) if t.ends_with("Nothing on the page matches.\n"))),
+        "{found:?}"
+    );
 }
