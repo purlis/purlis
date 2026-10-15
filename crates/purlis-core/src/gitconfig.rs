@@ -198,7 +198,7 @@ fn loop_or_bad_descriptor(e: &std::io::Error) -> bool {
 }
 
 /// Up to `limit` bytes of a REGULAR file, or `None`.
-fn read_bounded(path: &str, limit: u64) -> Option<Vec<u8>> {
+pub(crate) fn read_bounded(path: &str, limit: u64) -> Option<Vec<u8>> {
     let meta = std::fs::metadata(path).ok()?;
     if !meta.is_file() {
         return None;

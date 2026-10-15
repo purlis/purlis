@@ -528,7 +528,7 @@ pub fn detect_with_record(
     // program only reads or prints merely printed what it handed back, and raises nothing
     // from it; any other line may have met the refusal its programs said.
     let runs = runs_a_program(payload);
-    let may_run = may_run_a_program(payload);
+    let may_run = may_run_a_program(payload, place);
     let said = if bash_output_failed(payload) || (read_back_failed && !may_run) {
         Said::Failed
     } else if client {
@@ -820,20 +820,25 @@ fn runs_past_readers(line: &str, shells: usize) -> bool {
 /// whole runs none ([`runs_a_program`]), or to decide whether what it handed back is a block
 /// at all, where a line not read whole, and a reader that can start a program, runs one
 /// ([`may_run_a_program`]).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Reading {
+///
+/// Raising carries where the line ran, which a git reader's repository is found from
+/// ([`drivers::names_a_program`], #2212).
+#[derive(Clone, Copy)]
+enum Reading<'a> {
     Naming,
-    Raising,
+    Raising(&'a Place<'a>),
 }
 
 /// **Whether the command line of `payload` may have run a program that met a refusal** (#1972):
 /// the reading that decides whether what a result with no failure beside it handed back is a
 /// block at all. It errs toward a program: a line too big for the guards, one that does not
 /// tokenize, a string a shell is handed nested past what is read, and a reader that can start
-/// a program of its own ([`starts_a_program`]) each run one. Only a line read whole, whose every
+/// a program of its own ([`starts_a_program`]) each run one, as does a git reader in a
+/// repository whose config names a program it runs ([`drivers::names_a_program`], #2212), or in
+/// a folder the line names in a way that is not read. Only a line read whole, whose every
 /// program only reads or prints, runs none; and a result with no line beside it runs none,
 /// since nothing in it is a command this call ran.
-fn may_run_a_program(payload: &serde_json::Value) -> bool {
+fn may_run_a_program(payload: &serde_json::Value, place: &Place<'_>) -> bool {
     let Some(line) = payload["tool_input"]["command"].as_str() else {
         return false;
     };
@@ -842,7 +847,7 @@ fn may_run_a_program(payload: &serde_json::Value) -> bool {
     }
     let line = without_bodies(line);
     let (runs, too_deep) =
-        crate::shellseg::too_deep_within(|| reads_past_readers(&line, 0, Reading::Raising));
+        crate::shellseg::too_deep_within(|| reads_past_readers(&line, 0, Reading::Raising(place)));
     runs || too_deep
 }
 
@@ -880,14 +885,28 @@ fn long_option(word: &str, full: &str, shortest: &str) -> bool {
 /// assignments, and the `globals` and `rest` of its argv ([`crate::shellwrap::git_globals`]).
 /// Configuration given on the line (`-c`, `--config-env`, or `GIT_CONFIG_*` in its environment)
 /// can name one (`diff.external`, `core.fsmonitor`), as can `GIT_EXTERNAL_DIFF`, `--ext-diff`,
-/// and a `grep` that opens its files in a pager (`-O`, `--open-files-in-pager`).
+/// and a `grep` that opens its files in a pager (`-O`, `--open-files-in-pager`). A repository
+/// or a config named past the folder it runs in (`--git-dir`, `--work-tree`, `GIT_DIR`,
+/// `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `HOME`, `XDG_CONFIG_HOME`) may name one too (#2212).
 fn git_starts_a_program(env: &[String], globals: &[String], rest: &[String]) -> bool {
-    let configured = globals
-        .iter()
-        .any(|word| word.starts_with("-c") || word.starts_with("--config-env"));
+    let configured = globals.iter().any(|word| {
+        word.starts_with("-c")
+            || word.starts_with("--config-env")
+            || long_option(word, "--git-dir", "--git-dir")
+            || long_option(word, "--work-tree", "--work-tree")
+    });
     let in_env = env.iter().any(|assignment| {
         let name = assignment.split('=').next().unwrap_or_default();
-        name.starts_with("GIT_CONFIG") || name == "GIT_EXTERNAL_DIFF"
+        name.starts_with("GIT_CONFIG")
+            || matches!(
+                name,
+                "GIT_EXTERNAL_DIFF"
+                    | "GIT_DIR"
+                    | "GIT_WORK_TREE"
+                    | "GIT_COMMON_DIR"
+                    | "HOME"
+                    | "XDG_CONFIG_HOME"
+            )
     });
     let args = rest.get(1..).unwrap_or(&[]);
     // git takes any unambiguous prefix of a subcommand's long option.
@@ -934,50 +953,140 @@ fn sed_only_prints(args: &[String]) -> bool {
 
 /// [`runs_past_readers`] as `reading` asks: a line not read whole runs a program only when the
 /// question is whether to raise a block.
-fn reads_past_readers(line: &str, shells: usize, reading: Reading) -> bool {
-    let unread = reading == Reading::Raising;
+fn reads_past_readers(line: &str, shells: usize, reading: Reading<'_>) -> bool {
+    let place = match reading {
+        Reading::Raising(place) => Some(place),
+        Reading::Naming => None,
+    };
+    let unread = place.is_some();
     let Some(segments) = crate::shellseg::joined_argv(line) else {
         return unread;
     };
-    {
-        segments.iter().any(|segment| {
-            if segment
-                .argv
+    // Every folder the line may have moved to by each part (#2212): where it ran, and where
+    // each `cd` before took it; `None` once a `cd` names one that is not read.
+    let mut folders: Option<Vec<PathBuf>> = place.map(|place| vec![place.cwd.to_path_buf()]);
+    for segment in &segments {
+        if segment
+            .argv
+            .first()
+            .is_some_and(|word| HEADERS.contains(&word.as_str()))
+        {
+            continue;
+        }
+        let call = crate::shellwrap::split_env_chdir(&segment.argv);
+        if call.too_deep {
+            if unread {
+                return true;
+            }
+            continue;
+        }
+        if call.prog.is_empty() {
+            continue;
+        }
+        let base = crate::shellwrap::base_lower(&call.prog);
+        if base == "cd"
+            && let (Some(place), Some(seen)) = (place, folders.as_mut())
+        {
+            let target = call.argv.get(1).map(String::as_str);
+            let moved = seen
+                .last()
+                .and_then(|from| moved_to(from, target, place.home));
+            match moved {
+                Some(to) => seen.push(to),
+                None => folders = None,
+            }
+        }
+        if READERS.contains(&base.as_str()) {
+            if unread && starts_a_program(&base, &call.argv) {
+                return true;
+            }
+            continue;
+        }
+        if base == "git" {
+            let (globals, rest) = crate::shellwrap::git_globals(&call.argv);
+            if !rest
                 .first()
-                .is_some_and(|word| HEADERS.contains(&word.as_str()))
+                .is_some_and(|word| GIT_READERS.contains(&word.as_str()))
+                || (unread && git_starts_a_program(&call.env, &globals, &rest))
             {
-                return false;
+                return true;
             }
-            let call = crate::shellwrap::split_env_chdir(&segment.argv);
-            if call.too_deep {
-                return unread;
+            if let Some(place) = place
+                && git_reader_runs_a_program(folders.as_deref(), &call.chdir, &globals, place)
+            {
+                return true;
             }
-            if call.prog.is_empty() {
-                return false;
+            continue;
+        }
+        // A shell handed a string runs what the string does; one handed none runs a file.
+        let scripts = crate::shellwrap::shell_scripts_of(&call.prog, &call.argv);
+        if scripts.is_empty()
+            || if shells < MOST_SHELLS_DEEP {
+                scripts
+                    .iter()
+                    .any(|script| reads_past_readers(script, shells + 1, reading))
+            } else {
+                unread
             }
-            let base = crate::shellwrap::base_lower(&call.prog);
-            if READERS.contains(&base.as_str()) {
-                return unread && starts_a_program(&base, &call.argv);
-            }
-            if base == "git" {
-                let (globals, rest) = crate::shellwrap::git_globals(&call.argv);
-                return !rest
-                    .first()
-                    .is_some_and(|word| GIT_READERS.contains(&word.as_str()))
-                    || (unread && git_starts_a_program(&call.env, &globals, &rest));
-            }
-            // A shell handed a string runs what the string does; one handed none runs a file.
-            let scripts = crate::shellwrap::shell_scripts_of(&call.prog, &call.argv);
-            scripts.is_empty()
-                || if shells < MOST_SHELLS_DEEP {
-                    scripts
-                        .iter()
-                        .any(|script| reads_past_readers(script, shells + 1, reading))
-                } else {
-                    unread
-                }
-        })
+        {
+            return true;
+        }
     }
+    false
+}
+
+/// The folder `cd` with `target` moves to from `from`, or `None` for one that is not read: a
+/// word the shell expands (a variable, a substitution, a glob), `cd -`, and a home that is
+/// not known.
+fn moved_to(from: &Path, target: Option<&str>, home: Option<&Path>) -> Option<PathBuf> {
+    let target = target.unwrap_or("~");
+    if target == "-" || target.contains(['$', '`', '*', '?', '[']) {
+        return None;
+    }
+    let to = match target.strip_prefix('~') {
+        Some("") => home?.to_path_buf(),
+        Some(rest) if rest.starts_with('/') => home?.join(&rest[1..]),
+        Some(_) => return None,
+        None => from.join(target),
+    };
+    Some(lexical(&to))
+}
+
+/// **Whether a git reader may run a program its repository's config names** (#2212): in any
+/// folder the line may have moved it to (`folders`, `None` for one not read), then a
+/// wrapper's own folder (`chdir`) and each `-C` of its `globals`
+/// ([`drivers::names_a_program`]).
+fn git_reader_runs_a_program(
+    folders: Option<&[PathBuf]>,
+    chdir: &str,
+    globals: &[String],
+    place: &Place<'_>,
+) -> bool {
+    let Some(folders) = folders else {
+        return true;
+    };
+    let mut moves: Vec<&str> = Vec::new();
+    if !chdir.is_empty() {
+        moves.push(chdir);
+    }
+    let mut words = globals.iter();
+    while let Some(word) = words.next() {
+        if word == "-C" {
+            match words.next() {
+                Some(dir) => moves.push(dir),
+                None => return true,
+            }
+        } else if let Some(dir) = word.strip_prefix("-C") {
+            moves.push(dir);
+        }
+    }
+    folders.iter().any(|folder| {
+        let mut at = Some(folder.clone());
+        for to in &moves {
+            at = at.and_then(|from| moved_to(&from, Some(to), place.home));
+        }
+        at.is_none_or(|at| drivers::names_a_program(&at, place.home))
+    })
 }
 
 /// **Whether `payload` is the harness's own tool reading back a background command that ended
@@ -2135,6 +2244,9 @@ pub mod denial;
 #[path = "sandboxblock_background.rs"]
 pub mod background;
 
+#[path = "sandboxblock_drivers.rs"]
+pub mod drivers;
+
 #[cfg(test)]
 #[path = "sandboxblock_tests.rs"]
 mod tests;
@@ -2150,3 +2262,7 @@ mod printed_tests;
 #[cfg(test)]
 #[path = "sandboxblock_background_tests.rs"]
 mod background_tests;
+
+#[cfg(test)]
+#[path = "sandboxblock_drivers_tests.rs"]
+mod drivers_tests;
