@@ -24,6 +24,7 @@ pub(crate) fn about(what: GrantWhat, target: &str) -> Option<About> {
         GrantWhat::Write => Some(About::Write { folder: target }),
         GrantWhat::Socket => Some(About::Socket { socket: target }),
         GrantWhat::Service => Some(About::Service { service: target }),
+        GrantWhat::Port => Some(About::Port { port: target }),
         GrantWhat::Vault => Some(About::Vault { vault: target }),
         // Allowed from its own Notice, which no chat's refusal raises.
         GrantWhat::PersonaHosts => None,

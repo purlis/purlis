@@ -970,9 +970,9 @@ nothing restarts.
 ## Amended (2026-10-14, the operator's ruling Q64, #1987; amends the 2026-10-10 paragraphs on Keep blocked and on what a chat is told): every Ask's answer reaches the chat as one line
 
 The ruling: the person's answer to an Ask a chat's refusal raised, a host, a folder, a local
-socket or service, or a vault, reaches that chat as one line of purlis's own, "Allowed for this
-chat — retry" (or the scope chosen) or "Kept blocked — don't retry; <the reason given>". It is
-written in one place (`purlis_core::askoutcome::Outcome::line`):
+socket or service, a service on this Mac by its port (qw384), or a vault, reaches that chat as
+one line of purlis's own, "Allowed for this chat — retry" (or the scope chosen) or "Kept
+blocked — don't retry; <the reason given>". It is written in one place (`purlis_core::askoutcome::Outcome::line`):
 
 - an Allow: `` ⬢ purlis: reaching `api.example.com:443` — Allowed for this chat — retry. ``,
   with the scope the person chose;

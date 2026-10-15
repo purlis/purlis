@@ -787,5 +787,9 @@ fn a_port_grant_is_told_and_audited_by_its_number() {
         what.to_string(),
         "connecting to the service on this Mac at port 50795"
     );
-    assert!(told(&what, Level::Chat).contains("at port `50795` for this chat"));
+    assert_eq!(
+        told(&what, Level::Chat),
+        "⬢ purlis: connecting to the service on this Mac at port `50795` — Allowed for this chat \
+         — retry."
+    );
 }

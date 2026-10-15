@@ -32,6 +32,12 @@ fn every_kind() -> Vec<(About, &'static str)> {
             "reaching the system service `com.apple.SecurityServer`",
         ),
         (
+            About::Port {
+                port: "50795".to_owned(),
+            },
+            "connecting to the service on this Mac at port `50795`",
+        ),
+        (
             About::Vault {
                 vault: "devops".to_owned(),
             },
@@ -173,6 +179,12 @@ fn a_grant_s_what_and_level_name_the_same_ask_and_scope() {
         About::of(&What::Socket("/var/run/docker.sock".into())),
         About::Socket {
             socket: "/var/run/docker.sock".to_owned()
+        }
+    );
+    assert_eq!(
+        About::of(&What::Port(50795)),
+        About::Port {
+            port: "50795".to_owned()
         }
     );
     assert_eq!(Scope::of(Level::Once), Scope::Once);

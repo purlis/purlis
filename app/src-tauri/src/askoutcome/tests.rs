@@ -49,6 +49,11 @@ fn every_block() -> Vec<(GrantWhat, &'static str, &'static str)> {
             "com.apple.SecurityServer",
             "reaching the system service `com.apple.SecurityServer`",
         ),
+        (
+            GrantWhat::Port,
+            "50795",
+            "connecting to the service on this Mac at port `50795`",
+        ),
     ]
 }
 
@@ -125,10 +130,22 @@ fn an_allow_of_every_kind_is_told_in_the_same_one_line_words() {
             What::Service("com.apple.SecurityServer".to_owned()),
             "reaching the system service `com.apple.SecurityServer`",
         ),
+        (
+            What::Port(50795),
+            "connecting to the service on this Mac at port `50795`",
+        ),
     ] {
         assert_eq!(
             told(&what, Level::Chat),
             format!("⬢ purlis: {named} — Allowed for this chat — retry.")
+        );
+        // A port is allowed for this chat or for me on this machine (qw384), as any kind can be.
+        assert_eq!(
+            told(&what, Level::You),
+            format!(
+                "⬢ purlis: {named} — Allowed for every chat of this project on this machine — \
+                 retry."
+            )
         );
     }
     let vault = crate::vaultroute::allowed_outcome(&purlis_core::sandbox::local::VaultGrant {

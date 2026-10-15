@@ -41,6 +41,8 @@ pub enum About {
     Socket { socket: String },
     /// A system service its sandbox refused.
     Service { service: String },
+    /// A service on this Mac, by its one loopback port, its sandbox refused (qw384).
+    Port { port: String },
     /// A vault its persona may not use.
     Vault { vault: String },
 }
@@ -62,6 +64,9 @@ impl About {
             What::Service(service) => Self::Service {
                 service: service.clone(),
             },
+            What::Port(port) => Self::Port {
+                port: port.to_string(),
+            },
         }
     }
 
@@ -73,6 +78,12 @@ impl About {
             Self::Socket { socket } => format!("connecting to the local socket {}", code(socket)),
             Self::Service { service } => {
                 format!("reaching the system service {}", code(service))
+            }
+            Self::Port { port } => {
+                format!(
+                    "connecting to the service on this Mac at port {}",
+                    code(port)
+                )
             }
             Self::Vault { vault } => format!("using vault {}", code(vault)),
         }
