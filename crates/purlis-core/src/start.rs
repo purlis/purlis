@@ -803,7 +803,9 @@ pub fn sandbox_ahead(
         .map(|_| ())
     };
     let ahead = crate::sandbox::ahead(harness, root, machine, has, os_release, &check);
-    // A sandboxed Codex chat on a profile for every chat is the start's refusal too (#2037).
+    // What the start does with a Codex chat on a profile for every chat (#2037): at the full
+    // sandbox it refuses it, with the way out; at the floor it starts it without the floor,
+    // which leaves nothing to choose here, as a floor that cannot be applied does.
     if matches!(ahead, crate::sandbox::Ahead::Sandboxed)
         && let Some(why) = profile_refusal(
             Some(harness),
@@ -812,7 +814,14 @@ pub fn sandbox_ahead(
             true,
         )
     {
-        return Some(crate::sandbox::Ahead::Refused { why, install: None });
+        let full = crate::sandbox::Plane::read(root)
+            .in_force(&crate::sandbox::policy::Locks::of(root))
+            .is_some();
+        return Some(if full {
+            crate::sandbox::Ahead::Refused { why, install: None }
+        } else {
+            crate::sandbox::Ahead::Off
+        });
     }
     Some(ahead)
 }
@@ -1350,5 +1359,38 @@ mod tests {
         );
         assert_eq!(floor_lifted_for(Some(Harness::Codex), true), None);
         assert_eq!(floor_lifted_for(Some(Harness::ClaudeCode), false), None);
+    }
+
+    #[test]
+    fn the_picker_says_what_the_start_does_with_a_codex_chat_on_a_profile_for_every_chat() {
+        // #2037: refused at the full sandbox, with the way out; at the floor, nothing to choose.
+        let machine = crate::sandbox::Machine {
+            env: crate::secrets::Env::of(&[]),
+            home: Some(PathBuf::from("/home/op")),
+            os: crate::sandbox::Os::MacOs,
+        };
+        let codex = Profile {
+            name: "codex".to_owned(),
+            kind: "codex".to_owned(),
+            harness: "codex".to_owned(),
+            command: vec!["codex".to_owned()],
+            env: Vec::new(),
+            source: profiles::Source::BuiltIn,
+        };
+        let ahead_in = |toml: &str| {
+            let plane = tempfile::tempdir().expect("a plane");
+            std::fs::write(plane.path().join("charter.toml"), toml).expect("charter.toml");
+            sandbox_ahead(&codex, plane.path(), &machine, &|_| true, "", None)
+        };
+        assert_eq!(ahead_in(""), Some(crate::sandbox::Ahead::Off));
+        let Some(crate::sandbox::Ahead::Refused { why, .. }) =
+            ahead_in("[sandbox]\nmode = \"on\"\n")
+        else {
+            panic!("refused at the full sandbox");
+        };
+        assert!(
+            why.contains("Make or choose a sandbox-only Codex profile"),
+            "{why}"
+        );
     }
 }
