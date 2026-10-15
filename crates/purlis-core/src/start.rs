@@ -447,6 +447,15 @@ fn ready_given(
         // Under a policy that forbids the opt-out, no refusal sends the person to it (#1423).
         .map_err(|refused| refused.said(&crate::sandbox::policy::Locks::of(root)))?
         {
+            // A Codex chat at the floor on a profile for every chat (#2037).
+            Some(crate::sandbox::Decided::Sandboxed(applied))
+                if applied.level() == crate::sandbox::Level::Floor
+                    && let Some(why) =
+                        floor_lifted_for(Some(harness), profiles::sandbox_only(profile)) =>
+            {
+                floorless = Some(why);
+                (None, None)
+            }
             Some(crate::sandbox::Decided::Sandboxed(applied)) => (Some(applied), None),
             Some(crate::sandbox::Decided::Unsandboxed(lifted)) => {
                 notices.push(lifted.notice());
@@ -715,6 +724,20 @@ pub fn profile_refusal(
         ));
     }
     None
+}
+
+/// **Why a Codex chat at the floor starts without it** (#2037), or `None`: at the floor, a
+/// project that has not turned the sandbox on, a Codex chat on a profile for every chat would
+/// write that profile's Codex home, which unsandboxed runs use. So it starts as it did before
+/// the floor, its tab's sandbox mark saying why (the operator's ruling Q2 on #2071), and a
+/// sandbox-only Codex profile runs it at the floor.
+pub fn floor_lifted_for(harness: Option<Harness>, sandbox_only: bool) -> Option<String> {
+    (harness == Some(Harness::Codex) && !sandbox_only).then(|| {
+        "This chat runs with no sandbox: a Codex chat runs sandboxed only on a profile for \
+         sandboxed chats only, and this one is not. Make or choose a sandbox-only Codex \
+         profile in Settings › You › Profiles."
+            .to_owned()
+    })
 }
 
 /// Whether the picker may run `profile`'s program to check it: exactly when the start's own
@@ -1311,5 +1334,21 @@ mod tests {
                  pick another profile."
             )
         );
+    }
+
+    #[test]
+    fn a_codex_chat_at_the_floor_on_a_profile_for_every_chat_starts_without_it_and_says_why() {
+        // #2037: the floor would write the profile's own Codex home, which unsandboxed runs
+        // use; the operator's ruling Q2 on #2071 starts it as before, its mark saying why.
+        assert_eq!(
+            floor_lifted_for(Some(Harness::Codex), false).as_deref(),
+            Some(
+                "This chat runs with no sandbox: a Codex chat runs sandboxed only on a profile \
+                 for sandboxed chats only, and this one is not. Make or choose a sandbox-only \
+                 Codex profile in Settings › You › Profiles."
+            )
+        );
+        assert_eq!(floor_lifted_for(Some(Harness::Codex), true), None);
+        assert_eq!(floor_lifted_for(Some(Harness::ClaudeCode), false), None);
     }
 }

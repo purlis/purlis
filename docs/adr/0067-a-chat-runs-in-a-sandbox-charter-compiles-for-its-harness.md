@@ -226,7 +226,9 @@ machine's profiles, `docs/plane-format.md`): a profile purlis makes with a folde
 nothing imported, signed in once through Codex's own sign-in in that folder, and started by no
 chat outside the sandbox. Codex's home is that profile's folder, in place of a home of the
 project's own; a sandboxed Codex chat on any other profile is refused, with the way out (make or
-choose a sandbox-only Codex profile). **D-88q's guarantee holds as it was:** no sandboxed chat
+choose a sandbox-only Codex profile). At the floor (#2071), a Codex chat on any other profile
+starts without it, as it did before the floor, its tab's sandbox mark saying why (the
+operator's ruling Q2 on #2071). **D-88q's guarantee holds as it was:** no sandboxed chat
 reads or writes the operator's own Codex home, and nothing a sandboxed chat writes in Codex's
 state reaches an unsandboxed run, since no unsandboxed run uses that folder. purlis copies no
 sign-in into it (the seeding of the operator's login is retired), denies the chat every other

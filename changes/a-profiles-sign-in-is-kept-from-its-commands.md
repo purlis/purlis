@@ -11,5 +11,7 @@
   You › Profiles with *For sandboxed chats only* switched on, or `purlis profile create
   --harness codex --sandbox-only`, and sign it in through Codex's own sign-in. purlis no longer
   copies your Codex sign-in for a sandboxed chat, your own Codex home is never written by one,
-  and a sandboxed Codex chat on another profile says how to make one. A project's earlier
+  and a sandboxed Codex chat on another profile says how to make one. In a project that has not
+  turned the sandbox on, a Codex chat on another profile starts without the floor, as before,
+  and its tab says why. A project's earlier
   sandboxed Codex conversations are brought to that profile the first time it runs there (#2037).
