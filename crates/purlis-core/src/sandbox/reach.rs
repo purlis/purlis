@@ -201,6 +201,16 @@ impl Reach {
         self.anything
     }
 
+    /// This reach without the floor ([`Self::anything`]): only what it lists, and what policy
+    /// pins, with the same withdrawn ports. What a browser's lane reads (#2011).
+    #[must_use]
+    pub fn listed_only(&self) -> Self {
+        Self {
+            anything: false,
+            ..self.clone()
+        }
+    }
+
     /// This, refusing `hosts` outright where nothing lists them: the hosts an administrator's
     /// policy pins as never allowed (#1666), which no person is asked about.
     #[must_use]

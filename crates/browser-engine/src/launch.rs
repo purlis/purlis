@@ -29,7 +29,8 @@ use serde_json::{Map, Value, json};
 use crate::install::Ready;
 
 /// The address of the browser's reach proxy, its only route out. The proxy itself is the
-/// session host's (#2011); the engine is only told where it is.
+/// session host's (`purlis_core::sandbox::browser_reach::ReachProxy`, #2011); the engine is
+/// only told where it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReachProxy(pub SocketAddr);
 

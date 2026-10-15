@@ -18,8 +18,9 @@
 //! - [`WebAddress`]: the only addresses purlis sends a browser to, http and https; every call
 //!   that opens a page takes one, and nothing outside this crate speaks DevTools to the engine.
 //!
-//! Driving pages (snapshots, actions), the reach proxy itself and the broker that owns
-//! browsers are other parts of the session host (#2010, #2011, #2012).
+//! Driving pages (snapshots, actions), the reach proxy itself
+//! (`purlis_core::sandbox::browser_reach`) and the broker that owns browsers are other parts
+//! of the session host (#2010, #2011, #2012).
 
 mod address;
 pub mod cdp;
