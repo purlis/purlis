@@ -330,6 +330,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "keep_sandbox_block_for_tasks",
     // Keep blocked on one chat's: refuses what its proxy holds and tells the chat (#1666).
     "keep_sandbox_block",
+    // Point kubectl at it (qw384b): the person's kubeconfig contexts, read for their press,
+    // and the copy of one made for a chat. What it reads is the person's, and what it makes
+    // widens what that chat reaches, so no link lists or makes either.
+    "kube_contexts",
+    "point_kubectl",
     // The person names what a block did not (#1884, ADR 0093): the sockets and services this
     // machine offers to choose from, the choice itself, and taking up a block a chat only read
     // back. The choice is the person's, so no link lists, makes or prompts it.

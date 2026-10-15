@@ -349,8 +349,8 @@ rule while one who reads a bare refusal files an issue.
   counted, where nothing on the line can change that checkout: the move is the only git that
   writes on its line, every option it takes is on its own subcommand's short list of options
   spelled out whole that change nothing about which paths git writes, no configuration and no
-  editor is set anywhere on the line (`-c`, `--config-env`, `GIT_CONFIG*`, `GIT_EDITOR`,
-  `GIT_SEQUENCE_EDITOR`, `EDITOR`, `VISUAL`, an export of one), and every git on the line is
+  editor is set anywhere on the line (`-c`, `--config-env`, any `GIT_*` variable, `EDITOR`,
+  `VISUAL`, an export of one), and every git on the line is
   read, its alias included, and none is `git sparse-checkout`. Then, where `core.sparseCheckout` is on in the folder, git's own `sparse-checkout
   check-rules` says which paths those are. Otherwise, or where git does not answer, every path
   counts. A word spelled like a redirection but quoted (`'>'`) is an operand: on such a line

@@ -1284,19 +1284,27 @@ fn for_its_harness(
         );
         return (offer, target, why);
     }
+    // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
+    // carried the port by name through purlis's proxy, and the Notice says how it is reached.
     if offer == BlockOffer::Port && claude {
-        let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_PORT_SAID);
-        return (offer, target, why);
+        let said = match route {
+            Some(route) => format!("{route} {CLAUDE_CODE_PORT_SAID}"),
+            None => CLAUDE_CODE_PORT_SAID.to_owned(),
+        };
+        return (offer, target, Some(said));
     }
     (offer, target, route)
 }
 
-/// Why a service on this Mac is not allowed a Claude Code chat yet (qw384): its sandbox lets a
-/// command reach this machine's loopback on its proxy's two ports, or on every port, and on no
-/// one port alone, so the one port purlis would allow cannot be said to it.
-pub const CLAUDE_CODE_PORT_SAID: &str = "Claude Code's sandbox can let a command reach either \
-     every port on this Mac or none of them, never one alone, so purlis cannot allow this one \
-     port to this chat yet. A Codex or opencode chat can be allowed it.";
+/// How a Claude Code chat reaches a service on this Mac it is allowed (qw384b): its sandbox lets
+/// a command reach this machine's loopback on every port or on none but its proxy's, never one
+/// alone, and its commands send no address of this machine to a proxy. A name they do send, so
+/// the chat's proxy carries the port by name ([`purlis_core::sandbox::localport::THIS_MAC`]).
+pub const CLAUDE_CODE_PORT_SAID: &str = "In a Claude Code chat a command reaches it through this \
+     chat's proxy, by the name this-mac.internal and that port, never by 127.0.0.1 or localhost: \
+     curl https://this-mac.internal:<port>, or kubectl once Point kubectl at it gives this chat \
+     its own copy of a context on this Mac. A program that uses no proxy, such as psql or \
+     redis-cli, cannot reach it.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).

@@ -620,6 +620,12 @@ fn a_sparse_checkout_counts_only_where_nothing_on_the_line_can_change_it() {
         "GIT_SEQUENCE_EDITOR=true git rebase origin/tasks",
         "EDITOR=true git rebase origin/tasks",
         "export VISUAL=true; git rebase origin/tasks",
+        // Any of git's own variables, set or exported on the line.
+        "GIT_ASKPASS=/bin/true git pull",
+        "GIT_PROXY_COMMAND=/bin/true git pull origin main",
+        "GIT_SSH_COMMAND=true git pull",
+        "GIT_INDEX_FILE=/tmp/i git checkout tasks",
+        "export GIT_TRACE=1; git checkout tasks",
     ] {
         let (_, said) = f
             .asked(stopped, &sparse)

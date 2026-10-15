@@ -341,6 +341,8 @@ export const commands = {
 	allowSandboxBlockForTasks: __WINDOW_ONLY_RESULT,
 	keepSandboxBlockForTasks: __WINDOW_ONLY_RESULT,
 	keepSandboxBlock: __WINDOW_ONLY_RESULT,
+	kubeContexts: __WINDOW_ONLY_RESULT,
+	pointKubectl: __WINDOW_ONLY_RESULT,
 	sandboxBlockChoices: __WINDOW_ONLY_RESULT,
 	chooseSandboxBlockTarget: __WINDOW_ONLY_RESULT,
 	takeUpSandboxBlock: __WINDOW_ONLY_RESULT,
@@ -4678,6 +4680,18 @@ export type KeptBlocked = {
 	chat: string | null,
 	/**  When, in seconds since 1970. */
 	at: number,
+};
+
+/**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
+export type KubeContext = {
+	/**  Its name, as kubectl knows it. */
+	name: string,
+	/**  Its cluster's server, as the kubeconfig names it. */
+	server: string,
+	/**  The port of this Mac it reaches, where purlis can point a chat at it. */
+	port: number | null,
+	/**  Why purlis would not point a chat at it, where it would not: never pressable then. */
+	refused: string | null,
 };
 
 /**

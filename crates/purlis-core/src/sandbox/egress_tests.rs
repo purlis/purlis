@@ -5,7 +5,7 @@
 //! else is refused before a connection to it is made.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
 use super::egress::{
@@ -1427,5 +1427,126 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
             ])),
         "{:?}",
         told.lock().unwrap()
+    );
+}
+
+// ---- qw384b: a service on this Mac by name, for a client that never proxies this machine -----
+
+/// A Claude Code chat's proxy holding `port` for the chat, as its start compiles it.
+fn holding(heard: &Heard, port: u16) -> Proxy {
+    Proxy::serving(super::egress::Serving {
+        any_port: true,
+        ..heard.serving(Reach::of(
+            super::localport::reach_entries(port)
+                .into_iter()
+                .map(|entry| (entry, By::Chat))
+                .collect(),
+        ))
+    })
+    .expect("a proxy")
+}
+
+#[test]
+fn this_mac_by_name_is_tunnelled_to_a_granted_port_and_each_connection_recorded() {
+    let (listener, port) = an_echo_server();
+    let echoed = echo_once(listener);
+    let heard = Heard::default();
+    let proxy = holding(&heard, port);
+    let mut client = to(&proxy);
+    let name = format!("{}:{port}", super::localport::THIS_MAC);
+    let said = status(
+        &mut client,
+        &format!("CONNECT {name} HTTP/1.1\r\nHost: {name}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    client.write_all(b"ping").expect("through the tunnel");
+    let mut back = [0u8; 4];
+    client.read_exact(&mut back).expect("echoed back");
+    assert_eq!(&back, b"ping");
+    assert_eq!(echoed.join().expect("the server"), b"ping");
+    drop(client);
+    drop(proxy);
+    // Recorded by the name it was reached by, and the layer that granted it.
+    assert_eq!(heard.reached(), [(Some(name), "chat", 1)]);
+}
+
+#[test]
+fn this_mac_by_name_is_refused_on_a_port_not_granted_and_once_withdrawn() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = holding(&heard, port);
+    let other = format!(
+        "{}:{}",
+        super::localport::THIS_MAC,
+        port.wrapping_add(1).max(1)
+    );
+    assert_eq!(
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT {other} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 403 Forbidden"
+    );
+    proxy.withdraw_port(port);
+    let name = format!("{}:{port}", super::localport::THIS_MAC);
+    assert_eq!(
+        status(&mut to(&proxy), &format!("CONNECT {name} HTTP/1.1\r\n\r\n")),
+        "HTTP/1.1 403 Forbidden"
+    );
+    assert_eq!(
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT {LOOPBACK}:{port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 403 Forbidden"
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "a withdrawn port was reached");
+    proxy.settled();
+    // Refused as this machine: a Block of a service on this Mac, never a host's ask.
+    assert!(heard.local().contains(&name), "{:?}", heard.local());
+    assert!(heard.refused().is_empty(), "{:?}", heard.refused());
+}
+
+/// #2097 review: a name of this Mac is pinned at connect to this machine's loopback on the port
+/// the chat holds, and never looked up, so no second lookup can send it anywhere else; any
+/// other name is looked up at connect, as before, and held to the local-address check.
+#[test]
+fn a_name_of_this_mac_is_pinned_to_loopback_at_connect_and_never_looked_up() {
+    let reach = Reach::of(
+        super::localport::reach_entries(6443)
+            .into_iter()
+            .map(|entry| (entry, By::Chat))
+            .collect(),
+    );
+    let asked = std::cell::Cell::new(0);
+    // Loopback first, a public address after: what a name rebound between two lookups answers.
+    let rebinding = |_: &str, port: u16| {
+        asked.set(asked.get() + 1);
+        if asked.get() == 1 {
+            vec![SocketAddr::from(([127, 0, 0, 1], port))]
+        } else {
+            vec![SocketAddr::from(([203, 0, 113, 5], port))]
+        }
+    };
+    for name in super::localport::NAMES_OF_THIS_MAC {
+        assert_eq!(
+            super::egress::addresses(name, 6443, &reach, &[], &rebinding),
+            [SocketAddr::from(([127, 0, 0, 1], 6443))],
+            "{name}"
+        );
+    }
+    assert_eq!(asked.get(), 0, "a name of this Mac was looked up");
+    // Any other name is looked up at connect, and only its addresses a chat may reach are kept.
+    asked.set(1);
+    assert_eq!(
+        super::egress::addresses("evil.example", 6443, &reach, &[], &rebinding),
+        [SocketAddr::from(([203, 0, 113, 5], 6443))]
+    );
+    asked.set(0);
+    assert_eq!(
+        super::egress::addresses("evil.example", 6443, &Reach::default(), &[], &rebinding),
+        Vec::<SocketAddr>::new()
     );
 }

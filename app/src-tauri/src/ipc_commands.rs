@@ -80,6 +80,8 @@ macro_rules! app_commands {
                 taskblocks::allow_sandbox_block_for_tasks,
                 taskblocks::keep_sandbox_block_for_tasks,
                 sandboxing::keep_sandbox_block,
+                kubectl::kube_contexts,
+                kubectl::point_kubectl,
                 sandboxchoose::sandbox_block_choices,
                 sandboxchoose::choose_sandbox_block_target,
                 sandboxchoose::take_up_sandbox_block,
