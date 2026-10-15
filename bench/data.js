@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792058167459,
+  "lastUpdate": 1792061740735,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12222,6 +12222,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7636465,
             "unit": "ms",
             "extra": "median of 5 runs: 101.450, 101.631, 101.764, 102.637, 102.800 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d114c2488845cee6aeb8d3c1e0e65b7bd33ecf70",
+          "message": "The team's off ask rests only on what purlis verified (#2156) (#2165)\n\nThe ask for a project's committed sandbox off names a commit and its\nauthor only where that commit is in the history of the upstream commit\npurlis's own fetch found, read as written; otherwise it says the off is\nlocal and not on that upstream. Each fetch of the plane keeps the\nremote's own answer for its branch in this machine's config home.\n\nThe person's answer is kept for the off as purlis saw it, not for a\ncommit: a history rewritten under an off that stays asks nobody again,\nand the answer is let go once purlis reads the project's file not\nturning the sandbox off, so an off seen to leave and come back asks\nagain. The window's answer command no longer takes a commit.\n\nADR 0067's 2026-10-15 section, plane-format and a changes fragment say\nso.\n\nCloses #2156\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T14:54:30+04:00",
+          "tree_id": "378a5c4ac5590d9e7bf346df89941c17e2c38e18",
+          "url": "https://github.com/purlis/purlis/commit/d114c2488845cee6aeb8d3c1e0e65b7bd33ecf70"
+        },
+        "date": 1792061739527,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2747405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.258, 0.272, 0.275, 0.278, 0.293 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4436645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.409, 16.410, 16.444, 16.579, 16.692 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.428853,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.348, 101.326, 101.429, 101.440, 101.724 ms"
           }
         ]
       }
