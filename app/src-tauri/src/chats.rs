@@ -7206,6 +7206,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         }
     }
 
@@ -9588,6 +9589,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         }
     }
 
@@ -10416,6 +10418,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         };
 
         let session = chats
@@ -10434,6 +10437,60 @@ pub(crate) mod tests {
         assert_eq!(open[0].harness, Some(Harness::ClaudeCode));
         assert_eq!(open[0].profile.as_deref(), Some("claude-work"));
         let _ = chats.close(session);
+    }
+    #[test]
+    fn a_chat_whose_profile_names_a_key_in_a_vault_its_persona_may_not_read_starts_nothing() {
+        // #2036: a profile never widens who reads a vault. The read is made before anything
+        // is opened, so a refused one leaves no session, no tab and no value anywhere.
+        let chats = Chats::new();
+        let chat = Chat {
+            program: "/bin/sh".to_owned(),
+            name: "ide.7".to_owned(),
+            profile: Some("work".to_owned()),
+            ..Default::default()
+        };
+        let ready = purlis_core::start::Ready {
+            program: "/bin/sh".to_owned(),
+            command: vec!["-c".to_owned(), "sleep 30".to_owned()],
+            args: Vec::new(),
+            env: Vec::new(),
+            cwd: None,
+            harness: Some(Harness::ClaudeCode),
+            declared: None,
+            session: None,
+            how: purlis_core::reopen::Reopened::Fresh(
+                purlis_core::reopen::Fresh::NoConversationRecorded,
+            ),
+            plugins: std::collections::BTreeMap::new(),
+            sandbox: None,
+            unsandboxed: None,
+            floorless: None,
+            notices: Vec::new(),
+            agents_md: Vec::new(),
+            sign_in: Some(purlis_core::profilesignin::AtStart {
+                kind: purlis_core::harness_declaration::SignInKind::ApiKey,
+                billed_to: "your key · work".to_owned(),
+                credentials: vec![(
+                    "ANTHROPIC_API_KEY".to_owned(),
+                    purlis_core::profilesignin::Reference::parse("vault:providers/anthropic")
+                        .unwrap(),
+                )],
+            }),
+        };
+
+        let refused = chats
+            .start_ready(
+                &chat,
+                &ready,
+                Size {
+                    columns: 80,
+                    rows: 24,
+                },
+            )
+            .unwrap_err();
+
+        assert!(refused.contains("providers"), "{refused}");
+        assert!(chats.open_now().is_empty(), "nothing was started");
     }
     #[test]
     fn the_board_is_told_the_harness_the_profile_declared_before_the_program_starts() {
@@ -10493,6 +10550,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         };
 
         let session = chats.start_ready(&chat, &ready, SIZE).unwrap();
