@@ -215,8 +215,9 @@ pub type Trusting = Box<dyn Fn(Sandboxing<'_>) -> Result<(), String> + Send + Sy
 ///
 /// A chat that runs no harness (a shell) has [`purlis_core::eventlog::NONE`] for a harness and,
 /// unless it names one, a profile; a harness chat whose record names no profile does not know
-/// its profile, and says so. Nothing resolves a model choice yet (ADR 0087), so the model's
-/// source, provider and model are not known.
+/// its profile, and says so. Its model source is its profile's sign-in kind, which the start
+/// sets (ADR 0087 as amended, #2036); no model is chosen yet, so the provider and the model are
+/// not known.
 pub(crate) fn run_attributes(
     chat: &Chat,
     harness: Option<Harness>,
@@ -1320,6 +1321,7 @@ impl Chats {
             // A chat on a profile is an agent, never the operator's shell.
             false,
             why,
+            ready.sign_in.as_ref(),
         )?;
         self.floorless_at(session, ready.floorless.clone());
         Ok(session)
@@ -2155,6 +2157,8 @@ impl Chats {
             size,
             operator_shell,
             why,
+            // A chat on no profile has no sign-in of a profile's.
+            None,
         )
         // Where the floor could not be applied, its tab's sandbox mark says why (#2071, Q2).
         .inspect(|session| self.floorless_at(*session, floorless))
@@ -2228,6 +2232,7 @@ impl Chats {
         size: Size,
         operator_shell: bool,
         why: Why,
+        sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<u32, String> {
         // A project being let go of starts nothing more (#1949): its close may be running on
         // another thread than this start.
@@ -2350,14 +2355,30 @@ impl Chats {
             sandbox,
             runs_as.as_deref(),
         )?;
-        // What the run this start begins is, for its `run.started` (ADR 0066, #868).
-        let attributes = run_attributes(
+        // What the run this start begins is, for its `run.started` (ADR 0066, #868), its model
+        // source its profile's sign-in kind (ADR 0087 as amended, #2036).
+        let mut attributes = run_attributes(
             chat,
             harness,
             runs_as.as_deref(),
             sandbox.is_some(),
             conversation.as_deref(),
         );
+        attributes.model_source = sign_in.map(|s| s.kind.word().to_owned());
+        // A key or a cloud's credentials, read for this one start under the vault's own rules
+        // for the persona the chat runs as, before anything is started: a vault that does not
+        // open to it starts nothing (#2036). Handed to the program alone.
+        let handed = match sign_in.filter(|s| !s.credentials.is_empty()) {
+            Some(sign_in) => purlis_core::profilesignin::read(
+                &purlis_core::secrets::Ctx::new(
+                    &self.project,
+                    purlis_core::secrets::Env::from_process(),
+                ),
+                runs_as.as_deref(),
+                &sign_in.credentials,
+            )?,
+            None => purlis_core::profilesignin::Handed::default(),
+        };
         // What a wrapped chat needs running beside it, started before it and kept for as long
         // as it is open: charter's egress proxy and its own temp directory (ADR 0067 §2).
         // Its proxy tells the app each host it refuses, by the proxy's word (#1663): the
@@ -2504,6 +2525,7 @@ impl Chats {
                     env_pass: operator_env_pass(&self.project),
                     operator_shell,
                     git_hooks: self.git_hooks_for(harness),
+                    handed,
                 },
                 &|session| {
                     announced.store(session, std::sync::atomic::Ordering::SeqCst);

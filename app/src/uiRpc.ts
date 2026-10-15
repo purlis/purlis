@@ -6346,6 +6346,17 @@ export type ProfileRow = {
 	 *  where the project has not, or the kind is no harness.
 	 */
 	sandbox: SandboxAhead | null,
+	/**
+	 *  The model a chat on it runs (ADR 0087 as amended by #2036): the harness's default, until
+	 *  a model can be chosen. Always sent; optional in the window's type so a picker drawn from an
+	 *  older answer says nothing of it.
+	 */
+	model?: string | null,
+	/**
+	 *  What a chat on it is billed to: its sign-in kind in words and its label, or its name
+	 *  (#2036). Always sent; optional for the same reason.
+	 */
+	billed_to?: string | null,
 };
 
 /**

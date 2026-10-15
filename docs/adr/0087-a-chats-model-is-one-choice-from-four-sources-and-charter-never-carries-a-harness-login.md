@@ -6,6 +6,10 @@ subscription is signed in through the harness's own flow per device and never he
 and keys and cloud credentials are vault values sent to owned devices. X12's acknowledgement
 stays. What follows is the record as it was decided.
 
+**Amended 2026-10-14 (#2036), by the simplification round's ruling that a model choice is a
+profile plus a model:** a chat's model source is its profile's sign-in kind, and a key or cloud
+credentials are named by the profile. See *A model choice is a profile plus a model*, below.
+
 **Accepted 2026-10-01** by the operator (ruling V36), with dispatcher decisions D-0087a/b,
 drafted for program-map ticket MS-1 (#700). It follows these of the operator's rulings:
 
@@ -382,6 +386,35 @@ One store is new. `docs/plane-format.md` records it now, marked **decided, not y
 
 The model-key mark of §7 lives in a vault's metadata, whose file already has a tier. MS-4 names
 where it is kept when it writes it.
+
+## A model choice is a profile plus a model (amended 2026-10-14, #2036)
+
+Settled by the simplification round of 2026-10-14 (Q36 to Q43): *"A model choice = profile +
+model."* With ADR 0095, which makes every sign-in a profile's:
+
+- **A chat's model choice is the profile it runs on and a model.** The profile says how the chat
+  signs in and who is billed; the model is the model. Until a model can be chosen (§1's `model`,
+  MS-3), the model is the harness's default, and the picker says so.
+- **`model_source` is the profile's sign-in kind**: `subscription`, `api-key`, `cloud` or `local`
+  (ADR 0073 `[sign_in] kinds`), read from the profile and never from output. §2's `login` is
+  `subscription`, and its `key` is `api-key`; `gateway` stays GT-CLOUD's. A profile whose sign-in
+  purlis cannot see (a built-in on the harness's own sign-in) says it is not known.
+- **The picker shows, for every choice, the profile, the model and what it is billed to**: the
+  sign-in kind in words (*your plan*, *your key*, *your cloud account*, *nobody* for a local
+  model) and the profile's label, or its name where it has none. A built-in profile whose
+  sign-in purlis cannot see is billed to *whatever the harness is signed in with*.
+- **An `api-key` or `cloud` profile names its credentials, never their values**: each variable
+  its harness's adapter is handed for that kind (Claude Code's `ANTHROPIC_API_KEY`, its Bedrock
+  variables, Codex's `OPENAI_API_KEY`, and their like), each by a vault reference
+  (`vault:<vault>/<key>`). A variable the adapter does not hand for that harness and kind, or a
+  value that is not a reference, is refused when the profile is read.
+- **The values are read when the chat starts, and only into that chat's harness process**: never
+  into a shell tab, a file, a log, the event log or the hook socket. The vault opens to the chat
+  only as it opens to the chat's persona today (ADR 0068, D-1430-1): a chat on no persona, or on
+  one the vault is not open to, does not start, and says which vault and how to open it.
+- **§7's path decides how a value reaches the harness.** Where §7 sends a key through the proxy
+  (V36), the chat waits for the proxy (#822): it does not start, and says so. The harness's
+  process environment is used only where §7 allows it.
 
 ## ADR 0066, amended
 

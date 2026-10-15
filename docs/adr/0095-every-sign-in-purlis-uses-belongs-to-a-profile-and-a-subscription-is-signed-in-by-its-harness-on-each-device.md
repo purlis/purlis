@@ -128,7 +128,8 @@ acknowledgement is given.
   becomes: a subscription profile is signed in on the runner through the harness's own flow,
   shown in the window, and the desktop's sign-in never travels.
 - **§3's unattended acknowledgement** stands as it is (§6 above).
-- How a model choice names a profile is recorded with #2036.
+- How a model choice names a profile is recorded with #2036, in ADR 0087's *A model choice is a
+  profile plus a model*.
 
 ## ADR 0078, amended
 

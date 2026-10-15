@@ -67,6 +67,11 @@ pub struct Opening {
     /// armed with them after every other variable is settled, so a `GIT_CONFIG_COUNT` the
     /// operator passes or a profile sets keeps its pairs. None for a shell.
     pub git_hooks: Option<purlis_core::githooks::GitHooks>,
+    /// What its profile's sign-in hands its program as it starts (#2036): each variable and its
+    /// value, read from the vault for this one start, set last on the program's environment and
+    /// nowhere else. Its `Debug` names the variables alone. Nothing for every other chat, a
+    /// shell tab's among them.
+    pub handed: purlis_core::profilesignin::Handed,
 }
 
 /// Where a view's text goes. It is called on the view's own thread, one batch at a time.

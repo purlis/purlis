@@ -193,6 +193,11 @@ pub struct Ready {
     /// (NO-4). Named, never given as a path, so the window hands the core back a branch it
     /// places again. A hidden file outside every branch of the project is in the sentence only.
     pub agents_md: Vec<TheirAgentsMd>,
+    /// How it signs in, from its profile (#2036, ADR 0087 as amended): the kind its run records
+    /// as its model source, what it is billed to, and for a key or a cloud the vault reference
+    /// of each variable its harness is handed, read where its program is spawned
+    /// ([`crate::profilesignin::read`]). References only. `None` where purlis cannot see it.
+    pub sign_in: Option<crate::profilesignin::AtStart>,
 }
 
 /// A branch whose `AGENTS.md` is the operator's and hidden from `git status` by charter's line:
@@ -373,15 +378,29 @@ fn ready_given(
     if let Some(why) = crate::wiring::refusal_in(profile, root, declared) {
         return Err(why);
     }
+    // How it signs in, or no chat: a sign-in its harness cannot take, or credentials with no
+    // way to it here, starts nothing (#2036).
+    let sign_in = crate::profilesignin::at_start(
+        profile,
+        &crate::profilestore::listed_here(),
+        &crate::chatenv::read(root),
+    )?;
     // A profile this machine made, whose harness says it is not signed in here, does not
     // start: Sign in is the way out (#2035, ADR 0095 §3). Asked after the gate, so only a
-    // program the person approved is run, and only its status words.
+    // program the person approved is run, and only its status words. A profile kept as signing
+    // in with a key, a cloud or a local model is not the harness's own sign-in, and is not
+    // asked (#2036).
     // The refusal leaves one wait for the project and profile, the Ask the window shows.
-    if let Some(why) = crate::profilestore::sign_in::refusal(
-        profile,
-        &crate::chatenv::read(root),
-        &crate::profilestore::sign_in::ThisMachine,
-    ) {
+    let signs_in_otherwise = sign_in.as_ref().is_some_and(|s| {
+        s.kind != crate::harness_declaration::SignInKind::Subscription
+    });
+    if !signs_in_otherwise
+        && let Some(why) = crate::profilestore::sign_in::refusal(
+            profile,
+            &crate::chatenv::read(root),
+            &crate::profilestore::sign_in::ThisMachine,
+        )
+    {
         crate::profilestore::sign_in::waits_on(root, profile);
         return Err(why);
     }
@@ -580,6 +599,7 @@ fn ready_given(
         floorless,
         notices,
         agents_md,
+        sign_in,
     })
 }
 

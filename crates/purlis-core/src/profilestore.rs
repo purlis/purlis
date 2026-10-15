@@ -71,6 +71,11 @@ pub struct MachineProfile {
     /// When its settings were imported and from where, for a profile purlis made (#2034).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported: Option<Imported>,
+    /// How it signs in, where that is recorded (#2036): its kind, the label it is billed to,
+    /// and for a key or a cloud the vault reference of each variable its harness is handed,
+    /// never a value ([`crate::profilesignin`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_in: Option<crate::profilesignin::SignIn>,
     /// Every field of the record this build does not know, written back as it was read.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -240,6 +245,29 @@ pub fn update<T>(config_root: &Path, change: impl FnOnce(&mut Store) -> T) -> Re
         write(config_root, &store)?;
     }
     Ok(answer)
+}
+
+/// **Keeps how the profile `name` signs in**, or forgets it (`None`), in the store under
+/// `config_root` (#2036). A sign-in its harness cannot take is refused and the one it had is
+/// kept ([`crate::profilesignin::SignIn::check`]); so is a name no profile has.
+pub fn sign_in_with(
+    config_root: &Path,
+    name: &str,
+    sign_in: Option<crate::profilesignin::SignIn>,
+) -> Result<(), String> {
+    update(config_root, |store| {
+        let Some(profile) = store.profiles.iter_mut().find(|p| p.name == name) else {
+            return Err(format!(
+                "this machine has no profile named '{}'",
+                crate::shown::short(name)
+            ));
+        };
+        if let Some(sign_in) = &sign_in {
+            sign_in.check(&profile.harness)?;
+        }
+        profile.sign_in = sign_in;
+        Ok(())
+    })?
 }
 
 /// [`list`] of this machine's own config home, for a reader that only shows what is there: empty
@@ -447,6 +475,7 @@ pub fn adopt(
                     variables,
                 }),
                 imported: None,
+                sign_in: None,
                 rest: Map::new(),
             };
             store.profiles.push(profile.clone());

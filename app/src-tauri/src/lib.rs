@@ -1213,6 +1213,15 @@ struct ProfileRow {
     /// picker shows it beside "Start without the sandbox" (ADR 0067 §7, ruling V78 a). Null
     /// where the project has not, or the kind is no harness.
     sandbox: Option<sandboxing::SandboxAhead>,
+    /// The model a chat on it runs (ADR 0087 as amended by #2036): the harness's default, until
+    /// a model can be chosen. Always sent; optional in the window's type so a picker drawn from an
+    /// older answer says nothing of it.
+    #[specta(optional)]
+    model: Option<String>,
+    /// What a chat on it is billed to: its sign-in kind in words and its label, or its name
+    /// (#2036). Always sent; optional for the same reason.
+    #[specta(optional)]
+    billed_to: Option<String>,
 }
 
 /// Everything the picker draws, read from the plane when it is opened.
@@ -1293,6 +1302,10 @@ async fn harness_cards(
 /// What [`start_options`] answers for the project at `root`.
 fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
     let (set, check) = purlis_core::profiles::for_launch(root);
+    // What each row is billed to is read from this machine's records and what the project
+    // passes its chats, once for every row (#2036).
+    let machine = purlis_core::profilestore::listed_here();
+    let passed = purlis_core::chatenv::read(root);
     let on_disk = purlis_core::workspaces::Plane::open(root);
     // Every harness the project has, read once for every row (HP-19).
     let cards = purlis_core::harness_card::read(root);
@@ -1339,6 +1352,8 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
                     .find(|card| card.name == p.kind)
                     .map(HarnessGlance::from),
                 sandbox: sandboxing::ahead_here(p, root),
+                model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
+                billed_to: purlis_core::profilesignin::billed(p, &machine, &passed),
             })
             .collect(),
         refused: set

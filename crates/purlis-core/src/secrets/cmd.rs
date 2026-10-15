@@ -204,7 +204,13 @@ fn value_free(field: &Value, values: &[String]) -> Value {
 
 /// Every event [`trace_secret_use`] records under. A trace holding one is kept past the 30-day
 /// sweep (`retention`, V71) until AU-5 writes these into the audit chain.
-pub const HANDED_OUT: [&str; 4] = ["secret-exec", "secret-reveal", "secret-cp", "identity-move"];
+pub const HANDED_OUT: [&str; 5] = [
+    "secret-exec",
+    "secret-reveal",
+    "secret-cp",
+    "identity-move",
+    crate::profilesignin::PROFILE_SIGN_IN,
+];
 
 /// `_trace_secret_use`: record that a credential was handed out — which command, which names,
 /// never a value. Best-effort and silent: the bookkeeping must never fail the delivery.
