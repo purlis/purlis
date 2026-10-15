@@ -284,6 +284,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "dispatch" => json!({ "name": "paint", "brief": "Paint the widget" }),
         "dispatch_report" => json!({ "outcome": "done", "text": "Painted" }),
         "ask_operator" => json!({ "question": "Ship it?" }),
+        // A browser tool (#2013) is the app's to answer, and writes nothing of the project's.
+        browser if purlis_core::browsertools::is_one(browser) => json!({}),
         other => panic!("no arguments for {other}: add it to this test"),
     }
 }
@@ -312,6 +314,7 @@ fn every_tool_leaves_every_file_of_a_read_only_project_as_it_was() {
         .collect();
     let every: Vec<&str> = purlis_core::chattools::TOOLS
         .iter()
+        .chain(purlis_core::browsertools::TOOLS.iter())
         .map(|tool| tool.name)
         .collect();
     assert_eq!(listed, every, "the server lists every tool");
