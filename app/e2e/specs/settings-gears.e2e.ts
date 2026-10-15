@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } fro
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * **The quiet gears, and ⌘, at the focused level**, in the built app (SE-23, #1173; V89g and
@@ -124,9 +124,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     // The path box's own submit, found by its form, and the trust question's act found
     // in the question: the two are both named Open project.
     await $('form.by-path button[type="submit"]').click();
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
     await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",

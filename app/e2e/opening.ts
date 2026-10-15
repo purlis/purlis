@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { $, browser, expect } from "@wdio/globals";
+import { $, browser } from "@wdio/globals";
 
 /**
  * Opening a chat, as the operator does it since M1.2: press, pick, start.
@@ -16,13 +16,67 @@ import { $, browser, expect } from "@wdio/globals";
  * because WebdriverIO's Tauri service keeps ONE app process for the whole run.
  */
 export async function pickAndStart(): Promise<void> {
-  const dialog = await $('[role="dialog"]');
-  await dialog.waitForDisplayed({ timeout: 20_000 });
-  const approve = await $("button=Approve and start");
-  const start = (await approve.isExisting()) ? approve : await $("button=Start");
+  // The picker can take the palette's place, so it is looked for by its buttons at every look,
+  // and nothing found before it is held (#2126).
+  let pressing = "";
+  await browser.waitUntil(
+    async () => {
+      for (const words of ["Approve and start", "Start"])
+        if (await browser.execute(aDialogOffers, "dialog", "", words, false)) {
+          pressing = words;
+          return true;
+        }
+      return false;
+    },
+    { timeout: 20_000, timeoutMsg: "the picker never offered Start" },
+  );
+  const start = await $(`button=${pressing}`);
   await start.waitForClickable({ timeout: 20_000 });
   await start.click();
-  await expect(dialog).not.toBeDisplayed();
+  await theDialogHasGone("dialog", "", pressing, false, "the picker never went");
+}
+
+/**
+ * Whether the page shows a `role` dialog whose text holds `text` and which offers a button
+ * reading `button` (or, `partly`, holding it), looked for afresh. **Run in the page**, by
+ * `browser.execute`, so it closes over nothing (#2126): a dialog that takes another's place is
+ * found, and one that has gone is gone, where a held node would answer about the first forever.
+ */
+export function aDialogOffers(
+  role: string,
+  text: string,
+  button: string,
+  partly: boolean,
+): boolean {
+  for (const dialog of document.querySelectorAll(`[role="${role}"]`)) {
+    if (!(dialog.textContent ?? "").includes(text)) continue;
+    const offered = [...dialog.querySelectorAll("button")].some((one) => {
+      const said = (one.textContent ?? "").trim();
+      return partly ? said.includes(button) : said === button;
+    });
+    if (!offered) continue;
+    const seen = dialog as Element & { checkVisibility?: (options?: object) => boolean };
+    if (
+      typeof seen.checkVisibility !== "function" ||
+      seen.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    )
+      return true;
+  }
+  return false;
+}
+
+/** Waits until no dialog {@link aDialogOffers} would find is left, asking the page each time. */
+async function theDialogHasGone(
+  role: string,
+  text: string,
+  button: string,
+  partly: boolean,
+  timeoutMsg: string,
+): Promise<void> {
+  await browser.waitUntil(
+    async () => !(await browser.execute(aDialogOffers, role, text, button, partly)),
+    { timeout: 20_000, timeoutMsg },
+  );
 }
 
 /**
@@ -119,14 +173,23 @@ export async function pressAndStart(name: string): Promise<void> {
  * primitive for a question the operator did not go looking for.
  */
 export async function answerTheAsk(ending: string): Promise<void> {
-  const asking = await $('[role="alertdialog"]');
-  await asking.waitForDisplayed({ timeout: 20_000 });
-  // The question is about the row that was pressed; its title says which.
-  await expect(asking).toHaveText(expect.stringContaining(ending));
-  const answer = await asking.$("button=Close");
+  // The question is about the row that was pressed; its title says which. Looked for by that,
+  // afresh at every look: `endEveryChat` asks one after another, and a node held from the last
+  // question is not this one (#2126).
+  await browser.waitUntil(
+    async () => browser.execute(aDialogOffers, "alertdialog", ending, "Close", false),
+    { timeout: 20_000, timeoutMsg: `the question about ${ending} was never asked` },
+  );
+  const answer = await $('[role="alertdialog"]').$("button=Close");
   await answer.waitForClickable({ timeout: 20_000 });
   await answer.click();
-  await expect(asking).not.toBeDisplayed();
+  await theDialogHasGone(
+    "alertdialog",
+    ending,
+    "Close",
+    false,
+    `the question about ${ending} never went`,
+  );
 }
 
 /** Ends the chat a control named `name` belongs to, and answers the question it asks. */
@@ -161,16 +224,25 @@ export async function endEveryChat(most = 200): Promise<void> {
  */
 export async function closeProject(closer: string): Promise<void> {
   await $(closer).click();
-  const asking = await $('[role="alertdialog"]');
-  const asked = await asking
-    .waitForDisplayed({ timeout: 3_000 })
+  // Looked for afresh, by its answer, at every look (#2126).
+  const asked = await browser
+    .waitUntil(
+      async () => browser.execute(aDialogOffers, "alertdialog", "", "Close and end", true),
+      { timeout: 3_000 },
+    )
     .then(() => true)
     .catch(() => false);
   if (asked) {
-    const answer = await asking.$("button*=Close and end");
+    const answer = await $('[role="alertdialog"]').$("button*=Close and end");
     await answer.waitForClickable({ timeout: 20_000 });
     await answer.click();
-    await expect(asking).not.toBeDisplayed();
+    await theDialogHasGone(
+      "alertdialog",
+      "",
+      "Close and end",
+      true,
+      "the question about closing the project never went",
+    );
   }
   await everyCloseHasLetGo();
 }
@@ -230,11 +302,26 @@ export function showsTheQuestion(title: string): boolean {
  * the spec waited out 30 s with the question on screen. A look done by one `browser.execute`
  * holds no node (`reading.ts` is the same lesson for lists).
  */
-export async function openThroughTheTrustQuestion(): Promise<void> {
-  await browser.waitUntil(async () => browser.execute(showsTheQuestion, FIRST_ASK), {
-    timeout: 30_000,
-    timeoutMsg: `the trust question ("${FIRST_ASK}") was never drawn`,
-  });
+export async function openThroughTheTrustQuestion({
+  within = 30_000,
+  ifAsked = false,
+}: {
+  /** How long the question is waited for. */
+  within?: number;
+  /** A project this machine may already have approved: no question is not a failure. */
+  ifAsked?: boolean;
+} = {}): Promise<void> {
+  const asked = await browser
+    .waitUntil(async () => browser.execute(showsTheQuestion, FIRST_ASK), {
+      timeout: within,
+      timeoutMsg: `the trust question ("${FIRST_ASK}") was never drawn`,
+    })
+    .then(() => true)
+    .catch((why: unknown) => {
+      if (ifAsked) return false;
+      throw why;
+    });
+  if (!asked) return;
   // Found in the question, and only now that it is up: the opener's path box has an Open project
   // of its own.
   await $('[role="dialog"][aria-labelledby="approve-plane"]').$("button=Open project").click();

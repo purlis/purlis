@@ -7,6 +7,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { ask } from "../switching.js";
+import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * **A project this purlis opens read-only says why, and the window writes nothing to it**
@@ -104,8 +105,7 @@ describe("a project this purlis opens read-only", function () {
     await box.waitForDisplayed({ timeout: 20_000 });
     await box.addValue(mine);
     await $('form.by-path button[type="submit"]').click();
-    await $('[role="dialog"]').waitForExist({ timeout: 30_000 });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
     await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",

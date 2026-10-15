@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FIRST_ASK, showsTheQuestion } from "./opening";
+import { FIRST_ASK, aDialogOffers, showsTheQuestion } from "./opening";
 
 /**
  * **The trust question is waited for by what it says, read again at every look** (#2126).
@@ -67,7 +67,50 @@ describe("the trust question, as a spec waits for it", () => {
   });
 });
 
-/** Every scenario source but this module's own and the vitest files. */
+describe("a dialog that offers an answer, as a spec waits for it", () => {
+  /** A dialog of `role` saying `title`, with buttons reading `buttons`. */
+  function offering(role: string, title: string, buttons: string[]): HTMLElement {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", role);
+    dialog.append(title);
+    for (const words of buttons) {
+      const button = document.createElement("button");
+      button.textContent = words;
+      dialog.append(button);
+    }
+    document.body.append(dialog);
+    return dialog;
+  }
+
+  it("is the picker once it takes the palette's place, and not before", () => {
+    const palette = offering("dialog", "Palette", ["New tab"]);
+    expect(aDialogOffers("dialog", "", "Start", false)).toBe(false);
+    palette.remove();
+    offering("dialog", "Start a chat", ["Start", "Cancel"]);
+    expect(aDialogOffers("dialog", "", "Start", false)).toBe(true);
+  });
+
+  it("is the question about the chat named, not one asked before it", () => {
+    const before = offering("alertdialog", "End chat one?", ["Close", "Cancel"]);
+    expect(aDialogOffers("alertdialog", "End chat two", "Close", false)).toBe(false);
+    before.remove();
+    offering("alertdialog", "End chat two?", ["Close", "Cancel"]);
+    expect(aDialogOffers("alertdialog", "End chat two", "Close", false)).toBe(true);
+  });
+
+  it("matches a button by part of its words only when asked to", () => {
+    offering("alertdialog", "Close this project?", ["Close and end 2 chats"]);
+    expect(aDialogOffers("alertdialog", "", "Close and end", false)).toBe(false);
+    expect(aDialogOffers("alertdialog", "", "Close and end", true)).toBe(true);
+  });
+
+  it("is gone once the dialog has gone", () => {
+    offering("alertdialog", "End chat one?", ["Close"]).remove();
+    expect(aDialogOffers("alertdialog", "End chat one", "Close", false)).toBe(false);
+  });
+});
+
+/** Every scenario source but this module's own and the vitest files: specs, helpers, benches. */
 function scenarioSources(): { name: string; text: string }[] {
   const here = dirname(fileURLToPath(import.meta.url));
   const read = (dir: string, prefix: string) =>
@@ -77,18 +120,35 @@ function scenarioSources(): { name: string; text: string }[] {
         name: `${prefix}${name}`,
         text: readFileSync(join(dir, name), "utf8"),
       }));
-  return [...read(here, ""), ...read(join(here, "specs"), "specs/")].filter(
-    (one) => one.name !== "opening.ts",
-  );
+  return [
+    ...read(here, ""),
+    ...read(join(here, "specs"), "specs/"),
+    ...read(join(here, "bench"), "bench/"),
+  ].filter((one) => one.name !== "opening.ts");
 }
 
 describe("a scenario that opens a project through the trust gate", () => {
-  it("waits for the question through `openThroughTheTrustQuestion`, never on a dialog it held", () => {
-    const holding = scenarioSources().filter((one) => one.text.includes(`"${FIRST_ASK}"`));
+  it("never waits on the trust question's title itself", () => {
+    // In any quotes: a template literal is the same wait.
+    const title = new RegExp(`["'\`]${FIRST_ASK.replace("?", "\\?")}["'\`]`);
+    const naming = scenarioSources().filter((one) => title.test(one.text));
     expect(
-      holding.map((one) => one.name),
-      "these wait for the trust question by its words themselves; call " +
+      naming.map((one) => one.name),
+      "these wait on the trust question's title themselves; call " +
         "openThroughTheTrustQuestion() from opening.ts, which reads the page again at every look",
+    ).toEqual([]);
+  });
+
+  it("never presses the question's Open project through a dialog found before it", () => {
+    const pressing = scenarioSources().filter((one) =>
+      /\$\(\s*['"`]\[role="dialog"\]['"`]\s*\)\s*\.\$\(\s*['"`]button=Open project['"`]/.test(
+        one.text,
+      ),
+    );
+    expect(
+      pressing.map((one) => one.name),
+      "these press Open project in whichever dialog came first; call " +
+        "openThroughTheTrustQuestion() from opening.ts",
     ).toEqual([]);
   });
 });

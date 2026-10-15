@@ -12,7 +12,7 @@ import {
 import { dirname, join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { copyFixturePlane } from "../harness.js";
-import { showView } from "../opening.js";
+import { openThroughTheTrustQuestion, showView } from "../opening.js";
 
 /**
  * **A tab that holds something other than a chat**, in the built app (ADR 0043, as
@@ -461,9 +461,7 @@ describe("view tabs", function () {
       // in the question: the two are both named Open project.
       await $('form.by-path button[type="submit"]').click();
       // Through the gate, which is what reads the record (ADR 0035).
-      const question = await $('[role="dialog"]');
-      await question.waitForDisplayed({ timeout: 30_000 });
-      await $('[role="dialog"]').$("button=Open project").click();
+      await openThroughTheTrustQuestion();
 
       await theView("steward", "holds no credentials of its own");
       expect(await tabNames()).toEqual(["steward"]);

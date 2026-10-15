@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { menuNames, ROW } from "../menus.js";
 import { anEmptyRecord, cloneTheFixtureRepos, copyFixturePlane } from "../harness.js";
+import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * Making a workspace and deleting one, in the built app, against the real core.
@@ -184,9 +185,7 @@ describe("making a workspace and deleting one", function () {
     await $('form.by-path button[type="submit"]').click();
     // A plane nobody has approved is described and not opened; there is no third way in
     // (ADR 0035). This run's store is its own, so this is always a first ask.
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
     await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",

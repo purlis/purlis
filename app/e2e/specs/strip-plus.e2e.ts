@@ -5,7 +5,7 @@ import { realpathSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
-import { endEveryChat, pressAndStart } from "../opening.js";
+import { endEveryChat, openThroughTheTrustQuestion, pressAndStart } from "../opening.js";
 
 /**
  * **The `+` right after the last tab, in both strips** (DS-7, #1839; the operator's D6):
@@ -244,9 +244,7 @@ describe("the `+` right after the last tab", function () {
       await box.waitForDisplayed({ timeout: 20_000 });
       await box.addValue(mine);
       await $('form.by-path button[type="submit"]').click();
-      const question = await $('[role="dialog"]');
-      await question.waitForDisplayed({ timeout: 30_000 });
-      await $('[role="dialog"]').$("button=Open project").click();
+      await openThroughTheTrustQuestion();
       await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
         timeout: 30_000,
         timeoutMsg: "this spec's project never opened",

@@ -6,7 +6,7 @@ import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { copyFixturePlane } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * **The save indicator and the save button, in the built app** (charter-app#294, ADR 0051).
@@ -107,9 +107,7 @@ describe("saving the project from the title bar", function () {
     // The path box's own submit, found by its form, and the trust question's act found
     // in the question: the two are both named Open project.
     await $('form.by-path button[type="submit"]').click();
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
 
     await untilTheBarSays("Saving: Saved", "the bar never said the fresh plane was saved");
 

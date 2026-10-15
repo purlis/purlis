@@ -11,6 +11,7 @@ import {
   THE_RUNS_GIT_CONFIG_TEXT,
 } from "../harness.js";
 import { bandNotice } from "../reading.js";
+import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * **A machine with no git identity is told so by a Notice** (#1250), in the built app against
@@ -99,9 +100,7 @@ describe("a machine with no git identity", function () {
       // The path box's own submit, found by its form, and the trust question's act found
       // in the question: the two are both named Open project.
       await $('form.by-path button[type="submit"]').click();
-      const question = await $('[role="dialog"]');
-      await question.waitForDisplayed({ timeout: 30_000 });
-      await $('[role="dialog"]').$("button=Open project").click();
+      await openThroughTheTrustQuestion();
       await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
         timeout: 30_000,
         timeoutMsg: "this spec's project never opened",
