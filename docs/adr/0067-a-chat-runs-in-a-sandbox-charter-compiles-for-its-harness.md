@@ -1229,7 +1229,7 @@ says.
   not whole, the one file of the project that still opens in the window is the half of the
   registry to put right.
 
-Decided here and to be confirmed:
+Decided here, and ruled by the operator, 2026-10-15 (a vault of an unknown kind starts, with a Notice):
 
 - **A vault of a kind this purlis does not know does not stop a start.** A registry written by
   a newer purlis does not stop an older one: the files the entry names are kept, and Doctor
@@ -1344,9 +1344,9 @@ refused-name rule of the paragraphs of section 1 on a persona's tools.
   brokered run name the program by that resolved path.
 - A browser login's program is purlis's own pick and is not refused by this rule.
 
-## Amended (2026-10-14, qw385; amends the 2026-10-10 paragraph on a refused vault's Allow): a vault's key names come from the app, and a value is never read in the chat — to be confirmed
+## Amended (2026-10-14, qw385; amends the 2026-10-10 paragraph on a refused vault's Allow): a vault's key names come from the app, and a value is never read in the chat — ruled by the operator, 2026-10-15
 
-**To be confirmed by the operator.** Decided in implementation.
+**Ruled by the operator, 2026-10-15.** Decided in implementation.
 
 1. **`secret list <vault>` in a sandboxed chat is answered by the app** (and `persona secret
    list`). The chat sends one ask over its hook socket naming the vault and nothing else. The
@@ -1378,9 +1378,9 @@ refused-name rule of the paragraphs of section 1 on a persona's tools.
 
 No CLI word and no key of the project's format was added.
 
-## Noted (2026-10-14, qw382b): a save's conflict is settled by the window's git and a chat's edits — to be confirmed
+## Noted (2026-10-14, qw382b): a save's conflict is settled by the window's git and a chat's edits — ruled by the operator, 2026-10-15
 
-Decided under delegation, and recorded for the operator's ruling. Nothing in section 5 or in
+Decided under delegation, and ruled by the operator, 2026-10-15. Nothing in section 5 or in
 the `rootupdate` guard changes: a sandboxed chat in the project's root still runs no git that
 rewrites the tree from another commit, and `--abort` and `--quit` stay its only ways back. The
 window's Resolve (ADR 0051, noted the same day) runs the replay, the staging and
@@ -1401,9 +1401,9 @@ it is read (its alias included) and none is `git sparse-checkout`, and no writer
 the move. Where git does not answer, every path counts. A command that
 cannot finish still does not start.
 
-## Amended (2026-10-14, qw387; amends section 2): a chat's workspace create is made whole — to be confirmed
+## Amended (2026-10-14, qw387; amends section 2): a chat's workspace create is made whole — ruled by the operator, 2026-10-15
 
-**To be confirmed by the operator.** Decided in implementation.
+**Ruled by the operator, 2026-10-15.** Decided in implementation.
 
 1. **Every form of `purlis workspace create` a chat runs is made by the app**, or refused before
    anything is made. A plain create and `--vision` are the brokered write they were. With repos
@@ -1422,9 +1422,9 @@ cannot finish still does not start.
    after the scaffold, a vision or a share that could not be written fails `create`, naming them
    and `purlis workspace reinit`.
 
-## Amended (2026-10-14, qw384; extends section 2 and ADR 0093): a service on this Mac is allowed by its one port — to be confirmed
+## Amended (2026-10-14, qw384; extends section 2 and ADR 0093): a service on this Mac is allowed by its one port — ruled by the operator, 2026-10-15
 
-Decided under delegation; the operator confirms or changes it.
+Decided under delegation; ruled by the operator, 2026-10-15.
 
 - **A service on this Mac** is whatever listens on one port of this machine's loopback
   interface. A chat reaches none but its own proxy's two ports and the app's hook socket until a
@@ -1466,9 +1466,9 @@ Decided under delegation; the operator confirms or changes it.
 - **Policy.** `sandbox.socket-grants = false` holds a service on this Mac as it holds a socket,
   and `allow-scopes` holds its two scopes as any other.
 
-## Amended (2026-10-14, qw387; amends the brokered commit's "It only commits"): a branch folder is kept current by the app — to be confirmed
+## Amended (2026-10-14, qw387; amends the brokered commit's "It only commits"): a branch folder is kept current by the app — ruled by the operator, 2026-10-15
 
-**To be confirmed by the operator.** Decided in implementation, on the operator's ask.
+**Ruled by the operator, 2026-10-15.** Decided in implementation, on the operator's ask.
 
 A branch folder's index, HEAD and rebase state are in its clone's `.git`, which section 5
 denies a chat, so a sandboxed chat's own `git fetch`, `git rebase` and `git reset` fail there.
@@ -1505,9 +1505,9 @@ same core code a terminal runs:
 
 The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
 
-## Amended (2026-10-15, qw384b; extends the qw384 amendment): a Claude Code chat reaches a service on this Mac by name — to be confirmed
+## Amended (2026-10-15, qw384b; extends the qw384 amendment): a Claude Code chat reaches a service on this Mac by name — ruled by the operator, 2026-10-15
 
-Decided under delegation (option A of qw384's follow-up); the operator confirms or changes it.
+Decided under delegation (option A of qw384's follow-up); ruled by the operator, 2026-10-15.
 
 - **By name, through the chat's proxy.** Claude Code sends a command's connections to purlis's
   proxy, but its `NO_PROXY` keeps `localhost`, `127.0.0.1`, `::1` and the private ranges off it,
@@ -1574,7 +1574,8 @@ the person applies.
 - **Apply judges again**: the change is made to the file as the app reads it, shown whole by the
   row's own rules, and written under one lock per project held from the read to the rename, so
   of two Applies against the file as it was, the second is stale.
-- **No new persona or workspace** (the dispatcher's decision, to be confirmed): a proposal makes
+- **No new persona or workspace** (the dispatcher's decision, ruled by the operator, 2026-10-15; new skill folders
+  only): a proposal makes
   no folder but a skill's (`.claude/skills` and below). A file in a persona or a workspace that
   is not there is refused; a new persona or workspace is made with purlis's own ways first.
 - **Allows nothing** (PC-5): a tool or host the change declares still asks its own Allow.
