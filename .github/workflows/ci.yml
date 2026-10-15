@@ -681,6 +681,8 @@ jobs:
   #
   # nextest, as the `rust` job runs them: each test in a process of its own, so a leak is the
   # test's, not a neighbour's. `--reap` is safe here because the runner is the job's own.
+  # The browser engine's tests run here too: they start the runner's own Chrome, and macOS,
+  # with no parent-death signal, is where an engine outliving its host would show (#2009).
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only)
     if: github.event_name == 'schedule'
@@ -699,9 +701,45 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Build the tests
-        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app --no-run
+        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app --profile ci
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci
+
+  # The browser engine's tests on macOS, against the runner's own Chrome, on a pull request
+  # that changes the engine's crate (#2009). macOS has no parent-death signal, so an engine
+  # outliving its host would show here first; the Linux `rust` job runs the same tests on every
+  # pull request. Scoped like `bench`: a pull request that does not touch the crate runs a
+  # check of a few seconds and nothing else. The nightly `macos-tests` runs them on `main`.
+  browser-engine-macos:
+    name: browser engine on macos (real Chrome, when the engine changes)
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Whether this change touches the engine
+        id: scope
+        run: |
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if echo "$changed" | grep -qE '^(crates/browser-engine/|Cargo\.lock$|rust-toolchain\.toml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the browser engine's crate has not changed; not run"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/rust-toolchain
+      - if: steps.scope.outputs.run == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      # Not under `no-orphans.sh`: on a macOS runner the system starts processes of the job's
+      # user while the tests run (Spotlight's workers, cache extensions), which it would count.
+      # The tests check what they started themselves: every process of each engine is gone.
+      - name: The engine's tests, the runner's Chrome
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p purlis-browser-engine -- --test-threads=2
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build

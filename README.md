@@ -84,6 +84,7 @@ Intel macOS build, no `.rpm`, and no Windows until the port lands.
 | `crates/purlis-cli` | The `purlis` binary, with `charter` as an alias, called by hooks, scripts and agents |
 | `crates/stand-in` | Test-only: the one way a test writes a program it is about to run |
 | `crates/same-user` | Whether a socket's peer, a directory or a file is this user's alone: the one copy of the checks `charterd.sock`, the hook sockets and the client scopes' credentials rest on |
+| `crates/browser-engine` | The engine a browser runs on: a pinned Chrome for Testing, verified against its manifest before it runs, started over an inherited DevTools pipe with no port, in a process group its keeper ends when the host ends |
 | `crates/persona-statistics` | purlis's first built-in extension, and the executor's first consumer: the persona statistics view (ADR 0041 stage 2). The release build assembles it into the app's resources (`persona-statistics assemble <dir>`), and it links the core's stats code so its numbers are `purlis persona stats`'s |
 | `app/` | The desktop app: React + TypeScript UI |
 | `app/src-tauri` | The app's Rust side: Tauri commands that call the core |

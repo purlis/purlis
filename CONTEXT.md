@@ -551,6 +551,14 @@ browser profile (that is the **profile**)
 One of a browser's open documents. Pages of one browser share its cookies and logins.
 _Avoid_: tab (that is the window's), frame, document
 
+**Engine**:
+The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
+downloads on first use, checks against its manifest before it runs, and keeps current apart from
+purlis's own releases, or the machine's own Chrome when the person chooses it in Settings. The
+session host drives it only over a pipe it holds, never a port, and it ends with its host.
+_Avoid_: Chromium (unless that project is meant), headless Chrome, driver (that is who acts on a
+browser)
+
 **Driver**:
 Who may act on a browser now: the chat's agent, the person, or purlis itself while it performs a
 login. Exactly one at a time. While the person drives, the agent's browser tools are refused in
