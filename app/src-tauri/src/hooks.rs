@@ -340,6 +340,113 @@ pub struct Hooks {
     /// the fact, for `answering`'s reason: it needs the chat's record. Empty, the asker is told
     /// nothing answers and runs the command itself.
     secret_exec: Arc<Mutex<Option<SecretExecs>>>,
+    /// Where the session host owns this project's hook channel (#2000): what the window hears
+    /// the lines it hands on with. None where the window listens itself, or not at all.
+    relayed: Option<Arc<Relayed>>,
+}
+
+/// **A project's hook channel, owned by the session host and heard in the window** (#2000).
+///
+/// With chats in the session host, the host binds the project's hook socket, issues each chat
+/// its token and admits each line, and hands every line it admits on to the window. The window
+/// hears it here with the same hearing it listened with itself ([`Hooks::listening_on`]), so the
+/// board, Needs you and the asks move exactly as before.
+pub struct Relayed {
+    heeding: Arc<purlis_core::hookwire::relay::Heeding>,
+    /// Where the lines heard at once go, to be heard one after another in the order they
+    /// came, as the project's listener heard them when the window bound it (FD-9): one
+    /// project's lines never wait on another's.
+    in_order: Mutex<Option<std::sync::mpsc::Sender<InOrder>>>,
+    /// The socket the host listens on for this project: a sandbox charter wraps a chat in lets
+    /// the chat reach it.
+    socket: PathBuf,
+    /// Each running chat's program, as the host started it: what a line's chat is read from
+    /// there, and what a caller that waited compares (qw381).
+    programs: Mutex<std::collections::HashMap<u32, purlis_core::hookwire::Program>>,
+}
+
+/// A line to hear in order: its number, the line, and what replies to it.
+type InOrder = (
+    u64,
+    purlis_core::hookwire::relay::Heard,
+    purlis_core::hookwire::relay::Reply,
+);
+
+impl Relayed {
+    /// Takes line `id` the host handed on, replying through `reply`: a line that may wait as
+    /// long as a person takes (an ask, a permission ask, a `secret exec`) is heard on a thread
+    /// of its own, and every other one after the lines that came before it, on the project's
+    /// own thread ([`purlis_core::hookwire::relay::Heeding::hear`]). Returns at once.
+    pub fn take(
+        &self,
+        id: u64,
+        heard: purlis_core::hookwire::relay::Heard,
+        reply: purlis_core::hookwire::relay::Reply,
+    ) {
+        use purlis_core::hookwire::relay::Heeding;
+        if Heeding::waits(&heard) {
+            let heeding = Arc::clone(&self.heeding);
+            let spawned = std::thread::Builder::new()
+                .name("purlis-hook-ask".into())
+                .spawn(move || heeding.hear(id, heard, reply));
+            if let Err(why) = spawned {
+                tracing::warn!("purlis: a chat's ask could not be heard ({why})");
+            }
+            return;
+        }
+        let mut in_order = self.in_order.lock().unwrap_or_else(PoisonError::into_inner);
+        if in_order.is_none() {
+            let (lines, heard_in_order) = std::sync::mpsc::channel::<InOrder>();
+            let heeding = Arc::clone(&self.heeding);
+            let spawned = std::thread::Builder::new()
+                .name("purlis-hook-lines".into())
+                .spawn(move || {
+                    for (id, heard, reply) in heard_in_order {
+                        heeding.hear(id, heard, reply);
+                    }
+                });
+            match spawned {
+                Ok(_) => *in_order = Some(lines),
+                Err(why) => {
+                    tracing::warn!("purlis: a chat's hook line could not be heard ({why})");
+                    return;
+                }
+            }
+        }
+        if let Some(lines) = in_order.as_ref() {
+            let _ = lines.send((id, heard, reply));
+        }
+    }
+
+    /// The socket the host listens on for this project.
+    pub fn socket(&self) -> &Path {
+        &self.socket
+    }
+
+    /// Chat `chat`'s program, started by the host, is process `pid`.
+    pub fn started(&self, chat: u32, pid: u32) {
+        let mut programs = self.programs.lock().unwrap_or_else(PoisonError::into_inner);
+        match purlis_core::hookwire::Program::of(pid) {
+            Some(program) => {
+                programs.insert(chat, program);
+            }
+            None => {
+                programs.remove(&chat);
+            }
+        }
+    }
+
+    /// Chat `chat`'s program `pid` ended, or the chat was closed (`None`).
+    pub fn ended(&self, chat: u32, pid: Option<u32>) {
+        let mut programs = self.programs.lock().unwrap_or_else(PoisonError::into_inner);
+        if pid.is_none_or(|pid| {
+            programs
+                .get(&chat)
+                .is_some_and(|program| program.pid == pid)
+        }) {
+            programs.remove(&chat);
+        }
+    }
 }
 
 /// What runs a brokered `secret exec` (#1407): the ask, the connection it is held on, and what
@@ -1508,6 +1615,7 @@ impl Hooks {
             throttle: Arc::default(),
             hear_block: None,
             secret_exec: Arc::new(Mutex::new(None)),
+            relayed: None,
         }
     }
 
@@ -1525,6 +1633,33 @@ impl Hooks {
         let listener = Listener::bind(&at.within, &at.socket)?;
         let socket = listener.path().to_path_buf();
         let tokens = listener.tokens();
+        let (mut hooks, hearing) = Self::wired(plane, socket, moved, told_by_hand);
+        hooks.tokens = Some(tokens);
+        hooks.reading = Mutex::new(Some(listener.hear(hearing)));
+        Ok(hooks)
+    }
+
+    /// Hears what the session host hands on from the hook channel it owns at `at` (#2000):
+    /// nothing is bound here, and every line is heard as [`Self::listening_on`] hears one.
+    pub fn relayed(plane: PlaneId, at: &Where, moved: Teller, told_by_hand: ByHandTeller) -> Self {
+        let (mut hooks, hearing) = Self::wired(plane, at.socket.clone(), moved, told_by_hand);
+        hooks.relayed = Some(Arc::new(Relayed {
+            heeding: Arc::new(purlis_core::hookwire::relay::Heeding::new(hearing)),
+            in_order: Mutex::new(None),
+            socket: at.socket.clone(),
+            programs: Mutex::default(),
+        }));
+        hooks
+    }
+
+    /// What hears the hook channel at `socket` for `plane`, wherever its lines come from, and
+    /// the board and the slots it moves, not yet hearing anything.
+    fn wired(
+        plane: PlaneId,
+        socket: PathBuf,
+        moved: Teller,
+        told_by_hand: ByHandTeller,
+    ) -> (Self, Hearing) {
         let board = Arc::new(Mutex::new(Board::new()));
         let answering: Arc<Mutex<Option<Answering>>> = Arc::new(Mutex::new(None));
         let heard: Arc<Mutex<Option<Heard>>> = Arc::new(Mutex::new(None));
@@ -1570,7 +1705,7 @@ impl Hooks {
             plane.clone(),
             Arc::clone(&events),
         );
-        let reading = listener.hear(Hearing {
+        let hearing = Hearing {
             // A brokered `secret exec` (#1407), held on its connection while the command runs.
             // Taken out of the lock before it runs, as an answer is. A host its sandbox refused
             // is the asking chat's block, told on the same road as one its hook found.
@@ -1843,13 +1978,13 @@ impl Hooks {
                     recorded
                 })
             },
-        });
-        Ok(Self {
+        };
+        let hooks = Self {
             plane,
             board,
-            reading: Mutex::new(Some(reading)),
+            reading: Mutex::new(None),
             socket: Some(socket),
-            tokens: Some(tokens),
+            tokens: None,
             answering,
             heard,
             following,
@@ -1868,7 +2003,14 @@ impl Hooks {
             throttle,
             hear_block: Some(hear_block),
             secret_exec,
-        })
+            relayed: None,
+        };
+        (hooks, hearing)
+    }
+
+    /// Where the session host owns this project's hook channel, what hears what it hands on.
+    pub fn relayed_from_the_host(&self) -> Option<Arc<Relayed>> {
+        self.relayed.clone()
     }
 
     /// The permission asks this project's chats hold open (HP-6).
@@ -2276,6 +2418,9 @@ impl Hooks {
     /// Whether the asker on `connection` hung up while its ask was being answered
     /// (`ChatTokens::asker_gone`): what ends a wait nobody is waiting for any more (#1441).
     pub fn asker_gone(&self, connection: u64) -> bool {
+        if let Some(relayed) = &self.relayed {
+            return relayed.heeding.asker_gone(connection);
+        }
         self.tokens
             .as_ref()
             .is_some_and(|tokens| tokens.asker_gone(connection))
@@ -2283,6 +2428,14 @@ impl Hooks {
 
     /// The program chat `chat`'s lines are read from now, where one is recorded (qw381).
     pub fn program_of(&self, chat: u32) -> Option<purlis_core::hookwire::Program> {
+        if let Some(relayed) = &self.relayed {
+            return relayed
+                .programs
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&chat)
+                .cloned();
+        }
         self.tokens.as_ref()?.program_of(chat)
     }
 
@@ -2719,6 +2872,11 @@ impl SpoolWatch {
 ///
 /// The thread ends with the hearers, when the project stops listening; a look still pending
 /// then is let go, and the chat's spool is drained at its end or the next open.
+///
+/// **With chats in the session host, a line taken late can be recorded twice** (#2000). The
+/// host takes the live line, and this drain records the copy its hook spooled. Which copy was
+/// recorded already (#952) is known per process, so each process records its own. This holds
+/// until the event log is written in the host (#2003).
 ///
 /// [`spool::holds_lines`]: purlis_core::hookwire::spool::holds_lines
 /// [`spool::drain_running`]: purlis_core::hookwire::spool::drain_running

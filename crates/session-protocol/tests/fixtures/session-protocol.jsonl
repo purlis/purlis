@@ -40,3 +40,8 @@
 {"reply":{"re":16,"refused":{"code":"no_such_project","why":"this session host does not hold project 01J9PRJCT00000000000000000"}}}
 {"reply":{"re":18,"refused":{"code":"not_allowed","why":"a `terminal` link may not `hold_project`"}}}
 {"reply":{"re":19,"refused":{"code":"not_started","why":"there is no persona nobody in this project"}}}
+{"call":{"id":22,"command":"deal","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":23,"command":"dealt_already","project":"01J9PRJCT00000000000000000","dealt":6}}
+{"call":{"id":24,"command":"reply_heard","project":"01J9PRJCT00000000000000000","heard":12,"reply":"taken"}}
+{"reply":{"re":22,"ok":{"dealt":{"number":7}}}}
+{"pushed":{"heard":{"project":"01J9PRJCT00000000000000000","heard":12,"line":{"report":{"chat":7,"event":"stop"}}}}}
