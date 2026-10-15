@@ -159,6 +159,50 @@ pub struct SandboxState {
     /// allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
     #[specta(optional)]
     pub expects: Option<ProjectExpects>,
+    /// **The project's sandbox off** (#2071 PR C): its committed `[sandbox] mode = "off"`, the
+    /// commit it arrived in, and how the person on this machine answered it. `null` where the
+    /// project does not turn the sandbox off in a commit.
+    #[specta(optional)]
+    pub team_off: Option<TeamOffState>,
+    /// Why nobody here runs below the full sandbox (#2071 PR C): the project's
+    /// `policy = "never"`, or an administrator's policy, in one sentence. Settings shows it in
+    /// place of the level switch. `null` where each person chooses.
+    #[specta(optional)]
+    pub level_held: Option<String>,
+}
+
+/// **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8): once,
+/// "Your project turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on
+/// for me; Settings offers the other answer after.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct TeamOffState {
+    /// The commit that turned it off, whole: what an answer is sent back with.
+    pub commit: String,
+    /// Who made that commit, as git names them. Written by a repository: drawn inertly.
+    pub author: String,
+    /// The ask's sentence, in purlis's words.
+    pub said: String,
+    /// `null` until answered; `true` accepted (no sandbox by default), `false` kept on.
+    pub answer: Option<bool>,
+}
+
+impl TeamOffState {
+    /// The window's form of `team_off`, where there is an off to answer.
+    pub fn of(team_off: sandbox::team::TeamOff) -> Option<Self> {
+        use sandbox::team::TeamOff;
+        let (arrived, answer) = match team_off {
+            TeamOff::Asks(arrived) => (arrived, None),
+            TeamOff::Accepted(arrived) => (arrived, Some(true)),
+            TeamOff::KeptOn(arrived) => (arrived, Some(false)),
+            TeamOff::No | TeamOff::NotCommitted => return None,
+        };
+        Some(Self {
+            said: arrived.said(),
+            commit: arrived.commit,
+            author: arrived.author,
+            answer,
+        })
+    }
 }
 
 /// **What a project declares it expects and this machine has not allowed** (ADR 0093, ruling
@@ -506,6 +550,8 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
             CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
         }),
         expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
+        team_off: TeamOffState::of(sandbox::team::team_off(root)),
+        level_held: sandbox::team::allowed_levels(root).why,
     }
 }
 
@@ -542,6 +588,28 @@ pub(crate) const READING_SANDBOX: &str = "reading the project's sandbox";
 /// What the commands that change this machine's answers about the project's sandbox name their
 /// work, off the window's thread.
 const ANSWERING_SANDBOX: &str = "keeping your answer about the project's sandbox";
+
+/// **The person's answer to the project's sandbox off** (#2071, SO-8): Accept (`accept`) or
+/// Keep it on for me, for `commit`, the one the ask showed; refused where the off stands at
+/// another commit now. Kept in this machine's config home, where no chat writes; it takes
+/// effect at each chat's next start. The window's alone.
+#[tauri::command]
+#[specta::specta]
+pub async fn answer_team_sandbox_off(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    commit: String,
+    accept: bool,
+) -> Result<SandboxState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        let answer = sandbox::team::answering(&root, &commit, accept)?;
+        sandbox::local::answer_team_off(&root, answer)
+            .map_err(|why| format!("purlis could not keep your answer on this machine: {why}"))?;
+        Ok(state_of(&root))
+    })
+    .await
+}
 
 /// The project's sandbox, for the offer notice and Settings.
 ///

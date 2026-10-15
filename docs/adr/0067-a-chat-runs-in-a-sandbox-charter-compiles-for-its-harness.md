@@ -1780,3 +1780,37 @@ strict reading of a request's head, its tunnel and plain request, its limits.
 7. **Fails closed** (ruled 2026-10-14). The engine resolves no name and sends every request to
    its reach proxy. When the proxy stops it ends every connection it carries, tunnels included,
    and lets its port go only once nothing can connect to it; every load then fails.
+
+## Amended (2026-10-15, #2071 PR C; the operator's rulings SO-5, SO-8 and SO-9 of 2026-10-14, and of 2026-10-15 on the spelling; amends section 5): the team bounds each person's level, and its off reaches each person on their Accept
+
+Ruled by the operator. Section 5's "a committed file may turn the sandbox on and never off" is
+amended (SO-5): the team decides, in the committed `charter.toml`, how far its people may turn
+the sandbox down.
+
+- **`[sandbox] policy = "local" | "never"`** (absent is `local`).
+  - `local`: each person's own level on their machine holds (`on`, `floor` or `off`, ADR 0096),
+    as far as they confirmed it; the floor where they chose none (SO-9).
+  - `never`: nobody runs below the full sandbox. "Start without the sandbox" is refused on every
+    chat, and a person's own lower level is refused when set and clamped to the full sandbox when
+    a chat starts, each with a sentence naming the policy. It is carried as the administrator's
+    opt-out lock is (`policy::Locks::of`), and said as the project's.
+  - A value that is neither is refused with a sentence and read as `never`: a typo never loosens
+    anyone's sandbox.
+- **`[sandbox] mode = "off"` is the team's off** (the operator, 2026-10-15: the line a project
+  already carries, no new value). It reaches each person only by consent (SO-8): the first time
+  a commit turns it off, the window asks once, "Your project turned the sandbox off (commit <sha>
+  by <author>)", with **Accept** and **Keep it on for me**. Until they answer, their chats keep
+  their own level, or the floor. Accepted, a chat whose person chose no level runs with no
+  sandbox from its next start; a level they chose still stands. Settings › Sandbox › Your level
+  shows the answer and offers the other one.
+  - Only a committed off asks anyone: an off in the working tree alone turns nothing off. The
+    commit is the last one that changed `mode`, so an off committed again later asks again.
+  - The answer is kept for that commit in this machine's config home (`sandbox-grants`), which
+    no sandboxed chat writes.
+  - Under `policy = "never"`, `mode = "off"` is refused with a sentence naming the policy, and
+    the sandbox stays on.
+- **One bound for every start**: `sandbox::team::allowed_levels(root)` is what a person's level
+  is clamped to, and `team::level_for(root, persona)` the level a chat runs at. A chat's start
+  reads it through the one seam #2122 adds (`sandbox::bounded`).
+- **What stays**: the harness's own permission prompts, and purlis's guards of the project root
+  and its own state, at every level.

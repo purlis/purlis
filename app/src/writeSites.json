@@ -254,6 +254,11 @@
       "by": ["answerSandboxOffer"]
     },
     {
+      "at": "sandboxing.rs answer_team_sandbox_off",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["answerTeamSandboxOff"]
+    },
+    {
       "at": "sandboxing.rs decline_expects",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["declineProjectExpects"]

@@ -57,6 +57,7 @@ import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { dispatchGroup } from "./dispatch";
+import { teamPolicyRow } from "./teamPolicy";
 import {
   levelsWaitingRow,
   plainFilesRow,
@@ -646,7 +647,11 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
             settings: fromLocal(YOUR_LEVEL, yourLevelControls(read.entries.persona ?? [])),
             after:
               read.plane !== undefined
-                ? [...levelsWaitingRow(read.plane, read.local.text), ...plainFilesRow(read.plane)]
+                ? [
+                    ...teamPolicyRow(read.plane),
+                    ...levelsWaitingRow(read.plane, read.local.text),
+                    ...plainFilesRow(read.plane),
+                  ]
                 : [],
             sub: true,
           },

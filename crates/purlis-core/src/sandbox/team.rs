@@ -187,20 +187,27 @@ fn arrived(root: &Path) -> Option<Arrived> {
 }
 
 /// **The person's answer to the team's off** (Accept, or Keep it on for me, or a change of mind
-/// in Settings), for `commit`: refused unless that is the commit the off stands at now.
+/// in Settings), for `commit`, kept: refused unless that is the commit the off stands at now.
 pub fn answer(root: &Path, commit: &str, accept: bool) -> Result<(), String> {
+    let answer = answering(root, commit, accept)?;
+    super::local::answer_team_off(root, answer)
+        .map_err(|why| format!("purlis could not keep your answer on this machine: {why}"))
+}
+
+/// [`answer`]'s judgement alone: the answer to keep, or why there is none to give.
+pub fn answering(
+    root: &Path,
+    commit: &str,
+    accept: bool,
+) -> Result<super::local::TeamOffAnswer, String> {
     match team_off(root) {
         TeamOff::Asks(arrived) | TeamOff::Accepted(arrived) | TeamOff::KeptOn(arrived)
             if arrived.commit == commit =>
         {
-            super::local::answer_team_off(
-                root,
-                super::local::TeamOffAnswer {
-                    commit: arrived.commit,
-                    accepted: accept,
-                },
-            )
-            .map_err(|why| format!("purlis could not keep your answer on this machine: {why}"))
+            Ok(super::local::TeamOffAnswer {
+                commit: arrived.commit,
+                accepted: accept,
+            })
         }
         TeamOff::Asks(_) | TeamOff::Accepted(_) | TeamOff::KeptOn(_) => Err(
             "The project's sandbox off is from another commit now. Nothing was kept: look at \

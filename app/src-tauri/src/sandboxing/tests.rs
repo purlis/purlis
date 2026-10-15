@@ -1728,6 +1728,8 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             manifest: None,
             certificate_check: None,
             expects: None,
+            team_off: None,
+            level_held: None,
         }
     );
 
@@ -1758,6 +1760,8 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
                 widens: sandbox::Os::this() == sandbox::Os::MacOs,
             }),
             expects: None,
+            team_off: None,
+            level_held: None,
         }
     );
 }
@@ -1788,6 +1792,8 @@ fn keeping_it_off_leaves_the_project_as_it_was_and_asks_no_more() {
             manifest: None,
             certificate_check: None,
             expects: None,
+            team_off: None,
+            level_held: None,
         }
     );
     assert_eq!(
@@ -1948,4 +1954,46 @@ fn a_port_on_this_mac_is_one_port_for_this_chat_or_this_project_here() {
     assert!(refused("50795", GrantLevel::Chat).contains("event log"));
     assert!(sandbox::local::granted_ports(project.path()).is_empty());
     assert!(!chats.holds_for(3, &sandbox::grant::What::Port(50795)));
+}
+
+/// #2071 PR C: the team's off as the window asks it, and the policy that holds a person's level.
+#[test]
+fn the_team_s_off_is_asked_with_its_commit_and_author_and_answered_once() {
+    use purlis_core::sandbox::team::{Arrived, TeamOff};
+    let arrived = Arrived {
+        commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+        author: "Ada Lovelace".to_owned(),
+    };
+    let asks = TeamOffState::of(TeamOff::Asks(arrived.clone())).expect("asked");
+    assert_eq!(asks.commit, arrived.commit);
+    assert_eq!(asks.author, "Ada Lovelace");
+    assert_eq!(asks.answer, None);
+    assert_eq!(
+        asks.said,
+        "Your project turned the sandbox off (commit 0123456 by Ada Lovelace)."
+    );
+    assert_eq!(
+        TeamOffState::of(TeamOff::Accepted(arrived.clone())).map(|one| one.answer),
+        Some(Some(true))
+    );
+    assert_eq!(
+        TeamOffState::of(TeamOff::KeptOn(arrived)).map(|one| one.answer),
+        Some(Some(false))
+    );
+    assert_eq!(TeamOffState::of(TeamOff::No), None);
+    assert_eq!(TeamOffState::of(TeamOff::NotCommitted), None);
+}
+
+#[test]
+fn under_a_never_policy_the_state_says_why_no_level_goes_lower() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "schema = 1\n[sandbox]\nmode = \"on\"\npolicy = \"never\"\n",
+    )
+    .unwrap();
+    let state = state_of(project.path());
+    let held = state.level_held.expect("held");
+    assert!(held.contains("policy = \"never\""), "{held}");
+    assert_eq!(state.team_off, None);
 }

@@ -71,6 +71,7 @@ macro_rules! app_commands {
                 sandboxing::allow_persona_hosts,
                 sandboxing::allow_project_expects,
                 sandboxing::decline_project_expects,
+                sandboxing::answer_team_sandbox_off,
                 sandboxing::persona_grants_held,
                 sandboxing::allow_persona_grants,
                 sandboxing::type_sandbox_install,

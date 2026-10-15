@@ -54,6 +54,7 @@ export const LANES = {
       "acknowledgeProjectPresets",
       "allowProjectExpects",
       "declineProjectExpects",
+      "answerTeamSandboxOff",
       "allowPersonaHosts",
       "allowPersonaGrants",
       // A proposed change applied to the project's manifest (#1975).
