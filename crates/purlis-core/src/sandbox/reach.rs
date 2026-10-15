@@ -109,6 +109,17 @@ impl Decision {
         }
     }
 
+    /// Every word [`Self::word`] says.
+    pub const WORDS: [&'static str; 7] = [
+        "open", "persona", "you", "chat", "project", "ask", "refused",
+    ];
+
+    /// `word` as [`Self::word`] says it, where it is one: a decision's word read back from
+    /// elsewhere (#1999).
+    pub fn word_of(word: &str) -> Option<&'static str> {
+        Self::WORDS.into_iter().find(|one| *one == word)
+    }
+
     /// The decision a layer's listing makes: Open, Persona, or Allowed at its scope.
     pub fn by(by: By) -> Self {
         Self::of(by)
@@ -137,6 +148,21 @@ pub struct Reach {
     /// This machine, a link-local address and a metadata service stay refused, and so does a
     /// host policy pins as never allowed.
     anything: bool,
+}
+
+/// **A [`Reach`] written down** (#1999): what the session host starts a chat's proxy from,
+/// read back with [`Reach::from_written`] into the same reach, so the proxy it starts decides
+/// as one started in the window would.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// Each host listed, with its layer, in the order the layers decide.
+    pub listed: Vec<(String, By)>,
+    /// The hosts policy pins as never allowed, each as a host is written.
+    pub never: Vec<String>,
+    /// The ports of this machine withdrawn while the chat runs.
+    pub withdrawn: Vec<u16>,
+    /// The floor: every host carried.
+    pub anything: bool,
 }
 
 /// [`Reach::withdrawn`]: one set, shared by every copy of a reach.
@@ -242,6 +268,35 @@ impl Reach {
             anything,
             ..Self::of(listed)
         }
+    }
+
+    /// This reach written down ([`Written`]), for the session host (#1999).
+    pub fn written(&self) -> Written {
+        Written {
+            listed: self.listed.clone(),
+            never: self.never.iter().map(ToString::to_string).collect(),
+            withdrawn: self.withdrawn.ports().into_iter().collect(),
+            anything: self.anything,
+        }
+    }
+
+    /// **The reach `written` names** (#1999), exactly: its entries in the order written, never
+    /// sorted again, and a withdrawn set of its own. Refused where a host policy pins does not
+    /// read as a host, rather than read without it.
+    pub fn from_written(written: &Written) -> Result<Self, String> {
+        let never = written
+            .never
+            .iter()
+            .map(|typed| Host::parse(typed))
+            .collect::<Result<Vec<Host>, String>>()?;
+        Ok(Self {
+            listed: written.listed.clone(),
+            never,
+            withdrawn: Withdrawn(Arc::new(Mutex::new(
+                written.withdrawn.iter().copied().collect(),
+            ))),
+            anything: written.anything,
+        })
     }
 
     /// `hosts`, every one an Open host.

@@ -33,6 +33,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
+use purlis_core::sandbox::hosts::Host;
+use purlis_core::sandbox::plan::{self, Asking, Hearing, Plan};
+use purlis_core::sandbox::reach::{By, Reach};
+use purlis_core::sandbox::{Confinement, egress};
 use purlis_core::session::Exit;
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::{link, session};
@@ -113,10 +117,11 @@ pub(crate) fn in_the_host() -> Target {
         .enable_all()
         .build()
         .expect("a runtime");
-    let hosting = purlis_host::Hosting::hearing_with(
+    let hosting = purlis_host::Hosting::with(
         purlis_host::FromTheWindow(crate::sessionhost::launched),
         purlis_host::Terminals,
         crate::sessionhost::HookChannels,
+        crate::hostedconfinement::ConfinesHere,
     )
     .saving_with(crate::hostsaving::InTheHost);
     let link = runtime.block_on(async {
@@ -222,6 +227,7 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
         operator_shell: false,
         git_hooks: None,
         handed: Default::default(),
+        confinement: None,
     }
 }
 
@@ -795,6 +801,168 @@ fn a_hook_refuses_a_listener_that_is_not_its_chats_ancestor(target: &Target) {
     target.sessions.close(id).expect("it closes");
 }
 
+// A sandboxed chat's network (#1999): its confinement, started where its chat runs.
+
+/// A chat's plan listing `listed`, as the window compiles one for a harness it wraps, giving it
+/// the services on this machine at `given`.
+fn a_plan(listed: Vec<(String, By)>, given: Vec<u16>) -> Plan {
+    Plan {
+        reach: Reach::of(listed).written(),
+        tunnel_ports: egress::TUNNEL_PORTS.to_vec(),
+        plain_ports: egress::PLAIN_PORTS.to_vec(),
+        any_port: false,
+        beside: plan::Beside::Wrapped,
+        given,
+    }
+}
+
+/// A service on this machine, which answers nothing: what a chat may be given by its port.
+fn a_service() -> (std::net::TcpListener, u16) {
+    let service = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a service");
+    let port = service.local_addr().expect("its port").port();
+    (service, port)
+}
+
+/// The status line a chat's proxy, on its HTTP `port`, answers a tunnel to `target` with.
+fn tunnel_through(port: u16, target: &str) -> String {
+    use std::io::{BufRead, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the proxy");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("a timeout");
+    stream
+        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes())
+        .expect("sent");
+    let mut line = String::new();
+    std::io::BufReader::new(stream)
+        .read_line(&mut line)
+        .expect("a status line");
+    line.trim_end().to_owned()
+}
+
+/// What a chat's proxy told the window, by kind.
+#[derive(Default)]
+struct HeardOfIt {
+    refused: Mutex<Vec<String>>,
+    asked: Mutex<Vec<String>>,
+}
+
+fn hearing(heard: &Arc<HeardOfIt>, asks: bool) -> Hearing {
+    Hearing {
+        refusals: egress::Refusals::telling({
+            let heard = Arc::clone(heard);
+            Arc::new(move |host: &str, port: u16| {
+                heard
+                    .refused
+                    .lock()
+                    .expect("heard")
+                    .push(egress::host_and_port(host, port));
+            })
+        }),
+        asks: asks.then(|| Asking {
+            tell: {
+                let heard = Arc::clone(heard);
+                Arc::new(move |told| {
+                    if let purlis_core::sandbox::asks::Heard::Asked(targets) = told {
+                        heard.asked.lock().expect("heard").extend(targets);
+                    }
+                })
+            },
+            askable: Arc::new(|| true),
+            known: Arc::new(|_| None),
+        }),
+        ..Hearing::default()
+    }
+}
+
+/// A chat that runs in `confinement`, as the window starts one.
+fn in_it(target: &Target, confinement: &Confinement) -> u32 {
+    let mut opening = a_shell("printf 'confined.'; read line");
+    opening
+        .env
+        .push(("HTTPS_PROXY".into(), confinement.proxy_url()));
+    opening.confinement = confinement.held_as().map(str::to_owned);
+    let id = target
+        .sessions
+        .open(None, &opening, &|_| {})
+        .expect("it starts");
+    Pane::on(target, id).shows("confined.");
+    id
+}
+
+fn a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest(target: &Target) {
+    let (_service, port) = a_service();
+    let heard = Arc::new(HeardOfIt::default());
+    let confinement = target
+        .sessions
+        .confine(
+            &a_plan(vec![(format!("127.0.0.1:{port}"), By::You)], vec![port]),
+            hearing(&heard, false),
+        )
+        .expect("confined");
+    let id = in_it(target, &confinement);
+
+    assert_eq!(
+        tunnel_through(confinement.proxy_port(), &format!("127.0.0.1:{port}")),
+        "HTTP/1.1 200 Connection established"
+    );
+    assert_eq!(
+        tunnel_through(confinement.proxy_port(), "refused.invalid:443"),
+        "HTTP/1.1 403 Forbidden"
+    );
+    until("the window hears of the refusal", || {
+        *heard.refused.lock().expect("heard") == ["refused.invalid:443"]
+    });
+    target.sessions.close(id).expect("it closes");
+}
+
+fn a_port_withdrawn_while_a_chat_runs_is_carried_no_longer(target: &Target) {
+    let (_service, port) = a_service();
+    let confinement = target
+        .sessions
+        .confine(
+            &a_plan(vec![(format!("127.0.0.1:{port}"), By::You)], vec![port]),
+            Hearing::default(),
+        )
+        .expect("confined");
+    let id = in_it(target, &confinement);
+
+    confinement.withdraw_port(port).expect("withdrawn");
+
+    assert_eq!(
+        tunnel_through(confinement.proxy_port(), &format!("127.0.0.1:{port}")),
+        "HTTP/1.1 403 Forbidden"
+    );
+    target.sessions.close(id).expect("it closes");
+}
+
+fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
+    let heard = Arc::new(HeardOfIt::default());
+    let confinement = target
+        .sessions
+        .confine(&a_plan(Vec::new(), Vec::new()), hearing(&heard, true))
+        .expect("confined");
+    let id = in_it(target, &confinement);
+    let port = confinement.proxy_port();
+    let held = std::thread::spawn(move || tunnel_through(port, "held.invalid:443"));
+    until("the window is asked", || {
+        *heard.asked.lock().expect("heard") == ["held.invalid:443"]
+    });
+    let board = confinement.asks().expect("its proxy asks live");
+    assert!(board.asks_about(&Host::parse("held.invalid").expect("a host")));
+
+    let retry = board.allow(&Host::parse("held.invalid").expect("a host"), By::Chat);
+
+    // Carried: the proxy tried the host, which never resolves.
+    assert_eq!(held.join().expect("answered"), "HTTP/1.1 502 Bad Gateway");
+    assert!(retry.is_empty(), "nothing had given up");
+    assert_eq!(
+        board.allowed_live(),
+        [("held.invalid".to_owned(), By::Chat)]
+    );
+    target.sessions.close(id).expect("it closes");
+}
+
 /// Each behaviour, as a test of its own on every target.
 macro_rules! on_every_target {
     ($($behaviour:ident),* $(,)?) => {
@@ -827,6 +995,9 @@ on_every_target!(
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
+    a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
+    a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
     exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped,
 );

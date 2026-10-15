@@ -308,3 +308,61 @@ fn a_withdrawn_port_is_carried_no_longer_by_name_or_by_address() {
         assert_eq!(one.address_of(super::localport::THIS_MAC, 50795), None);
     }
 }
+
+/// #1999: a reach written down for the session host and read back there is the same reach,
+/// layer by layer and in the same order, with what policy pins, the ports withdrawn and the
+/// floor, so the proxy the host starts decides exactly as one started here would.
+#[test]
+fn a_reach_written_for_the_session_host_reads_back_the_same() {
+    use super::hosts::Host;
+    let reach = reach()
+        .never(vec![Host::parse("blocked.example.com").expect("a host")])
+        .and([("127.0.0.1:50795".to_owned(), By::You)]);
+    reach.withdraw(50795);
+
+    let read = Reach::from_written(&reach.written()).expect("a reach");
+
+    assert_eq!(read, reach);
+    assert_eq!(read.hosts(), reach.hosts());
+    assert_eq!(
+        read.decide("127.0.0.1", 50795, HTTPS, &[]),
+        Decision::Refused(Refused::LocalAddress),
+        "the withdrawn port stays withdrawn"
+    );
+    assert_eq!(
+        read.decide("blocked.example.com", 443, HTTPS, &[]),
+        Decision::Refused(Refused::Policy)
+    );
+    let floor = Reach::anything();
+    assert_eq!(
+        Reach::from_written(&floor.written()).expect("the floor"),
+        floor
+    );
+}
+
+/// #1999: a host policy pins that does not read back as a host is refused, never dropped.
+#[test]
+fn a_written_reach_whose_pinned_host_does_not_read_is_refused() {
+    let mut written = reach().written();
+    written.never.push("not a host".to_owned());
+
+    assert!(Reach::from_written(&written).is_err());
+}
+
+/// #1999: a decision's word told from the session host reads back as the record keeps it, and
+/// a word no decision says is not one.
+#[test]
+fn a_decisions_word_reads_back_and_no_other_does() {
+    for decision in [
+        Decision::Open,
+        Decision::Persona,
+        Decision::Allowed(By::You),
+        Decision::Allowed(By::Chat),
+        Decision::Allowed(By::Project),
+        Decision::Ask,
+        Decision::Refused(Refused::Policy),
+    ] {
+        assert_eq!(Decision::word_of(decision.word()), Some(decision.word()));
+    }
+    assert_eq!(Decision::word_of("everything"), None);
+}

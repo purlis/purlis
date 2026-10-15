@@ -203,6 +203,7 @@ fn the_windows_start(number: Option<u32>) -> StartProgram {
                 socket: "/the/window/s/own.sock".into(),
                 token: "the-window-s-token".into(),
             }),
+            confinement: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

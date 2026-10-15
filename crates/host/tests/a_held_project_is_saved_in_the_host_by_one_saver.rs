@@ -204,6 +204,7 @@ async fn a_program_that_ends_in_the_project_tells_its_saver_and_the_saver_sees_w
         harness: None,
         git_hooks: None,
         reporting: None,
+        confinement: None,
     };
     let program = client
         .start_program_told(StartProgram {

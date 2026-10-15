@@ -45,9 +45,29 @@
 {"call":{"id":24,"command":"reply_heard","project":"01J9PRJCT00000000000000000","heard":12,"reply":"taken"}}
 {"reply":{"re":22,"ok":{"dealt":{"number":7}}}}
 {"pushed":{"heard":{"project":"01J9PRJCT00000000000000000","heard":12,"line":{"report":{"chat":7,"event":"stop"}}}}}
-{"call":{"id":22,"command":"start_saving","project":"01J9PRJCT00000000000000000"}}
-{"call":{"id":23,"command":"stop_saving","project":"01J9PRJCT00000000000000000"}}
-{"call":{"id":24,"command":"fetch_project","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":25,"command":"confine","confinement":"01J9CNFNMNT0000000000000000","project":"01J9PRJCT00000000000000000","plan":{"listed":[{"host":"api.anthropic.com","layer":"open"},{"host":"grafana.example.com","layer":"persona"},{"host":"127.0.0.1:5432","layer":"you"},{"host":"one-off.example.com:8443","layer":"chat"},{"host":"pypi.example.com","layer":"project"}],"never":["blocked.example.com"],"withdrawn":[6443],"tunnel_ports":[443],"plain_ports":[80],"any_port":true,"beside":{"kind":"proxy_only","routes":"/home/me/project/.purlis/app/ssh"},"given":[5432]},"asks":true}}
+{"call":{"id":26,"command":"confine","confinement":"01J9CNFNMNT0000000000000001","project":"01J9PRJCT00000000000000000","plan":{"anything":true,"tunnel_ports":[443],"plain_ports":[80],"beside":{"kind":"wrapped"}}}}
+{"call":{"id":27,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":9,"launch":{"program":"/usr/bin/sandbox-exec","args":["-f","/tmp/profile.sb","codex"],"harness":"codex","confinement":"01J9CNFNMNT0000000000000001"}}}
+{"call":{"id":28,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"allow","host":"pypi.example.com","layer":"chat"}}
+{"call":{"id":29,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"forget","host":"pypi.example.com","layer":"you"}}
+{"call":{"id":30,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"keep_blocked","host":"tracker.example.com"}}
+{"call":{"id":31,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"withdraw_port","port":5432}}
+{"call":{"id":32,"command":"reach_of","confinement":"01J9CNFNMNT0000000000000000"}}
+{"call":{"id":33,"command":"let_go_of_confinement","confinement":"01J9CNFNMNT0000000000000000"}}
+{"reply":{"re":25,"ok":{"confined":{"confinement":"01J9CNFNMNT0000000000000000","http":50811,"socks":50812,"routed":"/home/me/project/.purlis/app/ssh/chat-4242-a1b2c3","ssh":"/home/me/project/.purlis/app/ssh/chat-4242-a1b2c3/purlis-ssh"}}}}
+{"reply":{"re":26,"ok":{"confined":{"confinement":"01J9CNFNMNT0000000000000001","http":50813,"socks":50814,"tmp":"/tmp/charter-chat-x1y2z3","ssh":"/tmp/charter-chat-x1y2z3/purlis-ssh"}}}}
+{"reply":{"re":28,"ok":{"reach_changed":{"retry":["pypi.example.com:443"]}}}}
+{"reply":{"re":32,"ok":{"reach":{"asked":["tracker.example.com:443"],"allowed_live":[{"host":"pypi.example.com","layer":"chat"}]}}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"refused","host":"tracker.example.com","port":443}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"refused_local","host":"169.254.169.254","port":80}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"refused_more","count":3}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"reached","target":"api.anthropic.com:443","by":"open","times":12}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"reached","by":"you","times":40}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"asked","targets":["tracker.example.com:443","cdn.tracker.example.com:443"]}}}
+{"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"timed_out","target":"tracker.example.com:443"}}}
+{"call":{"id":34,"command":"start_saving","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":35,"command":"stop_saving","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":36,"command":"fetch_project","project":"01J9PRJCT00000000000000000"}}
 {"pushed":{"saving":{"project":"01J9PRJCT00000000000000000","saved":true,"moved_tree":false}}}
-{"call":{"id":25,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
+{"call":{"id":37,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
 {"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}

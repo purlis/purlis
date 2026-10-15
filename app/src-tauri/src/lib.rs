@@ -70,6 +70,8 @@ mod machineprofiles;
 #[cfg(all(test, unix))]
 mod behaviour;
 #[cfg(unix)]
+mod hostedconfinement;
+#[cfg(unix)]
 mod hostedsessions;
 #[cfg(unix)]
 mod hostsaving;
@@ -2922,10 +2924,11 @@ fn refuse_beside_the_old_app() {
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
-        purlis_host::Hosting::hearing_with(
+        purlis_host::Hosting::with(
             purlis_host::FromTheWindow(sessionhost::launched),
             purlis_host::Terminals,
             sessionhost::HookChannels,
+            hostedconfinement::ConfinesHere,
         )
         .saving_with(hostsaving::InTheHost)
     })

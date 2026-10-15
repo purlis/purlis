@@ -2264,6 +2264,9 @@ fn revoke(
             level,
         },
     )?;
+    // A chat whose proxy in the session host could not be told, said once the grant is gone
+    // (#1999): its proxy was ended rather than left carrying the port.
+    let mut not_withdrawn: Option<String> = None;
     match (&grant, chat) {
         (_, Some(chat)) => {
             chats.revoke(chat, &grant);
@@ -2275,7 +2278,7 @@ fn revoke(
             if let What::Port(port) = &grant
                 && !sandbox::local::granted_ports(root).contains(port)
             {
-                chats.withdraw_port(Some(chat), *port);
+                not_withdrawn = chats.withdraw_port(Some(chat), *port).err();
             }
         }
         (What::Host(host), None) => {
@@ -2311,13 +2314,16 @@ fn revoke(
                 .map_err(|why| format!("purlis could not remove port {port}: {why}"))?;
             // Carried by no open chat's proxy any more but one that holds it for itself
             // (qw384b).
-            chats.withdraw_port(None, *port);
+            not_withdrawn = chats.withdraw_port(None, *port).err();
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {
         tracing::warn!("purlis: a revoked grant's record was left behind ({why})");
     }
-    Ok(())
+    match not_withdrawn {
+        Some(why) => Err(why),
+        None => Ok(()),
+    }
 }
 
 /// **Revokes `persona`'s use of `vault`** in the project at `root` (#1430): checked to be

@@ -85,11 +85,19 @@ use crate::view::{Limits, Views};
 /// number (`deal`, answered `dealt`, and `dealt_already` for numbers that went out before), and
 /// each line a held project's hooks write is pushed to the window that holds it (`heard`) and
 /// answered from there (`reply_heard`).
-/// 1.4 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
+///
+/// 1.4 added a chat's confinement in the host (#1999): `confine` starts a chat's proxy, and
+/// what runs beside it, from the window's plan, answered `confined` with where it is; a start's
+/// launch names the confinement it runs in; `change_reach` carries the window's answers to its
+/// live asks and a port withdrawn, answered `reach_changed`; `reach_of` reads its board,
+/// answered `reach`; `let_go_of_confinement` ends one; and the pushed notice `sandbox` tells
+/// the window what each proxy refused, carried and asks about.
+///
+/// 1.7 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
 /// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
 /// project's auto-save did; and the host's question to the window of who is mid-turn in a
 /// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
-pub const VERSION: Version = Version { major: 1, minor: 4 };
+pub const VERSION: Version = Version { major: 1, minor: 7 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -225,17 +233,17 @@ pub enum Command {
         reply: serde_json::Value,
     },
     /// Save a held project from now on: the host runs its watcher and its auto-save, as the
-    /// project's settings say, until [`Command::StopSaving`] or the host ends (1.4). A link
+    /// project's settings say, until [`Command::StopSaving`] or the host ends (1.7). A link
     /// that ends does not stop it, so the project goes on being saved while the window is
     /// gone. A project the host already saves is not saved twice. Each look that did something
     /// is pushed as [`Pushed::Saving`].
     StartSaving { project: String },
-    /// Stop saving a project, and answer once its auto-save has been told to stop (1.4).
+    /// Stop saving a project, and answer once its auto-save has been told to stop (1.7).
     StopSaving { project: String },
     /// Fetch what came in for a project the host saves, unless it fetched a moment ago: the
-    /// window came back into focus (1.4).
+    /// window came back into focus (1.7).
     FetchProject { project: String },
-    /// The window's answer to [`Pushed::WhoIsMidTurn`] (1.4): the chats mid-turn that could be
+    /// The window's answer to [`Pushed::WhoIsMidTurn`] (1.7): the chats mid-turn that could be
     /// writing the workspace, by the names the window shows, or none said where the window
     /// cannot tell, which the host takes as every chat it runs there.
     MidTurn {
@@ -243,6 +251,156 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         chats: Option<Vec<String>>,
     },
+    /// Start a chat's confinement, its proxy and what runs beside it, from the window's plan
+    /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
+    /// Boxed: a plan lists every host a chat reaches.
+    Confine(Box<Confine>),
+    /// End a confinement, whether or not a program runs in it (1.4).
+    LetGoOfConfinement { confinement: String },
+    /// The window's answer to a confinement's live ask, or a port withdrawn from it (1.4):
+    /// answered [`Answer::ReachChanged`].
+    ChangeReach {
+        confinement: String,
+        #[serde(flatten)]
+        change: ReachChange,
+    },
+    /// What a confinement's board of live asks holds now (1.4): answered [`Answer::Reach`].
+    ReachOf { confinement: String },
+}
+
+/// What a [`Command::Confine`] asks for (1.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Confine {
+    /// The id the window gives it, which a start's [`Launch::confinement`] names.
+    pub confinement: String,
+    /// The project it is for, by its stable id, which the host holds.
+    pub project: String,
+    /// What its proxy carries and what runs beside it.
+    pub plan: ConfinePlan,
+    /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub asks: bool,
+}
+
+/// A chat's confinement as the window planned it (1.4): its proxy's reach and ports, and what
+/// runs beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfinePlan {
+    /// Each host its sandbox lists, with the layer that lists it, in the order they decide.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listed: Vec<Listed>,
+    /// The hosts policy pins as never allowed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub never: Vec<String>,
+    /// The ports of the machine withdrawn while the chat runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withdrawn: Vec<u16>,
+    /// Every host is carried: the floor.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub anything: bool,
+    /// The ports a tunnel, and a plain request, is carried to for a host listed without one.
+    pub tunnel_ports: Vec<u16>,
+    pub plain_ports: Vec<u16>,
+    /// A host listed without a port is carried on every port.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub any_port: bool,
+    /// What runs beside the proxy.
+    pub beside: Beside,
+    /// The services on the machine the chat was given, each by its port.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub given: Vec<u16>,
+}
+
+/// A host a confinement's proxy carries, and the layer that lists it (1.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Listed {
+    pub host: String,
+    pub layer: Layer,
+}
+
+/// The layer that lists a host (1.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Layer {
+    Open,
+    Persona,
+    You,
+    Chat,
+    Project,
+}
+
+/// What runs beside a confinement's proxy (1.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Beside {
+    /// A temp folder of the chat's own, with its ssh route.
+    Wrapped,
+    /// Nothing but its ssh route, in a folder of its own inside `routes`.
+    ProxyOnly { routes: String },
+}
+
+/// The window's change to a confinement's reach (1.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "change", rename_all = "snake_case")]
+pub enum ReachChange {
+    /// The person allowed `host` at `layer`.
+    Allow { host: String, layer: Layer },
+    /// An Allow of `host` at `layer` was removed.
+    Forget { host: String, layer: Layer },
+    /// The person kept `host` blocked.
+    KeepBlocked { host: String },
+    /// `port` of the machine is carried no longer.
+    WithdrawPort { port: u16 },
+}
+
+/// Where a confinement is, as the host started it (1.4): its proxy's ports on the loopback
+/// interface, and the folders beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Confined {
+    pub confinement: String,
+    pub http: u16,
+    pub socks: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routed: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<String>,
+}
+
+/// What a confinement's board of live asks holds now (1.4).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReachNow {
+    /// The hosts and ports the person is being asked about.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asked: Vec<String>,
+    /// The hosts allowed live, each with its layer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_live: Vec<Listed>,
+}
+
+/// What a confinement's proxy did, as the host tells the window (1.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "told", rename_all = "snake_case")]
+pub enum SandboxTold {
+    /// It refused `host` on `port`, which nothing lists.
+    Refused { host: String, port: u16 },
+    /// It refused `host` on `port` as an address of the machine, or a link-local one.
+    RefusedLocal { host: String, port: u16 },
+    /// It has refused `count` hosts past the ones it names.
+    RefusedMore { count: u64 },
+    /// It carried `times` connections to `target` (none for the hosts past those it tells
+    /// apart), let through by `by`: the decision's word.
+    Reached {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+        by: String,
+        times: u64,
+    },
+    /// Ask the person about `targets`, each a host and port: one ask.
+    Asked { targets: Vec<String> },
+    /// A connection to `target` was held and nobody answered.
+    TimedOut { target: String },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -368,6 +526,10 @@ pub struct Launch {
     /// Where its hooks report, and the chat's token they carry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reporting: Option<Reporting>,
+    /// The confinement it runs in ([`Command::Confine`]), which then lives as long as the
+    /// program does, whether or not the link that made it does (1.4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confinement: Option<String>,
 }
 
 /// Where a chat's hooks report, and the token they carry (1.2).
@@ -433,6 +595,13 @@ pub enum Answer {
     Readiness(Readiness),
     /// The number dealt: [`Command::Deal`] (1.3).
     Dealt { number: u32 },
+    /// Where the confinement it started is: [`Command::Confine`] (1.4).
+    Confined(Confined),
+    /// The hosts held connections gave up on before an Allow, which the chat is told to retry:
+    /// [`Command::ChangeReach`] (1.4).
+    ReachChanged { retry: Vec<String> },
+    /// What a confinement's board holds now: [`Command::ReachOf`] (1.4).
+    Reach(ReachNow),
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -570,7 +739,14 @@ pub enum Pushed {
         heard: u64,
         line: serde_json::Value,
     },
-    /// One look of a project's auto-save did something (1.4): it `saved` the project, or only
+    /// What a confinement's proxy did (1.4). Pushed only to a link that may confine
+    /// ([`crate::grants::Power::Confine`]).
+    Sandbox {
+        confinement: String,
+        #[serde(flatten)]
+        told: SandboxTold,
+    },
+    /// One look of a project's auto-save did something (1.7): it `saved` the project, or only
     /// fetched, pushed or looked at a request; `moved_tree` when what it did moved files in the
     /// tree (a fast-forward, a save's rebase), so a client reads everything again, and only the
     /// git standing otherwise.
@@ -580,7 +756,7 @@ pub enum Pushed {
         moved_tree: bool,
     },
     /// The host asks the window which chats are mid-turn in a workspace of a project it saves
-    /// (1.4): a repo's auto-save waits for them (ADR 0051), and the turns are on the window's
+    /// (1.7): a repo's auto-save waits for them (ADR 0051), and the turns are on the window's
     /// board. Pushed to the window's links only; answered with [`Command::MidTurn`].
     WhoIsMidTurn {
         question: u64,
@@ -610,6 +786,10 @@ wire_words!(Command {
     Deal => "deal",
     DealtAlready => "dealt_already",
     ReplyHeard => "reply_heard",
+    Confine => "confine",
+    LetGoOfConfinement => "let_go_of_confinement",
+    ChangeReach => "change_reach",
+    ReachOf => "reach_of",
     StartSaving => "start_saving",
     StopSaving => "stop_saving",
     FetchProject => "fetch_project",
@@ -641,6 +821,10 @@ impl Command {
             | Command::FetchProject { .. }
             | Command::MidTurn { .. } => Power::Hold,
             Command::ReplyHeard { .. } => Power::Heard,
+            Command::Confine(_)
+            | Command::LetGoOfConfinement { .. }
+            | Command::ChangeReach { .. }
+            | Command::ReachOf { .. } => Power::Confine,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -653,6 +837,9 @@ wire_words!(Answer {
     ProgramStarted => "program_started",
     Readiness => "readiness",
     Dealt => "dealt",
+    Confined => "confined",
+    ReachChanged => "reach_changed",
+    Reach => "reach",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -675,6 +862,7 @@ wire_words!(Pushed {
     Ended => "ended",
     ViewEnded => "view_ended",
     Heard => "heard",
+    Sandbox => "sandbox",
     Saving => "saving",
     WhoIsMidTurn => "who_is_mid_turn",
 });
@@ -738,7 +926,14 @@ pub struct Peer {
     version: Version,
     opener: Opener,
     views: Views,
+    /// This link's number in this process: never another link's, live or ended.
+    link: u64,
+    /// The link has ended ([`Host::link_ended`]).
+    ended: std::sync::atomic::AtomicBool,
 }
+
+/// The number the next link [`serve`] serves is given.
+static NEXT_LINK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Peer {
     /// The scope the link was admitted as ([`crate::auth`]).
@@ -749,6 +944,18 @@ impl Peer {
     /// The version the link agreed on.
     pub fn version(&self) -> Version {
         self.version
+    }
+
+    /// **Which link this is**: a number no other link served in this process has, live or
+    /// ended, so a host tells links apart by it, never by where a peer is in memory.
+    pub fn link(&self) -> u64 {
+        self.link
+    }
+
+    /// Whether the link has ended. Set before [`Host::link_ended`] is called, so a call the host
+    /// finishes after that sees it, and undoes what it made for a link nobody holds.
+    pub fn has_ended(&self) -> bool {
+        self.ended.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// The link's views, of any kind: where an attach opens one ([`Views::open`]) and a detach
@@ -854,6 +1061,8 @@ pub async fn serve<H: Host>(
         version: link.version(),
         opener: link.opener(),
         views: Views::new(link.opener(), Limits::default()),
+        link: NEXT_LINK.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        ended: std::sync::atomic::AtomicBool::new(false),
     });
     let host = Arc::new(host);
     let mut calls = Calls::default();
@@ -861,6 +1070,7 @@ pub async fn serve<H: Host>(
     // The client is gone: nobody watches its views, so they close now, not once a view's
     // queue has filled; then the host is told.
     peer.views().end();
+    peer.ended.store(true, std::sync::atomic::Ordering::SeqCst);
     host.link_ended(&peer).await;
     // Nobody is left to hear these answers; the commands are carried out all the same.
     while calls.next().await.is_some() {}
@@ -1019,7 +1229,9 @@ enum Lane {
     Subscription,
     /// The replies to one line a held project's hooks wrote (1.3).
     Heard(u64),
-    /// The commands about one project's saving (1.4): a stop is never overtaken by the start
+    /// The commands about one confinement (1.4).
+    Confinement(String),
+    /// The commands about one project's saving (1.7): a stop is never overtaken by the start
     /// before it.
     Saving(String),
 }
@@ -1047,6 +1259,11 @@ impl Lane {
             | Command::Stop { chat: program }
             | Command::Close { program }
             | Command::Readiness { program } => Some(Lane::Program(program.clone())),
+            // A confinement's own commands keep their order: an Allow, then what it holds.
+            Command::Confine(confine) => Some(Lane::Confinement(confine.confinement.clone())),
+            Command::LetGoOfConfinement { confinement }
+            | Command::ChangeReach { confinement, .. }
+            | Command::ReachOf { confinement } => Some(Lane::Confinement(confinement.clone())),
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
             // The replies to one line keep their order: a command's frames, one after another.
             Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
@@ -1428,7 +1645,7 @@ impl Client {
         .await
     }
 
-    /// Save `project` from now on, in the host (1.4).
+    /// Save `project` from now on, in the host (1.7).
     pub async fn start_saving(&self, project: &str) -> Result<(), CallError> {
         self.done(Command::StartSaving {
             project: project.into(),
@@ -1436,7 +1653,7 @@ impl Client {
         .await
     }
 
-    /// Stop saving `project` in the host (1.4).
+    /// Stop saving `project` in the host (1.7).
     pub async fn stop_saving(&self, project: &str) -> Result<(), CallError> {
         self.done(Command::StopSaving {
             project: project.into(),
@@ -1444,7 +1661,7 @@ impl Client {
         .await
     }
 
-    /// Fetch what came in for `project`, which the host saves (1.4).
+    /// Fetch what came in for `project`, which the host saves (1.7).
     pub async fn fetch_project(&self, project: &str) -> Result<(), CallError> {
         self.done(Command::FetchProject {
             project: project.into(),
@@ -1628,6 +1845,7 @@ impl Subscribed {
                 Pushed::Ended { .. }
                 | Pushed::ViewEnded { .. }
                 | Pushed::Heard { .. }
+                | Pushed::Sandbox { .. }
                 | Pushed::Saving { .. }
                 | Pushed::WhoIsMidTurn { .. } => {}
             };

@@ -73,6 +73,10 @@ pub struct Opening {
     /// file or log, and its `Debug` names the variables alone. Nothing for every other chat, a
     /// shell tab's among them, and never sent over the link to the session host.
     pub handed: purlis_core::profilesignin::Handed,
+    /// The confinement the chat runs in, where it is held outside this process (#1999): the
+    /// session host's, by the id [`SessionHost::confine`] gave it. None for a chat without
+    /// one, or whose proxy runs in the window.
+    pub confinement: Option<String>,
 }
 
 /// Where a view's text goes. It is called on the view's own thread, one batch at a time.
@@ -205,6 +209,19 @@ pub trait SessionHost: Send + Sync {
     /// before the quit is not in the record at all, and its `.charter/sessions/<n>.workspace`
     /// and `<n>.lock` are still on disk for the 30 days `wscmd::select`'s prune leaves them.
     fn already_dealt(&self, dealt: u32);
+
+    /// **Starts a chat's confinement from `plan`**, its egress proxy and what runs beside it,
+    /// where this host runs its chats (#1999), with `hearing` told what the proxy does. In the
+    /// window's own process it starts here; the session host starts it there, from the same
+    /// plan with the same code, and holds it for as long as the chat runs. A start that runs in
+    /// it names it ([`Opening::confinement`]).
+    fn confine(
+        &self,
+        plan: &purlis_core::sandbox::plan::Plan,
+        hearing: purlis_core::sandbox::plan::Hearing,
+    ) -> Result<purlis_core::sandbox::Confinement, String> {
+        plan.start(hearing.here()).map_err(|why| why.to_string())
+    }
 
     /// The socket the sessions' hooks report on, where this host listens on one: a sandbox
     /// charter wraps a chat in lets the chat reach it ([`purlis_core::sandbox::At`]).

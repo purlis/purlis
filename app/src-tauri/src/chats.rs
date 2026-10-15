@@ -1558,8 +1558,10 @@ impl Chats {
     /// **Withdraws `port` of this Mac from running chats' proxies** (qw384b): its grant was
     /// removed, and a chat's proxy carries it no longer, whatever name it is reached by. `chat`
     /// names the one chat it was removed for; none, every open chat but one that holds the port
-    /// for itself. `chat` is the chat's id. The chats it was withdrawn from, by number.
-    pub fn withdraw_port(&self, chat: Option<&str>, port: u16) -> Vec<u32> {
+    /// for itself. `chat` is the chat's id. The chats it was withdrawn from, by number; or, where
+    /// a chat's proxy in the session host could not be told (#1999), what was said of each, once
+    /// every chat was tried. Such a chat's proxy was ended rather than left carrying the port.
+    pub fn withdraw_port(&self, chat: Option<&str>, port: u16) -> Result<Vec<u32>, String> {
         let what = purlis_core::sandbox::grant::What::Port(port);
         let holding: Vec<String> = lock(&self.grants)
             .iter()
@@ -1567,6 +1569,7 @@ impl Chats {
             .map(|(id, _)| id.clone())
             .collect();
         let open = lock(&self.open);
+        let mut failed: Vec<String> = Vec::new();
         let mut withdrawn: Vec<u32> = open
             .iter()
             .filter(|(_, running)| match chat {
@@ -1579,12 +1582,21 @@ impl Chats {
                     .is_some_and(|id| holding.contains(id)),
             })
             .filter_map(|(number, running)| {
-                running.confinement.as_ref()?.withdraw_port(port);
-                Some(*number)
+                match running.confinement.as_ref()?.withdraw_port(port) {
+                    Ok(()) => Some(*number),
+                    Err(why) => {
+                        failed.push(format!("Chat {number}: {why}"));
+                        None
+                    }
+                }
             })
             .collect();
         withdrawn.sort_unstable();
-        withdrawn
+        if failed.is_empty() {
+            Ok(withdrawn)
+        } else {
+            Err(failed.join(" "))
+        }
     }
 
     /// Owes chat `session` a restart on its conversation that tells it `told` (#1342): a grant
@@ -1629,7 +1641,7 @@ impl Chats {
 
     /// Chat `session`'s board of live asks (#1666), where its proxy holds a connection while
     /// the person is asked.
-    pub fn board_of(&self, session: u32) -> Option<Arc<purlis_core::sandbox::asks::Asks>> {
+    pub fn board_of(&self, session: u32) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
         lock(&self.open)
             .get(&session)?
             .confinement
@@ -1660,7 +1672,7 @@ impl Chats {
         level: purlis_core::sandbox::grant::Level,
     ) -> Live {
         use purlis_core::sandbox::grant::Level;
-        let boards: Vec<(u32, Arc<purlis_core::sandbox::asks::Asks>)> = {
+        let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
             let open = lock(&self.open);
             open.iter()
                 .filter(|(number, _)| level != Level::Chat || Some(**number) == session)
@@ -1700,7 +1712,7 @@ impl Chats {
         host: &purlis_core::sandbox::hosts::Host,
         level: purlis_core::sandbox::grant::Level,
     ) {
-        let boards: Vec<Arc<purlis_core::sandbox::asks::Asks>> = lock(&self.open)
+        let boards: Vec<Arc<dyn purlis_core::sandbox::Board>> = lock(&self.open)
             .values()
             .filter(|running| chat.is_none() || running.chat.identity.id.as_deref() == chat)
             .filter_map(|running| running.confinement.as_ref()?.asks().cloned())
@@ -2447,11 +2459,7 @@ impl Chats {
         let whose = Arc::new(std::sync::atomic::AtomicU32::new(0));
         // Each chat its own pair of ports (#1664): a connection's chat is the proxy it came in
         // on, and what it carried is told under that chat, never under anything it said.
-        let refusals = refused_by_the_proxy(Arc::clone(&self.refused), Arc::clone(&whose), harness)
-            .telling_more(more_refused_by_the_proxy(
-                Arc::clone(&self.refused_more),
-                Arc::clone(&whose),
-            ));
+        let refusals = refused_by_the_proxy(Arc::clone(&self.refused), Arc::clone(&whose), harness);
         // What its proxy refused before the chat had its number is told once it has (#1683).
         let untold = refusals.clone();
         let who = ReachedAs {
@@ -2477,17 +2485,34 @@ impl Chats {
                     self.project.clone(),
                 )
             });
-        let mut confinement = match sandbox {
-            Some(applied) => applied.confine_asking(refusals, Some(reached), asks).map_err(|err| {
-                purlis_core::sandbox::under_policy(
-                    &purlis_core::sandbox::policy::Locks::of(&self.project),
-                    format!(
-                        "{}, and purlis could not start what the sandbox needs beside this chat \
-                         ({err}), so nothing was started.",
-                        purlis_core::sandbox::LEAD
-                    ),
-                )
-            })?,
+        // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
+        // in the session host, which holds it for as long as the chat runs (#1999).
+        let mut confinement = match sandbox.and_then(purlis_core::sandbox::Applied::plan) {
+            Some(plan) => Some(
+                self.sessions
+                    .confine(
+                        &plan,
+                        purlis_core::sandbox::plan::Hearing {
+                            refusals,
+                            more: Some(more_refused_by_the_proxy(
+                                Arc::clone(&self.refused_more),
+                                Arc::clone(&whose),
+                            )),
+                            reached: Some(reached),
+                            asks,
+                        },
+                    )
+                    .map_err(|err| {
+                        purlis_core::sandbox::under_policy(
+                            &purlis_core::sandbox::policy::Locks::of(&self.project),
+                            format!(
+                                "{}, and purlis could not start what the sandbox needs beside \
+                                 this chat ({err}), so nothing was started.",
+                                purlis_core::sandbox::LEAD
+                            ),
+                        )
+                    })?,
+            ),
             None => None,
         };
         // Under a sandbox, the sandbox decides the line: a flag of the harness's own in the
@@ -2587,6 +2612,10 @@ impl Chats {
                     operator_shell,
                     git_hooks: self.git_hooks_for(harness),
                     handed,
+                    confinement: confinement
+                        .as_ref()
+                        .and_then(purlis_core::sandbox::Confinement::held_as)
+                        .map(str::to_owned),
                 },
                 &|session| {
                     announced.store(session, std::sync::atomic::Ordering::SeqCst);
@@ -4576,8 +4605,8 @@ struct Asking {
 ///
 /// Every answer comes from the window ([`Chats::allow_live`], [`Chats::keep_blocked_live`]);
 /// nothing a chat sends reaches the board.
-fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox::asks::Asks> {
-    use purlis_core::sandbox::asks::{Asks, Heard};
+fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::plan::Asking {
+    use purlis_core::sandbox::asks::Heard;
     use purlis_core::sandboxblock::{Block, Kind, Operation};
     let Asking {
         hear,
@@ -4594,7 +4623,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
             whose.load(std::sync::atomic::Ordering::SeqCst) != 0 && lock(&hear).is_some()
         })
     };
-    let board = Asks::new(Arc::new(move |heard: Heard| {
+    let tell = Arc::new(move |heard: Heard| {
         let chat = whose.load(std::sync::atomic::Ordering::SeqCst);
         if chat == 0 {
             return;
@@ -4652,11 +4681,15 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
                 record(&target, purlis_core::sandboxblock::record::TIMED_OUT);
             }
         }
-    }));
-    Arc::new(board.asking_while(askable).knowing(Arc::new(move |host| {
-        purlis_core::sandbox::grant::allowed_already(&root, host)
-            .map(purlis_core::sandbox::reach::By::from)
-    })))
+    });
+    purlis_core::sandbox::plan::Asking {
+        tell,
+        askable,
+        known: Arc::new(move |host| {
+            purlis_core::sandbox::grant::allowed_already(&root, host)
+                .map(purlis_core::sandbox::reach::By::from)
+        }),
+    }
 }
 
 /// Holds `target`, a host and port chat `chat`'s proxy asks about, as the block it is for the
@@ -4916,7 +4949,8 @@ pub(crate) mod tests {
                 moved: Arc::new(Mutex::new(None)),
             },
             std::env::temp_dir().join("purlis-no-such-project-1709"),
-        );
+        )
+        .board();
         let quick = |host: &str| {
             let started = std::time::Instant::now();
             let answer = board.hold(host, 443, &[443]);
@@ -4967,7 +5001,8 @@ pub(crate) mod tests {
                 moved,
             },
             std::env::temp_dir().join("purlis-no-such-project-1709-2"),
-        );
+        )
+        .board();
         let held = {
             let board = Arc::clone(&board);
             std::thread::spawn(move || board.hold("API.example.com", 443, &[443]))
@@ -5012,7 +5047,8 @@ pub(crate) mod tests {
                 moved,
             },
             std::env::temp_dir().join("purlis-no-such-project-1709-3"),
-        );
+        )
+        .board();
         let many = purlis_core::sandboxblock::AT_MOST_PER_RESULT + 2;
         let hosts: Vec<String> = (0..many).map(|at| format!("h{at}.example.com")).collect();
         let held: Vec<_> = hosts
@@ -6408,7 +6444,7 @@ pub(crate) mod tests {
         chats.hold_grant(held, What::Port(50795), 1).expect("held");
         // Removed for every chat of this project on this machine: the chat that holds it for
         // itself keeps it; the other's proxy carries it no longer.
-        assert_eq!(chats.withdraw_port(None, 50795), [other]);
+        assert_eq!(chats.withdraw_port(None, 50795), Ok(vec![other]));
         // Removed for the one chat: withdrawn from it.
         let id = lock(&chats.open)[&held]
             .chat
@@ -6416,7 +6452,7 @@ pub(crate) mod tests {
             .id
             .clone()
             .expect("an id");
-        assert_eq!(chats.withdraw_port(Some(&id), 50795), [held]);
+        assert_eq!(chats.withdraw_port(Some(&id), 50795), Ok(vec![held]));
         chats.close(held).expect("closed");
         chats.close(other).expect("closed");
     }

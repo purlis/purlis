@@ -806,6 +806,16 @@ pub struct SshRoute {
 pub const GIT_SSH_ENV: &str = "GIT_SSH_COMMAND";
 
 impl SshRoute {
+    /// The route written in `dir` already, by whoever started the chat's proxy (#1999).
+    pub fn at(dir: PathBuf) -> Self {
+        Self { dir }
+    }
+
+    /// The folder the route is written in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// The route through SOCKS port `socks`, written in `within`/`purlis-ssh` (made if
     /// missing): its configuration and its `ssh`, each the chat's user's alone.
     pub fn write(within: &Path, socks: u16) -> io::Result<Self> {

@@ -593,6 +593,12 @@ impl Serving {
     }
 }
 
+/// The URL a chat's `HTTPS_PROXY` and `HTTP_PROXY` name a proxy on `port` of the loopback
+/// interface by, wherever the proxy runs (#1999).
+pub fn url_of(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
+}
+
 /// A running proxy, on a pair of ports of the loopback interface: HTTP and SOCKS5. It stops
 /// listening on both when dropped, and tells what its tally still holds; a tunnel already open
 /// runs until either end closes it.
@@ -781,7 +787,7 @@ impl Proxy {
 
     /// The URL a chat's `HTTPS_PROXY` and `HTTP_PROXY` name it by.
     pub fn url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.port())
+        url_of(self.port())
     }
 }
 

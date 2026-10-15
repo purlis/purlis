@@ -11,7 +11,7 @@
 //! window's own process (ADR 0068, Ruled 3).
 //!
 //! **Above the seam nothing changes.** The window composes a chat's start as it always has (its
-//! sandbox and proxy, its hooks, its `PATH`), and hands the host that start as its [`Launch`];
+//! sandbox, its hooks, its `PATH`), and hands the host that start as its [`Launch`];
 //! the host composes the chat's environment from it with the same code the window's own path
 //! runs (`purlis_core::chatspec`), against the environment the window started it with. The host
 //! runs the program in a terminal of its own and the window draws it through a view, types into
@@ -23,6 +23,10 @@
 //! as the window did. Every line it admits comes to the window on the link and is heard with the
 //! window's own hearing ([`crate::hooks::Relayed`]), so the board, Needs you and the asks move
 //! as before; the reply goes back the same way. The token never reaches the window.
+//!
+//! **The host holds each chat's confinement** (#1999, `crate::hostedconfinement`): the window
+//! plans a chat's egress proxy from the sandbox it compiled, and the host starts and holds it,
+//! so it outlives the window's link.
 //!
 //! **One link for every project.** The window's link to its host ([`HostLink`]) carries every
 //! project's chats: their views come on it, word that a program ended, and their hooks' lines.
@@ -170,6 +174,8 @@ struct Shared {
     ends: Mutex<HashMap<String, TellEnd>>,
     /// What hears each held project's hook lines, by the project's stable id (#2000).
     hearing: Mutex<HashMap<String, Arc<Relayed>>>,
+    /// Who is told what each confinement's proxy did, by its id (#1999).
+    sandboxes: Mutex<HashMap<String, Arc<crate::hostedconfinement::Hears>>>,
     /// Who is told what each look of a project's auto-save did, by the project's id (#2002).
     savings: Mutex<HashMap<String, crate::autosave::Told>>,
     /// Who says which chats are mid-turn in a workspace of a project the host saves, by the
@@ -233,7 +239,7 @@ impl HostLink {
     }
 
     /// Send `command` and wait for the host's answer, from any thread.
-    fn call(&self, command: Command) -> Result<Answer, String> {
+    pub(crate) fn call(&self, command: Command) -> Result<Answer, String> {
         self.call_within(command, ANSWER_WITHIN)
     }
 
@@ -254,7 +260,7 @@ impl HostLink {
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.
-    fn send(&self, command: Command) {
+    pub(crate) fn send(&self, command: Command) {
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
             let word = command.word();
@@ -291,6 +297,16 @@ impl HostLink {
         let mut views = lock(&self.shared.views);
         views.drawing.remove(&view);
         views.waiting.remove(&view);
+    }
+
+    /// Tell `hears` what confinement `id`'s proxy does (#1999).
+    fn hear(&self, id: &str, hears: crate::hostedconfinement::Hears) {
+        lock(&self.shared.sandboxes).insert(id.to_owned(), Arc::new(hears));
+    }
+
+    /// Tell nobody what confinement `id`'s proxy does any more.
+    pub(crate) fn unhear(&self, id: &str) {
+        lock(&self.shared.sandboxes).remove(id);
     }
 
     /// Tell `tell` once program `program` ends.
@@ -504,6 +520,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     };
                     let _ = client.call(Command::MidTurn { question, chats }).await;
                 });
+            }
+            Told::Pushed(Pushed::Sandbox { confinement, told }) => {
+                let hears = lock(&shared.sandboxes).get(&confinement).cloned();
+                if let Some(hears) = hears {
+                    hears.told(told);
+                }
             }
             Told::Pushed(Pushed::ViewEnded { view, .. }) => {
                 let drained = lock(&shared.views)
@@ -883,6 +905,7 @@ impl Drop for SavedInTheHost {
 /// The window's own start, as the host is handed it. Where the chat's hooks report is the
 /// host's to say (#2000), so the launch says nothing of it.
 fn launch_of(opening: &Opening, program: String) -> Launch {
+    let confinement = opening.confinement.clone();
     Launch {
         program,
         args: opening.args.clone(),
@@ -897,6 +920,7 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
             .as_ref()
             .map(|hooks| hooks.dir().display().to_string()),
         reporting: None,
+        confinement,
     }
 }
 
@@ -1176,6 +1200,41 @@ impl SessionHost for HostedSessions {
             },
             told,
         ))
+    }
+
+    /// Started in the session host from the same plan, and held there for as long as the chat
+    /// runs: what its proxy does is told to `hearing` as the host pushes it (#1999).
+    fn confine(
+        &self,
+        plan: &purlis_core::sandbox::plan::Plan,
+        hearing: purlis_core::sandbox::plan::Hearing,
+    ) -> Result<purlis_core::sandbox::Confinement, String> {
+        use crate::hostedconfinement::{Hears, HeldInTheHost, placed, wire};
+        let (link, project) = self.link()?;
+        let id = purlis_core::reopen::mint();
+        let asks = hearing.asks.is_some();
+        // Heard before it is asked for, so nothing its proxy does is missed.
+        link.hear(&id, Hears::of(hearing));
+        let answered = link.call(Command::Confine(Box::new(session::Confine {
+            confinement: id.clone(),
+            project,
+            plan: wire(plan),
+            asks,
+        })));
+        let confined = match answered {
+            Ok(Answer::Confined(confined)) => confined,
+            other => {
+                link.unhear(&id);
+                return Err(match other {
+                    Ok(other) => format!("the session host answered a confinement with {other:?}"),
+                    Err(why) => why,
+                });
+            }
+        };
+        // Held from here: dropping it, on any path, lets the host end it.
+        let held = HeldInTheHost::new(id, Arc::clone(&link), asks);
+        purlis_core::sandbox::Confinement::held_elsewhere(placed(&confined), Box::new(held))
+            .map_err(|why| why.to_string())
     }
 }
 
