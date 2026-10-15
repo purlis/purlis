@@ -25,8 +25,9 @@ fn serve(dir: &Path) -> std::process::Command {
         .arg("serve")
         .env("PURLIS_CONFIG_HOME", dir.join("config"))
         .env("XDG_RUNTIME_DIR", dir.join("run"))
-        // A temporary directory the process inherits does not move the socket.
-        .env("TMPDIR", dir.join("elsewhere"))
+        // A temporary directory the process inherits does not move the socket. It is the
+        // test's own folder, which the build's fence already holds the run to.
+        .env("TMPDIR", dir)
         .stdin(Stdio::null());
     serve
 }
@@ -50,7 +51,6 @@ fn purlis_serve_listens_under_the_runtime_directory_and_a_second_one_leaves_it_s
         std::fs::Permissions::from_mode(0o700),
     )
     .unwrap();
-    std::fs::create_dir_all(dir.path().join("elsewhere")).unwrap();
     std::fs::create_dir_all(dir.path().join("config")).unwrap();
 
     let mut first = Ends(
@@ -64,17 +64,25 @@ fn purlis_serve_listens_under_the_runtime_directory_and_a_second_one_leaves_it_s
     BufReader::new(first.0.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
-    assert_eq!(line.trim_end(), "ready", "the host said it was ready");
+    if line.trim_end() != "ready" {
+        let _ = first.0.kill();
+        let mut said = String::new();
+        let _ = std::io::Read::read_to_string(&mut first.0.stderr.take().unwrap(), &mut said);
+        panic!("the host did not say it was ready: {line:?}\n{said}");
+    }
 
     let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
     let socket = dir.path().join("run").join("purlis").join("purlisd.sock");
     assert_eq!(mode(&socket), 0o600, "{}", socket.display());
     assert_eq!(mode(socket.parent().unwrap()), 0o700);
+    let mut beside: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    beside.sort();
     assert_eq!(
-        std::fs::read_dir(dir.path().join("elsewhere"))
-            .unwrap()
-            .count(),
-        0,
+        beside,
+        ["config", "run"],
         "nothing went in the inherited temporary directory"
     );
     let credentials = purlis_core::machine::charterd(&dir.path().join("config"));
