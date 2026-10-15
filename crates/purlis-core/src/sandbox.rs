@@ -5011,8 +5011,8 @@ pub fn decide_granted(
         }
         if !machine.os.has_backend() {
             return Ok(Some(Decided::Floorless(
-                "This chat runs with no sandbox: purlis has no sandbox backend on this system \
-                 yet."
+                "This chat runs with no sandbox: purlis could not apply the floor here, because \
+                 purlis has no sandbox backend on this system."
                     .to_owned(),
             )));
         }
