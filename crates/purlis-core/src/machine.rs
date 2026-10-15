@@ -376,11 +376,10 @@ pub fn dirs_spelled(config_root: &Path) -> Vec<PathBuf> {
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";
 
-/// Where `charterd` keeps `charterd.sock` and one credential file per human client scope
-/// (`<config>/charterd/<scope>`, ADR 0068 §5, plane-format.md): a directory a chat's sandbox
-/// denies reading and writing (ADR 0067 §5, class 3; FD-27). That denial holds the credentials,
-/// not the socket: a connect to a unix socket is network to a sandbox, and the socket is held by
-/// each compiler allowing no unix socket but the hook socket.
+/// Where the session host keeps one credential file per human client scope
+/// (`<config>/purlisd/<scope>`, ADR 0068 §5, plane-format.md): a directory a chat's sandbox
+/// denies reading and writing (ADR 0067 §5, class 3; FD-27). Its socket is under the runtime
+/// directory ([`crate::hostsocket`]).
 ///
 /// `purlisd/` once rename-local has moved it, else `charterd/` (V93a, RN-5).
 pub fn charterd(config_root: &Path) -> PathBuf {

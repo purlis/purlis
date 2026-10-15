@@ -1094,8 +1094,8 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
     assert_eq!(
         paths(&denied, Class::HumanPowers, Access::ReadWrite),
         [
-            // The human client scopes' credentials and `charterd.sock` (FD-27), under every
-            // name the folder and the config home have (RN-5).
+            // The human client scopes' credentials (FD-27), under every name the folder and
+            // the config home have (RN-5).
             std::path::PathBuf::from("/home/op/.config/purlis/purlisd"),
             std::path::PathBuf::from("/home/op/.config/purlis/charterd"),
             std::path::PathBuf::from("/home/op/.config/purlis/forge-etags"),
@@ -1106,6 +1106,11 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::profilestore::DIR),
+            // The session host's socket folder (#1997), where the host itself takes it.
+            crate::hostsocket::socket_for(None)
+                .parent()
+                .expect("a folder")
+                .to_path_buf(),
         ]
     );
 }

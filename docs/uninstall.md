@@ -115,8 +115,9 @@ folder `$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, names. It holds:
   open in which window, your pins, the update channel this machine follows, this device's
   random id, and the week it last fetched the update list;
 - the record of the extensions you turned off on this machine, beside it;
-- `purlisd/` (`charterd/` before the rename): the session host's socket and the credential
-  file of each of its local clients, which mean nothing without the app;
+- `purlisd/` (`charterd/` before the rename): the credential file of each of the session host's
+  local clients, which mean nothing without the app (its socket is in the runtime or temporary
+  folder, `purlis/` or `purlis-<uid>/`, and goes when the host ends);
 - `plugin/`: the plugin copy `purlis plugin install` kept, if step 3 left it;
 - the forges' cached responses, kept to ask them again cheaply;
 - `local-plane/`, only on a machine where an older purlis made the first-run project there and

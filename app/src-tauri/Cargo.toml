@@ -35,6 +35,10 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 purlis-core.workspace = true
+# The session host the window starts with its own binary and is the first client of (#1997).
+purlis-host.workspace = true
+# What the window speaks to its session host: the link, its scope and its credential (#1997).
+purlis-session-protocol = { path = "../../crates/session-protocol" }
 # A file tab's image preview crosses to the window as base64 (FM-2).
 base64 = "0.23"
 # About Charter: the running version's section of the repository's CHANGELOG.md.
@@ -58,7 +62,7 @@ rfd = { version = "0.16", default-features = false }
 # The app moving itself (ADR 0042). Its signature check is an ordinary dependency
 # of the plugin, not a feature, so there is no build of it that skips verification.
 tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["time", "rt"] }
+tokio = { version = "1", features = ["net", "time", "rt"] }
 # What the app notices goes to the diagnostic log `purlis_core::applog` installs (#647): a
 # file that rotates daily, and standard error. The version purlis-core uses.
 tracing = "0.1"

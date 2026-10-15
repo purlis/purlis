@@ -5200,6 +5200,7 @@ dependencies = [
  "dunce",
  "notify",
  "purlis-core",
+ "purlis-host",
  "purlis-session-protocol",
  "rfd",
  "rustix",
@@ -5256,6 +5257,7 @@ dependencies = [
  "clap",
  "flate2",
  "purlis-core",
+ "purlis-host",
  "regex",
  "rmcp",
  "serde_json",
@@ -5328,6 +5330,20 @@ dependencies = [
  "uuid",
  "wiremock",
  "zeroize",
+]
+
+[[package]]
+name = "purlis-host"
+version = "0.4.2"
+dependencies = [
+ "bytes",
+ "nix 0.31.3",
+ "purlis-same-user",
+ "purlis-session-protocol",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

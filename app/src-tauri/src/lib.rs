@@ -106,6 +106,8 @@ mod sandboxing;
 mod savefix;
 mod saving;
 mod searchfiles;
+#[cfg(unix)]
+mod sessionhost;
 mod sessions;
 mod settings;
 mod silence;
@@ -2893,6 +2895,14 @@ fn refuse_beside_the_old_app() {
     std::process::exit(1);
 }
 
+/// When this binary was started again as the window's session host (`sessionhost.rs`), serve
+/// until the window closes its end, and give the code to exit with; otherwise `None`, before
+/// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
+#[cfg(unix)]
+pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
+    purlis_host::serve_for_the_window_if_asked(sessionhost::place)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before anything else, chats included: the host has no controlling terminal, because a
@@ -3138,6 +3148,16 @@ pub fn run() {
             {
                 app.manage(HoldsTheConfigHome(held));
                 holds_the_config_home = true;
+            }
+            // The session host, started as the window's first client once the config home its
+            // credentials go in is where it stays (#1997). Its socket's folder is made here,
+            // before any chat starts, so each chat's sandbox denies a folder that is there; the
+            // host itself starts off the first paint.
+            #[cfg(unix)]
+            {
+                let host = sessionhost::SessionHost::default();
+                host.start();
+                app.manage(host);
             }
             // The person's forge sign-ins, for the window's own forge calls (#1816).
             forgeaccounts::hand_over_sign_ins();
@@ -3674,6 +3694,12 @@ pub fn run() {
                 // that asked (`purlis_core::executor`).
                 app.state::<views::Views>().stop_all();
                 app.state::<heard::Heard>().stop_all();
+                // No chat runs in the session host yet, so it ends at once; it would end all the
+                // same when this process does, since it holds the host's standard input.
+                #[cfg(unix)]
+                if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
+                    host.end();
+                }
                 // Every plane, not "the" plane: each one writes its own record into itself
                 // and ends its own sessions. A failure is not worth refusing to exit over —
                 // the next launch of that plane reads no record and starts empty.

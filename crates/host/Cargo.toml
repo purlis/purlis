@@ -1,0 +1,34 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-host"
+version.workspace = true
+description = "purlis's session host (`purlisd`): its socket, its credentials and the session protocol it serves"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Not purlis-core: the host is linked by the app and by `purlis serve`, and what it adds to
+# either is the session protocol and the same-user checks, nothing of git, HTTP or the keyring
+# (`tests/the_host_links_no_git_http_or_keyring_code.rs`).
+[dependencies]
+thiserror.workspace = true
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "rt", "sync", "time"] }
+
+[target."cfg(unix)".dependencies]
+purlis-session-protocol = { path = "../session-protocol" }
+purlis-same-user.workspace = true
+# `O_NOFOLLOW` for the host's lock: the version and features purlis-same-user already links.
+nix = { version = "0.31", default-features = false, features = ["fs"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true
+bytes = "1"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[lints]
+workspace = true
