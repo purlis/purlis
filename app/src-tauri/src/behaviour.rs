@@ -1198,6 +1198,160 @@ fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart(
     after.sessions.close(id).expect("it closes");
 }
 
+/// A window of the session host's own, over a link a test can cut as a crash of the window
+/// would: its hooks for the project, its chats, and what it is told.
+struct AWindow {
+    sessions: HostedSessions,
+    hooks: Hooks,
+    moved: Arc<Mutex<Vec<Moved>>>,
+    link: Arc<HostLink>,
+    cut: tokio::task::AbortHandle,
+}
+
+impl AWindow {
+    /// A window on `hosting`, for the project at `root`.
+    fn on(hosting: &purlis_host::Hosting, root: &Path, runtime: &tokio::runtime::Runtime) -> Self {
+        let hosting = hosting.clone();
+        let (link, cut) = runtime.block_on(async {
+            let (windows_end, near) = tokio::io::duplex(1 << 20);
+            let (far, hosts_end) = tokio::io::duplex(1 << 20);
+            let cut = tokio::spawn(async move {
+                let (mut near, mut far) = (near, far);
+                let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
+            })
+            .abort_handle();
+            let (client, served) = tokio::join!(
+                link::connect(
+                    windows_end,
+                    session::speaks(),
+                    Scope::LocalUi,
+                    HELD.of(Scope::LocalUi)
+                ),
+                link::serve_any(hosts_end, session::speaks(), &HELD)
+            );
+            tokio::spawn(session::serve(
+                served.expect("the host admits the window"),
+                hosting,
+                None,
+            ));
+            let link = HostLink::over(
+                client.expect("the window is admitted"),
+                tokio::runtime::Handle::current(),
+                || {},
+            )
+            .await
+            .expect("the window speaks to the host");
+            (link, cut)
+        });
+        let link = Arc::new(link);
+        let connection = Arc::new(Connection::default());
+        connection.ready(Arc::clone(&link));
+        let (hooks, moved) = hooks_of(root, true);
+        let sessions = HostedSessions::new(connection, root);
+        sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
+        AWindow {
+            sessions,
+            hooks,
+            moved,
+            link,
+            cut,
+        }
+    }
+
+    /// A chat started as the window starts one: on the board before its program runs.
+    fn starts(&self, script: &str) -> u32 {
+        self.sessions
+            .open(None, &a_shell(script), &|id| {
+                self.hooks.board().opened(id, None, None);
+            })
+            .expect("it starts")
+    }
+
+    /// Whether the window was told chat `id` needs you.
+    fn told_it_needs_you(&self, id: u32) -> bool {
+        self.moved
+            .lock()
+            .expect("the moves")
+            .iter()
+            .any(|moved| moved.session == id && moved.needs_you && moved.queue.contains(&id))
+    }
+}
+
+/// **The host's own target only** (#2194): the window's own process keeps no board that
+/// outlives it. A window whose link is cut as a crash cuts it comes back to the host, which kept
+/// the project's board meanwhile: every chat's state and Needs you are as the host kept them,
+/// a chat that said something while the window was away included.
+#[test]
+fn a_window_killed_and_back_reads_every_chats_state_and_needs_you_as_the_host_kept_them() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let kept = tempfile::tempdir().expect("the host's folder");
+    let hosting = purlis_host::Hosting::kept(
+        kept.path(),
+        purlis_host::FromTheWindow(crate::sessionhost::launched),
+        purlis_host::Terminals,
+        crate::sessionhost::HookChannels,
+        crate::hostedconfinement::ConfinesHere,
+    );
+    let (_project, root) = a_project();
+    let away = tempfile::tempdir().expect("a folder for the chat's signals");
+    let speak = away.path().join("speak");
+    let spoke = away.path().join("spoke");
+
+    let first = AWindow::on(&hosting, &root, &runtime);
+    let quiet = first.starts("printf 'quiet.'; read line");
+    let ended_its_turn = first.starts(&format!(
+        "PURLIS_HARNESS=claude '{}' hook stop </dev/null; printf 'reported.'; read line",
+        purlis()
+    ));
+    let speaks_while_away = first.starts(&format!(
+        "while [ ! -e '{speak}' ]; do sleep 0.1; done; \
+         PURLIS_HARNESS=claude '{purlis}' hook stop </dev/null; touch '{spoke}'; read line",
+        speak = speak.display(),
+        spoke = spoke.display(),
+        purlis = purlis(),
+    ));
+    until("the first window is told the chat needs you", || {
+        first.told_it_needs_you(ended_its_turn)
+    });
+    // Every move the first window made has reached the host: a read of the board follows them.
+    let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
+    first
+        .link
+        .call(session::Command::Board { project })
+        .expect("the host answers its board");
+
+    first.cut.abort();
+    drop(first);
+    std::fs::write(&speak, "").expect("the chat is told to speak");
+    until("the chat spoke with no window there", || spoke.exists());
+
+    let back = AWindow::on(&hosting, &root, &runtime);
+    back.sessions.hold().expect("it holds the project again");
+
+    let board = back.hooks.board();
+    assert_eq!(
+        board.chats().collect::<Vec<_>>(),
+        [quiet, ended_its_turn, speaks_while_away]
+    );
+    assert_eq!(board.state(quiet), purlis_core::state::State::Unknown);
+    assert_eq!(
+        board.state(ended_its_turn),
+        purlis_core::state::State::Waiting
+    );
+    assert_eq!(
+        board.state(speaks_while_away),
+        purlis_core::state::State::Waiting
+    );
+    assert_eq!(board.needs_you(), [ended_its_turn, speaks_while_away]);
+    drop(board);
+    assert!(back.told_it_needs_you(ended_its_turn));
+    assert!(back.told_it_needs_you(speaks_while_away));
+}
+
 /// Each behaviour, as a test of its own on every target. Each group after `not yet through a
 /// link` runs on the window's and the host's targets, and through a link waits for what its
 /// reason names (#2042).

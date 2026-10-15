@@ -119,7 +119,80 @@ pub fn launched(
 /// token, the process that sent it, each framed ask again, the spool's keys beside it. Only who
 /// listens changes, and the host is each chat's ancestor, so a hook admits it. Each line it
 /// admits is handed on to the window ([`purlis_core::hookwire::relay`]).
+///
+/// **It keeps the project's board** (#2194, [`KeptBoard`]), which outlives the window.
 pub struct HookChannels;
+
+/// **A held project's board, kept in the session host** (#2194,
+/// `purlis_core::state::kept`).
+///
+/// The window makes each move on its own copy and tells this one ([`KeptBoard::moved`]), so
+/// the two read the same; a window that holds the project takes this one whole
+/// ([`KeptBoard::whole`]). A line no window took moves it here, as the window's own hearing
+/// would with nothing said of what a chat waits on ([`KeptBoard::handing_on`]), and so does a
+/// program that ends with no window there ([`KeptBoard::ended`]): nothing a chat says while the
+/// window is away is lost.
+#[derive(Clone, Default)]
+pub struct KeptBoard(Arc<Mutex<purlis_core::state::Board>>);
+
+/// The most a board answered to a window may be, its frame's envelope aside.
+const A_BOARD_IS_AT_MOST: usize = purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES - 4096;
+
+impl KeptBoard {
+    fn board(&self) -> std::sync::MutexGuard<'_, purlis_core::state::Board> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// What hands each line on through `hand_on`, the board moved by one no window took.
+    pub fn handing_on(&self, hand_on: purlis_host::HandOn) -> purlis_core::hookwire::relay::HandOn {
+        let kept = self.clone();
+        Box::new(move |id, heard| {
+            let told = serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line));
+            if !told {
+                kept.board().hear(heard);
+            }
+            told
+        })
+    }
+
+    /// The window made `moved` of chat `number` on its own board. One this host cannot read
+    /// moves nothing, and is said in the log.
+    pub fn moved(&self, number: u32, moved: serde_json::Value) {
+        match serde_json::from_value::<purlis_core::state::Move>(moved) {
+            Ok(moved) => {
+                self.board().make(number, moved);
+            }
+            Err(why) => purlis_host_says(&format!(
+                "a move of chat {number} the window made could not be read, so the board kept \
+                 here did not make it: {why}"
+            )),
+        }
+    }
+
+    /// The board, whole, for a window that holds the project. One larger than the link carries
+    /// is answered as none, and said in the log: the window then starts from its own.
+    pub fn whole(&self) -> serde_json::Value {
+        let kept = serde_json::to_value(self.board().kept()).unwrap_or(serde_json::Value::Null);
+        let size = serde_json::to_vec(&kept).map_or(usize::MAX, |said| said.len());
+        if size > A_BOARD_IS_AT_MOST {
+            purlis_host_says(&format!(
+                "the board kept here is {size} bytes, more than the link carries \
+                 ({A_BOARD_IS_AT_MOST}), so the window starts from its own"
+            ));
+            return serde_json::Value::Null;
+        }
+        kept
+    }
+
+    /// Chat `number`'s program ended, `exit`, with no window there to say so.
+    pub fn ended(&self, number: u32, exit: &session::Exit) {
+        let exit = match exit {
+            session::Exit::Code(code) => purlis_core::session::Exit::Code(*code),
+            session::Exit::Signal(signal) => purlis_core::session::Exit::Signal(signal.clone()),
+        };
+        self.board().exited(number, crate::hooks::code_of(&exit));
+    }
+}
 
 impl purlis_host::Hear for HookChannels {
     fn open(
@@ -134,14 +207,14 @@ impl purlis_host::Hear for HookChannels {
             .map_err(|why| format!("its hook socket at {} ({why})", at.socket.display()))?;
         let socket = listener.path().to_path_buf();
         let tokens = listener.tokens();
-        let relaying = Relaying::new(Box::new(move |id, heard| {
-            serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line))
-        }));
+        let board = KeptBoard::default();
+        let relaying = Relaying::new(board.handing_on(hand_on));
         let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
         Ok(Some(Arc::new(HookChannel {
             socket,
             tokens,
             relaying,
+            board,
             reading: Mutex::new(Some(reading)),
         })))
     }
@@ -152,6 +225,8 @@ struct HookChannel {
     socket: PathBuf,
     tokens: Arc<purlis_core::hookwire::ChatTokens>,
     relaying: Arc<purlis_core::hookwire::relay::Relaying>,
+    /// The project's board, kept here (#2194).
+    board: KeptBoard,
     reading: Mutex<Option<purlis_core::hookwire::Reading>>,
 }
 
@@ -189,6 +264,18 @@ impl purlis_host::Channel for HookChannel {
                 purlis_host_says(&format!("a reply the window sent could not be read: {why}"))
             }
         }
+    }
+
+    fn moved(&self, number: u32, moved: serde_json::Value) {
+        self.board.moved(number, moved);
+    }
+
+    fn board(&self) -> serde_json::Value {
+        self.board.whole()
+    }
+
+    fn ended_with_no_window(&self, number: u32, exit: &session::Exit) {
+        self.board.ended(number, exit);
     }
 }
 

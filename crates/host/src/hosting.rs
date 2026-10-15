@@ -19,6 +19,11 @@
 //! window that holds the project ([`Pushed::Heard`]), whose reply comes back
 //! ([`Command::ReplyHeard`]). The host is each chat's ancestor, so a hook admits it.
 //!
+//! **Each held project's board is kept here too** (#2194): the window tells the channel each
+//! move it makes (`board_moved`) and reads the board whole as it holds the project (`board`).
+//! A project a program still runs in outlives the link that held it, with its channel and its
+//! board, so its chats are heard while no window is there.
+//!
 //! **Every hosted program is inside a chat to the admission check.** The holder the check is
 //! given is the window, when the window started this host, or the host itself: a hosted
 //! program, and everything it starts, is below both from its first instruction, so a peer among
@@ -1550,8 +1555,9 @@ impl session::Host for Hosting {
                 chat,
                 moved,
             } => {
-                self.held_channel(&project, peer)?
-                    .map(|channel| channel.moved(chat, moved));
+                if let Some(channel) = self.held_channel(&project, peer)? {
+                    channel.moved(chat, moved);
+                }
                 Ok(Answer::Done)
             }
             Command::Board { project } => Ok(Answer::Board(

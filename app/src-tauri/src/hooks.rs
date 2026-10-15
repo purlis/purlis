@@ -351,6 +351,11 @@ pub struct Hooks {
 /// its token and admits each line, and hands every line it admits on to the window. The window
 /// hears it here with the same hearing it listened with itself ([`Hooks::listening_on`]), so the
 /// board, Needs you and the asks move exactly as before.
+///
+/// **The board is kept in the host** (#2194, `purlis_core::state::kept`). As the window holds
+/// the project it takes the host's board whole, and from then on tells the host each move it
+/// makes on its own ([`Relayed::keep_with`]). Until it has taken it, the lines the host hands
+/// on wait here, so none is heard against a board the host's is about to replace.
 pub struct Relayed {
     heeding: Arc<purlis_core::hookwire::relay::Heeding>,
     /// Where the lines heard at once go, to be heard one after another in the order they
@@ -363,6 +368,14 @@ pub struct Relayed {
     /// Each running chat's program, as the host started it: what a line's chat is read from
     /// there, and what a caller that waited compares (qw381).
     programs: Mutex<std::collections::HashMap<u32, purlis_core::hookwire::Program>>,
+    /// The project's board in the window, which the host keeps too.
+    board: Arc<Mutex<Board>>,
+    plane: PlaneId,
+    /// Told each chat of the host's board as the window takes it.
+    moved: Teller,
+    /// The lines handed on before the window took the host's board, in the order they came:
+    /// `None` once it has.
+    waiting: Mutex<Option<Vec<InOrder>>>,
 }
 
 /// A line to hear in order: its number, the line, and what replies to it.
@@ -384,6 +397,15 @@ impl Relayed {
         reply: purlis_core::hookwire::relay::Reply,
     ) {
         use purlis_core::hookwire::relay::Heeding;
+        if let Some(waiting) = self
+            .waiting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            waiting.push((id, heard, reply));
+            return;
+        }
         if Heeding::waits(&heard) {
             let heeding = Arc::clone(&self.heeding);
             let spawned = std::thread::Builder::new()
@@ -421,6 +443,44 @@ impl Relayed {
     /// The socket the host listens on for this project.
     pub fn socket(&self) -> &Path {
         &self.socket
+    }
+
+    /// **The window holds the project in the host** (#2194): it takes `kept`, the board the
+    /// host keeps, as its own, where the host keeps one, and is told every chat on it as the
+    /// host kept it; from now on each move it makes is told to `keeper`, in the order made.
+    /// Then the lines that waited for this are heard, in the order they came.
+    pub fn keep_with(
+        &self,
+        keeper: purlis_core::state::Keeper,
+        kept: Option<purlis_core::state::Kept>,
+    ) {
+        let told: Vec<Moved> = {
+            let mut board = held_board(&self.board);
+            board.told_to(keeper);
+            match kept {
+                Some(kept) => {
+                    board.keep(kept);
+                    let chats: Vec<u32> = board.chats().collect();
+                    chats
+                        .into_iter()
+                        .map(|chat| seen_by(&board, &self.plane, chat))
+                        .collect()
+                }
+                None => Vec::new(),
+            }
+        };
+        for moved in told {
+            (self.moved)(moved);
+        }
+        let waited = self
+            .waiting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .unwrap_or_default();
+        for (id, heard, reply) in waited {
+            self.take(id, heard, reply);
+        }
     }
 
     /// Chat `chat`'s program, started by the host, is process `pid`.
@@ -1642,12 +1702,21 @@ impl Hooks {
     /// Hears what the session host hands on from the hook channel it owns at `at` (#2000):
     /// nothing is bound here, and every line is heard as [`Self::listening_on`] hears one.
     pub fn relayed(plane: PlaneId, at: &Where, moved: Teller, told_by_hand: ByHandTeller) -> Self {
-        let (mut hooks, hearing) = Self::wired(plane, at.socket.clone(), moved, told_by_hand);
+        let (mut hooks, hearing) = Self::wired(
+            plane.clone(),
+            at.socket.clone(),
+            Arc::clone(&moved),
+            told_by_hand,
+        );
         hooks.relayed = Some(Arc::new(Relayed {
             heeding: Arc::new(purlis_core::hookwire::relay::Heeding::new(hearing)),
             in_order: Mutex::new(None),
             socket: at.socket.clone(),
             programs: Mutex::default(),
+            board: Arc::clone(&hooks.board),
+            plane,
+            moved,
+            waiting: Mutex::new(Some(Vec::new())),
         }));
         hooks
     }
@@ -1951,9 +2020,7 @@ impl Hooks {
                     // it** (qw348): the guard's own verdict (arm A3c) raises a needs-you item
                     // on that chat, in the app's words, which names the window's Update. No
                     // word of the chat's is in it, and it presses nothing.
-                    if call.decision == purlis_core::hookwire::Decision::Deny
-                        && call.rule.as_deref() == Some(purlis_core::rootupdate::REASON)
-                    {
+                    if call.refused_a_root_update() {
                         let what = moving(&mut held_board(&board), &plane, call.chat, |board| {
                             board.needs(call.chat, purlis_core::state::Need::RootUpdateRefused)
                         });
