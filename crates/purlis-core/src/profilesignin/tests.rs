@@ -8,6 +8,7 @@ fn key_sign_in(variable: &str, reference: &str) -> SignIn {
         kind: "api-key".to_owned(),
         label: Some("work key".to_owned()),
         credentials: [(variable.to_owned(), reference.to_owned())].into(),
+        rest: Default::default(),
     }
 }
 
@@ -58,6 +59,7 @@ fn a_cloud_profile_names_its_clouds_variables() {
         ]
         .map(|(v, r)| (v.to_owned(), r.to_owned()))
         .into(),
+        rest: Default::default(),
     };
     assert_eq!(bedrock.check("claude"), Ok(()));
     let mut keyed = bedrock.clone();
@@ -74,6 +76,7 @@ fn a_kind_the_harness_does_not_sign_in_with_is_refused() {
         kind: "local".to_owned(),
         label: None,
         credentials: Default::default(),
+        rest: Default::default(),
     };
     assert!(local.check("claude").is_err(), "Claude Code has no local");
     assert_eq!(local.check("codex"), Ok(()));
@@ -321,12 +324,12 @@ mod handing {
                 .iter()
                 .map(|(v, r)| ((*v).to_owned(), (*r).to_owned()))
                 .collect(),
+            rest: Default::default(),
         }
     }
 
-    #[test]
-    fn a_bedrock_profiles_chat_starts_with_each_reference_and_no_value() {
-        let (profile, machine) = signed_in(
+    fn bedrock() -> (Profile, Vec<MachineProfile>) {
+        signed_in(
             "claude",
             cloud(&[
                 ("CLAUDE_CODE_USE_BEDROCK", "vault:aws/use"),
@@ -334,10 +337,43 @@ mod handing {
                 ("AWS_ACCESS_KEY_ID", "vault:aws/id"),
                 ("AWS_SECRET_ACCESS_KEY", "vault:aws/secret"),
             ]),
-        );
+        )
+    }
 
-        let at = at_start(&profile, &machine, &[])
-            .expect("a cloud profile starts")
+    #[test]
+    fn a_bedrock_profile_is_refused_in_words_while_this_version_hands_no_cloud_credentials() {
+        let (profile, machine) = bedrock();
+
+        let why = at_start(&profile, &machine, &[]).unwrap_err();
+
+        assert!(why.contains("#2151"), "{why}");
+        assert_eq!(
+            billed(&profile, &machine, &[]).as_deref(),
+            Some(
+                "your cloud account · team account · cloud credentials are not handed to a chat in this version"
+            ),
+            "the picker says it before the start does"
+        );
+    }
+
+    #[test]
+    fn where_the_cloud_path_is_open_the_row_says_its_commands_can_read_the_credentials() {
+        let (profile, machine) = bedrock();
+
+        assert_eq!(
+            billed_in(&profile, &machine, &[], true).as_deref(),
+            Some(
+                "your cloud account · team account · the commands it runs can read these credentials"
+            )
+        );
+    }
+
+    #[test]
+    fn a_bedrock_profiles_chat_starts_with_each_reference_and_no_value() {
+        let (profile, machine) = bedrock();
+
+        let at = at_start_in(&profile, &machine, &[], true)
+            .expect("a cloud profile starts where the cloud path is open")
             .expect("its sign-in is known");
 
         assert_eq!(at.kind, SignInKind::Cloud);
@@ -395,10 +431,90 @@ mod handing {
         ] {
             let (profile, machine) = signed_in(harness, cloud(&credentials));
 
-            let why = at_start(&profile, &machine, &[]).unwrap_err();
+            let why = at_start_in(&profile, &machine, &[], true).unwrap_err();
 
             assert!(why.contains(said), "{harness}: {why}");
             assert!(why.contains("#2151"), "{harness}: {why}");
+            let row = billed_in(&profile, &machine, &[], true).unwrap();
+            assert!(
+                row.contains("is not signed in from a vault"),
+                "{harness}: {row}"
+            );
         }
     }
+}
+
+#[test]
+fn no_refusal_or_row_has_a_double_space() {
+    use crate::profiles::{Profile, Source};
+    let profile = |harness: &str| Profile {
+        name: "work".to_owned(),
+        kind: harness.to_owned(),
+        harness: harness.to_owned(),
+        command: vec![harness.to_owned()],
+        env: Vec::new(),
+        source: Source::Machine,
+    };
+    let mut said = Vec::new();
+    for (harness, kind, variable) in [
+        ("claude", "api-key", "ANTHROPIC_API_KEY"),
+        ("claude", "cloud", "AWS_REGION"),
+        ("claude", "cloud", "CLAUDE_CODE_USE_VERTEX"),
+        ("codex", "cloud", "AZURE_OPENAI_API_KEY"),
+        ("claude", "local", "AWS_REGION"),
+        ("claude", "api-key", "PATH"),
+        ("shelly", "api-key", "ANTHROPIC_API_KEY"),
+    ] {
+        let sign_in = SignIn {
+            kind: kind.to_owned(),
+            label: Some("work key".to_owned()),
+            credentials: [(variable.to_owned(), "vault:v/k".to_owned())].into(),
+            rest: Default::default(),
+        };
+        if let Err(why) = sign_in.check(harness) {
+            said.push(why);
+        }
+        let record = crate::profilestore::MachineProfile {
+            name: "work".to_owned(),
+            harness: harness.to_owned(),
+            title: "work".to_owned(),
+            folders: crate::profilestore::Folders {
+                config: "/profiles/work/config".into(),
+                data: None,
+            },
+            adopted: None,
+            imported: None,
+            sign_in: Some(sign_in),
+            rest: Default::default(),
+        };
+        for open in [false, true] {
+            let machine = [record.clone()];
+            if let Err(why) = at_start_in(&profile(harness), &machine, &[], open) {
+                said.push(why);
+            }
+            said.extend(billed_in(&profile(harness), &machine, &[], open));
+        }
+    }
+    let mut bad = key_sign_in("ANTHROPIC_API_KEY", "written-by-hand");
+    said.push(bad.check("claude").unwrap_err());
+    bad.credentials.clear();
+    said.push(bad.check("claude").unwrap_err());
+    assert!(said.len() > 10, "{said:?}");
+    for one in &said {
+        assert!(!one.contains("  "), "{one:?}");
+    }
+}
+
+#[test]
+fn a_sign_in_keeps_every_field_this_build_does_not_know() {
+    let text = r#"{"kind":"cloud","label":"team","credentials":{"AWS_REGION":"vault:aws/region"},"since":"later"}"#;
+
+    let sign_in: SignIn = serde_json::from_str(text).unwrap();
+
+    assert_eq!(sign_in.rest.get("since"), Some(&serde_json::json!("later")));
+    let again: serde_json::Value = serde_json::to_value(&sign_in).unwrap();
+    assert_eq!(
+        again,
+        serde_json::from_str::<serde_json::Value>(text).unwrap()
+    );
 }

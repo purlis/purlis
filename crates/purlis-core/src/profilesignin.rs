@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::harness_declaration::SignInKind;
 
 /// A profile's sign-in, as its record keeps it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignIn {
     /// One of [`SignInKind`]'s words.
     pub kind: String,
@@ -32,6 +32,9 @@ pub struct SignIn {
     /// (`vault:<vault>/<key>`) its value is read from at a chat's start.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub credentials: BTreeMap<String, String>,
+    /// Every field this build does not know, written back as it was read.
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
 }
 
 /// A vault reference: the vault and the key in it.
@@ -241,7 +244,8 @@ pub fn read(
             .and_then(|vault| cmd::get_value(ctx, &vault, &reference.key))
             .map_err(|e| {
                 format!(
-                    "this chat's profile names {variable} as '{}' in vault '{}', and it could                      not be read ({}), so nothing was started",
+                    "this chat's profile names {variable} as '{}' in vault '{}', and it could \
+                     not be read ({}), so nothing was started",
                     crate::shown::short(&reference.key),
                     reference.vault,
                     e.message
@@ -320,28 +324,53 @@ pub fn billed_to(kind: Option<SignInKind>, label: &str, title: &str) -> String {
 
 /// What a chat on `profile` is billed to, as the picker shows it beside every choice: from
 /// this machine's records (`machine`) and the variables `[chat_env] pass` lists (`passed`), as
-/// [`at_start`] reads them, for a profile whose sign-in cannot start a chat here too. `None`
-/// for a harness purlis does not ship, whose sign-in purlis knows nothing of.
+/// [`at_start`] reads them. A row whose start would be refused says why in a few words, and a
+/// row whose credentials go into the harness's environment says that the commands it runs can
+/// read them (ADR 0087 §7). `None` for a harness purlis does not ship, whose sign-in purlis
+/// knows nothing of.
 pub fn billed(
     profile: &crate::profiles::Profile,
     machine: &[crate::profilestore::MachineProfile],
     passed: &[String],
 ) -> Option<String> {
+    billed_in(profile, machine, passed, CLOUD_IS_HANDED)
+}
+
+/// [`billed`], with whether a cloud's credentials are handed (`cloud_handed`, [`handing`]).
+fn billed_in(
+    profile: &crate::profiles::Profile,
+    machine: &[crate::profilestore::MachineProfile],
+    passed: &[String],
+    cloud_handed: bool,
+) -> Option<String> {
     let seen = Seen::of(profile, machine, passed)?;
     let said = billed_to(seen.kind, &seen.label, &seen.declaration.title);
-    // A key a kept sign-in names waits for the key proxy, and the picker says so first.
-    let waits = seen.kept.as_ref().is_some_and(|kept| {
-        kept.kind() == Some(SignInKind::ApiKey) && !kept.credentials.is_empty()
-    });
-    Some(if waits {
-        format!("{said} · {WAITS_FOR_THE_PROXY}")
-    } else {
-        said
-    })
+    let Some(kept) = &seen.kept else {
+        return Some(said);
+    };
+    if kept.check(&profile.kind).is_err() {
+        return Some(format!("{said} · {CANNOT_SIGN_IN_AS_KEPT}"));
+    }
+    let credentials = references(kept);
+    let (Some(kind), false) = (kept.kind(), credentials.is_empty()) else {
+        return Some(said);
+    };
+    Some(
+        match handing(&profile.kind, kind, &credentials, cloud_handed) {
+            Handing::Environment => format!("{said} · {READABLE_BY_ITS_COMMANDS}"),
+            Handing::Refused { row, .. } => format!("{said} · {row}"),
+        },
+    )
 }
 
 /// What a key profile's row and refusal say until the key proxy is there (#822).
 pub const WAITS_FOR_THE_PROXY: &str = "waits for the key proxy";
+
+/// What a row says where its credentials go into the harness's environment (ADR 0087 §7).
+pub const READABLE_BY_ITS_COMMANDS: &str = "the commands it runs can read these credentials";
+
+/// What a row says where its kept sign-in is one its harness cannot take.
+pub const CANNOT_SIGN_IN_AS_KEPT: &str = "cannot sign in as it is kept";
 
 /// What purlis sees of how a chat on a profile signs in.
 struct Seen {
@@ -379,6 +408,14 @@ impl Seen {
     }
 }
 
+/// Each credential `kept` names that reads as a vault reference.
+fn references(kept: &SignIn) -> Vec<(String, Reference)> {
+    kept.credentials
+        .iter()
+        .filter_map(|(variable, reference)| Some((variable.clone(), Reference::parse(reference)?)))
+        .collect()
+}
+
 /// The record of this machine's that `profile` runs as, where one does: a profile purlis made,
 /// or a built-in whose folder was adopted under its name. A profile the project declares under
 /// that name is the project's, and has none.
@@ -400,13 +437,22 @@ fn record_of(
 /// (`machine`) and the variables `[chat_env] pass` lists (`passed`): the record's sign-in where
 /// it has one, else what purlis can see of it
 /// ([`crate::harness_declaration::Declaration::profile_sign_in`]), else nothing known. `Err`
-/// where the record's sign-in is one its harness cannot take, and where its credentials
-/// reach the harness only by a way this version does not have ([`handing`]): the chat does not
-/// start.
+/// where the record's sign-in is one its harness cannot take, and where its credentials are
+/// not handed to a chat ([`handing`]): the chat does not start, and says why.
 pub fn at_start(
     profile: &crate::profiles::Profile,
     machine: &[crate::profilestore::MachineProfile],
     passed: &[String],
+) -> Result<Option<AtStart>, String> {
+    at_start_in(profile, machine, passed, CLOUD_IS_HANDED)
+}
+
+/// [`at_start`], with whether a cloud's credentials are handed (`cloud_handed`, [`handing`]).
+fn at_start_in(
+    profile: &crate::profiles::Profile,
+    machine: &[crate::profilestore::MachineProfile],
+    passed: &[String],
+    cloud_handed: bool,
 ) -> Result<Option<AtStart>, String> {
     let Some(seen) = Seen::of(profile, machine, passed) else {
         return Ok(None);
@@ -421,7 +467,7 @@ pub fn at_start(
     };
     kept.check(&profile.kind).map_err(|why| {
         format!(
-            "profile '{}' cannot sign in as it is kept: {why}. Nothing was started.",
+            "profile '{}' {CANNOT_SIGN_IN_AS_KEPT}: {why}. Nothing was started.",
             crate::shown::short(&profile.name)
         )
     })?;
@@ -429,18 +475,15 @@ pub fn at_start(
     let Some(kind) = kept.kind() else {
         return Ok(None);
     };
-    let credentials: Vec<(String, Reference)> = kept
-        .credentials
-        .iter()
-        .filter_map(|(variable, reference)| Some((variable.clone(), Reference::parse(reference)?)))
-        .collect();
-    if !credentials.is_empty() {
-        handing(&profile.kind, kind, &credentials).map_err(|why| {
-            format!(
-                "profile '{}' signs in with {why}. Nothing was started.",
-                crate::shown::short(&profile.name)
-            )
-        })?;
+    let credentials = references(kept);
+    if !credentials.is_empty()
+        && let Handing::Refused { why, .. } =
+            handing(&profile.kind, kind, &credentials, cloud_handed)
+    {
+        return Err(format!(
+            "profile '{}' signs in with {why}. Nothing was started.",
+            crate::shown::short(&profile.name)
+        ));
     }
     Ok(Some(AtStart {
         kind,
@@ -449,21 +492,39 @@ pub fn at_start(
     }))
 }
 
+/// **Whether this version hands a cloud's credentials to its chat's harness.** The operator
+/// ruled on 2026-10-15 (#2151) that a cloud's credentials go into the harness's process
+/// environment, and a key waits for the key proxy; this version does not open the cloud path,
+/// and #2151 is where it opens.
+const CLOUD_IS_HANDED: bool = false;
+
+/// How a sign-in's credentials reach its chat's harness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Handing {
+    /// Set on the harness's program as it starts. The commands, hooks and tools it starts
+    /// inherit them.
+    Environment,
+    /// Not handed: the chat does not start. `row` is what the picker says, `why` the refusal.
+    Refused { row: &'static str, why: String },
+}
+
 /// How the `credentials` of a `kind` sign-in reach a `harness` chat, as the operator ruled on
-/// 2026-10-15 (#2151, amending how ADR 0095 §4 applies ADR 0087 §7):
+/// 2026-10-15 (#2151, amending how ADR 0095 §4 applies ADR 0087 §7), with `cloud_handed`
+/// whether this version opens the cloud path ([`CLOUD_IS_HANDED`]):
 ///
-/// - **A cloud's credentials are handed in the harness's process environment, now.** A cloud
-///   signs its requests (Bedrock's signature, Vertex's and Azure's tokens) in ways a proxy that
-///   swaps one header cannot carry. Only where variables alone sign the harness in: Vertex
-///   signs in with a credentials file, which purlis never writes for a chat, and Codex reaches
-///   Azure through a provider set in its configuration, so both are refused in words.
+/// - **A cloud's credentials go into the harness's process environment.** A cloud signs its
+///   requests in ways a proxy that swaps one header cannot carry. Only where variables alone
+///   sign the harness in: Vertex signs in with a credentials file, which purlis does not write
+///   for a chat, and Codex reaches Azure through a provider set in its configuration, so both
+///   are refused in words.
 /// - **A key waits for the key proxy** (#822, ruling V36), wherever the harness takes a base
 ///   URL, which every harness purlis ships does: the chat does not start, and says so.
 fn handing(
     harness: &str,
     kind: SignInKind,
     credentials: &[(String, Reference)],
-) -> Result<(), String> {
+    cloud_handed: bool,
+) -> Handing {
     let title = crate::harness_declaration::builtin(harness)
         .map_or_else(|| harness.to_owned(), |d| d.title.clone());
     let names = |wanted: &[&str]| {
@@ -471,26 +532,43 @@ fn handing(
             .iter()
             .any(|(v, _)| wanted.contains(&v.as_str()))
     };
+    let vertex = names(&[
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLOUD_ML_REGION",
+        "ANTHROPIC_VERTEX_PROJECT_ID",
+        "GOOGLE_CLOUD_PROJECT",
+        "VERTEX_LOCATION",
+    ]);
     match kind {
-        SignInKind::Cloud if harness == "codex" => Err(format!(
-            "cloud credentials from your vault, and {title} reaches Azure through a provider set              in its own configuration, which purlis does not write for a chat yet (#2151)"
-        )),
-        SignInKind::Cloud
-            if names(&[
-                "CLAUDE_CODE_USE_VERTEX",
-                "CLOUD_ML_REGION",
-                "ANTHROPIC_VERTEX_PROJECT_ID",
-                "GOOGLE_CLOUD_PROJECT",
-                "VERTEX_LOCATION",
-            ]) =>
-        {
-            Err(format!(
-                "Vertex credentials from your vault, and {title} signs in to Vertex with a                  credentials file, which purlis does not write for a chat yet (#2151)"
-            ))
-        }
-        SignInKind::Cloud => Ok(()),
-        _ => Err(format!(
-            "a key from your vault, and {title} is handed a key only through purlis's key              proxy, which this version of purlis does not have, so a chat on it              {WAITS_FOR_THE_PROXY} (#822)"
-        )),
+        SignInKind::Cloud if harness == "codex" => Handing::Refused {
+            row: "Codex on Azure is not signed in from a vault",
+            why: format!(
+                "cloud credentials from your vault, and {title} reaches Azure through a \
+                 provider set in its own configuration, which purlis does not write for a chat \
+                 (#2151)"
+            ),
+        },
+        SignInKind::Cloud if vertex => Handing::Refused {
+            row: "Vertex is not signed in from a vault",
+            why: format!(
+                "Vertex credentials from your vault, and {title} signs in to Vertex with a \
+                 credentials file, which purlis does not write for a chat (#2151)"
+            ),
+        },
+        SignInKind::Cloud if !cloud_handed => Handing::Refused {
+            row: "cloud credentials are not handed to a chat in this version",
+            why: "cloud credentials from your vault, which this version of purlis does not \
+                  hand to a chat (#2151)"
+                .to_owned(),
+        },
+        SignInKind::Cloud => Handing::Environment,
+        _ => Handing::Refused {
+            row: WAITS_FOR_THE_PROXY,
+            why: format!(
+                "a key from your vault, and {title} is handed a key only through purlis's key \
+                 proxy, which this version of purlis does not have, so a chat on it \
+                 {WAITS_FOR_THE_PROXY} (#822)"
+            ),
+        },
     }
 }

@@ -408,18 +408,39 @@ model."* With ADR 0095, which makes every sign-in a profile's:
   variables, Codex's `OPENAI_API_KEY`, and their like), each by a vault reference
   (`vault:<vault>/<key>`). A variable the adapter does not hand for that harness and kind, or a
   value that is not a reference, is refused when the profile is read.
-- **The values are read when the chat starts, and only into that chat's harness process**: never
-  into a shell tab, a file, a log, the event log or the hook socket. The vault opens to the chat
-  only as it opens to the chat's persona today (ADR 0068, D-1430-1): a chat on no persona, or on
-  one the vault is not open to, does not start, and says which vault and how to open it.
+- **The values are read when the chat starts, and set on its harness's process**: purlis never
+  writes them to a file, a log, the event log or a shell tab. The commands, hooks and tools the
+  harness starts inherit them, so the agent can read them, which is §7's residual, and the
+  picker says so on the row. The vault opens to the chat only as it opens to the chat's persona
+  today (ADR 0068, D-1430-1): a chat on no persona, or on one the vault is not open to, does not
+  start, and says which vault and how to open it. Nothing is recorded or started for it.
 - **How a value reaches the harness: ruled 2026-10-15 (#2151).** A cloud's credentials
-  (Bedrock, Vertex, Azure) are handed in the harness's process environment now, as §7 allows
-  where no proxy can carry them: a cloud signs its requests in ways a proxy that swaps one
-  header cannot. Only where variables alone sign the harness in: Vertex's credentials file and
-  Codex's Azure provider, which is set in its configuration, are refused in words until #2151
-  hands them. A key still goes through the proxy (V36): a chat on an `api-key` profile waits
-  for it (#822), does not start, and says so, and the picker says *waits for the key proxy* on
-  its row.
+  (Bedrock, Vertex, Azure) go into the harness's process environment, as §7 allows where no
+  proxy can carry them: a cloud signs its requests in ways a proxy that swaps one header cannot.
+  Only where variables alone sign the harness in: Vertex's credentials file and Codex's Azure
+  provider, which is set in its configuration, are refused in words. This version does not open
+  the cloud path yet; #2151 opens it, and until then a cloud profile's chat does not start and
+  its row says so. A key still goes through the proxy (V36): a chat on an `api-key` profile
+  waits for it (#822), does not start, and says so, and the picker says *waits for the key
+  proxy* on its row.
+
+### Decided in implementation (#2036), to be confirmed
+
+The ruled parts above are the profile plus a model and the 2026-10-15 ruling on cloud
+credentials. These were decided in implementation, to be confirmed by the operator:
+
+- **D-2036-1** Which variables a harness is handed for a kind is adapter code, not a
+  declaration key: a declaration may not name a variable that reads as a credential (ADR 0073
+  §5, and this record's ADR 0073 amendment).
+- **D-2036-2** The values are read where the harness's program is opened and set on it last,
+  never in what a start records, compares or shows.
+- **D-2036-3** The vault opens to the chat's persona by the existing grants alone; a profile
+  never opens it to a chat that could not otherwise read it.
+- **D-2036-4** Only this machine's profiles keep a sign-in; a profile a clone's local file
+  declares works as it is declared, and its row says what purlis can see of it.
+- **D-2036-5** `model_source` takes the sign-in kind words (below, *ADR 0066, amended*).
+- **D-2036-6** The model is *the harness's default* until a model can be chosen.
+- **D-2036-7** Setting a profile's credentials from the window and `purlis profile` is #2150's.
 
 ## ADR 0066, amended
 
@@ -431,7 +452,9 @@ model."* With ADR 0095, which makes every sign-in a profile's:
   rejected*).
 - **`model_source` takes one of four values:** `login`, `key`, `gateway` and `local`. ADR 0066's
   four descriptions (*"the profile's login, an API key, a gateway, a local model"*) become those
-  words, and "the profile's login" is read as the harness's own login.
+  words, and "the profile's login" is read as the harness's own login. *Amended 2026-10-14
+  (#2036):* it is the profile's sign-in kind, `subscription`, `api-key`, `cloud` or `local`, and
+  `unknown` where purlis cannot see it; `gateway` stays GT-CLOUD's.
 - **A run also records `provider` and `model`**: the choice resolved at its start, then the model
   the harness reports. A report that differs from the choice is ADR 0066's `switch` and starts a
   new run, as a reported model switch already does.

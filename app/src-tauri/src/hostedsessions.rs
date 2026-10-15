@@ -52,6 +52,12 @@ fn switched_on(value: Option<&str>) -> bool {
     value == Some("1")
 }
 
+/// Why a chat whose profile hands it credentials is not started in the session host (#2036).
+pub const NOT_HANDED_IN_THE_HOST: &str = "this chat's profile signs it in with credentials from \
+     your vault, and purlis hands those only to a chat the window starts, never over the link to \
+     the session host, so nothing was started. Start purlis without PURLIS_CHATS_IN_THE_HOST to \
+     run it.";
+
 /// How long a start waits for the host's link to be ready, before it says why there is none.
 const LINK_WITHIN: Duration = Duration::from_secs(30);
 
@@ -521,6 +527,11 @@ impl SessionHost for HostedSessions {
     ) -> Result<u32, String> {
         if !opening.operator_shell && self.kill_switch.is_stopped() {
             return Err(STOPPED.to_owned());
+        }
+        // A profile's credentials are handed to a program the window starts, and never over the
+        // link (#2036): a chat that is handed some is not started here.
+        if !opening.handed.is_empty() {
+            return Err(NOT_HANDED_IN_THE_HOST.to_owned());
         }
         let (link, project) = self.link()?;
         let program = opening

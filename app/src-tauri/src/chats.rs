@@ -2243,6 +2243,30 @@ impl Chats {
         // its folder in the meantime is refused, and a folder that is going is no place to
         // start one (#1472).
         let _starting = self.going.starting_in(chat.cwd.as_deref())?;
+        // The persona it runs as is the one its environment names, which the core's start put
+        // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
+        // names none runs as the project's default.
+        let runs_as = env
+            .iter()
+            .find(|(name, _)| name == purlis_core::active::PERSONA_ENV)
+            .map(|(_, persona)| persona.clone())
+            .or_else(|| purlis_core::start::persona_for_a_new_chat(&self.project));
+        // A key or a cloud's credentials, read for this one start under the vault's own rules
+        // for the persona the chat runs as, before anything is recorded or started: a vault
+        // that does not open to it starts nothing, and leaves no event and no hook behind
+        // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
+        // starts inherit them.
+        let handed = match sign_in.filter(|s| !s.credentials.is_empty()) {
+            Some(sign_in) => purlis_core::profilesignin::read(
+                &purlis_core::secrets::Ctx::new(
+                    &self.project,
+                    purlis_core::secrets::Env::from_process(),
+                ),
+                runs_as.as_deref(),
+                &sign_in.credentials,
+            )?,
+            None => purlis_core::profilesignin::Handed::default(),
+        };
         // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
         // per clone and device (V43: a copy's was minted again before `put_back` got it),
         // when no record holds one, on this device, and a chat put back or started again keeps
@@ -2340,14 +2364,6 @@ impl Chats {
         // rest on (M8.3) — then the state hooks, then charter's own words: a chat's recorded
         // arguments may end in a positional prompt that nothing may come after.
         // `purlis_core::start::Ready::command_line` is the one place that order is decided.
-        // The persona it runs as is the one its environment names, which the core's start put
-        // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
-        // names none runs as the project's default.
-        let runs_as = env
-            .iter()
-            .find(|(name, _)| name == purlis_core::active::PERSONA_ENV)
-            .map(|(_, persona)| persona.clone())
-            .or_else(|| purlis_core::start::persona_for_a_new_chat(&self.project));
         let (hooks, armed) = self.state_hooks(
             harness,
             chat.cwd.as_deref(),
@@ -2365,20 +2381,6 @@ impl Chats {
             conversation.as_deref(),
         );
         attributes.model_source = sign_in.map(|s| s.kind.word().to_owned());
-        // A key or a cloud's credentials, read for this one start under the vault's own rules
-        // for the persona the chat runs as, before anything is started: a vault that does not
-        // open to it starts nothing (#2036). Handed to the program alone.
-        let handed = match sign_in.filter(|s| !s.credentials.is_empty()) {
-            Some(sign_in) => purlis_core::profilesignin::read(
-                &purlis_core::secrets::Ctx::new(
-                    &self.project,
-                    purlis_core::secrets::Env::from_process(),
-                ),
-                runs_as.as_deref(),
-                &sign_in.credentials,
-            )?,
-            None => purlis_core::profilesignin::Handed::default(),
-        };
         // What a wrapped chat needs running beside it, started before it and kept for as long
         // as it is open: charter's egress proxy and its own temp directory (ADR 0067 §2).
         // Its proxy tells the app each host it refuses, by the proxy's word (#1663): the
@@ -10439,9 +10441,10 @@ pub(crate) mod tests {
         let _ = chats.close(session);
     }
     #[test]
-    fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_nothing_else_holds_them() {
+    fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_nowhere() {
         // #2036, as ruled on 2026-10-15 (#2151): a cloud's credentials reach its chat's
-        // program at start, read from a vault its persona may use, and nowhere else.
+        // program at start, read from a vault its persona may use, and nothing purlis records
+        // or shows holds them. (Which start reaches here is `profilesignin`'s to decide.)
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let ctx = purlis_core::secrets::Ctx::new(&root, purlis_core::secrets::Env::of(&[]));

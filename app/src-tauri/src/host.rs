@@ -68,9 +68,10 @@ pub struct Opening {
     /// operator passes or a profile sets keeps its pairs. None for a shell.
     pub git_hooks: Option<purlis_core::githooks::GitHooks>,
     /// What its profile's sign-in hands its program as it starts (#2036): each variable and its
-    /// value, read from the vault for this one start, set last on the program's environment and
-    /// nowhere else. Its `Debug` names the variables alone. Nothing for every other chat, a
-    /// shell tab's among them.
+    /// value, read from the vault for this one start and set last on the program's environment.
+    /// The commands, hooks and tools the program starts inherit them. purlis writes them to no
+    /// file or log, and its `Debug` names the variables alone. Nothing for every other chat, a
+    /// shell tab's among them, and never sent over the link to the session host.
     pub handed: purlis_core::profilesignin::Handed,
 }
 

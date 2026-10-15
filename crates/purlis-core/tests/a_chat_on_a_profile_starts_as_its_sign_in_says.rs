@@ -4,8 +4,9 @@
 //! A chat started on a profile of this machine's starts as the profile's sign-in says (#2036,
 //! ADR 0087 as amended): its run's model source is the sign-in's kind, and what it is billed to
 //! is the profile's label. An `api-key` or `cloud` profile names its credentials by vault
-//! reference, and the start carries those references and never a value: where ADR 0087 §7
-//! sends a key through the proxy, the chat waits for it and starts nothing.
+//! reference, and the start carries those references and never a value. A key waits for the
+//! key proxy (#822), and this version hands no cloud's credentials (#2151): such a chat starts
+//! nothing, and says why.
 //!
 //! The profile store is found through this process's config home and data home, so each body
 //! runs in a child whose homes are the test's own folder, with a stand-in harness first on its
@@ -28,10 +29,15 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
     }
     let data = tempfile::tempdir().unwrap();
     let programs = tempfile::tempdir().unwrap();
+    // It answers its version, and its sign-in status as the test left it ([`signed_out`]).
     stand_in::program(
         programs.path(),
         "claude",
-        "#!/bin/sh\necho '2.1.288 (Claude Code)'\n",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = auth ]; then\n  [ -f '{}' ] && exit 1\n  exit 0\nfi\necho \
+             '2.1.288 (Claude Code)'\n",
+            data.path().join(SIGNED_OUT).display()
+        ),
     );
     let path = std::env::join_paths(std::iter::once(programs.path().to_path_buf()).chain(
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
@@ -47,6 +53,14 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
         ],
     );
     None
+}
+
+/// The file whose presence makes the stand-in harness say it is not signed in.
+const SIGNED_OUT: &str = "signed-out";
+
+/// From now on, the stand-in harness says this machine's profile is not signed in.
+fn signed_out(data: &Path) {
+    fs::write(data.join(SIGNED_OUT), "").unwrap();
 }
 
 fn project() -> tempfile::TempDir {
@@ -106,6 +120,7 @@ fn a_chat_on_a_subscription_profile_starts_with_its_kind_and_label_and_no_creden
         kind: "subscription".to_owned(),
         label: Some("Work plan".to_owned()),
         credentials: Default::default(),
+        rest: Default::default(),
     });
     let plane = project();
 
@@ -133,6 +148,7 @@ fn a_chat_on_a_key_profile_waits_for_the_key_proxy_and_starts_nothing() {
             "vault:providers/anthropic".to_owned(),
         )]
         .into(),
+        rest: Default::default(),
     });
     let plane = project();
 
@@ -154,6 +170,7 @@ fn a_sign_in_its_harness_cannot_take_is_refused_when_it_is_kept() {
         kind: "subscription".to_owned(),
         label: None,
         credentials: Default::default(),
+        rest: Default::default(),
     });
     let store = Homes::here().unwrap();
 
@@ -164,6 +181,7 @@ fn a_sign_in_its_harness_cannot_take_is_refused_when_it_is_kept() {
             kind: "local".to_owned(),
             label: None,
             credentials: Default::default(),
+            rest: Default::default(),
         }),
     );
 
@@ -176,15 +194,8 @@ fn a_sign_in_its_harness_cannot_take_is_refused_when_it_is_kept() {
     );
 }
 
-#[test]
-fn a_chat_on_a_cloud_profile_starts_carrying_its_references_and_never_a_value() {
-    purlis_core::unsteered!();
-    let Some(_data) = in_a_data_home_of_its_own(
-        "a_chat_on_a_cloud_profile_starts_carrying_its_references_and_never_a_value",
-    ) else {
-        return;
-    };
-    work_signed_in(SignIn {
+fn bedrock() -> SignIn {
+    SignIn {
         kind: "cloud".to_owned(),
         label: Some("team account".to_owned()),
         credentials: [
@@ -195,23 +206,65 @@ fn a_chat_on_a_cloud_profile_starts_carrying_its_references_and_never_a_value() 
         ]
         .map(|(v, r)| (v.to_owned(), r.to_owned()))
         .into(),
+        rest: Default::default(),
+    }
+}
+
+#[test]
+fn a_chat_on_a_cloud_profile_says_its_credentials_are_not_handed_and_starts_nothing() {
+    purlis_core::unsteered!();
+    let Some(_data) = in_a_data_home_of_its_own(
+        "a_chat_on_a_cloud_profile_says_its_credentials_are_not_handed_and_starts_nothing",
+    ) else {
+        return;
+    };
+    work_signed_in(bedrock());
+    let plane = project();
+
+    let why = start::ready(&start_on("work", plane.path()), plane.path()).unwrap_err();
+
+    assert!(why.contains("cloud credentials"), "{why}");
+    assert!(why.contains("Nothing was started"), "{why}");
+}
+
+#[test]
+fn a_cloud_profile_whose_harness_is_signed_out_is_never_asked_to_sign_in() {
+    // A cloud signs the chat in, not the harness's own plan (#2148's check is for that).
+    purlis_core::unsteered!();
+    let Some(data) = in_a_data_home_of_its_own(
+        "a_cloud_profile_whose_harness_is_signed_out_is_never_asked_to_sign_in",
+    ) else {
+        return;
+    };
+    signed_out(&data);
+    work_signed_in(bedrock());
+    let plane = project();
+
+    let why = start::ready(&start_on("work", plane.path()), plane.path()).unwrap_err();
+
+    assert!(why.contains("cloud credentials"), "{why}");
+    assert!(!why.contains("not signed in"), "{why}");
+}
+
+#[test]
+fn a_kept_subscription_profile_that_is_signed_out_is_still_refused_with_sign_in() {
+    purlis_core::unsteered!();
+    let Some(data) = in_a_data_home_of_its_own(
+        "a_kept_subscription_profile_that_is_signed_out_is_still_refused_with_sign_in",
+    ) else {
+        return;
+    };
+    signed_out(&data);
+    work_signed_in(SignIn {
+        kind: "subscription".to_owned(),
+        label: Some("Work plan".to_owned()),
+        credentials: Default::default(),
+        rest: Default::default(),
     });
     let plane = project();
 
-    let ready = start::ready(&start_on("work", plane.path()), plane.path()).expect("it starts");
+    let why = start::ready(&start_on("work", plane.path()), plane.path()).unwrap_err();
 
-    let sign_in = ready
-        .sign_in
-        .clone()
-        .expect("the start says how it signs in");
-    assert_eq!(sign_in.kind, SignInKind::Cloud);
-    assert_eq!(sign_in.billed_to, "your cloud account · team account");
-    assert_eq!(sign_in.credentials.len(), 4);
-    assert!(
-        ready
-            .env
-            .iter()
-            .all(|(name, _)| !sign_in.credentials.iter().any(|(v, _)| v == name)),
-        "no credential is in the start's own environment: the program alone is handed it"
-    );
+    assert!(why.contains("not signed in"), "{why}");
+    assert!(why.contains("Sign in"), "{why}");
 }
