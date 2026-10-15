@@ -64,6 +64,10 @@ fn a_board_told_every_move_of_another_reads_as_that_one_does() {
     window.opened(2, Some(Harness::ClaudeCode), Some(CONVERSATION.into()));
     window.reported(&its_own(1, Event::UserPromptSubmit));
     window.reported_while(&its_own(1, Event::Stop), Waits::default());
+    window.reported(&its_own(1, Event::UserPromptSubmit));
+    window.reported(&its_own(1, Event::Notification));
+    assert!(window.answered_by(1, &crate::harness::hooked::Asker::Chat));
+    window.reported(&its_own(1, Event::Stop));
     window.reported(&its_own(2, Event::UserPromptSubmit));
     window.reported_while(
         &its_own(2, Event::Stop),
