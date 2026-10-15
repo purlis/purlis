@@ -993,9 +993,10 @@ impl Hosting {
             .ok_or_else(|| no_such_confinement(id))
     }
 
-    /// Ends confinement `id`, whatever runs in it. One the host does not hold is let go of
-    /// already.
-    fn let_go_of_confinement(&self, id: &str) -> Answer {
+    /// Ends confinement `id`, whatever runs in it, and answers once it has ended: its proxy
+    /// carries nothing by the time the client hears so. One the host does not hold is let go
+    /// of already.
+    async fn let_go_of_confinement(&self, id: &str) -> Answer {
         let ending: Vec<Arc<dyn Confining>> = self
             .state()
             .confinements
@@ -1003,7 +1004,10 @@ impl Hosting {
             .map(|held| held.confining)
             .into_iter()
             .collect();
-        end_off_the_runtime(ending);
+        if !ending.is_empty() {
+            // A proxy's end waits on its listeners: off the runtime, and waited for.
+            let _ = tokio::task::spawn_blocking(move || drop(ending)).await;
+        }
         Answer::Done
     }
 }
@@ -1081,7 +1085,7 @@ impl session::Host for Hosting {
             } => self.reply_heard(&project, heard, reply, peer),
             Command::Confine(confine) => self.confine(*confine, peer).await,
             Command::LetGoOfConfinement { confinement } => {
-                Ok(self.let_go_of_confinement(&confinement))
+                Ok(self.let_go_of_confinement(&confinement).await)
             }
             Command::ChangeReach {
                 confinement,

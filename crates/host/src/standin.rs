@@ -185,6 +185,8 @@ struct Held {
     holding: bool,
     waiting: usize,
     refusing_changes: Option<String>,
+    /// How long each takes to end, as a proxy waits on its listeners.
+    ending_takes: std::time::Duration,
 }
 
 impl StandInConfines {
@@ -239,6 +241,11 @@ impl StandInConfines {
     pub fn let_starts_go(&self) {
         self.2.held.lock().unwrap().holding = false;
         self.2.changed.notify_all();
+    }
+
+    /// Each takes `long` to end from now on, as a proxy's end waits on its listeners.
+    pub fn take_to_end(&self, long: std::time::Duration) {
+        self.2.held.lock().unwrap().ending_takes = long;
     }
 
     /// It refuses every change the window makes from now on, saying `why`.
@@ -331,6 +338,8 @@ impl Confining for StandInConfining {
 
 impl Drop for StandInConfining {
     fn drop(&mut self) {
+        let takes = self.all.2.held.lock().unwrap().ending_takes;
+        std::thread::sleep(takes);
         self.all.with(&self.id, |one| one.ended = true);
     }
 }
