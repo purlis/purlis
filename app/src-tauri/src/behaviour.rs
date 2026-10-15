@@ -25,6 +25,12 @@
 //! host does both and hands each line it admits on to the window. A behaviour checks only what
 //! the window is told either way.
 //!
+//! **The kill switch is each target's** (#2001): the window's own switch, kept in a config home
+//! of the test's, which in the host's target holds the host's switch too, as the app's does
+//! when chats run in the host. What the host itself does with it, across its restart and for
+//! links that are not the window's, is the host's own tests'
+//! (`crates/host/tests/the_kill_switch_is_held_by_the_host.rs`).
+//!
 //! **To add a behaviour:** write `fn the_behaviour(target: &Target)`, and name it in the
 //! [`on_every_target!`] list at the bottom.
 
@@ -44,6 +50,7 @@ use purlis_session_protocol::{link, session};
 use crate::hooks::{Hooks, Moved};
 use crate::host::{Opening, SessionHost, Sink};
 use crate::hostedsessions::{Connection, HostLink, HostedSessions};
+use crate::killswitch::KillSwitch;
 use crate::sessions::{ENDED, Sessions};
 
 const SIZE: Size = Size {
@@ -59,6 +66,8 @@ pub(crate) struct Target {
     pub hooks: Hooks,
     /// Every move of a chat the window was told, in order.
     pub moved: Arc<Mutex<Vec<Moved>>>,
+    /// The kill switch, as the title bar throws and re-arms it.
+    pub switch: Arc<KillSwitch>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
@@ -94,11 +103,16 @@ fn hooks_of(root: &Path, relayed: bool) -> (Hooks, Arc<Mutex<Vec<Moved>>>) {
 pub(crate) fn in_the_window() -> Target {
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, false);
+    let config = tempfile::tempdir().expect("a config home");
+    let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
+    let mut sessions = Sessions::reporting_to(hooks.reporting());
+    sessions.stopped_by(Arc::clone(&switch));
     Target {
-        sessions: Box::new(Sessions::reporting_to(hooks.reporting())),
+        sessions: Box::new(sessions),
         hooks,
         moved,
-        _keeps: vec![Box::new(project)],
+        switch,
+        _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
 
@@ -109,12 +123,23 @@ static HELD: std::sync::LazyLock<Credentials> =
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them.
 pub(crate) fn in_the_host() -> Target {
+    let host = tempfile::tempdir().expect("the host's folder");
+    let mut target = in_a_host_keeping_its_switch_in(host.path());
+    target._keeps.push(Box::new(host));
+    target
+}
+
+/// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
+/// in a config home of its own, which starts with nothing thrown.
+fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("a runtime");
-    let hosting = purlis_host::Hosting::with(
+    let config = tempfile::tempdir().expect("a config home");
+    let hosting = purlis_host::Hosting::kept(
+        folder,
         purlis_host::FromTheWindow(crate::sessionhost::launched),
         purlis_host::Terminals,
         crate::sessionhost::HookChannels,
@@ -148,13 +173,17 @@ pub(crate) fn in_the_host() -> Target {
     connection.ready(Arc::new(link));
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
-    let sessions = HostedSessions::new(connection, &root);
+    let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
+    switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
+    let mut sessions = HostedSessions::new(connection, &root);
     sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
+    sessions.stopped_by(Arc::clone(&switch));
     Target {
         sessions: Box::new(sessions),
         hooks,
         moved,
-        _keeps: vec![Box::new(project), Box::new(runtime)],
+        switch,
+        _keeps: vec![Box::new(project), Box::new(config), Box::new(runtime)],
     }
 }
 
@@ -687,6 +716,82 @@ fn a_hook_refuses_a_listener_that_is_not_its_chats_ancestor(target: &Target) {
     target.sessions.close(id).expect("it closes");
 }
 
+/// Stop all, as the title bar throws it (`Planes::stop_every_agent`): the switch first, so
+/// nothing starts in the second the ending takes, then every program.
+fn stop_all(target: &Target) -> usize {
+    target
+        .switch
+        .stop(purlis_core::halt::Actor::Window)
+        .expect("the stop is kept");
+    target.sessions.stop_every_program()
+}
+
+fn stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms(target: &Target) {
+    let ends = told_of_ends(target);
+    let ids: Vec<u32> = (0..2)
+        .map(|_| {
+            target
+                .sessions
+                .open(
+                    None,
+                    &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+                    &|_| {},
+                )
+                .expect("it starts")
+        })
+        .collect();
+    for id in &ids {
+        Pane::on(target, *id).shows("HARNESS-READY");
+    }
+
+    assert_eq!(stop_all(target), 2);
+
+    until("both are told", || ends.lock().expect("ends").len() == 2);
+    for id in &ids {
+        assert_eq!(target.sessions.process_id(*id), None);
+    }
+    let refused = target.sessions.open(
+        None,
+        &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+        &|_| {},
+    );
+    assert_eq!(refused, Err(crate::sessions::STOPPED.to_owned()));
+
+    assert!(target.switch.rearm().expect("re-armed"));
+
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+            &|_| {},
+        )
+        .expect("it starts once re-armed");
+    Pane::on(target, id).shows("HARNESS-READY");
+    for id in ids.iter().chain([&id]) {
+        target.sessions.close(*id).expect("it closes");
+    }
+}
+
+fn while_stopped_the_operators_shell_opens(target: &Target) {
+    stop_all(target);
+
+    let id = target
+        .sessions
+        .open(
+            None,
+            &Opening {
+                operator_shell: true,
+                ..a_shell("printf 'looking around.'; read line")
+            },
+            &|_| {},
+        )
+        .expect("the operator's shell opens");
+
+    Pane::on(target, id).shows("looking around.");
+    target.sessions.close(id).expect("it closes");
+}
+
 // A sandboxed chat's network (#1999): its confinement, started where its chat runs.
 
 /// A chat's plan listing `listed`, as the window compiles one for a harness it wraps, giving it
@@ -849,6 +954,61 @@ fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
     target.sessions.close(id).expect("it closes");
 }
 
+/// **The host's own target only**: the window's own process has no host to start again, and it
+/// is the host that keeps the stop across its restart and refuses a start the window did not
+/// stop first (#2001). The window here is one that never heard of the stop.
+#[test]
+fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart() {
+    let kept = tempfile::tempdir().expect("the host's folder");
+    {
+        let before = in_a_host_keeping_its_switch_in(kept.path());
+        let id = before
+            .sessions
+            .open(
+                None,
+                &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+                &|_| {},
+            )
+            .expect("it starts");
+        Pane::on(&before, id).shows("HARNESS-READY");
+        stop_all(&before);
+        before.sessions.close(id).expect("it closes");
+    }
+
+    let after = in_a_host_keeping_its_switch_in(kept.path());
+    assert!(!after.switch.is_stopped(), "this window never heard of it");
+
+    let refused = after
+        .sessions
+        .open(
+            None,
+            &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+            &|_| {},
+        )
+        .expect_err("the host starts nothing");
+
+    assert!(
+        refused.contains("kill switch"),
+        "the host's words: {refused}"
+    );
+    assert!(
+        after.switch.agree_with_its_host(),
+        "the window learns of it"
+    );
+    assert!(after.switch.is_stopped());
+    assert!(after.switch.rearm().expect("re-armed"));
+    let id = after
+        .sessions
+        .open(
+            None,
+            &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+            &|_| {},
+        )
+        .expect("it starts once the window re-armed");
+    Pane::on(&after, id).shows("HARNESS-READY");
+    after.sessions.close(id).expect("it closes");
+}
+
 /// Each behaviour, as a test of its own on every target.
 macro_rules! on_every_target {
     ($($behaviour:ident),* $(,)?) => {
@@ -884,4 +1044,6 @@ on_every_target!(
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
+    stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
+    while_stopped_the_operators_shell_opens,
 );

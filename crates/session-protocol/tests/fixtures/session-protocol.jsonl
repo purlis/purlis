@@ -65,3 +65,10 @@
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"reached","by":"you","times":40}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"asked","targets":["tracker.example.com:443","cdn.tracker.example.com:443"]}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"timed_out","target":"tracker.example.com:443"}}}
+{"call":{"id":34,"command":"stop_all"}}
+{"call":{"id":35,"command":"kill_switch"}}
+{"call":{"id":36,"command":"rearm"}}
+{"reply":{"re":34,"ok":{"kill_switch":{"stopped":true}}}}
+{"reply":{"re":35,"ok":{"kill_switch":{"stopped":true,"why":"the kill switch's state could not be read (permission denied), so every agent is held stopped until purlis's window re-arms it"}}}}
+{"reply":{"re":19,"refused":{"code":"stopped","why":"every agent is stopped by the kill switch; nothing starts until it is re-armed in purlis's window"}}}
+{"reply":{"re":36,"refused":{"code":"not_allowed","why":"re-arming the kill switch is done in purlis's window only; a `terminal` link may stop every agent, never re-arm"}}}
