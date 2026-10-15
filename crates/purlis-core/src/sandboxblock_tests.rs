@@ -552,8 +552,7 @@ fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error(
             "{error}"
         );
     }
-    // A command that only read the words names no service to allow (#1808's review, MF-5): a
-    // block, and its Notice offers no Allow.
+    // A command that only read the words raises nothing (#1808's review, MF-5; #1972).
     assert_eq!(
         detect_with_targets(
             &came_back(
@@ -563,10 +562,7 @@ fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error(
             ),
             &place()
         ),
-        vec![(
-            block(Operation::Lookup, Kind::CertificateCheck, false),
-            None
-        )]
+        Vec::new()
     );
 }
 
@@ -1423,11 +1419,17 @@ fn a_refused_docker_socket_is_a_connection_to_a_local_socket_it_names() {
             )],
             "{line}"
         );
-        // …and what a command that succeeded printed is a block naming none, where its line
-        // runs no container client.
+        // …a line that runs a program and came back is a block naming none, where it runs no
+        // container client…
+        assert_eq!(
+            detect_with_targets(&came_back("make up", "", line), &place()),
+            vec![(block(Operation::Connect, Kind::LocalSocket, false), None)],
+            "{line}"
+        );
+        // …and what a line that only reads printed is none (#1972).
         assert_eq!(
             detect_with_targets(&came_back("cat build.log", "", line), &place()),
-            vec![(block(Operation::Connect, Kind::LocalSocket, false), None)],
+            Vec::new(),
             "{line}"
         );
     }
@@ -1848,35 +1850,42 @@ fn a_docker_run_whose_status_its_line_dropped_still_names_its_socket() {
 
 /// MF-5 holds: what a command that ran no container client printed names no socket, wherever
 /// the word `docker` stands in its line. A file, a page or a log can say any socket, and none
-/// of them can make its reader fail.
+/// of them can make its reader fail: a line that only reads raises no block at all (#1972).
 #[test]
 fn a_line_that_runs_no_container_client_names_no_socket_whatever_it_printed() {
+    let readers = [
+        "cat docker.log",
+        "cat notes.log | tail -40",
+        "grep -r docker . | tail",
+        "git show HEAD:docs/docker.md",
+        "echo 'docker run x; docker ps' && cat notes.log",
+        "",
+    ];
+    let programs = [
+        "curl -s https://example.com/docker | head",
+        "sh -c 'docker run x' 2>&1 | tail",
+        "make up 2>&1 | tail",
+        "dockerize -version; cat notes.log",
+    ];
     for said in refused_socket_words() {
-        for command in [
-            "cat docker.log",
-            "cat notes.log | tail -40",
-            "grep -r docker . | tail",
-            "git show HEAD:docs/docker.md",
-            "curl -s https://example.com/docker | head",
-            "echo 'docker run x; docker ps' && cat notes.log",
-            "sh -c 'docker run x' 2>&1 | tail",
-            "make up 2>&1 | tail",
-            "dockerize -version; cat notes.log",
-            "",
-        ] {
+        for (command, raised) in readers
+            .iter()
+            .map(|command| (command, Vec::new()))
+            .chain(programs.iter().map(|command| (command, unnamed_socket())))
+        {
             for payload in [
                 came_back(command, &format!("{said}\n"), ""),
                 came_back(command, "", &said),
             ] {
                 assert_eq!(
                     detect_with_targets(&payload, &place()),
-                    unnamed_socket(),
+                    raised,
                     "{command}\n{said}"
                 );
             }
         }
     }
-    // A result with no command beside it, or one that is no text, names none either.
+    // A result with no command beside it, or one that is no text, raises none either.
     let said = format!("dial unix {DESKTOP_SOCKET}: connect: operation not permitted\n");
     for input in [json!({}), json!({"command": ["docker", "ps"]}), json!(null)] {
         let payload = json!({
@@ -1885,7 +1894,7 @@ fn a_line_that_runs_no_container_client_names_no_socket_whatever_it_printed() {
             "tool_input": input,
             "tool_response": {"stdout": said, "stderr": "", "interrupted": false},
         });
-        assert_eq!(detect_with_targets(&payload, &place()), unnamed_socket());
+        assert_eq!(detect_with_targets(&payload, &place()), Vec::new());
     }
 }
 
@@ -1941,7 +1950,7 @@ fn a_container_clients_one_string_result_names_its_socket_and_no_violation_line_
     );
     assert_eq!(
         detect_with_targets(&codex_came_back("cat notes.log", &said), &place()),
-        unnamed_socket()
+        Vec::new()
     );
     let printed = appended(
         "ok",
@@ -2147,7 +2156,7 @@ fn a_command_refused_after_its_refusal_was_read_back_is_heard_on_its_own() {
 }
 
 #[test]
-fn a_refusal_read_back_from_a_background_commands_output_is_a_block_that_names_nothing() {
+fn a_refusal_read_back_from_a_background_commands_output_is_no_block() {
     let said = "docker: permission denied while trying to connect to the docker API at \
                 unix:///Users/dev/.docker/run/docker.sock: dial unix \
                 /Users/dev/.docker/run/docker.sock: connect: operation not permitted\n";
@@ -2162,18 +2171,9 @@ fn a_refusal_read_back_from_a_background_commands_output_is_a_block_that_names_n
         cwd: Path::new("/Users/dev/plane/workspaces/a/repo"),
         home: Some(Path::new("/Users/dev")),
     };
+    // Nothing beside it says how the command ended (#1972).
     assert!(read_back(&payload));
-    assert_eq!(
-        detect_with_targets(&payload, &place),
-        vec![(
-            Block {
-                operation: Operation::Connect,
-                kind: Kind::LocalSocket,
-                ours: false,
-            },
-            None
-        )]
-    );
+    assert_eq!(detect_with_targets(&payload, &place), Vec::new());
 }
 
 // ---- the certificate check, whose one service is purlis's own word (qw353) ----------------------
@@ -2260,9 +2260,9 @@ fn a_certificate_check_whose_status_its_line_dropped_still_names_its_service() {
     }
 }
 
-/// MF-5 holds for the certificate check: a result that only read the words raises a block that
-/// names no service, so no Allow. A line made of readers alone, a string of readers a shell is
-/// handed, a file tool's read, and a result with no command beside it.
+/// MF-5 holds for the certificate check: a result that only read the words raises no block
+/// (#1972). A line made of readers alone, a string of readers a shell is handed, a file tool's
+/// read, and a result with no command beside it.
 #[test]
 fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
     let read = format!("./gh.log:{REFUSED_CHECK}\n");
@@ -2294,7 +2294,7 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
         ] {
             assert_eq!(
                 detect_with_targets(&payload, &place()),
-                unnamed_check(),
+                Vec::new(),
                 "{command}"
             );
         }
@@ -2314,7 +2314,7 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
         });
         assert_eq!(
             detect_with_targets(&payload, &place()),
-            unnamed_check(),
+            Vec::new(),
             "{tool}"
         );
     }
@@ -2325,7 +2325,7 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
         "tool_input": {"file_path": "/private/tmp/claude-502/x/tasks/b1.output"},
         "tool_response": {"file": {"content": read}},
     });
-    assert_eq!(detect_with_targets(&background, &place()), unnamed_check());
+    assert_eq!(detect_with_targets(&background, &place()), Vec::new());
     let file = json!({
         "hook_event_name": "PostToolUse",
         "tool_name": "Read",
@@ -2334,6 +2334,7 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
     });
     assert_eq!(detect_with_targets(&file, &place()), Vec::new());
     // A line too big to read, and one that does not tokenize, are read as lines that only read.
+    // A Claude Code chat's real refusal there is still named by the sandbox's own report.
     let big = format!(
         "gh pr list # {}",
         "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES)
@@ -2341,7 +2342,7 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
     for command in [big.as_str(), "gh pr list 'unclosed"] {
         assert_eq!(
             detect_with_targets(&came_back(command, &read, ""), &place()),
-            unnamed_check()
+            Vec::new()
         );
     }
 }
@@ -2422,7 +2423,7 @@ fn a_long_line_is_read_for_what_it_runs_in_linear_time() {
                 &came_back(&readers, &format!("{REFUSED_CHECK}\n"), ""),
                 &place()
             ),
-            unnamed_check()
+            Vec::new()
         );
         // Here-documents, each with a body of lines that look like commands.
         let bodies: String = (0..programs)
@@ -2433,7 +2434,7 @@ fn a_long_line_is_read_for_what_it_runs_in_linear_time() {
                 &came_back(&bodies, &format!("{REFUSED_CHECK}\n"), ""),
                 &place()
             ),
-            unnamed_check()
+            Vec::new()
         );
         let nested: String = (0..programs)
             .map(|i| format!("sh -c 'cat f{i} | head'; "))
@@ -2472,7 +2473,7 @@ fn a_here_documents_body_is_read_as_text_and_never_as_a_program() {
         ] {
             assert_eq!(
                 detect_with_targets(&payload, &place()),
-                unnamed_check(),
+                Vec::new(),
                 "{command}"
             );
         }
@@ -2503,7 +2504,7 @@ fn a_line_of_readers_behind_the_shells_own_test_names_no_certificate_check() {
     ] {
         assert_eq!(
             detect_with_targets(&came_back(command, &read, ""), &place()),
-            unnamed_check(),
+            Vec::new(),
             "{command}"
         );
     }

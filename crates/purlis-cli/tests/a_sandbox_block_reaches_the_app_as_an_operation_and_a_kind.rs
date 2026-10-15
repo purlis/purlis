@@ -405,7 +405,7 @@ fn a_lookup_refused_inside_a_2_1_run_reaches_the_app_with_its_host() {
 /// socket, and the pipe ended with `tail`'s status, so Claude Code handed the result over as one
 /// that came back. The block reached the app naming no socket, and its Notice had no Allow. A
 /// line that runs a container client now names the socket; the same words from a line that only
-/// reads still name none.
+/// reads raise no block at all (#1972).
 #[test]
 fn a_docker_run_down_a_pipe_reaches_the_app_naming_its_socket() {
     let said = "docker: permission denied while trying to connect to the docker API at \
@@ -453,20 +453,20 @@ fn a_docker_run_down_a_pipe_reaches_the_app_naming_its_socket() {
     assert!(!told.contains("docker.sock"), "fixed words only: {told}");
     holds_nothing_of_the_call(&ran);
     let read = came_back(format!("cat {CANARY}.log | tail -40"));
-    assert_eq!(named(&read), vec![(socket, None)]);
+    assert_eq!(named(&read), Vec::new());
     holds_nothing_of_the_call(&read);
 }
 
-/// #1884: a refusal a chat only read back, in a background command's output its file tool
-/// read, reaches the app marked as read back and naming nothing, so its Notice is a quiet line
-/// nobody has to answer; and the chat is told that, not to wait. The same words from a command
-/// the chat ran are a block as ever.
+/// #1884: a refusal a chat only read back, in the standard error of a background command it
+/// polled, reaches the app marked as read back, so its Notice is a quiet line nobody has to
+/// answer; and the chat is told that, not to wait. What its file tool read of that output
+/// raises nothing (#1972). The same words from a command the chat ran are a block as ever.
 #[test]
 fn a_refusal_a_chat_only_read_back_reaches_the_app_marked_so_and_the_chat_is_not_told_to_wait() {
     let said = "docker: permission denied while trying to connect to the docker API at \
                 unix:///Users/dev/.docker/run/docker.sock: dial unix \
                 /Users/dev/.docker/run/docker.sock: connect: operation not permitted\n";
-    let read = hook(
+    let file_read = hook(
         "posttooluse-blocked",
         &serde_json::json!({
             "hook_event_name": "PostToolUse",
@@ -476,22 +476,24 @@ fn a_refusal_a_chat_only_read_back_reaches_the_app_marked_so_and_the_chat_is_not
             "cwd": "/Users/dev/plane/workspaces/a/repo",
         }),
     );
-    let socket = Block {
-        operation: Operation::Connect,
-        kind: Kind::LocalSocket,
-        ours: false,
-    };
-    assert_eq!(
-        read.blocked,
-        vec![SandboxBlocked {
-            chat: 7,
-            sandbox_blocked: socket,
-            harness: Some("claude".to_owned()),
-            target: None,
-            read_back: true,
-            suggested: None,
-        }]
+    assert_eq!(file_read.blocked, Vec::new());
+    let read = hook(
+        "posttooluse-blocked",
+        &serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "BashOutput",
+            "tool_input": {"bash_id": "b1"},
+            "tool_response": {
+                "stdout": "",
+                "stderr": "touch: /opt/tool/cache: Operation not permitted",
+                "status": "completed",
+            },
+            "cwd": "/Users/dev/plane/workspaces/a/repo",
+        }),
     );
+    assert_eq!(read.blocked.len(), 1, "{:?}", read.blocked);
+    assert!(read.blocked[0].read_back);
+    assert_eq!(read.blocked[0].sandbox_blocked.operation, Operation::Write);
     let told = context_of(&read.said, "PostToolUse");
     assert!(told.contains("What you just read holds"), "{told}");
     assert!(told.contains("nothing waits on their answer"), "{told}");

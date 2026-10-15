@@ -33,14 +33,20 @@
 //!
 //! The last two are read from a command's **standard error** (`PostToolUse`'s
 //! `tool_response.stderr`) wherever they are on a line. **A refusal of the network is read from
-//! standard output too** (#1663): a command run with `2>&1`, a failed command's `error` (which
-//! holds both streams), and a background command's output file a chat reads back with `cat`,
-//! with the harness's own tool for it, or with its file tool (#1683: only a file the harness
-//! keeps a background command's output in, never any other file the tool reads).
-//! There a line counts only when it ends where the refusal's own words do
-//! ([`ends_as_a_refusal`]), so a file that quotes them (a test's source, a log about one, a grep
-//! through this module) is not refused anything; and a program's own refusal of a path is never
-//! read there at all.
+//! standard output too** (#1663): a command run with `2>&1`, and a failed command's `error`
+//! (which holds both streams). There a line counts only when it ends where the refusal's own
+//! words do ([`ends_as_a_refusal`]); and a program's own refusal of a path is never read there
+//! at all.
+//!
+//! **Printed text is never a block** (#1972): a block is raised only for a refusal a command
+//! may have met. A result with no failure beside it says nothing of how each program of its
+//! line ended, since a pipe drops a status, so its line is read for that one answer
+//! ([`runs_a_program`]): a line whose every program only reads or prints (`cat`, `sed -n`,
+//! `grep`, `git show`) merely printed what it handed back, and raises no refusal of the network
+//! from it, on either stream or as one string. Nor does a background command's output read back
+//! later, with the harness's file tool or its own tool for it: nothing beside it says how that
+//! command ended. A failed command's error, the sandbox's own report and purlis's own proxy are
+//! read whatever the line runs.
 //!
 //! **What a command printed on standard output never names a host to allow**: a file or a
 //! server's page can say any host. A refused lookup names the host the program said it looked
@@ -52,8 +58,8 @@
 //!
 //! **Each harness's adapter hands its result over in that shape** (#1353). opencode returns a
 //! shell command's standard output and error as one text, with its exit status beside it. Its
-//! shim (`crate::opencode`) passes a command that did not fail as one mixed text, so only a
-//! violation block is read from it. A command that failed is passed as standard error marked
+//! shim (`crate::opencode`) passes a command that did not fail as one mixed text, read as
+//! Codex's is, below. A command that failed is passed as standard error marked
 //! `mixed`, and all three kinds of evidence are read from it, standard output included, which is
 //! wider than Claude Code's route: a failing command that prints a refusal's words raises a
 //! block. So from a mixed stream nothing but a violation line names a target for a grant
@@ -61,7 +67,8 @@
 //! Codex hands a shell command's result over as one string of both streams too, after every
 //! command (#1663: its shell is `Bash` to a hook, `crate::plugin::CODEX` cites its source), with
 //! no exit status beside it, so it is read as opencode's command that did not fail: a refusal
-//! of the network on a line that ends as one, and a lookup's host shown and never offered. A
+//! of the network on a line that ends as one, where the line runs a program other than a
+//! reader, and a lookup's host shown and never offered. A
 //! program's own refusal of a path is not read from it. A chat of either runs behind purlis's
 //! own proxy (`crate::sandbox::egress`), which tells the app each host it refused by name, as a
 //! brokered run's does; their hook leaves a refused host to it ([`the_proxy_tells_hosts`]), so one
@@ -489,27 +496,36 @@ pub fn detect_with_targets(
 ) -> Vec<(Block, Option<String>)> {
     let mut found: Vec<(Block, Option<String>)> = Vec::new();
     let client = runs_a_container_client(payload);
-    // A file tool's read is read only for a background command's output file, and as `cat`
-    // reads it: standard output (#1683). Any other file it read is not a command's result.
+    // A result with no failure beside it says nothing of how each program of its line ended
+    // (a pipe drops a status), so its line is the one signal left (#1972): a line whose every
+    // program only reads or prints merely printed what it handed back, and raises nothing
+    // from it; any other line may have met the refusal its programs said.
+    let runs = runs_a_program(payload);
+    let said = if client {
+        Said::Client
+    } else if runs {
+        Said::Unsaid
+    } else {
+        Said::Printed
+    };
+    // A file tool's read is no command's result, a background command's output file included
+    // (#1972): nothing it read says how a command ended, so nothing it read is a block.
     if payload["tool_name"].as_str() == Some(READ_TOOL) {
-        if let Some(content) = background_output_read(payload) {
-            found.extend(on_stdout(content, place, Said::Printed));
-        }
-        return at_most(found);
+        return Vec::new();
     }
     match &payload["tool_response"] {
         serde_json::Value::String(mixed) => {
-            // One string with no failure beside it: opencode's for a command that did not
-            // fail, Codex's for every command. A violation line in it may be one the command
-            // printed, so it raises a block and names no target to allow; a target comes only
-            // from the sandbox's own report or a failed command's own error (D-sock-5), or
-            // a container client's own words for its socket.
+            // One string with nothing of how the command ended beside it: opencode's for a
+            // command that did not fail, Codex's for every command. A violation line in it may
+            // be one the command printed, so it raises a block and names no target to allow; a
+            // target comes only from the sandbox's own report or a failed command's own error
+            // (D-sock-5), or a container client's own words for its socket.
             found.extend(
                 violations(mixed, place)
                     .into_iter()
                     .map(|(block, _)| (block, None)),
             );
-            found.extend(on_stdout(mixed, place, Said::by(client)));
+            found.extend(on_stdout(mixed, place, said));
         }
         response => {
             if let Some(stderr) = response["stderr"].as_str() {
@@ -534,9 +550,14 @@ pub fn detect_with_targets(
                     // A command that succeeded (D-sock-5): only the sandbox's own line names a
                     // socket or a service to allow, never what the program printed: the same
                     // rule as its standard output's ([`on_stdout`]). A container client whose
-                    // status the line dropped names its socket there too.
+                    // status the line dropped names its socket there too. A line that only
+                    // reads or prints raises no refusal of the network from it (#1972).
                     let own = violations(stderr, place);
-                    found.extend(on_stderr(stderr, place).into_iter().map(|(block, target)| {
+                    let mut read = reported_or_of_paths(stderr, place);
+                    if said != Said::Printed {
+                        read.extend(of_the_network(stderr, place));
+                    }
+                    found.extend(read.into_iter().map(|(block, target)| {
                         let kept = !matches!(
                             block.kind,
                             Kind::LocalSocket
@@ -550,7 +571,7 @@ pub fn detect_with_targets(
                 }
             }
             if let Some(stdout) = response["stdout"].as_str() {
-                found.extend(on_stdout(stdout, place, Said::by(client)));
+                found.extend(on_stdout(stdout, place, said));
             }
         }
     }
@@ -563,7 +584,7 @@ pub fn detect_with_targets(
     // was left unnamed, so no other result's line is read for it.
     let unnamed =
         |(block, target): &(Block, Option<String>)| target.is_none() && is_the_check(block);
-    if found.iter().any(unnamed) && runs_a_program(payload) {
+    if found.iter().any(unnamed) && runs {
         for (block, target) in &mut found {
             if target.is_none() && is_the_check(block) {
                 *target = target_of(block, crate::sandbox::services::TRUSTD, place);
@@ -580,30 +601,31 @@ fn is_the_check(block: &Block) -> bool {
     (block.operation, block.kind) == (Operation::Lookup, Kind::CertificateCheck) && !block.ours
 }
 
-/// Whose words a text read as standard output is: what decides whether a socket or the
-/// certificate check it names is one a grant may name ([`on_stdout`], D-sock-5).
+/// Whose words a text read as standard output is: whether it is a refusal the command met at
+/// all (#1972), and whether a socket or the certificate check it names is one a grant may name
+/// ([`on_stdout`], D-sock-5).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Said {
     /// A command that failed: its client's own error.
     Failed,
     /// A command that came back from a line that runs a container engine's client
-    /// ([`runs_a_container_client`]): its words name a socket, and nothing else.
+    /// ([`runs_a_container_client`]): its words name its socket, and nothing else.
     Client,
-    /// Anything else a command printed: it could say any socket.
+    /// A command that came back from a line that runs a program other than a reader
+    /// ([`runs_a_program`]): it may be a refusal one of its programs met, and it names no
+    /// socket, port or service, since it could say any.
+    Unsaid,
+    /// What a command merely printed: one that came back from a line whose every program only
+    /// reads or prints, or a result with no line beside it. Never a block (#1972).
     Printed,
 }
 
 impl Said {
-    /// What a result that came back is, where its line runs a container client or does not.
-    fn by(client: bool) -> Self {
-        if client { Self::Client } else { Self::Printed }
-    }
-
     /// Whether these words may name `kind`'s target, of the two only a failure's own words
     /// name; any other kind is named by whatever said it.
     fn names(self, kind: Kind) -> bool {
         match kind {
-            Kind::LocalSocket => self != Self::Printed,
+            Kind::LocalSocket => matches!(self, Self::Failed | Self::Client),
             // A port only from the failed program's own error (qw384): a container client's
             // words name a socket, never a port.
             Kind::LocalService | Kind::CertificateCheck => self == Self::Failed,
@@ -785,7 +807,8 @@ fn runs_past_readers(line: &str, shells: usize) -> bool {
     })
 }
 
-/// The harness's file tool, which the block words also hear (#1683).
+/// The harness's file tool, which the block words also hear (#1683); nothing it read is a
+/// block (#1972).
 const READ_TOOL: &str = "Read";
 
 /// The tools a block word hears that run nothing: each reads back what a background command
@@ -802,21 +825,6 @@ pub fn read_back(payload: &serde_json::Value) -> bool {
     payload["tool_name"]
         .as_str()
         .is_some_and(|tool| READING_TOOLS.contains(&tool))
-}
-
-/// **What a file tool read of a background command's output** (#1683): the text, where the
-/// file it read is one the harness keeps a background command's output in (an `<id>.output`
-/// file in a `tasks` folder, by its whole path). None for any other file.
-fn background_output_read(payload: &serde_json::Value) -> Option<&str> {
-    let path = Path::new(payload["tool_input"]["file_path"].as_str()?);
-    let kept = path.is_absolute()
-        && path.extension().is_some_and(|ext| ext == "output")
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|folder| folder == "tasks");
-    kept.then(|| payload["tool_response"]["file"]["content"].as_str())
-        .flatten()
 }
 
 /// `found`, each block once ([`is_the_same`]) and at most [`AT_MOST_PER_RESULT`]. **A block
@@ -993,11 +1001,14 @@ fn names_a_lookup(block: &Block) -> bool {
 /// refusal does ([`ends_as_a_refusal`]). It never names a host to allow, only the host a
 /// lookup was of; a violation block and a program's own refusal of a path are never read here.
 ///
-/// A local socket is named only where the command failed, or its line runs a container
-/// engine's client (`said`, D-sock-5): a client's own error is the one place the path is said.
-/// The output of any other command that succeeded (`cat` of a log, a file that quotes the
-/// words) names none: it could say any socket.
+/// Only a refusal the command may have met is read (#1972): what a line that only reads or
+/// prints handed back ([`Said::Printed`]) is none. A local
+/// socket is named only where the command failed, or its line runs a container engine's client
+/// (`said`, D-sock-5): a client's own error is the one place the path is said.
 fn on_stdout(text: &str, place: &Place<'_>, said: Said) -> Vec<(Block, Option<String>)> {
+    if said == Said::Printed {
+        return Vec::new();
+    }
     text.lines()
         .filter(|line| ends_as_a_refusal(line))
         .filter_map(network_refusal)
@@ -1019,6 +1030,14 @@ fn on_stdout(text: &str, place: &Place<'_>, said: Said) -> Vec<(Block, Option<St
 /// What a command's standard error says: its violation block, else a program's own refusals of
 /// paths outside what the chat may write; and any proxy's or certificate check's refusal.
 fn on_stderr(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
+    let mut out = reported_or_of_paths(text, place);
+    out.extend(of_the_network(text, place));
+    out
+}
+
+/// What standard error says but for the network: its violation block, else purlis's own words
+/// and a program's own refusals of paths outside what the chat may write.
+fn reported_or_of_paths(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
     let mut out = violations(text, place);
     // Claude Code's own lines say exactly what was refused; a program's words for the same
     // refusal would only count it again, less well.
@@ -1063,20 +1082,24 @@ fn on_stderr(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
                 }),
         );
     }
-    out.extend(
-        text.lines()
-            .filter_map(network_refusal)
-            .map(|(operation, kind, host)| {
-                let block = Block {
-                    operation,
-                    kind,
-                    ours: false,
-                };
-                let target = host.and_then(|host| target_of(&block, &host, place));
-                (block, target)
-            }),
-    );
     out
+}
+
+/// Any proxy's, lookup's, socket's or certificate check's refusal on a line of standard error,
+/// with what it names.
+fn of_the_network(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
+    text.lines()
+        .filter_map(network_refusal)
+        .map(|(operation, kind, host)| {
+            let block = Block {
+                operation,
+                kind,
+                ours: false,
+            };
+            let target = host.and_then(|host| target_of(&block, &host, place));
+            (block, target)
+        })
+        .collect()
 }
 
 /// The denials Claude Code reported for the command, in the block it appended to `text`
@@ -1932,3 +1955,7 @@ mod tests;
 #[cfg(test)]
 #[path = "sandboxblock_network_tests.rs"]
 mod network_tests;
+
+#[cfg(test)]
+#[path = "sandboxblock_printed_tests.rs"]
+mod printed_tests;

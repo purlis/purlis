@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Network refusals wherever a command said them (#1663): on standard output as well as
-//! standard error, in what a background command left in its output file, and with the host a
-//! lookup was of.
+//! Network refusals wherever a command that may have met one said them (#1663, #1972): on
+//! standard output as well as standard error, and with the host a lookup was of; never in what
+//! a line that only reads or prints handed back, nor in a background command's output read back.
 
 use super::*;
 use serde_json::json;
@@ -49,17 +49,14 @@ fn lookup(host: Option<&str>) -> (Block, Option<String>) {
     )
 }
 
-/// A refused socket read back from output: a block, naming no socket to allow, since a
-/// command's output could say any (ADR 0093, D-sock-5).
-fn socket() -> (Block, Option<String>) {
-    (
-        Block {
-            operation: Operation::Connect,
-            kind: Kind::LocalSocket,
-            ours: false,
-        },
-        None,
-    )
+/// Codex's `PostToolUse`: both streams in one string, with nothing of how the command ended.
+fn one_string(command: &str, said: &str) -> serde_json::Value {
+    json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_response": said,
+    })
 }
 
 /// The live case: a dispatched task ran a database client through a brokered run with both
@@ -74,97 +71,65 @@ fn a_lookup_a_2_1_run_said_on_standard_output_is_a_block_naming_its_host() {
         detect_with_targets(&failed(command, &format!("Exit code 1\n{said}")), &place()),
         vec![lookup(Some("db.prod.example.com"))]
     );
-    // It came back (the pipe's `tail` succeeded): the words are on standard output alone.
+    // Codex says nothing of how it ended either: read by its line the same way.
     assert_eq!(
-        detect_with_targets(&came_back(command, said, ""), &place()),
+        detect_with_targets(&one_string(command, said), &place()),
         vec![lookup(Some("db.prod.example.com"))]
     );
     // Go's resolver naming the server it asked says the same.
     assert_eq!(
         detect_with_targets(
-            &came_back(
+            &one_string(
                 command,
-                "lookup db.prod.example.com on 192.168.1.1:53: no such host",
-                ""
+                "lookup db.prod.example.com on 192.168.1.1:53: no such host"
             ),
             &place()
         ),
         vec![lookup(Some("db.prod.example.com"))]
     );
+    // It came back (the pipe's `tail` succeeded): its line runs a program, which may have met
+    // the refusal it said.
+    assert_eq!(
+        detect_with_targets(&came_back(command, said, ""), &place()),
+        vec![lookup(Some("db.prod.example.com"))]
+    );
 }
 
-/// The live case: a background `docker run` was refused its socket, and the chat read the
-/// refusal from the command's output file later, with `cat`: standard output.
+/// A background command's output read back later, with `cat`, with the harness's file tool or
+/// with its own tool for it, says nothing of how that command ended: it raises no block
+/// (#1972). The sandbox's own report of the command, where the harness keeps one, still does.
 #[test]
-fn a_socket_refusal_read_back_from_a_background_output_file_is_a_block() {
+fn a_background_commands_output_read_back_is_no_block() {
     let output = "Unable to find image 'postgres:16' locally\n\
                   docker: permission denied while trying to connect to the Docker daemon socket \
                   at unix:///Users/dev/.docker/run/docker.sock: Head \
                   \"http://%2FUsers%2Fdev%2F.docker%2Frun%2Fdocker.sock/_ping\": dial unix \
                   /Users/dev/.docker/run/docker.sock: connect: operation not permitted.\n\
-                  Run 'docker run --help' for more information\n";
-    assert_eq!(
-        detect_with_targets(
-            &came_back("cat /private/tmp/tasks/b7x2.output", output, ""),
-            &place()
-        ),
-        vec![socket()]
-    );
-}
-
-/// #1683: the same output read back with the harness's file tool, or with its own tool for a
-/// background command's output, is read as `cat` reads it: as standard output. A file tool's
-/// read of any other file is not read for blocks at all.
-#[test]
-fn a_background_commands_output_read_by_another_tool_is_read_as_cat_reads_it() {
-    let output = "Unable to find image 'postgres:16' locally\n\
-                  docker: permission denied while trying to connect to the Docker daemon socket \
-                  at unix:///Users/dev/.docker/run/docker.sock: Head \
-                  \"http://%2FUsers%2Fdev%2F.docker%2Frun%2Fdocker.sock/_ping\": dial unix \
-                  /Users/dev/.docker/run/docker.sock: connect: operation not permitted.\n";
-    let read = |path: &str| {
-        json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": path},
-            "tool_response": {"type": "text", "file": {"filePath": path, "content": output}},
-        })
-    };
+                  error: dial tcp: lookup db.prod.example.com: no such host\n";
     let output_file = "/private/tmp/claude-501/-Users-dev-plane/0b1c/tasks/b7x2.output";
-    assert_eq!(
-        detect_with_targets(&read(output_file), &place()),
-        vec![socket()]
-    );
-    for elsewhere in [
-        "/Users/dev/plane/workspaces/alpha/repo/src/x.rs",
-        "/Users/dev/plane/workspaces/alpha/repo/notes.output",
-        "/private/tmp/claude-501/tasks/b7x2.log",
-        "tasks/b7x2.output",
-    ] {
-        assert!(
-            detect_with_targets(&read(elsewhere), &place()).is_empty(),
-            "{elsewhere}"
-        );
-    }
-    // The harness's own tool for a background command's output hands it over as a command's.
+    let read = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": output_file},
+        "tool_response": {"type": "text", "file": {"filePath": output_file, "content": output}},
+    });
     let polled = json!({
         "hook_event_name": "PostToolUse",
         "tool_name": "BashOutput",
         "tool_input": {"bash_id": "b7x2"},
         "tool_response": {"stdout": output, "stderr": "", "status": "completed"},
     });
-    assert_eq!(detect_with_targets(&polled, &place()), vec![socket()]);
-    // What a file tool read never names a host to allow, as standard output never does.
-    let said = "error: dial tcp: lookup db.prod.example.com: no such host\n";
-    let looked_up = json!({
-        "tool_name": "Read",
-        "tool_input": {"file_path": output_file},
-        "tool_response": {"type": "text", "file": {"filePath": output_file, "content": said}},
-    });
-    assert_eq!(
-        detect_with_targets(&looked_up, &place()),
-        vec![lookup(Some("db.prod.example.com"))]
-    );
+    for payload in [
+        came_back("cat /private/tmp/tasks/b7x2.output", output, ""),
+        read,
+        polled,
+    ] {
+        assert_eq!(
+            detect_with_targets(&payload, &place()),
+            Vec::new(),
+            "{payload}"
+        );
+    }
 }
 
 /// Each way a program says a lookup was refused, with the host where it names one.
@@ -203,7 +168,8 @@ fn a_refused_lookup_names_the_host_its_program_said() {
             None,
         ),
     ] {
-        for payload in [came_back("x", "", line), came_back("x", line, "")] {
+        let failure = failed("x", &format!("Exit code 1\n{line}"));
+        for payload in [failure, one_string("x", line)] {
             assert_eq!(
                 detect_with_targets(&payload, &place()),
                 vec![lookup(host)],
@@ -228,7 +194,7 @@ fn standard_output_names_no_host_to_allow() {
         "curl: (56) CONNECT tunnel failed, response 403",
     ] {
         assert_eq!(
-            detect_with_targets(&came_back("x", line, ""), &place()),
+            detect_with_targets(&one_string("x", line), &place()),
             vec![(host, None)],
             "{line}"
         );
@@ -289,6 +255,7 @@ fn a_refusal_in_opencodes_one_text_is_read_as_standard_output() {
     let payload = json!({
         "hook_event_name": "PostToolUse",
         "tool_name": "bash",
+        "tool_input": {"command": "psql -h db.example.com"},
         "tool_response": "connecting\nerror: dial tcp: lookup db.example.com: no such host\n",
     });
     assert_eq!(
@@ -507,15 +474,15 @@ fn the_sandboxs_own_line_for_a_port_on_this_mac_names_the_port() {
     );
 }
 
-/// qw384: the same words a command merely printed (a log read back, one string with no failure
-/// beside it) raise the block and name no port: the person types it.
+/// qw384: the same words from a line that runs a program, with no failure beside them, raise
+/// the block and name no port: the person types it. A log merely printed raises none (#1972).
 #[test]
 fn a_printed_refusal_of_a_port_names_no_port() {
     let said = "Unable to connect to the server: dial tcp 127.0.0.1:50795: connect: operation \
                 not permitted\n";
     assert_eq!(
         detect_with_targets(&came_back("cat kubectl.log", said, ""), &place()),
-        vec![local_service(None)]
+        Vec::new()
     );
     let codex = json!({
         "hook_event_name": "PostToolUse",
