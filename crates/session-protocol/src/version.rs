@@ -50,8 +50,9 @@ pub const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 /// The longest hello or answer either end reads. A real one is a few dozen bytes.
 pub const MOST_HELLO_BYTES: usize = 4096;
 
-/// One version of the protocol. Minors within a major only add; a new major is a break.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// One version of the protocol. Minors within a major only add; a new major is a break. Ordered
+/// by major, then minor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Version {
     pub major: u16,
     pub minor: u16,

@@ -34,6 +34,8 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::link::{LinkError, Opener, Stream};
+
+pub mod frames;
 use crate::session::ViewEnd;
 
 /// What opens a view's stream.

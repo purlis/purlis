@@ -32,6 +32,7 @@ mod blank;
 mod browser;
 mod keys;
 mod ledger;
+mod screencast;
 mod settle;
 mod tree;
 
@@ -40,6 +41,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 pub use browser::Browser;
+pub use screencast::QUALITY;
 
 use crate::WebAddress;
 

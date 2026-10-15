@@ -105,6 +105,7 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
+import { BROWSERS_OFFERED } from "./browsers";
 
 /**
  * **Where a refusal is put right, when that is a setting** (#1201, SE-22): the words of the link
@@ -248,6 +249,9 @@ export type Does =
    *  names none. Nothing asks first: a shell starts no harness, so ADR 0022's picker has
    *  nothing to ask about. */
   | { verb: "newShell"; workspace?: string }
+  /** Starts a browser in the session host and opens it in a view tab (#2012). The person's
+   *  own act: nothing asks first, and Stop all refuses it. */
+  | { verb: "newBrowser" }
   /** Opens the picker for a new tab whose chat starts in `path` — the plane root's own row
    *  (SI-1). It starts nothing by itself; the picker is the only path ADR 0022 admits. */
   | { verb: "newChatIn"; path: string }
@@ -835,6 +839,8 @@ export type Doing = {
   newChat: () => void;
   /** A shell tab, in `workspace` when a row names one, else where a new chat would start. */
   newShell: (workspace?: string) => void;
+  /** A browser, in a view tab of its own (#2012). */
+  newBrowser: () => void;
   split: (direction: Direction) => void;
   closePane: () => void;
   closeTab: (tab: number) => void;
@@ -1541,6 +1547,14 @@ export function catalogue(now: Now): Offer[] {
     ...can("shell.new", "New shell", { verb: "newShell" }),
     note: `Your own shell, with no harness, where a new tab would start. ${SHELL_KEY_SAID}.`,
   });
+
+  // A browser purlis runs and you watch in a tab (#2012): it never opens as a window of its own.
+  // Offered once a browser the person opens can go somewhere (#2176, `BROWSERS_OFFERED`).
+  if (BROWSERS_OFFERED)
+    offers.push({
+      ...can("browser.new", "New browser", { verb: "newBrowser" }),
+      note: "A browser purlis runs, shown live in a tab of its own.",
+    });
 
   // **Always available, and available with nothing open.** ADR 0041 item 5: ADR 0035
   // shows what a project contributes in the dialog and nothing shows it afterwards, so the
@@ -2908,6 +2922,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "newShell":
       doing.newShell(...(does.workspace === undefined ? [] : [does.workspace]));
+      return DID;
+    case "newBrowser":
+      doing.newBrowser();
       return DID;
     case "split":
       doing.split(does.direction);
