@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792069197245,
+  "lastUpdate": 1792070407708,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12348,6 +12348,48 @@ window.BENCHMARK_DATA = {
             "value": 103.961464,
             "unit": "ms",
             "extra": "median of 5 runs: 103.798, 103.887, 103.961, 104.075, 105.424 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bcf1db353b164d37831581d88a3e5006642335d6",
+          "message": "Flaky: projects.e2e waits past 30 s for the open-this-project ask on the ubuntu shard (#2129)\n\n* Wait for the trust question by its words, so a spec cannot hold the dialog before it (#2126)\n\nThe cause: making a project ends in two dialogs, one in the other's place.\nNew project stays up saying \"Creating...\" while the second create_project\nruns, then the trust question replaces it. The spec took\n$('[role=\"dialog\"]') right after pressing GitHub, so it could take the New\nproject dialog in its last moment. Once that dialog went, the held node was\ndetached, and the WebDriver server inside the app hands a script a detached\nnode without calling it stale. WebdriverIO's isDisplayed then answers false\non every look and never looks for the selector again, so the spec waited out\n30 s with the question on screen. Its cleanup's Escape then cancelled the\nquestion, which is why the failure's record found no dialog and no project\nopened. The desktop portal line in the record is the launch's own, about\n100 s before, and is on every ubuntu run: nothing on this path asks the\nportal or the session bus.\n\nopenThroughTheTrustQuestion() in e2e/opening.ts waits for a dialog titled\n\"Open this project?\" with one browser.execute per look, holding no node,\nthen presses Open project inside it. The two waits in projects.e2e.ts and\nthe one in switching.ts use it, and opening.test.ts fails on any scenario\nsource that waits on the question's words itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Re-read the page for every dialog a scenario waits on, not a node found before it (#2126 review)\n\nThe same race as the trust question: a spec that holds the first\n[role=\"dialog\"] can hold one that another dialog then replaces, and the\ndriver inside the app never calls the detached node stale.\n\n- pickAndStart, answerTheAsk and closeProject wait for their dialog by the\n  answer it offers (aDialogOffers, run in the page), and wait for it to go\n  the same way, instead of holding a node and asking not.toBeDisplayed.\n- The trust question's wait in twelve more specs goes through\n  openThroughTheTrustQuestion(), which takes a shorter wait and an\n  optional question for windows.e2e.ts. your-repos.e2e.ts names the\n  question in its selector.\n- The guard says what it checks, reads bench/ too, takes any quotes, and\n  also fails on pressing Open project in whichever dialog came first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Wait for the picker and the asks to go by their Cancel, not by the button pressed (#2126 review)\n\nThe first fix round waited for a dialog to go by the button that was\npressed. That button changes its words while the dialog is still up\n(\"Starting...\"), so the wait ended at once. The next press then landed\nwhile the picker was still starting, and the second chat started on a\nprofile the plane does not declare (palette.e2e.ts:314, lifecycle.e2e.ts:121\nand :135 on both OSes). Each of these dialogs keeps its Cancel while it\nworks, so the dialog is gone when no dialog with its words offers Cancel.\nThe picker is also found by its title.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T17:04:33+04:00",
+          "tree_id": "f06c66b9ca1813ccc79b9c19fbdde7e729d0ba16",
+          "url": "https://github.com/purlis/purlis/commit/bcf1db353b164d37831581d88a3e5006642335d6"
+        },
+        "date": 1792070406458,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5031065000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.474, 0.496, 0.503, 0.506, 0.532 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4037745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.303, 16.323, 16.404, 16.508, 16.611 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.003556,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.659, 102.386, 104.004, 104.250, 105.144 ms"
           }
         ]
       }
