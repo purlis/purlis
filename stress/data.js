@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792027258362,
+  "lastUpdate": 1792029471132,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2334,6 +2334,42 @@ window.BENCHMARK_DATA = {
             "value": 190.6,
             "unit": "MB",
             "extra": "median of 6 samples: 211.6, 231.2, 198.8, 181.7, 182.5, 125.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9850f295c4edeade2724c9e9d43c93aa4ad6669d",
+          "message": "fix: a removal says when the selection could not move; one long log line never cuts the late commands (#2103) (#2104)\n\n* fix: a removal says when the selection could not move; one long log line never cuts the late commands\n\nAfter a workspace removal, a selection pointer that could not be written\nis said as that, with a failing exit, as workspace use does; never as a\nreset (#2103). In the e2e annotations, a single core log line longer than\nthe room left after the late commands and covers is cut to that room, so\nthe final cut never reaches the late commands.\n\nCloses #2103\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* docs(select): each function keeps its own doc\n\nRefs #2103\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T05:15:48+04:00",
+          "tree_id": "a667bd2f141c5746298d78d0d02a98d2e89c998c",
+          "url": "https://github.com/purlis/purlis/commit/9850f295c4edeade2724c9e9d43c93aa4ad6669d"
+        },
+        "date": 1792029469855,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 858,
+            "unit": "MB",
+            "extra": "median of 3 samples: 778, 858, 972 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 213.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 224.4, 238.3, 232.2, 201.9, 202.6, 125.2 MB"
           }
         ]
       }
