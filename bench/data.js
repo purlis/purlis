@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792049321966,
+  "lastUpdate": 1792053276642,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12096,6 +12096,48 @@ window.BENCHMARK_DATA = {
             "value": 104.16676000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.373, 103.412, 104.167, 105.405, 105.510 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "31538baec8b747ba737519beed6cdcfecd27e511",
+          "message": "test: a chat started on a profile made here says how it was made (#2149)\n\nThe start in #2096's test, which landed beside #2122's new field.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T12:33:20+04:00",
+          "tree_id": "02e272b8fdb97df935264f291d8ceb1d7ad74de5",
+          "url": "https://github.com/purlis/purlis/commit/31538baec8b747ba737519beed6cdcfecd27e511"
+        },
+        "date": 1792053275745,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27443150000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.268, 0.271, 0.274, 0.279, 0.281 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.497958500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.371, 16.464, 16.498, 16.551, 16.624 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4222715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.802, 101.018, 101.422, 101.755, 101.773 ms"
           }
         ]
       }
