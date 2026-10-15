@@ -1797,9 +1797,9 @@ export const commands = {
 	 *  On a blocking thread: it asks git a few questions per repo, and runs nothing that reaches a
 	 *  network.
 	 */
-	staleClones: (plane: PlaneId) => typedError<StaleClone[], string>(__TAURI_INVOKE("stale_clones", { plane })),
+	staleClones: (plane: PlaneId) => typedError<StaleClones, string>(__TAURI_INVOKE("stale_clones", { plane })),
 	/**  The person's Fix on a stale repo's Notice: answers what was done, or what blocks it. */
-	fixStaleClone: (plane: PlaneId, workspace: string, repo: string, fix: StaleFix) => typedError<string, string>(__TAURI_INVOKE("fix_stale_clone", { plane, workspace, repo, fix })),
+	fixStaleClone: (plane: PlaneId, workspace: string, repo: string, fix: StaleFix, shown: string | null) => typedError<string, string>(__TAURI_INVOKE("fix_stale_clone", { plane, workspace, repo, fix, shown })),
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -9040,18 +9040,26 @@ export type StaleBranch = {
 export type StaleClone = {
 	workspace: string,
 	repo: string,
-	/**  On a branch purlis cut for a chat or a task: that branch, and the remote's default. */
+	/**  Off its default branch: the branch it is on, and the remote's default. */
 	branch: StaleBranch | null,
 	/**  On a remote the forge said moved: where it is now, and where it went. */
 	remote: StaleRemote | null,
 };
 
+/**  What the Inbox is given: every stale repo, and what could not be read. */
+export type StaleClones = {
+	stale: StaleClone[],
+	/**  A sentence for each workspace or repo purlis could not read. */
+	unread: string[],
+};
+
 /**  Which way out the person pressed. */
 export type StaleFix = "branch" | "remote";
 
-/**  Both as `<host>/<owner>/<repo>`: a recorded address can carry a user, which is never drawn. */
 export type StaleRemote = {
+	/**  `origin` as `<host>/<owner>/<repo>`: a recorded address can carry a user, never drawn. */
 	origin: string,
+	/**  The address the Fix sets, whole, as it is set. */
 	now: string,
 };
 

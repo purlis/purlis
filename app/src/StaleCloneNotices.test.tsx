@@ -29,16 +29,16 @@ const ON_A_CHATS_BRANCH: StaleClone = {
 
 const BOTH: StaleClone = {
   ...ON_A_CHATS_BRANCH,
-  remote: { origin: "github.com/acme/widget", now: "github.com/purlis/widget" },
+  remote: { origin: "github.com/acme/widget", now: "https://github.com/purlis/widget.git" },
 };
 
 /** A core holding `stale` until a fix it answers with `fixed` (a refusal's words) or clears. */
-function core(stale: StaleClone[], fixed?: string) {
+function core(stale: StaleClone[], fixed?: string, unread: string[] = []) {
   let now = stale;
   const asked: { cmd: string; args: unknown }[] = [];
   mockIPC((cmd, args) => {
     asked.push({ cmd, args });
-    if (cmd === "stale_clones") return now;
+    if (cmd === "stale_clones") return { stale: now, unread };
     if (cmd === "fix_stale_clone") {
       if (fixed !== undefined) throw fixed;
       now = [];
@@ -62,8 +62,9 @@ describe("a stale repo's Notice", () => {
     shown();
 
     const notice = await screen.findByRole("status", { name: "widget in smart-ide" });
-    expect(notice).toHaveTextContent("widget in smart-ide is on chat-3");
-    expect(notice).toHaveTextContent("and not on main");
+    expect(notice).toHaveTextContent(
+      "widget in smart-ide is on chat-3, not main. A chat that starts in this repo works on chat-3.",
+    );
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Switch to main" })).toBeInTheDocument();
   });
@@ -73,7 +74,9 @@ describe("a stale repo's Notice", () => {
     shown();
 
     const notice = await screen.findByRole("status", { name: "widget in smart-ide" });
-    expect(notice).toHaveTextContent("the forge says it moved to github.com/purlis/widget");
+    expect(notice).toHaveTextContent(
+      "the forge says it moved to https://github.com/purlis/widget.git",
+    );
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Use the new address" })).toBeInTheDocument();
   });
@@ -121,5 +124,45 @@ describe("a stale repo's Notice", () => {
 
     await waitFor(() => expect(asked.map((one) => one.cmd)).toContain("stale_clones"));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("sets exactly the address it shows", async () => {
+    const asked = core([BOTH]);
+    shown();
+
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("button", { name: "Use the new address" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "fix_stale_clone")?.args).toMatchObject({
+        fix: "remote",
+        shown: "https://github.com/purlis/widget.git",
+      }),
+    );
+  });
+
+  it("keys a dismissal by the branch, so another branch later shows again", async () => {
+    core([{ ...ON_A_CHATS_BRANCH, branch: { branch: "chat-4", default: "main" } }]);
+    shown(vi.fn(), vi.fn(), new Set([staleCloneCause(ON_A_CHATS_BRANCH)]));
+
+    const notice = await screen.findByRole("status", { name: "widget in smart-ide" });
+    expect(notice).toHaveTextContent("is on chat-4");
+  });
+
+  it("keys a dismissal by each finding, so a later move of the same repo shows again", async () => {
+    core([BOTH]);
+    shown(vi.fn(), vi.fn(), new Set([staleCloneCause(ON_A_CHATS_BRANCH)]));
+
+    expect(await screen.findByRole("status", { name: "widget in smart-ide" })).toBeInTheDocument();
+  });
+
+  it("says which workspaces it could not read", async () => {
+    core([], undefined, ["could not read workspace 'beta' (gone)."]);
+    shown();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "could not read workspace 'beta' (gone).",
+    );
   });
 });

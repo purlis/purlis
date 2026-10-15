@@ -10,7 +10,6 @@ fn settled() -> Seen {
         repo: "widget".into(),
         branch: Some("main".into()),
         default: Some("main".into()),
-        chat_branches: ["chat-3".to_string(), "task-7".to_string()].into(),
         origin: Some("https://github.com/acme/widget.git".into()),
         moved_to: None,
         clean: Some(true),
@@ -31,10 +30,10 @@ fn a_clone_on_its_default_branch_is_not_stale() {
 }
 
 #[test]
-fn a_clone_left_on_a_branch_purlis_cut_for_a_chat_is_stale() {
+fn a_clone_left_on_another_branch_is_stale() {
     assert_eq!(
         judged(&on("chat-3")),
-        [Stale::OnAChatsBranch {
+        [Stale::OffDefault {
             branch: "chat-3".into(),
             default: "main".into(),
         }]
@@ -42,9 +41,15 @@ fn a_clone_left_on_a_branch_purlis_cut_for_a_chat_is_stale() {
 }
 
 #[test]
-fn a_clone_on_a_branch_no_chat_was_cut_for_is_left_alone() {
-    // The person's own branch in the shared clone is theirs to be on.
-    assert_eq!(judged(&on("my-feature")), []);
+fn any_branch_but_the_default_counts_whoever_checked_it_out() {
+    // purlis cannot tell a chat's plain checkout from the person's: the rule is the branch.
+    assert_eq!(
+        judged(&on("ci/sccache-stats-notice")),
+        [Stale::OffDefault {
+            branch: "ci/sccache-stats-notice".into(),
+            default: "main".into(),
+        }]
+    );
 }
 
 #[test]
@@ -107,6 +112,21 @@ fn a_move_to_another_host_or_a_url_purlis_would_not_hand_git_is_never_offered() 
         "ssh://git@github.com/purlis/widget.git",
         "-c core.sshCommand=x",
         "",
+        // Dot segments a client would resolve to another path than the one shown.
+        "https://github.com/acme/widget/../../evil/x",
+        "https://github.com/./purlis/widget.git",
+        "https://github.com/purlis/../widget.git",
+        // A query, a fragment, an escape: nothing but the path is taken.
+        "https://github.com/purlis/widget.git?x=1",
+        "https://github.com/purlis/widget.git#x",
+        "https://github.com/purlis/%77idget.git",
+        // Another port than origin's, or one that is not a number.
+        "https://github.com:8443/purlis/widget.git",
+        "https://github.com:/purlis/widget.git",
+        "https://github.com:x/purlis/widget.git",
+        // An owner alone, or an empty segment.
+        "https://github.com/widget.git",
+        "https://github.com/purlis//widget.git",
     ] {
         let seen = Seen {
             moved_to: Some(now.into()),
@@ -220,4 +240,67 @@ fn every_refusal_says_what_blocks_it() {
     }
     assert!(Blocked::OnlyHere(1).to_string().contains("1 commit "));
     assert!(Blocked::OnlyHere(3).to_string().contains("3 commits "));
+}
+
+#[test]
+fn the_address_set_is_rebuilt_from_its_checked_parts() {
+    let origin = "https://github.com/acme/widget.git";
+    for (said, set) in [
+        (
+            "https://github.com/purlis/widget.git/",
+            "https://github.com/purlis/widget.git",
+        ),
+        (
+            "https://GitHub.com/purlis/widget",
+            "https://github.com/purlis/widget.git",
+        ),
+        (
+            "https://github.com/group/sub/widget.git",
+            "https://github.com/group/sub/widget.git",
+        ),
+    ] {
+        assert_eq!(rebuilt(origin, said).as_deref(), Some(set), "{said}");
+    }
+    // origin's own port is kept, and required.
+    let on_a_port = "https://git.example:8443/acme/widget.git";
+    assert_eq!(
+        rebuilt(on_a_port, "https://git.example:8443/purlis/widget.git").as_deref(),
+        Some("https://git.example:8443/purlis/widget.git")
+    );
+    assert_eq!(
+        rebuilt(on_a_port, "https://git.example/purlis/widget.git"),
+        None
+    );
+    // A user on origin is not carried to the new address.
+    assert_eq!(
+        rebuilt(
+            "https://git@github.com/acme/widget.git",
+            "https://github.com/purlis/widget.git"
+        )
+        .as_deref(),
+        Some("https://github.com/purlis/widget.git")
+    );
+    // An SSH origin moves to the forge's HTTPS address on its host.
+    assert_eq!(
+        rebuilt(
+            "git@github.com:acme/widget.git",
+            "https://github.com/purlis/widget.git"
+        )
+        .as_deref(),
+        Some("https://github.com/purlis/widget.git")
+    );
+}
+
+#[test]
+fn what_is_kept_is_what_the_fix_sets() {
+    let seen = Seen {
+        moved_to: Some("https://GitHub.com/purlis/widget/".into()),
+        ..settled()
+    };
+    assert_eq!(
+        step(&seen, Fix::Remote),
+        Ok(Step::SetUrl {
+            to: "https://github.com/purlis/widget.git".into()
+        })
+    );
 }

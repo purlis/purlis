@@ -7707,7 +7707,7 @@ export const PlaneView = memo(function PlaneView({
         dismiss={dismiss}
         settle={settleNotices}
       />
-      {/* **A workspace's repo left on a chat's branch, or on a moved remote** (#1985): one
+      {/* **A workspace's repo left off its default branch, or on a moved remote** (#1985): one
           Notice per repo, with the Fix that loses no work. */}
       <StaleCloneNotices
         plane={plane}

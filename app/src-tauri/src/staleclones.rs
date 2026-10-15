@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A workspace's repo left on a chat's branch, or on a moved remote** (#1985): the window's
+//! **A workspace's repo left off its default branch, or on a moved remote** (#1985): the window's
 //! half of `purlis_core::staleclone`.
 //!
 //! [`stale_clones`] lists every repo of the project's workspaces that is stale, which the
@@ -15,12 +15,20 @@ use purlis_core::staleclone::{self, Fix, Stale};
 
 use crate::planes::{PlaneId, Planes};
 
+/// What the Inbox is given: every stale repo, and what could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct StaleClones {
+    pub stale: Vec<StaleClone>,
+    /// A sentence for each workspace or repo purlis could not read.
+    pub unread: Vec<String>,
+}
+
 /// One stale repo, as the Inbox draws it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct StaleClone {
     pub workspace: String,
     pub repo: String,
-    /// On a branch purlis cut for a chat or a task: that branch, and the remote's default.
+    /// Off its default branch: the branch it is on, and the remote's default.
     pub branch: Option<StaleBranch>,
     /// On a remote the forge said moved: where it is now, and where it went.
     pub remote: Option<StaleRemote>,
@@ -32,10 +40,11 @@ pub struct StaleBranch {
     pub default: String,
 }
 
-/// Both as `<host>/<owner>/<repo>`: a recorded address can carry a user, which is never drawn.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct StaleRemote {
+    /// `origin` as `<host>/<owner>/<repo>`: a recorded address can carry a user, never drawn.
     pub origin: String,
+    /// The address the Fix sets, whole, as it is set.
     pub now: String,
 }
 
@@ -56,7 +65,7 @@ pub enum StaleFix {
 pub async fn stale_clones(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-) -> Result<Vec<StaleClone>, String> {
+) -> Result<StaleClones, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || shown(staleclone::found(&root)))
         .await
@@ -72,6 +81,7 @@ pub async fn fix_stale_clone(
     workspace: String,
     repo: String,
     fix: StaleFix,
+    shown: Option<String>,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
@@ -92,7 +102,7 @@ pub async fn fix_stale_clone(
         }
     }
     let done = tauri::async_runtime::spawn_blocking(move || {
-        let fixed = staleclone::fix(&root, &workspace, &repo, fix)?;
+        let fixed = staleclone::fix(&root, &workspace, &repo, fix, shown.as_deref())?;
         // The window's saves push with the person's sign-in only to the remote recorded for the
         // repo: a record of the old address follows the repo to the new one.
         if let Some(moved) = &fixed.moved
@@ -116,7 +126,18 @@ pub async fn fix_stale_clone(
     Ok(done)
 }
 
-/// The chats mid-turn whose folder is the repo at `clone` or one inside it, by name.
+/// Whether a chat glanced as `glance` may be in a turn: running, asking something, stopped on a
+/// prompt in its terminal, or not yet heard from. A chat whose turn ended is not.
+fn mid_turn(glance: &crate::host::Glance) -> bool {
+    use purlis_core::state::State;
+    match glance.state {
+        State::Running | State::Unknown => true,
+        State::Waiting => glance.asking || glance.prompt.is_some(),
+        State::Done | State::Failed => false,
+    }
+}
+
+/// The chats that may be mid-turn whose folder is the repo at `clone` or one inside it, by name.
 fn working_in(held: &crate::planes::Held, clone: &std::path::Path) -> Vec<String> {
     held.chats()
         .open_now()
@@ -127,16 +148,15 @@ fn working_in(held: &crate::planes::Held, clone: &std::path::Path) -> Vec<String
                     || std::fs::canonicalize(cwd).is_ok_and(|real| real.starts_with(clone))
             })
         })
-        .filter(|open| {
-            held.board().glance(open.session).state == purlis_core::state::State::Running
-        })
+        .filter(|open| mid_turn(&held.board().glance(open.session)))
         .map(|open| open.label.clone().unwrap_or(open.name))
         .collect()
 }
 
 /// What the Inbox is given of what the core found.
-fn shown(found: Vec<staleclone::Found>) -> Vec<StaleClone> {
-    found
+fn shown(findings: staleclone::Findings) -> StaleClones {
+    let stale = findings
+        .found
         .into_iter()
         .map(|found| {
             let mut out = StaleClone {
@@ -147,20 +167,24 @@ fn shown(found: Vec<staleclone::Found>) -> Vec<StaleClone> {
             };
             for stale in found.stale {
                 match stale {
-                    Stale::OnAChatsBranch { branch, default } => {
+                    Stale::OffDefault { branch, default } => {
                         out.branch = Some(StaleBranch { branch, default });
                     }
                     Stale::RemoteMoved { origin, now } => {
                         out.remote = Some(StaleRemote {
                             origin: staleclone::place(&origin),
-                            now: staleclone::place(&now),
+                            now,
                         });
                     }
                 }
             }
             out
         })
-        .collect()
+        .collect();
+    StaleClones {
+        stale,
+        unread: findings.unread,
+    }
 }
 
 #[cfg(test)]

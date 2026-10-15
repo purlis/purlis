@@ -6,28 +6,25 @@
 //! Two ways a repo a workspace holds (its clone, `workspaces/<ws>/<repo>`, never a branch folder
 //! under `.worktrees`) goes stale:
 //!
-//! - **On a chat's branch.** Its checked-out branch is not the remote's default branch, and is a
-//!   branch purlis cut for a chat or a task: one with a base recorded under it
-//!   (`branch.<branch>.charterBase`, [`crate::worktree::cut_branches`]) or one the piece log
-//!   names. A chat that starts in the repo itself works on that branch. The fix switches the
-//!   repo back to its default branch, and only where nothing is lost: the tree holds no change,
-//!   no operation is stopped in it, and every commit of the branch is on another branch or on
-//!   the remote. The branch itself is kept.
+//! - **Off its default branch.** Its checked-out branch is not the remote's default branch
+//!   (`origin/HEAD`). purlis cannot tell whose branch a plain checkout is, so any other branch of
+//!   the repo itself counts; branch folders are never judged. A chat that starts in the repo
+//!   works on that branch. The fix switches the repo back to its default branch, and only where
+//!   nothing is lost: the tree holds no change, no operation is stopped in it, and every commit
+//!   of the branch is on another branch or on the remote. The branch itself is kept.
 //! - **On a moved remote.** The forge answered a fetch purlis ran with a redirect: the repo now
 //!   lives at another address on the same host (a rename, or a move to another owner). purlis
-//!   keeps what the forge said in the repo's own config (`remote.origin.purlisMovedTo`), and
-//!   the fix sets `origin` to that address and records it as the remote the window's saves push
-//!   to.
+//!   keeps that address in the repo's own config (`remote.origin.purlisMovedTo`), rebuilt from
+//!   its checked parts, and the fix sets `origin` to exactly that address.
 //!
 //! **Read from what purlis can read without running anything a chat wrote**: git through the
-//! hardened runner ([`crate::worktree::git`]), which runs no hook, filter or fsmonitor, and the
-//! plane's piece log. Nothing here asks the network.
+//! hardened runner ([`crate::worktree::git`]), which runs no hook, filter or fsmonitor. Nothing
+//! here asks the network.
 //!
 //! [`judged`] and [`step`] are the decisions, over a [`Seen`] that says what was read; [`read`]
 //! and [`fix`] do the reading and the one git command a fix runs. The fix is the person's, from
 //! the window (the command is on `WINDOW_ONLY`), and it reads the repo again before it acts.
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::forge;
@@ -46,8 +43,6 @@ pub struct Seen {
     pub branch: Option<String>,
     /// The remote's default branch as the repo knows it (`origin/HEAD`), with no fetch.
     pub default: Option<String>,
-    /// The branches purlis cut for a chat or a task.
-    pub chat_branches: BTreeSet<String>,
     /// `origin`'s address as the repo's config records it.
     pub origin: Option<String>,
     /// Where the forge said `origin` now lives ([`MOVED_KEY`]).
@@ -62,9 +57,10 @@ pub struct Seen {
 /// One way a repo is stale.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stale {
-    /// On `branch`, which purlis cut for a chat or a task, where `default` is the remote's.
-    OnAChatsBranch { branch: String, default: String },
-    /// `origin` is `origin`, and the forge said the repo now lives at `now`.
+    /// On `branch`, where `default` is the remote's default branch.
+    OffDefault { branch: String, default: String },
+    /// `origin` is `origin`, and the forge said the repo now lives at `now`: the address the fix
+    /// sets, as [`rebuilt`] made it.
     RemoteMoved { origin: String, now: String },
 }
 
@@ -107,52 +103,95 @@ fn commits(count: u32) -> String {
     }
 }
 
-/// How `seen` is stale, if it is: on a chat's branch first, then on a moved remote.
+/// How `seen` is stale, if it is: off its default branch first, then on a moved remote.
 pub fn judged(seen: &Seen) -> Vec<Stale> {
     let mut out = Vec::new();
     if let (Some(branch), Some(default)) = (&seen.branch, &seen.default)
         && branch != default
-        && seen.chat_branches.contains(branch)
     {
-        out.push(Stale::OnAChatsBranch {
+        out.push(Stale::OffDefault {
             branch: branch.clone(),
             default: default.clone(),
         });
     }
-    if let (Some(origin), Some(now)) = (&seen.origin, &seen.moved_to)
-        && moved_ok(origin, now)
+    if let (Some(origin), Some(said)) = (&seen.origin, &seen.moved_to)
+        && let Some(now) = rebuilt(origin, said)
     {
         out.push(Stale::RemoteMoved {
             origin: origin.clone(),
-            now: now.clone(),
+            now,
         });
     }
     out
 }
 
-/// Whether purlis would set `origin` to `now` in its place: an HTTPS address with no user and
-/// no blank or control character, on the host `origin` is on, naming another repository there.
-fn moved_ok(origin: &str, now: &str) -> bool {
-    let Some(rest) = now.strip_prefix("https://") else {
-        return false;
+/// The address purlis would set `origin` to on the forge's word that the repository is at
+/// `said`, or `None`: `https://<host>[:<port>]/<owner>/<repo>.git`, built from `said`'s parts once
+/// each is checked, so what the window shows is what is set. The host and the port are
+/// `origin`'s own (an SSH `origin` has no HTTPS port); each path segment is letters, digits,
+/// `.`, `_` and `-`, and not `.` or `..`, with at least an owner and a name; nothing else (a
+/// user, a query, an escape) is taken. And it names another repository than `origin` does.
+pub fn rebuilt(origin: &str, said: &str) -> Option<String> {
+    let rest = said.strip_prefix("https://")?;
+    let (authority, path) = rest.split_once('/')?;
+    let (host, port) = host_and_port(authority)?;
+    if (host.clone(), port.clone()) != origin_host_and_port(origin)? {
+        return None;
+    }
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let segments: Vec<&str> = path.split('/').collect();
+    let segment_ok = |one: &&str| {
+        !one.is_empty()
+            && *one != "."
+            && *one != ".."
+            && one
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
     };
-    let authority = rest.split('/').next().unwrap_or_default();
-    if authority.is_empty()
-        || authority.contains('@')
-        || now.chars().any(|c| c.is_whitespace() || c.is_control())
-    {
-        return false;
+    if segments.len() < 2 || !segments.iter().all(segment_ok) {
+        return None;
     }
-    let host = forge::host_of(now);
-    if host.is_empty() || host != forge::host_of(origin) {
-        return false;
+    let port = port.map(|port| format!(":{port}")).unwrap_or_default();
+    let url = format!("https://{host}{port}/{}.git", segments.join("/"));
+    let was = forge::gitcredential::place_of(origin)?;
+    (forge::gitcredential::place_of(&url)? != was).then_some(url)
+}
+
+/// An HTTPS authority's host, lowercased, and its port: `None` for a user, an empty or
+/// unusual host, or a port that is not digits.
+fn host_and_port(authority: &str) -> Option<(String, Option<String>)> {
+    if authority.contains('@') {
+        return None;
     }
-    match (
-        forge::gitcredential::place_of(origin),
-        forge::gitcredential::place_of(now),
-    ) {
-        (Some(was), Some(is)) => was != is,
-        _ => false,
+    let (host, port) = match authority.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (authority, None),
+    };
+    let host_ok = !host.is_empty()
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'));
+    let port_ok =
+        port.is_none_or(|port| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()));
+    (host_ok && port_ok).then(|| (host.to_ascii_lowercase(), port.map(str::to_owned)))
+}
+
+/// The host and the HTTPS port `origin` is reached on: an HTTPS address's own (its user
+/// dropped), else the host of an SSH address with no HTTPS port.
+fn origin_host_and_port(origin: &str) -> Option<(String, Option<String>)> {
+    match origin.strip_prefix("https://") {
+        Some(rest) => {
+            let authority = rest.split('/').next()?;
+            let authority = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, host)| host);
+            host_and_port(authority)
+        }
+        None => {
+            let host = forge::host_of(origin);
+            (!host.is_empty()).then_some((host, None))
+        }
     }
 }
 
@@ -168,7 +207,7 @@ pub fn step(seen: &Seen, fix: Fix) -> Result<Step, Blocked> {
             let default = stale
                 .into_iter()
                 .find_map(|one| match one {
-                    Stale::OnAChatsBranch { default, .. } => Some(default),
+                    Stale::OffDefault { default, .. } => Some(default),
                     Stale::RemoteMoved { .. } => None,
                 })
                 .ok_or(Blocked::Settled)?;
@@ -187,7 +226,7 @@ pub fn step(seen: &Seen, fix: Fix) -> Result<Step, Blocked> {
             .into_iter()
             .find_map(|one| match one {
                 Stale::RemoteMoved { now, .. } => Some(Step::SetUrl { to: now }),
-                Stale::OnAChatsBranch { .. } => None,
+                Stale::OffDefault { .. } => None,
             })
             .ok_or(Blocked::Settled),
     }
@@ -207,6 +246,14 @@ pub fn place(url: &str) -> String {
     forge::gitcredential::place_of(url).unwrap_or_else(|| "an address purlis cannot read".into())
 }
 
+/// What [`found`] read, and what it could not.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Findings {
+    pub found: Vec<Found>,
+    /// A sentence for each workspace or repo it could not read, which is not judged stale or not.
+    pub unread: Vec<String>,
+}
+
 /// One stale repo of the project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
@@ -215,20 +262,33 @@ pub struct Found {
     pub stale: Vec<Stale>,
 }
 
-/// Every stale repo of the plane at `plane`, workspace by workspace.
-pub fn found(plane: &Path) -> Vec<Found> {
-    let names = crate::workspaces::Plane::open(plane)
-        .workspaces()
-        .unwrap_or_default();
-    let mut out = Vec::new();
+/// Every stale repo of the plane at `plane`, workspace by workspace, and what could not be read.
+pub fn found(plane: &Path) -> Findings {
+    let mut out = Findings::default();
+    let names = match crate::workspaces::Plane::open(plane).workspaces() {
+        Ok(names) => names,
+        Err(why) => {
+            out.unread.push(format!(
+                "purlis could not list the project's workspaces ({why})."
+            ));
+            return out;
+        }
+    };
     for ws in names {
-        let Ok(clones) = repos::clones(plane, &ws) else {
-            continue;
+        let clones = match repos::clones(plane, &ws) {
+            Ok(clones) => clones,
+            Err(why) => {
+                out.unread.push(format!("{why}."));
+                continue;
+            }
         };
+        for (name, why) in clones.refused {
+            out.unread.push(format!("{ws}/{name}: {why}."));
+        }
         for repo in clones.repos {
-            let stale = judged(&read(plane, &ws, &repo));
+            let stale = judged(&read(&ws, &repo));
             if !stale.is_empty() {
-                out.push(Found {
+                out.found.push(Found {
                     workspace: ws.clone(),
                     repo: repo.name,
                     stale,
@@ -239,8 +299,8 @@ pub fn found(plane: &Path) -> Vec<Found> {
     out
 }
 
-/// What git and the piece log say about `repo` of workspace `ws`.
-pub fn read(plane: &Path, ws: &str, repo: &repos::Repo) -> Seen {
+/// What git says about `repo` of workspace `ws`.
+pub fn read(ws: &str, repo: &repos::Repo) -> Seen {
     let at = &repo.path;
     let state = repos::state_of(at).ok();
     let branch = state.as_ref().and_then(|state| match &state.head {
@@ -258,17 +318,10 @@ pub fn read(plane: &Path, ws: &str, repo: &repos::Repo) -> Seen {
     )
     .and_then(|named| named.strip_prefix("origin/").map(str::to_owned))
     .filter(|named| worktree::name::branch_name_ok(named).is_ok());
-    let mut chat_branches = worktree::cut_branches(plane, ws, &repo.name).unwrap_or_default();
-    chat_branches.extend(
-        crate::pieces::claims(plane, ws)
-            .into_keys()
-            .filter(|(of, _)| *of == repo.name)
-            .map(|(_, piece)| piece),
-    );
-    // The two git questions a fix needs, asked only of a repo on a chat's branch.
+    // The two git questions a fix needs, asked only of a repo off its default branch.
     let judged_on = branch
         .as_ref()
-        .filter(|branch| default.as_ref() != Some(*branch) && chat_branches.contains(*branch));
+        .filter(|branch| default.is_some() && default.as_ref() != Some(*branch));
     let clean = judged_on
         .and(state.as_ref())
         .map(|state| state.clean() && crate::gitstate::stopped(at).is_none());
@@ -278,7 +331,6 @@ pub fn read(plane: &Path, ws: &str, repo: &repos::Repo) -> Seen {
         repo: repo.name.clone(),
         branch,
         default,
-        chat_branches,
         // As the config records it, never through a rewrite (`url.<base>.insteadOf`).
         origin: asked(at, &["config", "--get", "remote.origin.url"]),
         moved_to: asked(at, &["config", "--get", MOVED_KEY]),
@@ -313,11 +365,18 @@ pub struct Moved {
 }
 
 /// The person's fix on `repo` of workspace `ws`: the repo is read again, and the fix runs its
-/// one git command or answers what blocks it. Never a force, a stash or a reset.
-pub fn fix(plane: &Path, ws: &str, name: &str, fix: Fix) -> Result<Fixed, String> {
+/// one git command or answers what blocks it. Never a force, a stash or a reset. `shown` is the
+/// address the window named for the remote fix: nothing else is set.
+pub fn fix(
+    plane: &Path,
+    ws: &str,
+    name: &str,
+    fix: Fix,
+    shown: Option<&str>,
+) -> Result<Fixed, String> {
     let repo = repos::clone_at(plane, ws, name)
         .ok_or_else(|| format!("Workspace {ws} holds no repo named {name}."))?;
-    let seen = read(plane, ws, &repo);
+    let seen = read(ws, &repo);
     match step(&seen, fix).map_err(|blocked| blocked.to_string())? {
         Step::Switch { to } => {
             // Untimed: a switch checks out a tree, and a killed one leaves it half-written. An
@@ -337,6 +396,13 @@ pub fn fix(plane: &Path, ws: &str, name: &str, fix: Fix) -> Result<Fixed, String
             })
         }
         Step::SetUrl { to } => {
+            if shown != Some(to.as_str()) {
+                return Err(
+                    "Not changed: the forge's address changed since the window showed it. Look \
+                     at it again."
+                        .to_owned(),
+                );
+            }
             let was = seen.origin.clone().unwrap_or_default();
             let set = git::run(&repo.path, &["remote", "set-url", "origin", &to], git::READ)
                 .map_err(|why| format!("Not changed: purlis could not start git ({why})."))?;
@@ -361,15 +427,19 @@ pub fn fix(plane: &Path, ws: &str, name: &str, fix: Fix) -> Result<Fixed, String
 }
 
 /// What a fetch from `origin` in the repo at `at` said, `said` (git's standard error): where the
-/// forge redirected it to another address on the same host, that address is kept
-/// ([`MOVED_KEY`]); where it did not, a kept one is let go. Run only for a fetch that worked.
+/// forge redirected it to another address on the same host, that address is kept as
+/// [`rebuilt`] makes it ([`MOVED_KEY`]); where it did not, a kept one is let go. Run only for a
+/// fetch that worked.
 pub fn heard(at: &Path, said: &str) {
     let origin = asked(at, &["config", "--get", "remote.origin.url"]);
-    match (redirected(said), origin) {
-        (Some(now), Some(origin)) if moved_ok(&origin, &now) => {
+    let now = redirected(said)
+        .zip(origin)
+        .and_then(|(said, origin)| rebuilt(&origin, &said));
+    match now {
+        Some(now) => {
             let _ = git::run(at, &["config", MOVED_KEY, &now], git::READ);
         }
-        _ => {
+        None => {
             if asked(at, &["config", "--get", MOVED_KEY]).is_some() {
                 let _ = git::run(at, &["config", "--unset-all", MOVED_KEY], git::READ);
             }

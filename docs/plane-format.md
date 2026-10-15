@@ -4587,12 +4587,15 @@ winning while it exists (`charter/harness/claude_code.py:221`).
   applied (`charter/gitpolicy.py:180`).
 - **`remote.origin.purlisMovedTo`** (purlis only, #1985): where the forge said a workspace's
   repo now lives. Written when a fetch purlis runs from `origin` (`purlis sync`, `purlis
-  worktree update`, the fetch before a cut) worked and git's own
-  `warning: redirecting to <url>` names an HTTPS address with no user on `origin`'s host and
-  another repository there; unset when a later such fetch is not redirected, and by the window's
-  Fix, which sets `origin` to that address (`git remote set-url`). While it differs from
-  `origin`, the project's Inbox shows the repo's stale-repo Notice. Rebuildable: the next fetch
-  says it again. (`crates/purlis-core/src/staleclone.rs`)
+  worktree update`, the fetch before a cut) worked and git's own `warning: redirecting to
+  <url>` names a repository purlis would move to, and then as purlis rebuilt it:
+  `https://<host>[:<port>]/<owner>/<repo>.git`, with `origin`'s own host and HTTPS port (none
+  for an SSH `origin`), path segments of letters, digits, `.`, `_` and `-` (never `.` or `..`),
+  and at least an owner and a name; nothing else of the URL is kept. Unset when a later such
+  fetch is not redirected, and by the window's Fix, which sets `origin` to exactly that address
+  (`git remote set-url`). The project's Inbox shows the repo's stale-repo Notice while the value
+  is one that rule takes and names another repository than `origin` does. Rebuildable: the next
+  fetch says it again. (`crates/purlis-core/src/staleclone.rs`)
 - **Read, never written:** `core.worktree` out of `<git dir>/config`, parsed by purlis's
   own mini-parser with a 262144-byte cap (`charter/gitconfig.py:71`, `:153`,
   `charter/gitconfig.py:61`); relative values resolve against the **git directory**

@@ -2,36 +2,66 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::host::Glance;
+use purlis_core::state::State;
 
 #[test]
 fn a_stale_repo_is_one_row_with_both_findings_and_no_address_carries_a_user() {
-    let found = vec![staleclone::Found {
-        workspace: "smart-ide".into(),
-        repo: "widget".into(),
-        stale: vec![
-            Stale::OnAChatsBranch {
-                branch: "chat-3".into(),
-                default: "main".into(),
-            },
-            Stale::RemoteMoved {
-                origin: "https://git@github.com/acme/widget.git".into(),
-                now: "https://github.com/purlis/widget.git".into(),
-            },
-        ],
-    }];
-    assert_eq!(
-        shown(found),
-        [StaleClone {
+    let findings = staleclone::Findings {
+        found: vec![staleclone::Found {
             workspace: "smart-ide".into(),
             repo: "widget".into(),
-            branch: Some(StaleBranch {
-                branch: "chat-3".into(),
-                default: "main".into(),
-            }),
-            remote: Some(StaleRemote {
-                origin: "github.com/acme/widget".into(),
-                now: "github.com/purlis/widget".into(),
-            }),
-        }]
+            stale: vec![
+                Stale::OffDefault {
+                    branch: "chat-3".into(),
+                    default: "main".into(),
+                },
+                Stale::RemoteMoved {
+                    origin: "https://git@github.com/acme/widget.git".into(),
+                    now: "https://github.com/Purlis/widget.git".into(),
+                },
+            ],
+        }],
+        unread: vec!["could not read workspace 'beta' (gone).".into()],
+    };
+    assert_eq!(
+        shown(findings),
+        StaleClones {
+            stale: vec![StaleClone {
+                workspace: "smart-ide".into(),
+                repo: "widget".into(),
+                branch: Some(StaleBranch {
+                    branch: "chat-3".into(),
+                    default: "main".into(),
+                }),
+                remote: Some(StaleRemote {
+                    origin: "github.com/acme/widget".into(),
+                    // Whole and as set, so the window shows what the Fix sets.
+                    now: "https://github.com/Purlis/widget.git".into(),
+                }),
+            }],
+            unread: vec!["could not read workspace 'beta' (gone).".into()],
+        }
     );
+}
+
+fn glance(state: State, asking: bool) -> Glance {
+    Glance {
+        state,
+        asking,
+        turns: 1,
+        prompt: None,
+    }
+}
+
+#[test]
+fn a_chat_is_mid_turn_while_it_runs_asks_or_has_not_been_heard_from() {
+    assert!(mid_turn(&glance(State::Running, false)));
+    assert!(mid_turn(&glance(State::Unknown, false)));
+    // Waiting on a permission or a question is still inside its turn.
+    assert!(mid_turn(&glance(State::Waiting, true)));
+    // A turn that ended, or a chat that ended, is not.
+    assert!(!mid_turn(&glance(State::Waiting, false)));
+    assert!(!mid_turn(&glance(State::Done, false)));
+    assert!(!mid_turn(&glance(State::Failed, false)));
 }

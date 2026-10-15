@@ -44,8 +44,8 @@ import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
  * (`opened_chats`), a doctor finding that stands as a Notice (`plane_doctor`, #1250), and a
  * sandbox change that left chats behind (`chats_on_older_sandbox`, #1428), a remembered
  * project that is gone (`recent_planes`' `gone`, #1291: {@link GONE}), and a workspace's repo
- * left on a chat's branch or a moved remote (`stale_clones`, #1985). A family is the cause up
- * to its first `:`.
+ * left off its default branch or on a moved remote (`stale_clones`, #1985). A family is the
+ * cause up to its first `:`.
  */
 export const KEPT: ReadonlySet<string> = new Set([
   "pin-dormant",
