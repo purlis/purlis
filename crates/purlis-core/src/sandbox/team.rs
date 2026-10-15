@@ -18,12 +18,20 @@
 //!   sentence naming the policy ([`policy::Locks::opt_out_refused`], [`never_said`]). `mode = "off"` beside it
 //!   is refused ([`super::Refusal::ModeOff`]).
 //! - **`mode = "off"`** under `local` is **the team's off**: the default becomes no sandbox,
-//!   and it reaches each person only on their one Accept ([`team_off`], [`answer`]): "Your
-//!   project turned the sandbox off (commit <sha> by <author>)". Until they accept, their chats
-//!   run at their own level, or the floor. Only an off that is committed asks anyone: a pushed
-//!   file never silently weakens anyone, and a working-tree edit turns nothing off. The answer is
-//!   kept for that commit in this machine's config home ([`super::local`]), which no sandboxed
-//!   chat writes; an off committed again later asks again.
+//!   and it reaches each person only on their one Accept ([`team_off`], [`answer`]). Until they
+//!   accept, their chats run at their own level, or the floor. Only an off that is committed
+//!   asks anyone: a pushed file never silently weakens anyone, and a working-tree edit turns
+//!   nothing off (#2156):
+//!   - **What the ask says rests on what purlis verified itself** ([`Arrival`]). It names the
+//!     commit and its author ("Your project turned the sandbox off (commit <sha> by <author>)")
+//!     only where that commit is in the history of the upstream commit purlis's own fetch found
+//!     ([`super::local::fetched_upstream`]), read as written. Otherwise it says the off is
+//!     local and not on the upstream purlis fetched.
+//!   - **The answer is kept for the off as purlis saw it**, in this machine's config home
+//!     ([`super::local`]), which no sandboxed chat writes, never for a commit: a history
+//!     rewritten under an off that stays asks nobody again. It is let go when purlis itself
+//!     reads the project's file not turning the sandbox off, so an off purlis saw leave and
+//!     come back asks again.
 //!
 //! **[`allowed_levels`] is the bound** a chat's start clamps the person's level to, and
 //! [`level_for`] the level it runs at.
@@ -107,21 +115,38 @@ pub fn never_said() -> String {
     )
 }
 
-/// The commit a team's off arrived in, and who made it.
+/// The commit a team's off arrived in on the upstream, and who made it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arrived {
     pub commit: String,
     pub author: String,
 }
 
-impl Arrived {
+/// **What purlis can say of where the team's off came from** (#2156).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Arrival {
+    /// In the history of the upstream commit purlis's own fetch found: this commit, by this
+    /// author.
+    Upstream(Arrived),
+    /// Not verified on that upstream: the off is this clone's own so far.
+    Local,
+}
+
+impl Arrival {
     /// What the ask says, before Accept and Keep it on for me.
     pub fn said(&self) -> String {
-        let short: String = self.commit.chars().take(7).collect();
-        format!(
-            "Your project turned the sandbox off (commit {short} by {}).",
-            crate::shown::short(&self.author)
-        )
+        match self {
+            Self::Upstream(arrived) => {
+                let short: String = arrived.commit.chars().take(7).collect();
+                format!(
+                    "Your project turned the sandbox off (commit {short} by {}).",
+                    crate::shown::short(&arrived.author)
+                )
+            }
+            Self::Local => "This project's sandbox off is local: it is not on the upstream purlis \
+                            fetched."
+                .to_owned(),
+        }
     }
 }
 
@@ -132,36 +157,89 @@ pub enum TeamOff {
     No,
     /// The file turns it off, but no commit does: nobody is asked, nothing is off.
     NotCommitted,
-    /// Committed, and this person has not answered for that commit: asked once.
-    Asks(Arrived),
+    /// Committed, and this person has not answered this off: asked once.
+    Asks(Arrival),
     /// They accepted it: no sandbox by default.
-    Accepted(Arrived),
+    Accepted(Arrival),
     /// They kept it on: their own level, or the floor.
-    KeptOn(Arrived),
+    KeptOn(Arrival),
 }
 
 /// How long the history may take to say which commit turned it off.
 const GIT_WAIT: Duration = Duration::from_secs(5);
 
 /// **Where the team's off stands** for the project at `root` on this machine.
+///
+/// Where the project's file does not turn the sandbox off, an answer kept for an earlier off is
+/// let go: purlis saw that off leave, so an off that comes back is asked again.
 pub fn team_off(root: &Path) -> TeamOff {
     if !Team::of(root).off {
+        if super::local::team_off_answer(root).is_some() {
+            // Best effort: where this machine's file cannot be written from here, the window's
+            // next read lets it go.
+            let _ = super::local::forget_team_off(root);
+        }
         return TeamOff::No;
     }
-    let Some(arrived) = arrived(root) else {
+    let Some(arrival) = arrival(root) else {
         return TeamOff::NotCommitted;
     };
     match super::local::team_off_answer(root) {
-        Some(answer) if answer.commit == arrived.commit && answer.accepted => {
-            TeamOff::Accepted(arrived)
-        }
-        Some(answer) if answer.commit == arrived.commit => TeamOff::KeptOn(arrived),
-        _ => TeamOff::Asks(arrived),
+        Some(answer) if answer.accepted => TeamOff::Accepted(arrival),
+        Some(_) => TeamOff::KeptOn(arrival),
+        None => TeamOff::Asks(arrival),
     }
 }
 
 /// How many of the manifest's commits are read back for the one that turned the sandbox off.
 const MOST_COMMITS_READ: usize = 200;
+
+/// History is read as it was written: no object stands in for another.
+const AS_WRITTEN: &str = "--no-replace-objects";
+
+/// Whether `said` is a commit's full id as git prints one.
+fn is_commit_id(said: &str) -> bool {
+    matches!(said.len(), 40 | 64) && said.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// **Where the team's off came from**: [`Arrival::Upstream`] where the commit it arrived in
+/// ([`arrived`]) is in the history of the upstream commit purlis's own fetch found, read as
+/// written; [`Arrival::Local`] otherwise. None where no commit turns it off.
+fn arrival(root: &Path) -> Option<Arrival> {
+    let arrived = arrived(root)?;
+    Some(if on_fetched_upstream(root, &arrived.commit) {
+        Arrival::Upstream(arrived)
+    } else {
+        Arrival::Local
+    })
+}
+
+/// Whether `commit` is in the history of the upstream commit purlis's own fetch kept for
+/// `root`. Never where nothing was kept, the repository has grafts, or git does not answer.
+fn on_fetched_upstream(root: &Path, commit: &str) -> bool {
+    let Some(upstream) = super::local::fetched_upstream(root) else {
+        return false;
+    };
+    if !is_commit_id(&upstream) || !is_commit_id(commit) {
+        return false;
+    }
+    let git = |args: &[&str]| crate::worktree::git::run(root, args, GIT_WAIT).ok();
+    // Grafts give a commit parents it was not written with.
+    let Some(grafts) = git(&["rev-parse", "--git-path", "info/grafts"]).filter(|run| run.ok())
+    else {
+        return false;
+    };
+    let grafts = Path::new(grafts.out.trim());
+    let grafts = if grafts.is_absolute() {
+        grafts.to_path_buf()
+    } else {
+        root.join(grafts)
+    };
+    if grafts.exists() {
+        return false;
+    }
+    git(&[AS_WRITTEN, "merge-base", "--is-ancestor", commit, &upstream]).is_some_and(|run| run.ok())
+}
 
 /// **The commit the team's off arrived in**: of the commits that changed the manifest, newest
 /// first, the last of the run at its head whose `[sandbox]` turns the sandbox off, the one
@@ -178,13 +256,23 @@ fn arrived(root: &Path) -> Option<Arrived> {
             .map(|run| run.out)
     };
     let off_at = |commit: &str| {
-        git(&["show", &format!("{commit}:./{name}")]).is_some_and(|text| Team::of_text(&text).off)
+        git(&[AS_WRITTEN, "show", &format!("{commit}:./{name}")])
+            .is_some_and(|text| Team::of_text(&text).off)
     };
     if !off_at("HEAD") {
         return None;
     }
     let most = MOST_COMMITS_READ.to_string();
-    let log = git(&["log", "-n", &most, "--format=%H%x1f%an", "HEAD", "--", name])?;
+    let log = git(&[
+        AS_WRITTEN,
+        "log",
+        "-n",
+        &most,
+        "--format=%H%x1f%an",
+        "HEAD",
+        "--",
+        name,
+    ])?;
     let mut arrived = None;
     for line in log.lines() {
         let (commit, author) = line.split_once('\u{1f}')?;
@@ -200,33 +288,19 @@ fn arrived(root: &Path) -> Option<Arrived> {
 }
 
 /// **The person's answer to the team's off** (Accept, or Keep it on for me, or a change of mind
-/// in Settings), for `commit`, kept: refused unless that is the commit the off stands at now.
-pub fn answer(root: &Path, commit: &str, accept: bool) -> Result<(), String> {
-    let answer = answering(root, commit, accept)?;
+/// in Settings), kept for the off as it stands: refused where no committed off stands.
+pub fn answer(root: &Path, accept: bool) -> Result<(), String> {
+    let answer = answering(root, accept)?;
     super::local::answer_team_off(root, answer)
         .map_err(|why| format!("purlis could not keep your answer on this machine: {why}"))
 }
 
 /// [`answer`]'s judgement alone: the answer to keep, or why there is none to give.
-pub fn answering(
-    root: &Path,
-    commit: &str,
-    accept: bool,
-) -> Result<super::local::TeamOffAnswer, String> {
+pub fn answering(root: &Path, accept: bool) -> Result<super::local::TeamOffAnswer, String> {
     match team_off(root) {
-        TeamOff::Asks(arrived) | TeamOff::Accepted(arrived) | TeamOff::KeptOn(arrived)
-            if arrived.commit == commit =>
-        {
-            Ok(super::local::TeamOffAnswer {
-                commit: arrived.commit,
-                accepted: accept,
-            })
+        TeamOff::Asks(_) | TeamOff::Accepted(_) | TeamOff::KeptOn(_) => {
+            Ok(super::local::TeamOffAnswer { accepted: accept })
         }
-        TeamOff::Asks(_) | TeamOff::Accepted(_) | TeamOff::KeptOn(_) => Err(
-            "The project's sandbox off is from another commit now. Nothing was kept: look at \
-             it again."
-                .to_owned(),
-        ),
         TeamOff::No | TeamOff::NotCommitted => Err(
             "The project does not turn the sandbox off in a commit, so there is nothing to \
              answer."

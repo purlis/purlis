@@ -1154,7 +1154,48 @@ fn fetch_branch(root: &Path, branch: &str) -> Result<(), String> {
     if !fetched.ok() {
         return Err(tail(&fetched));
     }
+    keep_fetched_upstream(root, &https, &helper, branch);
     Ok(())
+}
+
+/// **Keeps the upstream commit the remote names for `branch`** (#2156), in this machine's
+/// config home, where no chat writes ([`crate::sandbox::local::keep_fetched_upstream`]): what
+/// the project's sandbox off is checked against before its ask names a commit and an author.
+/// The remote's own answer, asked after the fetch, never a ref in the clone, and kept only
+/// where the fetch brought that commit here. Best effort: where it cannot be asked or kept, the
+/// one kept before stands.
+fn keep_fetched_upstream(root: &Path, https: &str, helper: &str, branch: &str) {
+    let name = format!("refs/heads/{branch}");
+    let Ok(listed) = git::run_network(root, Some(helper), &["ls-remote", https, &name]) else {
+        return;
+    };
+    if !listed.ok() {
+        return;
+    }
+    let Some(commit) = listed.out.lines().find_map(|line| {
+        let (commit, at) = line.split_once('\t')?;
+        (at.trim() == name && is_commit_id(commit)).then(|| commit.to_owned())
+    }) else {
+        return;
+    };
+    let here = git::run(
+        root,
+        &[
+            "--no-replace-objects",
+            "cat-file",
+            "-e",
+            &format!("{commit}^{{commit}}"),
+        ],
+        git::READ,
+    );
+    if here.is_ok_and(|run| run.ok()) {
+        let _ = crate::sandbox::local::keep_fetched_upstream(root, &commit);
+    }
+}
+
+/// Whether `said` is a commit's full id as git prints one.
+fn is_commit_id(said: &str) -> bool {
+    matches!(said.len(), 40 | 64) && said.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Why a fast-forward onto incoming commits would touch someone's work, or `None` when it

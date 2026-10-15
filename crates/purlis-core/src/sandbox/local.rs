@@ -297,11 +297,16 @@ struct OnDisk {
     /// ([`super::personal::in_force`]). A chat can write that file; it cannot write this one.
     #[serde(default, skip_serializing_if = "super::personal::Personal::is_empty")]
     levels_mine: super::personal::Personal,
-    /// Your answer to the project's sandbox off (#2071, SO-8): what `[sandbox] mode = "off"`
-    /// in the committed file does on this machine, for the commit it arrived in. Kept here,
-    /// where no chat writes.
+    /// Your answer to the project's sandbox off (#2071, SO-8; #2156): what `[sandbox] mode =
+    /// "off"` in the committed file does on this machine, for the off as purlis saw it, until
+    /// purlis sees it leave. Kept here, where no chat writes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     team_off: Option<TeamOffAnswer>,
+    /// The upstream commit purlis's own fetch of the project found (#2156), as the remote named
+    /// it: what an off is checked against before the ask names its commit and author. Kept
+    /// here, where no chat writes, never read from the clone's own refs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    upstream_fetched: Option<String>,
 }
 
 /// One dispatch grant that holds in one workspace only (#1505), as this file keeps it.
@@ -945,13 +950,10 @@ pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize
 
 // ---- your own levels, as you set or confirmed them (#2071) ------------------------------------
 
-/// Your own levels for the project at `root` that you set or confirmed in Settings on this
-/// machine.
-/// **Your answer to the project's sandbox off** (#2071, SO-8): the commit it arrived in, and
-/// whether you accepted it or kept the sandbox on.
+/// **Your answer to the project's sandbox off** (#2071, SO-8; #2156): whether you accepted
+/// it or kept the sandbox on. It is for the off as purlis saw it, never for a commit.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TeamOffAnswer {
-    pub commit: String,
     pub accepted: bool,
 }
 
@@ -966,6 +968,28 @@ pub fn answer_team_off(root: &Path, answer: TeamOffAnswer) -> io::Result<()> {
     change(root, |held| held.team_off = Some(answer))
 }
 
+/// Lets your answer to the project's sandbox off go: purlis read the project's file not turning
+/// the sandbox off, so an off that comes back is asked again.
+pub fn forget_team_off(root: &Path) -> io::Result<()> {
+    change(root, |held| held.team_off = None)
+}
+
+/// The upstream commit purlis's own fetch of the project at `root` found, where one was kept.
+pub fn fetched_upstream(root: &Path) -> Option<String> {
+    read(root).upstream_fetched
+}
+
+/// Keeps `commit` as the upstream commit purlis's own fetch of the project found: the fetch's,
+/// never a chat's (a sandboxed chat cannot write this file).
+pub fn keep_fetched_upstream(root: &Path, commit: &str) -> io::Result<()> {
+    if fetched_upstream(root).as_deref() == Some(commit) {
+        return Ok(());
+    }
+    change(root, |held| held.upstream_fetched = Some(commit.to_owned()))
+}
+
+/// Your own levels for the project at `root` that you set or confirmed in Settings on this
+/// machine.
 pub fn confirmed_levels(root: &Path) -> super::personal::Personal {
     read(root).levels_mine
 }

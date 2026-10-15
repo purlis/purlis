@@ -9,9 +9,10 @@ import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import type { SandboxState, TeamOffState } from "./bindings";
 
 /**
- * **The project's sandbox off reaches each person by one ask** (#2071, SO-8): "Your project
- * turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on for me,
- * answered by the window alone and never asked again for that commit.
+ * **The project's sandbox off reaches each person by one ask** (#2071, SO-8; #2156): "Your
+ * project turned the sandbox off (commit <sha> by <author>)" where purlis verified that on the
+ * upstream it fetched, or that the off is local, with Accept and Keep it on for me, answered by
+ * the window alone and not asked again while the off stays.
  */
 
 afterEach(() => {
@@ -20,7 +21,7 @@ afterEach(() => {
 });
 
 const PLANE = "/home/dev/plane";
-const LABEL = "Your project turned the sandbox off";
+const LABEL = "The project's sandbox off";
 
 const QUIET: SandboxState = {
   on: true,
@@ -39,6 +40,13 @@ const OFF: TeamOffState = {
   commit: "0123456789abcdef0123456789abcdef01234567",
   author: "Ada Lovelace",
   said: "Your project turned the sandbox off (commit 0123456 by Ada Lovelace).",
+  answer: null,
+};
+
+const LOCAL: TeamOffState = {
+  commit: null,
+  author: null,
+  said: "This project's sandbox off is local: it is not on the upstream purlis fetched.",
   answer: null,
 };
 
@@ -65,7 +73,7 @@ describe("the project's sandbox off (#2071, SO-8)", () => {
     expect(screen.getByRole("button", { name: "Keep it on for me" })).toBeTruthy();
   });
 
-  it("sends Accept with the commit it showed, and is gone once answered", async () => {
+  it("sends Accept, and is gone once answered", async () => {
     const sent = core(
       { ...QUIET, team_off: OFF },
       { ...QUIET, team_off: { ...OFF, answer: true } },
@@ -73,9 +81,7 @@ describe("the project's sandbox off (#2071, SO-8)", () => {
     render(<TeamSandboxOffNotice plane={PLANE} canAnswer />);
     await userEvent.click(await screen.findByRole("button", { name: "Accept" }));
     await waitFor(() =>
-      expect(sent("answer_team_sandbox_off")).toEqual([
-        { plane: PLANE, commit: OFF.commit, accept: true },
-      ]),
+      expect(sent("answer_team_sandbox_off")).toEqual([{ plane: PLANE, accept: true }]),
     );
     await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
   });
@@ -88,10 +94,17 @@ describe("the project's sandbox off (#2071, SO-8)", () => {
     render(<TeamSandboxOffNotice plane={PLANE} canAnswer />);
     await userEvent.click(await screen.findByRole("button", { name: "Keep it on for me" }));
     await waitFor(() =>
-      expect(sent("answer_team_sandbox_off")).toEqual([
-        { plane: PLANE, commit: OFF.commit, accept: false },
-      ]),
+      expect(sent("answer_team_sandbox_off")).toEqual([{ plane: PLANE, accept: false }]),
     );
+  });
+
+  it("says an off not verified on the upstream is local, naming no commit or author", async () => {
+    core({ ...QUIET, team_off: LOCAL });
+    render(<TeamSandboxOffNotice plane={PLANE} canAnswer />);
+    const notice = await screen.findByRole("status", { name: LABEL });
+    expect(notice).toHaveTextContent(LOCAL.said);
+    expect(notice).not.toHaveTextContent(/Your project turned/);
+    expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
   });
 
   it("asks nothing once answered, or where the project turns nothing off", async () => {

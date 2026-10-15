@@ -1798,16 +1798,25 @@ the sandbox down.
     anyone's sandbox.
 - **`[sandbox] mode = "off"` is the team's off** (the operator, 2026-10-15: the line a project
   already carries, no new value). It reaches each person only by consent (SO-8): the first time
-  a commit turns it off, the window asks once, "Your project turned the sandbox off (commit <sha>
-  by <author>)", with **Accept** and **Keep it on for me**. Until they answer, their chats keep
-  their own level, or the floor. Accepted, a chat whose person chose no level runs with no
-  sandbox from its next start; a level they chose still stands. Settings › Sandbox › Your level
-  shows the answer and offers the other one.
+  a commit turns it off, the window asks once, with **Accept** and **Keep it on for me**. Until
+  they answer, their chats keep their own level, or the floor. Accepted, a chat whose person
+  chose no level runs with no sandbox from its next start; a level they chose still stands.
+  Settings › Sandbox › Your level shows the answer and offers the other one.
   - Only a committed off asks anyone: an off in the working tree alone turns nothing off. The
     commit is the one whose `[sandbox]` turned it off, read from the history by what that table
-    says (never a `mode` of another table), so an off committed again later asks again.
-  - The answer is kept for that commit in this machine's config home (`sandbox-grants`), which
-    no sandboxed chat writes.
+    says (never a `mode` of another table).
+  - **What the ask says rests only on what purlis verified itself** (#2156). It names the commit
+    and its author, "Your project turned the sandbox off (commit <sha> by <author>)", only where
+    that commit is in the history of the upstream commit purlis's own fetch of the project
+    found, read as written (no replacement objects or grafts). That commit is the remote's own
+    answer to the app's fetch, kept in this machine's config home; a ref in the clone, a
+    remote-tracking one included, is never taken as proof. Otherwise the ask says the off is
+    local: "This project's sandbox off is local: it is not on the upstream purlis fetched."
+  - **The answer is kept for the off as purlis saw it, not for a commit** (#2156), in this
+    machine's config home (`sandbox-grants`), which no sandboxed chat writes. A history rewritten
+    under an off that stays asks nobody again. purlis lets the answer go when it reads the
+    project's file not turning the sandbox off (`mode` changed, or `policy = "never"`), so only
+    an off purlis itself saw leave and come back is asked again.
   - Under `policy = "never"`, `mode = "off"` is refused with a sentence naming the policy, and
     the sandbox stays on.
 - **One bound for every start**: `sandbox::team::allowed_levels(root)` is what a person's level

@@ -7220,9 +7220,9 @@ export type SandboxState = {
 	 */
 	expects?: ProjectExpects | null,
 	/**
-	 *  **The project's sandbox off** (#2071 PR C): its committed `[sandbox] mode = "off"`, the
-	 *  commit it arrived in, and how the person on this machine answered it. `null` where the
-	 *  project does not turn the sandbox off in a commit.
+	 *  **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
+	 *  "off"`, where it came from as far as purlis verified it, and how the person on this
+	 *  machine answered it. `null` where the project does not turn the sandbox off in a commit.
 	 */
 	team_off?: TeamOffState | null,
 	/**
@@ -8118,15 +8118,22 @@ export type TasksUsed = {
 };
 
 /**
- *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8): once,
- *  "Your project turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on
- *  for me; Settings offers the other answer after.
+ *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8; #2156):
+ *  once, with Accept and Keep it on for me; Settings offers the other answer after. It names
+ *  the commit and its author only where purlis verified them on the upstream it fetched, and
+ *  otherwise says the off is local.
  */
 export type TeamOffState = {
-	/**  The commit that turned it off, whole: what an answer is sent back with. */
-	commit: string,
-	/**  Who made that commit, as git names them. Written by a repository: drawn inertly. */
-	author: string,
+	/**
+	 *  The commit that turned it off, whole, where purlis verified it on the upstream it
+	 *  fetched; `null` where the off is local.
+	 */
+	commit: string | null,
+	/**
+	 *  Who made that commit, as git names them, where verified as `commit` is. Written by a
+	 *  repository: drawn inertly.
+	 */
+	author: string | null,
 	/**  The ask's sentence, in purlis's words. */
 	said: string,
 	/**  `null` until answered; `true` accepted (no sandbox by default), `false` kept on. */

@@ -6108,7 +6108,7 @@ fn in_a_project_at_the_floor_your_confirmed_off_starts_the_chat_without_it_and_n
 // ---- #2071 PR C: the team's off, through the one seam a start reads a level by ---------------
 
 /// A project whose committed `charter.toml` turns the sandbox off, the person having accepted
-/// that commit. Uses git: first run on CI.
+/// that off. Uses git: first run on CI.
 fn team_off_accepted(local: &str) -> tempfile::TempDir {
     let plane = plane_saying("[sandbox]\nmode = \"off\"\n");
     std::fs::write(plane.path().join(crate::profiles::LOCAL_FILE), local).expect("local");
@@ -6135,11 +6135,11 @@ fn team_off_accepted(local: &str) -> tempfile::TempDir {
         ],
     );
     assert!(ran.ok(), "{ran:?}");
-    let commit = match team::team_off(plane.path()) {
-        team::TeamOff::Asks(arrived) => arrived.commit,
-        other => panic!("{other:?}"),
-    };
-    team::answer(plane.path(), &commit, true).expect("accepted");
+    assert!(
+        matches!(team::team_off(plane.path()), team::TeamOff::Asks(_)),
+        "asked"
+    );
+    team::answer(plane.path(), true).expect("accepted");
     plane
 }
 

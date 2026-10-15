@@ -94,26 +94,41 @@ fn under_never_nobody_runs_below_the_full_sandbox_and_the_sentence_names_the_pol
     assert_eq!(locks.opt_out_refused().as_deref(), Some(why.as_str()));
 }
 
+/// What the app's own fetch of the upstream found there: `commit`, kept where no chat writes.
+fn fetched(root: &Path, commit: &str) {
+    crate::sandbox::local::keep_fetched_upstream(root, commit).unwrap();
+}
+
+/// The commit and author an off on the fetched upstream is named by.
+fn upstream(off: &TeamOff) -> Option<&Arrived> {
+    match off {
+        TeamOff::Asks(Arrival::Upstream(arrived))
+        | TeamOff::Accepted(Arrival::Upstream(arrived))
+        | TeamOff::KeptOn(Arrival::Upstream(arrived)) => Some(arrived),
+        _ => None,
+    }
+}
+
 #[test]
-fn a_team_s_off_waits_for_each_person_s_accept_naming_its_commit_and_author() {
+fn a_team_s_off_on_the_fetched_upstream_waits_for_each_person_s_accept_naming_its_commit_and_author()
+ {
     let root = project(OFF, "Ada Lovelace");
     let sha = head(root.path());
+    fetched(root.path(), &sha);
     // Until the person answers, their chats run at their own level, or the floor.
-    match team_off(root.path()) {
-        TeamOff::Asks(arrived) => {
-            assert_eq!(arrived.commit, sha);
-            assert_eq!(arrived.author, "Ada Lovelace");
-            let said = arrived.said();
-            assert!(said.contains(&sha[..7]), "{said}");
-            assert!(said.contains("Ada Lovelace"), "{said}");
-        }
-        other => panic!("{other:?}"),
-    }
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(_)), "{off:?}");
+    let arrived = upstream(&off).expect("named");
+    assert_eq!(arrived.commit, sha);
+    assert_eq!(arrived.author, "Ada Lovelace");
+    let said = Arrival::Upstream(arrived.clone()).said();
+    assert!(said.contains(&sha[..7]), "{said}");
+    assert!(said.contains("Ada Lovelace"), "{said}");
     assert_eq!(allowed_levels(root.path()).clamp(None), Floor);
     assert_eq!(level_for(root.path(), None), Floor);
 
     // Accepted: no sandbox, from each chat's next start.
-    answer(root.path(), &sha, true).unwrap();
+    answer(root.path(), true).unwrap();
     assert!(matches!(team_off(root.path()), TeamOff::Accepted(_)));
     assert_eq!(allowed_levels(root.path()).clamp(None), Off);
     assert_eq!(level_for(root.path(), None), Off);
@@ -121,50 +136,123 @@ fn a_team_s_off_waits_for_each_person_s_accept_naming_its_commit_and_author() {
     assert_eq!(allowed_levels(root.path()).clamp(Some(On)), On);
 
     // Changed their mind in Settings: kept on.
-    answer(root.path(), &sha, false).unwrap();
+    answer(root.path(), false).unwrap();
     assert!(matches!(team_off(root.path()), TeamOff::KeptOn(_)));
     assert_eq!(allowed_levels(root.path()).clamp(None), Floor);
 }
 
 #[test]
-fn the_accept_is_kept_where_no_chat_writes_and_a_new_off_asks_again() {
+fn a_local_commit_not_on_the_fetched_upstream_is_called_local_with_no_author() {
+    let root = project("[sandbox]\nmode = \"on\"\n", "Ada");
+    let before = head(root.path());
+    commit(root.path(), OFF, "Ada Lovelace");
+    let sha = head(root.path());
+    let said_of = |off: TeamOff| match off {
+        TeamOff::Asks(arrival) => {
+            assert_eq!(arrival, Arrival::Local);
+            arrival.said()
+        }
+        other => panic!("{other:?}"),
+    };
+    let quiet = |said: &str| {
+        assert!(said.contains("local"), "{said}");
+        assert!(said.contains("upstream"), "{said}");
+        assert!(!said.contains("Ada"), "{said}");
+        assert!(!said.contains(&sha[..7]), "{said}");
+    };
+    // Nothing fetched by the app: local.
+    quiet(&said_of(team_off(root.path())));
+    // The app's fetch found the upstream before the off: still local.
+    fetched(root.path(), &before);
+    quiet(&said_of(team_off(root.path())));
+    // A remote-tracking ref in the clone is no proof: anything in the clone may write one.
+    let moved = crate::testgit::run(
+        root.path(),
+        &["update-ref", "refs/remotes/origin/main", &sha],
+    );
+    assert!(moved.ok(), "{moved:?}");
+    quiet(&said_of(team_off(root.path())));
+    // Nor is an object that stands in for the upstream's.
+    let grafted = crate::testgit::run(root.path(), &["replace", "--graft", &before, &sha]);
+    assert!(grafted.ok(), "{grafted:?}");
+    quiet(&said_of(team_off(root.path())));
+    // The answer is still the person's to give, and it holds.
+    answer(root.path(), false).unwrap();
+    assert!(matches!(
+        team_off(root.path()),
+        TeamOff::KeptOn(Arrival::Local)
+    ));
+}
+
+#[test]
+fn a_history_rewritten_under_an_unchanged_off_asks_nobody_again() {
     let root = project(OFF, "Ada");
-    let first = head(root.path());
-    answer(root.path(), &first, true).unwrap();
+    answer(root.path(), false).unwrap();
+    // Rewritten: the off now sits in another commit, by another name.
+    let amended = crate::testgit::run(
+        root.path(),
+        &[
+            "-c",
+            "user.name=Someone Else",
+            "-c",
+            "user.email=else@example.invalid",
+            "commit",
+            "-q",
+            "--amend",
+            "--reset-author",
+            "-m",
+            "rewritten",
+        ],
+    );
+    assert!(amended.ok(), "{amended:?}");
+    assert!(matches!(team_off(root.path()), TeamOff::KeptOn(_)));
+    // And again, in a commit of its own on top.
+    commit(root.path(), &format!("{OFF}# again\n"), "Someone Else");
+    assert!(matches!(team_off(root.path()), TeamOff::KeptOn(_)));
+    // An accept holds the same way.
+    answer(root.path(), true).unwrap();
+    commit(root.path(), &format!("{OFF}# and again\n"), "Someone Else");
+    assert!(matches!(team_off(root.path()), TeamOff::Accepted(_)));
+}
+
+#[test]
+fn the_answer_is_kept_where_no_chat_writes_and_an_off_seen_to_leave_and_return_asks_again() {
+    let root = project(OFF, "Ada");
+    answer(root.path(), true).unwrap();
     // Not in the project: a chat could write there.
     assert!(!root.path().join(crate::profiles::LOCAL_FILE).exists());
     assert_eq!(
-        crate::sandbox::local::team_off_answer(root.path()).map(|one| one.commit),
-        Some(first.clone())
+        crate::sandbox::local::team_off_answer(root.path()).map(|one| one.accepted),
+        Some(true)
     );
     // Turned on, then off again in a later commit: asked again.
     commit(root.path(), "[sandbox]\nmode = \"on\"\n", "Bob");
     assert!(matches!(team_off(root.path()), TeamOff::No));
+    assert_eq!(crate::sandbox::local::team_off_answer(root.path()), None);
     commit(root.path(), OFF, "Bob");
-    match team_off(root.path()) {
-        TeamOff::Asks(arrived) => assert_eq!(arrived.author, "Bob"),
-        other => panic!("{other:?}"),
-    }
+    assert!(matches!(team_off(root.path()), TeamOff::Asks(_)));
     assert_eq!(allowed_levels(root.path()).clamp(None), Floor);
+
+    // The same where the file on disk says on for a while, with no commit.
+    answer(root.path(), true).unwrap();
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    assert!(matches!(team_off(root.path()), TeamOff::No));
+    std::fs::write(root.path().join("charter.toml"), OFF).unwrap();
+    assert!(matches!(team_off(root.path()), TeamOff::Asks(_)));
 }
 
 #[test]
-fn an_answer_for_another_commit_or_an_off_not_committed_is_refused() {
-    let root = project(OFF, "Ada");
-    assert!(
-        answer(
-            root.path(),
-            "0000000000000000000000000000000000000000",
-            true
-        )
-        .is_err()
-    );
+fn an_off_not_committed_is_not_answered() {
     // An off nobody committed (a working-tree edit) asks nobody and turns nothing off.
     let loose = project("[sandbox]\nmode = \"on\"\n", "Ada");
     std::fs::write(loose.path().join("charter.toml"), OFF).unwrap();
     assert!(matches!(team_off(loose.path()), TeamOff::NotCommitted));
     assert_eq!(allowed_levels(loose.path()).clamp(None), Floor);
-    assert!(answer(loose.path(), &head(loose.path()), true).is_err());
+    assert!(answer(loose.path(), true).is_err());
 }
 
 #[test]
@@ -172,7 +260,7 @@ fn never_with_off_is_refused_and_asks_nobody() {
     let root = project(NEVER_OFF, "Ada");
     assert!(matches!(team_off(root.path()), TeamOff::No));
     assert_eq!(allowed_levels(root.path()).clamp(None), On);
-    assert!(answer(root.path(), &head(root.path()), true).is_err());
+    assert!(answer(root.path(), true).is_err());
 }
 
 #[test]
@@ -196,11 +284,11 @@ fn under_never_the_personal_switch_is_refused_naming_the_policy() {
 }
 
 #[test]
-fn a_mode_changed_in_another_table_asks_nobody_again() {
+fn a_mode_changed_in_another_table_names_the_commit_the_off_arrived_in() {
     // Review of #2139: only `[sandbox].mode` says when the team's off arrived.
     let root = project(OFF, "Ada");
     let first = head(root.path());
-    answer(root.path(), &first, true).unwrap();
+    answer(root.path(), true).unwrap();
     commit(
         root.path(),
         "[plane]\nmode = \"pr\"\n\n[sandbox]\nmode = \"off\"\n",
@@ -211,11 +299,10 @@ fn a_mode_changed_in_another_table_asks_nobody_again() {
         "[plane]\nmode = \"off\"\n\n[repos.app]\nmode = \"pr\"\n\n[sandbox]\nmode = \"off\"\n",
         "Bob",
     );
-    match team_off(root.path()) {
-        TeamOff::Accepted(arrived) => {
-            assert_eq!(arrived.commit, first);
-            assert_eq!(arrived.author, "Ada");
-        }
-        other => panic!("{other:?}"),
-    }
+    fetched(root.path(), &head(root.path()));
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Accepted(_)), "{off:?}");
+    let arrived = upstream(&off).expect("named");
+    assert_eq!(arrived.commit, first);
+    assert_eq!(arrived.author, "Ada");
 }
