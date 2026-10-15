@@ -353,6 +353,13 @@ function RanWith({ vault }: { vault: string | null | undefined }) {
   );
 }
 
+/**
+ * **What Use <context> gives the chat** (#2097 review), said before any press: the copy holds
+ * the context's credentials, as the person's kubeconfig does, and the chat can read it.
+ */
+export const KUBECTL_COPY_SAID =
+  "This chat gets its own copy of the context you choose, its credentials included: this chat can read them. Your own kubeconfig is not changed.";
+
 /** The harness word a Claude Code chat's blocks carry. */
 const CLAUDE_CODE = "claude";
 
@@ -413,27 +420,30 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
       ) : contexts.length === 0 ? (
         <p>Your kubeconfig holds no context.</p>
       ) : (
-        <ul className="block-kubectl-contexts">
-          {contexts.map((context) => (
-            <li key={context.name}>
-              {context.refused === null ? (
-                <button
-                  type="button"
-                  className="ui-button ui-button-sm"
-                  tabIndex={0}
-                  disabled={busy}
-                  onClick={() => point(context.name)}
-                >
-                  Use {inertly(context.name)}
-                </button>
-              ) : (
-                <>
-                  <code>{inertly(context.name)}</code>: {inertly(context.refused)}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          <p>{KUBECTL_COPY_SAID}</p>
+          <ul className="block-kubectl-contexts">
+            {contexts.map((context) => (
+              <li key={context.name}>
+                {context.refused === null ? (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-sm"
+                    tabIndex={0}
+                    disabled={busy}
+                    onClick={() => point(context.name)}
+                  >
+                    Use {inertly(context.name)}
+                  </button>
+                ) : (
+                  <>
+                    <code>{inertly(context.name)}</code>: {inertly(context.refused)}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {said !== undefined && <p>{said}</p>}
     </div>

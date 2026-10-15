@@ -935,14 +935,7 @@ impl Teller {
 impl Allowed {
     /// The decision for a connection to `host` on `port`, a tunnel or not.
     fn decide(&self, host: &str, port: u16, tunnel: bool, own: &[std::net::IpAddr]) -> Decision {
-        // A service on this Mac is reached by name too (qw384b): a name is resolved for it only
-        // where the chat holds one.
-        let resolve = |name: &str| -> Vec<std::net::IpAddr> {
-            (name, port)
-                .to_socket_addrs()
-                .map(|found| found.map(|addr| addr.ip()).collect())
-                .unwrap_or_default()
-        };
+        // A service on this Mac is reached by a name of this Mac too (qw384b), never looked up.
         let ports = if self.any_port {
             &[port][..]
         } else if tunnel {
@@ -950,8 +943,7 @@ impl Allowed {
         } else {
             &self.plain_ports
         };
-        self.reach
-            .decide_resolving(host, port, ports, own, &resolve)
+        self.reach.decide_by_name(host, port, ports, own)
     }
 
     /// **The decision, once the person had their say** (#1666): an ask is held on the chat's
@@ -1525,21 +1517,43 @@ pub(crate) fn connect(host: &str, port: u16, reach: &Reach, own: &[std::net::IpA
             .map(Iterator::collect)
             .unwrap_or_default()
     };
-    // A service on this Mac by the name no resolver knows (qw384b), where the chat holds it.
-    let resolved: Vec<SocketAddr> = reach
-        .address_of(host, port)
-        .map_or_else(|| resolve(host, port), |addr| vec![addr]);
-    if resolved.is_empty() {
-        return Connected::Not;
-    }
-    let reached = reachable_from(&resolved, reach, own);
+    // Looked up once at most: what answered is remembered, so an empty answer tells apart from
+    // one with only addresses a chat never reaches.
+    let answered = std::cell::Cell::new(true);
+    let once = |host: &str, port: u16| {
+        let found: Vec<SocketAddr> = resolve(host, port);
+        answered.set(!found.is_empty());
+        found
+    };
+    let reached = addresses(host, port, reach, own, &once);
     if reached.is_empty() {
-        return Connected::OnlyLocal;
+        return if answered.get() {
+            Connected::OnlyLocal
+        } else {
+            Connected::Not
+        };
     }
     reached
         .into_iter()
         .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
         .map_or(Connected::Not, Connected::To)
+}
+
+/// **The addresses a connection to `host` on `port` is made at** (#2097 review): a name of this
+/// Mac on a port the chat holds is pinned to this machine's loopback and never looked up
+/// ([`Reach::address_of`]); any other name is looked up now, by `resolve`, and only the
+/// addresses a chat may reach are kept ([`reachable`]).
+pub fn addresses(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+) -> Vec<SocketAddr> {
+    match reach.address_of(host, port) {
+        Some(pinned) => vec![pinned],
+        None => reachable_from(&resolve(host, port), reach, own),
+    }
 }
 
 /// The addresses `host` on `port` is reached at, as `resolve` answers: each one a chat may

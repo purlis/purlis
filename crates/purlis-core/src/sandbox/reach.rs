@@ -278,48 +278,30 @@ impl Reach {
     /// **[`Self::decide`], with a service on this Mac reached by name** (qw384b): what the
     /// chat's proxy asks. A client that never sends this machine's own addresses to a proxy
     /// (Claude Code's `NO_PROXY`, every Go client's built-in bypass) still sends a name, so a
-    /// port granted to the chat is carried by name:
-    ///
-    /// - [`localport::THIS_MAC`] on a port is that port of this machine's loopback: carried at
-    ///   the layer that granted it, and refused as this machine where none did, never asked
-    ///   about as a host.
-    /// - A name nothing lists that `resolve` answers with this machine's loopback alone
-    ///   (`kubernetes.docker.internal`) is decided the same way. Names are resolved only for a
-    ///   chat holding a port, so every other chat decides as before.
+    /// name of this Mac ([`localport::NAMES_OF_THIS_MAC`], a fixed list, never looked up) on a
+    /// port is that port of this machine's loopback: carried at the layer that granted it, and
+    /// refused as this machine where none did, never asked about as a host. Any other name is
+    /// decided as [`Self::decide`] decides it, and no name is resolved here.
     ///
     /// Only while the port stands: one [`Self::withdraw`]n is carried no longer.
-    pub fn decide_resolving(
+    pub fn decide_by_name(
         &self,
         host: &str,
         port: u16,
         defaults: &[u16],
         own: &[IpAddr],
-        resolve: &dyn Fn(&str) -> Vec<IpAddr>,
     ) -> Decision {
-        let name = host.strip_suffix('.').unwrap_or(host);
-        if name.eq_ignore_ascii_case(localport::THIS_MAC) {
+        if localport::is_a_name_of_this_mac(host) {
             return self.on_this_mac(port);
-        }
-        if name.parse::<IpAddr>().is_err()
-            && self.holds_a_port()
-            && !self
-                .listed
-                .iter()
-                .any(|(entry, _)| allows_on(std::slice::from_ref(entry), name, port, defaults))
-        {
-            let resolved = resolve(name);
-            if !resolved.is_empty() && resolved.iter().all(IpAddr::is_loopback) {
-                return self.on_this_mac(port);
-            }
         }
         self.decide(host, port, defaults, own)
     }
 
-    /// Where the proxy connects for `host` on `port` instead of resolving it: this machine's
-    /// loopback for [`localport::THIS_MAC`] on a port the chat holds, which no resolver knows.
+    /// **Where the proxy connects for `host` on `port`, never looking it up**: this machine's
+    /// loopback, for a name of this Mac on a port the chat holds. Pinned, so no lookup at
+    /// connect can send such a connection anywhere else (#2097 review).
     pub fn address_of(&self, host: &str, port: u16) -> Option<SocketAddr> {
-        let name = host.strip_suffix('.').unwrap_or(host);
-        (name.eq_ignore_ascii_case(localport::THIS_MAC) && self.on_this_mac(port).carries())
+        (localport::is_a_name_of_this_mac(host) && self.on_this_mac(port).carries())
             .then(|| SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
     }
 
@@ -342,19 +324,6 @@ impl Reach {
             Some(by) => Decision::of(by),
             None => Decision::Refused(Refused::LocalAddress),
         }
-    }
-
-    /// Whether any port of this machine's loopback is listed, as a service on this Mac is.
-    fn holds_a_port(&self) -> bool {
-        self.listed.iter().any(|(entry, _)| {
-            let (name, held) = entry_parts(entry);
-            held.is_some()
-                && name
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .parse::<IpAddr>()
-                    .is_ok_and(|ip| ip.is_loopback())
-        })
     }
 
     fn exactly(&self, ip: IpAddr, port: u16) -> Option<By> {

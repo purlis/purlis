@@ -3151,10 +3151,20 @@ impl Confinement {
             }
         };
         let path = dir.join(name);
+        // Made new each time, never through whatever stands at the path: a file kept before is
+        // taken away first (a link itself, never what it points at), and the open neither
+        // follows a link nor takes a file that is there already (#2097 review).
+        match std::fs::remove_file(&path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err),
+            _ => {}
+        }
         let mut options = std::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
+        options.write(true).create_new(true);
         #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
         std::io::Write::write_all(&mut options.open(&path)?, text.as_bytes())?;
         Ok(path)
     }

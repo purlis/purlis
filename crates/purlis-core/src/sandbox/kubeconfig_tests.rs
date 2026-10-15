@@ -189,6 +189,25 @@ fn the_copy_is_kept_in_the_chats_own_folder_for_as_long_as_it_runs() {
     let again = confinement.keep_own(super::FILE, "{}").expect("kept");
     assert_eq!(again, path);
     assert_eq!(std::fs::read_to_string(&path).expect("read back"), "{}");
+    // A link put where the copy goes is never followed: what it points at is left as it was.
+    #[cfg(unix)]
+    {
+        let outside = tempfile::NamedTempFile::new().expect("a file elsewhere");
+        std::fs::write(outside.path(), "theirs").expect("written");
+        std::fs::remove_file(&path).expect("removed");
+        std::os::unix::fs::symlink(outside.path(), &path).expect("a link");
+        let kept = confinement.keep_own(super::FILE, "{}").expect("kept");
+        assert_eq!(
+            std::fs::read_to_string(outside.path()).expect("read"),
+            "theirs"
+        );
+        assert!(
+            !std::fs::symlink_metadata(&kept)
+                .expect("there")
+                .file_type()
+                .is_symlink()
+        );
+    }
     drop(confinement);
     assert!(!path.exists(), "gone with the chat");
 }

@@ -4320,20 +4320,12 @@ fn refused_by_the_proxy(
             // names the port, which its Notice offers to allow. Any other local address (a
             // link-local address, a metadata service) is never a host to allow (#1664), so its
             // Block names none, and its Notice offers what a local socket's does.
-            // A name that resolves to this machine's loopback alone is that port too (qw384b),
-            // resolved on the thread that tells it, never the proxy's.
+            // A name of this Mac is that port too (qw384b), from a fixed list, never looked up.
             let target = purlis_core::sandbox::egress::host_and_port(host, port);
             let _ = std::thread::Builder::new()
                 .name("purlis-refused".into())
                 .spawn(move || {
-                    let local =
-                        purlis_core::sandbox::localport::named_port(&target, &|name: &str| {
-                            use std::net::ToSocketAddrs;
-                            (name, 0)
-                                .to_socket_addrs()
-                                .map(|found| found.map(|addr| addr.ip()).collect())
-                                .unwrap_or_default()
-                        });
+                    let local = purlis_core::sandbox::localport::named_port(&target);
                     let block = purlis_core::hookwire::SandboxBlocked {
                         chat,
                         sandbox_blocked: Block {

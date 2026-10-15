@@ -8,7 +8,7 @@
 //! so a cluster at `https://127.0.0.1:50795` is refused by the chat's sandbox however its port
 //! is allowed. Named [`super::localport::THIS_MAC`] instead, the connection goes to the chat's
 //! proxy, which carries it to that port while the chat holds it
-//! ([`super::reach::Reach::decide_resolving`]).
+//! ([`super::reach::Reach::decide_by_name`]).
 //!
 //! On the person's press, the window copies one context for one chat ([`for_this_chat`]):
 //!

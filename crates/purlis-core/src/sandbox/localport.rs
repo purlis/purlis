@@ -31,10 +31,29 @@ use super::grant::Refused;
 
 /// **The name a chat reaches a service on this Mac by, through its proxy** (qw384b):
 /// `this-mac.internal:<port>`, carried to that port of the loopback interface while the chat
-/// holds it ([`super::reach::Reach::decide_resolving`]). A client that never sends this
+/// holds it ([`super::reach::Reach::decide_by_name`]). A client that never sends this
 /// machine's own addresses to a proxy (Claude Code's `NO_PROXY`, every Go client) still sends a
 /// name. Under `.internal`, which no public name is ever given.
 pub const THIS_MAC: &str = "this-mac.internal";
+
+/// **The names of this Mac a chat's proxy carries a granted port by** (qw384b, #2097 review): a
+/// fixed list, never looked up. [`THIS_MAC`], purlis's own; `kubernetes.docker.internal`, which
+/// Docker Desktop's cluster is named by; and `host.docker.internal`, which a container names this
+/// machine by. Each is this machine's loopback to the proxy whatever a resolver would say, and no
+/// other name is ever sent to a resolver on this account.
+pub const NAMES_OF_THIS_MAC: [&str; 3] = [
+    THIS_MAC,
+    "kubernetes.docker.internal",
+    "host.docker.internal",
+];
+
+/// Whether `host` is one of [`NAMES_OF_THIS_MAC`], in any case, a trailing dot or none.
+pub fn is_a_name_of_this_mac(host: &str) -> bool {
+    let named = host.strip_suffix('.').unwrap_or(host);
+    NAMES_OF_THIS_MAC
+        .iter()
+        .any(|name| named.eq_ignore_ascii_case(name))
+}
 
 /// What a chat whose commands send no address of this machine to a proxy (Claude Code's) is
 /// told of `port` once it is allowed (qw384b): the name its proxy carries it by.
@@ -200,8 +219,8 @@ pub fn seatbelt_rule(port: u16) -> String {
 
 /// **The port of a service on this Mac that `target` names**, where it names one on the
 /// loopback interface as the profile and the proxy carry it: `127.0.0.1:50795`, `[::1]:50795`,
-/// `localhost:50795`, and `this-mac.internal:50795` (qw384b). None for any other address, a name,
-/// or no port.
+/// `localhost:50795`, and a name of this Mac such as `this-mac.internal:50795` (qw384b). None for
+/// any other address, a name, or no port.
 pub fn loopback_port(target: &str) -> Option<u16> {
     let target = target.trim().trim_end_matches(['.', ',', ';']);
     let (host, port) = if let Some(rest) = target.strip_prefix('[') {
@@ -215,7 +234,7 @@ pub fn loopback_port(target: &str) -> Option<u16> {
     // address of the loopback block, which neither carries.
     let named = host.strip_suffix('.').unwrap_or(host);
     let loopback = named.eq_ignore_ascii_case("localhost")
-        || named.eq_ignore_ascii_case(THIS_MAC)
+        || is_a_name_of_this_mac(named)
         || host.parse::<IpAddr>().is_ok_and(|ip| {
             ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
                 || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
@@ -223,20 +242,11 @@ pub fn loopback_port(target: &str) -> Option<u16> {
     loopback.then_some(port)
 }
 
-/// **The port of this Mac a name the proxy refused as this machine names** (qw384b): what
-/// [`loopback_port`] names, and a name that `resolve` answers with this machine's loopback alone
-/// (`kubernetes.docker.internal:6443`). None for a name that resolves anywhere else, or nowhere.
-pub fn named_port(target: &str, resolve: &dyn Fn(&str) -> Vec<IpAddr>) -> Option<u16> {
-    if let Some(port) = loopback_port(target) {
-        return Some(port);
-    }
-    let (host, port) = target.trim().rsplit_once(':')?;
-    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
-    if host.is_empty() || host.starts_with('[') || host.parse::<IpAddr>().is_ok() {
-        return None;
-    }
-    let resolved = resolve(host);
-    (!resolved.is_empty() && resolved.iter().all(IpAddr::is_loopback)).then_some(port)
+/// **The port of this Mac a target the proxy refused as this machine names** (qw384b): what
+/// [`loopback_port`] names, a name of this Mac ([`NAMES_OF_THIS_MAC`]) included. No name is
+/// looked up.
+pub fn named_port(target: &str) -> Option<u16> {
+    loopback_port(target)
 }
 
 /// **The port a program's own refusal of a connection on this machine names** (qw384): Go's

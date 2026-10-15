@@ -198,29 +198,23 @@ fn a_port_purlis_took_is_freed_before_the_service_is_started_again() {
     );
 }
 
-/// qw384b: the name a chat's proxy carries a service on this Mac by names its port too, and so
-/// does a name that resolves to this machine's loopback alone; nothing else does.
+/// qw384b: a name of this Mac names its port too, from the fixed list alone; no name is looked
+/// up (#2097 review).
 #[test]
-fn this_mac_by_name_or_a_name_resolving_to_loopback_names_its_port() {
-    let loopback = |_: &str| vec![std::net::IpAddr::from([127, 0, 0, 1])];
-    let elsewhere = |_: &str| vec![std::net::IpAddr::from([10, 0, 0, 1])];
-    let mixed = |_: &str| {
-        vec![
-            std::net::IpAddr::from([127, 0, 0, 1]),
-            std::net::IpAddr::from([10, 0, 0, 1]),
-        ]
-    };
-    let nowhere = |_: &str| Vec::new();
+fn a_name_of_this_mac_names_its_port_and_no_other_name_does() {
     assert_eq!(loopback_port("this-mac.internal:50795"), Some(50795));
     assert_eq!(loopback_port("THIS-MAC.internal.:6443"), Some(6443));
-    assert_eq!(
-        named_port("kubernetes.docker.internal:6443", &loopback),
-        Some(6443)
-    );
-    assert_eq!(named_port("this-mac.internal:1", &nowhere), Some(1));
-    assert_eq!(named_port("127.0.0.1:2", &nowhere), Some(2));
-    assert_eq!(named_port("example.com:6443", &elsewhere), None);
-    assert_eq!(named_port("example.com:6443", &mixed), None);
-    assert_eq!(named_port("example.com:6443", &nowhere), None);
-    assert_eq!(named_port("example.com", &loopback), None);
+    assert_eq!(named_port("kubernetes.docker.internal:6443"), Some(6443));
+    assert_eq!(named_port("host.docker.internal:8080"), Some(8080));
+    assert_eq!(named_port("this-mac.internal:1"), Some(1));
+    assert_eq!(named_port("127.0.0.1:2"), Some(2));
+    for never in [
+        "example.com:6443",
+        "evil.example:6443",
+        "kubernetes.docker.internal.example.com:6443",
+        "kubernetes.docker.internal",
+        "kubernetes.docker.internal:0",
+    ] {
+        assert_eq!(named_port(never), None, "{never}");
+    }
 }

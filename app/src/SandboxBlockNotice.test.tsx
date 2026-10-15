@@ -538,6 +538,12 @@ describe("a service on this Mac's Notice (qw384)", () => {
       await userEvent.click(await screen.findByRole("button", { name: "Point kubectl at it…" }));
       expect(sent("kube_contexts")).toHaveLength(1);
       expect(sent("point_kubectl")).toEqual([]);
+      // Before any press, it says the chat gets that context's credentials, which it can read.
+      expect(
+        screen.getByText(
+          /gets its own copy of the context you choose, its credentials included: this chat can read them/,
+        ),
+      ).toBeTruthy();
       // A context elsewhere is listed with why, and never pressable.
       expect(screen.getByText(/api\.prod\.example\.com is not a cluster on this Mac/)).toBeTruthy();
       expect(screen.queryByRole("button", { name: /prod/ })).toBeNull();
