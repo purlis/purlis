@@ -33,7 +33,7 @@ fn a_steward_chat_telling() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32,
     )
     .running_sessions_on(Arc::new({
         let host = host.clone();
-        move |_| Box::new(host.clone())
+        move |_, _: &std::path::Path| Box::new(host.clone())
     }));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");

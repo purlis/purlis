@@ -113,8 +113,11 @@ tauri = { version = "2", features = ["test", "tray-icon"] }
 purlis-core = { workspace = true, features = ["fenced", "test-support"] }
 stand-in.workspace = true
 # The UI RPC's list of commands no link serves (`session_protocol::ui::WINDOW_ONLY`, HP-6), so
-# the client generated for the link leaves out the same ones.
-purlis-session-protocol = { path = "../../crates/session-protocol" }
+# the client generated for the link leaves out the same ones; and an in-memory link to a session
+# host, for the tests of chats run in one (#1998).
+purlis-session-protocol = { path = "../../crates/session-protocol", features = ["any-stream"] }
+# A program that stands in for a terminal's, behind the session host (#1998).
+purlis-host = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 # A vault's clipboard clear is tested on tokio's paused clock, not a real minute.
 tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }

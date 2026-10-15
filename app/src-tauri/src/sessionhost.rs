@@ -18,9 +18,11 @@
 //! and nothing the window draws waits for it. Once it says it is ready, the window connects as `local-ui` with the
 //! credential the host minted, and holds the link.
 //!
-//! No chat runs in it yet: chats still run in the window's own process, so the host takes every
-//! process below the window as inside a chat and refuses it a person's scope
-//! (`purlis_host::Window`). What this host says goes to the window's log.
+//! **Chats run in it behind the start-time switch** (#1998, `crate::hostedsessions`): the link
+//! the window holds is what every project's chats run over when the switch is on, and with no
+//! host of the window's own, those chats are refused with the reason ([`Connection`]). Wherever
+//! chats run, the host takes every process below the window as inside a chat and refuses it a
+//! person's scope (`purlis_host::Window`). What this host says goes to the window's log.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -30,6 +32,8 @@ use std::time::{Duration, Instant};
 
 use purlis_session_protocol::auth::{Credential, Scope};
 use purlis_session_protocol::{link, session};
+
+use crate::hostedsessions::{Connection, HostLink};
 
 /// How long the window waits for its host to say it is ready.
 const READY_WITHIN: Duration = Duration::from_secs(20);
@@ -75,10 +79,44 @@ pub fn why_not_ready(code: Option<i32>) -> &'static str {
     }
 }
 
+/// A chat the window composed, as the window would start it: the core's composition, against
+/// the environment the window started this host with (#1998). The host's [`purlis_host::Compose`]
+/// for the window's binary.
+pub fn launched(
+    launch: &session::Launch,
+    number: u32,
+    size: purlis_core::engine::Size,
+) -> Result<purlis_core::session::Spec, String> {
+    purlis_core::chatspec::launched(
+        std::env::vars_os(),
+        &purlis_core::chatspec::Launched {
+            program: &launch.program,
+            args: &launch.args,
+            cwd: launch.cwd.as_deref(),
+            set: &launch.set,
+            strip: &launch.strip,
+            pass: &launch.pass,
+            declared: &launch.declared,
+            harness: launch.harness.as_deref(),
+            git_hooks: launch.git_hooks.as_deref(),
+            reporting: launch.reporting.as_ref().map(|reporting| {
+                purlis_core::chatspec::Reporting {
+                    socket: Path::new(&reporting.socket),
+                    token: &reporting.token,
+                }
+            }),
+        },
+        number,
+        size,
+    )
+}
+
 /// The window's session host, while it runs.
 #[derive(Default)]
 pub struct SessionHost {
     held: Arc<Mutex<Option<Held>>>,
+    /// The link to it, for the chats that run in it.
+    connection: Arc<Connection>,
 }
 
 struct Held {
@@ -93,27 +131,40 @@ impl SessionHost {
     /// the host on a thread of its own and connects to it once it is ready. Nothing waits for
     /// the host; what goes wrong is said in the log.
     pub fn start(&self) {
+        let connection = &self.connection;
         let Some(place) = place() else {
-            tracing::warn!(
-                "purlis: no session host: there is no home folder to keep its credentials in"
-            );
+            let why = "there is no home folder to keep its credentials in";
+            tracing::warn!("purlis: no session host: {why}");
+            connection.gone(why);
             return;
         };
         if let Err(why) = purlis_core::hostsocket::make_the_folder(&place.socket) {
-            tracing::warn!(
-                "purlis: no session host: its folder {} could not be made this user's alone: \
-                 {why}",
+            let why = format!(
+                "its folder {} could not be made this user's alone: {why}",
                 place.socket.parent().unwrap_or(&place.socket).display()
             );
+            tracing::warn!("purlis: no session host: {why}");
+            connection.gone(why);
             return;
         }
         let held = Arc::clone(&self.held);
+        let connection = Arc::clone(connection);
         let spawned = std::thread::Builder::new()
             .name("session host".into())
-            .spawn(move || start_here(&held, place));
+            .spawn({
+                let connection = Arc::clone(&connection);
+                move || start_here(&held, place, &connection)
+            });
         if let Err(why) = spawned {
             tracing::warn!("purlis: the session host was not started: {why}");
+            connection.gone(format!("it was not started: {why}"));
         }
+    }
+
+    /// The link to the host, for the chats that run in it: ready once the host is, or gone with
+    /// the reason there is none.
+    pub fn connection(&self) -> Arc<Connection> {
+        Arc::clone(&self.connection)
     }
 
     /// Ends the host: closes its standard input, waits [`ENDS_WITHIN`] for it to go, and kills
@@ -136,11 +187,12 @@ impl SessionHost {
 }
 
 /// Starts the host and connects to it, on the calling thread.
-fn start_here(held: &Mutex<Option<Held>>, place: purlis_host::Place) {
+fn start_here(held: &Mutex<Option<Held>>, place: purlis_host::Place, connection: &Arc<Connection>) {
     let binary = match std::env::current_exe() {
         Ok(binary) => binary,
         Err(why) => {
             tracing::warn!("purlis: no session host: this program's path is unknown: {why}");
+            connection.gone(format!("this program's path is unknown: {why}"));
             return;
         }
     };
@@ -148,6 +200,7 @@ fn start_here(held: &Mutex<Option<Held>>, place: purlis_host::Place) {
         Ok(child) => child,
         Err(why) => {
             tracing::warn!("purlis: the session host did not start: {why}");
+            connection.gone(format!("it did not start: {why}"));
             return;
         }
     };
@@ -162,13 +215,14 @@ fn start_here(held: &Mutex<Option<Held>>, place: purlis_host::Place) {
     if !stdout.is_some_and(said_ready) {
         let code = wait_for_its_end(held, Instant::now() + ENDS_WITHIN);
         tracing::warn!("purlis: {} (process {pid})", why_not_ready(code));
+        connection.gone(why_not_ready(code));
         return;
     }
     tracing::info!(
         "purlis: the session host serves at {}",
         place.socket.display()
     );
-    connect(place.socket, place.credentials);
+    connect(place.socket, place.credentials, Arc::clone(connection));
 }
 
 /// The host's exit code, once it has ended by `deadline`.
@@ -211,13 +265,14 @@ fn log_what_it_says(said: std::process::ChildStderr) {
 }
 
 /// Connect to the host as `local-ui`, the window's scope, and hold the link for as long as the
-/// window runs. Nothing is asked of it yet.
-fn connect(socket: PathBuf, credentials: PathBuf) {
+/// window runs: the chats that run in the host go over it ([`HostLink`]).
+fn connect(socket: PathBuf, credentials: PathBuf, connection: Arc<Connection>) {
     tauri::async_runtime::spawn(async move {
         let credential = match Credential::read(&credentials, Scope::LocalUi) {
             Ok(credential) => credential,
             Err(why) => {
                 tracing::warn!("purlis: the session host's credential could not be read: {why}");
+                connection.gone(format!("its credential could not be read: {why}"));
                 return;
             }
         };
@@ -227,16 +282,31 @@ fn connect(socket: PathBuf, credentials: PathBuf) {
             }
             Err(why) => {
                 tracing::warn!("purlis: the session host's socket did not answer: {why}");
+                connection.gone(format!("its socket did not answer: {why}"));
                 return;
             }
         };
-        match linked {
-            Ok(mut link) => {
-                // Held until the host or the window ends it.
-                while link.control().next().await.is_some() {}
-                tracing::info!("purlis: the link to the session host ended");
+        let link = match linked {
+            Ok(link) => link,
+            Err(why) => {
+                tracing::warn!("purlis: the session host refused the window: {why}");
+                connection.gone(format!("it refused the window: {why}"));
+                return;
             }
-            Err(why) => tracing::warn!("purlis: the session host refused the window: {why}"),
+        };
+        let ended = {
+            let connection = Arc::clone(&connection);
+            move || {
+                tracing::info!("purlis: the link to the session host ended");
+                connection.gone("the link to it ended");
+            }
+        };
+        match HostLink::over(link, tokio::runtime::Handle::current(), ended).await {
+            Ok(link) => connection.ready(Arc::new(link)),
+            Err(why) => {
+                tracing::warn!("purlis: {why}");
+                connection.gone(why);
+            }
         }
     });
 }

@@ -10740,7 +10740,9 @@ mod tests {
     /// the tests do. What a chat was started on is `host.openings()`.
     fn planes_on(host: &Pretend) -> Planes {
         let host = host.clone();
-        planes().running_sessions_on(Arc::new(move |_| Box::new(host.clone())))
+        planes().running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+            Box::new(host.clone())
+        }))
     }
 
     /// The person asks `persona` from chat `asking`'s tab, with dispatch locked by nobody.
