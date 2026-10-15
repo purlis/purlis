@@ -239,7 +239,10 @@ describe("getting a project from your repos", function () {
     // only once the clone has answered, and says a failed clone in its alert. Waited on rather
     // than the folder appearing on disk, which a loaded runner can show late or early. The
     // question's own button: the Welcome's open-by-path form has an "Open project" of its own.
-    const gate = await $('[role="dialog"]').$("button=Open project");
+    // The question is named, not the first dialog: one found before it is not it (#2126).
+    const gate = await $('[role="dialog"][aria-labelledby="approve-plane"]').$(
+      "button=Open project",
+    );
     const refused = await $(`${WELCOME} .trouble[role="alert"]`);
     await browser.waitUntil(async () => (await gate.isExisting()) || (await refused.isExisting()), {
       timeout: 120_000,

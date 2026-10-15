@@ -6,7 +6,7 @@ import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { copyFixturePlane } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * **A save's red pull request, in the built app** (ADR 0051, amended 2026-10-13 and 2026-10-14;
@@ -128,9 +128,7 @@ describe("a save's red pull request in the Saving view", function () {
     await box.waitForDisplayed({ timeout: 20_000 });
     await box.addValue(plane);
     await $('form.by-path button[type="submit"]').click();
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
 
     // The bar's stage button opens the Saving view.
     const stage = await $(`${BAR} button[aria-label^="Saving:"]`);

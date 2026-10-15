@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { pressMenuPath, ROW } from "../menus.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * **A tab's menu opens Settings at that tab's level**, in the built app (#1213): the menu key on
@@ -121,9 +121,7 @@ describe("a tab's menu opens Settings at that tab's level", function () {
     // The path box's own submit, found by its form, and the trust question's act found
     // in the question: the two are both named Open project.
     await $('form.by-path button[type="submit"]').click();
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
     await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",

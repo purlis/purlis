@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { attributesOfEach } from "../reading.js";
+import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
  * A project tab split into an OS window of its own, and moved back (charter#126; ADR 0033,
@@ -152,9 +153,7 @@ describe("a project tab in a window of its own", function () {
     // The path box's own submit, found by its form, and the trust question's act found
     // in the question: the two are both named Open project.
     await $('form.by-path button[type="submit"]').click();
-    const question = await $('[role="dialog"]');
-    if (await question.waitForDisplayed({ timeout: 10_000 }).catch(() => false))
-      await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion({ within: 10_000, ifAsked: true });
     await stripHas(split, true);
   });
 
