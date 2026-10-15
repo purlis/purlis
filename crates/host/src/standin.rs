@@ -15,6 +15,11 @@ use purlis_terminal::engine::Size;
 use purlis_terminal::session::Spec;
 use tokio::sync::mpsc;
 
+use purlis_session_protocol::session::{
+    Confine, Confined, Listed, ReachChange, ReachNow, SandboxTold,
+};
+
+use crate::confining::{Askable, Confining, Tell};
 use crate::hosting::{Run, Running};
 
 /// What a stand-in program was asked, and what it wrote.
@@ -146,5 +151,186 @@ impl Run for StandIns {
         program.seen().holds_on = *self.1.lock().unwrap();
         self.0.lock().unwrap().push((spec, program.clone()));
         Ok(Arc::new(program))
+    }
+}
+
+/// What a stand-in confinement was planned with and asked, and whether it has ended (#1999).
+pub struct Confinement {
+    pub confine: Confine,
+    pub changes: Vec<ReachChange>,
+    pub ended: bool,
+    tell: Tell,
+    askable: Askable,
+}
+
+/// Starts every confinement as a stand-in that listens on nothing: it says it is at the ports
+/// it is told to, keeps every change the window makes, and tells the window what a test says its
+/// proxy did (#1999). Only tests build it (`test-support`).
+#[derive(Clone, Default)]
+pub struct StandInConfines(
+    Arc<Mutex<Vec<Confinement>>>,
+    Arc<Mutex<Option<String>>>,
+    Arc<Gate>,
+);
+
+/// What holds a stand-in's starts until a test lets them go, and what it refuses.
+#[derive(Default)]
+struct Gate {
+    held: Mutex<Held>,
+    changed: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct Held {
+    holding: bool,
+    waiting: usize,
+    refusing_changes: Option<String>,
+}
+
+impl StandInConfines {
+    /// Each confinement it started, in order.
+    pub fn seen(&self) -> std::sync::MutexGuard<'_, Vec<Confinement>> {
+        self.0.lock().unwrap()
+    }
+
+    /// The confinement it started as `id`.
+    fn with<T>(&self, id: &str, what: impl FnOnce(&mut Confinement) -> T) -> T {
+        let mut seen = self.seen();
+        what(
+            seen.iter_mut()
+                .find(|one| one.confine.confinement == id)
+                .expect("a confinement it started"),
+        )
+    }
+
+    /// Its proxy did `told`: the window is told as the host tells it.
+    pub fn proxy_did(&self, id: &str, told: SandboxTold) {
+        let tell = self.with(id, |one| Arc::clone(&one.tell));
+        tell(told);
+    }
+
+    /// Whether its proxy may hold a connection while the person is asked, now.
+    pub fn askable(&self, id: &str) -> bool {
+        let askable = self.with(id, |one| Arc::clone(&one.askable));
+        askable()
+    }
+
+    /// Whether it has ended.
+    pub fn ended(&self, id: &str) -> bool {
+        self.with(id, |one| one.ended)
+    }
+
+    /// It refuses every start from now on, saying `why`.
+    pub fn refuse(&self, why: &str) {
+        *self.1.lock().unwrap() = Some(why.to_owned());
+    }
+
+    /// Each start from now on waits, before it starts anything, until [`Self::let_starts_go`].
+    pub fn hold_starts(&self) {
+        self.2.held.lock().unwrap().holding = true;
+    }
+
+    /// How many starts wait now.
+    pub fn waiting(&self) -> usize {
+        self.2.held.lock().unwrap().waiting
+    }
+
+    /// The starts that wait go on.
+    pub fn let_starts_go(&self) {
+        self.2.held.lock().unwrap().holding = false;
+        self.2.changed.notify_all();
+    }
+
+    /// It refuses every change the window makes from now on, saying `why`.
+    pub fn refuse_changes(&self, why: &str) {
+        self.2.held.lock().unwrap().refusing_changes = Some(why.to_owned());
+    }
+}
+
+struct StandInConfining {
+    id: String,
+    all: StandInConfines,
+}
+
+impl crate::confining::Confine for StandInConfines {
+    fn confine(
+        &self,
+        confining: &crate::confining::ToConfine<'_>,
+        tell: Tell,
+        askable: Askable,
+    ) -> Result<Box<dyn Confining>, String> {
+        if let Some(why) = self.1.lock().unwrap().clone() {
+            return Err(why);
+        }
+        {
+            let mut held = self.2.held.lock().unwrap();
+            held.waiting += 1;
+            while held.holding {
+                held = self.2.changed.wait(held).unwrap();
+            }
+            held.waiting -= 1;
+        }
+        self.seen().push(Confinement {
+            confine: confining.confine.clone(),
+            changes: Vec::new(),
+            ended: false,
+            tell,
+            askable,
+        });
+        Ok(Box::new(StandInConfining {
+            id: confining.confine.confinement.clone(),
+            all: self.clone(),
+        }))
+    }
+}
+
+impl Confining for StandInConfining {
+    fn confined(&self) -> Confined {
+        let given = self
+            .all
+            .with(&self.id, |one| one.confine.plan.given.clone());
+        Confined {
+            confinement: self.id.clone(),
+            http: 50811,
+            socks: 50812,
+            tmp: Some("/tmp/charter-chat-standin".into()),
+            routed: None,
+            ssh: given.first().map(|port| format!("/tmp/given-{port}")),
+        }
+    }
+
+    fn change(&self, change: &ReachChange) -> Result<Vec<String>, String> {
+        if let Some(why) = self.all.2.held.lock().unwrap().refusing_changes.clone() {
+            return Err(why);
+        }
+        self.all
+            .with(&self.id, |one| one.changes.push(change.clone()));
+        Ok(match change {
+            ReachChange::Allow { host, .. } => vec![format!("{host}:443")],
+            _ => Vec::new(),
+        })
+    }
+
+    fn now(&self) -> ReachNow {
+        self.all.with(&self.id, |one| ReachNow {
+            asked: Vec::new(),
+            allowed_live: one
+                .changes
+                .iter()
+                .filter_map(|change| match change {
+                    ReachChange::Allow { host, layer } => Some(Listed {
+                        host: host.clone(),
+                        layer: *layer,
+                    }),
+                    _ => None,
+                })
+                .collect(),
+        })
+    }
+}
+
+impl Drop for StandInConfining {
+    fn drop(&mut self) {
+        self.all.with(&self.id, |one| one.ended = true);
     }
 }

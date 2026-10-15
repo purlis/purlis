@@ -9,8 +9,9 @@
 //! **What it does** (#1997, #1998): it listens on its socket, admits the scopes whose
 //! credentials it minted, refuses everyone else, and serves the session protocol: it holds
 //! projects, and starts, views, drives, stops and closes the programs a client starts in them
-//! ([`Hosting`]). How a start is composed is the binary's ([`Compose`]), built on the core, so
-//! this crate links none of it.
+//! ([`Hosting`]). How a start is composed is the binary's ([`Compose`]), and so is how a chat's
+//! confinement, its egress proxy, is started from the window's plan (#1999, [`Confine`]), each
+//! built on the core, so this crate links none of it.
 //!
 //! **How it starts, in order, each step failing closed:**
 //!
@@ -38,6 +39,8 @@
 //! socket.
 
 #[cfg(unix)]
+mod confining;
+#[cfg(unix)]
 mod hearing;
 #[cfg(unix)]
 mod hosting;
@@ -46,6 +49,8 @@ mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
 
+#[cfg(unix)]
+pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfine};
 #[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
@@ -68,9 +73,9 @@ pub const READY: &str = "ready";
 
 /// When the window's binary was started as its session host ([`SERVE_FOR_THE_WINDOW`]), serve
 /// at the place `place` names until the window closes this process's standard input, holding
-/// its programs and projects in what `hosting` gives (which composes each start and hears each
-/// held project's hooks), and give the code to exit with; otherwise `None`, before anything is
-/// read or opened.
+/// its programs and projects in what `hosting` gives (which composes each start, hears each held
+/// project's hooks and starts each chat's confinement), and give the code to exit with;
+/// otherwise `None`, before anything is read or opened.
 ///
 /// The window is this process's parent, and every chat it runs is below it, so a peer below it
 /// is inside a chat ([`Window`]). The ready line goes to standard output and what the host has

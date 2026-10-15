@@ -3373,30 +3373,54 @@ impl Applied {
     }
 
     /// [`Self::confine_telling`], its proxy holding a connection to a host nothing lists on
-    /// `asks` while the person is asked (#1666); none refuses it at once.
+    /// `asks` while the person is asked (#1666); none refuses it at once. It starts
+    /// [`Self::plan`] here, as the session host starts it there (#1999).
     pub fn confine_asking(
         &self,
         refusals: egress::Refusals,
         reached: Option<egress::Reached>,
         asks: Option<std::sync::Arc<asks::Asks>>,
     ) -> std::io::Result<Option<Confinement>> {
-        // Claude Code through purlis's proxy (#1665): its pair of ports, which its adapter
-        // names in its `--settings`; an older one keeps its own proxy.
-        if !self.through_proxy {
-            return Ok(None);
+        self.plan()
+            .map(|plan| {
+                plan.start(plan::Telling {
+                    refusals,
+                    reached,
+                    asks,
+                })
+            })
+            .transpose()
+    }
+
+    /// **What this chat's confinement is started from** (#1999), wherever it starts: the layers
+    /// this was compiled with ([`reach`]), its ports, and what runs beside its proxy. `None`
+    /// where nothing runs beside the chat: an older Claude Code keeps its own proxy (#1665).
+    pub fn plan(&self) -> Option<plan::Plan> {
+        self.through_proxy.then(|| self.planned())
+    }
+
+    /// [`Self::plan`], whether or not anything runs beside the chat.
+    fn planned(&self) -> plan::Plan {
+        let claude = matches!(*self.form, Form::ClaudeCode(_));
+        plan::Plan {
+            reach: self.reach.written(),
+            tunnel_ports: egress::TUNNEL_PORTS.to_vec(),
+            plain_ports: egress::PLAIN_PORTS.to_vec(),
+            // A host listed without a port on every port for Claude Code, as its own proxy
+            // carried it (#1665).
+            any_port: claude,
+            // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so
+            // its chat needs the proxy alone (#1699), and its ssh route where no chat writes
+            // (#1667).
+            beside: if claude {
+                plan::Beside::ProxyOnly {
+                    routes: plan::routes(&self.root),
+                }
+            } else {
+                plan::Beside::Wrapped
+            },
+            given: self.confines.widened.ports.clone(),
         }
-        let serving = egress::Serving {
-            asks,
-            ..self.serving(refusals, reached)
-        };
-        // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so its
-        // chat needs the proxy alone (#1699), and its ssh route where no chat writes (#1667).
-        if matches!(*self.form, Form::ClaudeCode(_)) {
-            Confinement::proxy_only_routed(serving, &tunnel::routes_folder(&self.root))
-        } else {
-            Confinement::serving(serving)
-        }
-        .map(Some)
     }
 
     /// What this chat's proxy serves ([`Self::confine_telling`]): the layers this was compiled
@@ -3407,12 +3431,14 @@ impl Applied {
         refusals: egress::Refusals,
         reached: Option<egress::Reached>,
     ) -> egress::Serving {
-        egress::Serving {
-            refusals,
-            reached,
-            any_port: matches!(*self.form, Form::ClaudeCode(_)),
-            ..egress::Serving::of((*self.reach).clone())
-        }
+        self.planned().serving(
+            (*self.reach).clone(),
+            plan::Telling {
+                refusals,
+                reached,
+                asks: None,
+            },
+        )
     }
 }
 
@@ -3457,21 +3483,132 @@ pub struct Line {
 /// What runs beside a chat charter wraps, for as long as it lives: the loopback proxy its
 /// traffic leaves through ([`egress`]) and a temp directory of its own, which a Claude Code
 /// chat's is without ([`Self::proxy_only`]). Both end when this is dropped.
+///
+/// **Here, or held elsewhere** (#1999): the proxy runs in this process, or in the session host,
+/// which started it from this chat's [`plan::Plan`] and holds it for as long as the chat runs
+/// ([`Self::held_elsewhere`]). Either way the chat is named the same ports and folders, and the
+/// window answers its board of live asks the same way ([`Board`]).
 #[derive(Debug)]
 pub struct Confinement {
-    proxy: egress::Proxy,
-    tmp: Option<tempfile::TempDir>,
+    proxy: Proxied,
+    tmp: Option<Folder>,
     /// Its proxy's live asks (#1666), where it holds connections while the person is asked.
-    asks: Option<std::sync::Arc<asks::Asks>>,
+    asks: Option<std::sync::Arc<dyn Board>>,
     /// Its ssh route through its SOCKS port (#1667), in its temp directory; none where it
     /// could not be written, and ssh then reaches nothing, as before.
     ssh: Option<tunnel::SshRoute>,
     /// The folder a Claude Code chat's route was written in, where no chat writes
     /// ([`Self::proxy_only_routed`]): removed as this ends.
-    routed: Option<tempfile::TempDir>,
+    routed: Option<Folder>,
     /// A folder of the chat's own made for what it keeps ([`Self::keep_own`]) where it has
     /// neither of the two above: removed as this ends.
     kept: Option<tempfile::TempDir>,
+}
+
+/// Where a chat's proxy runs.
+#[derive(Debug)]
+enum Proxied {
+    /// Boxed: a proxy holds its listeners' threads, and the other variant only two ports.
+    Here(Box<egress::Proxy>),
+    Elsewhere(Elsewhere),
+}
+
+/// A proxy the session host holds (#1999): its ports, purlis's own in this process too while it
+/// is held, and what reaches it.
+#[derive(Debug)]
+struct Elsewhere {
+    http: u16,
+    socks: u16,
+    held: Box<dyn HeldElsewhere>,
+}
+
+impl Drop for Elsewhere {
+    fn drop(&mut self) {
+        localport::release(self.http);
+        localport::release(self.socks);
+    }
+}
+
+/// A folder beside a chat: made here and removed as it ends, or made by whoever holds its proxy.
+#[derive(Debug)]
+enum Folder {
+    Own(tempfile::TempDir),
+    Theirs(PathBuf),
+}
+
+impl Folder {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Own(dir) => dir.path(),
+            Self::Theirs(path) => path,
+        }
+    }
+}
+
+/// **A chat's board of live asks, as the window answers it** (#1666): [`asks::Asks`] beside a
+/// proxy in this process, or the board the session host holds beside its proxy (#1999). Every
+/// answer comes from the window; nothing a chat sends reaches a board.
+pub trait Board: Send + Sync + std::fmt::Debug {
+    /// Whether the person is being asked about `host` ([`asks::Asks::asks_about`]).
+    fn asks_about(&self, host: &hosts::Host) -> bool;
+    /// The person allowed `host` at `by` ([`asks::Asks::allow`]): the hosts held connections
+    /// gave up on before it, which the chat is told to retry.
+    fn allow(&self, host: &hosts::Host, by: reach::By) -> Vec<String>;
+    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]).
+    fn keep_blocked(&self, host: &hosts::Host);
+    /// An Allow of `host` at `by` was removed ([`asks::Asks::forget`]).
+    fn forget(&self, host: &hosts::Host, by: reach::By);
+    /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
+    fn allowed_live(&self) -> Vec<(String, reach::By)>;
+}
+
+impl Board for asks::Asks {
+    fn asks_about(&self, host: &hosts::Host) -> bool {
+        asks::Asks::asks_about(self, host)
+    }
+
+    fn allow(&self, host: &hosts::Host, by: reach::By) -> Vec<String> {
+        asks::Asks::allow(self, host, by)
+    }
+
+    fn keep_blocked(&self, host: &hosts::Host) {
+        asks::Asks::keep_blocked(self, host);
+    }
+
+    fn forget(&self, host: &hosts::Host, by: reach::By) {
+        asks::Asks::forget(self, host, by);
+    }
+
+    fn allowed_live(&self) -> Vec<(String, reach::By)> {
+        asks::Asks::allowed_live(self)
+    }
+}
+
+/// **What holds a chat's proxy in another process** (#1999): the session host. Dropping it lets
+/// the holder end the proxy.
+pub trait HeldElsewhere: Send + Sync + std::fmt::Debug {
+    /// What the holder calls this confinement.
+    fn id(&self) -> &str;
+    /// `port` of this machine is carried no longer ([`Confinement::withdraw_port`]), or why the
+    /// holder could not be told. A holder that could not be told ends the proxy where it can,
+    /// so a port whose grant was removed is never carried on.
+    fn withdraw_port(&self, port: u16) -> Result<(), String>;
+    /// Its board of live asks, where its proxy asks live.
+    fn board(&self) -> Option<std::sync::Arc<dyn Board>>;
+}
+
+/// **Where a confinement is**: its proxy's two ports, and the folders beside it. What the
+/// session host says of one it started (#1999).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placed {
+    pub http: u16,
+    pub socks: u16,
+    /// The chat's own temp folder.
+    pub tmp: Option<PathBuf>,
+    /// The folder a Claude Code chat's ssh route was written in.
+    pub routed: Option<PathBuf>,
+    /// The ssh route's folder.
+    pub ssh: Option<PathBuf>,
 }
 
 impl Confinement {
@@ -3499,9 +3636,9 @@ impl Confinement {
             })
             .ok();
         Ok(Self {
-            proxy,
-            tmp: Some(tmp),
-            asks,
+            proxy: Proxied::Here(Box::new(proxy)),
+            tmp: Some(Folder::Own(tmp)),
+            asks: asks.map(|asks| asks as std::sync::Arc<dyn Board>),
             ssh,
             routed: None,
             kept: None,
@@ -3514,9 +3651,9 @@ impl Confinement {
     pub fn proxy_only(serving: egress::Serving) -> std::io::Result<Self> {
         let asks = serving.asks.clone();
         Ok(Self {
-            proxy: egress::Proxy::serving(serving)?,
+            proxy: Proxied::Here(Box::new(egress::Proxy::serving(serving)?)),
             tmp: None,
-            asks,
+            asks: asks.map(|asks| asks as std::sync::Arc<dyn Board>),
             ssh: None,
             routed: None,
             kept: None,
@@ -3532,11 +3669,57 @@ impl Confinement {
         match tunnel::routed_in(within, confinement.socks_port()) {
             Ok((dir, route)) => {
                 confinement.ssh = Some(route);
-                confinement.routed = Some(dir);
+                confinement.routed = Some(Folder::Own(dir));
             }
             Err(err) => tracing::warn!("purlis: a chat's ssh route was not written ({err})"),
         }
         Ok(confinement)
+    }
+
+    /// **A confinement the session host started and holds** (#1999), at `placed`, reached
+    /// through `held`: the chat is named its ports and folders as it would be named one started
+    /// here. Its two ports are purlis's own in this process too while it is held
+    /// ([`localport`]), so no chat here is allowed either; refused where a chat here was given
+    /// one of them.
+    pub fn held_elsewhere(placed: Placed, held: Box<dyn HeldElsewhere>) -> std::io::Result<Self> {
+        if !localport::hold_elsewhere(&[placed.http, placed.socks]) {
+            return Err(std::io::Error::other(
+                "the session host's proxy for this chat listens on a port a chat here was given",
+            ));
+        }
+        let asks = held.board();
+        Ok(Self {
+            proxy: Proxied::Elsewhere(Elsewhere {
+                http: placed.http,
+                socks: placed.socks,
+                held,
+            }),
+            tmp: placed.tmp.map(Folder::Theirs),
+            asks,
+            ssh: placed.ssh.map(tunnel::SshRoute::at),
+            routed: placed.routed.map(Folder::Theirs),
+            kept: None,
+        })
+    }
+
+    /// **Where this is** ([`Placed`]): what the session host says of one it started.
+    pub fn placed(&self) -> Placed {
+        Placed {
+            http: self.proxy_port(),
+            socks: self.socks_port(),
+            tmp: self.tmp().map(Path::to_path_buf),
+            routed: self.routed.as_ref().map(|dir| dir.path().to_path_buf()),
+            ssh: self.ssh.as_ref().map(|route| route.dir().to_path_buf()),
+        }
+    }
+
+    /// What holds this one in another process calls it ([`HeldElsewhere::id`]); `None` for one
+    /// that runs here.
+    pub fn held_as(&self) -> Option<&str> {
+        match &self.proxy {
+            Proxied::Here(_) => None,
+            Proxied::Elsewhere(elsewhere) => Some(elsewhere.held.id()),
+        }
     }
 
     /// Its ssh route through its SOCKS port (#1667), where it was written.
@@ -3546,32 +3729,38 @@ impl Confinement {
 
     /// The loopback port of its proxy's HTTP side.
     pub fn proxy_port(&self) -> u16 {
-        self.proxy.port()
+        match &self.proxy {
+            Proxied::Here(proxy) => proxy.port(),
+            Proxied::Elsewhere(elsewhere) => elsewhere.http,
+        }
     }
 
     /// The loopback port of its proxy's SOCKS5 side.
     pub fn socks_port(&self) -> u16 {
-        self.proxy.socks_port()
+        match &self.proxy {
+            Proxied::Here(proxy) => proxy.socks_port(),
+            Proxied::Elsewhere(elsewhere) => elsewhere.socks,
+        }
     }
 
     /// Both its proxy's ports, the only ones its wrap lets the chat connect to: HTTP, then SOCKS5.
     pub fn proxy_ports(&self) -> [u16; 2] {
-        [self.proxy.port(), self.proxy.socks_port()]
+        [self.proxy_port(), self.socks_port()]
     }
 
     /// The URL its proxy is named by in the chat's environment.
     pub fn proxy_url(&self) -> String {
-        self.proxy.url()
+        egress::url_of(self.proxy_port())
     }
 
     /// Its proxy's live asks (#1666), which the window's answers reach the chat by.
-    pub fn asks(&self) -> Option<&std::sync::Arc<asks::Asks>> {
+    pub fn asks(&self) -> Option<&std::sync::Arc<dyn Board>> {
         self.asks.as_ref()
     }
 
     /// The chat's own temp directory, which a proxy-only one has none of.
     pub fn tmp(&self) -> Option<&Path> {
-        self.tmp.as_ref().map(tempfile::TempDir::path)
+        self.tmp.as_ref().map(Folder::path)
     }
 
     /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
@@ -3580,9 +3769,8 @@ impl Confinement {
     /// alone. Where the file is.
     pub fn keep_own(&mut self, name: &str, text: &str) -> std::io::Result<PathBuf> {
         let dir = match (&self.tmp, &self.routed, &self.kept) {
-            (Some(own), _, _) | (None, Some(own), _) | (None, None, Some(own)) => {
-                own.path().to_path_buf()
-            }
+            (Some(own), _, _) | (None, Some(own), _) => own.path().to_path_buf(),
+            (None, None, Some(own)) => own.path().to_path_buf(),
             (None, None, None) => {
                 let made = tempfile::Builder::new().prefix("purlis-chat-").tempdir()?;
                 let path = made.path().to_path_buf();
@@ -3611,8 +3799,15 @@ impl Confinement {
 
     /// **`port` of this machine is carried by its proxy no longer** (qw384b): its grant was
     /// removed while the chat runs.
-    pub fn withdraw_port(&self, port: u16) {
-        self.proxy.withdraw_port(port);
+    /// One held elsewhere whose holder could not be told says why ([`HeldElsewhere::withdraw_port`]).
+    pub fn withdraw_port(&self, port: u16) -> Result<(), String> {
+        match &self.proxy {
+            Proxied::Here(proxy) => {
+                proxy.withdraw_port(port);
+                Ok(())
+            }
+            Proxied::Elsewhere(elsewhere) => elsewhere.held.withdraw_port(port),
+        }
     }
 }
 
@@ -5505,6 +5700,7 @@ pub mod localport;
 pub mod opencode;
 pub mod persona;
 pub mod personal;
+pub mod plan;
 pub mod planted;
 pub mod policy;
 pub mod program;
@@ -5533,6 +5729,8 @@ mod kept_tests;
 mod opencode_tests;
 #[cfg(test)]
 mod persona_tests;
+#[cfg(test)]
+mod plan_tests;
 #[cfg(test)]
 mod reach_tests;
 #[cfg(test)]
