@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792087176602,
+  "lastUpdate": 1792088386148,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12810,6 +12810,48 @@ window.BENCHMARK_DATA = {
             "value": 103.990351,
             "unit": "ms",
             "extra": "median of 5 runs: 102.661, 103.295, 103.990, 105.534, 105.921 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "04e0428b1de03022fa7f2ad9386943d46da40ac2",
+          "message": "ci: apply the Seatbelt profiles purlis emits on the macOS runner (#2208)\n\n* ci: apply the Seatbelt profiles purlis emits on the macOS runner (#2128)\n\nA core test builds the profiles a wrapped chat (Codex, opencode) starts\nunder, at the full sandbox and at the floor, the way a start builds them,\nand writes them out with their sample projects. tools/seatbelt-case.sh\napplies each one whole with sandbox-exec: a held name in another case is\nrefused (a vault read, a held folder written, a new held leaf), the\nmanifest is not written, and a file nothing holds is written and read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test: the emitted-profiles test opens by shedding the shell's steering (#2128)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T22:01:03+04:00",
+          "tree_id": "71b9a343c634455a6dbcef1a89a4d4be3005bedf",
+          "url": "https://github.com/purlis/purlis/commit/04e0428b1de03022fa7f2ad9386943d46da40ac2"
+        },
+        "date": 1792088383939,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48367550000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.478, 0.483, 0.484, 0.499, 0.504 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.840562,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.322, 16.652, 16.841, 17.004, 17.026 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.36343749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.324, 102.099, 102.363, 102.670, 103.385 ms"
           }
         ]
       }
