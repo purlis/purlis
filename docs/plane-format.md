@@ -282,6 +282,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [Claude Code's own files — purlis does NOT write them](#claude-codes-own-files--purlis-does-not-write-them)
   - [The shipped plugin's `hooks/hooks.json`](#the-shipped-plugins-hookshooksjson)
   - [2c. Git config purlis sets](#2c-git-config-purlis-sets)
+  - [`<git dir>/purlis-save.lock`](#git-dirpurlis-savelock)
   - [2d. purlis-private caches in this area](#2d-purlis-private-caches-in-this-area)
   - [`.charter/cache/harness-wiring.json`](#chartercacheharness-wiringjson)
   - [`.charter/unrecorded/<sha256[:32]>.json`](#charterunrecordedsha25632json)
@@ -4631,6 +4632,19 @@ always does. Two differences show (#1413):
   This narrows who learns which keys you set; it does not stop it: a host that fails on
   purpose, with a certificate or a dropped connection, still has the keys named, never their
   values.
+
+### `<git dir>/purlis-save.lock`
+
+- **Format:** empty file, used with `flock(LOCK_EX)` (`std::fs::File::try_lock`).
+- **Status:** **stable** — a cross-process mutex around every save and fetch purlis runs in
+  a repository: the plane's and each workspace repo's, from the window, `purlis save`, the
+  session host's auto-save, a resolve and the rename fix alike (#2002). A save that finds it
+  held is refused with "A save of this plane is already running"; one that may wait, waits.
+- **Tier:** Clone state, transient — held only while a save or a fetch runs; deleted ⇒ made
+  again by the next one.
+- **Written/locked by:** `purlis_core::planegit::Claim` (`crates/purlis-core/src/planegit.rs`).
+- **Git:** inside the git directory, so never tracked. In a linked worktree it is that
+  worktree's own git directory, as its index is.
 
 ### 2d. purlis-private caches in this area
 

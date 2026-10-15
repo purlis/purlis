@@ -61,8 +61,8 @@ pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfin
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
-    Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting, Run, Running, Terminals,
-    ToCompose,
+    ASK_WITHIN, AskTheWindow, Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting,
+    Looked, Poke, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
 };
 #[cfg(unix)]
 pub use killswitch::KILL_SWITCH;
