@@ -7,6 +7,7 @@ import * as AlertDialog from "../overlays/alert-dialog";
 import { AnswerBar } from "../AnswerBar";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
+import { askProfileSignIn } from "./links";
 
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
@@ -19,13 +20,18 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * A profile is the person's, for the whole machine, so it is under You, beside This machine and
  * Accounts. The list and every act are the core's (`machine_profiles`, `machine_profile_*`), the
  * window's alone; a refusal is said in the row, in the core's words.
+ *
+ * **Each row says how its profile signs in and where** (#2035, ADR 0095 §3), and whether its
+ * harness says it is signed in on this device. **Sign in** on a made profile asks the window of
+ * `plane` for a shell tab running the harness's own sign-in in the profile's folder; with no
+ * project behind Settings, the row says the command that does the same.
  */
-export function profilesGroup(): SettingsGroup {
+export function profilesGroup(plane?: string): SettingsGroup {
   return {
     id: "you.profiles",
     label: "Profiles",
     help: "The profiles this machine keeps for every project: each a harness with its own settings, sign-in and conversations, in a folder of its own. A profile a project declares under the same name in its own local settings is that project's.",
-    settings: [list, add],
+    settings: [listed(plane), add],
   };
 }
 
@@ -124,7 +130,7 @@ function importedSays(
   const from = done.profile.imported_from ?? "this machine";
   return done.copied.length === 0
     ? `${name}: found no settings to import in ${from}.`
-    : `${name}: imported ${done.copied.length === 1 ? "1 file" : `${done.copied.length} files`} of settings from ${from}. Its first chat signs in through the harness's own sign-in.`;
+    : `${name}: imported ${done.copied.length === 1 ? "1 file" : `${done.copied.length} files`} of settings from ${from}. Sign it in through the harness's own sign-in with Sign in.`;
 }
 
 /** Asks the core what removing `profile` takes away, and opens the question. */
@@ -160,6 +166,20 @@ function note(profile: MachineProfileRow): string {
   return `${profile.harness}, settings imported ${when}`;
 }
 
+/** What a profile's row says of its sign-in: how and where, then what its harness says. */
+function signedIn(profile: MachineProfileRow): string {
+  switch (profile.standing) {
+    case "signed-in":
+      return `Signs in ${profile.signs_in}. Signed in.`;
+    case "signed-out":
+      return `Signs in ${profile.signs_in}. Not signed in: a chat on it does not start until it is.`;
+    case "cannot-tell":
+      return `Signs in ${profile.signs_in}. ${profile.harness} cannot say whether it is signed in.`;
+    default:
+      return `Signs in with ${profile.signs_in}.`;
+  }
+}
+
 /** An entry's button. `tabIndex={0}`: WebKit leaves a button out of the Tab order without it
  *  (#190). */
 function EntryButton({
@@ -187,7 +207,7 @@ function EntryButton({
   );
 }
 
-const list: LiveSetting = {
+const listed = (plane: string | undefined): LiveSetting => ({
   id: "you.profiles.list",
   label: "This machine's profiles",
   help: "Import again takes the harness's settings from this machine once more; its conversations stay. Remove asks first and names what goes.",
@@ -215,6 +235,21 @@ const list: LiveSetting = {
                     <span className="ui-machine-name">{profile.name}</span>
                     <span className="ui-machine-path">{profile.folder}</span>
                     <span className="ui-setting-badge">{note(profile)}</span>
+                    <span className="ui-setting-help">{signedIn(profile)}</span>
+                    {profile.origin === "made" &&
+                      (plane === undefined ? (
+                        <span className="ui-setting-help">
+                          Open a project to sign in from its window, or run{" "}
+                          <code>purlis profile sign-in {profile.name}</code> in your terminal.
+                        </span>
+                      ) : (
+                        <EntryButton
+                          label={profile.standing === "signed-in" ? "Sign in again" : "Sign in"}
+                          spoken={`Sign ${profile.name} in`}
+                          disabled={now.busy}
+                          onClick={() => askProfileSignIn(plane, profile.name)}
+                        />
+                      ))}
                     {profile.origin === "made" && (
                       <EntryButton
                         label="Import again"
@@ -254,7 +289,7 @@ const list: LiveSetting = {
       ),
     };
   },
-};
+});
 
 /**
  * **Remove a profile?** Radix's `AlertDialog`, as every question whose answer destroys something
@@ -320,7 +355,7 @@ export function RemoveProfile({
 const add: LiveSetting = {
   id: "you.profiles.add",
   label: "Add profile",
-  help: "A new profile of a harness, for a second account or a client's. This machine's harness settings files are copied into it as they are, and its first chat signs in through the harness's own sign-in.",
+  help: "A new profile of a harness, for a second account or a client's. This machine's harness settings files are copied into it as they are, and Sign in signs it in through the harness's own sign-in.",
   writes: "this machine",
   useControl: function useAdd() {
     const now = useSyncExternalStore(subscribe, () => held);

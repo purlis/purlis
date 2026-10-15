@@ -459,6 +459,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "unwatch_session",
             "type_installer",
             "type_sandbox_install",
+            "type_profile_sign_in",
             "reference_into_chat",
             "references_into_chat",
             "answer_ask",

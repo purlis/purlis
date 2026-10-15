@@ -410,8 +410,10 @@ import { focusStands } from "./Cockpit";
 import {
   landing,
   linkToGroup,
+  PROFILE_SIGN_IN,
   SETTINGS_ACTION,
   SETTINGS_LINK,
+  type ProfileSignInAsk,
   type SettingsActionAsk,
   type SettingsLink,
   type SettingsLinkAsk,
@@ -460,9 +462,16 @@ type Where = { tab: true; in?: string; prefer?: string } | { split: Direction };
  *  `held` is a line typed and left for the person to run: the repo picker's forge login,
  *  whose host is the project's, read before Return (NO-8). */
 type Typed =
-  | { line: string; held?: boolean; installer?: undefined; sandboxInstall?: undefined }
-  | { installer: string; line?: undefined; sandboxInstall?: undefined }
-  | { sandboxInstall: true; line?: undefined; installer?: undefined };
+  | {
+      line: string;
+      held?: boolean;
+      installer?: undefined;
+      sandboxInstall?: undefined;
+      signIn?: undefined;
+    }
+  | { installer: string; line?: undefined; sandboxInstall?: undefined; signIn?: undefined }
+  | { sandboxInstall: true; line?: undefined; installer?: undefined; signIn?: undefined }
+  | { signIn: string; line?: undefined; installer?: undefined; sandboxInstall?: undefined };
 
 /**
  * One project, with everything that belongs to it.
@@ -735,6 +744,9 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
+  /** The profile of this machine's the last start was refused on because its harness says it
+   *  is not signed in here (#2035): the picker offers Sign in for it beside the refusal. */
+  const [pickerSignIn, setPickerSignIn] = useState<string>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
@@ -2806,6 +2818,15 @@ export const PlaneView = memo(function PlaneView({
                 if (said.status === "error") refusedBy("shell", said.error);
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
+          // A profile's sign-in (#2035): named, never spelled. The core types the harness's own
+          // sign-in with the profile's folder set, and the person drives it in this tab.
+          else if (typed?.signIn !== undefined)
+            void commands
+              .typeProfileSignIn(plane, session, typed.signIn)
+              .then((said) => {
+                if (said.status === "error") refusedBy("shell", said.error);
+              })
+              .catch((err: unknown) => refusedBy("shell", String(err)));
           // Typed and not run: installing needs sudo, so the person presses Return (V78 c).
           else if (typed?.sandboxInstall)
             void commands
@@ -3009,6 +3030,26 @@ export const PlaneView = memo(function PlaneView({
   }, [ask, openShell, plane, root]);
 
   /**
+   * **Sign in a profile** (#2035, ADR 0095 §3), from Settings or the picker: a shell tab at the
+   * project's root, outside every workspace, with the profile's own sign-in typed and run by the
+   * core. The person drives the harness's flow there; purlis reads none of it.
+   */
+  const signIn = useCallback(
+    (profile: string) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile });
+    },
+    [openShell, root],
+  );
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
+      if (wanted.plane === plane) signIn(wanted.profile);
+    };
+    window.addEventListener(PROFILE_SIGN_IN, asked);
+    return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
+  }, [plane, signIn]);
+
+  /**
    * A harness started by hand in one of this project's shell tabs (ADR 0062): the core says so,
    * and the tab's pane draws a banner until it is answered. Filtered on the plane, as
    * `chat-moved` is. A window that cannot listen (a unit test with no events) never hears one.
@@ -3173,10 +3214,25 @@ export const PlaneView = memo(function PlaneView({
         // In the picker, not behind it: the operator is still choosing, and a refusal they
         // cannot see beside the rows is one they cannot act on.
         setPickerTrouble(refused);
+        setPickerSignIn(undefined);
+        // A profile of this machine's its harness says is not signed in here offers Sign in
+        // as the way out (#2035): asked of the core, never read from the refusal's words.
+        const row = picking.options.profiles.find((one) => one.name === profile);
+        if (row?.source === "this machine") {
+          const mine = await commands
+            .machineProfiles()
+            .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+          if (
+            mine.status === "ok" &&
+            mine.data.some((one) => one.name === profile && one.standing === "signed-out")
+          )
+            setPickerSignIn(profile);
+        }
         return;
       }
       setPicking(undefined);
       setPickerTrouble(undefined);
+      setPickerSignIn(undefined);
     },
     [picking, startOn],
   );
@@ -8800,6 +8856,21 @@ export const PlaneView = memo(function PlaneView({
               starting={starting}
               prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
               trouble={pickerTrouble}
+              // Only beside the refusal it was asked for: any other step that clears the trouble
+              // takes the offer with it.
+              signIn={pickerTrouble === undefined ? undefined : pickerSignIn}
+              // Sign in (#2035): the picker closes, as it does for the install, and the shell tab
+              // the harness's own sign-in runs in comes to the front. The chat starts after it.
+              onSignIn={
+                root === undefined
+                  ? undefined
+                  : (profile) => {
+                      setPicking(undefined);
+                      setPickerTrouble(undefined);
+                      setPickerSignIn(undefined);
+                      signIn(profile);
+                    }
+              }
               onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
                 void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
               }

@@ -95,6 +95,8 @@ export function StartChat({
   starting = false,
   prefer,
   trouble,
+  signIn,
+  onSignIn,
   onStart,
   onApprove,
   onInstall,
@@ -118,6 +120,12 @@ export function StartChat({
   prefer?: string;
   /** Why the last attempt did not start, if it did not. */
   trouble?: string;
+  /** The profile that last attempt was refused on because its harness says it is not signed
+   *  in on this device (#2035, ADR 0095 §3): Sign in is offered beside the refusal. */
+  signIn?: string;
+  /** Sign in: the window runs the profile's harness's own sign-in in a shell tab. Absent, the
+   *  refusal's own words say how. */
+  onSignIn?: (profile: string) => void;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
    *  box, and `false` when there is none to tick. `withoutSandbox` is the person's opt-out for
    *  this chat, with the reason typed, or `null` for a sandboxed start. */
@@ -526,6 +534,19 @@ export function StartChat({
           {trouble && (
             <p className="honest mid-turn" role="alert">
               {trouble}
+            </p>
+          )}
+          {trouble && signIn !== undefined && onSignIn && (
+            <p className="honest">
+              {/* The harness's own sign-in, in a shell tab the person drives (#2035). */}
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                onClick={() => onSignIn(signIn)}
+              >
+                Sign in
+              </button>
             </p>
           )}
 

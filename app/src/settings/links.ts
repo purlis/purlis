@@ -116,6 +116,24 @@ export function askSettingsAction(plane: string, action: string): void {
   );
 }
 
+/**
+ * **Sign in a profile** (#2035, ADR 0095 §3): the project's window opens a shell tab at its root
+ * and the core types the profile's own sign-in into it (`type_profile_sign_in`), which the person
+ * drives there. Settings' Sign in sends it; `PlaneView` hears it. The window names the profile,
+ * never the command.
+ */
+export const PROFILE_SIGN_IN = "charter-profile-sign-in";
+
+/** What Sign in asked of a project's window: which project, and the profile's name. */
+export type ProfileSignInAsk = { plane: string; profile: string };
+
+/** Asks the window of the project `plane` to sign the profile `profile` in. */
+export function askProfileSignIn(plane: string, profile: string): void {
+  window.dispatchEvent(
+    new CustomEvent<ProfileSignInAsk>(PROFILE_SIGN_IN, { detail: { plane, profile } }),
+  );
+}
+
 /** The catalogue's rows a link out of Settings runs, by the ids `actions.ts` gives them. */
 export const OPEN_EXTENSIONS = "extensions.show";
 /** The Extensions group's link, at every level: where an extension is installed and approved. */

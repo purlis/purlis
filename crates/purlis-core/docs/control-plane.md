@@ -546,15 +546,26 @@ script on `PATH` can still export a key. purlis declines to hold one; it cannot 
 Every sign-in a chat uses is a profile's (ADR 0095). A profile made in the window
 (Settings › You › Profiles, Add profile) or with `purlis profile create <name> --harness
 <claude|codex|opencode>` gets a folder of its own in purlis's data home, and purlis sets the
-harness's folder variables to it, so the harness keeps its sign-in there. It is signed in
-through the harness's own sign-in, in its first chat. Its settings are imported from this
+harness's folder variables to it, so the harness keeps its sign-in there. Its settings are imported from this
 machine's harness settings by a list of settings files per harness, copied as they are; a
 sign-in file, a link and a file with another name on the disk are never copied, and
 `purlis profile import <name>` or Import again takes them once more. `purlis profile remove
 <name>` says what goes, the conversations in its folder among it, and removes it only with
 `--yes`; the window asks the same question first. A profile adopted from the harness's own
-folder is only forgotten, and its folder stays. A chat may not make, import or remove a
-profile.
+folder is only forgotten, and its folder stays. A chat may not make, import, remove or sign
+in a profile.
+
+A made profile is signed in through its harness's own sign-in (ADR 0095 §3): **Sign in**, on
+its row in Settings or beside the picker's refusal, opens a shell tab that runs
+`claude auth login`, `codex login` or `opencode auth login` with the profile's folder set, and
+`purlis profile sign-in <name>` runs the same in your own terminal. You drive the harness's own
+browser page or code there; the harness keeps the result in the profile's folder, and purlis
+reads none of what it prints and opens no file it writes. Whether a profile is signed in on
+this device is the harness's own answer: how `claude auth status` or `codex login status`
+exits, or whether opencode's `auth.json` is there, by its name. A chat on a made profile its
+harness says is signed out is refused before it starts, with Sign in as the way out; where the
+harness cannot say, the chat starts. `purlis profile sign-in <name> --check` says which. A
+profile adopted from the harness's own folder is signed in by your own sign-in and never asked.
 
 ### Kept out of git, and checked
 

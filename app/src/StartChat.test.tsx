@@ -1271,3 +1271,43 @@ describe("the one-time note on a harness that lacks something (#1134, W10)", () 
     expect(onStart).toHaveBeenCalled();
   });
 });
+
+describe("a profile its harness says is not signed in (#2035)", () => {
+  const refused =
+    "the profile 'work' is not signed in on this Mac. Nothing was started. Sign in runs Claude Code's own sign-in in a terminal tab.";
+
+  it("offers Sign in beside the refusal, and signs in the profile it was refused on", async () => {
+    const onSignIn = vi.fn();
+    render(
+      <StartChat
+        options={ONE}
+        trouble={refused}
+        signIn="work"
+        onSignIn={onSignIn}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(refused);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(onSignIn).toHaveBeenCalledWith("work");
+  });
+
+  it("offers no Sign in for a refusal of anything else", () => {
+    render(
+      <StartChat
+        options={ONE}
+        trouble="the sandbox could not be applied. Nothing was started."
+        onSignIn={vi.fn()}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+  });
+});

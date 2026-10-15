@@ -1317,6 +1317,18 @@ export const commands = {
 	/**  Removes `name`, only if `shown` is what removing it takes away now. */
 	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
 	/**
+	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
+	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, which
+	 *  the person then drives in that tab.
+	 * 
+	 *  **The window names the profile, never the command.** The line is the core's, made from this
+	 *  machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
+	 *  plane or the window reaches the shell through here. It is typed only into a shell at the
+	 *  project root, the one the window opened for it, never into a chat's pane. An adopted
+	 *  profile is refused: it is signed in by the person's own sign-in.
+	 */
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name })),
+	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
 	 */
@@ -6267,6 +6279,14 @@ export type MachineProfileRow = {
 	imported_at: number | null,
 	/**  The folder they were imported from. */
 	imported_from: string | null,
+	/**  How it signs in, and where: *through Claude Code's own sign-in, on this Mac*. */
+	signs_in: string,
+	/**
+	 *  Whether its harness says it is signed in on this device: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null for an adopted profile, signed in by the person's own sign-in and
+	 *  never asked.
+	 */
+	standing: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

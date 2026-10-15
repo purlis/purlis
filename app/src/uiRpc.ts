@@ -649,6 +649,7 @@ export const commands = {
 	machineProfileImport: __WINDOW_ONLY_RESULT,
 	machineProfileRemoval: __WINDOW_ONLY_RESULT,
 	machineProfileRemove: __WINDOW_ONLY_RESULT,
+	typeProfileSignIn: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -4949,6 +4950,14 @@ export type MachineProfileRow = {
 	imported_at: number | null,
 	/**  The folder they were imported from. */
 	imported_from: string | null,
+	/**  How it signs in, and where: *through Claude Code's own sign-in, on this Mac*. */
+	signs_in: string,
+	/**
+	 *  Whether its harness says it is signed in on this device: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null for an adopted profile, signed in by the person's own sign-in and
+	 *  never asked.
+	 */
+	standing: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

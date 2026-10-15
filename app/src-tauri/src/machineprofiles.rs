@@ -11,8 +11,15 @@
 //!
 //! **Remove is asked first**: [`machine_profile_removal`] says what goes, the window shows it,
 //! and [`machine_profile_remove`] removes only what was shown, refused when it changed since.
+//!
+//! **Sign in is the harness's own** (#2035, ADR 0095 §3): each row says how its profile signs
+//! in and whether its harness says it is signed in on this device, and Sign in opens a shell
+//! tab into which [`type_profile_sign_in`] types the harness's own sign-in with the profile's
+//! folder set. The person drives it there; purlis reads none of what it prints.
 
-use purlis_core::profilestore::{self, Homes, MachineSettings};
+use purlis_core::profilestore::{self, Homes, MachineSettings, sign_in};
+
+use crate::planes::{PlaneId, Planes};
 
 /// One of this machine's profiles, as Settings lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -30,6 +37,12 @@ pub struct MachineProfileRow {
     pub imported_at: Option<u32>,
     /// The folder they were imported from.
     pub imported_from: Option<String>,
+    /// How it signs in, and where: *through Claude Code's own sign-in, on this Mac*.
+    pub signs_in: String,
+    /// Whether its harness says it is signed in on this device: `signed-in`, `signed-out` or
+    /// `cannot-tell`. Null for an adopted profile, signed in by the person's own sign-in and
+    /// never asked.
+    pub standing: Option<String>,
 }
 
 impl From<&profilestore::MachineProfile> for MachineProfileRow {
@@ -54,8 +67,40 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
                 .imported
                 .as_ref()
                 .map(|i| i.from.display().to_string()),
+            signs_in: signs_in(record),
+            standing: None,
         }
     }
+}
+
+/// How `record` signs in, and where, as its row says it.
+fn signs_in(record: &profilestore::MachineProfile) -> String {
+    let harness = purlis_core::harness_declaration::builtin(&record.harness)
+        .map_or_else(|| record.harness.clone(), |d| d.title.clone());
+    let here = profilestore::this_device();
+    if record.adopted.is_some() {
+        format!("{harness}'s own sign-in on {here}, as it was before purlis")
+    } else {
+        format!("through {harness}'s own sign-in, on {here}")
+    }
+}
+
+/// Each of `records` as a row, with what its harness says of its sign-in, each asked at once.
+fn rows(records: &[profilestore::MachineProfile]) -> Vec<MachineProfileRow> {
+    std::thread::scope(|scope| {
+        let asked: Vec<_> = records
+            .iter()
+            .map(|record| scope.spawn(move || sign_in::standing_of(record, &sign_in::ThisMachine)))
+            .collect();
+        records
+            .iter()
+            .zip(asked)
+            .map(|(record, asked)| MachineProfileRow {
+                standing: asked.join().ok().flatten().map(|s| s.word().to_owned()),
+                ..MachineProfileRow::from(record)
+            })
+            .collect()
+    })
 }
 
 /// A profile made or imported into, and what its import did.
@@ -148,7 +193,7 @@ async fn blocking<T: Send + 'static>(
 pub async fn machine_profiles() -> Result<Vec<MachineProfileRow>, String> {
     blocking(|| {
         let records = profilestore::list(store()?.config_root())?;
-        Ok(records.iter().map(MachineProfileRow::from).collect())
+        Ok(rows(&records))
     })
     .await
 }
@@ -199,4 +244,40 @@ pub async fn machine_profile_remove(
     shown: MachineProfileRemoval,
 ) -> Result<(), String> {
     blocking(move || profilestore::remove(&store()?, &name, &shown.into()).map(|_| ())).await
+}
+
+/// Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
+/// 0095 §3): its harness's own sign-in command, with the profile's folder variables set, which
+/// the person then drives in that tab.
+///
+/// **The window names the profile, never the command.** The line is the core's, made from this
+/// machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
+/// plane or the window reaches the shell through here. It is typed only into a shell at the
+/// project root, the one the window opened for it, never into a chat's pane. An adopted
+/// profile is refused: it is signed in by the person's own sign-in.
+#[tauri::command]
+#[specta::specta]
+pub fn type_profile_sign_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    name: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    if !held.chats().is_shell_at(session, held.root()) {
+        return Err(
+            "that tab is not a shell at the project root, so no sign-in was typed.".to_owned(),
+        );
+    }
+    let record = profilestore::list(store()?.config_root())?
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}', so no sign-in was typed.",
+                purlis_core::shown::short(&name)
+            )
+        })?;
+    let line = sign_in::login_of(&record)?.line()?;
+    held.operator_input(session, line.as_bytes())
 }
