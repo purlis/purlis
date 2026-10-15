@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792038803060,
+  "lastUpdate": 1792040227906,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11760,6 +11760,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3089315,
             "unit": "ms",
             "extra": "median of 5 runs: 100.407, 100.593, 101.309, 101.446, 101.642 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "32e43eb7be3f74d3e9cb42f6e0789a97cd21c06c",
+          "message": "Every Ask's outcome reaches the chat as one plain line (#2082)\n\n* Every Ask's answer reaches the chat as one plain line\n\nThe person's answer to an Ask a chat's refusal raised (a host, a folder, a\nlocal socket or service, a vault) is told to that chat in one line written\nin one place, purlis_core::askoutcome::Outcome::line:\n\"Allowed for this chat — retry\" with the scope chosen, or \"Kept blocked by\nthe person — don't retry; <their reason, quoted as data>\" / \"no reason\ngiven\". A restart's first message, the next turn's word\n(Chats::tell_outcome) and a vault's typed line all take their text from it.\nKeep blocked now tells the chat for every kind, and the Inbox's row of a\nsandbox ask takes an optional reason.\n\nCloses #1987\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(#1987): a Keep says don't work around it, an answered block is a quiet no-op, Dispatch to tells nothing\n\n- The Keep line says \"don't retry or work around it\" (D-1987-8).\n- A live Allow at once is said as \"once, for this run of this chat\".\n- A Keep of a block no longer held does nothing and tells nothing, on the\n  Notice and in the Inbox alike; the Notice keeps every kind by one path.\n- Dispatch to {persona}… on a refused vault puts its Notice away with the\n  new put_away_refused_vault and tells the chat nothing.\n- Table rows for hostile reasons; ADR 0067's amendment splits the ruling\n  from what was decided in implementation.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A service on this Mac allowed by its port is told in the same one line\n\nThe local-service block kind (qw384) is an Ask whose answer reaches the\nchat in Outcome::line too: About::Port and its GrantWhat arm, with\n\"connecting to the service on this Mac at port `N`\", and rows in both\ntable tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T08:55:45+04:00",
+          "tree_id": "d5b0145bc129f37859f7c257e02070866c87c0ba",
+          "url": "https://github.com/purlis/purlis/commit/32e43eb7be3f74d3e9cb42f6e0789a97cd21c06c"
+        },
+        "date": 1792040226607,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.408649,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.407, 0.409, 0.409, 0.412, 0.414 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2813925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.192, 16.225, 16.281, 16.306, 16.422 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.663262,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.234, 101.364, 101.663, 101.824, 102.358 ms"
           }
         ]
       }
