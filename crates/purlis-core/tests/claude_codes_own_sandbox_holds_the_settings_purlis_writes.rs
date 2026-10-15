@@ -387,7 +387,7 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         assert_eq!(at, level, "Claude Code in the {name} project");
         assert_eq!(settings["sandbox"]["enabled"], true, "{name}: {settings}");
         // As a start decides it for a chat in this project.
-        let screened = purlis_core::harness::claude::project::screen(Some(&root));
+        let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
         let sources = screened.setting_sources();
         assert_eq!(
             sources,

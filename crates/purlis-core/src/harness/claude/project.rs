@@ -174,10 +174,15 @@ pub fn files(cwd: &Path) -> Vec<(PathBuf, String)> {
             ));
         }
     };
-    if let Some(top) = cwd.ancestors().find(|dir| dir.join(".git").exists()) {
-        add(top);
-        if let Some(main) = main_checkout(&top.join(".git")) {
-            add(&main);
+    // Walked as written and as the folder really is: Claude Code finds the repository by its
+    // real path, so a folder reached through a link still has its repository's file read.
+    let real = cwd.canonicalize().ok();
+    for walked in std::iter::once(cwd).chain(real.as_deref()) {
+        if let Some(top) = walked.ancestors().find(|dir| dir.join(".git").exists()) {
+            add(top);
+            if let Some(main) = main_checkout(&top.join(".git")) {
+                add(&main);
+            }
         }
     }
     out
@@ -197,8 +202,38 @@ fn main_checkout(dot_git: &Path) -> Option<PathBuf> {
     common.parent().map(Path::to_path_buf)
 }
 
-/// What a sandboxed chat in `cwd` finds in its project's Claude Code settings files.
+/// What a sandboxed chat in `cwd` finds in its project's Claude Code settings files, with the
+/// plugins this machine has installed for the person read from Claude Code's own record
+/// ([`installed_for_the_person`]).
 pub fn screen(cwd: Option<&Path>) -> Screened {
+    use crate::harness_plugin::Adapter as _;
+    let record = crate::harness_plugin::CLAUDE_CODE.record(&crate::harness_plugin::Env::of(&[]));
+    screen_with(cwd, installed_for_the_person(record.as_deref()).as_ref())
+}
+
+/// The ids Claude Code's record at `record` (`plugins/installed_plugins.json`) holds as
+/// installed at user scope; none where it is not there or cannot be read.
+pub fn installed_for_the_person(record: Option<&Path>) -> Option<Vec<String>> {
+    let text = std::fs::read_to_string(record?).ok()?;
+    let doc: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let plugins = doc.get("plugins")?.as_object()?;
+    Some(
+        plugins
+            .iter()
+            .filter(|(_, installs)| {
+                installs.as_array().is_some_and(|installs| {
+                    installs.iter().any(|one| {
+                        one.get("scope").and_then(serde_json::Value::as_str) == Some("user")
+                    })
+                })
+            })
+            .map(|(id, _)| id.clone())
+            .collect(),
+    )
+}
+
+/// [`screen`] with `installed` the plugins installed for the person (none read: none).
+pub fn screen_with(cwd: Option<&Path>, installed: Option<&Vec<String>>) -> Screened {
     let Some(cwd) = cwd else {
         return Screened {
             unchecked: true,
@@ -214,7 +249,7 @@ pub fn screen(cwd: Option<&Path>) -> Screened {
                     out.unreadable.push(name);
                 }
             }
-            Read::Settings(settings) => take(&settings, &mut out),
+            Read::Settings(settings) => take(&settings, installed, &mut out),
         }
     }
     out.dropped.sort();
@@ -246,7 +281,11 @@ fn read(path: &Path) -> Read {
 }
 
 /// Sorts what `settings` holds into `out`: each key kept or dropped, and its deny and ask rules.
-fn take(settings: &serde_json::Map<String, serde_json::Value>, out: &mut Screened) {
+fn take(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    installed: Option<&Vec<String>>,
+    out: &mut Screened,
+) {
     for (key, value) in settings {
         if (key == "env" && purlis_s_own_env(value))
             || (key == "hooks" && purlis_s_own_hooks(value))
@@ -285,10 +324,7 @@ fn take(settings: &serde_json::Map<String, serde_json::Value>, out: &mut Screene
                 }
             }
             "enabledPlugins" => {
-                let plugins_only = value
-                    .as_object()
-                    .is_some_and(|plugins| plugins.values().all(serde_json::Value::is_boolean));
-                if !plugins_only {
+                if !plugins_only(value, installed) {
                     out.dropped.push(key.clone());
                 }
             }
@@ -302,12 +338,38 @@ fn take(settings: &serde_json::Map<String, serde_json::Value>, out: &mut Screene
     }
 }
 
-/// Whether `env` holds the harness variable `init` writes, under any of its spellings, and
-/// nothing else ([`crate::scaffold::settings::ensure_harness_env`]).
+/// Whether `plugins` only chooses among what the person has: each plugin it turns on is one
+/// installed for the person (or one purlis itself pins on), and none it turns off is one purlis
+/// pins on.
+fn plugins_only(plugins: &serde_json::Value, installed: Option<&Vec<String>>) -> bool {
+    use crate::harness_plugin::Adapter as _;
+    let pinned_on = |id: &str| {
+        crate::harness_plugin::CLAUDE_CODE
+            .pinned()
+            .iter()
+            .any(|pin| pin.on && pin.id == id)
+    };
+    plugins.as_object().is_some_and(|plugins| {
+        plugins.iter().all(|(id, on)| match on.as_bool() {
+            Some(true) => {
+                pinned_on(id) || installed.is_some_and(|installed| installed.contains(id))
+            }
+            Some(false) => !pinned_on(id),
+            None => false,
+        })
+    })
+}
+
+/// The value `init` gives the harness variable for a Claude Code plane
+/// ([`crate::scaffold::settings::ensure_harness_env`]).
+const INIT_HARNESS: &str = "claude-code";
+
+/// Whether `env` holds the harness variable `init` writes, under any of its spellings, with the
+/// value `init` gives it, and nothing else ([`crate::scaffold::settings::ensure_harness_env`]).
 fn purlis_s_own_env(env: &serde_json::Value) -> bool {
     env.as_object().is_some_and(|env| {
         env.iter().all(|(name, value)| {
-            value.is_string()
+            value.as_str() == Some(INIT_HARNESS)
                 && crate::names::ENV_PREFIX
                     .spellings()
                     .any(|prefix| *name == format!("{prefix}HARNESS"))

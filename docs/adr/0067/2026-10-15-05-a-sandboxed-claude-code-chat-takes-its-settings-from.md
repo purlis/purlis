@@ -13,8 +13,10 @@ Section 2's Claude Code row is made precise. The rule:
   top of its repository and of the main checkout of a linked worktree. They are loaded as they
   are while every key in them is one of: `permissions.deny`, `permissions.ask`,
   `enabledPlugins`, `model`, `outputStyle`, `theme` and `$schema`, and purlis's own entries
-  exactly as `init` writes them: the harness variable alone in `env`, and the guard hook alone
-  in `hooks`. The list is small on purpose. A key Claude Code adds later is not loaded until it
+  exactly as `init` writes them: the harness variable alone in `env`, with the value `init`
+  gives it, and the guard hook alone in `hooks`. `enabledPlugins` is kept only where each plugin
+  it turns on is installed for the person (Claude Code's record, at user scope) or pinned on by
+  purlis, and it turns none off that purlis pins on. The list is small on purpose. A key Claude Code adds later is not loaded until it
   is ruled in.
 - **Anything else fails closed.** Any other key, a kept key of the wrong shape, a file that is
   there and cannot be read as settings, or a chat whose folder is not known: the chat starts
@@ -41,7 +43,8 @@ Section 2's Claude Code row is made precise. The rule:
   settings file is not one, and reading it would take the project's instructions away from
   chats it never reaches.
 - **D-PS-3: deny and ask rules are carried. Plugins and the cosmetic keys are not.** A
-  project's `enabledPlugins` only chooses among plugins the person installed. purlis's own
+  project's `enabledPlugins` is kept only while it chooses among plugins the person installed
+  and leaves purlis's own pins alone. purlis's own
   plugin choice and pins ride on `--settings` already (ADR 0050). A chat started on the
   person's settings goes without the project's choice, and its tab says the project's settings
   were not loaded.

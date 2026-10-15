@@ -3,6 +3,11 @@
 
 use super::*;
 
+/// What a chat in `cwd` finds, on a machine where the person installed `tidy@team` alone.
+fn screen(cwd: Option<&Path>) -> Screened {
+    screen_with(cwd, Some(&vec!["tidy@team".to_owned()]))
+}
+
 fn write(dir: &Path, file: &str, text: &str) {
     let path = dir.join(file);
     std::fs::create_dir_all(path.parent().expect("a folder")).expect("folders");
@@ -205,4 +210,99 @@ fn anything_else_under_purlis_s_own_keys_is_not_kept() {
         let screened = screen(Some(dir.path()));
         assert!(!screened.loads_the_project(), "{file}");
     }
+}
+
+#[test]
+fn the_harness_variable_is_kept_only_with_the_value_init_gives_it() {
+    let dir = tempfile::tempdir().expect("a folder");
+    for (value, kept) in [("claude-code", true), ("codex", false), ("", false)] {
+        let file = serde_json::json!({"env": {"PURLIS_HARNESS": value}});
+        write(dir.path(), ".claude/settings.json", &file.to_string());
+        let screened = screen(Some(dir.path()));
+        assert_eq!(screened.loads_the_project(), kept, "{value:?}");
+        if !kept {
+            assert_eq!(screened.dropped, ["env"]);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_reached_through_a_link_still_has_its_repository_s_file_read() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).expect("a repository");
+    std::fs::create_dir_all(repo.join("sub")).expect("a folder in it");
+    write(
+        &repo,
+        ".claude/settings.local.json",
+        r#"{"statusLine": {}}"#,
+    );
+    let link = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&link).expect("a folder outside it");
+    std::os::unix::fs::symlink(repo.join("sub"), link.join("link")).expect("a link");
+    let screened = screen(Some(&link.join("link")));
+    assert_eq!(screened.dropped, ["statusLine"], "{screened:?}");
+}
+
+#[test]
+fn plugins_are_kept_only_where_they_choose_among_what_the_person_has() {
+    use crate::harness_plugin::Adapter as _;
+    let pinned_on = crate::harness_plugin::CLAUDE_CODE
+        .pinned()
+        .iter()
+        .find(|pin| pin.on)
+        .expect("a plugin purlis pins on")
+        .id;
+    let one = |id: &str, on: bool| {
+        let mut plugins = serde_json::Map::new();
+        plugins.insert(id.to_owned(), serde_json::Value::Bool(on));
+        serde_json::Value::Object(plugins)
+    };
+    for (plugins, kept) in [
+        (
+            serde_json::json!({"tidy@team": true, "other@team": false}),
+            true,
+        ),
+        (one(pinned_on, true), true),
+        (serde_json::json!({"never@installed": true}), false),
+        (one(pinned_on, false), false),
+    ] {
+        let dir = tempfile::tempdir().expect("a folder");
+        let file = serde_json::json!({ "enabledPlugins": plugins });
+        write(dir.path(), ".claude/settings.json", &file.to_string());
+        let screened = screen(Some(dir.path()));
+        assert_eq!(screened.loads_the_project(), kept, "{plugins}");
+    }
+    // Where the record of what the person installed cannot be read, nothing turned on is kept.
+    let dir = tempfile::tempdir().expect("a folder");
+    write(
+        dir.path(),
+        ".claude/settings.json",
+        r#"{"enabledPlugins": {"tidy@team": true}}"#,
+    );
+    assert!(!screen_with(Some(dir.path()), None).loads_the_project());
+}
+
+#[test]
+fn the_person_s_plugins_are_read_from_claude_code_s_record_at_user_scope() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let record = dir.path().join("installed_plugins.json");
+    std::fs::write(
+        &record,
+        r#"{"version": 2, "plugins": {
+            "mine@team": [{"scope": "user"}],
+            "theirs@team": [{"scope": "project"}],
+            "both@team": [{"scope": "local"}, {"scope": "user"}]
+        }}"#,
+    )
+    .expect("the record");
+    let mut ids = installed_for_the_person(Some(&record)).expect("read");
+    ids.sort();
+    assert_eq!(ids, ["both@team", "mine@team"]);
+    assert_eq!(
+        installed_for_the_person(Some(&dir.path().join("none"))),
+        None
+    );
+    assert_eq!(installed_for_the_person(None), None);
 }
