@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792102538707,
+  "lastUpdate": 1792104613058,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13230,6 +13230,48 @@ window.BENCHMARK_DATA = {
             "value": 104.647293,
             "unit": "ms",
             "extra": "median of 5 runs: 103.550, 104.411, 104.647, 105.678, 106.977 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4df2d652ab1d9aacbcca53b730df167eedbbdf8c",
+          "message": "build(deps): Bump the actions group across 1 directory with 2 updates (#2228)\n\nBumps the actions group with 2 updates in the / directory: [taiki-e/install-action](https://github.com/taiki-e/install-action) and [ossf/scorecard-action](https://github.com/ossf/scorecard-action).\n\n\nUpdates `taiki-e/install-action` from 2.87.26 to 2.87.28\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/f7e5d7c961414b23f5b25b2da9294395d08513ad...1168f6810a3cb30a3514bf5756a3b7f0422c6df8)\n\nUpdates `ossf/scorecard-action` from 2.4.4 to 2.5.0\n- [Release notes](https://github.com/ossf/scorecard-action/releases)\n- [Changelog](https://github.com/ossf/scorecard-action/blob/main/RELEASE.md)\n- [Commits](https://github.com/ossf/scorecard-action/compare/2d1146689b8cda280b9bc96326124645441f03bc...fa7117db83c52d787ae5a89f350999701505d78e)\n\n---\nupdated-dependencies:\n- dependency-name: ossf/scorecard-action\n  dependency-version: 2.5.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: actions\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.87.28\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: actions\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-16T02:48:58+04:00",
+          "tree_id": "7cdec22d45e759c20bb2d1af72a60da3fa91f905",
+          "url": "https://github.com/purlis/purlis/commit/4df2d652ab1d9aacbcca53b730df167eedbbdf8c"
+        },
+        "date": 1792104610650,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.533617,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.514, 0.519, 0.534, 0.545, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6999565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.367, 16.696, 16.700, 16.918, 17.314 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.7085685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.373, 103.242, 103.709, 103.843, 105.201 ms"
           }
         ]
       }
