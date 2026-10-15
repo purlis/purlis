@@ -2921,8 +2921,9 @@ fn refuse_beside_the_old_app() {
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
-    purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
-        purlis_host::Hosting::with(
+    purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
+        purlis_host::Hosting::kept(
+            &place.credentials,
             purlis_host::FromTheWindow(sessionhost::launched),
             purlis_host::Terminals,
             sessionhost::HookChannels,
@@ -2940,6 +2941,7 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
         let connection = app.state::<sessionhost::SessionHost>().connection();
+        hold_the_switch_in_the_host(app.handle(), &planes, &connection);
         // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
         return planes
             .running_sessions_on(std::sync::Arc::new(
@@ -2954,6 +2956,30 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     }
     let _ = app;
     planes
+}
+
+/// The kill switch is the session host's too while chats run in it (#2001, ADR 0071): every
+/// stop reaches the host, a re-arm is the host's first, and once the host answers, the two are
+/// brought into line, towards stopped, and every window is told where the switch stands.
+#[cfg(unix)]
+fn hold_the_switch_in_the_host(
+    app: &tauri::AppHandle,
+    planes: &Planes,
+    connection: &std::sync::Arc<hostedsessions::Connection>,
+) {
+    let switch = planes.kill_switch();
+    switch.held_by(std::sync::Arc::clone(connection) as std::sync::Arc<dyn killswitch::Authority>);
+    let told = app.clone();
+    let agreed = std::thread::Builder::new()
+        .name("purlis-kill-switch-host".into())
+        .spawn(move || {
+            if switch.agree_with_its_host() {
+                let _ = told.emit(killswitch::CHANGED, true);
+            }
+        });
+    if let Err(why) = agreed {
+        tracing::warn!("purlis: the kill switch was not compared with the session host's ({why})");
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
