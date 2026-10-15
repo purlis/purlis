@@ -77,7 +77,7 @@ fn unsafe_at(doing: &'static str, at: &Path) -> impl FnOnce(std::io::Error) -> H
 /// Serve the session protocol at `place` until `until` resolves, then end every program it
 /// runs and remove the socket. `ready` is called once the host accepts. `window` is the window
 /// that started this host, when one did: its chats, in its process or in this one, run below it.
-/// `hosting` holds the programs.
+/// `hosting` holds the programs, and the kill switch as it read it when it was made.
 pub async fn serve(
     place: &Place,
     window: Option<Window>,
@@ -94,8 +94,7 @@ pub async fn serve(
         Credentials::mint_into(&place.credentials)
             .map_err(unsafe_at("mint its credentials", &place.credentials))?,
     );
-    // The kill switch, as this host's last one left it, before anyone is served (ADR 0071).
-    let hosting = hosting.kept_in(&place.credentials).started_by(window);
+    let hosting = hosting.started_by(window);
     ready();
 
     let served = accept(&listener, &credentials, &hosting, until).await;

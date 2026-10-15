@@ -83,8 +83,10 @@ pub enum Moved {
 /// The session host's hold on the switch, when chats run in it (#2001): it stops every program
 /// it runs, keeps the stop across its restart, and re-arms only for the window.
 pub trait Authority: Send + Sync {
-    /// Every agent stops: every program the host runs ends, and none starts.
-    fn stop(&self) -> Result<(), String>;
+    /// Every agent stops: every program the host runs ends, and none starts. `Ok` once the
+    /// host holds the stop, with what it had to say of it (a stop it could not keep across its
+    /// restart); `Err` when it was not told, or does not hold it.
+    fn stop(&self) -> Result<Option<String>, String>;
     /// Programs may start again: the window's link alone may ask.
     fn rearm(&self) -> Result<(), String>;
     /// Whether the host holds every agent stopped.
@@ -104,6 +106,9 @@ pub struct KillSwitch {
     recording: Mutex<Option<mpsc::Sender<Noted>>>,
     /// The session host that holds the switch too, when chats run in it.
     host: std::sync::OnceLock<Arc<dyn Authority>>,
+    /// A stop the session host has not taken yet: sent again at every look and at the next
+    /// [`Self::agree_with_its_host`], until it is.
+    owes_the_host: std::sync::atomic::AtomicBool,
 }
 
 /// What the recording thread is told: read the journal, or record a line the switch wrote.
@@ -122,6 +127,7 @@ impl KillSwitch {
             stopped: Mutex::new(stopped),
             recording: Mutex::new(None),
             host: std::sync::OnceLock::new(),
+            owes_the_host: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -216,10 +222,32 @@ impl KillSwitch {
         let Some(host) = self.host.get() else {
             return Ok(());
         };
-        host.stop().map_err(|why| {
-            tracing::warn!("purlis: the session host was not told every agent is stopped ({why})");
-            format!("every agent is stopped in this app, but the session host was not told ({why})")
+        let told = host.stop();
+        self.owes_the_host
+            .store(told.is_err(), std::sync::atomic::Ordering::SeqCst);
+        if let Ok(Some(said)) = &told {
+            return Err(format!(
+                "every agent is stopped, here and in the session host, but the session host \
+                 said: {said}"
+            ));
+        }
+        told.map(|_| ()).map_err(|why| {
+            tracing::warn!(
+                "purlis: the session host's stop is not as it should be, and is sent again at the \
+                 next look ({why})"
+            );
+            format!(
+                "every agent is stopped in this app, but the session host's stop is not as it \
+                 should be: {why}"
+            )
         })
+    }
+
+    /// Sends the session host again a stop it did not take.
+    fn pay_what_is_owed(&self) {
+        if self.owes_the_host.load(std::sync::atomic::Ordering::SeqCst) && self.is_stopped() {
+            let _ = self.tell_the_host();
+        }
     }
 
     /// Brings this switch and the session host's into line once the app reaches its host, in
@@ -265,11 +293,13 @@ impl KillSwitch {
             if let Err(why) = halt::rearm(config, at) {
                 drop(stopped);
                 // The host took the re-arm and the files did not: the host stops again, so the
-                // two never disagree towards running.
-                let _ = self.tell_the_host();
-                return Err(format!(
-                    "agents are still stopped: the re-arm was not kept ({why})"
-                ));
+                // two never disagree towards running; a stop it does not take now is owed, and
+                // sent again at the next look.
+                let not_kept = format!("agents are still stopped: the re-arm was not kept ({why})");
+                return Err(match self.tell_the_host() {
+                    Ok(()) => not_kept,
+                    Err(told) => format!("{not_kept}; {told}"),
+                });
             }
             self.noted(Noted::Wrote(halt::Entry {
                 at,
@@ -284,6 +314,7 @@ impl KillSwitch {
     /// Looks at the files and brings the switch in line with them, in the one direction it may
     /// move: towards stopped.
     pub fn look(&self) -> Moved {
+        self.pay_what_is_owed();
         let Some(config) = &self.config else {
             return Moved::Nothing;
         };
@@ -979,6 +1010,10 @@ mod tests {
     struct AHost {
         stopped: Mutex<bool>,
         refuses: bool,
+        /// Its stops fail, for as long as this says so.
+        stops_fail: Mutex<bool>,
+        /// It holds each stop but cannot keep it across its restart.
+        cannot_keep: bool,
         heard: Mutex<Vec<&'static str>>,
     }
 
@@ -1006,13 +1041,15 @@ mod tests {
     }
 
     impl Authority for AHost {
-        fn stop(&self) -> Result<(), String> {
+        fn stop(&self) -> Result<Option<String>, String> {
             self.heard.lock().unwrap().push("stop");
-            if self.refuses {
+            if self.refuses || *self.stops_fail.lock().unwrap() {
                 return Err("the session host is not running".into());
             }
             *self.stopped.lock().unwrap() = true;
-            Ok(())
+            Ok(self
+                .cannot_keep
+                .then(|| "the stop could not be kept across its restart".to_owned()))
         }
 
         fn rearm(&self) -> Result<(), String> {
@@ -1138,5 +1175,77 @@ mod tests {
         assert!(!switch.agree_with_its_host());
         switch.stop(Actor::Window).expect("stopped");
         assert!(switch.rearm().expect("re-armed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_re_arm_the_files_did_not_take_stops_the_host_again_or_owes_it_the_stop_until_it_does() {
+        use std::os::unix::fs::PermissionsExt;
+        let config = a_config_home();
+        let host = Arc::new(AHost::default());
+        let switch = held_by(config.path(), &host);
+        switch.stop(Actor::Window).expect("stopped");
+        // The files cannot take a re-arm, and the host cannot take its stop back.
+        let dir = halt::directory(config.path()).expect("the folder");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).expect("chmod");
+        *host.stops_fail.lock().unwrap() = true;
+
+        let refused = switch.rearm().expect_err("not re-armed");
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+        assert!(refused.contains("still stopped"), "{refused}");
+        assert!(
+            refused.contains("session host"),
+            "the host's part is said: {refused}"
+        );
+        assert!(switch.is_stopped());
+        assert!(!host.is_stopped(), "the host took the re-arm");
+
+        // The host takes stops again: the next look sends it the one it is owed.
+        *host.stops_fail.lock().unwrap() = false;
+        let _ = switch.look();
+
+        assert!(
+            host.is_stopped(),
+            "the two never stay apart towards running"
+        );
+    }
+
+    #[test]
+    fn a_stop_the_session_host_did_not_take_is_sent_again_when_the_app_next_agrees_with_it() {
+        let config = a_config_home();
+        let host = Arc::new(AHost::default());
+        *host.stops_fail.lock().unwrap() = true;
+        let switch = held_by(config.path(), &host);
+        let _ = switch.stop(Actor::Window);
+        assert!(!host.is_stopped());
+
+        *host.stops_fail.lock().unwrap() = false;
+        switch.agree_with_its_host();
+
+        assert!(host.is_stopped());
+    }
+
+    #[test]
+    fn a_stop_the_session_host_holds_but_cannot_keep_is_said_as_that_and_not_sent_again() {
+        let config = a_config_home();
+        let host = Arc::new(AHost {
+            cannot_keep: true,
+            ..AHost::default()
+        });
+        let switch = held_by(config.path(), &host);
+
+        let said = switch
+            .stop(Actor::Window)
+            .expect_err("not kept by the host");
+        let _ = switch.look();
+
+        assert!(said.contains("session host said"), "{said}");
+        assert!(!said.contains("not told"), "{said}");
+        assert_eq!(
+            host.heard(),
+            ["stop"],
+            "a stop the host holds is not owed to it"
+        );
     }
 }

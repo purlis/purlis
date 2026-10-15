@@ -79,7 +79,8 @@ pub const READY: &str = "ready";
 /// at the place `place` names until the window closes this process's standard input, holding
 /// its programs and projects in what `hosting` gives (which composes each start, hears each held
 /// project's hooks and starts each chat's confinement), and give the code to exit with;
-/// otherwise `None`, before anything is read or opened.
+/// otherwise `None`, before anything is read or opened. `hosting` is given the place, whose
+/// credentials folder is where the host keeps its kill switch ([`Hosting::kept`]).
 ///
 /// The window is this process's parent, and every chat it runs is below it, so a peer below it
 /// is inside a chat ([`Window`]). The ready line goes to standard output and what the host has
@@ -87,7 +88,7 @@ pub const READY: &str = "ready";
 #[cfg(unix)]
 pub fn serve_for_the_window_if_asked(
     place: impl FnOnce() -> Option<Place>,
-    hosting: impl FnOnce() -> Hosting,
+    hosting: impl FnOnce(&Place) -> Hosting,
 ) -> Option<i32> {
     if std::env::args_os().nth(1)? != SERVE_FOR_THE_WINDOW {
         return None;
@@ -97,7 +98,9 @@ pub fn serve_for_the_window_if_asked(
         Some(place) => run(
             &place,
             Some(window),
-            hosting(),
+            // The kill switch, as this host's last one left it, read before anyone is served
+            // (ADR 0071): the window's binary keeps it in the place's credentials folder.
+            hosting(&place),
             until_the_window_closes_its_end(),
         ),
         None => {
@@ -112,7 +115,12 @@ pub fn serve_for_the_window_if_asked(
 /// is what a failure to start gives.
 #[cfg(unix)]
 pub fn serve_alone(place: &Place, compose: impl Compose) -> i32 {
-    run(place, None, Hosting::new(compose), std::future::pending())
+    run(
+        place,
+        None,
+        Hosting::keeping_its_switch_in(&place.credentials, compose),
+        std::future::pending(),
+    )
 }
 
 #[cfg(unix)]

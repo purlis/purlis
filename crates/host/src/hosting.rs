@@ -39,8 +39,8 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::StreamExt;
-use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::auth::Scope;
+use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
     self, Answer, Attached, Chat, Command, Exit, Launch, Peer, ProgramKind, Pushed, Readiness,
@@ -286,36 +286,77 @@ struct Hosted {
 }
 
 impl Hosting {
-    /// A host whose starts `compose` composes, each run in a terminal of its own.
+    /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
+    /// switch kept in memory only: a test's.
     pub fn new(compose: impl Compose) -> Hosting {
         Hosting::running_with(compose, Terminals)
     }
 
     /// A host whose starts `compose` composes and `run` runs, which hears no hooks and starts no
-    /// chat's confinement.
+    /// chat's confinement, its kill switch kept in memory only: a test's.
     pub fn running_with(compose: impl Compose, run: impl Run) -> Hosting {
         Hosting::with(compose, run, HearsNothing, ConfinesNothing)
     }
 
     /// A host whose starts `compose` composes and `run` runs, and whose held projects' hooks
-    /// `hear` hears (#2000).
+    /// `hear` hears (#2000), its kill switch kept in memory only: a test's.
     pub fn hearing_with(compose: impl Compose, run: impl Run, hear: impl Hear) -> Hosting {
         Hosting::with(compose, run, hear, ConfinesNothing)
     }
 
     /// A host whose starts `compose` composes and `run` runs, and whose chats' confinements
-    /// `confine` starts (#1999).
+    /// `confine` starts (#1999), its kill switch kept in memory only: a test's.
     pub fn confining(compose: impl Compose, confine: impl Confine, run: impl Run) -> Hosting {
         Hosting::with(compose, run, HearsNothing, confine)
     }
 
     /// A host whose starts `compose` composes and `run` runs, whose held projects' hooks `hear`
-    /// hears (#2000), and whose chats' confinements `confine` starts (#1999).
+    /// hears (#2000), and whose chats' confinements `confine` starts (#1999), its kill switch
+    /// kept in memory only: a test's.
     pub fn with(
         compose: impl Compose,
         run: impl Run,
         hear: impl Hear,
         confine: impl Confine,
+    ) -> Hosting {
+        Hosting::built(compose, run, hear, confine, Switch::in_memory())
+    }
+
+    /// A host whose starts `compose` composes, each run in a terminal of its own, which hears
+    /// no hooks and starts no confinement, with its kill switch kept in `folder`, its own, and
+    /// read from there now: a host started again while stopped starts nothing until the window
+    /// re-arms (ADR 0071). What `purlis serve` runs.
+    pub fn keeping_its_switch_in(folder: &Path, compose: impl Compose) -> Hosting {
+        Hosting::kept(folder, compose, Terminals, HearsNothing, ConfinesNothing)
+    }
+
+    /// [`Hosting::keeping_its_switch_in`], each start run by `run`.
+    pub fn running_with_its_switch_in(
+        folder: &Path,
+        compose: impl Compose,
+        run: impl Run,
+    ) -> Hosting {
+        Hosting::kept(folder, compose, run, HearsNothing, ConfinesNothing)
+    }
+
+    /// [`Hosting::with`], with its kill switch kept in `folder`, its own, and read from there
+    /// now (ADR 0071): what the window's host runs.
+    pub fn kept(
+        folder: &Path,
+        compose: impl Compose,
+        run: impl Run,
+        hear: impl Hear,
+        confine: impl Confine,
+    ) -> Hosting {
+        Hosting::built(compose, run, hear, confine, Switch::kept_in(folder))
+    }
+
+    fn built(
+        compose: impl Compose,
+        run: impl Run,
+        hear: impl Hear,
+        confine: impl Confine,
+        switch: Switch,
     ) -> Hosting {
         Hosting {
             inner: Arc::new(Inner {
@@ -324,22 +365,7 @@ impl Hosting {
                 run: Box::new(run),
                 hear: Box::new(hear),
                 state: Mutex::default(),
-                switch: Switch::in_memory(),
-            }),
-        }
-    }
-
-    /// This host with its kill switch kept in `folder`, its own, and read from there now: a
-    /// host started again while stopped starts nothing until the window re-arms. Called before
-    /// the host serves anyone.
-    pub fn kept_in(self, folder: &Path) -> Hosting {
-        let inner = Arc::try_unwrap(self.inner).unwrap_or_else(|_| {
-            unreachable!("the switch is read before the host is shared with any link")
-        });
-        Hosting {
-            inner: Arc::new(Inner {
-                switch: Switch::kept_in(folder),
-                ..inner
+                switch,
             }),
         }
     }
@@ -1208,6 +1234,8 @@ impl Hosting {
             (hosted, confinements)
         };
         stop_together(hosted.into_iter().map(|hosted| hosted.running).collect());
+        // Each chat's proxy ends with the programs: no chat reaches anything once the host has.
+        drop(confinements);
     }
 }
 
@@ -1228,7 +1256,5 @@ fn stop_together(programs: Vec<Arc<dyn Running>>) {
         while !thread.is_finished() && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
-        // Each chat's proxy ends with the programs: no chat reaches anything once the host has.
-        drop(confinements);
     }
 }

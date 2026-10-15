@@ -37,7 +37,7 @@ impl Compose for Echo {
 
 /// A host whose switch is kept in `folder`, as `purlis serve` keeps it in its own.
 fn a_host_keeping_its_switch_in(folder: &Path, runs: &StandIns) -> Hosting {
-    Hosting::running_with(Echo, runs.clone()).kept_in(folder)
+    Hosting::running_with_its_switch_in(folder, Echo, runs.clone())
 }
 
 /// A link to `hosting` admitted as `scope`.

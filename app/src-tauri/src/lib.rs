@@ -2921,8 +2921,9 @@ fn refuse_beside_the_old_app() {
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
-    purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
-        purlis_host::Hosting::with(
+    purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
+        purlis_host::Hosting::kept(
+            &place.credentials,
             purlis_host::FromTheWindow(sessionhost::launched),
             purlis_host::Terminals,
             sessionhost::HookChannels,

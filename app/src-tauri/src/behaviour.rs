@@ -123,19 +123,28 @@ static HELD: std::sync::LazyLock<Credentials> =
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them.
 pub(crate) fn in_the_host() -> Target {
+    let host = tempfile::tempdir().expect("the host's folder");
+    let mut target = in_a_host_keeping_its_switch_in(host.path());
+    target._keeps.push(Box::new(host));
+    target
+}
+
+/// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
+/// in a config home of its own, which starts with nothing thrown.
+fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("a runtime");
     let config = tempfile::tempdir().expect("a config home");
-    let hosting = purlis_host::Hosting::with(
+    let hosting = purlis_host::Hosting::kept(
+        folder,
         purlis_host::FromTheWindow(crate::sessionhost::launched),
         purlis_host::Terminals,
         crate::sessionhost::HookChannels,
         crate::hostedconfinement::ConfinesHere,
-    )
-    .kept_in(&purlis_core::machine::charterd(config.path()));
+    );
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
         let (client, served) = tokio::join!(
@@ -704,6 +713,9 @@ fn a_hook_refuses_a_listener_that_is_not_its_chats_ancestor(target: &Target) {
         target.hooks.asks().pending(Instant::now()).is_empty(),
         "an ask reached the window through a listener that is not the chat's ancestor"
     );
+    target.sessions.close(id).expect("it closes");
+}
+
 /// Stop all, as the title bar throws it (`Planes::stop_every_agent`): the switch first, so
 /// nothing starts in the second the ending takes, then every program.
 fn stop_all(target: &Target) -> usize {
@@ -940,6 +952,61 @@ fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
         [("held.invalid".to_owned(), By::Chat)]
     );
     target.sessions.close(id).expect("it closes");
+}
+
+/// **The host's own target only**: the window's own process has no host to start again, and it
+/// is the host that keeps the stop across its restart and refuses a start the window did not
+/// stop first (#2001). The window here is one that never heard of the stop.
+#[test]
+fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart() {
+    let kept = tempfile::tempdir().expect("the host's folder");
+    {
+        let before = in_a_host_keeping_its_switch_in(kept.path());
+        let id = before
+            .sessions
+            .open(
+                None,
+                &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+                &|_| {},
+            )
+            .expect("it starts");
+        Pane::on(&before, id).shows("HARNESS-READY");
+        stop_all(&before);
+        before.sessions.close(id).expect("it closes");
+    }
+
+    let after = in_a_host_keeping_its_switch_in(kept.path());
+    assert!(!after.switch.is_stopped(), "this window never heard of it");
+
+    let refused = after
+        .sessions
+        .open(
+            None,
+            &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+            &|_| {},
+        )
+        .expect_err("the host starts nothing");
+
+    assert!(
+        refused.contains("kill switch"),
+        "the host's words: {refused}"
+    );
+    assert!(
+        after.switch.agree_with_its_host(),
+        "the window learns of it"
+    );
+    assert!(after.switch.is_stopped());
+    assert!(after.switch.rearm().expect("re-armed"));
+    let id = after
+        .sessions
+        .open(
+            None,
+            &a_harness(&["--sentinel", "HARNESS-READY", "--interactive"]),
+            &|_| {},
+        )
+        .expect("it starts once the window re-armed");
+    Pane::on(&after, id).shows("HARNESS-READY");
+    after.sessions.close(id).expect("it closes");
 }
 
 /// Each behaviour, as a test of its own on every target.

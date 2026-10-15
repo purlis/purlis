@@ -140,12 +140,14 @@ impl Connection {
 /// The window's switch reaches the host's over the window's link, as `local-ui`: the one link
 /// whose `rearm` the host takes.
 impl crate::killswitch::Authority for Connection {
-    fn stop(&self) -> Result<(), String> {
+    fn stop(&self) -> Result<Option<String>, String> {
         let switch = self.kill_switch_after(Command::StopAll)?;
-        match switch.why {
-            Some(why) => Err(why),
-            None => Ok(()),
+        if !switch.stopped {
+            return Err(switch
+                .why
+                .unwrap_or_else(|| "it does not hold every agent stopped".into()));
         }
+        Ok(switch.why)
     }
 
     fn rearm(&self) -> Result<(), String> {
