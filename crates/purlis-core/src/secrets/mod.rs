@@ -44,6 +44,7 @@ pub mod registry;
 pub mod run;
 pub mod seen;
 pub mod setup;
+pub mod tokeyring;
 pub mod tty;
 pub mod vaultcmd;
 

@@ -4034,18 +4034,25 @@ fn local_refusals(text: &str) -> Vec<crate::settings::Refusal> {
     };
     let mut out: Vec<Keyed> = table
         .keys()
-        .filter(|key| *key != hosts::KEY)
+        .filter(|key| ![hosts::KEY, personal::LEVEL, personal::PERSONAS].contains(&key.as_str()))
         .map(|key| {
             Keyed::at(
                 format!(
                     "{TABLE}.{key} in {local} is not read — this machine's [{TABLE}] holds \
-                     hosts, and only hosts. Whether chats run sandboxed, and the presets, are \
-                     the project's, in {FILE}."
+                     hosts and your own level ({}, {}), and nothing else. The project's mode \
+                     and presets are the project's, in {FILE}.",
+                    personal::LEVEL,
+                    personal::PERSONAS
                 ),
                 &[TABLE, key.as_str()],
             )
         })
         .collect();
+    // Your own level for this project (#2071): a value that is not one is refused.
+    out.extend(personal::read(table, local).1.into_iter().map(|refused| {
+        let key: Vec<&str> = refused.key.iter().map(String::as_str).collect();
+        Keyed::at(refused.why, &key)
+    }));
     match hosts::read(table.get(hosts::KEY)) {
         Ok(hosts::Listed { refused, .. }) => {
             out.extend(refused.into_iter().map(|(written, why)| {
@@ -4638,6 +4645,7 @@ pub mod local;
 pub mod localport;
 pub mod opencode;
 pub mod persona;
+pub mod personal;
 pub mod planted;
 pub mod policy;
 pub mod program;

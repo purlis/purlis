@@ -117,9 +117,9 @@ fn this_machine_s_file_holds_its_own_hosts_and_never_the_mode() {
     assert_eq!(
         refusals(off, "charter.local.toml"),
         [
-            "sandbox.mode in charter.local.toml is not read — this machine's [sandbox] holds hosts, \
-          and only hosts. Whether chats run sandboxed, and the presets, are the project's, in \
-          charter.toml."
+            "sandbox.mode in charter.local.toml is not read — this machine's [sandbox] holds hosts \
+             and your own level (level, personas), and nothing else. The project's mode and \
+             presets are the project's, in charter.toml."
         ]
     );
     let mine = "[sandbox]\nhosts = [\"10.100.39.145:6443\"]\n";

@@ -128,6 +128,7 @@ mod windows;
 mod worklinks;
 mod workspaces;
 mod worktrees;
+mod yoursandbox;
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
