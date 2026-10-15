@@ -2895,7 +2895,6 @@ fn refuse_beside_the_old_app() {
     std::process::exit(1);
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// When this binary was started again as the window's session host (`sessionhost.rs`), serve
 /// until the window closes its end, and give the code to exit with; otherwise `None`, before
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
@@ -2904,6 +2903,7 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place)
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before anything else, chats included: the host has no controlling terminal, because a
     // level-3 agent shares its session and could open it (V77, ADR 0080 §1). Started straight
@@ -3150,7 +3150,9 @@ pub fn run() {
                 holds_the_config_home = true;
             }
             // The session host, started as the window's first client once the config home its
-            // credentials go in is where it stays, off the first paint (#1997).
+            // credentials go in is where it stays (#1997). Its socket's folder is made here,
+            // before any chat starts, so each chat's sandbox denies a folder that is there; the
+            // host itself starts off the first paint.
             #[cfg(unix)]
             {
                 let host = sessionhost::SessionHost::default();

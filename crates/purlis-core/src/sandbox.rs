@@ -1497,13 +1497,17 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
-    // the runtime directory (#1997, `hostsocket`): a chat neither reads nor writes anything
-    // there.
+    // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor
+    // writes anything there.
     #[cfg(unix)]
-    if let Some(folder) =
-        crate::hostsocket::socket_for(|name| machine.env.get(name).map(Into::into)).parent()
     {
-        deny(Class::HumanPowers, folder.to_path_buf(), Access::ReadWrite);
+        let runtime = machine
+            .env
+            .get("XDG_RUNTIME_DIR")
+            .map(std::ffi::OsString::from);
+        if let Some(folder) = crate::hostsocket::socket_for(runtime.as_deref()).parent() {
+            deny(Class::HumanPowers, folder.to_path_buf(), Access::ReadWrite);
+        }
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();

@@ -1106,12 +1106,11 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::profilestore::DIR),
-            // The session host's socket folder (#1997), in the temporary directory, since
-            // this machine names no runtime directory.
-            std::path::PathBuf::from(format!(
-                "/tmp/purlis-{}",
-                purlis_same_user::Uid::effective().as_raw()
-            )),
+            // The session host's socket folder (#1997), where the host itself takes it.
+            crate::hostsocket::socket_for(None)
+                .parent()
+                .expect("a folder")
+                .to_path_buf(),
         ]
     );
 }

@@ -12,8 +12,10 @@
 //! input; the host stops when it closes, so a quit, a crash and a kill all end it. At a quit the
 //! window closes it and waits a moment for the host to go ([`SessionHost::end`]).
 //!
-//! **It is started off the first paint**, on a thread of its own: nothing the window draws
-//! waits for it. Once it says it is ready, the window connects as `local-ui` with the
+//! **Its folder is made first, the host is started off the first paint.** The socket's folder
+//! is made this user's alone on the window's own start, before any chat can start, so every
+//! chat's sandbox denies a folder that is there; the host then starts on a thread of its own,
+//! and nothing the window draws waits for it. Once it says it is ready, the window connects as `local-ui` with the
 //! credential the host minted, and holds the link.
 //!
 //! No chat runs in it yet: chats still run in the window's own process, so the host takes every
@@ -86,13 +88,29 @@ struct Held {
 }
 
 impl SessionHost {
-    /// Starts the host on a thread of its own, and connects to it once it is ready. Nothing
-    /// waits for it; what goes wrong is said in the log.
+    /// Makes the host's socket folder this user's alone now, on the calling thread, so that
+    /// every chat's sandbox, compiled from here on, denies a folder that is there; then starts
+    /// the host on a thread of its own and connects to it once it is ready. Nothing waits for
+    /// the host; what goes wrong is said in the log.
     pub fn start(&self) {
+        let Some(place) = place() else {
+            tracing::warn!(
+                "purlis: no session host: there is no home folder to keep its credentials in"
+            );
+            return;
+        };
+        if let Err(why) = purlis_core::hostsocket::make_the_folder(&place.socket) {
+            tracing::warn!(
+                "purlis: no session host: its folder {} could not be made this user's alone: \
+                 {why}",
+                place.socket.parent().unwrap_or(&place.socket).display()
+            );
+            return;
+        }
         let held = Arc::clone(&self.held);
         let spawned = std::thread::Builder::new()
             .name("session host".into())
-            .spawn(move || start_here(&held));
+            .spawn(move || start_here(&held, place));
         if let Err(why) = spawned {
             tracing::warn!("purlis: the session host was not started: {why}");
         }
@@ -118,13 +136,7 @@ impl SessionHost {
 }
 
 /// Starts the host and connects to it, on the calling thread.
-fn start_here(held: &Mutex<Option<Held>>) {
-    let Some(place) = place() else {
-        tracing::warn!(
-            "purlis: no session host: there is no home folder to keep its credentials in"
-        );
-        return;
-    };
+fn start_here(held: &Mutex<Option<Held>>, place: purlis_host::Place) {
     let binary = match std::env::current_exe() {
         Ok(binary) => binary,
         Err(why) => {
