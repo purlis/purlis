@@ -619,7 +619,9 @@ either way, never a dialog, so it costs nothing of the first run's interrupt bud
 ## Amended (2026-10-06, #1342): a block is never a dead end
 
 The operator's ruling of 2026-10-06 ("go with recommendations", option (a)) amends §1 and §7.
-"Only a person turns the sandbox off, for one chat" stays. A person may also widen one chat's
+"Only a person turns the sandbox off, for one chat" stays (since 2026-10-15 a person also sets
+their own level for their chats, ADR 0096, and the team's policy bounds it: see the section of
+that date). A person may also widen one chat's
 sandbox, or every chat's, by exactly what a block named:
 
 1. **A grant names one host or one folder to write.** The block's Notice on the chat's tab

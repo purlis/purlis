@@ -87,6 +87,7 @@ const LANE_FILE_WRITES_BEGINNING: &[(&str, &[&str])] = &[
 const LOCAL_READS: &[&str] = &[
     "allowed_persona_hosts",
     "confirmed_hosts",
+    "confirmed_levels",
     "dispatch_mine_in",
     "grantable_folders",
     "granted_ports",

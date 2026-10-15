@@ -983,11 +983,16 @@ pub fn standing(owes: crate::reopen::Owed, ended: bool, waits: bool) -> Standing
 /// project compiles for its own persona in that folder ([`crate::start::ready`]): the asking
 /// chat's per-chat grants, the grants it holds, its opt-out and whatever its harness was
 /// switched to while it ran are not the new chat's, and this never copies them (#1434, #1437).
+///
+/// `made` is how the app says it was made (#2071): asked for by `asking`, with the chain of
+/// chats above it exactly as the new chat's record keeps it, so its first start and every later
+/// one read the same chain; or the person's, where they asked for it from a tab.
 pub fn start_for(
     asking: &crate::reopen::Chat,
     its: Option<crate::dispatchgrant::Dispatched>,
     profile: String,
     name: String,
+    made: crate::sandbox::Made,
 ) -> crate::start::Start {
     let (persona, held, grants, without_sandbox) = match its {
         Some(its) => (Some(its.persona), its.held, its.grants, its.without_sandbox),
@@ -1004,77 +1009,13 @@ pub fn start_for(
         without_sandbox,
         held,
         grants,
-        // Asked for by `asking`: the person's level is read as the stricter of its own and the
-        // asking chat's (#2071). A handoff's start says so where it is built.
-        made: crate::sandbox::Made::Asked {
-            how: crate::sandbox::Asking::Dispatch,
-            above: chain_asking(asking),
-        },
-    }
-}
-
-/// **The chats that ask for a new one, nearest first** (#2071): `asking` itself, by its own
-/// persona (`None` for one on none), then the chats above it as its record keeps them, the
-/// chat the person started last. What the person's level for the new chat is held to
-/// ([`crate::sandbox::your_level`]). `None` where the record cannot say whole: a chat another
-/// chat asked for whose record keeps no chain.
-pub fn chain_asking(asking: &crate::reopen::Chat) -> Option<Vec<Option<String>>> {
-    let own = asking.persona.clone();
-    match asking.from.as_ref().filter(|from| !from.by_person) {
-        // The person's own chat, or one they asked for from a tab: the chain starts here.
-        None => Some(vec![own]),
-        Some(from) => {
-            let above = from.above.as_ref()?;
-            Some(std::iter::once(own).chain(above.iter().cloned()).collect())
-        }
+        made,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// #2071: the chain a new chat's level is held to is the asking chat, then the chats above
-    /// it as its record keeps them; none where that record cannot say.
-    #[test]
-    fn the_chain_asking_is_the_asking_chat_then_its_record_s_chain() {
-        use crate::reopen::{Chat, HandedFrom, Mode as Moved, Owed};
-        let from = |above: Option<Vec<Option<String>>>, by_person| HandedFrom {
-            id: None,
-            chat: 1,
-            name: "steward 1".to_owned(),
-            workspace: crate::active::Place::Workspace("alpha".to_owned()),
-            report: Owed::Due,
-            mode: Moved::Task,
-            depth: 1,
-            root: None,
-            above,
-            by_person,
-        };
-        let qa = |from| Chat {
-            persona: Some("qa".to_owned()),
-            from,
-            ..Chat::default()
-        };
-        assert_eq!(chain_asking(&qa(None)), Some(vec![Some("qa".to_owned())]));
-        assert_eq!(
-            chain_asking(&qa(Some(from(
-                Some(vec![None, Some("steward".to_owned())]),
-                false
-            )))),
-            Some(vec![
-                Some("qa".to_owned()),
-                None,
-                Some("steward".to_owned())
-            ])
-        );
-        assert_eq!(chain_asking(&qa(Some(from(None, false)))), None);
-        // Asked for by the person from a tab: the chain starts at it.
-        assert_eq!(
-            chain_asking(&qa(Some(from(None, true)))),
-            Some(vec![Some("qa".to_owned())])
-        );
-    }
 
     // ----- step 8: memory (#1467) -----------------------------------------------------------
 
@@ -2881,11 +2822,16 @@ mod tests {
             ..chat(Some("steward"))
         };
 
+        let asked = crate::sandbox::Made::Asked {
+            how: crate::sandbox::Asking::Dispatch,
+            above: Some(vec![Some("steward".to_owned())]),
+        };
         let start = start_for(
             &asking,
             Some(crate::dispatchgrant::grants_for_a_dispatched_chat("devops")),
             "codex-work".to_owned(),
             "7".to_owned(),
+            asked.clone(),
         );
 
         assert_eq!(
@@ -2902,15 +2848,18 @@ mod tests {
                 without_sandbox: None,
                 held: None,
                 grants: crate::sandbox::grant::Grants::default(),
-                // Asked for by the asking chat, named by its own persona (#2071).
-                made: crate::sandbox::Made::Asked {
-                    how: crate::sandbox::Asking::Dispatch,
-                    above: Some(vec![asking.persona.clone()]),
-                },
+                // How the app said it was made, as it is (#2071).
+                made: asked,
             }
         );
         // A chat on no persona dispatching to none starts one on none, holding nothing.
-        let plain = start_for(&asking, None, "work".to_owned(), "8".to_owned());
+        let plain = start_for(
+            &asking,
+            None,
+            "work".to_owned(),
+            "8".to_owned(),
+            crate::sandbox::Made::Window,
+        );
         assert_eq!((plain.persona, plain.held), (None, None));
     }
 
@@ -2951,6 +2900,7 @@ mod tests {
             Some(crate::dispatchgrant::grants_for_a_dispatched_chat(persona)),
             "work".to_owned(),
             "7".to_owned(),
+            crate::sandbox::Made::Unnamed,
         )
     }
 

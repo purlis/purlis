@@ -7343,11 +7343,25 @@ export const PlaneView = memo(function PlaneView({
       colour: colourWithHue(sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.colour),
       saving,
       readOnly: readOnlySaid,
+      // The level of the chat in front, for the title bar (#2071).
+      sandbox: tabs.inFront === undefined ? null : sandboxOf(chatOf(tabs, tabs.inFront)),
       // Where ⌘P's files are found first (FM-7): the cockpit's branch, else the one the
       // explorer picked (FM-5).
       branch: nearBranch,
     }),
-    [nearBranch, ofWorkspace, quietHere, readOnlySaid, report, run, saving, settled, sidebar],
+    [
+      nearBranch,
+      ofWorkspace,
+      quietHere,
+      readOnlySaid,
+      report,
+      run,
+      sandboxOf,
+      saving,
+      settled,
+      sidebar,
+      tabs,
+    ],
   );
   // **Before the paint, not after it.** A quit — Cmd-Q, the tray, the menu — arrives whenever
   // it arrives, and the window decides on what every project has told it: a report that

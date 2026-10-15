@@ -49,7 +49,7 @@ import {
   type Wrote,
 } from "./driver";
 import type { Collection, FileSetting, SettingsFileId, SettingsGroup } from "./groups";
-import { EXTENSIONS_LINK } from "./links";
+import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { discoverRow } from "./discover";
@@ -61,6 +61,7 @@ import { teamPolicyRow } from "./teamPolicy";
 import {
   levelsWaitingRow,
   plainFilesRow,
+  projectLevelSaid,
   YOUR_LEVEL,
   yourLevelControls,
   yourLevelHelp,
@@ -598,7 +599,12 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       notes: sandboxNotes(read.shared, read.sandbox),
       // The mode, and any value an administrator's policy locks (#1343), is a status line:
       // nothing here takes it back, moves it or resets it.
-      settings: fromShared("project.sandbox", sandboxControls(read.sandbox)).map((one) =>
+      settings: fromShared(
+        "project.sandbox",
+        sandboxControls(read.sandbox, () =>
+          linkToGroup(settingsPlace("project", read.plane), YOUR_LEVEL),
+        ),
+      ).map((one) =>
         same(one.key, SANDBOX_MODE) || one.kind === "status" ? { ...one, oneWay: true } : one,
       ),
       ...(sharedOk ? { collection: hostsCollection(read.shared, "hosts") } : {}),
@@ -644,7 +650,10 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
             id: YOUR_LEVEL,
             label: "Your level",
             help: yourLevelHelp(read.local.file),
-            settings: fromLocal(YOUR_LEVEL, yourLevelControls(read.entries.persona ?? [])),
+            settings: fromLocal(
+              YOUR_LEVEL,
+              yourLevelControls(read.entries.persona ?? [], projectLevelSaid(read.sandbox)),
+            ),
             after:
               read.plane !== undefined
                 ? [

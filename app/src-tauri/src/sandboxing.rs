@@ -169,6 +169,10 @@ pub struct SandboxState {
     /// place of the level switch. `null` where each person chooses.
     #[specta(optional)]
     pub level_held: Option<String>,
+    /// **Your own level here** (#2071, ADR 0096), as it starts a chat you start in this
+    /// project: `null` where you set none that counts, which leaves the project's own.
+    #[specta(optional)]
+    pub yours: Option<YourLevel>,
 }
 
 /// **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8; #2156):
@@ -211,6 +215,35 @@ impl TeamOffState {
             answer,
         })
     }
+}
+
+/// Your own level for a project, as it starts a chat you start there (#2071).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct YourLevel {
+    /// `on`, `floor` or `off`.
+    pub level: String,
+    /// Whether it is the level you set or confirmed in Settings on this machine, rather than one
+    /// the file says that counts unconfirmed because it is stricter.
+    pub confirmed: bool,
+}
+
+/// [`YourLevel`] for the project at `root`: read through the one seam a start reads it through
+/// (`sandbox::your_level`), for a chat you start in the window on no persona.
+fn yours_of(root: &std::path::Path, locks: &sandbox::policy::Locks) -> Option<YourLevel> {
+    // Only a level of yours: where you chose none, the project's own is said, or the team's.
+    sandbox::personal::in_force(root).level?;
+    // As a start takes it, within the team's bound: a floor the project's `never` or a policy
+    // keeps at the full sandbox is said as the full sandbox, which a full project says itself.
+    let level = sandbox::your_level(root, None, locks, &sandbox::Made::Window)?;
+    // The project's own level is the project's to say, however you came to it.
+    if level == sandbox::personal::base(root) {
+        return None;
+    }
+    let confirmed = sandbox::local::confirmed_levels(root).level == Some(level);
+    Some(YourLevel {
+        level: level.word().to_owned(),
+        confirmed,
+    })
 }
 
 /// **What a project declares it expects and this machine has not allowed** (ADR 0093, ruling
@@ -560,6 +593,7 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
         expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
         team_off: TeamOffState::of(sandbox::team::team_off(root)),
         level_held: sandbox::team::allowed_levels(root).why,
+        yours: yours_of(root, &locks),
     }
 }
 

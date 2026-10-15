@@ -181,6 +181,8 @@ export type FileSetting = Named & {
   /** A `status`'s one button, offered while no file sets the value: its label, and the value
    *  it writes. */
   turnOn?: { label: string; value: string };
+  /** A `status`'s button to the page that changes what it says, drawn whatever the value. */
+  goTo?: { label: string; onPress: () => void };
   /** What a `choice`'s empty option says; none is offered without it. */
   unset?: string;
   /** What a `choice` shows for each of its values, when that is not the value itself. */

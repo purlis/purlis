@@ -371,14 +371,14 @@ describe("Settings › Project › Sandbox", () => {
     ).toEqual(["github.com", "gitlab.com", "git.example.org"]);
   });
 
-  it("shows the mode as a status, with how one chat runs without it", async () => {
+  it("shows the mode as a status, with the way to your own level", async () => {
     core();
     const page = await atSandbox();
 
     const status = await within(page).findByRole("group", { name: "Sandbox" });
-    expect(status).toHaveTextContent(
-      "On for everyone in this project. To run one chat without it, use that chat's tab.",
-    );
+    expect(status).toHaveTextContent("On for everyone in this project.");
+    // Where a person turns it down for their own chats (#2071).
+    expect(within(status).getByRole("button", { name: "Change your level" })).toBeInTheDocument();
     expect(within(page).queryByRole("combobox", { name: "Sandbox mode" })).toBeNull();
     expect(within(page).queryByRole("button", { name: "Reset" })).toBeNull();
   });
@@ -879,7 +879,8 @@ describe("values an administrator's policy locks (#1343)", () => {
     expect(status).toHaveTextContent(REQUIRED);
     expect(status).toHaveTextContent("Counted on this machine only, and never sent.");
     expect(status).not.toHaveTextContent("use that chat's tab");
-    expect(within(status).queryByRole("button")).toBeNull();
+    // Nothing turns it on or off here; your own level is still yours to see (#2071).
+    expect(within(status).queryByRole("button", { name: "Turn the sandbox on" })).toBeNull();
   });
 
   it("shows a project that has not turned the sandbox on as on, required by policy, with no control (#1423)", async () => {
@@ -892,9 +893,8 @@ describe("values an administrator's policy locks (#1343)", () => {
 
     const status = await within(page).findByRole("group", { name: "Sandbox" });
     expect(status).toHaveTextContent(REQUIRED);
-    expect(status).not.toHaveTextContent("Off in this project");
+    expect(status).not.toHaveTextContent("Not turned on in this project");
     expect(within(status).queryByRole("button", { name: "Turn the sandbox on" })).toBeNull();
-    expect(within(status).queryByRole("button")).toBeNull();
     // The page says what a chat here reaches, as for any sandboxed project.
     await waitFor(() =>
       expect(page).toHaveTextContent(
@@ -929,7 +929,9 @@ describe("values an administrator's policy locks (#1343)", () => {
     const page = await atSandbox();
 
     const status = await within(page).findByRole("group", { name: "Sandbox" });
-    expect(status).toHaveTextContent("Off in this project.");
+    expect(status).toHaveTextContent(
+      "Not turned on in this project, so chats here start at the floor.",
+    );
     expect(within(status).getByRole("button", { name: "Turn the sandbox on" })).toBeInTheDocument();
   });
 

@@ -51,6 +51,8 @@ export type Control = {
   status?: (value: string) => string;
   /** A `status`'s one button while no file sets it: its label, and the value it writes. */
   turnOn?: { label: string; value: string };
+  /** A `status`'s button to the page that changes what it says, drawn whatever the value. */
+  goTo?: { label: string; onPress: () => void };
   /** What a `choice`'s empty option says. */
   unset?: string;
   /** What a `choice` shows for each of its values, when that is not the value itself. */
