@@ -5171,6 +5171,18 @@ pub fn bounded(level: Option<personal::Choice>, locks: &policy::Locks) -> Option
     }
 }
 
+/// What `person`'s own level lifts at this start: every class where it is `off`
+/// ([`your_level`]), named by how the start was made; nothing otherwise. The level is read for
+/// the chat's own persona ([`Person::level_as`]), never for whose grants it holds.
+fn yours_lifted(root: &Path, person: &Person<'_>, locks: &policy::Locks) -> Option<Lifted> {
+    let off = your_level(root, person.level_as, locks, person.made) == Some(personal::Choice::Off);
+    let via = person.made.via()?;
+    off.then_some(Lifted {
+        by: By::YourLevel(via),
+        reason: None,
+    })
+}
+
 /// [`decide`], for a chat a person let do `chat` besides (#1342).
 pub fn decide_granted(
     harness: Harness,
@@ -5195,6 +5207,10 @@ pub fn decide_granted(
                 by: By::Person,
                 reason: opt_out.kept_reason(),
             })));
+        }
+        // Your own level, through the one seam as in a project at the full sandbox.
+        if let Some(lifted) = yours_lifted(root, person, &locks) {
+            return Ok(Some(Decided::Unsandboxed(lifted)));
         }
         if !machine.os.has_backend() {
             return Ok(Some(Decided::Floorless(
@@ -5227,15 +5243,9 @@ pub fn decide_granted(
         })));
     }
     // Your own level (#2071): a confirmed `off` starts the chat as the opt-out does. `on` and
-    // `floor` start it as below, the full sandbox, until the floor has a profile of its own.
-    // `persona` is whose grants the chat holds; the level is read for the chat's own.
-    if your_level(root, person.level_as, &locks, person.made) == Some(personal::Choice::Off)
-        && let Some(via) = person.made.via()
-    {
-        return Ok(Some(Decided::Unsandboxed(Lifted {
-            by: By::YourLevel(via),
-            reason: None,
-        })));
+    // `floor` start it as below, the full sandbox, until a later change applies `floor` here.
+    if let Some(lifted) = yours_lifted(root, person, &locks) {
+        return Ok(Some(Decided::Unsandboxed(lifted)));
     }
     if !machine.os.has_backend() {
         // A policy that requires the sandbox is never met by starting without one (D-1423-1,

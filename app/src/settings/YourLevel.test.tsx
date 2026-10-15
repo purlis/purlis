@@ -158,9 +158,11 @@ describe("Settings › Sandbox › Your level", () => {
     core();
     await atYourLevel();
     expect(screen.getByText(/on this machine only/)).toBeInTheDocument();
-    // Until the floor has a profile of its own, it starts the full sandbox, and the page says so.
+    // Where the project turned the full sandbox on, Floor starts it for now, and the page says so.
     expect(
-      screen.getByText(/Until the floor ships, Floor starts a chat in the full sandbox/),
+      screen.getByText(
+        /where the project has turned the full sandbox on, Floor starts a chat in it for now/,
+      ),
     ).toBeInTheDocument();
     await waitFor(() => expect(picker("As scribe")).toBeInTheDocument());
     expect(await offeredIn(picker("This project"))).toEqual([

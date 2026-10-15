@@ -49,7 +49,7 @@ makes the floor every chat's default where a project has not turned the full san
    list of waiting levels are the window's alone. A chat that is already unsandboxed runs as
    the person and can write the record too, for this project or another: nothing here holds
    against a chat at `off`, which is what `off` means.
-8. **What a start does with it** (2026-10-15, the first wiring, before the floor lands). A
+8. **What a start does with it** (2026-10-15, the first wiring, with the floor of #2081). A
    start reads the level only through `sandbox::your_level`: `personal::in_force`, then
    `sandbox::bounded`, the one place a policy bounds it. An administrator's policy that forbids
    the opt-out forbids `off` too; the team's policy (#2071, PR C) bounds it there as well.
@@ -67,10 +67,11 @@ makes the floor every chat's default where a project has not turned the full san
      handoff) and its actor: the person for their own start in the window, purlis for a
      relaunch, a chat for one a chat asked for.
    - A chat that names no persona takes the project's level, never the default persona's.
-   - `on` starts the full sandbox, as today. `floor` does too until the floor has a profile
-     of its own (#2081), and the Settings page says so; then it starts the floor.
-   - A project that has not turned the sandbox on runs its chats with none, whatever the
-     level, until the floor becomes the default there.
+   - A project that has not turned the full sandbox on starts its chats at the floor (#2081),
+     and a confirmed `off` lifts that too, through the same seam.
+   - In a project that has turned the full sandbox on, `on` starts it, as before, and so does
+     `floor` until the next change starts the floor there; the Settings page says so. In one
+     that has not, `on` starts the floor until that change too.
    - The title-bar level mark comes with the floor's level plumbing.
 
 ## Consequences

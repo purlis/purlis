@@ -5974,3 +5974,31 @@ fn a_chain_entry_naming_the_default_persona_is_held_to_the_project_s_level_too()
     );
     assert!(sandboxed(&decided), "{decided:?}");
 }
+
+#[test]
+fn in_a_project_at_the_floor_your_confirmed_off_starts_the_chat_without_it_and_nothing_else_does() {
+    // A project that has not turned the full sandbox on starts its chats at the floor (#2071).
+    let plane = plane_saying("schema = 1\n");
+    std::fs::write(
+        plane.path().join(crate::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"off\"\n[sandbox.personas]\nqa = \"off\"\nsteward = \"floor\"\n",
+    )
+    .unwrap();
+    let at_floor = |decided: &Result<Option<Decided>, NotStarted>| matches!(decided, Ok(Some(Decided::Sandboxed(applied))) if applied.level() == Level::Floor);
+    // Written into the file alone: the floor.
+    let decided = decided_as(plane.path(), None);
+    assert!(at_floor(&decided), "{decided:?}");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    assert_eq!(
+        decided_as(plane.path(), None),
+        Ok(Some(Decided::Unsandboxed(your_level())))
+    );
+    // A chat asked for by one whose level is stricter does not start without it.
+    personal::set_by_you(plane.path(), Some("steward"), Some(personal::Choice::Floor)).unwrap();
+    let asked = decided_made(
+        plane.path(),
+        Some("qa"),
+        &asked(Asking::Dispatch, Some("steward")),
+    );
+    assert!(at_floor(&asked), "{asked:?}");
+}
