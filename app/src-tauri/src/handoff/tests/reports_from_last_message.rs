@@ -274,3 +274,50 @@ fn a_task_whose_turn_has_ended_is_not_noted_as_quiet() {
             .all(|one| !matches!(one, purlis_core::dispatchtalk::PersonSaid::Quiet { .. }))
     );
 }
+
+// ----- closing a finished task (#1981 D-4) ---------------------------------------------------
+
+#[test]
+fn the_chat_that_asked_closes_its_finished_task_and_its_row_and_nothing_else() {
+    use purlis_core::dispatched::{Answered, What};
+    let (plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+
+    // Still owing its report: not finished, and not closed.
+    let said = asks(&held, &id, steward, What::Close { of: task });
+    assert!(matches!(said, Answer::No { .. }), "{said:?}");
+    assert!(open_chats(&held).contains(&task));
+
+    // Its turns end without a report, and purlis reports for it from its last message: it is
+    // finished, and stays open owing one more.
+    a_turn_begins(&held, task);
+    its_turn_ends_saying(&held, task, "Looked.");
+    a_turn_begins(&held, task);
+    its_turn_ends_saying(&held, task, "Done looking.");
+    assert!(open_chats(&held).contains(&task));
+
+    // Another chat of the project, which did not dispatch it, cannot close it.
+    let alpha = held.root().join("workspaces").join("alpha");
+    let other = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+    let said = asks(&held, &id, other, What::Close { of: task });
+    assert!(matches!(said, Answer::No { .. }), "{said:?}");
+    assert!(open_chats(&held).contains(&task));
+
+    let said = asks(&held, &id, steward, What::Close { of: task });
+    let Answer::Task(answered) = said else {
+        panic!("closed, not {said:?}");
+    };
+    assert_eq!(
+        *answered,
+        Answered::Closed {
+            of: task,
+            name: "check prod".to_owned()
+        }
+    );
+    assert!(!open_chats(&held).contains(&task), "its program is ended");
+    assert!(
+        crate::finished::listed(&held)
+            .iter()
+            .all(|row| row.chat != Some(task)),
+        "its row is cleared"
+    );
+}

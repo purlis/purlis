@@ -413,6 +413,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
         }),
         What::Cancel { of } => cancel(held, asker, *of).unwrap_or_else(no),
         What::Output { of } => output(held, asker, *of).unwrap_or_else(no),
+        What::Close { of } => close(held, asker, *of).unwrap_or_else(no),
         What::Tell { to, text } => tell(held, asker, *to, text).unwrap_or_else(no),
         What::Note { text } => send_up(held, asker, Kind::Note, text).unwrap_or_else(no),
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
@@ -1616,6 +1617,77 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
 /// for the chat that dispatched it and no other. The app's record of that chat decides whose
 /// task it is ([`owned`]), and a task that has closed is read from the app's memory of it,
 /// keyed by the chat that asked: every other chat is refused in the one sentence a wait is.
+/// **`purlis dispatch close <chat>`** (#1981 D-4, ruled 2026-10-15): closes a finished task
+/// the asking chat dispatched itself, and no other chat's. #1485 stands: a task's program ends
+/// at its report, and what stays is its finished row, a readable record with Reopen. Close
+/// takes that row away. A task kept open after its report (it came out blocked, or purlis
+/// made its report from its last message) has its program ended first, by the chat's own
+/// close, as a reported task's always is.
+///
+/// **Refused where the task is not finished, or not the asking chat's to end**: one still owing
+/// its report (cancel asks it for one), one mid-turn, one the person is stopping, and one the
+/// person typed in, which is theirs to close from its tab.
+fn close(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
+    match owned(held, asker, of) {
+        Ok((from, name)) => {
+            let name = purlis_core::personas::one_line(&name);
+            if from.report == Owed::Due {
+                return Err(format!(
+                    "'{name}' (chat {of}) has not reported yet, so it is not finished. `purlis \
+                     dispatch cancel {of}` asks it for its report; close it once it has."
+                ));
+            }
+            if held.stopping().is_stopping(of) {
+                return Err(format!(
+                    "'{name}' (chat {of}) is being stopped by the person, and its stop ends it."
+                ));
+            }
+            if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
+                return Err(format!(
+                    "the person has typed in '{name}' (chat {of}), so it is theirs to close, \
+                     from its tab."
+                ));
+            }
+            let seen = seen(held, of);
+            if seen.running || seen.prompt_showing() {
+                return Err(format!(
+                    "'{name}' (chat {of}) is in a turn now; close it once that turn ends."
+                ));
+            }
+            end_it(held, of);
+            clear_row(held, asker, of);
+            Ok(task(Answered::Closed { of, name }))
+        }
+        Err(why) => {
+            let Some(name) = held
+                .tasks()
+                .ledger()
+                .gone(asker, of)
+                .map(|gone| gone.name.clone())
+            else {
+                return Err(why);
+            };
+            clear_row(held, asker, of);
+            Ok(task(Answered::Closed {
+                of,
+                name: purlis_core::personas::one_line(&name),
+            }))
+        }
+    }
+}
+
+/// Clears task `of`'s finished row under the chat `asker`, where it has one.
+fn clear_row(held: &Held, asker: u32, of: u32) {
+    let ids: Vec<String> = crate::finished::listed(held)
+        .into_iter()
+        .filter(|row| row.asker == asker && row.chat == Some(of))
+        .map(|row| row.id)
+        .collect();
+    if !ids.is_empty() {
+        crate::finished::clear(held, &ids);
+    }
+}
+
 fn output(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
     let name = match owned(held, asker, of) {
         Ok((_, name)) => name,

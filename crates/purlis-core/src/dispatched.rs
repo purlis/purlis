@@ -95,6 +95,9 @@ pub enum What {
     Cancel { of: u32 },
     /// What task `of` said last and the commands it ran (#1981): `purlis dispatch read`.
     Output { of: u32 },
+    /// Close finished task `of` (#1981 D-4): `purlis dispatch close`. Its program is ended where
+    /// it is still open, and its finished row is cleared.
+    Close { of: u32 },
     /// Send task `to` a follow-up (#1442). Refused unless this chat dispatched it and it is
     /// still working.
     Tell { to: u32, text: String },
@@ -135,6 +138,8 @@ pub enum Answered {
     Listed { rows: Vec<Row> },
     /// Task `of`, called `name`, is being cancelled; its report follows as any report does.
     Cancelling { of: u32, name: String },
+    /// Finished task `of`, called `name`, is closed (#1981 D-4).
+    Closed { of: u32, name: String },
     /// What task `of`, called `name`, said last and the commands it ran, oldest first (#1981),
     /// as the app heard them from its harness and masked them.
     Output {

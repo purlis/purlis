@@ -1792,6 +1792,48 @@ fn a_read_prints_what_the_task_said_and_ran_and_a_refused_one_says_why() {
 }
 
 #[test]
+fn a_close_says_the_task_is_closed_and_a_refused_one_says_why() {
+    // #1981 D-4: a finished task of this chat's, and no other.
+    let tmp = daily();
+    let (app, _reading, _asked) = an_app_answering_tasks(&tmp, |what| match what {
+        What::Close { of: 9 } => Answer::Task(Box::new(Answered::Closed {
+            of: 9,
+            name: "check the queue".to_owned(),
+        })),
+        What::Close { of } => Answer::No {
+            why: purlis_core::dispatched::not_yours(*of),
+        },
+        _ => Answer::Task(Box::new(Answered::Noted)),
+    });
+    let out = purlis_as(
+        &root(&tmp),
+        Some(&app),
+        ASKING,
+        &["dispatch", "close", "9"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).starts_with("purlis dispatch: closed 'check the queue' (chat 9)."),
+        "{}",
+        text(&out.stdout)
+    );
+    let out = purlis_as(
+        &root(&tmp),
+        Some(&app),
+        ASKING,
+        &["dispatch", "close", "4"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("chat 4 is not a task this chat dispatched"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
 fn a_cancel_says_what_happens_next_and_a_refused_one_says_why() {
     let tmp = daily();
     let (app, _reading, _asked) = an_app_answering_tasks(&tmp, |what| match what {

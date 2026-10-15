@@ -15,6 +15,7 @@
 //! purlis dispatch wait <chat> [--timeout <seconds>]
 //! purlis dispatch list
 //! purlis dispatch read <chat>
+//! purlis dispatch close <chat>
 //! purlis dispatch cancel <chat>
 //!
 //! purlis dispatch tell <chat> "<text>"        (the asking chat, to a task still working)
@@ -123,6 +124,13 @@ pub enum DispatchCommand {
     /// masked. Only a task this chat dispatched can be read by it; the whole conversation is
     /// the person's, in the task's tab.
     Read {
+        /// The task's chat, by its number in `purlis dispatch list`.
+        chat: u32,
+    },
+    /// Close a finished task this chat dispatched: its finished row goes, and a task kept open
+    /// after its report has its program ended. Refused for a task that has not reported, one
+    /// in a turn, and one the person typed in. `purlis dispatch list` shows each task's state.
+    Close {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
     },
@@ -668,6 +676,7 @@ pub fn run(command: &DispatchCommand) -> ExitCode {
         DispatchCommand::Wait { chat, timeout } => said(wait(*chat, *timeout)),
         DispatchCommand::List => said(list()),
         DispatchCommand::Read { chat } => said(read(*chat)),
+        DispatchCommand::Close { chat } => said(close(*chat)),
         DispatchCommand::Cancel { chat } => said(cancel(*chat)),
         DispatchCommand::Tell { chat, text } => said(tell(*chat, text)),
         DispatchCommand::Answer { chat, text } => said(answer(*chat, text)),
@@ -1009,6 +1018,17 @@ pub fn list() -> Result<String, String> {
 }
 
 /// `purlis dispatch read <chat>`: what task `of` said last and the commands it ran (#1981).
+/// `purlis dispatch close <chat>`: closes finished task `of` (#1981 D-4).
+pub fn close(of: u32) -> Result<String, String> {
+    match asked(What::Close { of }, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
+        Answered::Closed { of, name } => Ok(format!(
+            "{SAYS} closed '{name}' (chat {of}). Its report stays on its dispatch record; the \
+             Dispatches tab shows it."
+        )),
+        _ => Err(format!("{SAYS} the purlis app did not answer the close.")),
+    }
+}
+
 pub fn read(of: u32) -> Result<String, String> {
     match asked(What::Output { of }, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
         Answered::Output {

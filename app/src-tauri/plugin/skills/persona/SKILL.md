@@ -80,7 +80,8 @@ shows who exists.
   that turn ends. `purlis dispatch read <chat>` shows what one of your tasks said last and the
   commands it ran, with their exit codes, quoted as data: read it before you ask the person
   what a task did. Do not poll a task: you are told when one has gone quiet, and when it
-  reports or ends.
+  reports or ends. `purlis dispatch close <chat>` closes a finished task of yours once you have
+  read its report.
 
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works:
