@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792081403545,
+  "lastUpdate": 1792083860393,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12684,6 +12684,48 @@ window.BENCHMARK_DATA = {
             "value": 101.23380900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.667, 101.198, 101.234, 101.574, 102.019 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3f77b071fb3b325e387e08c0619947a9ec91b3a",
+          "message": "A chat's sandbox and egress proxy live in the session host (#2189)\n\nWith PURLIS_CHATS_IN_THE_HOST=1, a chat's confinement (its egress proxy, and\nthe folder and ssh route beside it) is started and held by the session host,\nso a chat keeps its network while the window's link is gone.\n\n- The window compiles the sandbox as before and plans the confinement from it\n  (sandbox::plan::Plan). The window's own path starts that plan; the host\n  reads it back exactly and starts it with the same function.\n- Session protocol: confine, let_go_of_confinement, change_reach and\n  reach_of, a start's launch naming its confinement, and the pushed sandbox\n  notice. All local-ui only; sandbox notices go only to a link that may\n  confine. Each frame is recorded in the protocol's fixture.\n- purlis-host holds each confinement for the link that made it (told apart\n  by its number) until a start on that link in that project names it, then\n  for that program; one whose link ended while it started ends at once.\n- The window hears what the host's proxy did through the closures it hands a\n  proxy of its own, and answers the host's board of live asks over its link.\n  A port the host cannot be told was withdrawn ends the chat's confinement.\n- Behaviour suite: a sandboxed chat's proxy carries, refuses, withdraws a\n  port and asks on both targets; a chat's proxy in the host still reaches\n  its hosts once the window's link is gone.\n- ADR 0068 amended for #1999.\n\nRefs #1999\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T21:03:03+04:00",
+          "tree_id": "af06d9c53146730b971a2b47dacee0264c3010bc",
+          "url": "https://github.com/purlis/purlis/commit/b3f77b071fb3b325e387e08c0619947a9ec91b3a"
+        },
+        "date": 1792083858943,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.524189,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.524, 0.524, 0.525, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.013553,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.831, 16.872, 17.014, 17.044, 17.158 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.5528685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.140, 103.549, 103.553, 105.143, 105.270 ms"
           }
         ]
       }
