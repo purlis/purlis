@@ -45,6 +45,28 @@ pub fn engine_program() -> Option<PathBuf> {
     None
 }
 
+/// On CI, a failing test also says why as an annotation of its job (a workflow command on its
+/// output), so the reason is read beside the run without its log.
+fn say_failures_on_ci() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
+        return;
+    }
+    ONCE.call_once(|| {
+        let before = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let test = std::thread::current().name().unwrap_or("a test").to_owned();
+            let mut said: String = info.to_string().chars().take(6000).collect();
+            said = said
+                .replace('%', "%25")
+                .replace('\r', "%0D")
+                .replace('\n', "%0A");
+            println!("::error title={test}::{said}");
+            before(info);
+        }));
+    });
+}
+
 /// The fixture site, served until the test ends.
 pub struct Site {
     pub address: SocketAddr,
@@ -167,6 +189,7 @@ fn respond(
 /// long as the browser.
 pub fn started() -> Option<(Browser, tempfile::TempDir, Site)> {
     let program = engine_program()?;
+    say_failures_on_ci();
     let site = serve();
     let data = tempfile::tempdir().unwrap();
     let launch = Launch::new(
