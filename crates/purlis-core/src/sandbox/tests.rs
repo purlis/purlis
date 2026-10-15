@@ -251,8 +251,11 @@ fn a_sandboxed_chat_may_read_and_run_charters_git_hooks_and_never_rewrite_them()
         );
     }
     let settings = claude::settings(&compiled(denied, Os::MacOs)).expect("compiles");
-    let deny_read = settings.sandbox["filesystem"]["denyRead"].to_string();
-    assert!(!deny_read.contains("Library"), "{deny_read}");
+    let deny_read = &settings.sandbox["filesystem"]["denyRead"];
+    for denied in deny_read.as_array().expect("a list") {
+        let denied = std::path::Path::new(denied.as_str().expect("a path"));
+        assert!(!hooks.starts_with(denied), "{deny_read}");
+    }
 }
 
 #[test]

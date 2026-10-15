@@ -59,7 +59,15 @@ describe("the Settings tab, at the You level", () => {
       within(nav())
         .getAllByRole("button")
         .map((one) => one.textContent),
-    ).toEqual(["Text", "Editor", "Chats list", "Notifications", "This machine", "Accounts", "Profiles"]);
+    ).toEqual([
+      "Text",
+      "Editor",
+      "Chats list",
+      "Notifications",
+      "This machine",
+      "Accounts",
+      "Profiles",
+    ]);
     expect(group("Text")).toHaveAttribute("aria-current", "true");
     expect(shown()).toHaveAccessibleName("Text");
     expect(slider(/window text size/i)).toBeInTheDocument();
