@@ -1131,7 +1131,7 @@ function Status({
         </button>
       )}
       {goTo !== undefined && (
-        <button type="button" tabIndex={0} onClick={goTo.onPress}>
+        <button type="button" className="ui-button" tabIndex={0} onClick={goTo.onPress}>
           {goTo.label}
         </button>
       )}
