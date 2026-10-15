@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792062980802,
+  "lastUpdate": 1792069197245,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12306,6 +12306,48 @@ window.BENCHMARK_DATA = {
             "value": 102.13154850000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.813, 101.854, 102.132, 102.983, 103.300 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "87c42d380d5c6fa4d0a5ad74e318d40b46f88197",
+          "message": "A chat runs in the session host, behind the start-time switch (#2164)\n\n* Session protocol 1.2: what a chat needs to run in the host\n\nHolding and letting go of a project, the full start (a program's id, run and\nnumber, persona, profile, size, resume, first message, the person's opt-out\nof the sandbox, and the window's own composed launch, which only local-ui may\ngive), close beside stop, readiness, a started program's number and process,\na listed chat's number and run, and two pushed notices: a program ended, and a\nview ended for good. Each frame is recorded in the protocol's fixture.\n\nRefs #1998\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A terminal's view, followed without a thread\n\nSession::follow hands a session host the screen as it is now apart from an\nasynchronous stream of what the program writes after it, taken together under\nthe terminal's lock so nothing is lost or doubled. The stream ends with the\nprogram, and letting go of it closes the view.\n\nRefs #1998\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The session host runs chats: hold a project, start, view, drive, close\n\npurlis-host gains Hosting, the session protocol's host for programs: it holds\nprojects, deals each chat's number in its project, runs what its binary\ncomposed in a terminal of its own, and views, writes to, resizes, stops and\ncloses it, telling subscribers as each ends. How a start is composed is the\nbinary's (Compose): the window's binary and `purlis serve` each compose a\nstart the window made with purlis_core::chatspec, the same code the window's\nown path runs, so the host links no core. Every hosted program is inside a\nchat to the admission check, below the window or below the host itself.\n\nRefs #1998\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A chat runs in the session host, behind the start-time switch\n\nWith PURLIS_CHATS_IN_THE_HOST=1 at start, each project's chats run in the\nsession host the window started (HostedSessions): the window composes the\nstart as it always has, deals the number and issues the token, and hands the\nhost its launch; the host composes the environment with the same code and\nruns the program; the window draws, types, resizes, stops and closes it over\nthe session protocol, and hears its end. With the switch on and no host of\nthe window's own, every chat start is refused with the reason. The switch is\noff by default, and then nothing changes: Sessions::open now composes through\npurlis_core::chatspec, the code both paths share.\n\nThe behaviour suite starts here (behaviour.rs): each behaviour written once\nagainst SessionHost, run in the window and in the host with real terminals\nand the fake harness.\n\nRefs #1998\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* ADR 0068: a chat runs in the session host behind the start-time switch\n\nRecords #1998's decisions, to be confirmed: where a start is composed, the\nswitch, the terminal's view source, protocol 1.2, the window-only launch, the\nnumber and token the window keeps until #2000, the admission holder, ending\non stop, and the behaviour suite's targets.\n\nRefs #1998\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Review fixes for chats in the session host\n\n- A program's end marks only that program: a chat closed and put back under\n  its number runs on. A start the host numbers otherwise than asked fails and\n  is closed. `close` answers once the host has let go of the program, so its\n  number is free; ending every chat stops each first.\n- Holding a project is the window's alone, counted per link: a link lets go\n  only of its own holds, they end with it, and a held project is not moved.\n- A closed program's process stays inside a chat to the admission check for\n  as long as the host runs.\n- Tests: the host ends every program as `serve` stops; a behaviour checks a\n  chat's PATH and a kept variable on both targets; every refusal code is\n  recorded in the protocol's fixture.\n- ADR 0068: D-1998-10, holds, and the suite's real-host target (#2170).\n\nRefs #1998\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T16:58:29+04:00",
+          "tree_id": "e2bcb5b814430e563cc889ee35223c4fd83ed6a2",
+          "url": "https://github.com/purlis/purlis/commit/87c42d380d5c6fa4d0a5ad74e318d40b46f88197"
+        },
+        "date": 1792069195663,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.546316,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.540, 0.546, 0.555, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7176605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.322, 16.398, 16.718, 16.893, 17.320 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.961464,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.798, 103.887, 103.961, 104.075, 105.424 ms"
           }
         ]
       }
