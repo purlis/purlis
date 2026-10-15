@@ -827,6 +827,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "vault_refusals",
     "vaults_to_move",
     "watch_session",
+    "what_a_restart_ends",
     "what_changed",
     "window_focus",
     "window_holds_planes",

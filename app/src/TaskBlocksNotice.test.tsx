@@ -159,3 +159,33 @@ describe("the question for several tasks (#1709)", () => {
     expect(question.textContent).not.toContain("waiting");
   });
 });
+
+describe("a folder's question for several tasks says what each task's restart ends (#1986)", () => {
+  it("names, for each task listed, what its restart will stop", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd !== "what_a_restart_ends") return null;
+      return (args as { session: number }).session === 4
+        ? { listening: [{ program: "node", port: 5173 }], others: 0 }
+        : null;
+    });
+    shown(group("write", ["chat", "you"]));
+
+    const each = screen.getByRole("list", { name: "What restarting each task ends" });
+    await waitFor(() =>
+      expect(
+        within(each)
+          .getAllByRole("listitem")
+          .map((one) => one.textContent),
+      ).toEqual([
+        "Allowing restarts talk on its conversation at its next pause between turns; its node on port 5173 will stop.",
+        "Allowing restarts sweep on its conversation at its next pause between turns. purlis cannot tell what it has running, so anything it started may stop.",
+      ]),
+    );
+  });
+
+  it("says nothing of a restart for a host, which a task may take without one", () => {
+    mockIPC(() => null);
+    shown(group("host", ["chat", "you", "project"]));
+    expect(screen.queryByRole("list", { name: "What restarting each task ends" })).toBeNull();
+  });
+});

@@ -1883,6 +1883,68 @@ fn ask_chat_restart(
     planes.held(&plane)?.chats().ask_restart(session)
 }
 
+/// **What restarting chat `session` would end now** (#1986, ruling Q63), for the Ask that
+/// restarts it to say beforehand: each program its commands started that listens on a TCP port,
+/// and how many others they started are running ([`purlis_core::restartends`]). `None` where
+/// purlis cannot tell: the chat runs no program here, or the process table or its listening
+/// sockets could not be read. Read from the operating system, never from what the chat printed.
+///
+/// Off the window's thread: it runs `ps` and `lsof`.
+#[tauri::command]
+#[specta::specta]
+async fn what_a_restart_ends(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<Option<RestartEnds>, String> {
+    let held = planes.held(&plane)?;
+    off_the_window(READING_WHAT_A_RESTART_ENDS, move || {
+        Ok(held
+            .chats()
+            .sessions()
+            .process_id(session)
+            .and_then(purlis_core::restartends::of)
+            .map(RestartEnds::from))
+    })
+    .await
+}
+
+/// What [`what_a_restart_ends`] is doing, where it did not finish.
+const READING_WHAT_A_RESTART_ENDS: &str = "reading what a restart of the chat would end";
+
+/// [`purlis_core::restartends::Ends`], as the window reads it.
+#[derive(serde::Serialize, specta::Type)]
+struct RestartEnds {
+    /// Each program below the chat listening on a TCP port, by port.
+    listening: Vec<ListeningProgram>,
+    /// How many other programs its commands started are running.
+    others: u32,
+}
+
+/// One program listening on one port.
+#[derive(serde::Serialize, specta::Type)]
+struct ListeningProgram {
+    /// Its program's name, without its folder.
+    program: String,
+    port: u16,
+}
+
+impl From<purlis_core::restartends::Ends> for RestartEnds {
+    fn from(ends: purlis_core::restartends::Ends) -> Self {
+        Self {
+            listening: ends
+                .listening
+                .into_iter()
+                .map(|one| ListeningProgram {
+                    program: one.program,
+                    port: one.port,
+                })
+                .collect(),
+            others: ends.others,
+        }
+    }
+}
+
 /// What a restart answered (#1342, #1428): the chat in its new run with what its start found
 /// to say, or, while it waits on a permission prompt, why it is not restarted yet.
 #[derive(serde::Serialize, specta::Type)]

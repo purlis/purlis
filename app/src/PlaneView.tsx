@@ -367,6 +367,7 @@ import { hueOf } from "./theme/tint";
 import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
+import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
 import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
@@ -4962,8 +4963,7 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [plane]);
   const oweRestart = useCallback(
-    (session: number) =>
-      setOwedRestarts((owed) => (owed.includes(session) ? owed : [...owed, session])),
+    (session: number) => setOwedRestarts((owed) => withRestartOwed(owed, session)),
     [],
   );
   /**
@@ -5023,21 +5023,35 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, chatRestarted],
   );
-  // **Only once the turn has ended** (#1342): the chat is waiting for you, or its program is
-  // done. Mid-turn it would lose what it was doing; a harness that reports no state is never
-  // restarted behind the person's back, and its pane offers Restart now instead.
+  // **Only at the chat's next pause between turns** (#1342, #1986): mid-turn it would lose
+  // what it was doing; a harness that reports no state is never restarted behind the person's
+  // back, and its pane offers Restart now instead. A chat whose program ended first is
+  // restarted by nothing, and is owed nothing ({@link restartsDue}).
   useEffect(() => {
     if (owedRestarts.length === 0) return;
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      for (const session of owedRestarts) {
-        const state = stateOf(states, session);
-        if (state === "waiting" || state === "done" || state === "failed") restartOwed(session);
-      }
+      const due = restartsDue(owedRestarts, (session) => stateOf(states, session));
+      for (const session of due.restart) restartOwed(session);
+      // Dropped only once the core, which hears the program itself end, owes it nothing: a
+      // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
+      if (due.ended.length > 0)
+        void commands
+          .owedRestarts(plane)
+          .then((read) => {
+            if (read.status === "ok" && Array.isArray(read.data)) {
+              const coreOwes = read.data;
+              setOwedRestarts((owed) => {
+                const kept = owedAfterEnded(owed, due.ended, coreOwes);
+                return kept.length === owed.length ? owed : kept;
+              });
+            }
+          })
+          .catch(() => undefined);
     };
     drive();
     return chats.store.subscribe(drive);
-  }, [owedRestarts, chats, restartOwed]);
+  }, [owedRestarts, chats, plane, restartOwed]);
   /**
    * What each chat's pane says of its restart ({@link RestartSaid}): under way, not yet, owed by
    * hand, or why it failed.
@@ -5095,10 +5109,15 @@ export const PlaneView = memo(function PlaneView({
       setRestartNotYet((was) => withoutKey(was, session));
       // Asked again, so a restart the core no longer owes is owed once more.
       if (act === "now") void askRestart(session);
-      // Owed already, and the person will not wait for the turn to end: the driver's step, now.
-      if (act === "mid-turn") restartOwed(session);
+      // Owed already, and the person will not wait for the turn to end: the driver's step, now,
+      // unless the chat's program has ended meanwhile (#1986).
+      if (act === "mid-turn") {
+        const states = chats.store.statesFor(chats.plane);
+        const due = restartsDue([session], (one) => stateOf(states, one), { now: session });
+        if (due.restart.includes(session)) restartOwed(session);
+      }
     },
-    [askRestart, restartOwed],
+    [askRestart, chats, restartOwed],
   );
   /** Restart chat, from a tab's menu or the palette. */
   useEffect(() => {

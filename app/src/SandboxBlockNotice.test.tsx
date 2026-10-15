@@ -584,3 +584,70 @@ describe("a service on this Mac's Notice (qw384)", () => {
     );
   });
 });
+
+describe("an Allow that restarts the chat says beforehand what will end (#1986)", () => {
+  const FOLDER: ChatBlocked = {
+    ...UNNAMED,
+    operation: "write",
+    kind: "outside",
+    said: "a write outside the chat's folders",
+    offer: "write",
+    target: "/Users/op/work/notes",
+    levels: ["chat", "you"],
+  };
+
+  function drawnReading(block: ChatBlocked, ends: unknown) {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "what_a_restart_ends") return ends;
+      return null;
+    });
+    render(
+      <SandboxBlockNotice
+        block={block}
+        asks={askOfBlock(block)}
+        more={0}
+        onDismiss={vi.fn()}
+        onAllowed={vi.fn()}
+        onRestarted={vi.fn()}
+      />,
+    );
+    return asked;
+  }
+
+  it("names the dev server a folder's Allow will stop, at the chat's next pause", async () => {
+    drawnReading(FOLDER, { listening: [{ program: "node", port: 5173 }], others: 0 });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/at its next pause between turns; its/, { exact: false }),
+      ).toHaveTextContent("its node on port 5173 will stop."),
+    );
+    expect(screen.getByRole("button", { name: /^Allow/ })).toBeTruthy();
+  });
+
+  it("says plainly when purlis cannot tell what a socket's Allow will end", async () => {
+    drawnReading(
+      {
+        ...FOLDER,
+        kind: "local-socket",
+        said: "a connection to a local socket",
+        offer: "socket",
+        target: "/Users/op/.docker/run/docker.sock",
+        levels: ["once", "chat", "you"],
+      },
+      null,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/purlis cannot tell what it has running/)).toBeTruthy(),
+    );
+  });
+
+  it("asks nothing about a host, which the chat may take without restarting", () => {
+    const asked = drawnReading({ ...UNNAMED, target: "api.example.com" }, null);
+    expect(asked).not.toContain("what_a_restart_ends");
+    expect(screen.queryByText(/next pause between turns/)).toBeNull();
+  });
+});

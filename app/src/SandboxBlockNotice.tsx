@@ -22,6 +22,7 @@ import { eachHost, hostsOf, inertly, isAnAsk, matched, type HeldBlock } from "./
 import { SandboxChoose, chooseSaid, mayChoose } from "./SandboxChoose";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
+import { RestartEndsLine } from "./RestartEnds";
 import { Field, SettingRow } from "./settings/components";
 
 /**
@@ -508,6 +509,10 @@ function AllowNotice({
       ? block.offer
       : "write";
   const target = block.target ?? typed.trim();
+  /** A folder, a socket, a service or a port reaches the chat only by restarting it, at its next pause
+   *  (#1986): what that ends is said before the Allow. A host the chat's proxy may take live
+   *  restarts nothing, so it says none of this. */
+  const restarts = what !== "host";
   /** The hosts this Notice lists that no Allow on it has allowed yet and the registry still
    *  lists, oldest first: a host answered anywhere else is no longer asked about here. */
   const hosts = hostsOf(block);
@@ -1043,6 +1048,12 @@ function AllowNotice({
           : ` ${asking.length} hosts were refused. One Allow allows each of them, and the chat restarts once.`)}
       {what === "host" && moreRefused > 0 && ` ${moreRefusedSaid(moreRefused)}`}
       {block.ruled !== null && block.ruled !== undefined && ` ${block.ruled}`}
+      {restarts && (
+        <>
+          {" "}
+          <RestartEndsLine plane={block.plane} session={block.session} />
+        </>
+      )}
       {allowedHosts.length > 0 && <> Allowed already: {drawn(allowedHosts)}.</>}
       {said !== undefined && ` ${said}`}
       {behind}

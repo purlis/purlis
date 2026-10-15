@@ -3566,6 +3566,9 @@ impl Planes {
                     // And the record no longer names the ended program's pid (V82, #1018).
                     if let Some(held) = me.get().and_then(std::sync::Weak::upgrade) {
                         held.chats.a_program_ended();
+                        // A restart it was owed waited for a pause that will not come: nothing
+                        // restarts it (#1986).
+                        held.chats.its_program_ended(session);
                         // A command waiting on it is told, and so is whatever waited for it
                         // to move (#1441).
                         crate::dispatched::moved(&held, session);
