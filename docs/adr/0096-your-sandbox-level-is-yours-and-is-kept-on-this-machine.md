@@ -49,9 +49,19 @@ makes the floor every chat's default where a project has not turned the full san
    list of waiting levels are the window's alone. A chat that is already unsandboxed runs as
    the person and can write the record too, for this project or another: nothing here holds
    against a chat at `off`, which is what `off` means.
-8. **A chat's start reads it once the floor lands.** This record's first change saves, shows
-   and confirms the level; a chat's start reads it through `personal::in_force` once PR A
-   (#2081) merges, and the level mark in the title bar comes with that wiring.
+8. **What a start does with it** (2026-10-15, the first wiring, before the floor lands). A
+   start reads the level only through `sandbox::your_level`: `personal::in_force`, then
+   `sandbox::bounded`, the one place a policy bounds it. An administrator's policy that forbids
+   the opt-out forbids `off` too; the team's policy (#2071, PR C) bounds it there as well.
+   - A confirmed `off`, for the project or the chat's persona, starts the chat as "Start
+     without the sandbox" does: every class lifted, audited as the person's
+     (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its tab says
+     *no sandbox — your setting*, and the folder check an opt-out skips is skipped.
+   - `on` starts the full sandbox, as today. `floor` does too until the floor has a profile
+     of its own (#2081), and the Settings page says so; then it starts the floor.
+   - A project that has not turned the sandbox on runs its chats with none, whatever the
+     level, until the floor becomes the default there.
+   - The title-bar level mark comes with the floor's level plumbing.
 
 ## Consequences
 

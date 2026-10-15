@@ -4808,6 +4808,9 @@ impl OptOut {
 pub enum By {
     /// A person, in the window, for this chat ([`OptOut`]).
     Person,
+    /// A person, by their own level for this project or the chat's persona, as they set or
+    /// confirmed it in Settings on this machine (#2071, ADR 0096; [`your_level`]).
+    YourLevel,
     /// Charter itself, because this operating system has no sandbox backend yet (Windows,
     /// M46, #565; ruling V21 3). The audit names charter as the actor, never the operator (ruling V78 b).
     NoBackend(Os),
@@ -4831,6 +4834,11 @@ impl Lifted {
         match self.by {
             By::Person => "This chat runs without the sandbox: you turned it off for this chat \
                            only. A new or resumed chat does not inherit it."
+                .to_owned(),
+            By::YourLevel => "No sandbox — your setting. This chat runs without the sandbox \
+                              because your level for this project, on this machine, is no \
+                              sandbox (Settings › Sandbox › Your level). Every chat it covers \
+                              starts this way until you change it."
                 .to_owned(),
             // The Windows backend is M46, #565.
             By::NoBackend(os) => format!(
@@ -4881,6 +4889,20 @@ impl Change {
                 "actor_kind": "human",
                 "actor": "operator",
                 "scope": "local-ui",
+                "harness": harness,
+                "persona": persona,
+                "reason": reason,
+                "lifted": classes,
+            }),
+            // The person's own setting, made in the window and confirmed on this machine.
+            Self::Off(Lifted {
+                by: By::YourLevel,
+                reason,
+            }) => serde_json::json!({
+                "actor_kind": "human",
+                "actor": "operator",
+                "scope": "local-ui",
+                "by": "your-level",
                 "harness": harness,
                 "persona": persona,
                 "reason": reason,
@@ -4980,6 +5002,29 @@ pub fn decide(
     )
 }
 
+/// **The level a person's own setting starts a chat at** (#2071, ADR 0096): their level for
+/// the project at `root`, or for `persona`, as they set or confirmed it on this machine
+/// ([`personal::in_force`], never the file's word alone), within what policy lets a person
+/// choose ([`bounded`]).
+pub fn your_level(
+    root: &Path,
+    persona: Option<&str>,
+    locks: &policy::Locks,
+) -> Option<personal::Choice> {
+    bounded(personal::in_force(root).for_persona(persona), locks)
+}
+
+/// `level`, within what policy lets a person choose: an administrator's policy that forbids
+/// the opt-out forbids `off` too, and the chat starts as it would with no level of theirs.
+/// **The seam for the team's policy** (#2071, PR C): what it bounds, it bounds here, the one
+/// place a start reads a person's level through.
+pub fn bounded(level: Option<personal::Choice>, locks: &policy::Locks) -> Option<personal::Choice> {
+    match level {
+        Some(personal::Choice::Off) if locks.opt_out_refused().is_some() => None,
+        level => level,
+    }
+}
+
 /// [`decide`], for a chat a person let do `chat` besides (#1342).
 pub fn decide_granted(
     harness: Harness,
@@ -5032,6 +5077,14 @@ pub fn decide_granted(
         return Ok(Some(Decided::Unsandboxed(Lifted {
             by: By::Person,
             reason: opt_out.kept_reason(),
+        })));
+    }
+    // Your own level (#2071): a confirmed `off` starts the chat as the opt-out does. `on` and
+    // `floor` start it as below, the full sandbox, until the floor has a profile of its own.
+    if your_level(root, persona, &locks) == Some(personal::Choice::Off) {
+        return Ok(Some(Decided::Unsandboxed(Lifted {
+            by: By::YourLevel,
+            reason: None,
         })));
     }
     if !machine.os.has_backend() {
@@ -5144,7 +5197,8 @@ pub fn at_start(
         Some(lifted) => (
             Some(Change::Off(lifted.clone())),
             counted(match lifted.by {
-                By::Person => local::Started::OptedOut,
+                // Your level is a person's opt-out too, counted as one.
+                By::Person | By::YourLevel => local::Started::OptedOut,
                 By::NoBackend(_) => local::Started::NoBackend,
             }),
         ),

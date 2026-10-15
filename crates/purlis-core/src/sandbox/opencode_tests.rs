@@ -1544,3 +1544,40 @@ fn a_plane_root_opencode_chat_cannot_write_charter_local_toml() {
     assert!(!wrote.status.success(), "{wrote:?}");
     assert!(!plane.path().join("charter.local.toml").exists());
 }
+
+/// The record of what a person allowed and confirmed on this machine (`sandbox-grants`, ADR
+/// 0093; your confirmed levels, ADR 0096 §7) is in the config home, which no sandboxed chat
+/// writes, under every harness charter compiles for (#2071).
+#[test]
+fn no_harness_lets_a_sandboxed_chat_write_this_machine_s_sandbox_grants() {
+    let plane = plane_saying(ON);
+    let root = real(plane.path());
+    let home = tempfile::tempdir().expect("a home");
+    let home_dir = real(home.path());
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[]),
+        home: Some(home_dir.clone()),
+        os: Os::MacOs,
+    };
+    let config_root = home_dir.join(".config");
+    let grants = crate::machine::dir(&config_root)
+        .join(super::local::MACHINE_GRANTS)
+        .join("0123456789abcdef.json");
+    let mut held = 0;
+    for harness in Harness::ALL {
+        let Some(_) = compiler(harness) else { continue };
+        let stated = stated(harness, &root, &root, &machine);
+        let denied: Vec<PathBuf> = crate::machine::dirs_spelled(&config_root)
+            .into_iter()
+            .filter(|folder| grants.starts_with(folder))
+            .filter(|folder| (stated.denies_write)(&folder.display().to_string()))
+            .collect();
+        assert!(
+            !denied.is_empty(),
+            "{harness:?} lets a chat write {}",
+            grants.display()
+        );
+        held += 1;
+    }
+    assert_eq!(held, 3, "Claude Code, Codex and opencode");
+}

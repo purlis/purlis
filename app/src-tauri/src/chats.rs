@@ -85,9 +85,12 @@ fn project_sandbox(
     // (D-1423-1), and may forbid the opt-out no refusal then names (#1423).
     let locks = purlis_core::sandbox::policy::Locks::of(root);
     let leaves_it_off = !plane.missing() && !plane.unreadable() && plane.in_force(&locks).is_none();
-    // A person's opt-out (#1342) starts the chat without the sandbox, so its folder confines
-    // nothing and is not checked: the opt-out sits inside every refusal, as in `decide`.
-    if !leaves_it_off && opt_out.is_none() && machine.os.has_backend() {
+    // A person's opt-out (#1342), or their own level confirmed at `off` (#2071), starts the
+    // chat without the sandbox, so its folder confines nothing and is not checked: each sits
+    // inside every refusal, as in `decide`. A chat on no profile has no persona.
+    let yours_off = purlis_core::sandbox::your_level(root, None, &locks)
+        == Some(purlis_core::sandbox::personal::Choice::Off);
+    if !leaves_it_off && opt_out.is_none() && !yours_off && machine.os.has_backend() {
         let Some(cwd) = cwd else {
             return Err(purlis_core::sandbox::FolderRefusal::Missing.said(&locks));
         };
@@ -2270,7 +2273,11 @@ impl Chats {
             if let Err(why) = written {
                 use purlis_core::sandbox::{By, Change, Lifted};
                 match change {
-                    Change::Off(Lifted { by: By::Person, .. }) => {
+                    // A person's choice, here or as their level, is always recorded.
+                    Change::Off(Lifted {
+                        by: By::Person | By::YourLevel,
+                        ..
+                    }) => {
                         return Err(format!(
                             "purlis could not record that this chat would run without the \
                              sandbox ({why}), so it was not started. An opt-out is always \

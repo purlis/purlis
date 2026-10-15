@@ -5620,3 +5620,119 @@ fn claude_codes_held_names_match_in_either_case() {
         ".git/hooks"
     );
 }
+
+// -------------------------------------------------------------------------------------
+// Your own level (#2071, ADR 0096): a confirmed `off` starts the chat as the opt-out does
+// -------------------------------------------------------------------------------------
+
+/// A sandboxed project whose `purlis.local.toml` says `local`.
+fn plane_with_local(local: &str) -> tempfile::TempDir {
+    let plane = plane_saying(ON);
+    std::fs::write(plane.path().join(crate::profiles::LOCAL_FILE), local).expect("the local file");
+    plane
+}
+
+fn decided_as(
+    plane: &std::path::Path,
+    persona: Option<&str>,
+) -> Result<Option<Decided>, NotStarted> {
+    decide(
+        Harness::ClaudeCode,
+        plane,
+        &machine(Os::MacOs),
+        &|_| true,
+        None,
+        persona,
+    )
+}
+
+fn your_level() -> Lifted {
+    Lifted {
+        by: By::YourLevel,
+        reason: None,
+    }
+}
+
+#[test]
+fn a_confirmed_off_starts_the_chat_without_the_sandbox_as_your_setting() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"off\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+
+    assert_eq!(
+        decided_as(plane.path(), None),
+        Ok(Some(Decided::Unsandboxed(your_level())))
+    );
+    assert!(
+        your_level().notice().contains("your setting"),
+        "{}",
+        your_level().notice()
+    );
+    // Audited as the person's, and counted as the opt-out is.
+    assert_eq!(
+        at_start(Some(&your_level()), false, false, true),
+        (
+            Some(Change::Off(your_level())),
+            Some(local::Started::OptedOut)
+        )
+    );
+    assert_eq!(
+        Change::Off(your_level()).body(Some(Harness::ClaudeCode), None)["actor"],
+        "operator"
+    );
+}
+
+#[test]
+fn an_off_a_chat_wrote_into_the_file_starts_nothing_without_the_sandbox() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"off\"\n[sandbox.personas]\nqa = \"off\"\n");
+    for persona in [None, Some("qa")] {
+        let decided = decided_as(plane.path(), persona);
+        assert!(
+            matches!(decided, Ok(Some(Decided::Sandboxed(_)))),
+            "{persona:?}: {decided:?}"
+        );
+    }
+}
+
+#[test]
+fn a_persona_s_confirmed_off_starts_its_chats_alone_without_the_sandbox() {
+    let plane = plane_with_local("[sandbox.personas]\nqa = \"off\"\n");
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::Off)).unwrap();
+    assert_eq!(
+        decided_as(plane.path(), Some("qa")),
+        Ok(Some(Decided::Unsandboxed(your_level())))
+    );
+    let other = decided_as(plane.path(), Some("devops"));
+    assert!(
+        matches!(other, Ok(Some(Decided::Sandboxed(_)))),
+        "{other:?}"
+    );
+}
+
+#[test]
+fn on_and_floor_start_the_full_sandbox_until_the_floor_lands() {
+    for word in ["on", "floor"] {
+        let plane = plane_with_local(&format!("[sandbox]\nlevel = \"{word}\"\n"));
+        let level = personal::Choice::of_word(word);
+        personal::set_by_you(plane.path(), None, level).unwrap();
+        let decided = decided_as(plane.path(), None);
+        assert!(
+            matches!(decided, Ok(Some(Decided::Sandboxed(_)))),
+            "{word}: {decided:?}"
+        );
+    }
+}
+
+#[test]
+fn a_policy_that_forbids_the_opt_out_bounds_your_level_too() {
+    let required = policy::Locks::parse(
+        r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#,
+        std::path::Path::new("policy.json"),
+    );
+    let off = Some(personal::Choice::Off);
+    assert_eq!(bounded(off, &required), None);
+    assert_eq!(bounded(off, &policy::Locks::none()), off);
+    assert_eq!(
+        bounded(Some(personal::Choice::On), &required),
+        Some(personal::Choice::On)
+    );
+}
