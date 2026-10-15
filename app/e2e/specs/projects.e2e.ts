@@ -128,6 +128,9 @@ async function stripBecomes(want: { path: string | null; front: boolean }[]): Pr
  */
 async function remembers(
   want: string[],
+  /** The one in front, where it matters: the store is written after each switch, so a read
+   *  that only waited for the list could see the one before it. */
+  inFront?: number,
 ): Promise<{ planes: string[]; active: number | null; dropped: string[] }> {
   let back = { planes: [] as string[], active: null as number | null, dropped: [] as string[] };
   await browser.waitUntil(
@@ -142,7 +145,10 @@ async function remembers(
         active: raw.windows[0]?.active ?? null,
         dropped: raw.dropped,
       };
-      return JSON.stringify(back.planes) === JSON.stringify(want);
+      return (
+        JSON.stringify(back.planes) === JSON.stringify(want) &&
+        (inFront === undefined || back.active === inFront)
+      );
     },
     {
       timeout: 30_000,
@@ -273,7 +279,7 @@ describe("a window holding more than one project", function () {
     // The other end of decision 28, which is as far as one app process reaches: the window
     // said what it holds, the real machine store took it, and the core reads it back in the
     // order the tabs are in.
-    const back = await remembers([first, second]);
+    const back = await remembers([first, second], 0);
 
     expect(back.active).toBe(0);
     expect(back.dropped).toEqual([]);

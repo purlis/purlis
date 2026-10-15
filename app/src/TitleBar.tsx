@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { commands, type PlaneSaving, type RepoSaving, type TitleBarRoom } from "./bindings";
 import { SaveIndicator } from "./SavingView";
 import { AboutCharter } from "./About";
@@ -88,7 +89,14 @@ export function TitleBar({
   chats,
   needing,
   save,
+  sandbox,
 }: {
+  /**
+   * The level of the chat in front of the project in front (#2071), as its tab says it: so the
+   * level is in sight wherever the person looks first. `null` or absent where no chat is in
+   * front draws nothing.
+   */
+  sandbox?: SandboxSaid | null;
   /**
    * The project strip (ADR 0054), drawn after the room the window controls take. `App` builds
    * it, because the projects, their pins and the strip's show-more are the window's. Absent — a
@@ -170,6 +178,12 @@ export function TitleBar({
         {/* Then the project in front's unsaved work: about the project, not the app, and the
             one thing on the bar the operator acts on as often as a chat that asks. */}
         {save && <SaveIndicator {...save} />}
+        {/* The level of the chat in front, beside the project's save: about that chat. */}
+        {sandbox && (
+          <span className="title-bar-sandbox" data-testid="title-sandbox">
+            <SandboxMark level={sandbox.level} why={sandbox.why} of="The chat in front" />
+          </span>
+        )}
         {/* The kill switch (OV-1): about every chat in every window, so it is here. */}
         <KillSwitch />
         <AboutCharter />

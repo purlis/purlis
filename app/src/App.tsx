@@ -2165,6 +2165,8 @@ function App() {
         }
         updates={updates}
         room={titleBarRoom}
+        // The level of the chat in front of the project in front (#2071).
+        sandbox={inFront !== undefined ? reports[inFront]?.sandbox : undefined}
         chats={ending}
         needing={{
           count: askedCount ?? everyNeeding.length,

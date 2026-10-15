@@ -29,12 +29,22 @@ function isLevel(word: string): word is SandboxLevel {
  * no sandbox. Always drawn for a chat, so its level is never out of sight; nothing for a shell
  * or a chat still to start.
  */
-export function SandboxMark({ level, why }: { level?: string | null; why?: string | null }) {
+export function SandboxMark({
+  level,
+  why,
+  of,
+}: {
+  level?: string | null;
+  why?: string | null;
+  /** Whose level it is, where that is not plain from where it is drawn: the title bar's. */
+  of?: string;
+}) {
   if (level == null || !isLevel(level)) return null;
   const Icon = ICONS[level];
   // Where the floor could not be applied here, the mark says why (#2071, Q2), on its title and
   // to a screen reader: not as a Notice on the pane, which every such chat would carry.
-  const said = why ? `${SANDBOX_SAID[level]}: ${why}` : SANDBOX_SAID[level];
+  const levelSaid = why ? `${SANDBOX_SAID[level]}: ${why}` : SANDBOX_SAID[level];
+  const said = of ? `${of}: ${levelSaid}` : levelSaid;
   // Named by `aria-label`, not by words in the tab: the tab's text stays the chat's name, which
   // is what the window and its close button call the chat.
   return (
