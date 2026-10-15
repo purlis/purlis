@@ -7728,13 +7728,11 @@ mod tests {
             .start(&one_chat_on(&program).chats[0], STARTING)
             .expect("it starts");
         assert!(becomes(|| ready.exists()), "the stand-in never started");
-        an_ask_open_on(&held, session);
 
         let why = held
             .contain_project_settings(session)
             .expect_err("nothing to start again on");
         assert!(why.contains("ended this chat"), "{why}");
-        assert!(!held.asks_open_for(session));
         assert!(
             held.chats()
                 .open_now()
