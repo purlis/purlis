@@ -550,6 +550,31 @@ fn an_action_that_opens_a_page_answers_with_it_and_makes_it_current() {
 }
 
 #[test]
+fn a_page_opened_before_it_has_an_address_is_answered_once_it_has_one() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    engine.on(|sent, engine| {
+        if sent.method == "Input.dispatchMouseEvent" && sent.params["type"] == "mouseReleased" {
+            engine.emit(
+                "Target.targetCreated",
+                json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"","attached":false}}),
+                None,
+            );
+            engine.emit(
+                "Target.targetInfoChanged",
+                json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"More","url":"http://fixture.test/more.html","attached":true}}),
+                None,
+            );
+        }
+        None
+    });
+    let answer = browser.call(&id(2), Call::Click { target: more }).unwrap();
+    assert_eq!(answer.opened.len(), 1, "{answer:?}");
+    assert_eq!(answer.opened[0].address, "http://fixture.test/more.html");
+    assert!(engine.sent("Target.closeTarget").is_empty());
+}
+
+#[test]
 fn a_page_the_engine_opens_at_a_file_or_app_address_is_closed_and_never_listed() {
     let (browser, engine) = browser();
     let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");

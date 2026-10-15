@@ -19,12 +19,14 @@ use common::site;
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{Call, CallId, Content, Ref};
 
-/// Whether an address is one a page may be at: a web address, an empty page, or the engine's
-/// page for a load that failed.
+/// Whether an address is one a page may be at: a web address, an empty page (or one with no
+/// address yet), or the engine's page for a load that failed.
 fn web_or_blank(address: &str) -> bool {
-    WebAddress::parse(address).is_ok()
-        || address == "about:blank"
-        || address.starts_with("chrome-error://")
+    blank(address) || WebAddress::parse(address).is_ok() || address.starts_with("chrome-error://")
+}
+
+fn blank(address: &str) -> bool {
+    address.is_empty() || address == "about:blank"
 }
 
 #[test]
@@ -90,7 +92,7 @@ fn a_link_or_redirect_a_page_offers_to_a_file_or_an_apps_own_scheme_does_not_ope
             .unwrap();
         // A window the engine made for the address is empty at most: it never reached it.
         for opened in &clicked.opened {
-            assert_eq!(opened.address, "about:blank", "{link} opened {clicked:?}");
+            assert!(blank(&opened.address), "{link} opened {clicked:?}");
         }
         // Give the engine time to have done whatever it was going to do.
         std::thread::sleep(Duration::from_millis(500));
@@ -104,10 +106,7 @@ fn a_link_or_redirect_a_page_offers_to_a_file_or_an_apps_own_scheme_does_not_ope
             );
         }
         let new: Vec<_> = listed.iter().skip(open_at_start).collect();
-        assert!(
-            new.iter().all(|p| p.address == "about:blank"),
-            "{link}: {listed:?}"
-        );
+        assert!(new.iter().all(|p| blank(&p.address)), "{link}: {listed:?}");
         // Nothing of the machine's own files is on the current page.
         let shown = browser
             .call(

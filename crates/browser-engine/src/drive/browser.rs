@@ -87,10 +87,11 @@ const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
 
-/// Whether a page may stay open at `address`: a web address, an empty page, or the engine's
-/// own page for a load that failed. Every other page is closed.
+/// Whether a page may stay open at `address`: a web address, an empty page (or one with no
+/// address yet), or the engine's own page for a load that failed. Every other page is closed.
 fn may_stay_open(address: &str) -> bool {
-    address == "about:blank"
+    address.is_empty()
+        || address == "about:blank"
         || address.starts_with("chrome-error://")
         || WebAddress::parse(address).is_ok()
 }
