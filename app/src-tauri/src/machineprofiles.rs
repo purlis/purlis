@@ -294,11 +294,12 @@ pub async fn machine_profile_pin(
 #[tauri::command]
 #[specta::specta]
 pub async fn machine_profile_create(
+    planes: tauri::State<'_, Planes>,
     name: String,
     kind: String,
     sandbox_only: bool,
 ) -> Result<MachineProfileImported, String> {
-    blocking(move || {
+    let made = blocking(move || {
         let store = store()?;
         let now = purlis_core::halt::now();
         if sandbox_only {
@@ -308,7 +309,12 @@ pub async fn machine_profile_create(
         }
         .map(MachineProfileImported::from)
     })
-    .await
+    .await?;
+    // A sandbox-only Codex profile clears every project's wait for one (#2037).
+    if sandbox_only {
+        crate::asking::every_projects_asks_may_have_moved(&planes);
+    }
+    Ok(made)
 }
 
 /// Imports `name`'s settings again from this machine's.

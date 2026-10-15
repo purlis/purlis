@@ -905,6 +905,25 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
     }
 }
 
+/// **A start in the project `held` was refused, for `why`** (#2037, #2035): a refusal may have
+/// left a wait the window lists as an Ask (*Codex needs a sandbox-only profile here*, *Sign in
+/// …*), so the window is told its asks may have moved and reads them again at once. `why`, as
+/// it was.
+pub fn start_refused(held: &crate::planes::Held, why: String) -> String {
+    held.chats().asks_may_have_moved();
+    why
+}
+
+/// Every project `planes` holds is told its asks may have moved: a sandbox-only Codex profile
+/// was made outside its Ask (#2037), which clears any project's wait for one.
+pub fn every_projects_asks_may_have_moved(planes: &crate::planes::Planes) {
+    for plane in planes.open_now() {
+        if let Ok(held) = planes.held(&plane) {
+            held.chats().asks_may_have_moved();
+        }
+    }
+}
+
 /// The option id of Make one on the Ask for a sandbox-only Codex profile (#2037).
 pub const MAKE_SANDBOX_ONLY: &str = "make";
 

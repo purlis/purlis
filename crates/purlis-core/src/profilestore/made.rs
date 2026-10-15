@@ -501,6 +501,15 @@ fn own_folder(homes: &Homes, record: &MachineProfile) -> Result<PathBuf, String>
 /// profile's folder sits directly in `profiles`. `None` for anything else, and the chat is not
 /// started.
 pub fn sandbox_home(profiles: &Path, name: &str, folder: &Path) -> Option<PathBuf> {
+    #[cfg(unix)]
+    let me = Some(rustix::process::getuid().as_raw());
+    #[cfg(not(unix))]
+    let me = None;
+    sandbox_home_of(profiles, name, folder, me)
+}
+
+/// [`sandbox_home`], for the user `me` where the system has users.
+fn sandbox_home_of(profiles: &Path, name: &str, folder: &Path, me: Option<u32>) -> Option<PathBuf> {
     if !crate::profiles::name_ok(name)
         || folder
             .components()
@@ -514,10 +523,12 @@ pub fn sandbox_home(profiles: &Path, name: &str, folder: &Path) -> Option<PathBu
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            if meta.uid() != rustix::process::getuid().as_raw() {
+            if me != Some(meta.uid()) {
                 return None;
             }
         }
+        #[cfg(not(unix))]
+        let _ = me;
         meta.file_type().is_dir().then_some(())
     };
     let profile = profiles.join(name);

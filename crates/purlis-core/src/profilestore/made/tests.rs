@@ -684,3 +684,18 @@ fn a_sandbox_only_profiles_home_is_its_own_config_folder_and_nothing_else() {
     std::os::unix::fs::symlink(&person, inner.join("config")).unwrap();
     assert_eq!(sandbox_home(profiles, "inner", &inner.join("config")), None);
 }
+
+#[test]
+fn a_sandbox_only_profiles_folder_another_user_owns_is_no_home() {
+    // #2037 review: owned by this user, or nothing.
+    let machine = Machine::new();
+    let made = create_sandbox_only(&machine.store, "codex-sandbox", "codex", 100).unwrap();
+    let own = made.record.folders.config.clone();
+    let me = rustix::process::getuid().as_raw();
+    let profiles = machine.store.dir();
+    assert!(sandbox_home_of(profiles, "codex-sandbox", &own, Some(me)).is_some());
+    assert_eq!(
+        sandbox_home_of(profiles, "codex-sandbox", &own, Some(me.wrapping_add(1))),
+        None
+    );
+}

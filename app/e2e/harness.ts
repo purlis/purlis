@@ -553,6 +553,8 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
   // On macOS a Codex chat runs at the floor, so only on a sandbox-only profile (#2037): the
   // state run's machine store has one, `scenario` (`declareTheStateRunsProfile`), and a
   // project of a state spec's own makes it its default rather than declaring a Codex of its own.
+  // That profile runs the program the state run gave it, so `program` is not used here: every
+  // state spec passes the same reporting harness the run does.
   if (kind === "codex" && process.platform === "darwin") {
     writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
     return;
