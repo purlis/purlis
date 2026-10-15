@@ -160,8 +160,14 @@ pub fn team_off(root: &Path) -> TeamOff {
     }
 }
 
-/// The commit that last changed the manifest's `mode`, where the committed file (`HEAD`'s)
-/// turns the sandbox off too; none outside git, or where only the working tree says off.
+/// How many of the manifest's commits are read back for the one that turned the sandbox off.
+const MOST_COMMITS_READ: usize = 200;
+
+/// **The commit the team's off arrived in**: of the commits that changed the manifest, newest
+/// first, the last of the run at its head whose `[sandbox]` turns the sandbox off, the one
+/// before it not turning it off (so a change of `mode` in any other table, or of anything else,
+/// is never an arrival). None outside git, where `HEAD`'s file does not turn it off (only the
+/// working tree says off), or where the history cannot be read.
 fn arrived(root: &Path) -> Option<Arrived> {
     let manifest = crate::names::manifest(root);
     let name = manifest.file_name()?.to_str()?;
@@ -171,24 +177,26 @@ fn arrived(root: &Path) -> Option<Arrived> {
             .filter(crate::worktree::git::Run::ok)
             .map(|run| run.out)
     };
-    let committed = git(&["show", &format!("HEAD:./{name}")])?;
-    if !Team::of_text(&committed).off {
+    let off_at = |commit: &str| {
+        git(&["show", &format!("{commit}:./{name}")]).is_some_and(|text| Team::of_text(&text).off)
+    };
+    if !off_at("HEAD") {
         return None;
     }
-    let found = git(&[
-        "log",
-        "-1",
-        "--format=%H%x1f%an",
-        "-G",
-        "^[[:space:]]*mode[[:space:]]*=",
-        "--",
-        name,
-    ])?;
-    let (commit, author) = found.trim().split_once('\u{1f}')?;
-    Some(Arrived {
-        commit: commit.to_owned(),
-        author: author.to_owned(),
-    })
+    let most = MOST_COMMITS_READ.to_string();
+    let log = git(&["log", "-n", &most, "--format=%H%x1f%an", "HEAD", "--", name])?;
+    let mut arrived = None;
+    for line in log.lines() {
+        let (commit, author) = line.split_once('\u{1f}')?;
+        if !off_at(commit) {
+            break;
+        }
+        arrived = Some(Arrived {
+            commit: commit.to_owned(),
+            author: author.to_owned(),
+        });
+    }
+    arrived
 }
 
 /// **The person's answer to the team's off** (Accept, or Keep it on for me, or a change of mind

@@ -194,3 +194,28 @@ fn under_never_the_personal_switch_is_refused_naming_the_policy() {
     let free = tempfile::tempdir().unwrap();
     crate::sandbox::personal::set_by_you(free.path(), None, Some(Off)).unwrap();
 }
+
+#[test]
+fn a_mode_changed_in_another_table_asks_nobody_again() {
+    // Review of #2139: only `[sandbox].mode` says when the team's off arrived.
+    let root = project(OFF, "Ada");
+    let first = head(root.path());
+    answer(root.path(), &first, true).unwrap();
+    commit(
+        root.path(),
+        "[plane]\nmode = \"pr\"\n\n[sandbox]\nmode = \"off\"\n",
+        "Bob",
+    );
+    commit(
+        root.path(),
+        "[plane]\nmode = \"off\"\n\n[repos.app]\nmode = \"pr\"\n\n[sandbox]\nmode = \"off\"\n",
+        "Bob",
+    );
+    match team_off(root.path()) {
+        TeamOff::Accepted(arrived) => {
+            assert_eq!(arrived.commit, first);
+            assert_eq!(arrived.author, "Ada");
+        }
+        other => panic!("{other:?}"),
+    }
+}

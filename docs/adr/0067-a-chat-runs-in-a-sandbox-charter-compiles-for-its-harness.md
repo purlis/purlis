@@ -1804,7 +1804,8 @@ the sandbox down.
   sandbox from its next start; a level they chose still stands. Settings › Sandbox › Your level
   shows the answer and offers the other one.
   - Only a committed off asks anyone: an off in the working tree alone turns nothing off. The
-    commit is the last one that changed `mode`, so an off committed again later asks again.
+    commit is the one whose `[sandbox]` turned it off, read from the history by what that table
+    says (never a `mode` of another table), so an off committed again later asks again.
   - The answer is kept for that commit in this machine's config home (`sandbox-grants`), which
     no sandboxed chat writes.
   - Under `policy = "never"`, `mode = "off"` is refused with a sentence naming the policy, and
