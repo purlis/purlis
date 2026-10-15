@@ -652,6 +652,7 @@ export const commands = {
 	machineProfileRemove: __WINDOW_ONLY_RESULT,
 	typeProfileSignIn: __WINDOW_ONLY_RESULT,
 	dismissSignIn: __WINDOW_ONLY_RESULT,
+	machineProfilePin: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -4976,6 +4977,19 @@ export type MachineProfileRow = {
 	 *  Copilot, never a Claude plan); empty where the harness signs in to its own.
 	 */
 	plans: PlanRow[],
+	/**  The harness version its chats run on (#2038); null until its first chat pins it. */
+	pinned: string | null,
+	/**
+	 *  The version of its harness installed on this machine, as its program answers
+	 *  `--version`; null where purlis could not read one.
+	 */
+	installed: string | null,
+	/**
+	 *  The version **Update the pin** offers: the one installed, where the profile's next chat
+	 *  would not start on it (another major, or an older one). Null where its chats run on the
+	 *  version installed, or follow it.
+	 */
+	offered: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

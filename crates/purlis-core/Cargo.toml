@@ -67,6 +67,10 @@ grep-regex = "0.1"
 grep-searcher = "0.1"
 # The secret-shape rules are `charter/hooks.py`'s regexes, ported character for character.
 regex = "1"
+# A profile's pinned harness version (#2038): the version each harness answers `--version` with,
+# compared as Semantic Versioning orders it. dtolnay's crate, MIT OR Apache-2.0, already in this
+# workspace's lockfile, so it adds no crate to the tree and no licence to review.
+semver = "1"
 serde = { workspace = true, features = ["derive"] }
 # `preserve_order` keeps a manifest's key order as it was read: charter rewrites a document
 # it read, so a Rust writer that sorted keys would reorder the operator's file.

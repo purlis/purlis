@@ -279,3 +279,30 @@ The implementer decided it on 2026-10-15, to be confirmed by the operator:
 - **X12's acknowledgement** (§6) is #2168's, with its store as `docs/plane-format.md` records it
   and keyed as ADR 0087 keys it; a profile made here with a subscription is one of the logins it
   asks about.
+
+## How a profile pins its harness version (#2038)
+
+**Ruled by the operator on 2026-10-15**: a profile purlis made follows its harness's minor and
+patch updates by itself, its pin moving and the chat's tab saying so, and only a new major
+version refuses, with Update the pin as the way out; a conversation resumes on a version of the
+same major as the one that wrote it, until a harness declaration says otherwise (#2160).
+
+- **The pin is the version the profile's first chat finds installed**, as the harness answers
+  `--version`, and is kept in the profile's record (`pinned`). No conversation is in a profile
+  before its first chat. Adoption still runs no program.
+- **A chat on a profile purlis made starts on its pinned version, or on a newer one of the same
+  major, which the pin then follows.** On another major version, a new chat and a resumed one
+  alike do not start, and the refusal names the way out: **Update the pin**, the person's act on
+  the profile's page and the window's alone, or the pinned version installed again.
+- **An adopted profile follows its harness** to any version, by the operator's condition that
+  nothing is lost: its pin moves and the chat's tab says so. It never refuses a chat for its
+  version.
+
+Two readings were the dispatcher's on 2026-10-15, in implementation, to be confirmed by the
+operator:
+
+- **An older version than the pin, of the same major, is refused** for a profile purlis made,
+  as another major is: the ruling follows updates, and an older version may not read what a
+  newer one wrote.
+- **A version purlis cannot read does not start a pinned profile purlis made**; a profile not yet
+  pinned, and an adopted one, start as before.

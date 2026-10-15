@@ -1313,7 +1313,10 @@ export const commands = {
 	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
 	 */
 	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
-	/**  This machine's profiles, in the order they were made. */
+	/**
+	 *  This machine's profiles, in the order they were made, each with the version of its harness
+	 *  installed here beside its pin (#2038): each harness asked `--version` once.
+	 */
 	machineProfiles: () => typedError<MachineProfileRow[], string>(__TAURI_INVOKE("machine_profiles")),
 	/**  Makes the profile `name` of the harness `kind`, its settings imported from this machine's. */
 	machineProfileCreate: (name: string, kind: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_create", { name, kind })),
@@ -1342,6 +1345,11 @@ export const commands = {
 	 *  next start on it asks again while its harness says it is signed out.
 	 */
 	dismissSignIn: (plane: PlaneId, profile: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile })),
+	/**
+	 *  **Update the pin** (#2038): pins `name` to `version`, the one the page showed installed, so
+	 *  its chats run, and its conversations resume, on that version from now on.
+	 */
+	machineProfilePin: (name: string, version: string) => typedError<MachineProfileRow, string>(__TAURI_INVOKE("machine_profile_pin", { name, version })),
 	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
@@ -6317,6 +6325,19 @@ export type MachineProfileRow = {
 	 *  Copilot, never a Claude plan); empty where the harness signs in to its own.
 	 */
 	plans: PlanRow[],
+	/**  The harness version its chats run on (#2038); null until its first chat pins it. */
+	pinned: string | null,
+	/**
+	 *  The version of its harness installed on this machine, as its program answers
+	 *  `--version`; null where purlis could not read one.
+	 */
+	installed: string | null,
+	/**
+	 *  The version **Update the pin** offers: the one installed, where the profile's next chat
+	 *  would not start on it (another major, or an older one). Null where its chats run on the
+	 *  version installed, or follow it.
+	 */
+	offered: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

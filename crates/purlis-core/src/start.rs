@@ -515,6 +515,8 @@ fn ready_given(
         start.show_footer,
         &standing,
     );
+    // What the program answered `--version`, where the sandbox's check asked it.
+    let mut heard = None;
     // Ruling V87g: a sandbox binds only the harness it was compiled for, and never a program a
     // sandboxed chat could have changed. Resolved once, here: the real file it names is what the
     // check asks and what the chat then runs.
@@ -546,8 +548,21 @@ fn ready_given(
         // older one says once, on its tab, that it keeps its own (#1665).
         if let Some(said) = said {
             applied.answered(&said);
+            heard = Some(said);
         }
     }
+    // A chat runs on its profile's pinned harness version, or does not start (#2038).
+    let words: Vec<String> = std::iter::once(program.clone())
+        .chain(argv.iter().cloned())
+        .collect();
+    notices.extend(on_pinned_version(
+        profile,
+        &words,
+        &here,
+        &env,
+        heard,
+        start.resume.is_some(),
+    )?);
     // Only a record's path: the briefing reads it through `sessionrecord::open`, which refuses
     // anything else, and a profile cannot set a `CHARTER_` name to forge one.
     if let Some(record) = start
@@ -601,6 +616,57 @@ fn ready_given(
         agents_md,
         sign_in,
     })
+}
+
+/// **A chat runs on its profile's pinned harness version** (#2038,
+/// [`crate::profilestore::pin`]): for a profile of this machine's, made or adopted, the version
+/// its program `words` answers `--version` with, in the chat's folder `cwd` and environment
+/// `env` (`heard`, where the sandbox's check already asked it), is held to the profile's pin,
+/// resuming a conversation or not. `Ok` with the sentence the chat's tab says, where there is one;
+/// `Err` with the refusal and its way out. Nothing is asked of any other profile, and an adopted
+/// profile's program is asked only where the sandbox's check asked it.
+fn on_pinned_version(
+    profile: &Profile,
+    words: &[String],
+    cwd: &Path,
+    env: &[(String, String)],
+    heard: Option<String>,
+    resuming: bool,
+) -> Result<Option<String>, String> {
+    let records = crate::profilestore::listed_here();
+    let Some(record) = crate::profilestore::pin::record_of(profile, &records) else {
+        return Ok(None);
+    };
+    // An adopted profile never refuses a chat for its version, so its program is asked nothing
+    // more than the sandbox's check already asked: its pin follows the answer heard, where there
+    // is one, and a start that heard none costs no extra program run.
+    if record.adopted.is_some() && heard.is_none() {
+        return Ok(None);
+    }
+    let Some(config) = crate::machine::config_root() else {
+        return Ok(None);
+    };
+    let said = heard.or_else(|| {
+        crate::sandbox::program::version_of(
+            words,
+            crate::sandbox::program::Chat {
+                cwd,
+                writable: &[],
+                env,
+            },
+        )
+        .ok()
+    });
+    let installed = said
+        .as_deref()
+        .and_then(|said| crate::profilestore::pin::version_in(&profile.kind, said));
+    crate::profilestore::pin::at_start(
+        &config,
+        &record.name,
+        installed.as_ref(),
+        resuming,
+        crate::halt::now(),
+    )
 }
 
 /// Whether the picker may run `profile`'s program to check it: exactly when the start's own

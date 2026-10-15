@@ -578,6 +578,15 @@ is held to the project's dispatch list for the persona, and a profile the clone'
 file declares under that name is still the clone's and still asked about before its command
 runs.
 
+A profile pins its harness version, so a conversation resumes on the version that wrote it.
+Its first chat pins the version installed, as the harness answers `--version`. A profile
+purlis made then follows its harness's minor and patch updates, its pin moving and the chat's
+tab saying so; on another major version, or an older one, a chat does not start, a resumed one
+too, and Update the pin in Settings › You › Profiles, which the page offers then, moves its
+chats and the conversations they resume to it. A profile adopted
+from the harness's own folder follows the harness instead: its pin moves with the version
+installed, and the chat's tab says so.
+
 ### Kept out of git, and checked
 
 `purlis init` writes `/charter.local.toml` into a new plane's `.gitignore`, and

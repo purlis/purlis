@@ -8,7 +8,7 @@
 //! module is the one place the file is read and written, under one lock: every change is an
 //! [`update`] of the whole [`Store`]. The profiles the window makes (#2034) are records in it
 //! too ([`made`]). A kind of record is a field of [`MachineProfile`] (`adopted`, and `imported`
-//! for a profile purlis made); a field a
+//! for a profile purlis made, and `pinned` once a chat ran on it, [`pin`]); a field a
 //! build does not know is kept in [`MachineProfile::rest`] and written back as it was, and a
 //! record a build cannot read at all is kept as written.
 //!
@@ -76,6 +76,9 @@ pub struct MachineProfile {
     /// never a value ([`crate::profilesignin`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_in: Option<crate::profilesignin::SignIn>,
+    /// The harness version its chats run on, from its first chat on (#2038, [`pin`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<pin::Pinned>,
     /// Every field of the record this build does not know, written back as it was read.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -476,6 +479,7 @@ pub fn adopt(
                 }),
                 imported: None,
                 sign_in: None,
+                pinned: None,
                 rest: Map::new(),
             };
             store.profiles.push(profile.clone());
@@ -498,6 +502,7 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
 mod made;
 pub use made::*;
 
+pub mod pin;
 pub mod sign_in;
 
 #[cfg(test)]
