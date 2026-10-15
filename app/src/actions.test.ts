@@ -640,6 +640,7 @@ describe("the one list of actions", () => {
       "Your settings: Text",
       "Your settings: Editor",
       "Your settings: Chats list",
+      "Your settings: Notifications",
       "Your settings: This machine",
       "Your settings: Accounts",
     ]);
@@ -2384,8 +2385,9 @@ describe("the palette at fifty chats", () => {
     // 906 since #629: Turn screen-reader mode on (or off), one row whose title reads the mode.
     // 907 since #1814: Your settings: Accounts.
     // 908 since #2071: the project's Your level page, under Sandbox.
+    // 909 since #1989: Your settings: Notifications.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(908);
+    expect(offers).toHaveLength(909);
   });
 
   /**

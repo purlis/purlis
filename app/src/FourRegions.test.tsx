@@ -1442,6 +1442,24 @@ describe("the right side's activity bar", () => {
     await waitFor(() => expect(within(group).getByRole("listitem")).toHaveFocus());
   });
 
+  it("lands a notification about several chats on the first still waiting (#1989)", async () => {
+    mockEvents = true;
+    // Chat 2 was answered since: the first of the notification's chats still waiting is 4.
+    waitingAsks = [asking(3, "Run cargo test"), asking(4, "Run npm test")];
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Memory" });
+    await waitFor(() => expect(tab("Inbox")).toHaveAccessibleDescription("2 things wait on you"));
+    const behind = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    await emit(ASKS_NOTIFIED, { plane: PLANE, session: 2, sessions: [2, 4, 3] });
+    behind.mockRestore();
+    fireEvent.focus(window);
+
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const group = within(inbox).getByRole("region", { name: "steward 4" });
+    await waitFor(() => expect(within(group).getByRole("listitem")).toHaveFocus());
+  });
+
   it("draws no count when nothing is left to do", async () => {
     core();
     render(<App />);
