@@ -298,7 +298,7 @@ same major as the one that wrote it, until a harness declaration says otherwise 
   nothing is lost: its pin moves and the chat's tab says so. It never refuses a chat for its
   version.
 
-Two readings were the dispatcher's on 2026-10-15, in implementation, to be confirmed by the
+Three readings were the implementer's on 2026-10-15, in implementation, to be confirmed by the
 operator:
 
 - **An older version than the pin, of the same major, is refused** for a profile purlis made,
@@ -306,3 +306,6 @@ operator:
   newer one wrote.
 - **A version purlis cannot read does not start a pinned profile purlis made**; a profile not yet
   pinned, and an adopted one, start as before.
+- **Below 1.0, every release counts as a minor update and follows**, as Semantic Versioning
+  numbers it (`0.147.0` to `0.148.0` keeps major version 0): a harness that releases weekly below
+  1.0 (Codex) would otherwise ask the person to Update the pin every week.

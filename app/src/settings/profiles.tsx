@@ -197,7 +197,7 @@ function pinNote(profile: MachineProfileRow): string {
 
 /** The version a profile is offered to pin to: the one installed, where its next chat would not
  *  start on it. The core says which (another major, or an older version). */
-function newer(profile: MachineProfileRow): string | undefined {
+function offeredVersion(profile: MachineProfileRow): string | undefined {
   return profile.offered ?? undefined;
 }
 
@@ -284,13 +284,13 @@ const listed = (plane: string | undefined): LiveSetting => ({
                         />
                       ))}
                     <span className="ui-setting-badge">{pinNote(profile)}</span>
-                    {newer(profile) !== undefined && (
+                    {offeredVersion(profile) !== undefined && (
                       <EntryButton
                         label="Update the pin"
-                        spoken={`Update the pin of ${profile.name} to ${newer(profile)}`}
+                        spoken={`Update the pin of ${profile.name} to ${offeredVersion(profile)}`}
                         disabled={now.busy}
                         onClick={() => {
-                          const version = newer(profile) ?? "";
+                          const version = offeredVersion(profile) ?? "";
                           void acting(
                             () => commands.machineProfilePin(profile.name, version),
                             () =>

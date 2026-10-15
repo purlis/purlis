@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A profile pins its harness version** (#2038, ADR 0095, spec #2030), so a conversation
-//! resumes on the version that wrote it.
+//! **A profile pins its harness version** (#2038, ADR 0095, spec #2030), so its conversations
+//! resume on its pinned version, or on a newer one of the same major version.
 //!
 //! A profile of this machine's records the version of its harness its chats run on
 //! ([`Pinned`], `pinned` in its record). This machine has one version of each harness installed,
@@ -102,7 +102,21 @@ pub fn record_of<'a>(
     };
     records
         .iter()
-        .find(|r| r.name == profile.name && r.adopted.is_some() == adopted)
+        .find(|r| is_record(r, &profile.name, adopted))
+}
+
+/// Whether `record` is the one named `name`, adopted or made as `adopted` says: how
+/// [`record_of`] finds a chat's record, and how [`at_start`] finds it again under the lock.
+fn is_record(record: &MachineProfile, name: &str, adopted: bool) -> bool {
+    record.name == name && record.adopted.is_some() == adopted
+}
+
+/// The version **Update the pin** offers `record` where `here` is installed: `here`, where the
+/// profile's next chat would not start on it (another major version, or an older one); `None`
+/// where it is not pinned yet, runs on `here`, or follows it ([`follows`]).
+pub fn offered(record: &MachineProfile, here: &Version) -> Option<Version> {
+    let pinned = Version::parse(&record.pinned.as_ref()?.version).ok();
+    (pinned.as_ref() != Some(here) && !follows(record, here)).then(|| here.clone())
 }
 
 /// What a start on a profile does about its pin.
@@ -169,11 +183,11 @@ fn moved(record: &MachineProfile, pinned: &str, installed: &Version, resuming: b
     let name = crate::shown::short(&record.name);
     if resuming {
         format!(
-            "This chat's conversation was written by {harness} {pinned}, the version the profile \
-             '{name}' is pinned to, and {harness} {installed} is installed. purlis resumes a \
-             conversation only on a newer version of the same major version as the one that \
-             wrote it, so nothing was started. To resume it on {installed}, press Update the pin in Settings › You › Profiles, or install \
-             {harness} {pinned} again."
+            "This chat resumes a conversation of the profile '{name}', which is pinned to \
+             {harness} {pinned}, and {harness} {installed} is installed. purlis resumes a profile's \
+             conversations only on its pinned version or a newer one of the same major version, \
+             so nothing was started. To resume it on {installed}, press Update the pin in \
+             Settings › You › Profiles, or install {harness} {pinned} again."
         )
     } else {
         format!(
@@ -216,25 +230,33 @@ fn followed(record: &MachineProfile, from: &str, to: &Version) -> String {
     )
 }
 
-/// **A chat's start on the profile `name`** of the store under `config_root`, `installed`
-/// being the version its program answered `--version` with (`None` where purlis could not read
-/// one), resuming a conversation or not: `Ok` with the sentence its tab says, where there is
-/// one, or the refusal, with its way out. Pins a profile on its first chat and moves its pin
-/// with its harness where it [`follows`], at `now`; judged under the store's lock, on the record as it
-/// is then. A name the store does not have starts as it would have.
+/// **A chat's start on `record`**, the profile of the store under `config_root` that
+/// [`record_of`] found for it, `installed` being the version its program answered `--version`
+/// with (`None` where purlis could not read one), resuming a conversation or not: `Ok` with the
+/// sentence its tab says, where there is one, or the refusal, with its way out. Pins a profile on
+/// its first chat and moves its pin with its harness where it [`follows`], at `now`; judged under
+/// the store's lock, on the record as it is then, found again as [`record_of`] found it. A record
+/// the store no longer has starts as it would have.
+///
+/// **An adopted profile is never refused**, whatever the store answers (one a newer purlis wrote,
+/// one that cannot be read): whether it is adopted is taken from `record`, before the store is
+/// asked again.
 pub fn at_start(
     config_root: &Path,
-    name: &str,
+    record: &MachineProfile,
     installed: Option<&Version>,
     resuming: bool,
     now: u64,
 ) -> Result<Option<String>, String> {
-    let mut adopted = false;
+    let adopted = record.adopted.is_some();
     let answer = super::update(config_root, |store| {
-        let Some(record) = store.profiles.iter_mut().find(|p| p.name == name) else {
+        let Some(record) = store
+            .profiles
+            .iter_mut()
+            .find(|p| is_record(p, &record.name, adopted))
+        else {
             return Ok(None);
         };
-        adopted = record.adopted.is_some();
         let pin = |version: &Version| {
             Some(Pinned {
                 version: version.to_string(),

@@ -121,7 +121,7 @@ fn the_first_chat_on_a_profile_pins_the_version_installed_and_the_next_runs_on_i
     assert_eq!(pinned("work").as_deref(), Some(INSTALLED));
 
     start::ready(&start_on("work", plane.path(), Some("s-1")), plane.path())
-        .expect("its conversation resumes on the version that wrote it");
+        .expect("its conversation resumes on its pinned version");
 }
 
 #[test]
@@ -143,7 +143,9 @@ fn a_chat_on_a_profile_pinned_to_another_major_version_is_refused_with_the_way_o
     let resumed =
         start::ready(&start_on("work", plane.path(), Some("s-1")), plane.path()).unwrap_err();
     assert!(
-        resumed.contains("written by Claude Code 1.0.40"),
+        resumed.contains(
+            "resumes a conversation of the profile 'work', which is pinned to Claude Code 1.0.40"
+        ),
         "{resumed}"
     );
     assert!(resumed.contains("Update the pin"), "{resumed}");

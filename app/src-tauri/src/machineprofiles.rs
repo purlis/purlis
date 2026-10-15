@@ -155,18 +155,10 @@ fn pinned_row(
     record: &profilestore::MachineProfile,
     here: Option<&profilestore::pin::Version>,
 ) -> MachineProfileRow {
-    let pinned = record
-        .pinned
-        .as_ref()
-        .and_then(|p| profilestore::pin::Version::parse(&p.version).ok());
     MachineProfileRow {
         offered: here
-            .filter(|here| {
-                record.pinned.is_some()
-                    && pinned.as_ref() != Some(*here)
-                    && !profilestore::pin::follows(record, here)
-            })
-            .map(ToString::to_string),
+            .and_then(|here| profilestore::pin::offered(record, here))
+            .map(|v| v.to_string()),
         installed: here.map(ToString::to_string),
         ..MachineProfileRow::from(record)
     }

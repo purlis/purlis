@@ -662,7 +662,7 @@ fn on_pinned_version(
         .and_then(|said| crate::profilestore::pin::version_in(&profile.kind, said));
     crate::profilestore::pin::at_start(
         &config,
-        &record.name,
+        record,
         installed.as_ref(),
         resuming,
         crate::halt::now(),
