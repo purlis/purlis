@@ -13,7 +13,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use purlis_core::profilestore::{self, MachineSettings, Store};
+use purlis_core::profilestore::{self, Homes, MachineSettings};
 use purlis_core::start::{self, Start};
 
 /// Set on the child: the data home it was started with.
@@ -69,8 +69,8 @@ fn start_on(name: &str, root: &Path) -> Start {
 
 /// Makes the profile `name` of `kind`, with `settings` as this machine's settings folder for
 /// `variable`.
-fn made(name: &str, kind: &str, variable: &str, settings: &Path) -> profilestore::Record {
-    let store = Store::here().expect("the test's data home");
+fn made(name: &str, kind: &str, variable: &str, settings: &Path) -> profilestore::MachineProfile {
+    let store = Homes::here().expect("the test's data home");
     let home = settings.parent().unwrap().to_path_buf();
     let named = settings.display().to_string();
     let env = move |asked: &str| (asked == variable).then(|| named.clone());

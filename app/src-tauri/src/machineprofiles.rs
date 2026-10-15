@@ -12,7 +12,7 @@
 //! **Remove is asked first**: [`machine_profile_removal`] says what goes, the window shows it,
 //! and [`machine_profile_remove`] removes only what was shown, refused when it changed since.
 
-use purlis_core::profilestore::{self, MachineSettings, Store};
+use purlis_core::profilestore::{self, Homes, MachineSettings};
 
 /// One of this machine's profiles, as Settings lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -32,14 +32,14 @@ pub struct MachineProfileRow {
     pub imported_from: Option<String>,
 }
 
-impl From<&profilestore::Record> for MachineProfileRow {
-    fn from(record: &profilestore::Record) -> Self {
+impl From<&profilestore::MachineProfile> for MachineProfileRow {
+    fn from(record: &profilestore::MachineProfile) -> Self {
         Self {
             name: record.name.clone(),
-            kind: record.kind.clone(),
-            harness: purlis_core::harness_declaration::builtin(&record.kind)
-                .map_or_else(|| record.kind.clone(), |d| d.title.clone()),
-            origin: if record.is_adopted() {
+            kind: record.harness.clone(),
+            harness: purlis_core::harness_declaration::builtin(&record.harness)
+                .map_or_else(|| record.harness.clone(), |d| d.title.clone()),
+            origin: if record.adopted.is_some() {
                 "adopted"
             } else {
                 "made"
@@ -115,8 +115,8 @@ impl From<MachineProfileRemoval> for profilestore::Removal {
     }
 }
 
-fn store() -> Result<Store, String> {
-    Store::here().ok_or_else(|| {
+fn store() -> Result<Homes, String> {
+    Homes::here().ok_or_else(|| {
         "purlis cannot tell where its data home is, or it is inside a project or a git work \
          tree, so it keeps no profile there."
             .to_owned()
@@ -147,14 +147,7 @@ async fn blocking<T: Send + 'static>(
 #[specta::specta]
 pub async fn machine_profiles() -> Result<Vec<MachineProfileRow>, String> {
     blocking(|| {
-        let store = store()?;
-        let records = store.records().map_err(|e| {
-            format!(
-                "purlis could not read this machine's profiles in {} ({}).",
-                store.records_file().display(),
-                purlis_core::rewrite::os_words(&e)
-            )
-        })?;
+        let records = profilestore::list(store()?.config_root())?;
         Ok(records.iter().map(MachineProfileRow::from).collect())
     })
     .await

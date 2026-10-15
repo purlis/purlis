@@ -3496,7 +3496,7 @@ fn plugin_machine(
 /// it, as the window serves the same acts to itself alone. What it did, and a refusal, go to
 /// stderr, as purlis's reports do.
 fn machine_profile(verb: &ProfileCommand) -> ExitCode {
-    use purlis_core::profilestore::{self, MachineSettings, Store};
+    use purlis_core::profilestore::{self, Homes, MachineSettings};
     if purlis_core::envvar::var(purlis_core::hookwire::CHAT_ENV)
         .is_some_and(|chat| !chat.trim().is_empty())
     {
@@ -3505,7 +3505,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
              Profiles in the window or from your own terminal",
         );
     }
-    let Some(store) = Store::here() else {
+    let Some(store) = Homes::here() else {
         return refused(
             "purlis cannot tell where its data home is, or it is inside a project or a git \
              work tree, so no profile was changed",
@@ -3525,7 +3525,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                     "made the profile '{}' ({}) in {}\n{}its first chat signs in through the \
                      harness's own sign-in.\n",
                     made.record.name,
-                    made.record.kind,
+                    made.record.harness,
                     store.folder_of(&made.record.name).display(),
                     imported_lines(&made)
                 )
