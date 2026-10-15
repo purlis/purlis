@@ -2606,10 +2606,14 @@ pub struct Homes {
     /// The operator's own Codex home: `$CODEX_HOME`, or `~/.codex`. A wrapped chat neither reads
     /// nor writes it (D-88q).
     pub codex: Option<PathBuf>,
-    /// The Codex home of this project's sandboxed chats, of their own (D-88q): under charter's
-    /// data home ([`crate::datahome`]), one per project. Set by [`Compiled::of`], which knows the
-    /// project.
+    /// The Codex home this project's sandboxed chats had of their own before they ran on a
+    /// profile for sandboxed chats only (D-88q, amended 2026-10-15): under charter's data home
+    /// ([`crate::datahome`]), one per project, its conversations brought to that profile once.
+    /// Set by [`Compiled::of`], which knows the project.
     pub codex_project: Option<PathBuf>,
+    /// The folders of the profiles purlis made on this machine (`<data>/profiles`, #2034):
+    /// denied to every chat, but a wrapped chat's own profile's folder.
+    pub profiles: Option<PathBuf>,
 }
 
 impl Homes {
@@ -2631,6 +2635,7 @@ impl Homes {
             cache: xdg("XDG_CACHE_HOME", ".cache"),
             codex: xdg("CODEX_HOME", ".codex"),
             codex_project: None,
+            profiles: Self::charter_data(machine).map(|data| data.join(crate::profilestore::DIR)),
         }
     }
 
@@ -3155,9 +3160,17 @@ impl Applied {
     /// commands apart from itself. Claude Code does: its sandbox holds the commands its Bash tool
     /// runs, and a deny rule its Read and Edit tools, while its own process reads its sign-in.
     /// Codex and opencode run whole inside purlis's wrap with their commands, so what the harness
-    /// reads its commands can read too, and the form is left as it is; their declarations say so
-    /// (`[sign_in] kept_from_commands`).
+    /// reads its commands can read too, and their declarations say so (`[sign_in]
+    /// kept_from_commands`). A wrapped Codex is also started in its profile's folder
+    /// ([`codex::Wrap::on_profile`]).
     pub fn on_profile(&mut self, folders: &signin::ProfileFolders) {
+        // A wrapped Codex runs in its profile's folder: one purlis made for sandboxed chats
+        // only (#2037, ruled 2026-10-15), never the person's own Codex home.
+        if let Form::Codex(wrap) = &mut *self.form
+            && let Some(folder) = &folders.config
+        {
+            wrap.on_profile(folder);
+        }
         let Form::ClaudeCode(settings) = &mut *self.form else {
             return;
         };

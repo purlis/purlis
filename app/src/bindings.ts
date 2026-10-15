@@ -1318,8 +1318,11 @@ export const commands = {
 	 *  installed here beside its pin (#2038): each harness asked `--version` once.
 	 */
 	machineProfiles: () => typedError<MachineProfileRow[], string>(__TAURI_INVOKE("machine_profiles")),
-	/**  Makes the profile `name` of the harness `kind`, its settings imported from this machine's. */
-	machineProfileCreate: (name: string, kind: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_create", { name, kind })),
+	/**
+	 *  Makes the profile `name` of the harness `kind`, its settings imported from this machine's;
+	 *  or, `sandbox_only`, one for sandboxed chats only, with nothing imported (#2037).
+	 */
+	machineProfileCreate: (name: string, kind: string, sandboxOnly: boolean) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_create", { name, kind, sandboxOnly })),
 	/**  Imports `name`'s settings again from this machine's. */
 	machineProfileImport: (name: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_import", { name })),
 	/**  What removing `name` takes away, for the window to ask about. */
@@ -6338,6 +6341,8 @@ export type MachineProfileRow = {
 	 *  version installed, or follow it.
 	 */
 	offered: string | null,
+	/**  Whether it is for sandboxed chats only (#2037): only a sandboxed chat starts on it. */
+	sandbox_only: boolean,
 	/**
 	 *  Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
 	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.

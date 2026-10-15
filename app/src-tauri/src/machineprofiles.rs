@@ -55,6 +55,8 @@ pub struct MachineProfileRow {
     /// would not start on it (another major, or an older one). Null where its chats run on the
     /// version installed, or follow it.
     pub offered: Option<String>,
+    /// Whether it is for sandboxed chats only (#2037): only a sandboxed chat starts on it.
+    pub sandbox_only: bool,
     /// Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
     /// page's warning, in the core's words; null where its harness keeps the sign-in from them.
     pub commands_can_read_sign_in: Option<String>,
@@ -101,6 +103,7 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
             pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             installed: None,
             offered: None,
+            sandbox_only: record.sandbox_only,
             commands_can_read_sign_in: purlis_core::sandbox::signin::commands_can_read(
                 &record.harness,
             ),
@@ -286,18 +289,23 @@ pub async fn machine_profile_pin(
     .await
 }
 
-/// Makes the profile `name` of the harness `kind`, its settings imported from this machine's.
+/// Makes the profile `name` of the harness `kind`, its settings imported from this machine's;
+/// or, `sandbox_only`, one for sandboxed chats only, with nothing imported (#2037).
 #[tauri::command]
 #[specta::specta]
 pub async fn machine_profile_create(
     name: String,
     kind: String,
+    sandbox_only: bool,
 ) -> Result<MachineProfileImported, String> {
     blocking(move || {
         let store = store()?;
-        settings_here(|machine| {
-            profilestore::create(&store, &name, &kind, machine, purlis_core::halt::now())
-        })
+        let now = purlis_core::halt::now();
+        if sandbox_only {
+            profilestore::create_sandbox_only(&store, &name, &kind, now)
+        } else {
+            settings_here(|machine| profilestore::create(&store, &name, &kind, machine, now))
+        }
         .map(MachineProfileImported::from)
     })
     .await

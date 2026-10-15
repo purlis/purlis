@@ -182,25 +182,27 @@ it, and never sends that count anywhere.
 - **opencode's hook reports.** A wrapped opencode chat's hooks run inside the sandbox, so what
   they report is the chat's own claim, never proof that a hook ran (#1069). A report the app
   does not take is shown in the chat's window rather than kept for later.
-- **What Codex keeps for itself.** A sandboxed project's Codex chats keep their Codex state
-  in a home of the project's own, which purlis keeps outside the project and seeds with your
-  Codex login. They neither read nor write your own Codex home, nor another project's, so
-  nothing they write in Codex's own state reaches a conversation you resume outside the
-  sandbox; you resume theirs only through purlis, in that project. What they write in their
-  own folder is another matter: a project file such as an instruction file (`AGENTS.md`, a
-  skills folder) is read by any later Codex started in that folder, unsandboxed too, as it is
-  for every harness. In the project's home, a chat can write what a Codex turn writes: the
-  threads' state, sessions, history, shell snapshots (which Codex runs before a
-  conversation's commands), its memories, goals and queue (which every conversation shares, a
-  resume hands the model, and Codex's own screen does not start without writing), locks, log,
-  installation id and a refreshed login. So one sandboxed Codex chat can influence what a
-  later sandboxed Codex chat of the same project loads, inside the sandbox, but never an
-  unsandboxed run's Codex state. It cannot write Codex's config, skills, plugins or helpers,
-  which a later Codex loads. purlis writes the project home's config itself: it marks each
-  chat's folder untrusted, so Codex loads no project-local config, hooks or exec policies
-  there, and it trusts exactly the hooks purlis arms, so those run and nothing else does.
-  Codex checks certificates against the system's authorities, never ones a person added to
-  the keychain.
+- **What Codex keeps for itself.** A sandboxed Codex chat runs on a profile purlis made for
+  sandboxed chats only, and keeps its Codex state in that profile's folder, which purlis keeps
+  outside every project. No other chat runs on that profile, and a sandboxed Codex chat runs on
+  no other, so nothing it writes in Codex's own state reaches a conversation you resume outside
+  the sandbox. The profile is signed in once through Codex's own sign-in, in its folder, and
+  purlis never copies a sign-in into it. A sandboxed Codex chat neither reads nor writes your own
+  Codex home, another profile's folder, or the home a project's sandboxed chats had before; that
+  home's conversations are brought to the profile once, and never its sign-in. What a chat writes
+  in its own folder is another matter: a project file such as an instruction file (`AGENTS.md`,
+  a skills folder) is read by any later Codex started in that folder, unsandboxed too, as it is
+  for every harness. In the profile's folder, a chat can write what a Codex turn writes: the
+  threads' state, sessions, history, shell snapshots (which Codex runs before a conversation's
+  commands), its memories, goals and queue (which every conversation shares, a resume hands the
+  model, and Codex's own screen does not start without writing), locks, log, installation id and
+  a refreshed sign-in. So one sandboxed Codex chat can influence what a later sandboxed Codex
+  chat on the same profile loads, inside the sandbox, but never an unsandboxed run's Codex state.
+  It cannot write Codex's config, skills, plugins or helpers, which a later Codex loads. purlis
+  writes the profile's config itself: it marks each chat's folder untrusted, so Codex loads no
+  project-local config, hooks or exec policies there, and it trusts exactly the hooks purlis
+  arms, so those run and nothing else does. Codex checks certificates against the system's
+  authorities, never ones a person added to the keychain.
 - **A directory moved into place, for Claude Code.** Claude Code's own sandbox keeps a chat
   from writing a clone's git config and hooks, but cannot keep it from moving a whole `.git`
   into place (#1065). purlis's wrap holds this for opencode and Codex.

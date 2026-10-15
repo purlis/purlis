@@ -37,6 +37,7 @@ function row(name: string, more: Partial<MachineProfileRow> = {}): MachineProfil
     pinned: "2.1.300",
     installed: "2.1.300",
     offered: null,
+    sandbox_only: false,
     commands_can_read_sign_in: null,
     ...more,
   };
@@ -70,7 +71,11 @@ beforeEach(() => {
       case "machine_profiles":
         return structuredClone(profiles);
       case "machine_profile_create": {
-        const made = row(String(given.name), { kind: String(given.kind) });
+        const made = row(String(given.name), {
+          kind: String(given.kind),
+          sandbox_only: given.sandboxOnly === true,
+          imported_at: given.sandboxOnly === true ? null : 1_760_000_000,
+        });
         profiles.push(made);
         return { profile: made, copied: ["settings.json", "CLAUDE.md"], skipped: [] };
       }
@@ -192,10 +197,32 @@ describe("Settings › You › Profiles", () => {
       expect(sent.find((one) => one.cmd === "machine_profile_create")?.args).toEqual({
         name: "claude-work",
         kind: "claude",
+        sandboxOnly: false,
       }),
     );
     expect(await screen.findByText("claude-work")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("imported 2 files of settings");
+  });
+
+  it("makes a profile for sandboxed chats only when that is switched on (#2037)", async () => {
+    render(
+      <>
+        <Row at={0} />
+        <Row at={1} />
+      </>,
+    );
+    await userEvent.type(await screen.findByRole("textbox", { name: "Name" }), "codex-sandbox");
+    await userEvent.click(screen.getByRole("switch", { name: "For sandboxed chats only" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    await waitFor(() =>
+      expect(sent.find((one) => one.cmd === "machine_profile_create")?.args).toEqual({
+        name: "codex-sandbox",
+        kind: "claude",
+        sandboxOnly: true,
+      }),
+    );
+    expect(await screen.findByText("Claude Code, for sandboxed chats only")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("made for sandboxed chats only");
   });
 
   it("imports a profile's settings again", async () => {

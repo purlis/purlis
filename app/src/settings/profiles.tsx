@@ -164,6 +164,7 @@ function remove(shown: MachineProfileRemoval) {
 /** What a profile's row says beside its name. */
 function note(profile: MachineProfileRow): string {
   if (profile.origin === "adopted") return `${profile.harness}, the harness's own folder`;
+  if (profile.sandbox_only) return `${profile.harness}, for sandboxed chats only`;
   if (profile.imported_at === null) return profile.harness;
   const when = new Date(profile.imported_at * 1000).toLocaleDateString();
   return `${profile.harness}, settings imported ${when}`;
@@ -414,14 +415,17 @@ const add: LiveSetting = {
     const now = useSyncExternalStore(subscribe, () => held);
     const [name, setName] = useState("");
     const [kind, setKind] = useState("claude");
+    const [sandboxOnly, setSandboxOnly] = useState(false);
     const submit = () => {
       const named = name.trim();
       if (named === "" || now.busy) return;
       void acting(
-        () => commands.machineProfileCreate(named, kind),
+        () => commands.machineProfileCreate(named, kind, sandboxOnly),
         (done) => {
           setName("");
-          return importedSays(named, done);
+          return sandboxOnly
+            ? `${named}: made for sandboxed chats only, with nothing imported. Its first chat signs in through the harness's own sign-in.`
+            : importedSays(named, done);
         },
       );
     };
@@ -460,6 +464,19 @@ const add: LiveSetting = {
                 value={kind}
                 disabled={now.busy}
                 onValueChange={setKind}
+              />
+            )}
+          />
+          <SettingRow
+            label="For sandboxed chats only"
+            help="Only a sandboxed chat starts on it, and a sandboxed Codex chat starts on no other profile. Nothing is imported into it."
+            control={(inner) => (
+              <Choice
+                kind="switch"
+                ids={inner}
+                checked={sandboxOnly}
+                disabled={now.busy}
+                onCheckedChange={setSandboxOnly}
               />
             )}
           />

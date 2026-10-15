@@ -4990,6 +4990,8 @@ export type MachineProfileRow = {
 	 *  version installed, or follow it.
 	 */
 	offered: string | null,
+	/**  Whether it is for sandboxed chats only (#2037): only a sandboxed chat starts on it. */
+	sandbox_only: boolean,
 	/**
 	 *  Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
 	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.

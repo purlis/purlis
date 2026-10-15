@@ -602,3 +602,38 @@ fn an_import_reads_nothing_through_a_folder_swapped_for_a_link_while_it_runs() {
         },
     );
 }
+
+#[test]
+fn a_sandbox_only_profile_is_made_with_a_folder_of_its_own_and_nothing_imported() {
+    // #2037, ruled 2026-10-15: a sandboxed Codex chat runs on a profile purlis makes and uses
+    // only inside the sandbox. It is signed in through Codex's own sign-in, never from a copy.
+    let mut machine = Machine::new();
+    let codex = machine.names("CODEX_HOME", "codex-home");
+    write(&codex.join("auth.json"), "the person's own sign-in\n");
+    write(&codex.join("config.toml"), "model = \"m\"\n");
+
+    let made = create_sandbox_only(&machine.store, "codex-sandbox", "codex", 100).unwrap();
+
+    assert!(made.record.sandbox_only);
+    assert_eq!(made.record.imported, None);
+    assert!(made.record.folders.config.is_dir());
+    assert_eq!(files(&made.record.folders.config), Vec::<String>::new());
+    assert_eq!(listed(&machine.store), std::slice::from_ref(&made.record));
+    // The person's own folder is as it was.
+    assert_eq!(
+        fs::read_to_string(codex.join("auth.json")).unwrap(),
+        "the person's own sign-in\n"
+    );
+    // Its settings are purlis's: there is nothing to import into it.
+    let refused = machine.import("codex-sandbox", 200).unwrap_err();
+    assert!(refused.contains("sandboxed chats only"), "{refused}");
+}
+
+#[test]
+fn a_profile_made_for_every_chat_is_not_sandbox_only_and_says_nothing_of_it_on_disk() {
+    let machine = Machine::new();
+    let made = machine.create("work", "claude", 100).unwrap();
+    assert!(!made.record.sandbox_only);
+    let text = fs::read_to_string(crate::profilestore::path(machine.store.config_root())).unwrap();
+    assert!(!text.contains("sandbox_only"), "{text}");
+}

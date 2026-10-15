@@ -178,6 +178,31 @@ pub fn create(
     machine: &MachineSettings,
     now: u64,
 ) -> Result<Made, String> {
+    make(homes, name, kind, Some(machine), now)
+}
+
+/// **Makes the profile `name` of the harness `kind` for sandboxed chats only** (#2037, ruled
+/// 2026-10-15): a folder of its own, with nothing imported, since its settings are purlis's,
+/// and no sign-in until its harness's own sign-in is run in it. The record, or the sentence
+/// saying why not; a refusal leaves nothing behind.
+pub fn create_sandbox_only(
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    now: u64,
+) -> Result<Made, String> {
+    make(homes, name, kind, None, now)
+}
+
+/// [`create`], with its settings imported from `machine`'s, or, with none, a profile for
+/// sandboxed chats only ([`create_sandbox_only`]).
+fn make(
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    machine: Option<&MachineSettings>,
+    now: u64,
+) -> Result<Made, String> {
     if !crate::profiles::name_ok(name) {
         return Err(format!(
             "'{}' cannot be a profile's name: use letters, digits, '-' and '_', starting with a \
@@ -222,7 +247,7 @@ pub fn create(
                 }
                 None => None,
             };
-            let from = machine.of(kind);
+            let from = machine.and_then(|machine| machine.of(kind));
             let copied = match &from {
                 Some(from) => import_into(allowed, from, &folder, &config)?,
                 None => Copied::default(),
@@ -239,6 +264,7 @@ pub fn create(
             imported: from.map(|from| Imported { at: now, from }),
             sign_in: None,
             pinned: None,
+            sandbox_only: machine.is_none(),
             rest: Map::new(),
         };
         store.profiles.push(record.clone());
@@ -272,6 +298,12 @@ pub fn import(
             return Err(format!(
                 "'{name}' is the harness's own folder, adopted in place, so its settings are \
                  already the machine's. There is nothing to import."
+            ));
+        }
+        if record.sandbox_only {
+            return Err(format!(
+                "'{name}' is a profile for sandboxed chats only, and its settings are purlis's, \
+                 so nothing is imported into it."
             ));
         }
         let (_, allowed) = harness_of(&record.harness)?;

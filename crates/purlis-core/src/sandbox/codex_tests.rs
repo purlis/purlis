@@ -55,6 +55,24 @@ fn line_in(
     )
 }
 
+/// The folder of the profile for sandboxed chats only a test's Codex chats run on, under
+/// `machine`'s profiles.
+fn profile_home(machine: &Machine) -> Option<PathBuf> {
+    Some(Homes::of(machine).profiles?.join("codex-sandbox/config"))
+}
+
+/// [`for_start`] for a Codex chat on `machine`, on that profile, as a start applies it.
+fn codex_start(plane: &Path, machine: &Machine) -> Result<Option<Applied>, NotStarted> {
+    let mut applied = for_start(Harness::Codex, plane, machine, &|_| true)?;
+    if let Some(applied) = &mut applied {
+        applied.on_profile(&signin::ProfileFolders {
+            config: profile_home(machine),
+            data: None,
+        });
+    }
+    Ok(applied)
+}
+
 fn real(path: &Path) -> PathBuf {
     path.canonicalize().expect("a real path")
 }
@@ -64,14 +82,9 @@ fn a_codex_chat_in_a_sandboxed_plane_starts_inside_charters_wrap_on_macos() {
     // #1123: the hold-back of ruling V87f is lifted where charter can wrap Codex.
     let plane = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     assert_eq!(applied.harness(), Harness::Codex);
     assert!(matches!(applied.form(), Form::Codex(_)), "{applied:?}");
     assert_eq!(never_on(Harness::Codex, Os::MacOs), None);
@@ -81,13 +94,8 @@ fn a_codex_chat_in_a_sandboxed_plane_starts_inside_charters_wrap_on_macos() {
 fn on_linux_a_codex_chat_is_refused_until_charter_can_wrap_it_there() {
     let plane = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
-    let refused = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::Linux),
-        &|_| true,
-    )
-    .expect_err("refused");
+    let refused =
+        codex_start(plane.path(), &machine_at(home.path(), Os::Linux)).expect_err("refused");
     assert_eq!(
         refused,
         NotStarted::Uncompilable(Uncompilable {
@@ -116,14 +124,9 @@ fn a_keyring_vault_does_not_refuse_a_wrapped_codex_chat_because_the_wrap_holds_t
     )
     .expect("registry");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
@@ -146,14 +149,9 @@ fn the_wrapped_line_runs_codex_whole_under_sandbox_exec_with_its_own_sandbox_off
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let line = line_in(&applied, &cwd, "resume ses_1 hello", &confinement).expect("starts");
     assert_eq!(line.program, backend::SANDBOX_EXEC);
@@ -231,14 +229,9 @@ fn a_flag_of_codexs_own_that_would_widen_what_it_is_handed_still_refuses_the_cha
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let refused = line_in(&applied, &cwd, "--search", &confinement).expect_err("refused");
     assert!(refused.contains("`--search`"), "{refused}");
@@ -255,9 +248,11 @@ fn write_allows(profile: &str) -> Vec<String> {
         .collect()
 }
 
-/// The project's own Codex home (D-88q) for a plane, on a machine whose home is `home`.
-fn project_home(plane: &Path, home: &Path) -> PathBuf {
-    Homes::codex_project(&machine_at(home, Os::MacOs), plane).expect("a data home")
+/// The Codex home of a test's sandboxed chats, on a machine whose home is `home`: the folder of
+/// the profile for sandboxed chats only they run on (#2037, D-88q as amended 2026-10-15). The
+/// same for every project.
+fn chat_home(_plane: &Path, home: &Path) -> PathBuf {
+    profile_home(&machine_at(home, Os::MacOs)).expect("a data home")
 }
 
 #[test]
@@ -266,21 +261,16 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_a_codex_turn_wri
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let line = line_in(&applied, &cwd, "", &confinement).expect("starts");
-    let named = project_home(plane.path(), home.path());
+    let named = chat_home(plane.path(), home.path());
     assert!(
         named.starts_with(
             home.path()
-                .join("Library/Application Support/charter/codex-homes")
+                .join("Library/Application Support/charter/profiles")
         ),
         "{}",
         named.display()
@@ -345,7 +335,9 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_a_codex_turn_wri
 }
 
 #[test]
-fn each_project_has_a_codex_home_of_its_own_and_the_operators_follows_codex_home() {
+fn a_codex_chat_runs_in_its_profiles_folder_and_the_operators_home_follows_codex_home() {
+    // #2037, D-88q as amended 2026-10-15: the folder of the profile for sandboxed chats only,
+    // the same for every project, and never the operator's own home.
     let one = plane_saying(ON);
     let two = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
@@ -363,35 +355,56 @@ fn each_project_has_a_codex_home_of_its_own_and_the_operators_follows_codex_home
         home: Some(home.path().to_path_buf()),
         os: Os::MacOs,
     };
-    let homes: Vec<PathBuf> = [&one, &two]
-        .iter()
-        .map(|plane| {
-            let applied = for_start(Harness::Codex, plane.path(), &machine, &|_| true)
-                .expect("starts")
-                .expect("sandboxed");
-            let Form::Codex(wrap) = applied.form() else {
-                panic!("a Codex wrap");
-            };
-            assert_eq!(wrap.operator.as_deref(), Some(elsewhere.path()));
-            assert!(
-                wrap.denied
-                    .iter()
-                    .any(|it| it.path == elsewhere.path() && it.access == Access::ReadWrite),
-                "{:?}",
-                wrap.denied
-            );
-            wrap.home.clone().expect("a project home")
-        })
-        .collect();
-    assert!(
-        homes[0].starts_with(data.path().join("codex-homes")),
-        "{homes:?}"
-    );
-    assert_ne!(homes[0], homes[1], "two projects share a Codex home");
+    for plane in [&one, &two] {
+        let applied = codex_start(plane.path(), &machine)
+            .expect("starts")
+            .expect("sandboxed");
+        let Form::Codex(wrap) = applied.form() else {
+            panic!("a Codex wrap");
+        };
+        assert_eq!(wrap.operator.as_deref(), Some(elsewhere.path()));
+        assert!(
+            wrap.denied
+                .iter()
+                .any(|it| it.path == elsewhere.path() && it.access == Access::ReadWrite),
+            "{:?}",
+            wrap.denied
+        );
+        assert_eq!(
+            wrap.home.as_deref(),
+            Some(data.path().join("profiles/codex-sandbox/config").as_path())
+        );
+    }
 }
 
 #[test]
-fn the_project_home_is_seeded_with_the_operators_login_and_a_config_charter_writes() {
+fn a_codex_chat_on_the_operators_own_home_or_any_folder_purlis_did_not_make_has_no_home() {
+    let plane = plane_saying(ON);
+    let home = tempfile::tempdir().expect("a home");
+    let machine = machine_at(home.path(), Os::MacOs);
+    for folder in [
+        home.path().join(".codex"),
+        home.path().join("elsewhere"),
+        Homes::of(&machine).profiles.expect("a data home"),
+    ] {
+        let mut applied = for_start(Harness::Codex, plane.path(), &machine, &|_| true)
+            .expect("starts")
+            .expect("sandboxed");
+        applied.on_profile(&signin::ProfileFolders {
+            config: Some(folder.clone()),
+            data: None,
+        });
+        let Form::Codex(wrap) = applied.form() else {
+            panic!("a Codex wrap");
+        };
+        assert_eq!(wrap.home, None, "{folder:?}");
+    }
+}
+
+#[test]
+fn no_sign_in_is_copied_into_the_chats_home_and_the_config_is_charters() {
+    // #2037: the profile is signed in through Codex's own sign-in, in its folder. The operator's
+    // own home is neither read nor written.
     let plane = plane_saying(ON);
     let cwd = plane.path().join("workspaces/w");
     std::fs::create_dir_all(&cwd).expect("a workspace");
@@ -404,33 +417,45 @@ fn the_project_home_is_seeded_with_the_operators_login_and_a_config_charter_writ
         "[mcp_servers.x]\ncommand = \"/bin/x\"\n",
     )
     .expect("a config");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let before = files_in(home.path());
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     line_in(&applied, &cwd, "", &confinement).expect("starts");
-    let project = project_home(plane.path(), home.path());
+    let chat = chat_home(plane.path(), home.path());
+    assert!(!chat.join("auth.json").exists(), "a sign-in was copied");
+    // Nothing anywhere holds a copy, and the operator's home is as it was.
+    let after = files_in(home.path());
     assert_eq!(
-        std::fs::read_to_string(project.join("auth.json")).expect("seeded"),
+        after
+            .iter()
+            .filter(|path| path.ends_with("auth.json"))
+            .collect::<Vec<_>>(),
+        [&operator.join("auth.json")]
+    );
+    assert_eq!(
+        before
+            .iter()
+            .filter(|path| path.starts_with(&operator))
+            .collect::<Vec<_>>(),
+        after
+            .iter()
+            .filter(|path| path.starts_with(&operator))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        std::fs::read_to_string(operator.join("auth.json")).expect("theirs"),
         "{\"OPENAI_API_KEY\": \"sk-1\"}"
     );
-    // A newer project login, refreshed inside the wrap, is kept; an older one is replaced.
-    std::fs::write(
-        project.join("auth.json"),
-        "{\"OPENAI_API_KEY\": \"sk-1\", \"refreshed\": 2}",
-    )
-    .expect("a refresh");
+    // A sign-in made in the chat's home by Codex's own sign-in stays as it is.
+    std::fs::write(chat.join("auth.json"), "{\"signed in\": \"here\"}").expect("signed in");
     line_in(&applied, &cwd, "", &confinement).expect("starts");
     assert_eq!(
-        std::fs::read_to_string(project.join("auth.json")).expect("kept"),
-        "{\"OPENAI_API_KEY\": \"sk-1\", \"refreshed\": 2}"
+        std::fs::read_to_string(chat.join("auth.json")).expect("kept"),
+        "{\"signed in\": \"here\"}"
     );
-    let config: toml::Table = std::fs::read_to_string(project.join("config.toml"))
+    let config: toml::Table = std::fs::read_to_string(chat.join("config.toml"))
         .expect("written")
         .parse()
         .expect("TOML");
@@ -445,27 +470,88 @@ fn the_project_home_is_seeded_with_the_operators_login_and_a_config_charter_writ
     }
 }
 
-/// A file's modification time set to `stamp` (`touch -t` form), as a chat inside the wrap could.
-fn touch(path: &Path, stamp: &str) {
-    let status = crate::forklock::status(
-        std::process::Command::new("touch")
-            .args(["-t", stamp])
-            .arg(path),
+/// Every file below `dir`, as paths, never through a link.
+fn files_in(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at).into_iter().flatten().flatten() {
+            let kind = entry.file_type().expect("a type");
+            if kind.is_dir() {
+                stack.push(entry.path());
+            } else {
+                out.push(entry.path());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn a_projects_former_codex_home_gives_its_conversations_once_and_never_its_sign_in() {
+    let data = tempfile::tempdir().expect("a data home");
+    let former = data.path().join("codex-homes/0123");
+    let home = data.path().join("profiles/codex-sandbox/config");
+    std::fs::create_dir_all(former.join("sessions/2026/10/04")).expect("its sessions");
+    std::fs::create_dir_all(former.join("archived_sessions/2026/09/30")).expect("archived");
+    std::fs::create_dir_all(home.join("sessions/2026/10/04")).expect("the profile's");
+    std::fs::write(former.join("auth.json"), "a copied sign-in").expect("its login");
+    std::fs::write(former.join("config.toml"), "x").expect("its config");
+    std::fs::write(former.join("sessions/2026/10/04/rollout-a.jsonl"), "a").expect("one");
+    std::fs::write(former.join("sessions/2026/10/04/rollout-b.jsonl"), "theirs").expect("two");
+    std::fs::write(home.join("sessions/2026/10/04/rollout-b.jsonl"), "ours").expect("ours");
+    std::fs::write(
+        former.join("archived_sessions/2026/09/30/rollout-c.jsonl"),
+        "c",
     )
-    .expect("touch runs");
-    assert!(status.success());
+    .expect("archived");
+    std::fs::create_dir_all(former.join("sessions/notaday")).expect("not a day");
+    std::fs::write(former.join("sessions/notaday/x.jsonl"), "x").expect("not brought");
+    std::os::unix::fs::symlink(
+        "/etc/hosts",
+        former.join("sessions/2026/10/04/rollout-l.jsonl"),
+    )
+    .expect("a link");
+
+    codex::bring_conversations(&former, &home);
+
+    let read = |path: &str| std::fs::read_to_string(home.join(path)).ok();
+    assert_eq!(
+        read("sessions/2026/10/04/rollout-a.jsonl").as_deref(),
+        Some("a")
+    );
+    assert_eq!(
+        read("sessions/2026/10/04/rollout-b.jsonl").as_deref(),
+        Some("ours")
+    );
+    assert_eq!(
+        read("archived_sessions/2026/09/30/rollout-c.jsonl").as_deref(),
+        Some("c")
+    );
+    assert!(!home.join("auth.json").exists(), "a sign-in was brought");
+    assert!(!home.join("config.toml").exists());
+    assert!(!home.join("sessions/notaday").exists());
+    assert!(std::fs::symlink_metadata(home.join("sessions/2026/10/04/rollout-l.jsonl")).is_err());
+    // Once: a conversation the person later removed from the profile is not brought again.
+    std::fs::remove_file(home.join("sessions/2026/10/04/rollout-a.jsonl")).expect("removed");
+    codex::bring_conversations(&former, &home);
+    assert!(!home.join("sessions/2026/10/04/rollout-a.jsonl").exists());
+    // And the former home keeps all it had.
+    assert_eq!(
+        std::fs::read_to_string(former.join("auth.json")).expect("left"),
+        "a copied sign-in"
+    );
 }
 
 /// A Codex chat in `plane`'s workspace started under the wrap, armed with `armed`, on a machine
-/// whose home is `home`: the project home it was given.
+/// whose home is `home`: the Codex home it was given.
 fn started_in(plane: &Path, home: &Path, armed: &[String]) -> PathBuf {
     let cwd = plane.join("workspaces/w");
     std::fs::create_dir_all(&cwd).expect("a workspace");
-    let applied = for_start(Harness::Codex, plane, &machine_at(home, Os::MacOs), &|_| {
-        true
-    })
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane, &machine_at(home, Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     applied
         .line(
@@ -483,136 +569,11 @@ fn started_in(plane: &Path, home: &Path, armed: &[String]) -> PathBuf {
             },
         )
         .expect("starts");
-    project_home(plane, home)
-}
-
-/// `bytes` as unpadded base64url, as a JWT's parts are written.
-fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let mut n = 0u32;
-        for (at, byte) in chunk.iter().enumerate() {
-            n |= u32::from(*byte) << (16 - 8 * at);
-        }
-        for at in 0..=chunk.len() {
-            out.push(char::from(ALPHABET[((n >> (18 - 6 * at)) & 63) as usize]));
-        }
-    }
-    out
-}
-
-/// A token whose claims name `account` and `user`, unsigned: the seed decodes, never verifies.
-fn token(account: &str, user: &str) -> String {
-    let claims = serde_json::json!({
-        "sub": user,
-        "https://api.openai.com/auth": {"chatgpt_account_id": account, "chatgpt_user_id": user},
-    });
-    format!(
-        "{}.{}.sig",
-        base64url(br#"{"alg":"none"}"#),
-        base64url(claims.to_string().as_bytes())
-    )
-}
-
-/// A ChatGPT login: its tokens for `account` and `user`, and a plain `account_id` beside them.
-fn chatgpt_login(account_id: &str, account: &str, user: &str, extra: &str) -> String {
-    serde_json::json!({
-        "tokens": {
-            "id_token": token(account, user),
-            "access_token": token(account, user),
-            "refresh_token": "r",
-            "account_id": account_id,
-        },
-        "extra": extra,
-    })
-    .to_string()
+    chat_home(plane, home)
 }
 
 #[test]
-fn the_seed_replaces_an_older_a_future_dated_or_another_accounts_login_and_never_follows_a_link() {
-    let plane = plane_saying(ON);
-    let home = tempfile::tempdir().expect("a home");
-    let operator = home.path().join(".codex");
-    std::fs::create_dir_all(&operator).expect("the operator's home");
-    let ours = chatgpt_login("acct-operator", "acct-operator", "user-op", "");
-    let ours = ours.as_str();
-    std::fs::write(operator.join("auth.json"), ours).expect("a login");
-    touch(&operator.join("auth.json"), "202601010000");
-    let project = started_in(plane.path(), home.path(), &[]);
-    let login = project.join("auth.json");
-    let read = || std::fs::read_to_string(&login).expect("a login");
-    assert_eq!(read(), ours);
-    // Older than the operator's: replaced.
-    std::fs::write(
-        &login,
-        chatgpt_login("acct-operator", "acct-operator", "user-op", "old"),
-    )
-    .expect("old");
-    touch(&login, "202501010000");
-    started_in(plane.path(), home.path(), &[]);
-    assert_eq!(read(), ours);
-    // A refresh of the same account, newer: kept.
-    let refreshed = chatgpt_login("acct-operator", "acct-operator", "user-op", "refreshed");
-    let refreshed = refreshed.as_str();
-    std::fs::write(&login, refreshed).expect("refreshed");
-    started_in(plane.path(), home.path(), &[]);
-    assert_eq!(read(), refreshed);
-    // Another account, dated ahead to look newest: replaced either way.
-    std::fs::write(
-        &login,
-        chatgpt_login("acct-other", "acct-other", "user-other", ""),
-    )
-    .expect("swapped");
-    started_in(plane.path(), home.path(), &[]);
-    assert_eq!(read(), ours);
-    // Review R2-F1: another account's tokens with the operator's plain `account_id` copied
-    // beside them: the tokens' claims are what is compared, so it is replaced.
-    std::fs::write(
-        &login,
-        chatgpt_login("acct-operator", "acct-other", "user-other", "copied"),
-    )
-    .expect("swapped");
-    started_in(plane.path(), home.path(), &[]);
-    assert_eq!(read(), ours);
-    // A token that does not decode: replaced (fail closed).
-    std::fs::write(
-        &login,
-        r#"{"tokens": {"access_token": "not-a-jwt", "account_id": "acct-operator"}}"#,
-    )
-    .expect("garbled");
-    started_in(plane.path(), home.path(), &[]);
-    assert_eq!(read(), ours);
-    std::fs::write(&login, refreshed).expect("refreshed");
-    touch(&login, "209901010000");
-    started_in(plane.path(), home.path(), &[]);
-    assert_eq!(read(), ours);
-    // A link in the project's place is replaced by a regular file, its target untouched.
-    let target = home.path().join("elsewhere.json");
-    std::fs::write(&target, "untouched").expect("a target");
-    std::fs::remove_file(&login).expect("removed");
-    std::os::unix::fs::symlink(&target, &login).expect("a link");
-    started_in(plane.path(), home.path(), &[]);
-    assert!(
-        !std::fs::symlink_metadata(&login)
-            .expect("there")
-            .is_symlink()
-    );
-    assert_eq!(
-        std::fs::read_to_string(&target).expect("target"),
-        "untouched"
-    );
-    // An operator's login that is a link is not followed, and nothing is copied from it.
-    let other = tempfile::tempdir().expect("another home");
-    let other_plane = plane_saying(ON);
-    std::fs::create_dir_all(other.path().join(".codex")).expect("a home");
-    std::os::unix::fs::symlink(&target, other.path().join(".codex/auth.json")).expect("a link");
-    let fresh = started_in(other_plane.path(), other.path(), &[]);
-    assert!(!fresh.join("auth.json").exists());
-}
-
-#[test]
-fn the_project_home_is_its_owners_alone() {
+fn the_chats_codex_home_is_its_owners_alone() {
     use std::os::unix::fs::PermissionsExt;
     let plane = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
@@ -625,7 +586,7 @@ fn the_project_home_is_its_owners_alone() {
 }
 
 #[test]
-fn a_codex_chat_with_no_data_home_is_refused_and_no_home_is_made() {
+fn a_codex_chat_on_no_profile_for_sandboxed_chats_is_refused_with_the_way_out() {
     let plane = plane_saying(ON);
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
@@ -634,35 +595,31 @@ fn a_codex_chat_with_no_data_home_is_refused_and_no_home_is_made() {
         home: None,
         os: Os::MacOs,
     };
-    let applied = for_start(Harness::Codex, plane.path(), &machine, &|_| true)
+    let applied = codex_start(plane.path(), &machine)
         .expect("starts")
         .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let refused = line_in(&applied, &cwd, "", &confinement).expect_err("refused");
     assert_eq!(
         refused,
-        "this project runs every chat sandboxed, and purlis has no data folder on this machine \
-         to keep this project's Codex home in, so nothing was started."
+        "this project runs every chat sandboxed, and a sandboxed Codex chat runs in the folder \
+         of a profile for sandboxed chats only, and this chat is on no such profile, so nothing \
+         was started. Make or choose a sandbox-only Codex profile in Settings › You › Profiles."
     );
 }
 
 #[test]
-fn a_refused_chat_seeds_no_home() {
+fn a_refused_chat_readies_no_home() {
     // Review F6: the home is made only once the line is known to start.
     let plane = plane_saying(ON);
     let home = plane.path().join("home");
     std::fs::create_dir(&home).expect("a home inside the plane");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(&home, Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(&home, Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     line_in(&applied, plane.path(), "", &confinement).expect_err("refused");
-    assert!(!project_home(plane.path(), &home).exists());
+    assert!(!chat_home(plane.path(), &home).exists());
 }
 
 /// What charter arms a Codex chat with: its hooks, as its adapter hands them over.
@@ -753,14 +710,9 @@ fn a_chat_whose_directory_holds_codexs_home_is_not_wrapped() {
     let plane = plane_saying(ON);
     let home = plane.path().join("home");
     std::fs::create_dir(&home).expect("a home inside the plane");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(&home, Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(&home, Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let refused = line_in(&applied, plane.path(), "", &confinement).expect_err("refused");
     assert_eq!(
@@ -774,14 +726,9 @@ fn a_chat_whose_directory_holds_codexs_home_is_not_wrapped() {
 fn a_wrapped_codex_chat_with_no_confinement_is_refused() {
     let plane = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
     let refused = applied
@@ -843,14 +790,9 @@ fn the_wrap_allows_codex_no_unix_socket_but_the_hook_socket() {
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let unix = |line: &Line| -> Vec<String> {
         line.args
@@ -883,14 +825,9 @@ fn the_wrap_leaves_the_chats_hook_channel_as_the_app_set_it() {
     let cwd = plane.path().join("w");
     std::fs::create_dir(&cwd).expect("a workspace");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let hook = plane.path().join("hooks.sock");
     let line = line_reporting_on(&applied, &cwd, Some(&hook), &confinement);
@@ -905,14 +842,9 @@ fn a_codex_chat_is_denied_the_manifests_of_its_folder_and_those_above_it_only() 
     let repo = plane.path().join("ws/repo");
     std::fs::create_dir_all(repo.join("sub")).expect("a repo");
     let home = tempfile::tempdir().expect("a home");
-    let applied = for_start(
-        Harness::Codex,
-        plane.path(),
-        &machine_at(home.path(), Os::MacOs),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let profile = line_in(&applied, &repo, "", &confinement)
         .expect("starts")
@@ -973,14 +905,9 @@ mod live {
         fn new() -> Self {
             let plane = plane_saying(ON);
             let home = tempfile::tempdir().expect("a home");
-            let applied = for_start(
-                Harness::Codex,
-                plane.path(),
-                &machine_at(home.path(), Os::MacOs),
-                &|_| true,
-            )
-            .expect("starts")
-            .expect("sandboxed");
+            let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+                .expect("starts")
+                .expect("sandboxed");
             let confinement = applied.confine().expect("confined").expect("a wrap");
             Self {
                 plane,
@@ -1253,13 +1180,13 @@ mod live {
     }
 
     #[test]
-    fn the_project_codex_home_holds_only_what_a_turn_writes() {
+    fn the_chats_codex_home_holds_only_what_a_turn_writes() {
         let wrapped = Wrapped::new();
         let cwd = wrapped.plane.path().join("w");
         std::fs::create_dir(&cwd).expect("a workspace");
         std::fs::write(wrapped.home.path().join(".zshrc"), "").expect("a startup file");
         let line = wrapped.line(&cwd);
-        let codex = project_home(wrapped.plane.path(), wrapped.home.path());
+        let codex = chat_home(wrapped.plane.path(), wrapped.home.path());
         std::fs::create_dir_all(codex.join("skills/x")).expect("skills");
         std::fs::write(codex.join("history.jsonl"), "").expect("history");
         let zshrc = wrapped.home.path().join(".zshrc").display().to_string();
@@ -1275,8 +1202,8 @@ mod live {
         ] {
             assert!(ran_in(&line, &cwd, &at(ok)), "{ok} was refused");
         }
-        // Ruling D-88s: the stores every thread of the project shares are written here, in the
-        // project's own home, since Codex's interactive screen does not start without them.
+        // Ruling D-88s: the stores every thread on the profile shares are written here, in the
+        // profile's folder, since Codex's interactive screen does not start without them.
         for store in codex::SHARED_STORES {
             let write = format!(
                 "echo x > {store}_1.sqlite && echo x > {store}_1.sqlite-wal && echo x > {store}_1.sqlite-shm"
@@ -1374,31 +1301,57 @@ mod live {
     }
 
     #[test]
-    fn another_projects_codex_home_is_not_read_and_the_chats_own_is() {
-        // Review F1: another project's sessions are its own.
+    fn another_profiles_folder_and_a_projects_former_home_are_not_read_and_the_chats_own_is() {
+        // Review F1, and #2037: another profile's sign-in and sessions are its own, and so are
+        // the homes projects had before.
         let wrapped = Wrapped::new();
         let cwd = wrapped.plane.path().join("w");
         std::fs::create_dir(&cwd).expect("a workspace");
         let line = wrapped.line(&cwd);
-        let own = project_home(wrapped.plane.path(), wrapped.home.path());
-        let other = own.with_file_name("0123456789abcdef0123456789abcdef");
-        std::fs::create_dir_all(other.join("sessions/2026/10/04")).expect("another home");
-        std::fs::write(other.join("sessions/2026/10/04/rollout-x.jsonl"), "theirs")
-            .expect("their session");
-        std::fs::write(own.join("sessions/mine.jsonl"), "mine").expect("our session");
+        let own = chat_home(wrapped.plane.path(), wrapped.home.path());
+        let profiles = own
+            .parent()
+            .and_then(Path::parent)
+            .expect("the profiles' folder");
+        let other = profiles.join("work/config");
+        let former = Homes::codex_project(
+            &machine_at(wrapped.home.path(), Os::MacOs),
+            wrapped.plane.path(),
+        )
+        .expect("a data home");
+        for theirs in [&other, &former] {
+            std::fs::create_dir_all(theirs.join("sessions/2026/10/04")).expect("a home");
+            std::fs::write(theirs.join("sessions/2026/10/04/rollout-x.jsonl"), "theirs")
+                .expect("their session");
+            std::fs::write(theirs.join("auth.json"), "{}").expect("their sign-in");
+            for refused in [
+                format!("cat '{}/auth.json'", theirs.display()),
+                format!(
+                    "cat '{}/sessions/2026/10/04/rollout-x.jsonl'",
+                    theirs.display()
+                ),
+                format!("ls '{}'", theirs.display()),
+                format!("echo x > '{}/sessions/planted.jsonl'", theirs.display()),
+            ] {
+                assert!(!ran_in(&line, &cwd, &refused), "{refused} was let through");
+            }
+        }
         assert!(!ran_in(
             &line,
             &cwd,
-            &format!(
-                "cat '{}/sessions/2026/10/04/rollout-x.jsonl'",
-                other.display()
-            )
+            &format!("ls '{}'", profiles.display())
         ));
-        assert!(!ran_in(&line, &cwd, &format!("ls '{}'", other.display())));
+        std::fs::write(own.join("sessions/mine.jsonl"), "mine").expect("our session");
         assert!(ran_in(
             &line,
             &cwd,
             &format!("grep -q mine '{}/sessions/mine.jsonl'", own.display())
+        ));
+        // Its own sign-in, which Codex itself reads and refreshes.
+        assert!(ran_in(
+            &line,
+            &cwd,
+            &format!("echo {{}} > '{}/auth.json'", own.display())
         ));
     }
 
@@ -1410,7 +1363,7 @@ mod live {
         let cwd = wrapped.plane.path().join("w");
         std::fs::create_dir(&cwd).expect("a workspace");
         let line = wrapped.line(&cwd);
-        let own = project_home(wrapped.plane.path(), wrapped.home.path());
+        let own = chat_home(wrapped.plane.path(), wrapped.home.path());
         assert!(ran_in(
             &line,
             &cwd,
@@ -1484,14 +1437,9 @@ mod live {
         std::fs::write(credentials.join("local-ui"), "c0ffee").expect("a credential");
         let linked_home = homes.path().join("linked");
         std::os::unix::fs::symlink(&real_home, &linked_home).expect("a linked home");
-        let applied = for_start(
-            Harness::Codex,
-            plane.path(),
-            &machine_at(&linked_home, Os::MacOs),
-            &|_| true,
-        )
-        .expect("starts")
-        .expect("sandboxed");
+        let applied = codex_start(plane.path(), &machine_at(&linked_home, Os::MacOs))
+            .expect("starts")
+            .expect("sandboxed");
         let confinement = applied.confine().expect("confined").expect("a wrap");
         let line = line_reporting_on(&applied, &cwd, None, &confinement);
         // A control: the wrap reads what no class denies.
@@ -1531,14 +1479,9 @@ mod live {
             .into_iter()
             .map(|path| std::os::unix::net::UnixListener::bind(path).expect("a socket"))
             .collect();
-        let applied = for_start(
-            Harness::Codex,
-            plane.path(),
-            &machine_at(home.path(), Os::MacOs),
-            &|_| true,
-        )
-        .expect("starts")
-        .expect("sandboxed");
+        let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+            .expect("starts")
+            .expect("sandboxed");
         let confinement = applied.confine().expect("confined").expect("a wrap");
         let line = line_reporting_on(&applied, &cwd, Some(&hook), &confinement);
         let connects = |socket: &Path| {

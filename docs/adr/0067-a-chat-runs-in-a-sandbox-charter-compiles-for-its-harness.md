@@ -220,6 +220,22 @@ wrap, but never an unsandboxed run's Codex state: no chat reads or writes the op
 home or another project's. Per-chat isolation of the shared stores is #1150. Codex is handed the system's certificate authorities as a file, since the
 profile refuses the keychain's service. The Linux wrap is #1040 for both harnesses.
 
+*Amended 2026-10-15 (#2037), by the operator's ruling of 2026-10-15 on ADR 0095 §5:* a
+sandboxed Codex chat runs on a **profile for sandboxed chats only** (`sandbox_only` in this
+machine's profiles, `docs/plane-format.md`): a profile purlis makes with a folder of its own and
+nothing imported, signed in once through Codex's own sign-in in that folder, and started by no
+chat outside the sandbox. Codex's home is that profile's folder, in place of a home of the
+project's own; a sandboxed Codex chat on any other profile is refused, with the way out (make or
+choose a sandbox-only Codex profile). **D-88q's guarantee holds as it was:** no sandboxed chat
+reads or writes the operator's own Codex home, and nothing a sandboxed chat writes in Codex's
+state reaches an unsandboxed run, since no unsandboxed run uses that folder. purlis copies no
+sign-in into it (the seeding of the operator's login is retired), denies the chat every other
+profile's folder and the homes projects had before, and still writes the home's config itself
+as above. The conversations of a project's former home are brought to the profile's folder once,
+before the wrap, each where the profile has none of that name, and never its sign-in or config.
+The stores D-88s grants are now shared by the sandboxed chats on one profile, across projects,
+inside the wrap only.
+
 **The compile is total, or the chat is wrapped.** Every denial class in section 5 must hold for
 every harness. When a harness's native sandbox cannot express a class (for example, a read-deny
 that its write-only confinement cannot state), purlis wraps the harness in its own generated
