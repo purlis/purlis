@@ -215,7 +215,8 @@ fn arrival(root: &Path) -> Option<Arrival> {
 }
 
 /// Whether `commit` is in the history of the upstream commit purlis's own fetch kept for
-/// `root`. Never where nothing was kept, the repository has grafts, or git does not answer.
+/// `root`, read as written ([`written_ancestor`]). Never where nothing was kept, the repository
+/// has grafts, or git does not answer.
 fn on_fetched_upstream(root: &Path, commit: &str) -> bool {
     let Some(upstream) = super::local::fetched_upstream(root) else {
         return false;
@@ -238,7 +239,100 @@ fn on_fetched_upstream(root: &Path, commit: &str) -> bool {
     if grafts.exists() {
         return false;
     }
-    git(&[AS_WRITTEN, "merge-base", "--is-ancestor", commit, &upstream]).is_some_and(|run| run.ok())
+    written_ancestor(root, commit, &upstream)
+}
+
+/// Whether `commit` is in the history of `upstream` as that history was written, not as the
+/// clone's store holds it: every commit on the way from `upstream` down to `commit` is read back
+/// and hashed, kept only where its bytes are the ones its id names, and the way is walked
+/// through the parents those checked bytes name. git lists the commits on the way; it is never
+/// taken at its word on what they say. Never for a repository whose ids are not SHA-1.
+fn written_ancestor(root: &Path, commit: &str, upstream: &str) -> bool {
+    use std::collections::HashMap;
+    let kind = gix::hash::Kind::Sha1;
+    let Ok(upstream) = gix::ObjectId::from_hex(upstream.as_bytes()) else {
+        return false;
+    };
+    let Ok(commit) = gix::ObjectId::from_hex(commit.as_bytes()) else {
+        return false;
+    };
+    if upstream.kind() != kind || commit.kind() != kind {
+        return false;
+    }
+    let range = format!("{commit}..{upstream}");
+    let Some(listed) = crate::worktree::git::run(
+        root,
+        &[AS_WRITTEN, "rev-list", "--ancestry-path", &range],
+        GIT_WAIT,
+    )
+    .ok()
+    .filter(crate::worktree::git::Run::ok) else {
+        return false;
+    };
+    let mut asked = listed.out;
+    asked.push_str(&format!("{commit}\n"));
+    let Some(read) = crate::worktree::git::run_with_input(
+        root,
+        &[AS_WRITTEN, "cat-file", "--batch"],
+        asked.into_bytes(),
+        GIT_WAIT,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0)) else {
+        return false;
+    };
+    // Each commit read back whose bytes are the ones its id names, by the parents they name.
+    let mut parents = HashMap::new();
+    let mut rest = read.out.as_slice();
+    while !rest.is_empty() {
+        let Some((id, bytes, after)) = batch_record(rest) else {
+            return false;
+        };
+        rest = after;
+        let Some(id) = id else { continue };
+        let hashed = gix::objs::compute_hash(kind, gix::objs::Kind::Commit, bytes);
+        if hashed.ok() != Some(id) {
+            continue;
+        }
+        let Ok(read) = gix::objs::CommitRef::from_bytes(bytes, kind) else {
+            continue;
+        };
+        parents.insert(id, read.parents().collect::<Vec<_>>());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut ahead = vec![upstream];
+    while let Some(at) = ahead.pop() {
+        if !seen.insert(at) {
+            continue;
+        }
+        let Some(of) = parents.get(&at) else { continue };
+        if at == commit {
+            return true;
+        }
+        ahead.extend(of.iter().copied());
+    }
+    false
+}
+
+/// One record of `git cat-file --batch`'s answer: the commit's id and bytes (no id for an object
+/// that is missing or not a commit), and what follows it. None where the answer is not one.
+fn batch_record(answer: &[u8]) -> Option<(Option<gix::ObjectId>, &[u8], &[u8])> {
+    let end = answer.iter().position(|&b| b == b'\n')?;
+    let header = std::str::from_utf8(&answer[..end]).ok()?;
+    let after = &answer[end + 1..];
+    let mut words = header.split(' ');
+    let id = words.next()?;
+    match (words.next(), words.next(), words.next()) {
+        (Some("missing" | "ambiguous"), None, None) => Some((None, &[], after)),
+        (Some(kind), Some(size), None) => {
+            let size: usize = size.parse().ok()?;
+            let bytes = after.get(..size)?;
+            let after = after.get(size..)?.strip_prefix(b"\n")?;
+            let id = gix::ObjectId::from_hex(id.as_bytes()).ok();
+            Some((id.filter(|_| kind == "commit"), bytes, after))
+        }
+        _ => None,
+    }
 }
 
 /// **The commit the team's off arrived in**: of the commits that changed the manifest, newest

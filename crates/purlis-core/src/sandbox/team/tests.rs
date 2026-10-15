@@ -322,3 +322,150 @@ fn in_a_project_at_the_full_sandbox_a_person_who_chose_nothing_runs_at_it() {
     assert_eq!(bound.clamp(Some(Floor)), Floor);
     assert_eq!(bound.lowest, Off);
 }
+
+/// A commit of HEAD's tree on `parent`, made without moving HEAD: a commit of the upstream's
+/// that this clone has fetched but not checked out.
+fn commit_on(root: &Path, parent: &str, message: &str) -> String {
+    let made = crate::testgit::run(
+        root,
+        &[
+            "-c",
+            "user.name=Upstream",
+            "-c",
+            "user.email=upstream@example.invalid",
+            "commit-tree",
+            "HEAD^{tree}",
+            "-p",
+            parent,
+            "-m",
+            message,
+        ],
+    );
+    assert!(made.ok(), "{made:?}");
+    made.out.trim().to_owned()
+}
+
+/// Where the clone keeps `id` as a loose object.
+fn loose(root: &Path, id: &str) -> std::path::PathBuf {
+    root.join(".git/objects").join(&id[..2]).join(&id[2..])
+}
+
+/// The object kept under `id` is replaced by `bytes`, as written to the clone's own store.
+fn substitute(root: &Path, id: &str, bytes: &[u8]) {
+    let at = loose(root, id);
+    assert!(at.exists(), "{at:?}");
+    std::fs::remove_file(&at).unwrap();
+    std::fs::write(&at, bytes).unwrap();
+}
+
+/// A commit like `id`, but naming `parent` as its parent, written to the store under its own id:
+/// the loose object's bytes.
+fn forged(root: &Path, id: &str, parent: &str) -> Vec<u8> {
+    let read = crate::testgit::run(root, &["cat-file", "commit", id]);
+    assert!(read.ok(), "{read:?}");
+    let text: String = read
+        .out
+        .lines()
+        .map(|line| {
+            if line.starts_with("parent ") {
+                format!("parent {parent}\n")
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect();
+    let file = root.join(".git/forged");
+    std::fs::write(&file, text).unwrap();
+    let written = crate::testgit::run(
+        root,
+        &["hash-object", "-w", "-t", "commit", file.to_str().unwrap()],
+    );
+    assert!(written.ok(), "{written:?}");
+    std::fs::read(loose(root, written.out.trim())).unwrap()
+}
+
+#[test]
+fn an_off_further_down_the_fetched_upstream_s_history_is_named() {
+    let root = project(OFF, "Ada Lovelace");
+    let sha = head(root.path());
+    let next = commit_on(root.path(), &sha, "next");
+    let upstream_head = commit_on(root.path(), &next, "and next");
+    fetched(root.path(), &upstream_head);
+    let off = team_off(root.path());
+    let arrived = upstream(&off).expect("named");
+    assert_eq!(arrived.commit, sha);
+    assert_eq!(arrived.author, "Ada Lovelace");
+}
+
+#[test]
+fn a_substituted_or_damaged_object_on_the_way_to_the_fetched_upstream_calls_the_off_local() {
+    // The upstream went on from the project's first commit; the off is a local commit beside it.
+    let root = project("[sandbox]\nmode = \"on\"\n", "Ada");
+    let before = head(root.path());
+    let between = commit_on(root.path(), &before, "between");
+    let upstream_head = commit_on(root.path(), &between, "upstream");
+    commit(root.path(), OFF, "Ada Lovelace");
+    let sha = head(root.path());
+    fetched(root.path(), &upstream_head);
+    assert!(matches!(
+        team_off(root.path()),
+        TeamOff::Asks(Arrival::Local)
+    ));
+
+    // The commit between them, in the clone's store, now names the off as its parent.
+    let bytes = forged(root.path(), &between, &sha);
+    substitute(root.path(), &between, &bytes);
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+
+    // A damaged object reads as local too.
+    substitute(root.path(), &between, b"not an object");
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+}
+
+#[test]
+fn a_substituted_object_on_an_off_the_upstream_does_hold_calls_it_local() {
+    // The off is on the upstream, but a commit on the way to it reads other than it was written.
+    let root = project(OFF, "Ada Lovelace");
+    let sha = head(root.path());
+    let next = commit_on(root.path(), &sha, "next");
+    let upstream_head = commit_on(root.path(), &next, "and next");
+    fetched(root.path(), &upstream_head);
+    assert!(upstream(&team_off(root.path())).is_some());
+    // Same parent, other bytes: a message changed under the same id.
+    let reworded = {
+        let read = crate::testgit::run(root.path(), &["cat-file", "commit", &next]);
+        let file = root.path().join(".git/reworded");
+        std::fs::write(&file, read.out.replace("next", "other")).unwrap();
+        let written = crate::testgit::run(
+            root.path(),
+            &["hash-object", "-w", "-t", "commit", file.to_str().unwrap()],
+        );
+        assert!(written.ok(), "{written:?}");
+        std::fs::read(loose(root.path(), written.out.trim())).unwrap()
+    };
+    substitute(root.path(), &next, &reworded);
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+}
+
+#[test]
+fn a_grafts_file_calls_the_off_local() {
+    let root = project("[sandbox]\nmode = \"on\"\n", "Ada");
+    let before = head(root.path());
+    let upstream_head = commit_on(root.path(), &before, "upstream");
+    commit(root.path(), OFF, "Ada Lovelace");
+    let sha = head(root.path());
+    fetched(root.path(), &upstream_head);
+    // A graft gives the upstream's commit the off as its parent.
+    let info = root.path().join(".git/info");
+    std::fs::create_dir_all(&info).unwrap();
+    std::fs::write(info.join("grafts"), format!("{upstream_head} {sha}\n")).unwrap();
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+    // And with the graft gone, the off is local still: it never was on the upstream.
+    std::fs::remove_file(info.join("grafts")).unwrap();
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+}
