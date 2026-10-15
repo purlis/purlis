@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792024887971,
+  "lastUpdate": 1792025851143,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11508,6 +11508,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6400705,
             "unit": "ms",
             "extra": "median of 5 runs: 101.186, 101.206, 101.640, 101.720, 101.912 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "05264a28fe7a205b4bf7a1d2131604966862c8bd",
+          "message": "A Claude Code chat is allowed a service on this Mac, reached by name (qw384b) (#2097)\n\n* fix(qw384b): a chat's proxy carries a granted port by name, and a chat's kubeconfig names it so\n\nThe reach table carries this-mac.internal:P, and a name that resolves to this machine's\nloopback alone (kubernetes.docker.internal), to 127.0.0.1:P while the chat holds P, at the\nlayer that granted it; on any other port it is this machine, refused and never asked about.\nNames are resolved only for a chat that holds a port. A port withdrawn while the chat runs is\ncarried by no copy of its reach any more.\n\nkubeconfig copies one context for one chat: only a cluster on this Mac (127.0.0.1, localhost,\nkubernetes.docker.internal), its server named https://this-mac.internal:P with\ntls-server-name the name it had; a context elsewhere, with a proxy of its own or skipping the\ncertificate check is refused with why.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw384b): a Claude Code chat is allowed a service on this Mac, reached by name\n\nA Claude Code chat's port Block now offers the same Allow as Codex and opencode. Its commands\nreach the port through the chat's proxy as this-mac.internal:<port> (or a name resolving to\nthis machine's loopback, such as kubernetes.docker.internal), only while the chat holds it, and\nthe chat is told the name when it restarts. Removing a port's grant withdraws it from every open\nchat's proxy at once, but one that holds it for itself.\n\nPoint kubectl at it, on the Notice once the port is allowed, lists the person's kube contexts\n(kubectl config view) and copies one whose cluster is on this Mac for that chat alone: server\nhttps://this-mac.internal:<port>, tls-server-name the name it had, written 0600 into the chat's\nown folder at each start and named by KUBECONFIG for it alone. Any other context is listed with\nwhy; a context with a proxy of its own or no certificate check is refused. ~/.kube is never\nwritten.\n\nA refusal of this-mac.internal:<port>, or of a name resolving to loopback, is a Block naming the\nport. ADR 0067 amendment, CONTEXT term and changes fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(qw384b): Point kubectl's commands are the window's alone, and its tests arm the sandbox\n\nkube_contexts reads the person's kubeconfig and point_kubectl widens what a chat reaches, so\nneither is served on a link. The tests that start a sandboxed chat arm it as the app ships an\nopencode chat. A refusal's words name no command that is not one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* style(qw384b): the withdraw test keeps its pretend host unnamed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(qw384b): the Claude Code port route is compared whole, never printed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw384b): names of this Mac are a fixed list, pinned to loopback; the copy says it holds credentials\n\nThe proxy carries a granted port by this-mac.internal, kubernetes.docker.internal and\nhost.docker.internal alone, never looked up: Reach::decide_by_name decides them, and connect\nis made to this machine's loopback on that port and nowhere else (egress::addresses). No other\nname is looked up on this account, in the decision or in the Block's port.\n\nBefore a context is chosen, Point kubectl at it says the chat gets its own copy of it,\ncredentials included, which the chat can read. The copy is made new each time, never through\na link. Removing a port stops new connections at once; one already open ends when the chat\nrestarts, as the ADR and the changes fragment now say.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T04:52:21+04:00",
+          "tree_id": "8ef35adbe725947de58c15299b789344bc5e72e5",
+          "url": "https://github.com/purlis/purlis/commit/05264a28fe7a205b4bf7a1d2131604966862c8bd"
+        },
+        "date": 1792025849709,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46423800000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.460, 0.460, 0.464, 0.467, 0.475 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.388755000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.214, 16.291, 16.389, 16.491, 16.519 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.421685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.439, 100.746, 101.422, 101.777, 101.852 ms"
           }
         ]
       }
