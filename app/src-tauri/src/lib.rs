@@ -2920,7 +2920,11 @@ fn refuse_beside_the_old_app() {
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
-        purlis_host::FromTheWindow(sessionhost::launched)
+        purlis_host::Hosting::hearing_with(
+            purlis_host::FromTheWindow(sessionhost::launched),
+            purlis_host::Terminals,
+            sessionhost::HookChannels,
+        )
     })
 }
 
@@ -2933,15 +2937,17 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
         let connection = app.state::<sessionhost::SessionHost>().connection();
-        return planes.running_sessions_on(std::sync::Arc::new(
-            move |reporting, root: &std::path::Path| {
-                Box::new(hostedsessions::HostedSessions::new(
-                    std::sync::Arc::clone(&connection),
-                    root,
-                    reporting,
-                ))
-            },
-        ));
+        // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
+        return planes
+            .running_sessions_on(std::sync::Arc::new(
+                move |_reporting, root: &std::path::Path| {
+                    Box::new(hostedsessions::HostedSessions::new(
+                        std::sync::Arc::clone(&connection),
+                        root,
+                    ))
+                },
+            ))
+            .hearing_hooks_through_the_host();
     }
     let _ = app;
     planes

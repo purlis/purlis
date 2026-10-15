@@ -2892,6 +2892,8 @@ pub mod spool;
 pub mod permission;
 
 pub mod framed;
+
+pub mod relay;
 #[cfg(unix)]
 pub use framed::Framed;
 #[cfg(not(unix))]

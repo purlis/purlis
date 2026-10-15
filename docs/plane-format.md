@@ -6128,10 +6128,16 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   why and closed, unread. A hook reads that as not taken and spools its line for the next
   drain; a `purlis` command that asked something says the app is busy.
 - **Status:** **internal** — bound by the app while a plane is open and gone with it. Nothing
-  reads it but the connection it serves. **purlis only.**
-- **Tier:** Clone state, transient — it lives as long as the app has the plane open.
+  reads it but the connection it serves. **purlis only.** With chats in the session host (the
+  start-time switch, ADR 0068 as amended for #1998), the session host binds it instead, from
+  when it first holds the project until nothing holds it, issues each chat its token, and
+  hands each line it admits on to the window, which answers it (#2000). The path, the line and
+  every check on it are the same either way.
+- **Tier:** Clone state, transient — it lives as long as the app (or the session host) has the
+  plane open.
 - **Written by:** `hooks::socket_for` names it and `hookwire::Listener::bind` binds it
-  (`app/src-tauri/src/hooks.rs`, `crates/purlis-core/src/hookwire.rs`). When
+  (`app/src-tauri/src/hooks.rs`, `crates/purlis-core/src/hookwire.rs`; in the session host,
+  `app/src-tauri/src/sessionhost.rs`'s `HookChannels`). When
   `<plane>/.charter/app/hooks.sock` would be longer than a socket path may be (104 bytes on
   macOS), it is `charter-<user>-<16 hex>/hooks.sock` under `$XDG_RUNTIME_DIR`, else the per-user
   temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`.
