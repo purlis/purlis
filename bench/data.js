@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792076483647,
+  "lastUpdate": 1792078748158,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12558,6 +12558,48 @@ window.BENCHMARK_DATA = {
             "value": 101.953176,
             "unit": "ms",
             "extra": "median of 5 runs: 99.808, 100.187, 101.953, 102.139, 102.980 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "187c9bcfc4e1d3aeb810182834a22bf8ff508165",
+          "message": "Hook socket, tokens, board and Needs you live in the session host (#2186)\n\n* A chat's hooks are heard in the session host\n\nWith the start-time switch on, the session host owns each held project's\nhook socket and its chats' tokens. It binds the socket with the window's\nown listener and checks (token, sending process, each framed ask), deals\neach chat's number, issues each chat its token and records its program.\nEach line it admits is pushed to the window that holds the project and\nheard there with the window's own hearing, so the board, Needs you and\nthe asks move as before; the reply goes back over the link.\n\nSession protocol 1.3 adds `deal`, `dealt_already`, `reply_heard` and the\npushed `heard`, window-only. The behaviour suite gains a chat that needs\nyou and a permission ask answered from the window on Claude Code, Codex\nand opencode, and a hook that refuses a listener that is not its chat's\nancestor, on both targets.\n\nCloses #2000\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Hooks in the host: review fixes for #2000\n\nThe ADR amendment's decision labels now match the PR. It adds the\nper-project line order and says plainly that a line taken late can be\nrecorded twice in the event log until #2003. The switch-off item follows\nthe operator's ruling. Numbers are dealt with a checked add and are\nrefused past the last one, on both sides. The permission behaviour\nexpects literal decisions, and a test holds that the window's launch\nsays nothing of where a chat reports.\n\nRefs #2000\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T19:37:48+04:00",
+          "tree_id": "538884ff04c14fa0e89bf8cdb714ee1188339815",
+          "url": "https://github.com/purlis/purlis/commit/187c9bcfc4e1d3aeb810182834a22bf8ff508165"
+        },
+        "date": 1792078747120,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5428115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.531, 0.541, 0.543, 0.545, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.965889,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.325, 16.886, 16.966, 17.038, 17.506 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.0244195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.647, 103.743, 104.024, 105.299, 105.506 ms"
           }
         ]
       }
