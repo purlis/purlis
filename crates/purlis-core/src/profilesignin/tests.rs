@@ -258,6 +258,7 @@ mod billed {
             adopted: None,
             imported: None,
             sign_in,
+            pinned: None,
             rest: Default::default(),
         }
     }
@@ -311,6 +312,7 @@ mod handing {
             adopted: None,
             imported: None,
             sign_in: Some(sign_in),
+            pinned: None,
             rest: Default::default(),
         };
         (profile, vec![record])
@@ -485,6 +487,7 @@ fn no_refusal_or_row_has_a_double_space() {
             adopted: None,
             imported: None,
             sign_in: Some(sign_in),
+            pinned: None,
             rest: Default::default(),
         };
         for open in [false, true] {

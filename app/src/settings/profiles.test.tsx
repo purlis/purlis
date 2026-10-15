@@ -12,7 +12,8 @@ import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./links";
 
 /**
  * **Settings › You › Profiles** (#2034): this machine's profiles are listed with when their
- * settings were imported; Add profile hands the name and harness to the core; Import again
+ * settings were imported and the version each is pinned to (#2038), with Update the pin where a
+ * newer one is installed; Add profile hands the name and harness to the core; Import again
  * imports again; Remove… asks first with what goes, and removes only what it showed; an adopted
  * profile's question says its folder stays. Each row says how its profile signs in, where, and
  * what its harness says (#2035); Sign in asks the project's window to sign it in.
@@ -33,6 +34,9 @@ function row(name: string, more: Partial<MachineProfileRow> = {}): MachineProfil
     signs_in: "through Claude Code's own sign-in, on this Mac",
     standing: "signed-in",
     plans: [],
+    pinned: "2.1.300",
+    installed: "2.1.300",
+    offered: null,
     ...more,
   };
 }
@@ -78,6 +82,13 @@ beforeEach(() => {
         if (of === undefined) throw "this machine has no profile named that.";
         return removal(of);
       }
+      case "machine_profile_pin": {
+        const pinned = profiles.find((one) => one.name === given.name);
+        if (pinned === undefined) throw "this machine has no profile named that.";
+        pinned.pinned = String(given.version);
+        pinned.offered = null;
+        return structuredClone(pinned);
+      }
       case "machine_profile_remove":
         profiles = profiles.filter((one) => one.name !== given.name);
         return null;
@@ -107,6 +118,42 @@ function Row({ at, plane = "/p" }: { at: number; plane?: string | null }) {
 }
 
 describe("Settings › You › Profiles", () => {
+  it("says each profile's pinned version and offers another major version installed", async () => {
+    profiles = [
+      row("work", { pinned: "2.1.283", installed: "3.0.0", offered: "3.0.0" }),
+      row("same"),
+      row("new", { pinned: null }),
+      row("minor", { pinned: "2.1.283", installed: "2.2.0" }),
+      row("mine", {
+        origin: "adopted",
+        imported_at: null,
+        pinned: "2.1.283",
+        installed: "2.1.300",
+      }),
+    ];
+    render(<Row at={0} />);
+    expect(await screen.findByText("Pinned to 2.1.283, 3.0.0 installed")).toBeTruthy();
+    expect(screen.getByText("Pinned to 2.1.300")).toBeTruthy();
+    expect(screen.getByText("Pinned by its first chat")).toBeTruthy();
+    expect(screen.getByText("Pinned to 2.1.283, its next chat follows 2.2.0")).toBeTruthy();
+    expect(screen.getByText("Pinned to 2.1.283, its next chat follows 2.1.300")).toBeTruthy();
+    // Only a profile whose next chat would not start on the version installed is offered it.
+    expect(screen.getAllByRole("button", { name: /^Update the pin of / })).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Update the pin of work to 3.0.0" }));
+
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "machine_profile_pin",
+        args: { name: "work", version: "3.0.0" },
+      }),
+    );
+    expect(
+      await screen.findByText("work: its chats run on Claude Code 3.0.0 from now on."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Update the pin of / })).toBeNull();
+  });
+
   it("lists each profile with when its settings were imported", async () => {
     profiles = [row("work"), row("mine", { origin: "adopted", imported_at: null })];
     render(<Row at={0} />);

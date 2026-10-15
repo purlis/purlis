@@ -16,6 +16,7 @@ use std::io::{IsTerminal, Read, Write};
 use clap::{Args, Subcommand};
 use purlis_core::secrets::cmd::{self, Io, Say};
 use purlis_core::secrets::exec::{self, Request};
+use purlis_core::secrets::persons_own::{self, Verb};
 use purlis_core::secrets::vaultcmd::{self, AddRequest};
 use purlis_core::secrets::{Ctx, Env};
 
@@ -381,9 +382,30 @@ pub fn persona_secret(
         | PersonaSecretCommand::Cp { who, .. }
         | PersonaSecretCommand::Exec { who, .. } => who.persona.clone(),
     };
+    let flag = who.filter(|p| !p.is_empty());
+    // In a sandboxed chat a write or an audit is the person's: decided before the persona's
+    // vault is looked up in the registry (#1969).
+    let persons = match &command {
+        PersonaSecretCommand::Set { set, .. } => Some(Verb::PersonaSecretSet {
+            persona: flag.as_deref(),
+            key: &set.key,
+        }),
+        PersonaSecretCommand::Rm { key, .. } => Some(Verb::PersonaSecretRm {
+            persona: flag.as_deref(),
+            key,
+        }),
+        PersonaSecretCommand::Audit { .. } => Some(Verb::PersonaSecretAudit {
+            persona: flag.as_deref(),
+        }),
+        _ => None,
+    };
+    if let Some(verb) = persons
+        && persons_own::refused(&ctx, verb, io)
+    {
+        return 1;
+    }
     // The whole check first (#1059): a misspelled `--persona` must not read whatever vault
     // happens to be tagged with the misspelling.
-    let flag = who.filter(|p| !p.is_empty());
     if let Some(name) = &flag
         && let Some(refused) = purlis_core::personas::name_refusal(here.plane.root(), name)
     {

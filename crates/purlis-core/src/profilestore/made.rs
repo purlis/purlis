@@ -238,6 +238,7 @@ pub fn create(
             adopted: None,
             imported: from.map(|from| Imported { at: now, from }),
             sign_in: None,
+            pinned: None,
             rest: Map::new(),
         };
         store.profiles.push(record.clone());
