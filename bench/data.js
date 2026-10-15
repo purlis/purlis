@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792083860393,
+  "lastUpdate": 1792085278136,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12726,6 +12726,48 @@ window.BENCHMARK_DATA = {
             "value": 103.5528685,
             "unit": "ms",
             "extra": "median of 5 runs: 103.140, 103.549, 103.553, 105.143, 105.270 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c3b904c60b83e3d9d84ce686cc81dd22a9fe88e2",
+          "message": "docs(adr): an amendment is a file of its own, so parallel PRs stop conflicting (#2195)\n\n* docs(adr): an amendment is a file of its own, docs/adr/<NNNN>/<date>-<slug>.md\n\nEvery pull request that amended ADR 0067 appended a dated section to its end, so any two in\nflight conflicted at the same lines. An amendment is now a file of its own beside the record,\nas a changelog entry is a fragment in changes/:\n\n- The 196 dated amendment sections of 51 ADRs (\"Amended\", \"Amendment\", \"Noted\", \"Ruled\",\n  \"Decided\", \"Built\", \"Re-opened\", \"ADR NNNN, amended\") move once into\n  docs/adr/<NNNN>/<yyyy-mm-dd>-<slug>.md, text and dates unchanged; each heading moves up one\n  level, and relative links gain the one \"../\" the folder adds. Same-day amendments whose\n  names would not sort in the order they were written carry a two-digit ordinal.\n- Each such record ends with an \"Amendments\" section that links to its folder and lists\n  nothing, so it never changes again when an amendment is added.\n- The docs site's sync appends the list of a record's amendments to its page, in name order.\n- tools/adr-amendments.mjs refuses a dated amendment section in any record, an amendments\n  folder with no record of its number, a record that does not link to its folder, and a file\n  not named <yyyy-mm-dd>-<slug>.md or not starting with its heading. Its test checks the\n  repository's own docs/adr, so CI's tool tests hold the rule.\n\nCloses #1982\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* docs(adr): sub-section amendments are files too, and same-day 0086 reads in order\n\nReview of #2195:\n\n- The guard reads `### ` headings as well as `## `. ADR 0064's eight dated `### Amended`\n  sub-sections move to docs/adr/0064/, each to the next heading of its level, with its\n  headings moved up two levels.\n- A refusal names the exact file to write, docs/adr/<NNNN>/<date>-<slug>.md, from the\n  heading by the same rule the move used (amendmentFile), so a pull request can be fixed in\n  one step.\n- Same-day order compares whole file names, so 0086's two 2026-10-02 amendments carry -01-\n  and -02- and read in the order they were written.\n\nRefs #1982\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T21:26:29+04:00",
+          "tree_id": "aeeb9108371c8184608290b0fba2b89212f2ff8d",
+          "url": "https://github.com/purlis/purlis/commit/c3b904c60b83e3d9d84ce686cc81dd22a9fe88e2"
+        },
+        "date": 1792085276779,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.519149,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.519, 0.519, 0.531, 0.532 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.953434,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.412, 16.605, 16.953, 17.081, 17.180 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.7997355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.589, 103.620, 104.800, 105.571, 108.372 ms"
           }
         ]
       }
