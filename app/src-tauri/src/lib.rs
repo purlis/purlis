@@ -89,6 +89,7 @@ mod planes;
 mod planewatch;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod proposals;
 mod readonly;
 mod rebrief;
 mod references;

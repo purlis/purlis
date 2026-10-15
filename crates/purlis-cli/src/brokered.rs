@@ -295,14 +295,14 @@ pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
     }
     let content = String::from_utf8(content)
         .map_err(|_| "the draft is not text purlis can show".to_owned())?;
-    let proposal = proposed::read_and_apply(root, &rel, |_| Ok(content))?;
+    let proposal = proposed::read_and_apply(root, &rel, proposed::Change::Whole { content })?;
     let answered = asked(
         |chat| {
             Ask::Propose(Box::new(hookwire::ProposeAsk {
                 chat,
                 path: proposal.path.display().to_string(),
                 base: proposal.base,
-                content: proposal.content,
+                change: proposal.change,
             }))
         },
         A_WRITE_TAKES_AT_MOST,

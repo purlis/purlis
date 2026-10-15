@@ -623,6 +623,17 @@ export const commands = {
 	 *  next turn that the person kept the workspace, and not to ask again unless they ask.
 	 */
 	keepAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<null, string>(__TAURI_INVOKE("keep_asked_workspace", { plane, session, workspace })),
+	/**
+	 *  **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
+	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
+	 *  Window-only.
+	 */
+	applyProposedChange: (plane: PlaneId, id: number) => typedError<string, string>(__TAURI_INVOKE("apply_proposed_change", { plane, id })),
+	/**
+	 *  **Dismiss** on a proposed change: nothing is written, and the chat is told on its next turn.
+	 *  Window-only.
+	 */
+	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	/**
@@ -3225,6 +3236,11 @@ export type AnswerPath =
  *  own count.
  */
 { via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
+/**
+ *  `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
+ *  proposal `id` (#1975).
+ */
+{ via: "proposed-change"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3329,6 +3345,11 @@ export type AskSource =
  *  (qw356).
  */
 "workspace-removal" | 
+/**
+ *  A change a chat proposed to purlis's own configuration, which only the person applies
+ *  (#1975).
+ */
+"proposed-change" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */

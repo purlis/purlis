@@ -260,6 +260,9 @@ pub struct Held {
     vault_refusals: crate::vaultroute::Refusals,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
+    /// The changes each chat proposed to purlis's own configuration, until the person answers
+    /// (#1975).
+    proposals: crate::proposals::Proposals,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
     mcp_failures: Arc<crate::mcpfailed::Failures>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
@@ -509,6 +512,12 @@ impl Held {
     /// (qw356).
     pub fn removal_asks(&self) -> &crate::removalasks::Asked {
         &self.removal_asks
+    }
+
+    /// The changes each chat proposed to purlis's own configuration, for the person to apply
+    /// (#1975).
+    pub fn proposals(&self) -> &crate::proposals::Proposals {
+        &self.proposals
     }
 
     /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
@@ -971,6 +980,7 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
+        self.proposals.forget(session);
         self.mcp_failures.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
@@ -3607,6 +3617,7 @@ impl Planes {
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
+            proposals: crate::proposals::Proposals::default(),
             mcp_failures,
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),

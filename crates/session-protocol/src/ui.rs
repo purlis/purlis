@@ -278,6 +278,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.
     "keep_asked_workspace",
+    // Apply and Dismiss on a chat's proposed change (#1975): only the person applies a change to
+    // purlis's own configuration, and no chat answers its own proposal (PC-3).
+    "apply_proposed_change",
+    "dismiss_proposed_change",
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",

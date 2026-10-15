@@ -131,7 +131,12 @@ fn a_draft_in_the_chat_s_folder_is_handed_over_as_the_manifest_s_new_content() {
         Ok(Ask::Propose(proposed)) => {
             assert_eq!(proposed.chat, 3);
             assert_eq!(proposed.path, "charter.toml");
-            assert_eq!(proposed.content, "schema = 1\nmode = \"pr\"\n");
+            assert_eq!(
+                proposed.change,
+                purlis_core::proposed::Change::Whole {
+                    content: "schema = 1\nmode = \"pr\"\n".to_owned()
+                }
+            );
             assert_eq!(
                 proposed.base,
                 purlis_core::proposed::base_of(Some(b"schema = 1\n"))

@@ -269,9 +269,10 @@ pub fn answer(
         Ask::Keys { chat, vault } => {
             crate::vaults::keys_for_chat(held, plane, &|_| {}, chat, &vault)
         }
-        // A proposed change (#1975): this app does not hold one for the person yet, so it says
-        // so, and the asking chat is refused its edit as before.
-        Ask::Propose(_) => no(purlis_core::proposed::NOT_HELD.to_owned()),
+        // A proposed change (#1975): no ticket, for the removal's reason. The line names a file
+        // and a change; the app writes nothing for it, and holds it for the person on the tab
+        // of the chat whose token the line carries.
+        Ask::Propose(proposal) => crate::proposals::asked(held, &proposal),
         // Where the asking chat is working (#1450): no ticket, for the record's reason. The
         // line names only the chat whose token it carries, and the picture is this app's own
         // record of its open chats.
@@ -7139,7 +7140,9 @@ mod tests {
                 chat,
                 path: "purlis.toml".to_owned(),
                 base: None,
-                content: "[plane]\n".to_owned(),
+                change: purlis_core::proposed::Change::Whole {
+                    content: "[plane]\n".to_owned(),
+                },
             })),
         ];
         let mut kinds: Vec<usize> = asks.iter().map(kind).collect();

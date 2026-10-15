@@ -56,6 +56,8 @@ export const LANES = {
       "declineProjectExpects",
       "allowPersonaHosts",
       "allowPersonaGrants",
+      // A proposed change applied to the project's manifest (#1975).
+      "applyProposedChange",
       // It drops a listed folder that resolves elsewhere now, so it writes as it reads.
       "grantableFolders",
       "listGrantableFolder",

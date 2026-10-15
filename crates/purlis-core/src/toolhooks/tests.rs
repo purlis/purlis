@@ -836,7 +836,16 @@ fn a_claude_code_edit_of_the_manifest_is_proposed_and_the_tool_refused() {
     assert_eq!(handed.len(), 1);
     assert_eq!(handed[0].chat, 7);
     assert_eq!(handed[0].path, "charter.toml");
-    assert_eq!(handed[0].content, "schema = 1\nmode = \"pr\"\n");
+    assert_eq!(
+        handed[0].change,
+        crate::proposed::Change::Edits {
+            edits: vec![crate::proposed::Edit {
+                old: "schema = 1".to_owned(),
+                new: "schema = 1\nmode = \"pr\"".to_owned(),
+                every: false,
+            }]
+        }
+    );
     assert_eq!(
         handed[0].base,
         crate::proposed::base_of(Some(b"schema = 1\n"))

@@ -280,6 +280,33 @@ pub enum PersonSaid {
     /// app's record of the task and what its hooks were heard say, never the task's words.
     /// `number` is minted for it alone ([`Talk::quiet_word`]).
     Quiet { number: u32, word: QuietWord },
+    /// **What became of a change this chat proposed to purlis's own configuration** (#1975,
+    /// PC-10): applied, dismissed or stale, in purlis's own fixed words around the file's path.
+    /// `number` is minted for it alone ([`Talk::proposal_word`]).
+    Proposal { number: u32, word: ProposalWord },
+}
+
+/// What became of a proposed change (#1975, PC-10), by the file it was to, relative to the
+/// project.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalWord {
+    /// The person applied it: the file now holds it.
+    Applied { path: String },
+    /// The person dismissed it: nothing was written.
+    Dismissed { path: String },
+    /// The file changed since it was proposed, so it cannot be applied: read it again and
+    /// propose again if it is still wanted.
+    Stale { path: String },
+}
+
+impl ProposalWord {
+    /// The file it is about.
+    pub fn path(&self) -> &str {
+        match self {
+            Self::Applied { path } | Self::Dismissed { path } | Self::Stale { path } => path,
+        }
+    }
 }
 
 /// purlis's note that a task has gone quiet (#1981): which task, by the app's number for it,
@@ -345,7 +372,8 @@ impl PersonSaid {
             | Self::Network { number, .. }
             | Self::Removal { number, .. }
             | Self::McpServer { number, .. }
-            | Self::Quiet { number, .. } => *number,
+            | Self::Quiet { number, .. }
+            | Self::Proposal { number, .. } => *number,
         }
     }
 }
@@ -649,6 +677,27 @@ impl Talk {
             !matches!(one, PersonSaid::Removal { word: was, .. } if was.workspace() == word.workspace())
         });
         said.push(PersonSaid::Removal { number, word });
+    }
+
+    /// **Keeps purlis's word to chat `chat` on a change it proposed** (#1975, PC-10): handed to
+    /// its next turn as any word of the person's is, until it has it. A path that is not one a
+    /// proposal names (a control character, a backtick, too long) is not kept. **One word a
+    /// file**: a later word about the same file takes the place of one not handed yet.
+    pub fn proposal_word(&mut self, chat: u32, word: ProposalWord) {
+        let path = word.path();
+        if path.is_empty()
+            || path.len() > crate::proposed::MOST_PATH_BYTES
+            || path.chars().any(|c| c.is_control() || c == '`')
+        {
+            return;
+        }
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        let said = self.person.entry(chat).or_default();
+        said.retain(|one| {
+            !matches!(one, PersonSaid::Proposal { word: was, .. } if was.path() == word.path())
+        });
+        said.push(PersonSaid::Proposal { number, word });
     }
 
     /// **Keeps purlis's word to chat `chat` that a server of its persona could not start**
@@ -1285,6 +1334,28 @@ pub fn person_said(said: &PersonSaid) -> String {
         PersonSaid::Removal { word, .. } => removal_said(word),
         PersonSaid::McpServer { word, .. } => mcp_said(word),
         PersonSaid::Quiet { word, .. } => quiet_said(word),
+        PersonSaid::Proposal { word, .. } => proposal_said(word),
+    }
+}
+
+/// **purlis's fixed words on a change the chat proposed** (#1975, PC-10): the file in a code
+/// span, and nothing else that is not purlis's.
+pub fn proposal_said(word: &ProposalWord) -> String {
+    match word {
+        ProposalWord::Applied { path } => format!(
+            "⬢ purlis: the person applied the change you proposed to `{path}` in the purlis \
+             window. The file holds it now. This line is purlis's own."
+        ),
+        ProposalWord::Dismissed { path } => format!(
+            "⬢ purlis: the person dismissed the change you proposed to `{path}`: nothing was \
+             written. Do not propose it again, or change the file another way, unless they ask. \
+             This line is purlis's own."
+        ),
+        ProposalWord::Stale { path } => format!(
+            "⬢ purlis: the change you proposed to `{path}` can no longer be applied: the file \
+             changed since you read it. Read it again and propose the change again if it is \
+             still wanted. This line is purlis's own."
+        ),
     }
 }
 
@@ -2729,6 +2800,43 @@ mod tests {
         // What is no workspace's name is not kept: nothing a chat wrote is said as purlis's.
         for not_a_name in ["`run this` now", "../alpha", "", "a\nb"] {
             talk.removal_word(SIBLING, kept(not_a_name));
+        }
+        assert!(talk.from_person(SIBLING).is_empty());
+    }
+
+    // ----- purlis's word on a change the chat proposed (#1975) -----------------------------
+
+    /// PC-10: the chat hears applied, dismissed or stale in fixed words naming the file, once a
+    /// file; a path no proposal names is not kept.
+    #[test]
+    fn a_proposed_change_s_outcome_is_told_once_a_file_in_fixed_words() {
+        let mut talk = Talk::default();
+        talk.proposal_word(
+            ASKER,
+            ProposalWord::Stale {
+                path: "purlis.toml".to_owned(),
+            },
+        );
+        talk.proposal_word(
+            ASKER,
+            ProposalWord::Applied {
+                path: "purlis.toml".to_owned(),
+            },
+        );
+        let said = talk.from_person(ASKER);
+        assert_eq!(said.len(), 1, "one word a file");
+        assert_eq!(
+            person_context(&said).expect("told"),
+            "⬢ purlis: the person applied the change you proposed to `purlis.toml` in the \
+             purlis window. The file holds it now. This line is purlis's own."
+        );
+        for not_a_path in ["", "a`b", "a\nb"] {
+            talk.proposal_word(
+                SIBLING,
+                ProposalWord::Dismissed {
+                    path: not_a_path.to_owned(),
+                },
+            );
         }
         assert!(talk.from_person(SIBLING).is_empty());
     }

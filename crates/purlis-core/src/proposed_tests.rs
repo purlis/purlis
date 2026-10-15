@@ -137,7 +137,18 @@ fn a_hook_s_edit_of_a_proposable_file_is_a_proposal_against_the_file_as_it_is() 
         .expect("ours")
         .expect("a proposal");
     assert_eq!(proposed.path, PathBuf::from("purlis.toml"));
-    assert_eq!(proposed.content, "[plane]\nmode = \"pr\"\n");
+    assert_eq!(proposed.after, "[plane]\nmode = \"pr\"\n");
+    // What travels is the tool's own edit, never the file.
+    assert_eq!(
+        proposed.change,
+        Change::Edits {
+            edits: vec![Edit {
+                old: "[plane]".to_owned(),
+                new: "[plane]\nmode = \"pr\"".to_owned(),
+                every: false,
+            }]
+        }
+    );
     assert_eq!(proposed.base, base_of(Some(b"[plane]\n")));
 
     // A file that is not there yet is proposed whole, with no base.
@@ -265,22 +276,110 @@ fn an_edit_claude_code_would_refuse_is_refused() {
     }
 }
 
-/// The size cap is a boundary, not a cut: a file of [`MOST_BYTES`] is proposed whole, one byte
-/// more is not proposed at all.
+/// The size cap is a boundary, not a cut: a whole content of [`MOST_BYTES`] is proposed whole,
+/// one byte more is not proposed at all; and an edit carries only its own text, so a file far
+/// larger than that is proposed as its edit, up to [`MOST_FILE_BYTES`].
 #[test]
-fn a_proposal_is_never_cut_at_the_size_cap() {
+fn a_proposal_is_never_cut_and_an_edit_carries_only_its_own_text() {
     let (_dir, root) = project();
     let rel = Path::new("personas/devops/persona.md");
     let at_most = "x".repeat(MOST_BYTES);
-    let whole = read_and_apply(&root, rel, |_| Ok(at_most.clone())).expect("whole");
-    assert_eq!(whole.content.len(), MOST_BYTES);
+    let whole = read_and_apply(
+        &root,
+        rel,
+        Change::Whole {
+            content: at_most.clone(),
+        },
+    )
+    .expect("whole");
+    assert_eq!(whole.after.len(), MOST_BYTES);
     assert_eq!(
-        read_and_apply(&root, rel, |_| Ok(format!("{at_most}x"))),
+        read_and_apply(
+            &root,
+            rel,
+            Change::Whole {
+                content: format!("{at_most}x")
+            }
+        ),
         Err(UNPREPARED.to_owned())
     );
-    std::fs::write(root.join(rel), format!("{at_most}x")).expect("a long file");
-    assert_eq!(
-        read_and_apply(&root, rel, |now| Ok(now.unwrap_or_default().to_owned())),
-        Err(UNPREPARED.to_owned())
+
+    // A persona of 200 KiB, one line of it changed.
+    let large = format!(
+        "---\nname: devops\n---\n{}",
+        "words ".repeat(200 * 1024 / 6)
     );
+    std::fs::write(root.join(rel), &large).expect("a large persona");
+    let edit = serde_json::json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "personas/devops/persona.md", "old_string": "name: devops", "new_string": "name: ops"},
+    });
+    let proposed = from_edit(&root, &edit, &root)
+        .expect("ours")
+        .expect("a proposal");
+    assert!(proposed.change.carried() < 32);
+    assert_eq!(
+        proposed.after,
+        large.replacen("name: devops", "name: ops", 1)
+    );
+
+    // A file past what a proposal may change is not read at all.
+    std::fs::write(root.join(rel), "x".repeat(MOST_FILE_BYTES + 1)).expect("a longer file");
+    assert_eq!(
+        from_edit(&root, &edit, &root),
+        Some(Err(UNPREPARED.to_owned()))
+    );
+}
+
+/// PC-3, PC-8: the app makes the change to the file as it reads it, only while it is what the
+/// proposal was worked out against, and writes exactly that, keeping the file's permissions.
+#[cfg(unix)]
+#[test]
+fn the_app_makes_and_writes_the_change_only_while_the_file_is_what_it_was() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, root) = project();
+    let rel = Path::new("purlis.toml");
+    std::fs::set_permissions(root.join(rel), std::fs::Permissions::from_mode(0o640))
+        .expect("a mode");
+    let change = Change::Edits {
+        edits: vec![Edit {
+            old: "[plane]".to_owned(),
+            new: "[plane]\nmode = \"pr\"".to_owned(),
+            every: false,
+        }],
+    };
+    let base = base_of(Some(b"[plane]\n"));
+    let prepared = prepare(&root, rel, Some(base.as_deref()), &change).expect("made");
+    assert_eq!(prepared.before.as_deref(), Some("[plane]\n"));
+    write_pinned(&root, rel, base.as_deref(), &prepared.after).expect("written");
+    assert_eq!(
+        std::fs::read_to_string(root.join(rel)).expect("read"),
+        "[plane]\nmode = \"pr\"\n"
+    );
+    assert_eq!(
+        std::fs::metadata(root.join(rel))
+            .expect("there")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o640
+    );
+    // The file changed since: stale, at both steps, and nothing written.
+    assert_eq!(
+        prepare(&root, rel, Some(base.as_deref()), &change),
+        Err(NotMade::Stale)
+    );
+    assert_eq!(
+        write_pinned(&root, rel, base.as_deref(), "x"),
+        Err(NotMade::Stale)
+    );
+    // A new file in a skill folder that is not there yet is made with it.
+    let skill = Path::new(".claude/skills/review/SKILL.md");
+    write_pinned(&root, skill, None, "# Review\n").expect("a new skill");
+    assert_eq!(
+        std::fs::read_to_string(root.join(skill)).expect("read"),
+        "# Review\n"
+    );
+    // One a chat made since it was proposed as new: stale.
+    assert_eq!(write_pinned(&root, skill, None, "x"), Err(NotMade::Stale));
 }

@@ -40,15 +40,17 @@ pub const PROPOSED_SAID: &str = "purlis showed this change to the person as a pr
      only they apply it, in the window. Wait for their answer, which comes back to this chat as \
      applied, dismissed or stale. Do not write the file another way.";
 
-/// What an app that does not hold proposed changes answers one ([`crate::hookwire::Ask::Propose`]):
-/// the asking chat is then refused its edit as before.
-pub const NOT_HELD: &str = "this app does not show proposed changes to the person";
-
-/// **The most bytes a proposed file may hold**: what the hook channel carries whole on one line
-/// at its worst, every byte a character JSON spells in six, beside the longest path
-/// ([`MOST_PATH_BYTES`]) and the base. A proposal is never cut: a longer one is not made
-/// (`hookwire`'s test holds the two together).
+/// **The most bytes a proposal carries** ([`Change::carried`]): what the hook channel carries
+/// whole on one line at its worst, every byte a character JSON spells in six, beside the
+/// longest path ([`MOST_PATH_BYTES`]) and the base. An edit carries only its own text, so the
+/// file it changes may be far larger ([`MOST_FILE_BYTES`]); a whole new content is held to
+/// this. A proposal is never cut: a longer one is not made (`hookwire`'s test holds the two
+/// together).
 pub const MOST_BYTES: usize = 12 * 1024;
+
+/// The most bytes a file a proposal changes may hold, before or after: read whole to show the
+/// change and to write it. Far past any configuration file.
+pub const MOST_FILE_BYTES: usize = 1024 * 1024;
 
 /// The longest path a proposal names, in bytes.
 pub const MOST_PATH_BYTES: usize = 256;
@@ -152,40 +154,101 @@ fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
         .filter(|rel| !rel.as_os_str().is_empty())
 }
 
-/// **The file's content once a Claude Code edit tool's `input` is applied to `now`** (the file
-/// as it is, or none where it is not there), exactly as the tool would write it: `Write` the
-/// whole content, `Edit` one replacement, `MultiEdit` each in turn. Or why it cannot be, in the
-/// tool's own terms: a text that is not there, or there more than once without `replace_all`.
-pub fn apply_edit(tool: &str, input: &Value, now: Option<&str>) -> Result<String, String> {
-    let input = input
-        .as_object()
-        .ok_or_else(|| "the edit's input is not an object".to_owned())?;
-    let out = match tool {
-        "Write" => text(input, "content")?.to_owned(),
-        "Edit" => replace(now.unwrap_or(""), input)?,
-        "MultiEdit" => {
-            let edits = input
-                .get("edits")
-                .and_then(Value::as_array)
-                .filter(|edits| !edits.is_empty())
-                .ok_or_else(|| "the edit's input has no edits".to_owned())?;
-            let mut text = now.unwrap_or("").to_owned();
-            for edit in edits {
-                let edit = edit
-                    .as_object()
-                    .ok_or_else(|| "one of the edits is not an object".to_owned())?;
-                text = replace(&text, edit)?;
+/// **What a proposal changes**, as it travels to the app: the tool's own edits, which the app
+/// applies to the file as it reads it, or a whole new content. An edit carries only what it
+/// replaces and what it puts there, so a proposal to a large file is as small as its edits.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Change {
+    /// The file's whole new content: a `Write`, or `purlis propose --from`.
+    Whole { content: String },
+    /// Replacements made in turn, as `Edit` and `MultiEdit` make them.
+    Edits { edits: Vec<Edit> },
+}
+
+/// One replacement: `old` replaced by `new`, once, or wherever it appears with `every`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Edit {
+    pub old: String,
+    pub new: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub every: bool,
+}
+
+impl Change {
+    /// **A Claude Code edit tool's `input`, as a change**: `Write`'s content, `Edit`'s one
+    /// replacement, `MultiEdit`'s in turn. Or why not: what the tool itself would refuse.
+    pub fn of_tool(tool: &str, input: &Value) -> Result<Self, String> {
+        let input = input
+            .as_object()
+            .ok_or_else(|| "the edit's input is not an object".to_owned())?;
+        match tool {
+            "Write" => Ok(Self::Whole {
+                content: text(input, "content")?.to_owned(),
+            }),
+            "Edit" => Ok(Self::Edits {
+                edits: vec![edit_of(input)?],
+            }),
+            "MultiEdit" => {
+                let edits = input
+                    .get("edits")
+                    .and_then(Value::as_array)
+                    .filter(|edits| !edits.is_empty())
+                    .ok_or_else(|| "the edit's input has no edits".to_owned())?;
+                let edits = edits
+                    .iter()
+                    .map(|edit| {
+                        edit.as_object()
+                            .ok_or_else(|| "one of the edits is not an object".to_owned())
+                            .and_then(edit_of)
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(Self::Edits { edits })
             }
-            text
+            other => Err(format!("{other} is not an edit purlis proposes")),
         }
-        other => return Err(format!("{other} is not an edit purlis proposes")),
-    };
-    if out.len() > MOST_BYTES {
-        return Err(format!(
-            "the file would be longer than the {MOST_BYTES} bytes a proposed change may be"
-        ));
     }
-    Ok(out)
+
+    /// The bytes it carries: what one line of the hook channel must hold whole.
+    pub fn carried(&self) -> usize {
+        match self {
+            Self::Whole { content } => content.len(),
+            Self::Edits { edits } => edits
+                .iter()
+                .map(|edit| edit.old.len() + edit.new.len())
+                .sum(),
+        }
+    }
+
+    /// **The file's content once this change is made to `now`** (the file as it is, or none
+    /// where it is not there), exactly as the tool would write it, or why it cannot be: the
+    /// same in the hook, where the change is checked, and in the app, where it is shown and
+    /// written.
+    pub fn apply(&self, now: Option<&str>) -> Result<String, String> {
+        let out = match self {
+            Self::Whole { content } => content.clone(),
+            Self::Edits { edits } => {
+                if edits.is_empty() {
+                    return Err("the change has no edits".to_owned());
+                }
+                let mut text = now.unwrap_or("").to_owned();
+                for edit in edits {
+                    text = replace(&text, edit)?;
+                }
+                text
+            }
+        };
+        if out.len() > MOST_FILE_BYTES {
+            return Err("the file would be longer than a proposed change may make it".to_owned());
+        }
+        Ok(out)
+    }
+}
+
+/// **The file's content once a Claude Code edit tool's `input` is applied to `now`**
+/// ([`Change::of_tool`], then [`Change::apply`]).
+pub fn apply_edit(tool: &str, input: &Value, now: Option<&str>) -> Result<String, String> {
+    Change::of_tool(tool, input)?.apply(now)
 }
 
 fn text<'a>(input: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
@@ -195,21 +258,28 @@ fn text<'a>(input: &'a Map<String, Value>, key: &str) -> Result<&'a str, String>
         .ok_or_else(|| format!("the edit's input has no {key}"))
 }
 
-/// One `old_string` → `new_string` replacement of `now`, as the tool makes it.
-fn replace(now: &str, input: &Map<String, Value>) -> Result<String, String> {
-    let old = text(input, "old_string")?;
-    let new = text(input, "new_string")?;
-    let every = input.get("replace_all").and_then(Value::as_bool) == Some(true);
+/// One edit of the tool's input.
+fn edit_of(input: &Map<String, Value>) -> Result<Edit, String> {
+    Ok(Edit {
+        old: text(input, "old_string")?.to_owned(),
+        new: text(input, "new_string")?.to_owned(),
+        every: input.get("replace_all").and_then(Value::as_bool) == Some(true),
+    })
+}
+
+/// One replacement of `now`, as the tool makes it.
+fn replace(now: &str, edit: &Edit) -> Result<String, String> {
+    let Edit { old, new, every } = edit;
     if old.is_empty() {
         return Err("the text to replace is empty".to_owned());
     }
     if old == new {
         return Err("the edit changes nothing".to_owned());
     }
-    match now.matches(old).count() {
+    match now.matches(old.as_str()).count() {
         0 => Err("the text to replace is not in the file".to_owned()),
-        1 => Ok(now.replacen(old, new, 1)),
-        _ if every => Ok(now.replace(old, new)),
+        1 => Ok(now.replacen(old.as_str(), new, 1)),
+        _ if *every => Ok(now.replace(old.as_str(), new)),
         many => Err(format!(
             "the text to replace is in the file {many} times: name more of it, or replace every \
              one"
@@ -242,42 +312,113 @@ pub fn from_edit(root: &Path, payload: &Value, cwd: &Path) -> Option<Result<Prop
     let rel = proposable(root, &path).ok()?;
     // Why it could not be made is never said: it could depend on what the file holds.
     Some(
-        read_and_apply(root, &rel, |now| {
-            apply_edit(tool, &payload["tool_input"], now)
-        })
-        .map_err(|_| UNPREPARED.to_owned()),
+        Change::of_tool(tool, &payload["tool_input"])
+            .and_then(|change| read_and_apply(root, &rel, change))
+            .map_err(|_| UNPREPARED.to_owned()),
     )
 }
 
+/// The kind of a proposed change's audit (PC-4).
+pub const APPLIED_KIND: &str = "trust.proposed.apply";
+
+/// **A proposed change the person applied, as the audit records it** (PC-4): who (the person,
+/// in the window), the persona the chat that proposed it runs as, the file and the SHA-256 of
+/// what was written. Which chat, when and on which machine are the envelope's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Applied<'a> {
+    pub persona: Option<&'a str>,
+    pub path: &'a str,
+    pub written: &'a str,
+}
+
+impl Applied<'_> {
+    /// The event's body.
+    pub fn body(&self) -> serde_json::Value {
+        serde_json::json!({
+            "actor_kind": "human",
+            "actor": "operator",
+            "scope": "local-ui",
+            "persona": self.persona,
+            "file": self.path,
+            "written": self.written,
+        })
+    }
+}
+
 /// A proposal, as a hook or `purlis propose` hands it over: the file relative to the project,
-/// the base the change was worked out against, and the file's whole new content.
+/// the base the change was worked out against, the change, and what it makes of the file as
+/// it was read here (checked, never sent: the app works it out again from its own read).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proposed {
     pub path: PathBuf,
     pub base: Option<String>,
-    pub content: String,
+    pub change: Change,
+    pub after: String,
 }
 
 /// The file at `rel` as it is now, and `change` made to it: the proposal, or why there is none.
-/// The file is read only as [`read_pinned`] reads it.
-pub fn read_and_apply(
-    root: &Path,
-    rel: &Path,
-    change: impl FnOnce(Option<&str>) -> Result<String, String>,
-) -> Result<Proposed, String> {
-    let now = read_pinned(root, rel).map_err(|Unpinned| UNPREPARED.to_owned())?;
-    let text = match &now {
-        None => None,
-        Some(bytes) => Some(std::str::from_utf8(bytes).map_err(|_| UNPREPARED.to_owned())?),
-    };
-    let content = change(text)?;
-    if content.len() > MOST_BYTES {
+/// The file is read only as [`read_pinned`] reads it, and a change longer than one line of the
+/// hook channel carries whole is not made ([`MOST_BYTES`]).
+pub fn read_and_apply(root: &Path, rel: &Path, change: Change) -> Result<Proposed, String> {
+    if change.carried() > MOST_BYTES {
         return Err(UNPREPARED.to_owned());
     }
+    let prepared = prepare(root, rel, None, &change).map_err(|_| UNPREPARED.to_owned())?;
     Ok(Proposed {
         path: rel.to_path_buf(),
-        base: base_of(now.as_deref()),
-        content,
+        base: prepared.base,
+        change,
+        after: prepared.after,
+    })
+}
+
+/// A change made to the file as it was read: the file then, its base, and what the change
+/// makes of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prepared {
+    pub before: Option<String>,
+    pub base: Option<String>,
+    pub after: String,
+}
+
+/// Why a change could not be made, or could not be written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotMade {
+    /// The file is not what the change was worked out against any more (PC-8): read it again
+    /// and propose again.
+    Stale,
+    /// It could not be made at all: the file is not one regular file with one name, is not
+    /// text, or the change does not apply. Why is never said.
+    Unprepared,
+}
+
+/// **`change` made to the file at `rel` as it is now**, read only as [`read_pinned`] reads it,
+/// and, where `base` is given, only while the file is still what that base says ([`NotMade::Stale`]
+/// otherwise). What the window shows and what Apply writes are both this.
+pub fn prepare(
+    root: &Path,
+    rel: &Path,
+    base: Option<Option<&str>>,
+    change: &Change,
+) -> Result<Prepared, NotMade> {
+    let now = read_pinned(root, rel).map_err(|Unpinned| NotMade::Unprepared)?;
+    let read = base_of(now.as_deref());
+    if let Some(expected) = base
+        && expected != read.as_deref()
+    {
+        return Err(NotMade::Stale);
+    }
+    let before = match now {
+        None => None,
+        Some(bytes) => Some(String::from_utf8(bytes).map_err(|_| NotMade::Unprepared)?),
+    };
+    let after = change
+        .apply(before.as_deref())
+        .map_err(|_| NotMade::Unprepared)?;
+    Ok(Prepared {
+        before,
+        base: read,
+        after,
     })
 }
 
@@ -289,7 +430,7 @@ pub struct Unpinned;
 /// **The file at `rel` under `root`, read only where it is the file the name says**: each
 /// folder from `root` down opened without following a link, the file itself opened without
 /// following one and without waiting on it, and taken only where the open handle is a regular
-/// file with one name, at most [`MOST_BYTES`] long. None where nothing is there; refused for
+/// file with one name, at most [`MOST_FILE_BYTES`] long. None where nothing is there; refused for
 /// anything else (a link, a second name, a pipe or a device, a longer file).
 #[cfg(unix)]
 pub fn read_pinned(root: &Path, rel: &Path) -> Result<Option<Vec<u8>>, Unpinned> {
@@ -328,13 +469,109 @@ pub fn read_pinned(root: &Path, rel: &Path) -> Result<Option<Vec<u8>>, Unpinned>
     }
     let mut bytes = Vec::new();
     std::fs::File::from(file)
-        .take(MOST_BYTES as u64 + 1)
+        .take(MOST_FILE_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| Unpinned)?;
-    if bytes.len() > MOST_BYTES {
+    if bytes.len() > MOST_FILE_BYTES {
         return Err(Unpinned);
     }
     Ok(Some(bytes))
+}
+
+/// **Writes `after` as the file at `rel` under `root`, only while it is still what `base` says**
+/// (none: not there): what the window's Apply does (PC-3), as the person. Each folder is opened
+/// without following a link, and one not there yet is made; the file is checked through the
+/// handle it is read by, exactly as [`read_pinned`] checks it; the new content goes to a file
+/// of its own beside it, made new, flushed, and renamed over the old one, keeping its
+/// permissions. Anything else is [`NotMade::Stale`] or [`NotMade::Unprepared`], and nothing is
+/// written.
+#[cfg(unix)]
+pub fn write_pinned(
+    root: &Path,
+    rel: &Path,
+    base: Option<&str>,
+    after: &str,
+) -> Result<(), NotMade> {
+    use rustix::fs::{
+        AtFlags, CWD, FileType, Mode, OFlags, fstat, mkdirat, openat, renameat, unlinkat,
+    };
+    use std::io::{Read as _, Write as _};
+    let unprepared = |_| NotMade::Unprepared;
+    let parts: Vec<&std::ffi::OsStr> = rel
+        .components()
+        .map(|part| match part {
+            Component::Normal(name) => Ok(name),
+            _ => Err(NotMade::Unprepared),
+        })
+        .collect::<Result<_, _>>()?;
+    let (leaf, folders) = parts.split_last().ok_or(NotMade::Unprepared)?;
+    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut at = openat(CWD, root, folder, Mode::empty()).map_err(unprepared)?;
+    for name in folders {
+        at = match openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()) {
+            Ok(next) => next,
+            Err(rustix::io::Errno::NOENT) if base.is_none() => {
+                mkdirat(&at, *name, Mode::from_raw_mode(0o755)).map_err(unprepared)?;
+                openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()).map_err(unprepared)?
+            }
+            Err(rustix::io::Errno::NOENT) => return Err(NotMade::Stale),
+            Err(_) => return Err(NotMade::Unprepared),
+        };
+    }
+    let mode = match openat(
+        &at,
+        *leaf,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Err(rustix::io::Errno::NOENT) if base.is_none() => 0o644,
+        Err(rustix::io::Errno::NOENT) => return Err(NotMade::Stale),
+        Err(_) => return Err(NotMade::Unprepared),
+        Ok(file) => {
+            let stat = fstat(&file).map_err(unprepared)?;
+            if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile || stat.st_nlink != 1
+            {
+                return Err(NotMade::Unprepared);
+            }
+            let mut bytes = Vec::new();
+            std::fs::File::from(file)
+                .take(MOST_FILE_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| NotMade::Unprepared)?;
+            if base_of(Some(&bytes)).as_deref() != base {
+                return Err(NotMade::Stale);
+            }
+            stat.st_mode as u32 & 0o7777
+        }
+    };
+    let temp = format!(
+        ".{}.purlis-apply-{}",
+        leaf.to_string_lossy(),
+        std::process::id()
+    );
+    let written = openat(
+        &at,
+        temp.as_str(),
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::from_raw_mode(mode as _),
+    )
+    .map_err(unprepared)?;
+    let mut file = std::fs::File::from(written);
+    let done = file
+        .write_all(after.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|_| NotMade::Unprepared)
+        .and_then(|()| renameat(&at, temp.as_str(), &at, *leaf).map_err(unprepared));
+    if done.is_err() {
+        let _ = unlinkat(&at, temp.as_str(), AtFlags::empty());
+    }
+    done
+}
+
+/// [`write_pinned`] where no folder can be opened without following a link: never.
+#[cfg(not(unix))]
+pub fn write_pinned(_: &Path, _: &Path, _: Option<&str>, _: &str) -> Result<(), NotMade> {
+    Err(NotMade::Unprepared)
 }
 
 /// [`read_pinned`] where no folder can be opened without following a link: never.
