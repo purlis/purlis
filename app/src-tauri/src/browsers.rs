@@ -61,7 +61,8 @@ mod hosted {
     const LINK_WITHIN: Duration = Duration::from_secs(30);
 
     /// The window's browsers, in its session host: the link they go over, and each project the
-    /// window has held on it for them, by its root, with the browsers it started there.
+    /// window has held for them, by its root, with the browsers it started there. A project is
+    /// held on its root's own link, which its chats share (#2178).
     pub(crate) struct WindowBrowsers {
         connection: Arc<Connection>,
         projects: Mutex<HashMap<PathBuf, Held>>,
@@ -85,9 +86,9 @@ mod hosted {
             self.connection.wait(LINK_WITHIN)
         }
 
-        /// The link, with the project at `root` held on it, and the project's id.
+        /// The project at `root`'s own link, with the project held on it, and the project's id.
         fn held(&self, root: &Path) -> Result<(Arc<HostLink>, String), String> {
-            let link = self.link()?;
+            let link = self.connection.of_project(root, LINK_WITHIN)?;
             let mut projects = self.projects();
             if let Some(held) = projects.get(root) {
                 return Ok((link, held.project.clone()));
@@ -195,7 +196,7 @@ mod hosted {
             let Some(held) = self.projects().remove(root) else {
                 return 0;
             };
-            let Ok(link) = self.connection.wait(Duration::ZERO) else {
+            let Ok(link) = self.connection.of_project(root, Duration::ZERO) else {
                 return 0;
             };
             let ended = held

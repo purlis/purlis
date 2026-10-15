@@ -18,9 +18,10 @@
 //! and nothing the window draws waits for it. Once it says it is ready, the window connects as `local-ui` with the
 //! credential the host minted, and holds the link.
 //!
-//! **Chats run in it behind the start-time switch** (#1998, `crate::hostedsessions`): the link
-//! the window holds is what every project's chats run over when the switch is on, and with no
-//! host of the window's own, those chats are refused with the reason ([`Connection`]). Wherever
+//! **Chats run in it behind the start-time switch** (#1998, `crate::hostedsessions`): when the
+//! switch is on, each project root's chats run over a link of its own, opened as the window's
+//! is (#2178), and with no host of the window's own, those chats are refused with the reason
+//! ([`Connection`]). Wherever
 //! chats run, the host takes every process below the window as inside a chat and refuses it a
 //! person's scope (`purlis_host::Window`). What this host says goes to the window's log.
 
@@ -378,7 +379,8 @@ fn log_what_it_says(said: std::process::ChildStderr) {
 }
 
 /// Connect to the host as `local-ui`, the window's scope, and hold the link for as long as the
-/// window runs: the chats that run in the host go over it ([`HostLink`]).
+/// window runs: the chats that run in the host go over it, and over one more link for each
+/// project root the window holds there, opened the same way ([`HostLink`], #2178).
 fn connect(socket: PathBuf, credentials: PathBuf, connection: Arc<Connection>) {
     tauri::async_runtime::spawn(async move {
         let credential = match Credential::read(&credentials, Scope::LocalUi) {
@@ -389,39 +391,65 @@ fn connect(socket: PathBuf, credentials: PathBuf, connection: Arc<Connection>) {
                 return;
             }
         };
-        let linked = match tokio::net::UnixStream::connect(&socket).await {
-            Ok(stream) => {
-                link::connect(stream, session::speaks(), Scope::LocalUi, &credential).await
+        let runtime = tokio::runtime::Handle::current();
+        match open_link(&socket, &credential, &connection).await {
+            Ok(link) => {
+                let dial = dialing(socket, credential, Arc::downgrade(&connection), runtime);
+                connection.ready(Arc::new(link), dial);
             }
-            Err(why) => {
-                tracing::warn!("purlis: the session host's socket did not answer: {why}");
-                connection.gone(format!("its socket did not answer: {why}"));
-                return;
-            }
-        };
-        let link = match linked {
-            Ok(link) => link,
-            Err(why) => {
-                tracing::warn!("purlis: the session host refused the window: {why}");
-                connection.gone(format!("it refused the window: {why}"));
-                return;
-            }
-        };
-        let ended = {
-            let connection = Arc::clone(&connection);
-            move || {
-                tracing::info!("purlis: the link to the session host ended");
-                connection.gone("the link to it ended");
-            }
-        };
-        match HostLink::over(link, tokio::runtime::Handle::current(), ended).await {
-            Ok(link) => connection.ready(Arc::new(link)),
             Err(why) => {
                 tracing::warn!("purlis: {why}");
                 connection.gone(why);
             }
         }
     });
+}
+
+/// A `local-ui` link to the host at `socket`. Once it ends the host is taken to be gone, and
+/// every chat start says so.
+async fn open_link(
+    socket: &Path,
+    credential: &Credential,
+    connection: &Arc<Connection>,
+) -> Result<HostLink, String> {
+    let stream = tokio::net::UnixStream::connect(socket)
+        .await
+        .map_err(|why| format!("its socket did not answer: {why}"))?;
+    let link = link::connect(stream, session::speaks(), Scope::LocalUi, credential)
+        .await
+        .map_err(|why| format!("it refused the window: {why}"))?;
+    let ended = {
+        let connection = Arc::downgrade(connection);
+        move || {
+            tracing::info!("purlis: a link to the session host ended");
+            if let Some(connection) = connection.upgrade() {
+                connection.gone("the link to it ended");
+            }
+        }
+    };
+    HostLink::over(link, tokio::runtime::Handle::current(), ended).await
+}
+
+/// Opens one more link to the host, from any thread but the runtime's own: what
+/// [`Connection::of_project`] holds each project root on.
+fn dialing(
+    socket: PathBuf,
+    credential: Credential,
+    connection: std::sync::Weak<Connection>,
+    runtime: tokio::runtime::Handle,
+) -> crate::hostedsessions::Dial {
+    Arc::new(move |within| {
+        let connection = connection
+            .upgrade()
+            .ok_or("the window no longer holds its link to it")?;
+        let (opened, link) = std::sync::mpsc::channel();
+        let (socket, credential) = (socket.clone(), credential.clone());
+        runtime.spawn(async move {
+            let _ = opened.send(open_link(&socket, &credential, &connection).await);
+        });
+        link.recv_timeout(within)
+            .map_err(|_| "it did not open another link in time".to_owned())?
+    })
 }
 
 #[cfg(test)]

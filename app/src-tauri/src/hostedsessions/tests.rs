@@ -12,14 +12,9 @@ use std::time::{Duration, Instant};
 use purlis_core::engine::Size;
 use purlis_host::standin::{Savers, StandIns};
 use purlis_host::{FromTheWindow, Hosting};
-use purlis_session_protocol::auth::{Credentials, Scope};
-use purlis_session_protocol::link;
 use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
-
-static HELD: std::sync::LazyLock<Credentials> =
-    std::sync::LazyLock::new(|| Credentials::mint().unwrap());
 
 const SIZE: Size = Size {
     columns: 100,
@@ -55,25 +50,7 @@ fn hosted() -> Hosted {
     let savers = Savers::default();
     let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone())
         .saving_with(savers.clone());
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(256 * 1024);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(served.unwrap(), hosting, None));
-        HostLink::over(client.unwrap(), tokio::runtime::Handle::current(), || {})
-            .await
-            .unwrap()
-    });
-    let link = Arc::new(link);
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::clone(&link));
+    let (connection, link) = super::in_memory(hosting, &runtime);
     let (dir, root) = a_project();
     Hosted {
         sessions: HostedSessions::new(connection, &root),
@@ -128,6 +105,41 @@ fn a_pane() -> (Sink, Arc<Mutex<String>>) {
         Box::new(move |text: String| seen.lock().unwrap().push_str(&text)) as Sink
     };
     (sink, seen)
+}
+
+#[test]
+fn two_clones_of_one_project_in_one_window_both_start_chats() {
+    // #2178: one project id, two folders, one window's connection to its host.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let runs = StandIns::default();
+    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone());
+    let (connection, _window) = super::in_memory(hosting, &runtime);
+    let clone = || {
+        let (dir, root) = a_project();
+        std::fs::write(
+            root.join(purlis_core::plane::MANIFEST),
+            "[project]\nid = \"01J9PRJCT00000000000000000\"\n",
+        )
+        .unwrap();
+        (dir, root)
+    };
+    let ((_one, first), (_two, second)) = (clone(), clone());
+    let first = HostedSessions::new(Arc::clone(&connection), &first);
+    let second = HostedSessions::new(connection, &second);
+
+    let started = (
+        first.open(None, &a_shell("true"), &|_| {}),
+        second.open(None, &a_shell("true"), &|_| {}),
+    );
+
+    assert_eq!(started, (Ok(1), Ok(1)), "each clone deals its own numbers");
+    assert_eq!(runs.ran().len(), 2);
+    drop((first, second));
+    drop(runtime);
 }
 
 #[test]
@@ -524,25 +536,7 @@ fn heard_in_the_window() -> Heard {
         runs.clone(),
         channel.clone(),
     );
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(256 * 1024);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(served.unwrap(), hosting, None));
-        HostLink::over(client.unwrap(), tokio::runtime::Handle::current(), || {})
-            .await
-            .unwrap()
-    });
-    let link = Arc::new(link);
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::clone(&link));
+    let (connection, link) = super::in_memory(hosting, &runtime);
     let (dir, root) = a_project();
     let moved: Arc<Mutex<Vec<crate::hooks::Moved>>> = Arc::default();
     let plane: crate::planes::PlaneId =

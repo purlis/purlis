@@ -46,12 +46,11 @@ use purlis_core::sandbox::plan::{self, Asking, Hearing, Plan};
 use purlis_core::sandbox::reach::{By, Reach};
 use purlis_core::sandbox::{Confinement, egress};
 use purlis_core::session::Exit;
-use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::{link, session};
 
 use crate::hooks::{Hooks, Moved};
 use crate::host::{Opening, SessionHost, Sink};
-use crate::hostedsessions::{Connection, HostLink, HostedSessions};
+use crate::hostedsessions::HostedSessions;
 use crate::killswitch::KillSwitch;
 use crate::sessions::{ENDED, Sessions};
 
@@ -120,9 +119,6 @@ pub(crate) fn in_the_window() -> Target {
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
-
-static HELD: std::sync::LazyLock<Credentials> =
-    std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
 
 /// A chat in the session host: the switch on. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
@@ -217,39 +213,16 @@ async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
 /// The window, speaking the session protocol over an in-memory `local-ui` link to the host
 /// `host` makes, on a runtime of the target's own, its own kill switch in a config home of its
 /// own.
-fn a_window_on<H: session::Host>(host: impl FnOnce() -> H + Send + 'static) -> Target {
+fn a_window_on<H: session::Host + Clone>(host: impl FnOnce() -> H + Send + 'static) -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("a runtime");
     let config = tempfile::tempdir().expect("a config home");
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(1 << 20);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(
-            served.expect("the host admits the window"),
-            host(),
-            None,
-        ));
-        HostLink::over(
-            client.expect("the window is admitted"),
-            tokio::runtime::Handle::current(),
-            || {},
-        )
-        .await
-        .expect("the window speaks to the host")
-    });
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::new(link));
+    // Made on the runtime, as a host is made where it serves.
+    let host = runtime.block_on(async move { host() });
+    let (connection, _window) = crate::hostedsessions::in_memory(host, &runtime);
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
