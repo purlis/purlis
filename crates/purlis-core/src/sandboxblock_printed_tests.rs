@@ -425,3 +425,70 @@ fn a_readers_refusal_of_a_path_on_standard_error_is_still_a_block() {
         );
     }
 }
+
+/// More readers that can start a program of their own (#2203): `rg --pre`, `sort
+/// --compress-program`, `less` and `more` (their input preprocessor, `LESSOPEN`, is a
+/// program), and `git` given configuration on its line (`-c`, `--config-env`, or
+/// `GIT_CONFIG_*` and `GIT_EXTERNAL_DIFF` in its environment: `diff.external`,
+/// `core.fsmonitor`), asked for an external diff, or a grep that opens its files in a pager
+/// (`-O`, `--open-files-in-pager`). The same readers without those forms still only read.
+#[test]
+fn more_readers_that_can_start_a_program_still_raise_their_block() {
+    for command in [
+        "rg --pre ./ping needle",
+        "rg --pre=./ping needle",
+        "rg -n --pre=./ping needle src",
+        "sort --compress-program=./ping big.txt",
+        "sort --compress-program ./ping big.txt",
+        "less notes.log",
+        "LESSOPEN='|./ping %s' less notes.log",
+        "more notes.log",
+        "git -c diff.external=./ping diff",
+        "git -c core.fsmonitor=./ping status",
+        "git --config-env=core.fsmonitor=PING status",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=./ping git status",
+        "GIT_EXTERNAL_DIFF=./ping git diff",
+        "git grep -O needle",
+        "git grep -O./ping needle",
+        "git grep --open-files-in-pager=./ping needle",
+        "git diff --ext-diff",
+        // Any prefix the program itself takes for the option.
+        "sort --co=./ping big.txt",
+        "sort --compress ./ping big.txt",
+        "git grep --open-files needle",
+        "git grep --op=./ping needle",
+        "git diff --ext",
+        "git log -p --ext-d",
+    ] {
+        for payload in every_harness(command, &refused_socket()) {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                unnamed_socket(),
+                "{payload}"
+            );
+        }
+    }
+    for command in [
+        "rg -n needle src",
+        "rg --pretty needle",
+        "sort -u list.txt",
+        "git status --short",
+        "git grep -n needle",
+        "git diff -O order.txt",
+        "git -C repo show HEAD:src/x.rs",
+        // Other options a prefix could be confused with.
+        "sort --check list.txt",
+        "rg --pre-glob '*.gz' needle",
+        "git grep --only-matching needle",
+        "git diff --exit-code",
+        "git diff --no-ext-diff",
+    ] {
+        for payload in every_harness(command, &refused_socket()) {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                Vec::new(),
+                "{payload}"
+            );
+        }
+    }
+}
