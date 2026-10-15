@@ -1263,9 +1263,14 @@ async fn start_options(
     plane: PlaneId,
 ) -> Result<StartOptions, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || start_options_in(&root))
-        .await
-        .map_err(|err| format!("purlis could not read the profiles: {err}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        let t = std::time::Instant::now();
+        let r = start_options_in(&root);
+        tracing::info!("[DEBUG-2157] start_options {} ms", t.elapsed().as_millis());
+        r
+    })
+    .await
+    .map_err(|err| format!("purlis could not read the profiles: {err}"))?
 }
 
 /// Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
@@ -1463,6 +1468,8 @@ async fn start_chat(
     let held = planes.held(&plane)?;
     let config = planes.config().map(std::path::Path::to_path_buf);
     tauri::async_runtime::spawn_blocking(move || {
+        let debug_t = std::time::Instant::now();
+        let _debug = DebugTimer(debug_t, "start_chat");
         let named = label.clone();
         let show_footer = boxes.show_footer;
         let without_sandbox = boxes
@@ -4554,5 +4561,17 @@ mod tests_reader {
         if let Some(code) = purlis_core::files::serve_if_asked() {
             std::process::exit(code);
         }
+    }
+}
+
+/// [DEBUG-2157] temporary timing probe.
+struct DebugTimer(std::time::Instant, &'static str);
+impl Drop for DebugTimer {
+    fn drop(&mut self) {
+        tracing::info!(
+            "[DEBUG-2157] {} {} ms",
+            self.1,
+            self.0.elapsed().as_millis()
+        );
     }
 }

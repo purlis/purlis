@@ -164,21 +164,28 @@ describe("the window", () => {
     // The whole test's time is that allowance for each session it can open, never one fixed
     // total that a slower runner, or a slower start, crosses with nothing wrong.
     this.timeout(FIFTY * EACH_SESSION_MS);
+    const debugTimes: string[] = []; // [DEBUG-2157]
     while (harnessesRunning() < FIFTY) {
       const before = harnessesRunning();
+      const debugT = Date.now(); // [DEBUG-2157]
       await pressAndStart("New tab");
+      const debugPicked = Date.now() - debugT; // [DEBUG-2157]
       await browser.waitUntil(() => harnessesRunning() > before, {
         timeout: EACH_SESSION_MS,
         interval: 100,
         timeoutMsg: `the tab opened with ${before} sessions running started no session of its own in ${EACH_SESSION_MS / 1000} s`,
       });
+      debugTimes.push(`${debugPicked}+${Date.now() - debugT - debugPicked}`); // [DEBUG-2157]
     }
+    const debugT2 = Date.now(); // [DEBUG-2157]
 
     expect(harnessesRunning()).toBe(FIFTY);
     const [pane] = await panes();
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
     await until(pane, "you said: with fifty sessions running");
+    // [DEBUG-2157] a deliberate failure, to carry the timings out in its annotation.
+    throw new Error(`[DEBUG-2157] opens ms: ${debugTimes.join(" ")}; after ${Date.now() - debugT2}`);
   });
 
   /**
