@@ -14,7 +14,7 @@
 # the binary was linked against. It is pinned by the digest of its multi-architecture index;
 # Dependabot proposes the next one. The packages are the archive's current ones at build time,
 # so every build of `main` carries the security fixes of that day.
-FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 # git: a chat's clone and branches. ca-certificates: every TLS connection a chat makes.
 # tini: PID 1, which reaps what a chat's programs leave behind when the host is not there to.
