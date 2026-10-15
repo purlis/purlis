@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792043596470,
+  "lastUpdate": 1792044700009,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11928,6 +11928,48 @@ window.BENCHMARK_DATA = {
             "value": 104.3048465,
             "unit": "ms",
             "extra": "median of 5 runs: 101.625, 103.573, 104.305, 105.352, 106.288 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6053c4fca74a1f8bd44843020f1af7ca10bfb3d1",
+          "message": "dispatch: a chat closes its own finished task (#1981 D-4) (#2119)\n\n* dispatch: a chat closes its own finished task (#1981 D-4)\n\nRuled 2026-10-15: #1485 stands. A finished task stays a readable row with\nReopen; the asking chat may close its own with the close command, which\nends a task kept open after its report and clears its row. Refused for a\ntask that has not reported, one in a turn, one being stopped, and one the\nperson typed in.\n\nCloses #1981\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(qw397): close holds the report lock and the #1485 holds, and its docs sit on it\n\nThe close reads every refusal again under the lock a report is taken\nunder and ends the chat in that hold, as a cancel does; it is refused\nwhile the person looks at the task or a task of its own is at work, the\nholds the #1485 end keeps. Doc comments are back on their own functions.\nTests cover each refusal and that close is never pre-allowed.\n\nRefs #1981\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T10:07:00+04:00",
+          "tree_id": "77a061c85f580df91b9d8f399f12a1f562687a8e",
+          "url": "https://github.com/purlis/purlis/commit/6053c4fca74a1f8bd44843020f1af7ca10bfb3d1"
+        },
+        "date": 1792044698120,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4747405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.459, 0.469, 0.475, 0.476, 0.492 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.357892500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.285, 16.348, 16.358, 16.361, 16.366 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.816294,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.062, 101.633, 101.816, 101.907, 102.110 ms"
           }
         ]
       }
