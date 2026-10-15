@@ -2508,12 +2508,14 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             // same reason; the rung it tests for is spelled here as the two pointer rungs,
             // which are `session`/`active-file` in charter's own vocabulary.
             if code == 0 {
-                reset_active_after_removal(&here, name, say);
+                let reset = reset_active_after_removal(&here, name, say);
                 heard.push(ExtensionEvent::WorkspaceRemoved {
                     workspace: name.clone(),
                 });
+                reset
+            } else {
+                code
             }
-            code
         }
         WorkspaceCommand::Rename { old, new } => {
             // The chats the app has open in it, under either name so a rename finished after
@@ -2804,13 +2806,15 @@ fn pinned(now: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {
 /// caller is standing in are the operator's own and are not purlis's to rewrite; a pointer
 /// purlis wrote is, and one naming a directory that no longer exists is how the next write
 /// re-creates the workspace that was just deleted.
+///
+/// Answers the exit code: a pointer that could not be written is said as that, never as a
+/// reset (#2103).
 fn reset_active_after_removal(
     here: &Here,
     removed: &str,
     say: &mut dyn FnMut(purlis_core::repocmd::Say),
-) {
+) -> u8 {
     use purlis_core::active::WorkspaceRung;
-    use purlis_core::repocmd::Say;
 
     let active = purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
     if active.name != removed
@@ -2819,15 +2823,18 @@ fn reset_active_after_removal(
             WorkspaceRung::SessionPointer | WorkspaceRung::TerminalPointer
         )
     {
-        return;
+        return 0;
     }
     let fallback = purlis_core::active::plane_default_workspace(here.plane.root());
     // `force`, because the session is locked to the workspace that just went away and that
     // lock can refuse nothing useful now.
-    purlis_core::wscmd::select::set_active(here.plane.root(), &fallback, &here.ids, true);
-    say(Say::Info(format!(
-        "Active workspace reset to '{fallback}'."
-    )));
+    purlis_core::wscmd::select::reset_after_removal(
+        here.plane.root(),
+        removed,
+        &fallback,
+        &here.ids,
+        say,
+    )
 }
 
 fn run(command: Command) -> Result<u8, String> {
