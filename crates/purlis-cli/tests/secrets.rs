@@ -706,3 +706,83 @@ fn a_termination_during_resolution_starts_nothing() {
         "the command ran after charter was told to stop"
     );
 }
+
+/// `persona secret set | rm | audit` in a sandboxed chat are the person's, decided before the
+/// persona's vault is looked up (#1969): with a registry that cannot be read, each still says
+/// the sentence that names the way, and the vault is untouched.
+#[test]
+fn persona_secret_writes_and_audit_in_a_sandboxed_chat_are_refused_before_the_registry_is_read() {
+    let tmp = plane();
+    let root = tmp.path().join("plane");
+    std::fs::write(
+        root.join(".charter/vaults.json"),
+        "this is not a registry {",
+    )
+    .expect("an unreadable registry");
+    let vault = root.join(".charter/vaults/devops.json");
+    let before = std::fs::read_to_string(&vault).expect("the vault");
+
+    // Without the mark the registry is read, and it cannot be: the proof that the sandboxed
+    // runs below never reached it.
+    let out = run(
+        &tmp,
+        &[
+            "persona",
+            "secret",
+            "rm",
+            "API_TOKEN",
+            "--persona",
+            "devops",
+        ],
+    );
+    assert!(!out.status.success());
+    assert!(
+        !text(&out.stderr).contains("sandboxed chat"),
+        "{}",
+        text(&out.stderr)
+    );
+
+    let cases: [(&[&str], &str); 3] = [
+        (
+            &[
+                "persona",
+                "secret",
+                "set",
+                "API_TOKEN",
+                "--stdin",
+                "--persona",
+                "devops",
+            ],
+            "purlis persona secret set API_TOKEN --persona devops",
+        ),
+        (
+            &[
+                "persona",
+                "secret",
+                "rm",
+                "API_TOKEN",
+                "--persona",
+                "devops",
+            ],
+            "purlis persona secret rm API_TOKEN --persona devops",
+        ),
+        (
+            &["persona", "secret", "audit", "--persona", "devops"],
+            "purlis persona secret audit --persona devops",
+        ),
+    ];
+    for (args, way) in cases {
+        let out = charter(&tmp, args)
+            .env("PURLIS_SANDBOXED", "1")
+            .output()
+            .expect("the binary runs");
+        let err = text(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {err}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+        assert!(err.contains("sandboxed chat"), "{args:?}: {err}");
+        assert!(err.contains(way), "{args:?}: {err}");
+        assert!(err.contains("own terminal"), "{args:?}: {err}");
+        assert!(!err.contains(TOKEN), "{args:?}: {err}");
+    }
+    assert_eq!(std::fs::read_to_string(&vault).expect("the vault"), before);
+}

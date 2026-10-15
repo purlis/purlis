@@ -161,6 +161,17 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   chat for every provider, whatever was allowed; the refusal names `secret list` for the key
   names and `secret exec` through a declared tool for a value (a terminal outside the chat on
   Linux).
+- **The rest of the vault verbs are yours, and a sandboxed chat is told so before anything is
+  read** (#1969). `secret set`, `secret rm`, `vault add` and `vault remove` change a vault or
+  the registry, and the app takes no write for a chat: in a sandboxed chat each is refused
+  before the registry, the vault or standard input is read, with a sentence naming your two ways to do it, the vault's tab (or New vault…
+  and Delete vault… in the palette) and the same command in your own terminal. `secret audit`
+  and `vault verify` print no value, but read each key's age from the vault's storage and
+  resolve every value, which a sandboxed chat does not; they are refused the same way, naming
+  `secret list` and `vault list` for what the chat can see, the Vaults panel for each vault's
+  health, and your terminal for the full check. `persona secret set`, `rm` and `audit` are
+  refused the same way before the persona's vault is looked up, naming the same `persona
+  secret` command. Outside a sandboxed chat every verb runs as before.
 - **A persona's tools: a plain `kubectl` that runs through `secret exec`** (#1407). The
   project's `charter.toml` can name the programs a persona's chats run with a vault's value:
 
@@ -284,6 +295,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   read. After that it is an ordinary file: no guard knows purlis put a credential there.
 - **`secret set`**, **`secret rm`** and **`secret audit`** (secrets older than `--days`, for a
   keyring or plain-file vault) write and inspect; `set` refuses an empty value unless `--allow-empty`.
+  In a sandboxed chat all three are yours, and refused there with the way that works.
 - **`persona secret <verb> [--persona <name>]`** runs the same verb on the vault of the active
   persona: its `vault:` field, else the vault tagged with it. `vault: none` says the persona
   holds no credentials.
@@ -292,7 +304,8 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   because the chat's sandbox denies it every provider's own files: each vault's provider and
   persona, and whether this chat may use it, with no scope or health column and no provider
   asked; `vault verify` resolves every reference
-  for real and exits non-zero when one does not resolve.
+  for real and exits non-zero when one does not resolve. `vault add`, `vault remove` and
+  `vault verify` are yours in a sandboxed chat, and refused there with the way that works.
 
 `exec`, `cp` and `get --reveal` each record one event in the session trace naming the vault,
 the keys and the command — never a value.
