@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792027919758,
+  "lastUpdate": 1792031337270,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11634,6 +11634,48 @@ window.BENCHMARK_DATA = {
             "value": 101.71432150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.599, 101.670, 101.714, 101.939, 102.143 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2118b1bf7931db172538c79713a954370276f1e3",
+          "message": "feat(sandbox): your own level per project and persona, and moving plain-file vaults into the keychain (#2071, PR B) (#2105)\n\n* feat(sandbox): your own level per project and persona, and a move of plain-file vaults into the keychain\n\nSettings › Project › Sandbox › Your level sets on, floor or off for the project and for each\npersona, in this machine's purlis.local.toml ([sandbox] level, [sandbox.personas]); the save\nand the reader refuse a value that is not a level. A local file git would carry turns nobody's\nsandbox down. The same page lists the project's plain-file vaults and moves each one this\nmachine registers into the keychain, each secret written and read back before the file goes.\n\nA chat's start reads the level once the floor (#2081) lands. Part of #2071 (PR B).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(palette): the Your level page is one more row\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(#2105): a level counts only as far as you confirmed it, and a vault moves before it is switched\n\n- The vault move builds the keychain vault first, writes and reads back every secret, and only\n  then switches the registration and removes the file and its rotation record, all under the\n  vault's keys' lock. A move that stops deletes what it wrote and its index and says anything\n  it could not take back. An old same-named keychain index is removed when empty and refused\n  when it lists items. Rollback is tested with a store that fails a write, a read-back and a\n  delete.\n- A chat can write purlis.local.toml, so a level it holds counts only where it is the one you\n  set or confirmed in Settings on this machine (levels_mine, in the config home), or stricter.\n  A lower one waits on the page with Confirm. Picking a level confirms it; a raw save does not.\n- personal.rs says so; the unused writer is gone; plane-format names purlis.local.toml.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(#2105): a Confirm carries the level it showed, and a move lists each item before writing it\n\n- confirm_sandbox_level takes the level its row showed and is refused where the file says\n  another one, or none, by then: nothing written between the showing and the click is\n  confirmed in its place.\n- The move lists each key in the keychain index before writing its item, so a move that dies\n  mid-way leaves no item nothing names; the team-vault check runs under the keys' lock.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T06:27:46+04:00",
+          "tree_id": "769b9637694fa331042beb63efa2f47fb06e6fab",
+          "url": "https://github.com/purlis/purlis/commit/2118b1bf7931db172538c79713a954370276f1e3"
+        },
+        "date": 1792031336001,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.523207,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.512, 0.523, 0.542, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.710880999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.246, 16.436, 16.711, 16.884, 16.895 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.11769699999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.583, 103.485, 104.118, 104.731, 105.767 ms"
           }
         ]
       }
