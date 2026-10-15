@@ -406,6 +406,8 @@ fn the_asking_chats_own() -> Start {
             writes: vec!["/Users/o/elsewhere".into()],
             ..Default::default()
         },
+        // The asking chat's own start was the person's.
+        made: crate::sandbox::Made::Window,
     }
 }
 
@@ -435,6 +437,9 @@ fn the_persona_chat_starts_with_no_held_grants_no_opt_out_and_no_bypass() {
             without_sandbox: None,
             held: None,
             grants: crate::sandbox::grant::Grants::default(),
+            // Never the asking chat's own way of being started: a start that names no asker
+            // never takes the person's `off` (#2071).
+            made: crate::sandbox::Made::Unnamed,
         })
     );
 }

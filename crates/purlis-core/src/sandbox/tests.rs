@@ -5648,9 +5648,41 @@ fn decided_as(
 
 fn your_level() -> Lifted {
     Lifted {
-        by: By::YourLevel,
+        by: By::YourLevel(Via::Window),
         reason: None,
     }
+}
+
+/// [`decide_granted`] for a start made `made`, the chat's level read as `level_as`.
+fn decided_made(
+    plane: &std::path::Path,
+    level_as: Option<&str>,
+    made: &Made,
+) -> Result<Option<Decided>, NotStarted> {
+    decide_granted(
+        Harness::ClaudeCode,
+        plane,
+        &machine(Os::MacOs),
+        &|_| true,
+        &Person {
+            opt_out: None,
+            level_as,
+            made,
+        },
+        level_as,
+        &grant::Grants::default(),
+    )
+}
+
+fn asked(how: Asking, asker: Option<&str>) -> Made {
+    Made::Asked {
+        how,
+        asker: Some(asker.map(str::to_owned)),
+    }
+}
+
+fn sandboxed(decided: &Result<Option<Decided>, NotStarted>) -> bool {
+    matches!(decided, Ok(Some(Decided::Sandboxed(_))))
 }
 
 #[test]
@@ -5735,4 +5767,115 @@ fn a_policy_that_forbids_the_opt_out_bounds_your_level_too() {
         bounded(Some(personal::Choice::On), &required),
         Some(personal::Choice::On)
     );
+}
+
+#[test]
+fn a_chat_at_on_that_dispatches_or_hands_off_to_a_persona_you_turned_off_starts_it_sandboxed() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"on\"\n[sandbox.personas]\nqa = \"off\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::On)).unwrap();
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::Off)).unwrap();
+    // The person's own start of a qa chat runs without it.
+    assert_eq!(
+        decided_made(plane.path(), Some("qa"), &Made::Window),
+        Ok(Some(Decided::Unsandboxed(your_level())))
+    );
+    for how in [Asking::Dispatch, Asking::Handoff] {
+        let decided = decided_made(plane.path(), Some("qa"), &asked(how, None));
+        assert!(sandboxed(&decided), "{how:?}: {decided:?}");
+    }
+}
+
+#[test]
+fn a_chat_at_off_that_dispatches_to_a_persona_at_on_starts_it_sandboxed() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"off\"\n[sandbox.personas]\nqa = \"on\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::On)).unwrap();
+    let decided = decided_made(plane.path(), Some("qa"), &asked(Asking::Dispatch, None));
+    assert!(sandboxed(&decided), "{decided:?}");
+}
+
+#[test]
+fn both_at_off_a_chat_asked_for_starts_without_the_sandbox_and_says_who_asked() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"off\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    assert_eq!(
+        decided_made(plane.path(), None, &asked(Asking::Dispatch, None)),
+        Ok(Some(Decided::Unsandboxed(Lifted {
+            by: By::YourLevel(Via::Dispatch),
+            reason: None,
+        })))
+    );
+}
+
+#[test]
+fn a_start_that_does_not_say_how_it_was_made_or_who_asked_never_turns_the_sandbox_off() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"off\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    let unknown = Made::Asked {
+        how: Asking::Handoff,
+        asker: None,
+    };
+    for made in [Made::Unnamed, unknown] {
+        let decided = decided_made(plane.path(), None, &made);
+        assert!(sandboxed(&decided), "{made:?}: {decided:?}");
+    }
+    for made in [Made::Resume, Made::Relaunch] {
+        let decided = decided_made(plane.path(), None, &made);
+        assert!(
+            matches!(decided, Ok(Some(Decided::Unsandboxed(_)))),
+            "{made:?}: {decided:?}"
+        );
+    }
+}
+
+#[test]
+fn the_audit_says_how_a_start_your_level_lifted_was_made() {
+    let body = |via| {
+        Change::Off(Lifted {
+            by: By::YourLevel(via),
+            reason: None,
+        })
+        .body(Some(Harness::ClaudeCode), None)
+    };
+    let window = body(Via::Window);
+    assert_eq!(
+        (window["actor"].clone(), window["scope"].clone()),
+        ("operator".into(), "local-ui".into())
+    );
+    assert_eq!(body(Via::Resume)["made"], "resume");
+    let relaunch = body(Via::Relaunch);
+    assert_eq!(relaunch["made"], "relaunch");
+    assert_eq!(relaunch["actor_kind"], "host");
+    for (via, word) in [(Via::Dispatch, "dispatch"), (Via::Handoff, "handoff")] {
+        let asked = body(via);
+        assert_eq!(asked["made"], word);
+        assert_eq!(asked["actor_kind"], "agent", "{asked}");
+        assert_ne!(asked["scope"], "local-ui", "{asked}");
+    }
+}
+
+#[test]
+fn a_chat_that_names_no_persona_takes_the_project_s_level_not_the_default_persona_s() {
+    let plane = plane_with_local("[sandbox.personas]\nsteward = \"off\"\n");
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        format!("{ON}\n[persona]\ndefault = \"steward\"\n"),
+    )
+    .unwrap();
+    personal::set_by_you(plane.path(), Some("steward"), Some(personal::Choice::Off)).unwrap();
+    // Its grants are the default persona's; its level is the project's.
+    let decided = decide_granted(
+        Harness::ClaudeCode,
+        plane.path(),
+        &machine(Os::MacOs),
+        &|_| true,
+        &Person {
+            opt_out: None,
+            level_as: None,
+            made: &Made::Window,
+        },
+        Some("steward"),
+        &grant::Grants::default(),
+    );
+    assert!(sandboxed(&decided), "{decided:?}");
 }

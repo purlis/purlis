@@ -1004,6 +1004,12 @@ pub fn start_for(
         without_sandbox,
         held,
         grants,
+        // Asked for by `asking`: the person's level is read as the stricter of its own and the
+        // asking chat's (#2071). A handoff's start says so where it is built.
+        made: crate::sandbox::Made::Asked {
+            how: crate::sandbox::Asking::Dispatch,
+            asker: Some(asking.persona.clone()),
+        },
     }
 }
 
@@ -2837,6 +2843,11 @@ mod tests {
                 without_sandbox: None,
                 held: None,
                 grants: crate::sandbox::grant::Grants::default(),
+                // Asked for by the asking chat, named by its own persona (#2071).
+                made: crate::sandbox::Made::Asked {
+                    how: crate::sandbox::Asking::Dispatch,
+                    asker: Some(asking.persona.clone()),
+                },
             }
         );
         // A chat on no persona dispatching to none starts one on none, holding nothing.

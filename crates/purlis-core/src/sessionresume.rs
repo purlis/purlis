@@ -184,6 +184,8 @@ pub fn ready(root: &Path, path: &str, name: &str, after_failure: bool) -> Result
         // A resumed chat starts sandboxed, or is refused, whatever the chat it resumes ran under
         // (ADR 0067 §7): an opt-out is never inherited.
         without_sandbox: None,
+        // The person's Resume, in the Sessions panel: their own level holds at it (#2071).
+        made: crate::sandbox::Made::Resume,
         // A record's `persona:` is written from what the chat said it was, so a Resume never
         // takes a persona's hosts past the default persona's on the record's word: it holds the
         // default's until the person allows its own (#1362, D-1362-6).

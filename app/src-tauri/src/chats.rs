@@ -77,9 +77,10 @@ fn project_sandbox(
     cwd: Option<&Path>,
     machine: &purlis_core::sandbox::Machine,
     has: &dyn Fn(&str) -> bool,
-    opt_out: Option<&purlis_core::sandbox::OptOut>,
+    person: &purlis_core::sandbox::Person<'_>,
     grants: &purlis_core::sandbox::grant::Grants,
 ) -> Result<Option<purlis_core::sandbox::Decided>, String> {
+    let opt_out = person.opt_out;
     let plane = purlis_core::sandbox::Plane::read(root);
     // An administrator's policy may require the sandbox where the project has not turned it on
     // (D-1423-1), and may forbid the opt-out no refusal then names (#1423).
@@ -87,8 +88,8 @@ fn project_sandbox(
     let leaves_it_off = !plane.missing() && !plane.unreadable() && plane.in_force(&locks).is_none();
     // A person's opt-out (#1342), or their own level confirmed at `off` (#2071), starts the
     // chat without the sandbox, so its folder confines nothing and is not checked: each sits
-    // inside every refusal, as in `decide`. A chat on no profile has no persona.
-    let yours_off = purlis_core::sandbox::your_level(root, None, &locks)
+    // inside every refusal, as in `decide`.
+    let yours_off = purlis_core::sandbox::your_level(root, person.level_as, &locks, person.made)
         == Some(purlis_core::sandbox::personal::Choice::Off);
     if !leaves_it_off && opt_out.is_none() && !yours_off && machine.os.has_backend() {
         let Some(cwd) = cwd else {
@@ -100,7 +101,7 @@ fn project_sandbox(
     }
     // A chat on no profile adopts no persona, so no persona's grants (#1362); a person's grants
     // for this one chat (#1342) are its own.
-    purlis_core::sandbox::decide_granted(harness, root, machine, has, opt_out, None, grants)
+    purlis_core::sandbox::decide_granted(harness, root, machine, has, person, None, grants)
         .map_err(|not| not.said(&locks))
 }
 
@@ -260,6 +261,27 @@ enum Why {
     /// A chat started again in the place of one whose harness could not bring its
     /// conversation back (`lostOnResume`): the same chat, `fresh`.
     Again,
+}
+
+/// **How a start of `chat` is made** (#2071), from the app's own record of it: asked for by
+/// another chat (a dispatch or a handoff, at its first start and every later one), else the
+/// person's new chat in the window, else the app starting it again.
+fn made_of(chat: &Chat, why: Why) -> purlis_core::sandbox::Made {
+    use purlis_core::sandbox::{Asking, Made};
+    if let Some(from) = chat.from.as_ref().filter(|from| !from.by_person) {
+        return Made::Asked {
+            how: match from.mode {
+                purlis_core::reopen::Mode::Handoff => Asking::Handoff,
+                purlis_core::reopen::Mode::Task => Asking::Dispatch,
+            },
+            // The asking chat's persona, nearest first; a record that cannot say names none.
+            asker: from.above.as_ref().and_then(|above| above.first().cloned()),
+        };
+    }
+    match why {
+        Why::New => Made::Window,
+        Why::Relaunch | Why::Upgrade | Why::Again => Made::Relaunch,
+    }
 }
 
 /// The most chats that were closed this launch whose ids are remembered, for
@@ -1113,6 +1135,7 @@ impl Chats {
         chat: &Chat,
         grants: &purlis_core::sandbox::grant::Grants,
         opt_out: Option<&purlis_core::sandbox::OptOut>,
+        made: &purlis_core::sandbox::Made,
     ) -> Result<Decided, String> {
         let Some(harness) = chat.harness() else {
             return Ok((None, None, None));
@@ -1124,7 +1147,12 @@ impl Chats {
             chat.cwd.as_deref(),
             &purlis_core::sandbox::Machine::this(),
             &purlis_core::sandbox::backend::installed,
-            opt_out,
+            // A chat on no profile has no persona: its level is the project's.
+            &purlis_core::sandbox::Person {
+                opt_out,
+                level_as: None,
+                made,
+            },
             grants,
         )?;
         let (applied, lifted, floorless) = match decided {
@@ -1357,6 +1385,7 @@ impl Chats {
                 // relaunch until the person allows its own (#1362, D-1362-5).
                 held: chat.held.clone(),
                 grants: self.grants_of(chat),
+                made: made_of(chat, why),
             },
             &self.project,
         )?;
@@ -1992,7 +2021,12 @@ impl Chats {
                 &self.project,
                 machine,
                 has,
-                None,
+                &purlis_core::sandbox::Person {
+                    opt_out: None,
+                    level_as: chat.persona.as_deref(),
+                    // What the chat's next start would be made as.
+                    made: &made_of(&chat, Why::Relaunch),
+                },
                 persona.as_deref(),
                 &with.grants,
             ) else {
@@ -2080,10 +2114,10 @@ impl Chats {
         #[cfg(test)]
         let decided = match &self.deciding {
             Some(deciding) => deciding(chat, &grants, opt_out),
-            None => self.sandbox_off_profile(chat, &grants, opt_out),
+            None => self.sandbox_off_profile(chat, &grants, opt_out, &made_of(chat, why)),
         };
         #[cfg(not(test))]
-        let decided = self.sandbox_off_profile(chat, &grants, opt_out);
+        let decided = self.sandbox_off_profile(chat, &grants, opt_out, &made_of(chat, why));
         let (sandboxed, unsandboxed, floorless) = decided?;
         let mut launch = chat.launch();
         let sandbox = sandboxed.map(|(applied, program)| {
@@ -2275,7 +2309,7 @@ impl Chats {
                 match change {
                     // A person's choice, here or as their level, is always recorded.
                     Change::Off(Lifted {
-                        by: By::Person | By::YourLevel,
+                        by: By::Person | By::YourLevel(_),
                         ..
                     }) => {
                         return Err(format!(
@@ -5556,6 +5590,66 @@ pub(crate) mod tests {
     use super::*;
     use crate::host::pretend::Pretend;
 
+    /// #2071: a start is made as the app's record says: a chat another chat asked for names
+    /// it, at its first start and every later one; the person's own is theirs.
+    #[test]
+    fn a_start_is_made_as_the_record_says_and_a_dispatched_chat_names_its_asker() {
+        use purlis_core::reopen::{HandedFrom, Mode as Moved, Owed as Report};
+        use purlis_core::sandbox::{Asking, Made};
+        let from = |mode, above: Option<Vec<Option<String>>>, by_person| HandedFrom {
+            id: None,
+            chat: 1,
+            name: "steward 1".to_owned(),
+            workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+            report: Report::Due,
+            mode,
+            depth: 1,
+            root: None,
+            above,
+            by_person,
+        };
+        let chat = |from| Chat {
+            from,
+            ..Chat::default()
+        };
+        let steward = Some(vec![Some("steward".to_owned())]);
+        assert_eq!(
+            made_of(
+                &chat(Some(from(Moved::Task, steward.clone(), false))),
+                Why::Relaunch
+            ),
+            Made::Asked {
+                how: Asking::Dispatch,
+                asker: Some(Some("steward".to_owned())),
+            }
+        );
+        assert_eq!(
+            made_of(
+                &chat(Some(from(Moved::Handoff, steward.clone(), false))),
+                Why::New
+            ),
+            Made::Asked {
+                how: Asking::Handoff,
+                asker: Some(Some("steward".to_owned())),
+            }
+        );
+        // A record that cannot say who asked names nobody.
+        assert_eq!(
+            made_of(&chat(Some(from(Moved::Task, None, false))), Why::New),
+            Made::Asked {
+                how: Asking::Dispatch,
+                asker: None,
+            }
+        );
+        // Asked for by the person from a tab, or no other chat at all: the person's.
+        assert_eq!(
+            made_of(&chat(Some(from(Moved::Task, steward, true))), Why::New),
+            Made::Window
+        );
+        assert_eq!(made_of(&chat(None), Why::New), Made::Window);
+        assert_eq!(made_of(&chat(None), Why::Relaunch), Made::Relaunch);
+    }
+
     const SIZE: Size = Size {
         columns: 80,
         rows: 24,
@@ -6453,7 +6547,11 @@ pub(crate) mod tests {
                     &root,
                     &a_machine(),
                     &|_| true,
-                    opt_out,
+                    &purlis_core::sandbox::Person {
+                        opt_out,
+                        level_as: None,
+                        made: &purlis_core::sandbox::Made::Window,
+                    },
                     None,
                     grants,
                 )
@@ -6981,7 +7079,11 @@ pub(crate) mod tests {
                 plane.path(),
                 &a_machine(),
                 &|_| true,
-                None,
+                &purlis_core::sandbox::Person {
+                    opt_out: None,
+                    level_as: persona,
+                    made: &purlis_core::sandbox::Made::Window,
+                },
                 persona,
                 &purlis_core::sandbox::grant::Grants::default(),
             )
@@ -7365,7 +7467,11 @@ pub(crate) mod tests {
             Some(&linked),
             &on(purlis_core::sandbox::Os::Windows),
             &|_| true,
-            None,
+            &purlis_core::sandbox::Person {
+                opt_out: None,
+                level_as: None,
+                made: &purlis_core::sandbox::Made::Window,
+            },
             &Default::default(),
         );
         assert!(
@@ -7386,7 +7492,11 @@ pub(crate) mod tests {
             Some(&linked),
             &on(purlis_core::sandbox::Os::MacOs),
             &|_| true,
-            None,
+            &purlis_core::sandbox::Person {
+                opt_out: None,
+                level_as: None,
+                made: &purlis_core::sandbox::Made::Window,
+            },
             &Default::default(),
         );
         assert_eq!(
@@ -10443,6 +10553,7 @@ pub(crate) mod tests {
                 without_sandbox: None,
                 held: None,
                 grants: Default::default(),
+                made: purlis_core::sandbox::Made::Window,
             },
             &root,
         )

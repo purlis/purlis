@@ -2890,9 +2890,19 @@ fn dispatch_noting(
             // **Its sandbox is what the project compiles for its own persona in that folder**
             // (`start::ready`), as for any chat of that persona started there: nothing of the
             // asking chat's is carried, and no folder but its own is added for it (#1453).
+            let start = dispatchdecision::start_for(&asking, its, profile, name);
             let start = start::Start {
                 cwd,
-                ..dispatchdecision::start_for(&asking, its, profile, name)
+                // Asked for by `asking`, as a handoff or a dispatch (#2071).
+                made: purlis_core::sandbox::Made::Asked {
+                    how: if wanted.mode() == Mode::Handoff {
+                        purlis_core::sandbox::Asking::Handoff
+                    } else {
+                        purlis_core::sandbox::Asking::Dispatch
+                    },
+                    asker: Some(asking.persona.clone()),
+                },
+                ..start
             };
             match to.as_deref() {
                 // **The joined start** (#1446): whatever the start held of the asking chat's
@@ -4789,6 +4799,7 @@ mod tests {
                 without_sandbox: None,
                 held: None,
                 grants: Default::default(),
+                made: purlis_core::sandbox::Made::Window,
             },
             root,
         )

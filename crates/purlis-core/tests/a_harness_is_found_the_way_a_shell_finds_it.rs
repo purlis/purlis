@@ -76,6 +76,7 @@ impl Plane {
             without_sandbox: None,
             held: None,
             grants: Default::default(),
+            made: purlis_core::sandbox::Made::Window,
         }
     }
 }

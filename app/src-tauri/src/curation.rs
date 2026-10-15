@@ -459,6 +459,8 @@ pub fn start_typed_where_it_can_be(
             without_sandbox: None,
             held: None,
             grants: Default::default(),
+            // The person's curation action, from the window (#2071).
+            made: purlis_core::sandbox::Made::Window,
         },
         &root,
     )?;
@@ -572,6 +574,8 @@ pub fn start_sent(
             without_sandbox: None,
             held: None,
             grants: Default::default(),
+            // The person's curation action, from the window (#2071).
+            made: purlis_core::sandbox::Made::Window,
         },
         &root,
     )

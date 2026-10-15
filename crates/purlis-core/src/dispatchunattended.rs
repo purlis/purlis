@@ -396,7 +396,14 @@ pub fn start_of_a_persona_chat(
         return Err(refused);
     }
     let with = dispatchgrant::grants_for_a_dispatched_chat(target);
+    // Who asked, where the start says so; anything else of the asking chat's own start is
+    // dropped, and a start that names no asker never takes the person's `off` (#2071).
+    let made = match &start.made {
+        asked @ crate::sandbox::Made::Asked { .. } => asked.clone(),
+        _ => crate::sandbox::Made::Unnamed,
+    };
     Ok(Start {
+        made,
         persona: Some(with.persona),
         held: with.held,
         grants: with.grants,
