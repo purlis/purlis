@@ -461,20 +461,33 @@ impl SessionHost {
     /// Ends the host: closes its standard input, waits [`ENDS_WITHIN`] for it to go, and kills
     /// it if it has not. For the app's exit.
     pub fn end(&self) {
-        let Some(mut held) = self.held.lock().unwrap_or_else(|e| e.into_inner()).take() else {
-            return;
-        };
-        drop(held.stdin.take());
-        let deadline = Instant::now() + ENDS_WITHIN;
-        while Instant::now() < deadline {
-            if matches!(held.child.try_wait(), Ok(Some(_))) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        let _ = held.child.kill();
-        let _ = held.child.wait();
+        end_held(&self.held);
     }
+
+    /// What ends the host from elsewhere, as [`Self::end`] does: a quit that the host did not
+    /// answer in time ends it before the save at quit (#2002). Ending it twice ends it once.
+    pub fn ender(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let held = Arc::clone(&self.held);
+        Arc::new(move || end_held(&held))
+    }
+}
+
+/// Ends the host `held` holds, if it still does: closes its standard input, waits
+/// [`ENDS_WITHIN`] for it to go, and kills it if it has not.
+fn end_held(held: &Mutex<Option<Held>>) {
+    let Some(mut held) = held.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        return;
+    };
+    drop(held.stdin.take());
+    let deadline = Instant::now() + ENDS_WITHIN;
+    while Instant::now() < deadline {
+        if matches!(held.child.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = held.child.kill();
+    let _ = held.child.wait();
 }
 
 /// Starts the host and connects to it, on the calling thread.

@@ -63,6 +63,14 @@ impl PlaneId {
     }
 }
 
+impl PlaneId {
+    /// The id the session host's watch of a project it saves is started under (#2002): that
+    /// watch tells nobody by it, and no registry of the host's holds it.
+    pub(crate) fn saved_in_the_host(root: &Path) -> Self {
+        Self::of(root)
+    }
+}
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -230,9 +238,10 @@ pub struct Held {
     /// What the sidebar draws, kept current by what the watch and auto-save say moved
     /// (FD-10b, [`purlis_core::planemodel`]). In memory only.
     model: Arc<Mutex<Model>>,
-    /// The plane's auto-save worker (charter-app#296): saves it after a quiet period and when
-    /// a chat ends, and fetches what comes in. Stopped when the plane is let go of.
-    autosave: Mutex<Option<crate::autosave::Worker>>,
+    /// The plane's auto-save (charter-app#296): saves it after a quiet period and when a chat
+    /// ends, and fetches what comes in. It runs where the plane's chats run: here, or in the
+    /// session host (#2002). Stopped when the plane is let go of.
+    autosave: Mutex<Option<Box<dyn crate::autosave::Saver>>>,
     /// What each open chat read of the plane's instructions when it started (charter#369), so
     /// the window can mark a chat still running on ones that have since changed.
     started_on: StartedOn,
@@ -1422,6 +1431,14 @@ impl Held {
             .collect()
     }
 
+    /// The plane's auto-save, taken from it: the quit stops it ([`Planes::let_go_of_all`]).
+    fn take_saver(&self) -> Option<Box<dyn crate::autosave::Saver>> {
+        self.autosave
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
     /// Tell the plane's auto-save worker something, if it has one.
     pub fn poke_autosave(&self, poke: crate::autosave::Poke) {
         if let Some(worker) = self
@@ -1837,6 +1854,8 @@ pub struct Planes {
     changes: crate::planewatch::Changed,
     /// Told when auto-save saved a plane (charter-app#343).
     saves: crate::autosave::Saved,
+    /// Ends the session host, for a quit it did not answer in time (#2002).
+    end_the_host: Arc<dyn Fn() + Send + Sync>,
     /// Told the root of each plane let go of, so the one watch per repo stops listening to its
     /// clones (FD-11).
     released: Released,
@@ -2102,6 +2121,7 @@ impl Planes {
             arrivals: Arc::new(|_| {}),
             changes: Arc::new(|_, _| {}),
             saves: Arc::new(|_, _| {}),
+            end_the_host: Arc::new(|| {}),
             released: Arc::new(|_| {}),
             closed: Arc::new(|_| {}),
             by_hand: Arc::new(|_| {}),
@@ -2233,6 +2253,13 @@ impl Planes {
     /// that hear a plane being saved are told (charter-app#343).
     pub fn telling_saves(mut self, saves: crate::autosave::Saved) -> Self {
         self.saves = saves;
+        self
+    }
+
+    /// Ends the session host with `end`, at a quit whose stop of a project's saving it did not
+    /// answer in time, before the save at quit runs (#2002).
+    pub fn ending_the_host_with(mut self, end: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.end_the_host = end;
         self
     }
 
@@ -3502,13 +3529,23 @@ impl Planes {
         // name (FD-10b).
         let model = Arc::new(Mutex::new(Model::read(&root)));
         let changes = applying(Arc::clone(&model), root.clone(), Arc::clone(&self.changes));
-        // Before a chat can end, so its end is one the worker hears.
-        let autosave = crate::autosave::Worker::start(
-            id.clone(),
-            root.clone(),
-            Arc::clone(&changes),
-            Arc::clone(&self.saves),
-        );
+        // Before a chat can end, so its end is one the worker hears. Where the chats run: in
+        // the session host, the host saves the plane, and this window starts none of its own.
+        let autosave = chats.sessions().keep_saving(&root, {
+            let changes = Arc::clone(&changes);
+            let saves = Arc::clone(&self.saves);
+            let plane = id.clone();
+            let root = root.clone();
+            Arc::new(move |looked: crate::autosave::Looked| {
+                changes(
+                    plane.clone(),
+                    crate::autosave::what_it_did(looked.moved_tree),
+                );
+                if looked.saved {
+                    saves(plane.clone(), root.clone());
+                }
+            })
+        });
         // No hook can report a program dying (the process is gone), so the operating system
         // does. That is not charter reading a harness's output (ADR 0018) — it is the
         // process's own exit status, and the only honest source for `failed`.
@@ -3831,6 +3868,14 @@ impl Planes {
         // Every command purlis is running with a vault for a chat ends here, with everything it
         // started that stayed in its process group (#1407).
         purlis_core::secrets::brokered::stop_every_run();
+        // Every plane's saving stops at once, against one short deadline, so a save at quit
+        // never overlaps the session host's; a host that does not answer is ended first
+        // (#2002).
+        crate::autosave::stop_every_saver_by(
+            all.iter().filter_map(|held| held.take_saver()).collect(),
+            std::time::Instant::now() + crate::autosave::QUIT_STOPS_WITHIN,
+            &*self.end_the_host,
+        );
         // Before the chats are ended: a turn this quit cuts off leaves its repo half-written,
         // and that repo is not saved (charter-app#299).
         let roots: Vec<_> = all

@@ -74,6 +74,8 @@ mod behaviour;
 mod hostedconfinement;
 #[cfg(unix)]
 mod hostedsessions;
+#[cfg(unix)]
+mod hostsaving;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -2953,7 +2955,8 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
                 sessionhost::HookChannels(kept.clone()),
                 hostedconfinement::ConfinesHere,
             )
-            .recording_with(kept),
+            .recording_with(kept)
+            .saving_with(hostsaving::InTheHost),
         )
     })
 }
@@ -2966,7 +2969,8 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     #[cfg(unix)]
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
-        let connection = app.state::<sessionhost::SessionHost>().connection();
+        let host = app.state::<sessionhost::SessionHost>();
+        let connection = host.connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);
         // The host writes the event log, and the window hands it each write (#2003).
         let events = hooks::Events::in_the_host({
@@ -2984,7 +2988,10 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
                     ))
                 },
             ))
-            .hearing_hooks_through_the_host();
+            .hearing_hooks_through_the_host()
+            // The host saves the projects too (#2002): a quit it does not answer in time ends
+            // it before the save at quit.
+            .ending_the_host_with(host.ender());
     }
     let _ = app;
     planes

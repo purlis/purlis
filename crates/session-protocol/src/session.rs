@@ -101,6 +101,11 @@ use crate::view::{Limits, Views};
 /// carries whole frames ([`crate::view::frames`]), a view's `role` and `rate` on `attach_view`,
 /// and a listed program's `kind`.
 ///
+/// 1.7 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
+/// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
+/// project's auto-save did; and the host's question to the window of who is mid-turn in a
+/// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
+///
 /// 1.8 added the event log written in the host (#2003): `record` carries one write the window
 /// decided to the host, which writes it in the log it alone holds while chats run in it, in the
 /// order the window sent them.
@@ -254,6 +259,25 @@ pub enum Command {
         project: String,
         heard: u64,
         reply: serde_json::Value,
+    },
+    /// Save a held project from now on: the host runs its watcher and its auto-save, as the
+    /// project's settings say, until [`Command::StopSaving`] or the host ends (1.7). A link
+    /// that ends does not stop it, so the project goes on being saved while the window is
+    /// gone. A project the host already saves is not saved twice. Each look that did something
+    /// is pushed as [`Pushed::Saving`].
+    StartSaving { project: String },
+    /// Stop saving a project, and answer once its auto-save has been told to stop (1.7).
+    StopSaving { project: String },
+    /// Fetch what came in for a project the host saves, unless it fetched a moment ago: the
+    /// window came back into focus (1.7).
+    FetchProject { project: String },
+    /// The window's answer to [`Pushed::WhoIsMidTurn`] (1.7): the chats mid-turn that could be
+    /// writing the workspace, by the names the window shows, or none said where the window
+    /// cannot tell, which the host takes as every chat it runs there.
+    MidTurn {
+        question: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        chats: Option<Vec<String>>,
     },
     /// Start a chat's confinement, its proxy and what runs beside it, from the window's plan
     /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
@@ -800,6 +824,23 @@ pub enum Pushed {
         #[serde(flatten)]
         told: SandboxTold,
     },
+    /// One look of a project's auto-save did something (1.7): it `saved` the project, or only
+    /// fetched, pushed or looked at a request; `moved_tree` when what it did moved files in the
+    /// tree (a fast-forward, a save's rebase), so a client reads everything again, and only the
+    /// git standing otherwise.
+    Saving {
+        project: String,
+        saved: bool,
+        moved_tree: bool,
+    },
+    /// The host asks the window which chats are mid-turn in a workspace of a project it saves
+    /// (1.7): a repo's auto-save waits for them (ADR 0051), and the turns are on the window's
+    /// board. Pushed to the window's links only; answered with [`Command::MidTurn`].
+    WhoIsMidTurn {
+        question: u64,
+        project: String,
+        workspace: String,
+    },
 }
 
 wire_words!(Command {
@@ -830,6 +871,10 @@ wire_words!(Command {
     StopAll => "stop_all",
     Rearm => "rearm",
     KillSwitch => "kill_switch",
+    StartSaving => "start_saving",
+    StopSaving => "stop_saving",
+    FetchProject => "fetch_project",
+    MidTurn => "mid_turn",
     Record => "record",
 });
 
@@ -853,7 +898,11 @@ impl Command {
             Command::HoldProject { .. }
             | Command::LetGoOfProject { .. }
             | Command::Deal { .. }
-            | Command::DealtAlready { .. } => Power::Hold,
+            | Command::DealtAlready { .. }
+            | Command::StartSaving { .. }
+            | Command::StopSaving { .. }
+            | Command::FetchProject { .. }
+            | Command::MidTurn { .. } => Power::Hold,
             Command::ReplyHeard { .. } => Power::Heard,
             Command::Confine(_)
             | Command::LetGoOfConfinement { .. }
@@ -899,6 +948,8 @@ wire_words!(Pushed {
     ViewEnded => "view_ended",
     Heard => "heard",
     Sandbox => "sandbox",
+    Saving => "saving",
+    WhoIsMidTurn => "who_is_mid_turn",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -1267,6 +1318,9 @@ enum Lane {
     Heard(u64),
     /// The commands about one confinement (1.4).
     Confinement(String),
+    /// The commands about one project's saving (1.7): a stop is never overtaken by the start
+    /// before it.
+    Saving(String),
     /// What the window asks the event log to write, in the order it asked (1.8).
     Record,
 }
@@ -1285,7 +1339,8 @@ impl Lane {
             | Command::DealtAlready { .. }
             | Command::StopAll
             | Command::Rearm
-            | Command::KillSwitch => None,
+            | Command::KillSwitch
+            | Command::MidTurn { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -1304,6 +1359,9 @@ impl Lane {
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
             // The replies to one line keep their order: a command's frames, one after another.
             Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
+            Command::StartSaving { project }
+            | Command::StopSaving { project }
+            | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
             // A run's start before what is written under it.
             Command::Record { .. } => Some(Lane::Record),
         }
@@ -1706,6 +1764,30 @@ impl Client {
         .await
     }
 
+    /// Save `project` from now on, in the host (1.7).
+    pub async fn start_saving(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::StartSaving {
+            project: project.into(),
+        })
+        .await
+    }
+
+    /// Stop saving `project` in the host (1.7).
+    pub async fn stop_saving(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::StopSaving {
+            project: project.into(),
+        })
+        .await
+    }
+
+    /// Fetch what came in for `project`, which the host saves (1.7).
+    pub async fn fetch_project(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::FetchProject {
+            project: project.into(),
+        })
+        .await
+    }
+
     /// End `program` and forget it (1.2).
     pub async fn close(&self, program: &str) -> Result<(), CallError> {
         self.done(Command::Close {
@@ -1927,7 +2009,9 @@ impl Subscribed {
                 Pushed::Ended { .. }
                 | Pushed::ViewEnded { .. }
                 | Pushed::Heard { .. }
-                | Pushed::Sandbox { .. } => {}
+                | Pushed::Sandbox { .. }
+                | Pushed::Saving { .. }
+                | Pushed::WhoIsMidTurn { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;
