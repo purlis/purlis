@@ -793,3 +793,129 @@ fn a_memory_that_spells_a_secret_through_its_escapes_is_flagged_as_the_save_woul
         );
     }
 }
+
+// ---- a proposed change (#1975) ---------------------------------------------------------- //
+
+fn sandboxed_claude(plane: Plane) -> Plane {
+    plane
+        .with_env(crate::hookwire::SANDBOXED_ENV, "1")
+        .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+        .with_env(crate::hookwire::CHAT_ENV, "7")
+}
+
+fn edit_of_the_manifest(plane: &Plane) -> Value {
+    serde_json::json!({
+        "tool_name": "Edit",
+        "cwd": plane.cwd(),
+        "tool_input": {
+            "file_path": plane.root.join("charter.toml").display().to_string(),
+            "old_string": "schema = 1",
+            "new_string": "schema = 1\nmode = \"pr\"",
+        },
+    })
+}
+
+/// PC-2: a sandboxed Claude Code chat's edit of purlis's own configuration is handed to the
+/// app as a proposal, worked out against the file as it is, and the tool is refused with the
+/// words that say the person has it.
+#[test]
+fn a_claude_code_edit_of_the_manifest_is_proposed_and_the_tool_refused() {
+    let plane = sandboxed_claude(Plane::new());
+    let handed = std::cell::RefCell::new(Vec::new());
+    let answer = plane.ask(edit_of_the_manifest(&plane), |hook| {
+        pretooluse_edit_proposing(hook, &|ask| {
+            handed.borrow_mut().push(ask);
+            true
+        })
+    });
+    let Answer::Deny(verdict) = answer else {
+        panic!("refused, not {answer:?}");
+    };
+    assert_eq!(verdict.denial, crate::proposed::PROPOSED_SAID);
+    let handed = handed.into_inner();
+    assert_eq!(handed.len(), 1);
+    assert_eq!(handed[0].chat, 7);
+    assert_eq!(handed[0].path, "charter.toml");
+    assert_eq!(handed[0].content, "schema = 1\nmode = \"pr\"\n");
+    assert_eq!(
+        handed[0].base,
+        crate::proposed::base_of(Some(b"schema = 1\n"))
+    );
+    // Nothing was written: only the person applies it.
+    assert_eq!(
+        std::fs::read_to_string(plane.root.join("charter.toml")).unwrap(),
+        "schema = 1\n"
+    );
+}
+
+/// PC-2, PC-14: an app that does not take it, another harness, an unsandboxed chat, policy off
+/// and any other file: the edit is the edit guard's as before, and nothing is handed over.
+#[test]
+fn an_edit_that_is_no_proposal_is_left_to_the_chat_s_own_sandbox() {
+    let plane = sandboxed_claude(Plane::new());
+    let refused_by_the_app = plane.ask(edit_of_the_manifest(&plane), |hook| {
+        pretooluse_edit_proposing(hook, &|_| false)
+    });
+    assert_eq!(refused_by_the_app, Answer::Nothing);
+
+    let never = |_: crate::hookwire::ProposeAsk| -> bool { panic!("nothing is handed over") };
+    let opencode = Plane::new()
+        .with_env(crate::hookwire::SANDBOXED_ENV, "1")
+        .with_env(crate::hookwire::HARNESS_ENV, "opencode")
+        .with_env(crate::hookwire::CHAT_ENV, "7");
+    assert_eq!(
+        opencode.ask(edit_of_the_manifest(&opencode), |hook| {
+            pretooluse_edit_proposing(hook, &never)
+        }),
+        Answer::Nothing
+    );
+    let unsandboxed = Plane::new()
+        .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+        .with_env(crate::hookwire::CHAT_ENV, "7");
+    assert_eq!(
+        unsandboxed.ask(edit_of_the_manifest(&unsandboxed), |hook| {
+            pretooluse_edit_proposing(hook, &never)
+        }),
+        Answer::Nothing
+    );
+    let other = serde_json::json!({
+        "tool_name": "Edit",
+        "cwd": plane.cwd(),
+        "tool_input": {"file_path": plane.root.join("notes.md").display().to_string(),
+                       "old_string": "a", "new_string": "b"},
+    });
+    assert_eq!(
+        plane.ask(other, |hook| pretooluse_edit_proposing(hook, &never)),
+        Answer::Nothing
+    );
+
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    assert_eq!(
+        plane.ask(edit_of_the_manifest(&plane), |hook| {
+            pretooluse_edit_proposing(hook, &never)
+        }),
+        Answer::Nothing
+    );
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+}
+
+/// A change the tool could not make is refused in fixed words that say nothing of the file.
+#[test]
+fn an_edit_whose_text_is_not_in_the_file_is_refused_in_fixed_words() {
+    let plane = sandboxed_claude(Plane::new());
+    let payload = serde_json::json!({
+        "tool_name": "Edit",
+        "cwd": plane.cwd(),
+        "tool_input": {"file_path": "charter.toml", "old_string": "nothing", "new_string": "x"},
+    });
+    let answer = plane.ask(payload, |hook| {
+        pretooluse_edit_proposing(hook, &|_| panic!("nothing is handed over"))
+    });
+    let Answer::Deny(verdict) = answer else {
+        panic!("refused, not {answer:?}");
+    };
+    assert_eq!(verdict.denial, crate::proposed::UNPREPARED);
+}

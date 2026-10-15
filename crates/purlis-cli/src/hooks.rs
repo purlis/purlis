@@ -135,7 +135,7 @@ pub type Handler = fn(&Hook) -> Answer;
 pub fn handler(name: &str) -> Option<Handler> {
     Some(match name {
         "pretooluse-read" => toolhooks::pretooluse_read,
-        "pretooluse-edit" => toolhooks::pretooluse_edit,
+        "pretooluse-edit" => pretooluse_edit,
         "pretooluse-dispatch" => toolhooks::pretooluse_dispatch,
         "posttooluse" => toolhooks::posttooluse,
         "posttooluse-skill" => toolhooks::posttooluse_skill,
@@ -144,6 +144,15 @@ pub fn handler(name: &str) -> Option<Handler> {
         // took once it has ([`told_after`]), never from here.
         BLOCKED | BLOCKED_ON_FAILURE => says_nothing,
         _ => return None,
+    })
+}
+
+/// `pretooluse-edit`: the state-directory guard, and a sandboxed Claude Code chat's edit of
+/// purlis's own configuration handed to the app as a proposed change (#1975), which the window
+/// shows the person to apply ([`toolhooks::pretooluse_edit_proposing`]).
+fn pretooluse_edit(hook: &Hook) -> Answer {
+    toolhooks::pretooluse_edit_proposing(hook, &|ask| {
+        crate::brokered::proposal_taken(purlis_core::hookwire::Ask::Propose(Box::new(ask)))
     })
 }
 

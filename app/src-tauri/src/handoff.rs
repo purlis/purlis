@@ -269,6 +269,9 @@ pub fn answer(
         Ask::Keys { chat, vault } => {
             crate::vaults::keys_for_chat(held, plane, &|_| {}, chat, &vault)
         }
+        // A proposed change (#1975): this app does not hold one for the person yet, so it says
+        // so, and the asking chat is refused its edit as before.
+        Ask::Propose(_) => no(purlis_core::proposed::NOT_HELD.to_owned()),
         // Where the asking chat is working (#1450): no ticket, for the record's reason. The
         // line names only the chat whose token it carries, and the picture is this app's own
         // record of its open chats.
@@ -7071,6 +7074,7 @@ mod tests {
                 Ask::Commit(_) => 10,
                 Ask::Removal(_) => 11,
                 Ask::Keys { .. } => 12,
+                Ask::Propose(_) => 13,
             }
         }
         let asks = vec![
@@ -7130,10 +7134,17 @@ mod tests {
                 chat,
                 vault: "ops".to_owned(),
             },
+            // A proposed change (#1975): it names a file and a change, and writes nothing.
+            Ask::Propose(Box::new(purlis_core::hookwire::ProposeAsk {
+                chat,
+                path: "purlis.toml".to_owned(),
+                base: None,
+                content: "[plane]\n".to_owned(),
+            })),
         ];
         let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
         kinds.dedup();
-        assert_eq!(kinds, (0..=12).collect::<Vec<_>>(), "one of every kind");
+        assert_eq!(kinds, (0..=13).collect::<Vec<_>>(), "one of every kind");
         asks
     }
 
