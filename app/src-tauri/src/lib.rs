@@ -244,6 +244,19 @@ pub(crate) struct Shipped {
 /// unless a test says otherwise by naming its own `Shipped`. The stand-in is never the test
 /// binary itself: a hook run with it would start the tests again.
 #[cfg(test)]
+impl Shipped {
+    /// A build that ships nothing: no binary, no plugin, no shims and no git hooks.
+    pub(crate) fn nothing() -> Self {
+        Self {
+            binary: None,
+            plugin: None,
+            shims: None,
+            git_hooks: None,
+        }
+    }
+}
+
+#[cfg(test)]
 impl Default for Shipped {
     fn default() -> Self {
         static SHIPPED: std::sync::OnceLock<(tempfile::TempDir, PathBuf, PathBuf)> =

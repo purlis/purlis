@@ -63,7 +63,10 @@ impl Plane {
     }
 
     fn harness(&self) -> PathBuf {
-        stand_in::program(self.root(), "harness-stand-in", "#!/bin/sh\nexit 0\n")
+        // Beside the plane, answering `--version` as Claude Code does: a start asks (#2071).
+        let bin = beside().join(self.root().file_name().expect("a named plane"));
+        fs::create_dir_all(&bin).unwrap();
+        stand_in::claude_code(&bin, "harness-stand-in", "#!/bin/sh\nexit 0\n")
     }
 
     /// Declares `work` (this machine's default) and `other`, both claude, both approved.
@@ -654,4 +657,12 @@ fn a_plane_root_record_resumes_in_the_plane_root_directory_it_names() {
 
     assert_eq!(resumed.ready.cwd.as_deref(), Some(plane.root()));
     assert!(resumed.notes.is_empty(), "nothing guessed");
+}
+
+/// A folder beside every test's project, never in one, for its stand-in harness: a chat starts
+/// at the floor (#2071), which starts no program the chat could have written.
+fn beside() -> &'static std::path::Path {
+    static ONE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    ONE.get_or_init(|| tempfile::tempdir().expect("a folder for the stand-ins"))
+        .path()
 }

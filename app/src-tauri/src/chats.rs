@@ -5555,6 +5555,17 @@ pub(crate) mod tests {
     /// A conversation the chat is not in: a nested harness's.
     const OTHER: &str = "66666666-7777-4888-9999-000000000000";
 
+    /// A program called `name` that is there, beside every test's project and never in one, and
+    /// answers `--version` as Claude Code does: a harness chat starts at the floor (#2071), which
+    /// checks the program it starts even where a pretend host runs nothing.
+    fn standing(name: &str) -> String {
+        static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        let dir = DIR.get_or_init(|| tempfile::tempdir().expect("a folder for the stand-ins"));
+        stand_in::claude_code(dir.path(), name, "#!/bin/sh\nexec sleep 600\n")
+            .display()
+            .to_string()
+    }
+
     /// A directory holding a program called `claude` that prints the arguments it was given
     /// and then waits, so a test can see what the app actually put on its command line. It
     /// answers `--version` as Claude Code does, which a sandboxed start asks (#2071).
@@ -6292,7 +6303,7 @@ pub(crate) mod tests {
         let chats = chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(plane.path(), "/nowhere/opencode"), SIZE)
+            .start(&a_chat_in(plane.path(), &standing("opencode")), SIZE)
             .expect_err("not started");
 
         // Refused for one reason or another on every system — no compiler here, no wrap there,
@@ -6370,7 +6381,7 @@ pub(crate) mod tests {
                 .start(
                     &Chat {
                         cwd: Some(below),
-                        ..chat("/nowhere/opencode", "off-profile", None)
+                        ..chat(&standing("opencode"), "off-profile", None)
                     },
                     SIZE,
                 )
@@ -6465,7 +6476,7 @@ pub(crate) mod tests {
     fn a_chat_in_with(plane: &std::path::Path, resume: Option<&str>) -> Chat {
         Chat {
             cwd: Some(plane.to_path_buf()),
-            ..chat("/nowhere/claude", "restarted", resume)
+            ..chat(&standing("claude"), "restarted", resume)
         }
     }
 
@@ -7146,7 +7157,7 @@ pub(crate) mod tests {
         let chats = chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(plane.path(), "/nowhere/codex"), SIZE)
+            .start(&a_chat_in(plane.path(), &standing("codex")), SIZE)
             .expect_err("not started");
 
         assert!(!refused.contains("#1123"), "{refused}");
@@ -7178,7 +7189,7 @@ pub(crate) mod tests {
 
         let refused = chats
             .start(
-                &a_chat_in(&plane.path().join("workspaces/w"), "/nowhere/opencode"),
+                &a_chat_in(&plane.path().join("workspaces/w"), &standing("opencode")),
                 SIZE,
             )
             .expect_err("not started");
@@ -7200,7 +7211,7 @@ pub(crate) mod tests {
         let chats = pretend_chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(elsewhere.path(), "/nowhere/opencode"), SIZE)
+            .start(&a_chat_in(elsewhere.path(), &standing("opencode")), SIZE)
             .expect_err("not started");
         assert_eq!(
             refused,
@@ -7209,7 +7220,7 @@ pub(crate) mod tests {
         );
 
         let refused = chats
-            .start(&chat("/nowhere/opencode", "no folder", None), SIZE)
+            .start(&chat(&standing("opencode"), "no folder", None), SIZE)
             .expect_err("not started");
         assert_eq!(
             refused,
@@ -7230,7 +7241,7 @@ pub(crate) mod tests {
         let chats = pretend_chats_of(plane.path());
 
         let refused = chats
-            .start(&a_chat_in(&planted, "/nowhere/opencode"), SIZE)
+            .start(&a_chat_in(&planted, &standing("opencode")), SIZE)
             .expect_err("not started");
 
         assert!(
@@ -7258,7 +7269,7 @@ pub(crate) mod tests {
         };
 
         let agent = chats
-            .start(&a_chat_in(elsewhere.path(), "/nowhere/claude"), SIZE)
+            .start(&a_chat_in(elsewhere.path(), &standing("claude")), SIZE)
             .expect("starts");
         let opening = host.openings().pop().expect("opened");
         assert_eq!(root_of(&opening), [project.display().to_string()]);
@@ -7279,7 +7290,7 @@ pub(crate) mod tests {
         let chats = pretend_chats_of(gone.path());
 
         let refused = chats
-            .start(&a_chat_in(gone.path(), "/nowhere/claude"), SIZE)
+            .start(&a_chat_in(gone.path(), &standing("claude")), SIZE)
             .expect_err("not started");
 
         assert_eq!(
@@ -7303,14 +7314,14 @@ pub(crate) mod tests {
         };
 
         let refused = chats
-            .start(&a_chat_in(plane.path(), "/nowhere/claude"), SIZE)
+            .start(&a_chat_in(plane.path(), &standing("claude")), SIZE)
             .expect_err("not started");
         assert!(says_why(&refused), "{refused}");
         assert!(chats.in_order().is_empty(), "a chat was opened");
 
         let record = Record {
             chats: vec![a_resumable_chat_in(plane.path())],
-            ..one_recorded("/nowhere/claude")
+            ..one_recorded(&standing("claude"))
         };
         chats.put_back_here(&record, SIZE);
         let waiting = chats.would_not_start();

@@ -410,7 +410,10 @@ fn two_chats_starting_in_one_piece_at_once_leave_charters_own_file() {
 
 /// Where a chat in the clone starts: the plane's own profile, so `start::ready` itself runs.
 fn with_a_profile(f: &support::Fixture) {
-    let program = stand_in::program(&f.plane, "claude-stand-in", "#!/bin/sh\nexit 0\n");
+    // Beside the plane, answering `--version` as Claude Code does: a start asks (#2071).
+    let bin = beside().join(f.plane.file_name().expect("a named plane"));
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = stand_in::claude_code(&bin, "claude-stand-in", "#!/bin/sh\nexit 0\n");
     std::fs::write(
         f.plane.join(purlis_core::profiles::LOCAL_FILE),
         format!(
@@ -881,4 +884,12 @@ fn a_piece_charter_wired_before_the_rename_is_carried_over_in_place() {
         "",
         "nothing charter wrote shows in git status"
     );
+}
+
+/// A folder beside every test's project, never in one, for its stand-in harness: a chat starts
+/// at the floor (#2071), which starts no program the chat could have written.
+fn beside() -> &'static std::path::Path {
+    static ONE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    ONE.get_or_init(|| tempfile::tempdir().expect("a folder for the stand-ins"))
+        .path()
 }

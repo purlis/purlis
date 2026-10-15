@@ -1319,20 +1319,23 @@ fn a_folder_you_list_widens_the_allowlist_and_nothing_a_class_or_path_holds() {
     for refused in ["/", "/nohome/dev", "relative"] {
         assert!(list_folder(root, &machine(), refused).is_err(), "{refused}");
     }
-    // Listed, and Settings is told what it holds that later code loads (review R3).
-    let agents = list_folder(root, &machine(), "/nohome/dev/Library/LaunchAgents").expect("listed");
+    // Listed, and Settings is told what it holds that later code loads (review R3): an
+    // editor's user settings, under it.
+    let support = "/nohome/dev/Library/Application Support";
+    let held = list_folder(root, &machine(), support).expect("listed");
     assert!(
-        agents
-            .holds
+        held.holds
             .iter()
-            .any(|one| one.ends_with("Library/LaunchAgents")),
-        "{agents:?}"
+            .any(|one| one.ends_with("Application Support")),
+        "{held:?}"
     );
+    // What macOS starts at login is later code itself since #2071: never listed.
+    assert!(list_folder(root, &machine(), "/nohome/dev/Library/LaunchAgents").is_err());
     // One that holds a harness's own is refused outright.
     assert!(list_folder(root, &machine(), "/nohome/dev/Library").is_err());
     assert_eq!(
         listed_folders(root),
-        ["/noopt/tools", "/nohome/dev/Library/LaunchAgents"]
+        ["/noopt/tools", "/nohome/dev/Library/Application Support"]
     );
 }
 

@@ -986,13 +986,21 @@ fn a_block_s_notice_offers_allow_only_for_a_host_or_a_folder_and_the_way_out_oth
     }
     // Off the allowlist (D-1342-10): no Allow, and the chat without the sandbox instead.
     let home = std::env::var("HOME").expect("a home");
+    let (offer, _, why) = told(
+        Operation::Write,
+        Kind::Home,
+        false,
+        Some("/opt/tool/cache/x.lock"),
+    );
+    assert_eq!((offer, why), (BlockOffer::Unsandboxed, true));
+    // What a later program runs at the person's own level is never granted since #2071, and
+    // the way that works is said: the person makes the change themselves.
     for path in [
         format!("{home}/Library/LaunchAgents/x.plist"),
         format!("{home}/.config/git/config"),
-        "/opt/tool/cache/x.lock".to_owned(),
     ] {
         let (offer, _, why) = told(Operation::Write, Kind::Home, false, Some(&path));
-        assert_eq!((offer, why), (BlockOffer::Unsandboxed, true), "{path}");
+        assert_eq!((offer, why), (BlockOffer::Brokered, true), "{path}");
     }
     // A local socket: the same.
     assert_eq!(

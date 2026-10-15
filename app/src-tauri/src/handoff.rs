@@ -5102,7 +5102,7 @@ mod tests {
         let planes = planes();
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
-        let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+        let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
         let before = held.chats().open_now().len();
         // Its harness reported its permission prompts off, on a report the board took.
         held.unattended().heard(asking, true);
@@ -5111,8 +5111,8 @@ mod tests {
 
         // It stands at the project's root and the handoff moves the work into alpha as
         // another persona: a crossing, which a chat nobody is at makes only under a grant
-        // that names the pair (the train's review, M2). But this project has no sandbox, so
-        // the chat has neither prompts nor a sandbox, and that is what it is told (#1543): it
+        // that names the pair (the train's review, M2). But it was started without the sandbox,
+        // so the chat has neither prompts nor a sandbox, and that is what it is told (#1543): it
         // hands off to no other persona whatever the grants say, and a grant naming the pair
         // would not carry it. Nothing is kept for the person either.
         assert_eq!(
@@ -7646,6 +7646,39 @@ mod tests {
             .expect("it runs")
     }
 
+    /// [`a_chat_as`], started without the sandbox by a person's choice: a chat of a project
+    /// that has not turned the sandbox on runs at the floor (#2071), so a chat with no sandbox
+    /// is one a person started without it.
+    fn a_chat_without_sandbox_as(
+        held: &Held,
+        root: &Path,
+        persona: Option<&str>,
+        cwd: &Path,
+    ) -> u32 {
+        let start = purlis_core::start::Start {
+            profile: Some("work".to_owned()),
+            persona: persona.map(str::to_owned),
+            name: "1".to_owned(),
+            cwd: Some(cwd.to_path_buf()),
+            without_sandbox: Some(purlis_core::sandbox::OptOut::default()),
+            ..Default::default()
+        };
+        let ready = purlis_core::start::ready(&start, root).expect("the asking chat starts");
+        assert!(ready.unsandboxed.is_some(), "started without the sandbox");
+        let chat = Chat {
+            program: ready.program.clone(),
+            cwd: ready.cwd.clone(),
+            name: "1".to_owned(),
+            resume: ready.session.clone(),
+            profile: Some("work".to_owned()),
+            persona: persona.map(str::to_owned),
+            ..Default::default()
+        };
+        held.chats()
+            .start_ready(&chat, &ready, STARTING)
+            .expect("it runs")
+    }
+
     fn a_dispatch(chat: u32, ticket: &str, to: Option<&str>, name: &str) -> Ask {
         Ask::Dispatch(Box::new(DispatchAsk {
             chat,
@@ -9396,7 +9429,8 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
         let alpha = held.root().join("workspaces").join("alpha");
-        let asking = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+        // Started without the sandbox, as a chat of a project with none ran before the floor.
+        let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &alpha);
         let before = held.chats().open_now().len();
         // Its harness reported its permission prompts off.
         held.unattended().heard(asking, true);
@@ -9443,8 +9477,7 @@ mod tests {
                 "{place:?}: {own:?}"
             );
         }
-        // To another persona, a chat started with no sandbox, as one of a project with none
-        // is, is told that first (#1543): it dispatches to no other persona whatever the
+        // To another persona, a chat started with no sandbox is told that first (#1543): it dispatches to no other persona whatever the
         // grants say, so the crossing's sentence, that a grant naming the pair would carry
         // it, is not said. With a grant that stands for the pair the answer is the same.
         let across = |held: &Held| {
@@ -9473,7 +9506,7 @@ mod tests {
     #[test]
     fn a_chat_nobody_is_at_with_no_sandbox_is_told_so_before_a_limit() {
         // #1543 l3: dispatch is off in this project (a limit of 0), and the chat runs with no
-        // sandbox, as one of a project with none does. Asking for another persona it is told
+        // sandbox, started without it. Asking for another persona it is told
         // the no-sandbox refusal, which no slot would lift; for its own persona, and for a
         // chat a person is at, the limit is what refuses, as before. Every call is refused.
         let plane = a_plane_with_personas();
@@ -9485,7 +9518,7 @@ mod tests {
         let planes = planes();
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
-        let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+        let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
         let tickets = Tickets::default();
         let before = held.chats().open_now().len();
 
@@ -10160,7 +10193,7 @@ mod tests {
         let planes = planes();
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
-        let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+        let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
         let before = held.chats().open_now().len();
         // Its harness reported its permission prompts off, on a report the board took.
         held.unattended().heard(asking, false);
@@ -10177,7 +10210,7 @@ mod tests {
             "check the cluster",
         );
 
-        // This project has no sandbox, so the chat has neither prompts nor a sandbox: it
+        // It was started without the sandbox, so it has neither prompts nor a sandbox: it
         // dispatches to no other persona, whatever the grants say.
         assert_eq!(
             said,

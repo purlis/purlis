@@ -192,7 +192,8 @@ fn a_profile_that_names_an_absolute_program_starts_that_exact_program() {
     // `/private/var/…`, and a launch that silently swapped them would start a program under a
     // path the record then could not match.
     let plane = Plane::new();
-    let bin = stand_in::program(plane.root(), "claude-stand-in", "#!/bin/sh\n");
+    // Beside the plane, answering `--version` as Claude Code does: a start asks (#2071).
+    let bin = stand_in::claude_code(beside(), "claude-stand-in", "#!/bin/sh\n");
     plane.running(&bin.display().to_string());
 
     let ready = start::ready(&plane.start(), plane.root()).expect("it starts");
@@ -235,4 +236,12 @@ fn every_caller_of_the_search_gets_the_same_answer_out_of_it() {
         !dirs.contains(&nowhere),
         "the fixed list is a constant, not something a machine adds to"
     );
+}
+
+/// A folder beside every test's project, never in one, for its stand-in harness: a chat starts
+/// at the floor (#2071), which starts no program the chat could have written.
+fn beside() -> &'static std::path::Path {
+    static ONE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    ONE.get_or_init(|| tempfile::tempdir().expect("a folder for the stand-ins"))
+        .path()
 }
