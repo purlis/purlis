@@ -7,7 +7,11 @@
 use std::cell::Cell;
 use std::net::{IpAddr, SocketAddr};
 
-use super::{Lane, NewSite, NewSites, Refusal, Route, Verdict, public_address, route};
+use std::time::{Duration, Instant};
+
+use super::{
+    Lane, NewSite, NewSites, Refusal, Route, Verdict, lookup_within, public_address, route,
+};
 use crate::sandbox::reach::{By, Decision, Reach};
 
 mod sockets;
@@ -260,9 +264,8 @@ fn a_withdrawn_local_port_is_refused() {
 }
 
 #[test]
-fn a_private_link_local_or_metadata_address_is_refused_even_when_the_chat_lists_it() {
+fn a_private_link_local_or_metadata_address_is_refused_unless_named_exactly() {
     for (host, port) in [
-        ("10.0.0.5", 6443),
         ("10.0.0.5", 443),
         ("172.16.0.1", 443),
         ("192.168.1.1", 80),
@@ -432,4 +435,161 @@ fn a_new_site_is_told_to_whoever_hears_new_sites_and_refused_by_default() {
         port: 443
     }));
     assert_eq!(heard.lock().unwrap().len(), 2);
+}
+
+/// A chat's reach naming private addresses each way a list could: exactly an address and port,
+/// an address with no port, ranges, and link-local and metadata addresses exactly.
+fn private_reach() -> Reach {
+    Reach::of(
+        [
+            ("10.0.0.5:6443", By::You),
+            ("[fd12:3456:789a::1]:8443", By::Chat),
+            ("100.64.0.7:22", By::Chat),
+            ("10.0.0.6", By::You),
+            ("10.0.0.0/8", By::You),
+            ("10.0.0.0/8:443", By::You),
+            ("169.254.169.254:80", By::You),
+            ("[fd00:ec2::254]:80", By::You),
+            ("[::ffff:10.0.0.9]:443", By::You),
+            ("cluster.example.com:6443", By::You),
+        ]
+        .into_iter()
+        .map(|(host, by)| (host.to_owned(), by))
+        .collect(),
+    )
+}
+
+#[test]
+fn a_private_address_is_carried_by_the_literal_address_and_port_the_person_allowed() {
+    let lane = Lane::of(private_reach());
+    for (host, port, by, to) in [
+        ("10.0.0.5", 6443, By::You, "10.0.0.5:6443"),
+        (
+            "fd12:3456:789a::1",
+            8443,
+            By::Chat,
+            "[fd12:3456:789a::1]:8443",
+        ),
+        ("100.64.0.7", 22, By::Chat, "100.64.0.7:22"),
+    ] {
+        for tunnel in [true, false] {
+            assert_eq!(
+                lane.decide(host, port, tunnel, &[]),
+                carried(Decision::Allowed(by), Some(to)),
+                "{host}:{port}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_private_address_on_another_port_by_a_range_or_in_another_form_is_refused() {
+    let lane = Lane::of(private_reach());
+    for (host, port) in [
+        ("10.0.0.5", 443),
+        ("10.0.0.5", 6444),
+        ("10.0.0.6", 443),
+        ("10.0.0.6", 80),
+        ("10.0.0.1", 443),
+        ("10.0.0.0", 443),
+        ("::ffff:10.0.0.5", 6443),
+        ("::ffff:a00:5", 6443),
+        ("64:ff9b::a00:5", 6443),
+        ("2002:a00:5::1", 6443),
+        ("::ffff:10.0.0.9", 443),
+        ("10.0.0.9", 443),
+        ("169.254.169.254", 80),
+        ("fd00:ec2::254", 80),
+        ("::ffff:169.254.169.254", 80),
+    ] {
+        assert_eq!(
+            lane.decide(host, port, port != 80, &[]),
+            Verdict::Refused(Refusal::NotPublic),
+            "{host}:{port}"
+        );
+    }
+}
+
+#[test]
+fn a_private_address_of_this_machine_is_refused_though_the_person_allowed_it() {
+    let lane = Lane::of(private_reach());
+    assert_eq!(
+        lane.decide("10.0.0.5", 6443, true, &[ip("10.0.0.5")]),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+}
+
+#[test]
+fn a_name_for_an_allowed_private_address_is_refused() {
+    let lane = Lane::of(private_reach());
+    // Listed by name with its port, it is decided as a name ...
+    let Verdict::Carry { at: None, .. } = lane.decide("cluster.example.com", 6443, true, &[])
+    else {
+        panic!("a listed name is carried to what it resolves to, judged then");
+    };
+    // ... and what it resolves to is judged as a name's: a private address is never reached
+    // by a name, even one the person allowed by its address.
+    let asked = Cell::new(0);
+    assert_eq!(
+        route(
+            "cluster.example.com",
+            6443,
+            None,
+            &[],
+            &resolving(&["10.0.0.5:6443"], &asked)
+        ),
+        Route::NotPublic
+    );
+}
+
+#[test]
+fn nothing_is_carried_where_this_machines_addresses_cannot_be_read() {
+    let lane = Lane::of(chats_reach());
+    for own in [None, Some(&[][..])] {
+        for (host, port) in [
+            ("example.com", 443),
+            ("127.0.0.1", 5173),
+            ("new.example.net", 443),
+        ] {
+            assert_eq!(
+                lane.decide_here(host, port, true, own),
+                Verdict::Refused(Refusal::ThisMachineUnknown),
+                "{host}:{port}"
+            );
+        }
+    }
+    assert_eq!(
+        lane.decide_here("example.com", 443, true, Some(&[ip("127.0.0.1")])),
+        carried(Decision::Open, None)
+    );
+}
+
+#[test]
+fn a_lookup_that_takes_too_long_is_given_up_on() {
+    let started = Instant::now();
+    let found = lookup_within(Duration::from_millis(100), || {
+        std::thread::sleep(Duration::from_secs(3));
+        vec![at("93.184.215.14:443")]
+    });
+    assert_eq!(found, None);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        lookup_within(Duration::from_secs(5), || vec![at("93.184.215.14:443")]),
+        Some(vec![at("93.184.215.14:443")])
+    );
+}
+
+#[test]
+fn a_new_site_is_named_as_one_spelling() {
+    assert_eq!(
+        NewSite::of("New.Example.NET.", 443),
+        NewSite {
+            host: "new.example.net".to_owned(),
+            port: 443
+        }
+    );
 }

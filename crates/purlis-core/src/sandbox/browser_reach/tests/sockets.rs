@@ -219,3 +219,59 @@ fn with_the_proxy_gone_nothing_is_carried() {
     assert!(refused, "something still listens at the proxy's address");
     assert!(nobody_connected(&listener));
 }
+
+#[test]
+fn a_tunnel_open_when_the_proxy_goes_is_ended_with_it() {
+    let (listener, port) = a_server();
+    // A server that echoes until its client goes, then says it went.
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("the proxy's connection");
+        let mut buf = [0u8; 64];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return true,
+                Ok(n) => {
+                    if stream.write_all(&buf[..n]).is_err() {
+                        return true;
+                    }
+                }
+            }
+        }
+    });
+    let proxy = a_proxy(port, NewSites::refusing());
+    let proxy_port = proxy.address().port();
+    assert!(crate::sandbox::localport::is_own(proxy_port));
+    let mut client = to(&proxy);
+    assert_eq!(
+        status(
+            &mut client,
+            &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 200 Connection established"
+    );
+    client.write_all(b"ping").expect("sent");
+    let mut back = [0u8; 4];
+    client.read_exact(&mut back).expect("echoed");
+    drop(proxy);
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("a timeout");
+    let mut more = [0u8; 4];
+    match client.read(&mut more) {
+        Ok(0) => {}
+        Err(err)
+            if !matches!(
+                err.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) => {}
+        other => panic!("the tunnel outlived its proxy: {other:?}"),
+    }
+    assert!(
+        server.join().expect("the server"),
+        "the server saw its client go"
+    );
+    assert!(
+        !crate::sandbox::localport::is_own(proxy_port),
+        "the port is let go once the proxy stopped listening"
+    );
+}

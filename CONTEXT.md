@@ -590,8 +590,9 @@ _Avoid_: autofill, credential tool, password tool
 **Reach** (of a browser):
 The sites and local ports a browser may open and the ones its agent may write to: its chat's
 **allowed hosts**, in a lane of their own for the browser, shown with the chat's in the one
-Granted list. A site new to the project that the agent itself writes an address for asks once;
-a link the page offered does not.
+Granted list. A site new to the project that the agent itself writes an address for, or posts a
+form to, asks once; a link the page offered does not. A private address is reached only by the
+literal address and port the person allowed.
 _Avoid_: allowlist (in UI text), network access, browser allowlist (it is the same allowed
 hosts)
 

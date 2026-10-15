@@ -380,23 +380,29 @@ pub fn refused_address(ip: IpAddr, own: &[IpAddr]) -> bool {
 
 /// This machine's own interface addresses, as the system lists them now; none where it cannot.
 pub fn own_addresses() -> Vec<IpAddr> {
+    own_addresses_read().unwrap_or_default()
+}
+
+/// This machine's own interface addresses, as the system lists them now, or `None` where the
+/// list cannot be read: what a caller that must refuse without it asks.
+pub fn own_addresses_read() -> Option<Vec<IpAddr>> {
     #[cfg(unix)]
     {
-        let Ok(found) = nix::ifaddrs::getifaddrs() else {
-            return Vec::new();
-        };
-        found
-            .filter_map(|one| {
-                let address = one.address?;
-                address
-                    .as_sockaddr_in()
-                    .map(|v4| IpAddr::V4(v4.ip()))
-                    .or_else(|| address.as_sockaddr_in6().map(|v6| IpAddr::V6(v6.ip())))
-            })
-            .collect()
+        let found = nix::ifaddrs::getifaddrs().ok()?;
+        Some(
+            found
+                .filter_map(|one| {
+                    let address = one.address?;
+                    address
+                        .as_sockaddr_in()
+                        .map(|v4| IpAddr::V4(v4.ip()))
+                        .or_else(|| address.as_sockaddr_in6().map(|v6| IpAddr::V6(v6.ip())))
+                })
+                .collect(),
+        )
     }
     #[cfg(not(unix))]
-    Vec::new()
+    None
 }
 
 fn v4(ip: Ipv4Addr) -> Result<Ipv4Addr, String> {

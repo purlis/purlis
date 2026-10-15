@@ -8,25 +8,34 @@
 //! - **By host and port, without opening TLS.** A `CONNECT host:port` is decided by its target;
 //!   a plain request by its absolute target, whose one `Host` must name the same host. The
 //!   head is read as strictly as a chat's proxy reads it ([`super::egress`]).
-//! - **Public addresses only** ([`public_address`]): never this machine, a private, shared,
-//!   link-local, metadata, multicast or reserved address, whatever the chat's reach lists.
+//! - **Public addresses** ([`public_address`]), and besides them only what the person allowed by
+//!   its literal address and port: never a link-local, metadata, multicast or reserved address,
+//!   whatever the chat's reach lists.
 //! - **A named local port by its literal address alone**: `127.0.0.1:N` or `[::1]:N`, where
 //!   the chat's reach lists exactly that address and port (a port the person allowed). A name
 //!   for this machine (`localhost`, a name of this Mac) is refused, and so is a name that ends
 //!   in a number, which is an address written another way.
-//! - **It resolves names itself, once**, and connects only at the public addresses it resolved
-//!   ([`route`]), so the address it checked is the one it connects to.
-//! - **A new site** (public, and listed by nothing) is told to [`NewSites`], which refuses it
-//!   until a browser's Ask answers there.
+//! - **A private address by its literal address and port alone** (ruled 2026-10-15, #2131): a
+//!   private, shared or unique local address the chat's reach lists exactly with its port,
+//!   such as `10.0.0.5:6443`. Never by a name, a range, another port or another spelling.
+//! - **It resolves names itself, once and within a limit**, and connects only at the public
+//!   addresses it resolved ([`route`]), so the address it checked is the one it connects to.
+//! - **Public sites are readable; a site new to the project asks.** An address the agent writes
+//!   for a site new to the project, or a form it posts there, asks the person once (#2018); a
+//!   link the page offered does not. By host and port the proxy cannot tell these apart, so it
+//!   tells every new site to [`NewSites`], which the browser's broker answers.
+//!   [`NewSites::refusing`] is the interim default until #2018: it refuses every new site.
 //! - **It fails closed.** The engine resolves no name and sends every request to this proxy
-//!   (`purlis_browser_engine::launch`); when the proxy is dropped it stops listening, and every
-//!   load fails.
+//!   (`purlis_browser_engine::launch`). When the proxy is dropped it stops listening and ends
+//!   every connection it carries, tunnels included, so every load fails; where this machine's
+//!   own addresses cannot be read, it carries nothing.
 
+use std::collections::HashMap;
 use std::io::{self, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
-use std::sync::Arc;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use super::egress::{
     LIMITS, Limits, PATIENCE, PLAIN_PORTS, Request, TUNNEL_PORTS, answer, read_head, same_host,
@@ -79,6 +88,9 @@ pub enum Refusal {
     NeverAHost(String),
     /// A host an administrator's policy pins as never allowed.
     Policy,
+    /// This machine's own addresses could not be read, so no address can be told apart from
+    /// them: nothing is carried.
+    ThisMachineUnknown,
 }
 
 impl Lane {
@@ -87,12 +99,28 @@ impl Lane {
         Self { reach }
     }
 
+    /// [`Self::decide`], with `own` as it was read: refused outright where this machine's
+    /// addresses could not be read (`None`) or the system listed none.
+    pub fn decide_here(
+        &self,
+        host: &str,
+        port: u16,
+        tunnel: bool,
+        own: Option<&[IpAddr]>,
+    ) -> Verdict {
+        match own {
+            Some(own) if !own.is_empty() => self.decide(host, port, tunnel, own),
+            _ => Verdict::Refused(Refusal::ThisMachineUnknown),
+        }
+    }
+
     /// **The verdict for a connection to `host` on `port`**, a tunnel (`CONNECT`) or a plain
     /// request, with `own` this machine's interface addresses. By host and port alone:
     ///
     /// - An address is judged as itself. This machine is carried only at `127.0.0.1` or `::1`
-    ///   on a port the chat's reach lists exactly there (a named local port); any other address
-    ///   that is not public ([`public_address`]) is refused, whatever lists it.
+    ///   on a port the chat's reach lists exactly there (a named local port); a private address
+    ///   ([`private_address`]) only where the chat's reach lists exactly it and that port; any
+    ///   other address that is not public ([`public_address`]) is refused, whatever lists it.
     /// - A name of this machine (`localhost`, a name under it, a name of this Mac) is refused:
     ///   a named local port is reached by its literal address alone. A name that ends in a
     ///   number is an address written another way, and refused.
@@ -147,9 +175,13 @@ impl Lane {
         if public_address(ip, own) {
             return None;
         }
-        if ip == IpAddr::V4(Ipv4Addr::LOCALHOST) || ip == IpAddr::V6(Ipv6Addr::LOCALHOST) {
+        let named_loopback =
+            ip == IpAddr::V4(Ipv4Addr::LOCALHOST) || ip == IpAddr::V6(Ipv6Addr::LOCALHOST);
+        let named_private = private_address(ip, own);
+        if named_loopback || named_private {
             // Carried where the chat's reach lists exactly that address and port, at the layer
-            // that lists it ([`Reach::lists_exactly`]), and while it is not withdrawn.
+            // that lists it, and (for a local port) while it is not withdrawn: decided with no
+            // default port, so only an entry held to this port can match.
             let by = self.reach.decide(&ip.to_string(), port, &[], own);
             if by.carries() {
                 return Some(Verdict::Carry {
@@ -214,10 +246,20 @@ pub struct NewSite {
     pub port: u16,
 }
 
-/// **Whoever hears the browser's new sites**, and says whether each is carried. The seam a
-/// browser's Ask meets; until it does, every new site is refused ([`NewSites::refusing`]), so
-/// a browser reaches only what its chat's reach lists. What it carries is still connected to
-/// only at public addresses ([`route`]).
+impl NewSite {
+    /// `host` on `port` in one spelling: lower case, with no final dot.
+    pub fn of(host: &str, port: u16) -> Self {
+        Self {
+            host: host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase(),
+            port,
+        }
+    }
+}
+
+/// **Whoever hears the browser's new sites**, and says whether each is carried: the seam the
+/// browser's broker answers, carrying a link the page offered and asking the person once for
+/// an address the agent wrote or a form it posts (#2018). What it carries is still connected
+/// to only at public addresses ([`route`]).
 #[derive(Clone)]
 pub struct NewSites(Arc<dyn Fn(&NewSite) -> bool + Send + Sync>);
 
@@ -233,7 +275,8 @@ impl NewSites {
         Self(Arc::new(hear))
     }
 
-    /// Refuses every new site.
+    /// Refuses every new site: the interim default until the browser's Ask answers here
+    /// (#2018), so a browser reaches only what its chat's reach lists.
     pub fn refusing() -> Self {
         Self::new(|_| false)
     }
@@ -242,6 +285,42 @@ impl NewSites {
     pub fn carries(&self, site: &NewSite) -> bool {
         (self.0)(site)
     }
+}
+
+/// How long a name's lookup may take before the connection is given up on.
+pub const LOOKUP_PATIENCE: Duration = Duration::from_secs(10);
+
+/// The most lookups running at once across every reach proxy: one more is refused at once, so
+/// a resolver that never answers holds a bounded number of threads.
+const LOOKUPS_AT_ONCE: usize = 32;
+
+/// Lookups running now ([`LOOKUPS_AT_ONCE`]).
+static LOOKUPS: AtomicUsize = AtomicUsize::new(0);
+
+/// **`resolve` run on a thread of its own, waited for at most `within`**: what it answered, or
+/// `None` where it took longer or too many lookups are running. A lookup given up on runs
+/// to its end on its own thread and its answer is dropped.
+pub fn lookup_within<F>(within: Duration, resolve: F) -> Option<Vec<SocketAddr>>
+where
+    F: FnOnce() -> Vec<SocketAddr> + Send + 'static,
+{
+    if LOOKUPS.fetch_add(1, Ordering::SeqCst) >= LOOKUPS_AT_ONCE {
+        LOOKUPS.fetch_sub(1, Ordering::SeqCst);
+        return None;
+    }
+    let (send, answered) = std::sync::mpsc::sync_channel(1);
+    let spawned = std::thread::Builder::new()
+        .name("purlis-reach-lookup".into())
+        .spawn(move || {
+            let found = resolve();
+            LOOKUPS.fetch_sub(1, Ordering::SeqCst);
+            let _ = send.send(found);
+        });
+    if spawned.is_err() {
+        LOOKUPS.fetch_sub(1, Ordering::SeqCst);
+        return None;
+    }
+    answered.recv_timeout(within).ok()
 }
 
 /// How long a failing accept waits before it tries again.
@@ -255,6 +334,85 @@ const BACKOFF: Duration = Duration::from_millis(100);
 pub struct ReachProxy {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
+    live: Live,
+    accepting: Option<std::thread::JoinHandle<()>>,
+}
+
+/// How long a dropped proxy waits for its accept loop to end.
+const STOP_PATIENCE: Duration = Duration::from_secs(2);
+
+/// **Every connection a proxy carries now**, each by its sockets (the browser's, and the
+/// site's once connected), so a proxy that stops ends them all. Shared by its connections.
+#[derive(Clone, Default)]
+struct Live(Arc<Mutex<Connections>>);
+
+#[derive(Default)]
+struct Connections {
+    /// Set once the proxy stops: a socket added after is shut at once.
+    closed: bool,
+    next: u64,
+    open: HashMap<u64, Vec<TcpStream>>,
+}
+
+/// One connection's place in [`Live`], given up when the connection ends.
+struct Entry {
+    live: Live,
+    id: u64,
+}
+
+impl Live {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Connections> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A new connection's entry, holding `client`.
+    fn enter(&self, client: &TcpStream) -> Entry {
+        let id = {
+            let mut connections = self.lock();
+            let id = connections.next;
+            connections.next += 1;
+            id
+        };
+        let entry = Entry {
+            live: self.clone(),
+            id,
+        };
+        entry.hold(client);
+        entry
+    }
+
+    /// Ends every connection, and every one that starts from now.
+    fn close(&self) {
+        let mut connections = self.lock();
+        connections.closed = true;
+        for socket in connections.open.values().flatten() {
+            let _ = socket.shutdown(Shutdown::Both);
+        }
+    }
+}
+
+impl Entry {
+    /// Holds `socket` with this connection, or shuts it where the proxy has stopped. Whether
+    /// the connection may go on.
+    fn hold(&self, socket: &TcpStream) -> bool {
+        let mut connections = self.live.lock();
+        let Ok(copy) = socket.try_clone() else {
+            let _ = socket.shutdown(Shutdown::Both);
+            return false;
+        };
+        if connections.closed {
+            let _ = socket.shutdown(Shutdown::Both);
+            return false;
+        }
+        connections.open.entry(self.id).or_default().push(copy);
+        true
+    }
+}
+
+impl Drop for Entry {
+    fn drop(&mut self) {
+        self.live.lock().open.remove(&self.id);
+    }
 }
 
 impl std::fmt::Debug for ReachProxy {
@@ -292,6 +450,8 @@ impl ReachProxy {
         });
         let open = Arc::new(AtomicUsize::new(0));
         let stopping = Arc::clone(&stop);
+        let live = Live::default();
+        let living = live.clone();
         let spawned = std::thread::Builder::new()
             .name("purlis-reach".into())
             .spawn(move || {
@@ -314,20 +474,33 @@ impl ReachProxy {
                         continue;
                     }
                     let held = Counted(Arc::clone(&open));
+                    let entry = living.enter(&stream);
                     let served = Arc::clone(&served);
                     let _ = std::thread::Builder::new()
                         .name("purlis-reach-conn".into())
                         .spawn(move || {
                             let _held = held;
-                            serve(stream, &served);
+                            serve(stream, &served, &entry);
                         });
                 }
+                // The listener closes here, and only then is its port let go: never while
+                // anything could still connect to it.
+                drop(listener);
+                super::localport::release(address.port());
             });
-        if let Err(why) = spawned {
-            super::localport::release(address.port());
-            return Err(why);
-        }
-        Ok(Self { address, stop })
+        let accepting = match spawned {
+            Ok(accepting) => accepting,
+            Err(why) => {
+                super::localport::release(address.port());
+                return Err(why);
+            }
+        };
+        Ok(Self {
+            address,
+            stop,
+            live,
+            accepting: Some(accepting),
+        })
     }
 
     /// The address the browser's engine is told to send everything to.
@@ -339,9 +512,20 @@ impl ReachProxy {
 impl Drop for ReachProxy {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
-        // Wakes the accept, which then sees the stop and closes the listener.
-        let _ = TcpStream::connect_timeout(&self.address, Duration::from_secs(1));
-        super::localport::release(self.address.port());
+        // Every connection it carries ends now, tunnels included.
+        self.live.close();
+        // Wakes the accept, which then sees the stop, closes the listener and lets its port go.
+        let Some(accepting) = self.accepting.take() else {
+            return;
+        };
+        let until = Instant::now() + STOP_PATIENCE;
+        while !accepting.is_finished() && Instant::now() < until {
+            let _ = TcpStream::connect_timeout(&self.address, Duration::from_millis(200));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if accepting.is_finished() {
+            let _ = accepting.join();
+        }
     }
 }
 
@@ -355,7 +539,7 @@ impl Drop for Counted {
 }
 
 /// One browser connection: its request read, decided, and carried or refused.
-fn serve(mut client: TcpStream, served: &Served) {
+fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
     let idle = served.limits.idle;
     let _ = client.set_write_timeout(Some(idle.min(PATIENCE)));
     let Some((head, rest)) = read_head(&mut client, served.limits.head) else {
@@ -388,15 +572,12 @@ fn serve(mut client: TcpStream, served: &Served) {
         );
         return;
     }
-    let own = super::hosts::own_addresses();
+    let own = super::hosts::own_addresses_read();
     let tunnel = request.forward.is_none();
-    let at = match served.lane.decide(host, port, tunnel, &own) {
+    let at = match served.lane.decide_here(host, port, tunnel, own.as_deref()) {
         Verdict::Carry { at, .. } => at,
         Verdict::NewSite { at } => {
-            let site = NewSite {
-                host: host.to_owned(),
-                port,
-            };
+            let site = NewSite::of(host, port);
             if !served.new_sites.carries(&site) {
                 answer(&mut client, "403 Forbidden", &new_site_said(host, port));
                 return;
@@ -412,11 +593,16 @@ fn serve(mut client: TcpStream, served: &Served) {
             return;
         }
     };
+    let own = own.unwrap_or_default();
     let resolve = |host: &str, port: u16| -> Vec<SocketAddr> {
-        (host, port)
-            .to_socket_addrs()
-            .map(Iterator::collect)
-            .unwrap_or_default()
+        let host = host.to_owned();
+        lookup_within(LOOKUP_PATIENCE, move || {
+            (host.as_str(), port)
+                .to_socket_addrs()
+                .map(Iterator::collect)
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
     };
     let addresses = match route(host, port, at, &own, &resolve) {
         Route::To(addresses) => addresses,
@@ -432,7 +618,7 @@ fn serve(mut client: TcpStream, served: &Served) {
             answer(
                 &mut client,
                 "502 Bad Gateway",
-                &format!("purlis's reach proxy found no address for {host}"),
+                &format!("purlis's reach proxy found no address for {host} in time"),
             );
             return;
         }
@@ -448,6 +634,9 @@ fn serve(mut client: TcpStream, served: &Served) {
         );
         return;
     };
+    if !entry.hold(&upstream) {
+        return;
+    }
     let _ = client.set_write_timeout(Some(idle));
     let _ = upstream.set_write_timeout(Some(idle));
     let sent = match &request.forward {
@@ -486,9 +675,10 @@ fn refusal_said(host: &str, port: u16, why: &Refusal) -> String {
             "a port of this machine is reached by its address, 127.0.0.1:{port} or [::1]:{port}, \
              never by a name"
         ),
-        Refusal::NotPublic => {
-            "it is a private, link-local, metadata or reserved address".to_owned()
-        }
+        Refusal::NotPublic => "it is a private, link-local, metadata or reserved address, and a \
+                               private one is reached only by the address and port the person \
+                               allowed"
+            .to_owned(),
         Refusal::SpelledAnotherWay => {
             "it is an address written another way: write an IPv4 address as four numbers".to_owned()
         }
@@ -497,6 +687,9 @@ fn refusal_said(host: &str, port: u16, why: &Refusal) -> String {
             .to_owned(),
         Refusal::NeverAHost(why) => why.clone(),
         Refusal::Policy => "an administrator's policy pins it as never allowed".to_owned(),
+        Refusal::ThisMachineUnknown => {
+            "this machine's own addresses cannot be read, so no address is carried".to_owned()
+        }
     };
     format!("purlis's reach proxy does not carry this browser to {host}:{port}: {because}")
 }
@@ -513,6 +706,24 @@ fn this_machine(ip: IpAddr, own: &[IpAddr]) -> bool {
             Some(carried) => this_machine(IpAddr::V4(carried), own),
             None => ip.is_loopback() || ip.is_unspecified(),
         },
+    }
+}
+
+/// **Whether `ip` is a private address a person may allow a browser by its literal address and
+/// port** (ruled 2026-10-15, #2131): a private IPv4 range, the carriers' shared space
+/// (`100.64.0.0/10`) or an IPv6 unique local address (`fc00::/7`), written as itself (never an
+/// IPv6 form carrying an IPv4 one), and none of this machine's (`own`), a link-local or a cloud
+/// metadata address ([`refused_address`]).
+pub fn private_address(ip: IpAddr, own: &[IpAddr]) -> bool {
+    if refused_address(ip, own) {
+        return false;
+    }
+    match ip {
+        IpAddr::V4(ip) => {
+            let [a, b, ..] = ip.octets();
+            ip.is_private() || (a == 100 && (64..128).contains(&b))
+        }
+        IpAddr::V6(ip) => embedded_v4(ip).is_none() && ip.segments()[0] & 0xfe00 == 0xfc00,
     }
 }
 
