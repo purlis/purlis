@@ -527,14 +527,16 @@ export const commands = {
 	 *  **Keep blocked on the one question for several tasks of chat `session`** (#1508): checked
 	 *  as an Allow is ([`checked`]), then each task's block is let go. Nothing is granted.
 	 */
-	keepSandboxBlockForTasks: (plane: PlaneId, session: number, seen: SeenBlock[]) => typedError<number[], string>(__TAURI_INVOKE("keep_sandbox_block_for_tasks", { plane, session, seen })),
+	keepSandboxBlockForTasks: (plane: PlaneId, session: number, seen: SeenBlock[], reason: string | null) => typedError<number[], string>(__TAURI_INVOKE("keep_sandbox_block_for_tasks", { plane, session, seen, reason })),
 	/**
 	 *  **Keep blocked** on a block's Notice (#1666, taking over #1411's line): `shown` is the block
-	 *  the Notice showed. Refused unless the chat is held on that block now (#1538). Nothing is
-	 *  granted. For a host, what the chat's proxy holds on it is refused now, and the chat is told,
-	 *  in purlis's fixed words, not to try it again unless the person asks.
+	 *  the Notice showed, `reason` what the person typed for the chat, if anything. Nothing is
+	 *  done where the chat is not held on that block now (#1538): it was answered already.
+	 *  Nothing is granted. For a host, what the chat's
+	 *  proxy holds on it is refused now; for every kind, the chat is told in one line not to retry,
+	 *  with the reason (#1987).
 	 */
-	keepSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<null, string>(__TAURI_INVOKE("keep_sandbox_block", { plane, session, shown })),
+	keepSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_sandbox_block", { plane, session, shown, reason })),
 	/**
 	 *  **The contexts of the person's kubeconfig** (qw384b), as kubectl reads it (every file
 	 *  `KUBECONFIG` names), each with whether a chat can be pointed at it. Data a context holds
@@ -625,10 +627,18 @@ export const commands = {
 	 */
 	allowRefusedVault: (plane: PlaneId, session: number, vault: string) => typedError<VaultAnswered, string>(__TAURI_INVOKE("allow_refused_vault", { plane, session, vault })),
 	/**
-	 *  **Keep blocked** on a refused vault's Notice: puts it away, and changes nothing. The chat's
-	 *  next try at the vault raises it again.
+	 *  **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
+	 *  next turn is told in one line not to retry, with `reason`, what the person typed for it, if
+	 *  anything (#1987). Its next try at the vault raises the Notice again.
 	 */
-	keepVaultBlocked: (plane: PlaneId, session: number, vault: string) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault })),
+	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
+	/**
+	 *  **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to
+	 *  {persona}… on it, where the work goes to the vault's own persona. Nothing was kept blocked
+	 *  by the person, so the chat is not told it was; it hears how the work went from that persona
+	 *  or the person. Its next try at the vault raises the Notice again.
+	 */
+	putAwayRefusedVault: (plane: PlaneId, session: number, vault: string) => typedError<null, string>(__TAURI_INVOKE("put_away_refused_vault", { plane, session, vault })),
 	/**
 	 *  **Keep** on a chat's question: puts it away and removes nothing. The chat is told on its
 	 *  next turn that the person kept the workspace, and not to ask again unless they ask.

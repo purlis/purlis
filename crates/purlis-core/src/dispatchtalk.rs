@@ -264,10 +264,14 @@ pub enum PersonSaid {
         question: String,
         text: String,
     },
-    /// **The person's answer to a host this chat's connection was held on** (#1666), after
-    /// the connection gave up waiting, or kept blocked: purlis's own fixed words, never the
-    /// chat's. `number` is minted for it alone ([`Talk::network_word`]).
-    Network { number: u32, word: NetworkWord },
+    /// **The person's answer to an Ask of this chat's** (#1987): a host its connection was
+    /// held on and gave up waiting for, or anything its sandbox refused and the person kept
+    /// blocked, or a vault. Told in [`crate::askoutcome::Outcome::line`]'s one line, never the
+    /// chat's words. `number` is minted for it alone ([`Talk::outcome_word`]).
+    Asked {
+        number: u32,
+        outcome: crate::askoutcome::Outcome,
+    },
     /// **What the person decided of a workspace this chat asked them to remove** (qw356), in
     /// the purlis window: purlis's own fixed words around the workspace's name, never the
     /// chat's. `number` is minted for it alone ([`Talk::removal_word`]).
@@ -345,23 +349,9 @@ impl RemovalWord {
     }
 }
 
-/// What the person answered of hosts a chat's connections were held on (#1666): each host and
-/// port as purlis's proxy heard it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkWord {
-    /// Allowed after the command that asked had given up waiting: run it again.
-    Retry { hosts: Vec<String> },
-    /// Kept blocked: do not try again unless the person asks.
-    KeptBlocked { hosts: Vec<String> },
-}
-
-/// Where the numbers of [`PersonSaid::Network`] start: far past any question's, which count
+/// Where the numbers of [`PersonSaid::Asked`] start: far past any question's, which count
 /// up from one, so the two never name each other.
 const NETWORK_NUMBERS: u32 = 1 << 30;
-
-/// The most hosts one network word names.
-const MOST_NETWORK_HOSTS: usize = 8;
 
 impl PersonSaid {
     /// The number of the question it is about: what names it when a chat says it has it.
@@ -369,7 +359,7 @@ impl PersonSaid {
         match self {
             Self::Answered { number, .. }
             | Self::AnsweredFor { number, .. }
-            | Self::Network { number, .. }
+            | Self::Asked { number, .. }
             | Self::Removal { number, .. }
             | Self::McpServer { number, .. }
             | Self::Quiet { number, .. }
@@ -627,38 +617,37 @@ impl Talk {
         Ok(unread)
     }
 
-    /// **Keeps purlis's word to chat `chat` on hosts its connections were held on** (#1666):
-    /// handed to its next turn as any word of the person's is, until it has it. Each host is
-    /// held to a host's rule, so the line names nothing but hosts; one that is not is left out,
-    /// and a word naming none is not kept.
-    pub fn network_word(&mut self, chat: u32, word: NetworkWord) {
-        let sound = |hosts: Vec<String>| -> Vec<String> {
-            hosts
-                .into_iter()
-                .filter_map(|host| crate::sandbox::hosts::Host::parse(&host).ok())
-                .map(|host| host.to_string())
-                .filter(|host| !host.starts_with("*."))
-                .take(MOST_NETWORK_HOSTS)
-                .collect()
+    /// **Keeps purlis's word to chat `chat` on the person's answer to an Ask of its**
+    /// (#1987): handed to its next turn as any word of the person's is, until it has it, as
+    /// [`crate::askoutcome::Outcome::line`]'s one line. A host is held to a host's rule, so the
+    /// line names nothing but a host; one that is not is not kept. **One word an Ask**: a later
+    /// answer to the same Ask takes the place of one the chat has not been handed yet, so it is
+    /// told one line, the last answer.
+    pub fn outcome_word(&mut self, chat: u32, outcome: crate::askoutcome::Outcome) {
+        use crate::askoutcome::About;
+        let outcome = match outcome.about {
+            About::Host { host } => {
+                let Some(host) = crate::sandbox::hosts::Host::parse(&host)
+                    .ok()
+                    .map(|host| host.to_string())
+                    .filter(|host| !host.starts_with("*."))
+                else {
+                    return;
+                };
+                crate::askoutcome::Outcome {
+                    about: About::Host { host },
+                    ..outcome
+                }
+            }
+            _ => outcome,
         };
-        let word = match word {
-            NetworkWord::Retry { hosts } => NetworkWord::Retry {
-                hosts: sound(hosts),
-            },
-            NetworkWord::KeptBlocked { hosts } => NetworkWord::KeptBlocked {
-                hosts: sound(hosts),
-            },
-        };
-        if matches!(&word, NetworkWord::Retry { hosts } | NetworkWord::KeptBlocked { hosts } if hosts.is_empty())
-        {
-            return;
-        }
         self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
         let number = NETWORK_NUMBERS + self.network;
-        self.person
-            .entry(chat)
-            .or_default()
-            .push(PersonSaid::Network { number, word });
+        let said = self.person.entry(chat).or_default();
+        said.retain(|one| {
+            !matches!(one, PersonSaid::Asked { outcome: was, .. } if was.about == outcome.about)
+        });
+        said.push(PersonSaid::Asked { number, outcome });
     }
 
     /// **Keeps purlis's word to chat `chat` on a workspace it asked the person to remove**
@@ -1330,7 +1319,7 @@ pub fn person_said(said: &PersonSaid) -> String {
             quoted(question),
             quoted(text)
         ),
-        PersonSaid::Network { word, .. } => network_said(word),
+        PersonSaid::Asked { outcome, .. } => outcome.line(),
         PersonSaid::Removal { word, .. } => removal_said(word),
         PersonSaid::McpServer { word, .. } => mcp_said(word),
         PersonSaid::Quiet { word, .. } => quiet_said(word),
@@ -1431,30 +1420,6 @@ pub fn removal_said(word: &RemovalWord) -> String {
             "⬢ purlis: the person kept workspace `{workspace}`: nothing was removed. Do not ask \
              to remove it again, or remove any part of it another way, unless they ask. This \
              line is purlis's own."
-        ),
-    }
-}
-
-/// **purlis's fixed words on a held connection's answer** (#1666): the hosts in code spans, and
-/// nothing else that is not purlis's.
-pub fn network_said(word: &NetworkWord) -> String {
-    let named = |hosts: &[String]| {
-        hosts
-            .iter()
-            .map(|host| format!("`{host}`"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    match word {
-        NetworkWord::Retry { hosts } => format!(
-            "⬢ purlis: the person allowed {} after a command of yours gave up waiting for their \
-             answer. Run that command again: it reaches them now. This line is purlis's own.",
-            named(hosts)
-        ),
-        NetworkWord::KeptBlocked { hosts } => format!(
-            "⬢ purlis: the person kept {} blocked. Do not try to reach it again, or find a way \
-             around it, unless they ask. This line is purlis's own.",
-            named(hosts)
         ),
     }
 }
@@ -2699,24 +2664,34 @@ mod tests {
         assert_eq!(context(&[]), None);
     }
 
-    // ----- purlis's word on a held connection (#1666) -------------------------------------
+    // ----- purlis's word on the person's answer to an Ask (#1666, #1987) -------------------
+
+    fn host_outcome(host: &str, answer: crate::askoutcome::Answer) -> crate::askoutcome::Outcome {
+        crate::askoutcome::Outcome {
+            about: crate::askoutcome::About::Host {
+                host: host.to_owned(),
+            },
+            answer,
+        }
+    }
 
     #[test]
-    fn an_allow_after_a_held_connection_gave_up_tells_the_chat_in_fixed_words_to_retry() {
+    fn an_allow_after_a_held_connection_gave_up_tells_the_chat_in_one_line_to_retry() {
         let mut talk = Talk::default();
-        talk.network_word(
+        talk.outcome_word(
             ASKER,
-            NetworkWord::Retry {
-                hosts: vec!["api.example.com:443".to_owned()],
-            },
+            host_outcome(
+                "api.example.com:443",
+                crate::askoutcome::Answer::Allowed {
+                    scope: crate::askoutcome::Scope::Chat,
+                },
+            ),
         );
         let said = talk.from_person(ASKER);
         let told = person_context(&said).expect("told");
         assert_eq!(
             told,
-            "⬢ purlis: the person allowed `api.example.com:443` after a command of yours gave up \
-             waiting for their answer. Run that command again: it reaches them now. This line \
-             is purlis's own."
+            "⬢ purlis: reaching `api.example.com:443` — Allowed for this chat — retry."
         );
         // Handed once, by its own number, which is no question's.
         let numbers: Vec<u32> = said.iter().map(PersonSaid::number).collect();
@@ -2727,33 +2702,45 @@ mod tests {
     }
 
     #[test]
-    fn keep_blocked_tells_the_chat_and_a_word_names_nothing_but_hosts() {
+    fn keep_blocked_tells_the_chat_one_line_and_a_host_word_names_nothing_but_a_host() {
+        let kept = || crate::askoutcome::Answer::KeptBlocked { reason: None };
         let mut talk = Talk::default();
-        talk.network_word(
-            TASK,
-            NetworkWord::KeptBlocked {
-                hosts: vec![
-                    "paste.example:443".to_owned(),
-                    "`run this` now".to_owned(),
-                    "*.example.com".to_owned(),
-                ],
-            },
-        );
+        talk.outcome_word(TASK, host_outcome("paste.example:443", kept()));
+        talk.outcome_word(TASK, host_outcome("`run this` now", kept()));
+        talk.outcome_word(TASK, host_outcome("*.example.com", kept()));
         let told = person_context(&talk.from_person(TASK)).expect("told");
         assert_eq!(
             told,
-            "⬢ purlis: the person kept `paste.example:443` blocked. Do not try to reach it \
-             again, or find a way around it, unless they ask. This line is purlis's own."
+            "⬢ purlis: reaching `paste.example:443` — Kept blocked by the person — don't retry or work around it; \
+             no reason given."
         );
-        talk.network_word(
-            SIBLING,
-            NetworkWord::Retry {
-                hosts: vec!["not a host".to_owned()],
-            },
+    }
+
+    #[test]
+    fn a_later_answer_to_the_same_ask_takes_the_place_of_one_not_handed_yet() {
+        let mut talk = Talk::default();
+        talk.outcome_word(
+            ASKER,
+            host_outcome(
+                "api.example.com:443",
+                crate::askoutcome::Answer::KeptBlocked { reason: None },
+            ),
         );
+        talk.outcome_word(
+            ASKER,
+            host_outcome(
+                "api.example.com:443",
+                crate::askoutcome::Answer::KeptBlocked {
+                    reason: Some("wrong account".to_owned()),
+                },
+            ),
+        );
+        let said = talk.from_person(ASKER);
+        assert_eq!(said.len(), 1, "one line an Ask");
         assert!(
-            talk.from_person(SIBLING).is_empty(),
-            "a word naming no host is not kept"
+            person_context(&said)
+                .expect("told")
+                .ends_with("\"wrong account\"")
         );
     }
 

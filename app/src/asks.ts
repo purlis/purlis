@@ -203,6 +203,7 @@ export async function answerTaken(
   plane: string,
   ask: Shown,
   option: string,
+  reason?: string,
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -226,11 +227,10 @@ export async function answerTaken(
         break;
       case "sandbox-block":
         // Keep blocked as the block's Notice keeps it (#1666): for a host, what the chat's
-        // proxy holds on it is refused now and the chat is told, so its command waits no more.
+        // proxy holds on it is refused now, so its command waits no more; and the chat is told
+        // in one line not to retry, with the person's reason if they gave one (#1987).
         if (option === "keep")
-          return path.shown.what === "host"
-            ? commands.keepSandboxBlock(plane, ask.session, path.shown)
-            : commands.forgetSandboxBlock(plane, ask.session, path.shown);
+          return commands.keepSandboxBlock(plane, ask.session, path.shown, reason?.trim() || null);
         if (isLevel(option)) {
           const allowed = await commands.allowSandboxBlock(plane, ask.session, path.shown, option);
           if (allowed.status === "ok") live = allowed.data.live === true;

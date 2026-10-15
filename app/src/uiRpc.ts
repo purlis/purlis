@@ -384,6 +384,7 @@ export const commands = {
 	chatAttended: (plane: PlaneId, session: number) => typedError<boolean, string>(__TAURI_INVOKE("chat_attended", { plane, session })),
 	allowRefusedVault: __WINDOW_ONLY_RESULT,
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
+	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,

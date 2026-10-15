@@ -365,6 +365,44 @@ describe("answering in place", () => {
     );
   });
 
+  it("keeps a refused host blocked with the reason typed beside it, which its chat is told (#1987)", async () => {
+    const calls = core();
+    draw([HOST, permission(3, "a1", ["steward 3"])]);
+    // Only a sandbox ask has the box: a permission's own answers go to its harness.
+    const boxes = screen.getAllByRole("textbox", { name: /Why you keep it blocked/ });
+    expect(boxes).toHaveLength(1);
+    await userEvent.type(boxes[0], "use the internal mirror");
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "keep_sandbox_block",
+        args: {
+          plane: PLANE,
+          session: 5,
+          shown: HOST.answer.via === "sandbox-block" ? HOST.answer.shown : null,
+          reason: "use the internal mirror",
+        },
+      }),
+    );
+  });
+
+  it("keeps a refused host blocked with no reason where none is typed (#1987)", async () => {
+    const calls = core();
+    draw([HOST]);
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "keep_sandbox_block",
+        args: {
+          plane: PLANE,
+          session: 5,
+          shown: HOST.answer.via === "sandbox-block" ? HOST.answer.shown : null,
+          reason: null,
+        },
+      }),
+    );
+  });
+
   it("says the source's own sentence when it refuses, and lists the ask still", async () => {
     core({ answer_ask: new Error("This ask was answered elsewhere.") });
     const { props } = draw([permission(3, "late", ["steward 3"])]);

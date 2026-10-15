@@ -2774,7 +2774,7 @@ impl Planes {
             let weak = Arc::downgrade(&held);
             Arc::new(move |session, word| {
                 if let Some(strong) = weak.upgrade() {
-                    strong.tasks().ledger().talk.network_word(session, word);
+                    strong.tasks().ledger().talk.outcome_word(session, word);
                 }
             })
         });

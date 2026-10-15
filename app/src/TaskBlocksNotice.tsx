@@ -149,7 +149,7 @@ export function TaskBlocksNotice({
     setBusy(true);
     setSaid(undefined);
     void commands
-      .keepSandboxBlockForTasks(plane, group.session, seenOf(members))
+      .keepSandboxBlockForTasks(plane, group.session, seenOf(members), null)
       .then((done) => {
         if (done.status === "error") setSaid(done.error);
         else onKeepBlocked(members.filter((one) => done.data.includes(one.session)));

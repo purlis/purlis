@@ -509,6 +509,9 @@ type Shape = {
   answers: boolean;
   /** It gets a reply box. */
   reply: boolean;
+  /** It gets a box for why it is kept blocked, which its chat is told with the answer
+   *  (#1987). */
+  reason: boolean;
   /** It has the queue's Ignore. */
   ignore: boolean;
 };
@@ -539,6 +542,7 @@ function shapeOf(
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
     // while it is itself waiting, it gets the box beside the reason (#1700).
     reply: ask.source === "question" && (why === undefined || asked?.(ask.session) === true),
+    reason: ask.answer.via === "sandbox-block" && ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
     ignore: waits && onIgnore !== undefined,
@@ -549,6 +553,7 @@ function shapeOf(
 function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): string[] {
   return [
     key,
+    ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
     `${key}:go`,
@@ -638,6 +643,8 @@ function Ask({
   const id = useId();
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Why the person keeps it blocked, if they say: told to the chat with the answer. */
+  const [reason, setReason] = useState("");
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
@@ -665,7 +672,7 @@ function Ask({
     }
     setBusy(true);
     setSaid(undefined);
-    void answerTaken(plane, ask, option.id)
+    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined)
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -716,6 +723,22 @@ function Ask({
       <Reply plane={plane} ask={ask} stop={key} />
     ) : shape.answers ? (
       <WithWrites ask={ask} onDrawn={onChangeDrawn}>
+        {shape.reason && (
+          <Stop id={`${key}:reason`}>
+            <input
+              type="text"
+              className="ui-input inbox-reason"
+              aria-label={`Why you keep it blocked, told to ${who}`}
+              value={reason}
+              placeholder="Why keep it blocked? (optional, the chat is told)"
+              maxLength={REASON_TYPED_MOST}
+              autoComplete="off"
+              spellCheck
+              onChange={(event) => setReason(event.target.value)}
+              onKeyDown={keepHomeAndEnd}
+            />
+          </Stop>
+        )}
         <div className="inbox-answers ui-button-row" role="group" aria-label={`Answers to ${who}`}>
           {shape.offers.map((option) => (
             // Never `disabled` while busy: a disabled button drops the keyboard to the page
@@ -908,6 +931,9 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
     </form>
   );
 }
+
+/** The most characters the reason box takes; the chat is told at most 200 of them. */
+const REASON_TYPED_MOST = 400;
 
 /** What an Allow pressed on an ask drawn or moved just now says: nothing was allowed. */
 export const MOVED_JUST_NOW =

@@ -640,26 +640,34 @@ function AllowNotice({
       asksMoved(block.plane);
     });
   };
-  /** Keep blocked (#1666): the core refuses what the proxy holds, and tells the chat. */
+  /** Keep blocked (#1666, #1987): the core refuses what the proxy holds on a host, and tells
+   *  the chat, whatever the block is. */
   const keepBlocked = () => {
     if (busy) return;
     const targets = hosts.length > 0 ? asking : block.target !== null ? [block.target] : [];
     if (keepSaid !== undefined) sayWay(keepSaid, targets);
-    if (what !== "host" || targets.length === 0) {
+    if (targets.length === 0) {
       onDismiss();
       return;
     }
+    // Every kind is kept blocked by the core, which tells the chat in one line (#1987); a
+    // block answered already is a quiet no-op there, and the Notice goes.
     setBusy(true);
     setSaid(undefined);
     void Promise.all(
       targets.map((one) =>
         commands
-          .keepSandboxBlock(block.plane, block.session, {
-            operation: block.operation,
-            kind: block.kind,
-            what,
-            target: one,
-          })
+          .keepSandboxBlock(
+            block.plane,
+            block.session,
+            {
+              operation: block.operation,
+              kind: block.kind,
+              what,
+              target: one,
+            },
+            null,
+          )
           .then((done) => (done.status === "error" ? done.error : undefined))
           .catch((err: unknown) => `purlis could not keep it blocked: ${String(err)}`),
       ),

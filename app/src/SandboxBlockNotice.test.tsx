@@ -427,6 +427,67 @@ describe("a host block past the hosts the chat's proxy names", () => {
   });
 });
 
+describe("Keep blocked on a block that is not a host (#1987)", () => {
+  const FOLDER: ChatBlocked = {
+    ...UNNAMED,
+    operation: "write",
+    kind: "home",
+    said: "a write to a folder outside the project",
+    offer: "write",
+    target: "/Users/dev/.cache/cargo",
+    levels: ["chat", "you"],
+  };
+
+  function keeping(answer: unknown) {
+    const asked: { cmd: string; args: unknown }[] = [];
+    const onDismiss = vi.fn();
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "keep_sandbox_block" && answer instanceof Error) throw answer.message;
+      return null;
+    });
+    render(
+      <SandboxBlockNotice
+        block={FOLDER}
+        asks={askOfBlock(FOLDER)}
+        more={0}
+        onDismiss={onDismiss}
+        onAllowed={vi.fn()}
+        onRestarted={vi.fn()}
+      />,
+    );
+    return { asked, onDismiss };
+  }
+
+  it("is kept by the core, which tells the chat, and the Notice goes", async () => {
+    const { asked, onDismiss } = keeping(null);
+    await userEvent.click(screen.getByRole("button", { name: /^Keep blocked/ }));
+    await waitFor(() => expect(onDismiss).toHaveBeenCalled());
+    expect(asked.filter((one) => one.cmd === "keep_sandbox_block").map((one) => one.args)).toEqual([
+      {
+        plane: PLANE,
+        session: 4,
+        shown: {
+          operation: "write",
+          kind: "home",
+          what: "write",
+          target: "/Users/dev/.cache/cargo",
+        },
+        reason: null,
+      },
+    ]);
+  });
+
+  it("says why and stays where the core could not keep it", async () => {
+    const { onDismiss } = keeping(new Error("purlis could not read this project."));
+    await userEvent.click(screen.getByRole("button", { name: /^Keep blocked/ }));
+    await waitFor(() =>
+      expect(screen.getByText(/purlis could not read this project\./)).toBeInTheDocument(),
+    );
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+});
+
 describe("a service on this Mac's Notice (qw384)", () => {
   const CLUSTER: ChatBlocked = {
     ...UNNAMED,
