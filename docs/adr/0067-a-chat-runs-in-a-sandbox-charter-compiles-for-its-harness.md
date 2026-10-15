@@ -1643,9 +1643,14 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
     package each link there leads to; Homebrew's whole prefix where it is there
     (`/opt/homebrew`, or `Cellar`, `opt`, `lib` and `Homebrew` under `/usr/local`); npm's
     global packages; the person's own Python site folders (`Library/Python`,
-    `.local/lib/python*`); the program the chat starts, with its whole package; and each
+    `.local/lib`, whole); the program the chat starts, with its whole package; and each
     declared tool's program. A write to one of these is a sandbox block whose Allow lets that
     chat write the folder (SO-10).
+  - Every project's purlis files, not only the chat's own: the state folder under every
+    spelling and the manifests under every name, wherever they are and however a name is
+    spelled. The full sandbox writes none of these in the chat's own project; Claude Code's
+    held names cannot be lifted inside, so at the floor its own project's nested manifests are
+    held too (D-391-8). At every level, the vault files of every project are unreadable.
   - Codex and opencode: no Apple Event, nothing opened through Launch Services, no job
     created in launchd, and no `crontab` or `at` run; no unix socket but the hook socket and
     the ones a person allowed (ruling Q1), and the hook socket's folder never written; no port

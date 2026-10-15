@@ -415,6 +415,10 @@ pub fn profile(
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
+    // Last, so nothing given back reaches them: no project's vaults are read (#2071).
+    for rule in vaults_everywhere_rules()? {
+        line(rule);
+    }
     if out.len() > MOST_PROFILE {
         return Err(TOO_LARGE);
     }
@@ -524,13 +528,60 @@ pub fn floor_profile(
         "(deny file-write-create (require-all (vnode-type DIRECTORY) (regex #\"^/(.*/)?\\.git/modules/.+\")))"
             .to_owned(),
     );
+    for rule in every_project_rules()? {
+        line(rule);
+    }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
+    }
+    // Last, so nothing given back reaches them: no project's vaults are read (#2071).
+    for rule in vaults_everywhere_rules()? {
+        line(rule);
     }
     if out.len() > MOST_PROFILE {
         return Err(TOO_LARGE);
     }
     Ok(out)
+}
+
+/// **What the floor keeps from being written in every project on this machine** (#2071): its
+/// state folder, under every spelling, and its manifests, under every name, wherever they are
+/// and however a name is spelled. The full sandbox writes no project but the chat's own, and
+/// none of these in it; at the floor every folder is written, so each is held by name.
+pub fn every_project_rules() -> Result<Vec<String>, &'static str> {
+    let mut rules = Vec::new();
+    for state in crate::names::STATE_DIR.spellings() {
+        let regex = format!("^/(.*/)?{}(/.*)?$", either_case(&escaped(state)));
+        rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
+    }
+    for manifest in super::MANIFESTS {
+        let regex = format!("^/(.*/)?{}$", either_case(&escaped(manifest)));
+        rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
+    }
+    Ok(rules)
+}
+
+/// **No project's vaults are read, at either level** (#2071): the vaults and the fingerprint key
+/// under every spelling of a state folder, wherever it is and however it is spelled. The
+/// chat's own project's are denied by path besides ([`super::Denied::of`]).
+pub fn vaults_everywhere_rules() -> Result<Vec<String>, &'static str> {
+    let mut rules = Vec::new();
+    for state in crate::names::STATE_DIR.spellings() {
+        for (kept, tail) in [
+            ("vaults", "(/.*)?$"),
+            (crate::secrets::fingerprint::KEY_FILE, "$"),
+        ] {
+            let regex = format!(
+                "^/(.*/)?{}{tail}",
+                either_case(&format!("{}/{}", escaped(state), escaped(kept)))
+            );
+            rules.push(format!(
+                "(deny file-read* file-write* (regex {}))",
+                string(&regex)?
+            ));
+        }
+    }
+    Ok(rules)
 }
 
 /// What the floor holds besides files ([`floor_profile`]): nothing started outside the profile,

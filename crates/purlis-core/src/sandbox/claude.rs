@@ -139,6 +139,19 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         edit_rules.push(format!("Edit({rooted})"));
         edit_rules.push(format!("Edit({rooted}/**)"));
     }
+    // No project's vaults are read, at either level (#2071): under every spelling of a state
+    // folder, anywhere. The chat's own project's are denied by path above.
+    for state in crate::names::STATE_DIR.spellings() {
+        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+            let glob = format!("/**/{state}/{kept}");
+            for glob in [glob.clone(), format!("{glob}/**")] {
+                read_rules.push(format!("Read(/{glob})"));
+                edit_rules.push(format!("Edit(/{glob})"));
+                deny_read.push(glob.clone());
+                deny_write.push(glob);
+            }
+        }
+    }
     // The later-code class (ruling V73b), by name at any depth: added to the names Claude
     // Code's own sandbox already keeps commands from writing, never in their place. A name
     // that holds only itself (`.git`) is left out: a glob here denies what is below it too,
@@ -248,6 +261,19 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 edit_rules.push(format!("Edit(/{glob}/**)"));
                 deny_write.push(glob);
             }
+        }
+        // Every project's state folder and manifests, wherever they are (#2071): the full sandbox
+        // writes no project but the chat's own, and none of these in it. Claude Code's
+        // `denyWrite` cannot be lifted inside, so its own project's nested manifests are held
+        // too (D-391-8).
+        let every: Vec<String> = crate::names::STATE_DIR
+            .spellings()
+            .flat_map(|state| [format!("/**/{state}"), format!("/**/{state}/**")])
+            .chain(super::MANIFESTS.iter().map(|name| format!("/**/{name}")))
+            .collect();
+        for glob in every {
+            edit_rules.push(format!("Edit(/{glob})"));
+            deny_write.push(glob);
         }
         for path in &compiled.held {
             for name in names_for(path) {

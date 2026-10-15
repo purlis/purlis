@@ -388,6 +388,28 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
         "no",
         "a job handed to launchd"
     );
+    // The control: the same submit, under the same profile less that one rule, goes through,
+    // so the refusal above is the rule's.
+    assert!(profile.contains("(deny job-creation)\n"), "{profile}");
+    let without = profile.replace("(deny job-creation)\n", "");
+    let submitted = crate::forklock::output(
+        std::process::Command::new(backend::SANDBOX_EXEC)
+            .args(["-p", &without, "/bin/sh", "-c"])
+            .arg(tried(&format!(
+                "{} submit -l purlis.floor.control -- /usr/bin/true",
+                copied.display()
+            )))
+            .current_dir(&root),
+    )
+    .expect("it runs");
+    let _ = crate::forklock::status(
+        std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.control"]),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&submitted.stdout).trim(),
+        "yes",
+        "the same submit without the rule"
+    );
     let _ = crate::forklock::status(
         std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.test"]),
     );
@@ -399,6 +421,14 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
             home.display()
         ))),
         "no"
+    );
+    // The control: a name beside it that nothing holds is written in the same home.
+    assert_eq!(
+        run(&tried(&format!(
+            "mkdir -p {0}/library/launchagentz && touch {0}/library/launchagentz/x.plist",
+            home.display()
+        ))),
+        "yes"
     );
     // The hook socket and the proxy's port, and no other socket or port of this machine.
     let nc = |target: &str| tried(&format!("/usr/bin/nc -z -w 2 {target}"));
@@ -629,4 +659,150 @@ fn the_floor_confines_a_chat_to_no_folder_so_one_with_none_of_its_own_still_star
     ));
     let refused = full.line(words(), &At::default()).expect_err("refused");
     assert!(refused.contains("no folder of its own"), "{refused}");
+}
+
+/// **Another project's purlis files are held at the floor, and its vaults are not read**
+/// (#2071): a chat in one project writes every folder, so the state folder and the manifests
+/// of every project are held by name wherever they are, and no project's vaults are read.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_chat_at_the_floor_writes_no_other_projects_purlis_files_and_reads_no_vault() {
+    let can_apply =
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let (_dir, root) = project();
+    let (_sibling, other) = project();
+    let kept = other.join(".purlis").join("vaults");
+    std::fs::create_dir_all(&kept).expect("its vaults");
+    std::fs::write(kept.join("ops.json"), "{}").expect("a vault");
+    std::fs::write(other.join("notes.txt"), "x").expect("a note");
+    let profile = wrapped_floor(
+        Harness::Codex,
+        &root,
+        &machine_with(Path::new("/opt/none")),
+        &[],
+        None,
+    );
+    let tried = |script: &str| -> bool {
+        crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/bin/sh", "-c", script])
+                .current_dir(&root),
+        )
+        .expect("it runs")
+        .status
+        .success()
+    };
+    let other = other.display();
+    // The control: the other project itself is written and read.
+    assert!(tried(&format!("echo y >> {other}/notes.txt")));
+    assert!(tried(&format!("head -c 1 {other}/notes.txt")));
+    let vault = format!("{other}/.purlis/vaults/ops.json");
+    for refused in [
+        // Its approvals: its next chat would run what nobody approved.
+        format!("echo '{{}}' > {other}/.purlis/harness-profiles-launched.json"),
+        format!("mkdir -p {other}/.charter && echo x > {other}/.charter/mcp-approved.json"),
+        // Its manifests: taking its full sandbox away, or what its chats are handed.
+        format!("echo x > {other}/purlis.toml"),
+        format!("rm {other}/charter.toml"),
+        format!("echo x > {other}/purlis.local.toml"),
+        // However the name is spelled.
+        format!("echo x > {other}/.PURLIS/x"),
+        format!("echo x > {other}/Purlis.toml"),
+        // Its vaults, written or read.
+        format!("echo x > {vault}"),
+        format!("head -c 1 {vault}"),
+        format!("head -c 1 {other}/.Purlis/Vaults/ops.json"),
+    ] {
+        assert!(!tried(&refused), "{refused} was let through");
+    }
+}
+
+#[test]
+fn every_projects_purlis_files_are_held_by_name_and_no_projects_vault_is_read() {
+    let (_dir, root) = project();
+    let machine = machine_with(Path::new("/opt/none"));
+    // The floor, for Codex and opencode: by name, anywhere, in either case.
+    let profile = wrapped_floor(Harness::Codex, &root, &machine, &[], None);
+    for rule in seatbelt::every_project_rules()
+        .expect("rules")
+        .into_iter()
+        .chain(seatbelt::vaults_everywhere_rules().expect("rules"))
+    {
+        assert!(
+            profile.contains(&rule),
+            "{rule} is not in the floor's profile"
+        );
+    }
+    assert!(
+        profile.contains(r#"[pP][uU][rR][lL][iI][sS]"#),
+        "a name in either case"
+    );
+    // The floor, for Claude Code: every project's state folder and manifests unwritten, and no
+    // project's vaults read, by its commands and by its own tools.
+    let settings = settings_of(&floor_of(decided(Harness::ClaudeCode, &root, &machine)));
+    let fs = &settings.sandbox["filesystem"];
+    let deny_write = strings(&fs["denyWrite"]);
+    let deny_read = strings(&fs["denyRead"]);
+    for state in crate::names::STATE_DIR.spellings() {
+        assert!(deny_write.contains(&format!("/**/{state}/**")), "{state}");
+        assert!(
+            deny_read.contains(&format!("/**/{state}/vaults/**")),
+            "{state}"
+        );
+        assert!(
+            settings
+                .deny
+                .contains(&format!("Read(//**/{state}/vaults/**)")),
+            "{state}"
+        );
+    }
+    for name in MANIFESTS {
+        assert!(deny_write.contains(&format!("/**/{name}")), "{name}");
+    }
+}
+
+#[test]
+fn no_projects_vault_is_read_at_the_full_sandbox_either() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
+    let machine = machine_with(Path::new("/opt/none"));
+    let compiled = match decided(Harness::Codex, &root, &machine) {
+        Some(Decided::Sandboxed(applied)) => applied,
+        other => panic!("not sandboxed: {other:?}"),
+    };
+    let Form::Codex(wrap) = compiled.form() else {
+        panic!("not Codex's form");
+    };
+    let profile = codex::profile(wrap, &root, Path::new("/tmp"), &[], None).expect("a profile");
+    for rule in seatbelt::vaults_everywhere_rules().expect("rules") {
+        assert!(profile.contains(&rule), "{rule} is not in the full profile");
+    }
+    // Nor does the full sandbox take on the floor's every-project write rules: it writes no
+    // other project in the first place.
+    for rule in seatbelt::every_project_rules().expect("rules") {
+        assert!(!profile.contains(&rule), "{rule}");
+    }
+    let claude = match decided(Harness::ClaudeCode, &root, &machine) {
+        Some(Decided::Sandboxed(applied)) => settings_of(&applied),
+        other => panic!("not sandboxed: {other:?}"),
+    };
+    let deny_read = strings(&claude.sandbox["filesystem"]["denyRead"]);
+    for state in crate::names::STATE_DIR.spellings() {
+        assert!(
+            deny_read.contains(&format!("/**/{state}/vaults/**")),
+            "{state}"
+        );
+    }
 }

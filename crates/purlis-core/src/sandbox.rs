@@ -2346,13 +2346,8 @@ fn machine_held_now(path: Option<&str>, home: Option<&Path>) -> Vec<PathBuf> {
     // The person's own Python site folders, whose `.pth` files run at every interpreter start.
     if let Some(home) = home {
         hold(real(&home.join("Library/Python")));
-        if let Ok(entries) = std::fs::read_dir(home.join(".local/lib")) {
-            for entry in entries.flatten() {
-                if entry.file_name().to_string_lossy().starts_with("python") {
-                    hold(real(&entry.path()));
-                }
-            }
-        }
+        // Whole, so a Python folder made there after the chat started is held too.
+        hold(real(&home.join(".local/lib")));
     }
     let path = path.map(std::ffi::OsString::from);
     for dir in crate::programs::search_dirs_from(path.as_deref(), home) {

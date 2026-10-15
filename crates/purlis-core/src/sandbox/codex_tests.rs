@@ -1024,6 +1024,36 @@ mod live {
     }
 
     #[test]
+    fn a_wrapped_codex_chat_reads_no_other_projects_vault() {
+        // #2071: the chat's own project's vaults are denied by path, and every other
+        // project's by name, wherever it is and however it is spelled.
+        let wrapped = Wrapped::new();
+        let other = tempfile::tempdir().expect("another project");
+        let other = real(other.path());
+        let kept = other.join(".purlis").join("vaults");
+        std::fs::create_dir_all(&kept).expect("its vaults");
+        std::fs::write(kept.join("ops.json"), "{}").expect("a vault");
+        std::fs::write(other.join("notes.txt"), "x").expect("a note");
+        let line = wrapped.line(wrapped.plane.path());
+        let other = other.display();
+        // The control: the same project's other file is read.
+        assert!(ran_in(
+            &line,
+            wrapped.plane.path(),
+            &format!("head -c 1 {other}/notes.txt")
+        ));
+        for refused in [
+            format!("head -c 1 {other}/.purlis/vaults/ops.json"),
+            format!("head -c 1 {other}/.PURLIS/vaults/ops.json"),
+        ] {
+            assert!(
+                !ran_in(&line, wrapped.plane.path(), &refused),
+                "{refused} was let through"
+            );
+        }
+    }
+
+    #[test]
     fn a_wrapped_codex_chat_writes_a_manifest_only_where_it_cannot_change_a_chats_sandbox() {
         // #1336: below its folder and in its temp folder, yes; in its folder, `ws` and the
         // root, never, nor moved into place.
