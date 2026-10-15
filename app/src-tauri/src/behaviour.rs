@@ -12,11 +12,12 @@
 //! connected to by the window's own code ([`crate::sessionhost::SessionHost`]), spoken to over
 //! its socket, with real terminals. It runs on Linux, where each test gives its host a socket
 //! and a config home of its own; the host's code over an in-memory link (`in_the_host`) runs
-//! everywhere beside it. Each behaviour speaks only what the window speaks to either,
-//! [`SessionHost`], and checks only what the window can observe: what its pane draws, what it is
-//! told, what ends. A test ends the host process it started. When the in-app path is deleted
-//! (#2005), its target goes with it, and the host's stay; Docker and a cluster join as targets
-//! of their own (spec #2041).
+//! everywhere beside it. **And a third, through a link**: the window's host relaying to another
+//! host over the link between hosts ([`through_a_link`], #2042). Each behaviour speaks only what
+//! the window speaks to any of them, [`SessionHost`], and checks only what the window can
+//! observe: what its pane draws, what it is told, what ends. A test ends the host process it
+//! started. When the in-app path is deleted (#2005), its target goes with it, and the host's
+//! stay; Docker and a cluster join as targets of their own (spec #2041).
 //!
 //! **The chat's program is the repo's fake harness** (`crates/fake-harness`), or a shell where a
 //! behaviour needs the terminal itself (its size, its line discipline) or runs `purlis hook` as
@@ -148,19 +149,92 @@ pub(crate) fn in_the_host() -> Target {
 /// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
 /// in a config home of its own, which starts with nothing thrown.
 fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("a runtime");
-    let hosting = purlis_host::Hosting::kept(
+    let folder = folder.to_path_buf();
+    a_window_on(move || a_host(&folder))
+}
+
+/// A chat on another session host, reached through this machine's (#2042): the window speaks to
+/// host A, which relays to host B over the link between hosts, as the desktop's host reaches a
+/// runner's (ADR 0078 §4). Host B is the host's own code with real terminals, composed as the
+/// window's binary composes them; both hosts are on this machine, linked in memory over the
+/// encrypted link, each end's link key pinned by the other. Host B takes the window's start
+/// and its replies because host A relays them from the window's own link (ruled 2026-10-15).
+pub(crate) fn through_a_link() -> Target {
+    let folder = tempfile::tempdir().expect("host B's folder");
+    let host_b = a_host(folder.path());
+    let mut target = a_window_on(move || {
+        purlis_host::Relay::new(Arc::new(move || {
+            let host_b = host_b.clone();
+            Box::pin(async move { Ok(linked_to(host_b).await) })
+        }))
+    });
+    target._keeps.push(Box::new(folder));
+    target
+}
+
+/// A session host as the window's binary composes it, keeping its kill switch in `folder`: its
+/// starts composed from the window's launch, each in a real terminal, its chats' hooks heard on
+/// their project's channel, each confined here.
+fn a_host(folder: &Path) -> purlis_host::Hosting {
+    purlis_host::Hosting::kept(
         folder,
         purlis_host::FromTheWindow(crate::sessionhost::launched),
         purlis_host::Terminals,
         crate::sessionhost::HookChannels,
         crate::hostedconfinement::ConfinesHere,
     )
-    .saving_with(crate::hostsaving::InTheHost);
+    .saving_with(crate::hostsaving::InTheHost)
+}
+
+/// A link from host A to `host_b`, over the link between hosts on an in-memory stream.
+async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
+    use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
+    let identity = |device: &str| Identity {
+        device: device.to_owned(),
+        key: LinkKey::generate().expect("a link key"),
+    };
+    let pinned = |identity: &Identity| Pinned {
+        device: identity.device.clone(),
+        key: identity.key.public(),
+    };
+    let (a, b) = (
+        identity("01JA0DESKT0P00000000000000"),
+        identity("01JB0RUNNER0000000000000000"),
+    );
+    let (desktop, b_pinned) = (pinned(&a), pinned(&b));
+    let (a_end, b_end) = tokio::io::duplex(1 << 20);
+    tokio::spawn(async move {
+        let answered = hostlink::answer(
+            b_end,
+            Handshake::THIS_BUILD,
+            &b,
+            &desktop,
+            Liveness::default(),
+        )
+        .await
+        .expect("host B admits host A");
+        session::serve(answered.link, host_b, None).await
+    });
+    hostlink::connect(
+        a_end,
+        Handshake::THIS_BUILD,
+        &a,
+        &b_pinned,
+        Liveness::default(),
+    )
+    .await
+    .expect("host A links to host B")
+}
+
+/// The window, speaking the session protocol over an in-memory `local-ui` link to the host
+/// `host` makes, on a runtime of the target's own, its own kill switch in a config home of its
+/// own.
+fn a_window_on<H: session::Host>(host: impl FnOnce() -> H + Send + 'static) -> Target {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
         let (client, served) = tokio::join!(
@@ -174,7 +248,7 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
         );
         tokio::spawn(session::serve(
             served.expect("the host admits the window"),
-            hosting,
+            host(),
             None,
         ));
         HostLink::over(
@@ -187,7 +261,7 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link));
-    let mut target = a_window_on(connection, std::env::vars_os().collect());
+    let mut target = a_window_over(connection, std::env::vars_os().collect());
     target._keeps.push(Box::new(runtime));
     target
 }
@@ -195,7 +269,7 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
 /// The window, its chats run in the session host it reaches over `connection`, whose process
 /// was started with `inherited`: its project, its hooks heard from the host, and its own switch
 /// in a config home of its own, held by the host.
-fn a_window_on(connection: Arc<Connection>, inherited: Vec<(OsString, OsString)>) -> Target {
+fn a_window_over(connection: Arc<Connection>, inherited: Vec<(OsString, OsString)>) -> Target {
     let config = tempfile::tempdir().expect("a config home");
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
@@ -274,7 +348,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
     connection
         .wait(PATIENCE)
         .expect("the window connects to its host");
-    let mut target = a_window_on(connection, inherited);
+    let mut target = a_window_over(connection, inherited);
     target.savers_here = 0;
     // Ended before the folders it serves from go.
     target._keeps.insert(0, Box::new(host));
@@ -310,6 +384,7 @@ fn charter_app() -> PathBuf {
         .get_or_init(|| built_beside("charter-app", "purlis-app"))
         .clone()
 }
+
 
 /// The `purlis` binary, whose `purlis hook` a chat's harness runs, built once beside this
 /// test's binary when it is not there yet.
@@ -1304,9 +1379,14 @@ mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart
     }
 }
 
-/// Each behaviour, as a test of its own on every target.
+/// Each behaviour, as a test of its own on every target. Each group after `not yet through a
+/// link` runs on the window's and the host's targets, and through a link waits for what its
+/// reason names (#2042).
 macro_rules! on_every_target {
-    ($($behaviour:ident),* $(,)?) => {
+    (
+        $($behaviour:ident),* $(,)?;
+        $(not yet through a link ($why:literal): $($waiting:ident),+ $(,)?;)*
+    ) => {
         $(
             mod $behaviour {
                 #[test]
@@ -1324,8 +1404,38 @@ macro_rules! on_every_target {
                 fn in_a_host_process() {
                     super::$behaviour(&super::in_a_host_process());
                 }
+
+                #[test]
+                fn through_a_link() {
+                    super::$behaviour(&super::through_a_link());
+                }
             }
         )*
+        $($(
+            mod $waiting {
+                #[test]
+                fn in_the_window() {
+                    super::$waiting(&super::in_the_window());
+                }
+
+                #[test]
+                fn in_the_host() {
+                    super::$waiting(&super::in_the_host());
+                }
+
+                #[cfg(target_os = "linux")]
+                #[test]
+                fn in_a_host_process() {
+                    super::$waiting(&super::in_a_host_process());
+                }
+
+                #[test]
+                #[ignore = $why]
+                fn through_a_link() {
+                    super::$waiting(&super::through_a_link());
+                }
+            }
+        )+)*
     };
 }
 
@@ -1341,12 +1451,15 @@ on_every_target!(
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
-    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
+    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor;
+    not yet through a link ("a sandboxed chat starts on a runner through the link in #2217"):
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
-    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
+    not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
-    while_stopped_the_operators_shell_opens,
+    while_stopped_the_operators_shell_opens;
+    not yet through a link ("saving a project on a runner comes with code over the link in #2046"):
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
-    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped,
+    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
 );
