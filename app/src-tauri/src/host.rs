@@ -211,6 +211,13 @@ pub trait SessionHost: Send + Sync {
     fn reports_to(&self) -> Option<std::path::PathBuf> {
         None
     }
+
+    /// Hears what the session host hands on from the hook channel it owns for this plane with
+    /// `relayed` (#2000). A host that runs its chats in this process listens itself, and is
+    /// never told this.
+    fn hear_through(&self, relayed: std::sync::Arc<crate::hooks::Relayed>) {
+        let _ = relayed;
+    }
 }
 
 /// One chat as the board has it, read under one hold so the three agree.

@@ -80,7 +80,12 @@ use crate::view::{Limits, Views};
 /// the sandbox, and the window's own [`Launch`]), `close` beside `stop`, `readiness`, a started
 /// program's number and process, a listed chat's number and run, and two pushed notices: a
 /// program `ended`, and a view `view_ended` for good.
-pub const VERSION: Version = Version { major: 1, minor: 2 };
+///
+/// 1.3 added what moves a chat's hooks into the host (#2000): the host deals each chat's
+/// number (`deal`, answered `dealt`, and `dealt_already` for numbers that went out before), and
+/// each line a held project's hooks write is pushed to the window that holds it (`heard`) and
+/// answered from there (`reply_heard`).
+pub const VERSION: Version = Version { major: 1, minor: 3 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -200,6 +205,21 @@ pub enum Command {
     /// Whether a hosted program is ready to be typed at, as its terminal and the clock say it,
     /// never what it wrote (1.2): answered [`Answer::Readiness`].
     Readiness { program: String },
+    /// Deal the next number in a held project, for a chat about to be started with it: one no
+    /// chat of the project has had, so a client may name the chat by it first (1.3). Answered
+    /// [`Answer::Dealt`].
+    Deal { project: String },
+    /// The numbers up to `dealt` went out in a held project before this host dealt any, so none
+    /// of them is dealt again (1.3).
+    DealtAlready { project: String, dealt: u32 },
+    /// The reply to the line a held project's hooks wrote that the host pushed as `heard`
+    /// ([`Pushed::Heard`]): what the window answered it with, in the shape the line's kind takes
+    /// (1.3).
+    ReplyHeard {
+        project: String,
+        heard: u64,
+        reply: serde_json::Value,
+    },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -388,6 +408,8 @@ pub enum Answer {
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
+    /// The number dealt: [`Command::Deal`] (1.3).
+    Dealt { number: u32 },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -517,6 +539,14 @@ pub enum Pushed {
         view: u32,
         why: ViewEnd,
     },
+    /// A line a held project's chat's hooks wrote, admitted by the host (1.3): pushed, numbered
+    /// `heard`, to the subscribed links that hold the project, which reply with
+    /// [`Command::ReplyHeard`] where its kind takes a reply. It never carries the chat's token.
+    Heard {
+        project: String,
+        heard: u64,
+        line: serde_json::Value,
+    },
 }
 
 wire_words!(Command {
@@ -537,6 +567,9 @@ wire_words!(Command {
     LetGoOfProject => "let_go_of_project",
     Close => "close",
     Readiness => "readiness",
+    Deal => "deal",
+    DealtAlready => "dealt_already",
+    ReplyHeard => "reply_heard",
 });
 
 impl Command {
@@ -555,7 +588,11 @@ impl Command {
             Command::Answer { .. } => Power::Answer,
             Command::Stop { .. } | Command::Close { .. } => Power::Stop,
             Command::Start(_) | Command::StartProgram(_) => Power::Start,
-            Command::HoldProject { .. } | Command::LetGoOfProject { .. } => Power::Hold,
+            Command::HoldProject { .. }
+            | Command::LetGoOfProject { .. }
+            | Command::Deal { .. }
+            | Command::DealtAlready { .. } => Power::Hold,
+            Command::ReplyHeard { .. } => Power::Heard,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -567,6 +604,7 @@ wire_words!(Answer {
     Started => "started",
     ProgramStarted => "program_started",
     Readiness => "readiness",
+    Dealt => "dealt",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -588,6 +626,7 @@ wire_words!(Pushed {
     Missed => "missed",
     Ended => "ended",
     ViewEnded => "view_ended",
+    Heard => "heard",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -928,6 +967,8 @@ enum Lane {
     Program(String),
     /// `subscribe` and `unsubscribe`.
     Subscription,
+    /// The replies to one line a held project's hooks wrote (1.3).
+    Heard(u64),
 }
 
 impl Lane {
@@ -939,7 +980,9 @@ impl Lane {
             | Command::Start(_)
             | Command::StartProgram(_)
             | Command::HoldProject { .. }
-            | Command::LetGoOfProject { .. } => None,
+            | Command::LetGoOfProject { .. }
+            | Command::Deal { .. }
+            | Command::DealtAlready { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -951,6 +994,8 @@ impl Lane {
             | Command::Close { program }
             | Command::Readiness { program } => Some(Lane::Program(program.clone())),
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
+            // The replies to one line keep their order: a command's frames, one after another.
+            Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
         }
     }
 }
@@ -1347,6 +1392,36 @@ impl Client {
         }
     }
 
+    /// Deal the next number in `project` (1.3).
+    pub async fn deal(&self, project: &str) -> Result<u32, CallError> {
+        match self
+            .call(Command::Deal {
+                project: project.into(),
+            })
+            .await?
+        {
+            Answer::Dealt { number } => Ok(number),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Send `command` now, behind every command sent before it on this client, and answer with
+    /// a future of its answer: what keeps the order of commands sent from one thread without
+    /// waiting for each answer (a host keeps the order of those of one lane).
+    pub fn call_now(
+        &self,
+        command: Command,
+    ) -> impl Future<Output = Result<Answer, CallError>> + Send + 'static {
+        let (reply, answer) = oneshot::channel();
+        let sent = self.asks.send(Ask::Session(command, reply));
+        async move {
+            sent.map_err(|_| CallError::Closed("the link is closed".into()))?;
+            answer
+                .await
+                .map_err(|_| CallError::Closed("the link is closed".into()))?
+        }
+    }
+
     /// Attach a view of `kind` on `program`: its stream comes on the [`Acceptor`]
     /// [`Client::new`] gave. A host one version behind refuses it `unknown_command`;
     /// [`Client::attach`] is its word for a terminal view.
@@ -1468,8 +1543,8 @@ impl Subscribed {
                     self.cursor
                         .insert(device.clone(), resumes_at.saturating_sub(1));
                 }
-                // Neither is an event of the log: the cursor stays where it is.
-                Pushed::Ended { .. } | Pushed::ViewEnded { .. } => {}
+                // None is an event of the log: the cursor stays where it is.
+                Pushed::Ended { .. } | Pushed::ViewEnded { .. } | Pushed::Heard { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;
