@@ -40,7 +40,7 @@ use crate::serving::Window;
 
 /// A start, as the host hands it to its [`Compose`]: the project it is in, the number the chat
 /// was dealt there, and what the client asked for.
-pub struct Starting<'a> {
+pub struct ToCompose<'a> {
     /// The project's stable id.
     pub project: &'a str,
     /// Where the project is on this machine.
@@ -57,7 +57,7 @@ pub struct Starting<'a> {
 /// on the core, so the host links none of it (#1998).
 pub trait Compose: Send + Sync + 'static {
     /// The program to run for `starting`, or why it cannot be started, in a sentence.
-    fn compose(&self, starting: &Starting<'_>) -> Result<Spec, String>;
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String>;
 }
 
 /// Composes a start from the window's own [`Launch`], which `launched` turns into the program,
@@ -70,7 +70,7 @@ impl<F> Compose for FromTheWindow<F>
 where
     F: Fn(&Launch, u32, Size) -> Result<Spec, String> + Send + Sync + 'static,
 {
-    fn compose(&self, starting: &Starting<'_>) -> Result<Spec, String> {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
         match &starting.start.launch {
             Some(launch) => (self.0)(launch, starting.number, starting.size),
             None => Err(
@@ -86,7 +86,7 @@ where
 pub struct ComposesNothing;
 
 impl Compose for ComposesNothing {
-    fn compose(&self, _starting: &Starting<'_>) -> Result<Spec, String> {
+    fn compose(&self, _starting: &ToCompose<'_>) -> Result<Spec, String> {
         Err("this session host was given no way to compose a start".into())
     }
 }
@@ -201,6 +201,11 @@ struct Inner {
 struct State {
     projects: HashMap<String, Held>,
     programs: HashMap<String, Hosted>,
+    /// The processes of programs closed or ended by the host, kept for the admission check for
+    /// as long as the host runs: a process a program started may outlive it in its session, in
+    /// a group of its own the close did not reach, and is still inside that chat. Keeping a
+    /// number past its session errs towards refusing a peer, never towards admitting one.
+    closed: Vec<u32>,
     /// Each project's highest number dealt: it only rises, so a number names one chat.
     dealt: HashMap<String, u32>,
     subscribers: Vec<mpsc::Sender<Pushed>>,
@@ -210,7 +215,14 @@ struct State {
 
 struct Held {
     path: PathBuf,
-    holders: usize,
+    /// How many holds each link has on it, by the link.
+    links: HashMap<usize, usize>,
+}
+
+/// A link, as the host tells its holds apart: its peer's place in memory, the same for every
+/// command of the link and never another live link's.
+fn link_of(peer: &Peer) -> usize {
+    std::ptr::from_ref(peer) as usize
 }
 
 struct Hosted {
@@ -291,7 +303,7 @@ impl Hosting {
         chats
     }
 
-    fn hold(&self, project: String, path: String) -> Result<Answer, Refusal> {
+    fn hold(&self, project: String, path: String, peer: &Peer) -> Result<Answer, Refusal> {
         let path = PathBuf::from(path);
         if !path.is_absolute() || !path.is_dir() {
             return Err(Refusal {
@@ -303,25 +315,53 @@ impl Hosting {
             });
         }
         let mut state = self.state();
-        let held = state.projects.entry(project).or_insert(Held {
+        let held = state.projects.entry(project.clone()).or_insert(Held {
             path: path.clone(),
-            holders: 0,
+            links: HashMap::new(),
         });
-        held.path = path;
-        held.holders += 1;
+        // A project held is where it was first held until every hold is let go of: no client
+        // moves another's.
+        if held.path != path {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "project {project} is held at {}, not at {}",
+                    held.path.display(),
+                    path.display()
+                ),
+            });
+        }
+        *held.links.entry(link_of(peer)).or_default() += 1;
         Ok(Answer::Done)
     }
 
-    fn let_go(&self, project: &str) -> Result<Answer, Refusal> {
+    fn let_go(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let link = link_of(peer);
         let mut state = self.state();
-        match state.projects.get_mut(project) {
-            Some(held) if held.holders > 1 => held.holders -= 1,
+        let Some(held) = state.projects.get_mut(project) else {
+            return Err(no_such_project(project));
+        };
+        match held.links.get_mut(&link) {
+            Some(holds) if *holds > 1 => *holds -= 1,
             Some(_) => {
-                state.projects.remove(project);
+                held.links.remove(&link);
             }
+            // A link lets go only of its own holds.
             None => return Err(no_such_project(project)),
         }
+        if held.links.is_empty() {
+            state.projects.remove(project);
+        }
         Ok(Answer::Done)
+    }
+
+    /// A link ended: its holds go with it.
+    fn let_go_of_the_links(&self, peer: &Peer) {
+        let link = link_of(peer);
+        self.state().projects.retain(|_, held| {
+            held.links.remove(&link);
+            !held.links.is_empty()
+        });
     }
 
     async fn start(&self, start: StartProgram) -> Result<Answer, Refusal> {
@@ -367,7 +407,7 @@ impl Hosting {
         let spec = self
             .inner
             .compose
-            .compose(&Starting {
+            .compose(&ToCompose {
                 project: &start.project,
                 project_path: &path,
                 number,
@@ -456,18 +496,22 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    async fn close(&self, program: &str) -> Result<Answer, Refusal> {
-        let hosted = self
-            .state()
-            .programs
-            .remove(program)
-            .ok_or_else(|| no_such_program(program))?;
-        // Ended here, off the runtime; the views end with its output.
-        let _ = tokio::task::spawn_blocking(move || {
+    /// Forgets `program` at once, so its number is free when this answers, and ends it off the
+    /// runtime; its views end with its output.
+    fn close(&self, program: &str) -> Result<Answer, Refusal> {
+        let hosted = {
+            let mut state = self.state();
+            let hosted = state
+                .programs
+                .remove(program)
+                .ok_or_else(|| no_such_program(program))?;
+            state.closed.extend(hosted.process);
+            hosted
+        };
+        tokio::task::spawn_blocking(move || {
             hosted.running.stop();
             drop(hosted);
-        })
-        .await;
+        });
         Ok(Answer::Done)
     }
 }
@@ -479,8 +523,8 @@ impl session::Host for Hosting {
             Command::HoldProject {
                 project,
                 project_path,
-            } => self.hold(project, project_path),
-            Command::LetGoOfProject { project } => self.let_go(&project),
+            } => self.hold(project, project_path, peer),
+            Command::LetGoOfProject { project } => self.let_go(&project, peer),
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start).await,
             },
@@ -508,7 +552,7 @@ impl session::Host for Hosting {
                 Ok(Answer::Readiness(self.running(&program)?.readiness()))
             }
             Command::Stop { chat } => self.stop(&chat).await,
-            Command::Close { program } => self.close(&program).await,
+            Command::Close { program } => self.close(&program),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -526,6 +570,10 @@ impl session::Host for Hosting {
         }
     }
 
+    async fn link_ended(&self, peer: &Peer) {
+        self.let_go_of_the_links(peer);
+    }
+
     async fn subscribe(
         &self,
         _since: Since,
@@ -541,10 +589,12 @@ impl session::Host for Hosting {
 /// this host, or below the host itself, and every hosted program by its pid.
 impl Chats for Hosting {
     fn programs(&self) -> Vec<u32> {
-        self.state()
+        let state = self.state();
+        state
             .programs
             .values()
             .filter_map(|hosted| hosted.process)
+            .chain(state.closed.iter().copied())
             .collect()
     }
 
@@ -584,12 +634,13 @@ impl Hosting {
     /// Ends every program, all at once, and returns once they are gone or [`ENDS_WITHIN`] has
     /// passed: what the host does as it stops, so a quit still ends every chat.
     pub fn end_all(&self) {
-        let hosted: Vec<Hosted> = self
-            .state()
-            .programs
-            .drain()
-            .map(|(_, hosted)| hosted)
-            .collect();
+        let hosted: Vec<Hosted> = {
+            let mut state = self.state();
+            let hosted: Vec<Hosted> = state.programs.drain().map(|(_, hosted)| hosted).collect();
+            let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
+            state.closed.extend(processes);
+            hosted
+        };
         let ending: Vec<_> = hosted
             .into_iter()
             .filter_map(|hosted| {

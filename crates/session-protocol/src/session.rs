@@ -125,6 +125,17 @@ pub const NOT_ALLOWED: &str = "not_allowed";
 /// cannot compose, or a program it could not run.
 pub const NOT_STARTED: &str = "not_started";
 
+/// Every refusal code this version says. A later minor may add one; a client treats one it
+/// does not know as a refusal and shows its `why`.
+pub const REFUSALS: &[&str] = &[
+    UNKNOWN_COMMAND,
+    MALFORMED,
+    NO_SUCH_CHAT,
+    NO_SUCH_PROJECT,
+    NOT_ALLOWED,
+    NOT_STARTED,
+];
+
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
 /// some.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -543,10 +554,8 @@ impl Command {
             Command::Resize { .. } => Power::Resize,
             Command::Answer { .. } => Power::Answer,
             Command::Stop { .. } | Command::Close { .. } => Power::Stop,
-            Command::Start(_)
-            | Command::StartProgram(_)
-            | Command::HoldProject { .. }
-            | Command::LetGoOfProject { .. } => Power::Start,
+            Command::Start(_) | Command::StartProgram(_) => Power::Start,
+            Command::HoldProject { .. } | Command::LetGoOfProject { .. } => Power::Hold,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }

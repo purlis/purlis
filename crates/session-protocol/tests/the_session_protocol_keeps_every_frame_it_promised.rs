@@ -177,15 +177,20 @@ fn every_word_on_the_wire_is_snake_case() {
         }
         walk(&line, "");
     }
-    for code in [
-        session::UNKNOWN_COMMAND,
-        session::MALFORMED,
-        session::NO_SUCH_CHAT,
-        session::NO_SUCH_PROJECT,
-        session::NOT_ALLOWED,
-    ] {
+    for code in session::REFUSALS {
         assert!(snake(code), "{code}");
     }
+}
+
+#[test]
+fn every_refusal_code_this_version_says_is_recorded() {
+    let recorded: BTreeSet<String> = recorded()
+        .iter()
+        .filter_map(|line| line.pointer("/reply/refused/code"))
+        .filter_map(|code| code.as_str().map(str::to_owned))
+        .collect();
+    let said: BTreeSet<String> = session::REFUSALS.iter().map(|c| (*c).to_owned()).collect();
+    assert_eq!(recorded, said);
 }
 
 #[test]

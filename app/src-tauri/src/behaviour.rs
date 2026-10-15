@@ -380,6 +380,55 @@ fn a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key(target: &
     target.sessions.close(id).expect("it closes");
 }
 
+fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target) {
+    // What the window's own composition gives a chat started with nothing of its own: every
+    // target must give the same, whichever process starts it.
+    let expected = purlis_core::chatspec::spec(
+        std::env::vars_os(),
+        &purlis_core::chatspec::Terminal {
+            program: "/bin/sh",
+            args: &[],
+            cwd: None,
+            size: SIZE,
+            starting: purlis_core::chatenv::Starting {
+                harness: None,
+                operator: &[],
+                strip: &[],
+                set: &[],
+                git_hooks: None,
+                declared: &[],
+            },
+            number: 1,
+            reporting: None,
+        },
+    );
+    let value = |name: &str| {
+        expected
+            .env
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let (path, home) = (value("PATH"), value("HOME"));
+    assert!(!path.is_empty(), "a chat is given a PATH");
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_shell("read line; printf 'P[%s]H[%s].' \"$PATH\" \"$HOME\"; read line"),
+            &|_| {},
+        )
+        .expect("it starts");
+    let pane = Pane::on(target, id);
+
+    target.sessions.input(id, b"\r").expect("typed");
+
+    pane.shows(&format!("P[{path}]H[{home}]."));
+    target.sessions.close(id).expect("it closes");
+}
+
 /// Each behaviour, as a test of its own on every target.
 macro_rules! on_every_target {
     ($($behaviour:ident),* $(,)?) => {
@@ -408,4 +457,5 @@ on_every_target!(
     stopping_every_program_ends_each_and_keeps_their_tabs,
     a_closed_chat_is_ended_and_gone,
     a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key,
+    a_chat_starts_with_the_path_and_variables_the_window_gives_it,
 );

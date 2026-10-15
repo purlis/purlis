@@ -29,6 +29,7 @@ const PATIENCE: Duration = Duration::from_secs(10);
 
 struct Hosted {
     sessions: HostedSessions,
+    link: Arc<HostLink>,
     runs: StandIns,
     root: std::path::PathBuf,
     _dir: tempfile::TempDir,
@@ -67,11 +68,13 @@ fn hosted() -> Hosted {
             .await
             .unwrap()
     });
+    let link = Arc::new(link);
     let connection = Arc::new(Connection::default());
-    connection.ready(Arc::new(link));
+    connection.ready(Arc::clone(&link));
     let (dir, root) = a_project();
     Hosted {
         sessions: HostedSessions::new(connection, &root, None),
+        link,
         runs,
         root,
         _dir: dir,
@@ -343,4 +346,64 @@ fn ending_every_chat_closes_each_in_the_host() {
 
     assert!(hosted.sessions.running().is_empty());
     assert!(hosted.runs.ran().iter().all(|(_, run)| run.seen().stopped));
+}
+
+#[test]
+fn a_closed_chats_end_does_not_end_the_chat_put_back_under_its_number() {
+    let hosted = hosted();
+    let ends = Arc::new(Mutex::new(Vec::new()));
+    hosted.sessions.when_one_ends({
+        let ends = Arc::clone(&ends);
+        Arc::new(move |id, exit| ends.lock().unwrap().push((id, exit)))
+    });
+    hosted.runs.hold_on();
+    hosted
+        .sessions
+        .open(Some(5), &a_shell("true"), &|_| {})
+        .unwrap();
+    let closed = hosted.runs.last();
+    hosted.sessions.close(5).unwrap();
+
+    let again = hosted
+        .sessions
+        .open(Some(5), &a_shell("true"), &|_| {})
+        .unwrap();
+    closed.ends(Exit::Code(0));
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert_eq!(again, 5);
+    assert_eq!(
+        hosted.sessions.process_id(5),
+        Some(4242),
+        "the new one runs on"
+    );
+    assert!(
+        ends.lock().unwrap().is_empty(),
+        "{:?}",
+        ends.lock().unwrap()
+    );
+}
+
+#[test]
+fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
+    let hosted = hosted();
+    let (link, project) = hosted.sessions.link().unwrap();
+    // A program of the project's that the window does not know already has number 5.
+    link.call(Command::StartProgram(Box::new(StartProgram {
+        number: Some(5),
+        launch: Some(launch_of(&a_shell("true"), "/bin/sh".to_owned(), None)),
+        ..StartProgram::of(project, ProgramKind::Shell)
+    })))
+    .unwrap();
+
+    let refused = hosted
+        .sessions
+        .open(Some(5), &a_shell("true"), &|_| {})
+        .unwrap_err();
+
+    assert!(refused.contains("not 5"), "{refused}");
+    assert!(hosted.sessions.running().is_empty());
+    let started = hosted.runs.last();
+    until("the host closes it", || started.seen().stopped);
+    drop(hosted.link);
 }

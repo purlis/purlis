@@ -219,8 +219,6 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "detach_view",
             "subscribe",
             "unsubscribe",
-            "hold_project",
-            "let_go_of_project",
             "close",
             "readiness",
         ],

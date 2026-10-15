@@ -560,6 +560,19 @@ impl SessionHost for HostedSessions {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let started = match link.call(Command::StartProgram(Box::new(start))) {
+            // The host runs it under the number the window announced, or the window would key
+            // it under one its hooks do not carry: it is closed, and the start fails.
+            Ok(Answer::ProgramStarted {
+                program, number, ..
+            }) if number != Some(id) => {
+                self.forget_token(id);
+                link.send(Command::Close { program });
+                return Err(format!(
+                    "the session host started this chat as number {}, not {id}, so it was \
+                     closed; start it again",
+                    number.map_or_else(|| "none".to_owned(), |number| number.to_string())
+                ));
+            }
             Ok(Answer::ProgramStarted {
                 program, process, ..
             }) => (program, process),
@@ -591,11 +604,15 @@ impl SessionHost for HostedSessions {
             .as_ref()
             .map(|reporting| Arc::clone(&reporting.tokens));
         let running = Arc::clone(&self.running);
+        let ended = program.clone();
         link.when_it_ends(
             &program,
             Box::new(move |exit| {
-                if let Some(program) = lock(&running).get_mut(&id) {
-                    program.process = None;
+                // Only the program that ended: a chat closed and put back under its number is
+                // another program, which runs on.
+                match lock(&running).get_mut(&id) {
+                    Some(chat) if chat.id == ended => chat.process = None,
+                    _ => return,
                 }
                 if let (Some(tokens), Some(pid)) = (&tokens, pid) {
                     tokens.program_ended(id, pid);
@@ -689,14 +706,20 @@ impl SessionHost for HostedSessions {
             for view in &program.views {
                 link.undraw(*view);
             }
-            link.send(Command::Close {
+            // Answered once the host has let go of it, before its program has ended: its
+            // number is free for a chat put back under it.
+            if let Err(why) = link.call(Command::Close {
                 program: program.id,
-            });
+            }) {
+                tracing::warn!("purlis: the session host did not close chat {id}: {why}");
+            }
         }
         Ok(())
     }
 
+    /// Every program is stopped, which answers once it is gone, then closed.
     fn end_all(&self) {
+        self.to_every_program(|chat| Command::Stop { chat });
         self.to_every_program(|program| Command::Close { program });
         lock(&self.running).clear();
     }

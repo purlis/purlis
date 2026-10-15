@@ -35,3 +35,8 @@
 {"pushed":{"ended":{"program":"01J9ZQ5000000000000000000A","run":"01J9ZQ7000000000000000000C","exit":{"code":0}}}}
 {"pushed":{"ended":{"program":"01J9ZQ5000000000000000000A","exit":{"signal":"Hangup"}}}}
 {"pushed":{"view_ended":{"view":4,"why":"program_ended"}}}
+{"reply":{"re":41,"refused":{"code":"unknown_command","why":"this host does not know the command `fork`"}}}
+{"reply":{"re":42,"refused":{"code":"malformed","why":"a `resize` command this host cannot read"}}}
+{"reply":{"re":16,"refused":{"code":"no_such_project","why":"this session host does not hold project 01J9PRJCT00000000000000000"}}}
+{"reply":{"re":18,"refused":{"code":"not_allowed","why":"a `terminal` link may not `hold_project`"}}}
+{"reply":{"re":19,"refused":{"code":"not_started","why":"there is no persona nobody in this project"}}}

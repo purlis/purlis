@@ -46,8 +46,8 @@ pub mod standin;
 
 #[cfg(unix)]
 pub use hosting::{
-    Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting, Run, Running, Starting,
-    Terminals,
+    Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting, Run, Running, Terminals,
+    ToCompose,
 };
 /// The session protocol this host speaks, for a binary's [`Compose`].
 #[cfg(unix)]

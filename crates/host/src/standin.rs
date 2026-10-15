@@ -20,6 +20,8 @@ use crate::hosting::{Run, Running};
 /// What a stand-in program was asked, and what it wrote.
 #[derive(Default)]
 pub struct Seen {
+    /// It ignores being stopped: it ends only when told to ([`StandIn::ends`]).
+    pub holds_on: bool,
     pub typed: Vec<u8>,
     pub sizes: Vec<Size>,
     pub stopped: bool,
@@ -89,8 +91,14 @@ impl Running for StandIn {
     }
 
     fn stop(&self) {
-        self.seen().stopped = true;
-        self.ends(Exit::Signal("Interrupt".into()));
+        let holds_on = {
+            let mut seen = self.seen();
+            seen.stopped = true;
+            seen.holds_on
+        };
+        if !holds_on {
+            self.ends(Exit::Signal("Interrupt".into()));
+        }
     }
 
     fn process(&self) -> Option<u32> {
@@ -111,7 +119,7 @@ impl Running for StandIn {
 
 /// Runs every start as a stand-in, and keeps each, with the spec it was given.
 #[derive(Clone, Default)]
-pub struct StandIns(Arc<Mutex<Vec<(Spec, StandIn)>>>);
+pub struct StandIns(Arc<Mutex<Vec<(Spec, StandIn)>>>, Arc<Mutex<bool>>);
 
 impl StandIns {
     /// Every start it ran, with its spec, in order.
@@ -125,9 +133,17 @@ impl StandIns {
     }
 }
 
+impl StandIns {
+    /// The programs it runs from now on ignore being stopped ([`Seen::holds_on`]).
+    pub fn hold_on(&self) {
+        *self.1.lock().unwrap() = true;
+    }
+}
+
 impl Run for StandIns {
     fn run(&self, spec: Spec) -> Result<Arc<dyn Running>, String> {
         let program = StandIn::default();
+        program.seen().holds_on = *self.1.lock().unwrap();
         self.0.lock().unwrap().push((spec, program.clone()));
         Ok(Arc::new(program))
     }

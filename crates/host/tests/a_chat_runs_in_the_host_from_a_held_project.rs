@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use purlis_host::standin::StandIns;
-use purlis_host::{Compose, Hosting, Starting, Window};
+use purlis_host::{Compose, Hosting, ToCompose, Window};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::local::Chats;
@@ -36,7 +36,7 @@ static HELD: std::sync::LazyLock<Credentials> =
 struct Echo;
 
 impl Compose for Echo {
-    fn compose(&self, starting: &Starting<'_>) -> Result<Spec, String> {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
         if starting.start.persona.as_deref() == Some("nobody") {
             return Err("there is no persona nobody in this project".into());
         }
@@ -59,6 +59,19 @@ struct Linked {
 async fn linked() -> Linked {
     let runs = StandIns::default();
     let hosting = Hosting::running_with(Echo, runs.clone());
+    let (client, views, events) = another_window(&hosting).await;
+    Linked {
+        client,
+        views,
+        events,
+        runs,
+        hosting,
+        project: tempfile::tempdir().unwrap(),
+    }
+}
+
+/// Another `local-ui` link to `hosting`.
+async fn another_window(hosting: &Hosting) -> (Client, Acceptor, Events) {
     let (a, b) = duplex(256 * 1024);
     let (client, served) = tokio::join!(
         link::connect(
@@ -70,15 +83,7 @@ async fn linked() -> Linked {
         link::serve_any(b, session::speaks(), &HELD)
     );
     tokio::spawn(session::serve(served.unwrap(), hosting.clone(), None));
-    let (client, views, events) = Client::new(client.unwrap());
-    Linked {
-        client,
-        views,
-        events,
-        runs,
-        hosting,
-        project: tempfile::tempdir().unwrap(),
-    }
+    Client::new(client.unwrap())
 }
 
 impl Linked {
@@ -347,7 +352,15 @@ async fn a_closed_program_is_ended_and_forgotten() {
 
     linked.client.close(&program).await.unwrap();
 
-    assert!(linked.runs.last().seen().stopped);
+    let program_ran = linked.runs.last();
+    let deadline = std::time::Instant::now() + PATIENCE;
+    while !program_ran.seen().stopped {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the host never ended it"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
     assert!(linked.client.list().await.unwrap().is_empty());
     let refused = linked.client.write(&program, b"x").await.unwrap_err();
     assert_eq!(
@@ -370,4 +383,128 @@ async fn every_hosted_program_is_inside_a_chat_to_the_admission_check() {
     );
     let windowed = Hosting::running_with(Echo, StandIns::default()).started_by(Some(Window(77)));
     assert_eq!(windowed.holder(), Some(77));
+}
+
+#[tokio::test]
+async fn a_closed_chats_number_is_free_once_the_close_is_answered() {
+    let linked = linked().await;
+    linked.hold().await;
+    let first = linked
+        .client
+        .start_program_told(StartProgram {
+            number: Some(5),
+            ..a_harness()
+        })
+        .await
+        .unwrap();
+
+    linked.client.close(&first.program).await.unwrap();
+    let again = linked
+        .client
+        .start_program_told(StartProgram {
+            number: Some(5),
+            ..a_harness()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(again.number, Some(5));
+}
+
+#[tokio::test]
+async fn a_closed_programs_process_stays_inside_a_chat_to_the_admission_check() {
+    let linked = linked().await;
+    linked.hold().await;
+    let program = linked.client.start_program(a_harness()).await.unwrap();
+
+    linked.client.close(&program).await.unwrap();
+
+    assert!(linked.client.list().await.unwrap().is_empty());
+    assert_eq!(
+        linked.hosting.programs(),
+        [4242],
+        "what it started may outlive it in its session"
+    );
+}
+
+#[tokio::test]
+async fn a_link_lets_go_only_of_its_own_hold_and_its_holds_end_with_it() {
+    let linked = linked().await;
+    linked.hold().await;
+    let (other, _views, _events) = another_window(&linked.hosting).await;
+
+    let refused = other.let_go_of_project(PROJECT).await.unwrap_err();
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_PROJECT)
+    );
+    linked
+        .client
+        .start_program(a_harness())
+        .await
+        .expect("still held");
+
+    let Linked {
+        client, hosting, ..
+    } = linked;
+    drop(client);
+    let deadline = std::time::Instant::now() + PATIENCE;
+    loop {
+        match other.start_program(a_harness()).await {
+            Err(refused)
+                if refused.refusal().map(|r| r.code.as_str()) == Some(session::NO_SUCH_PROJECT) =>
+            {
+                break;
+            }
+            _ => assert!(
+                std::time::Instant::now() < deadline,
+                "the hold outlived its link"
+            ),
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    drop(hosting);
+}
+
+#[tokio::test]
+async fn a_held_project_is_not_moved_by_another_hold() {
+    let linked = linked().await;
+    linked.hold().await;
+    let elsewhere = tempfile::tempdir().unwrap();
+
+    let refused = linked
+        .client
+        .hold_project(PROJECT, elsewhere.path().to_str().unwrap())
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED)
+    );
+    let listed = {
+        linked.client.start_program(a_harness()).await.unwrap();
+        linked.client.list().await.unwrap()
+    };
+    assert_eq!(
+        listed[0].project_path.as_deref(),
+        linked.project.path().to_str()
+    );
+}
+
+#[tokio::test]
+async fn ending_the_host_ends_every_program_it_runs() {
+    let linked = linked().await;
+    linked.hold().await;
+    for _ in 0..3 {
+        linked.client.start_program(a_harness()).await.unwrap();
+    }
+
+    let hosting = linked.hosting.clone();
+    tokio::task::spawn_blocking(move || hosting.end_all())
+        .await
+        .unwrap();
+
+    assert!(linked.runs.ran().iter().all(|(_, run)| run.seen().stopped));
+    assert!(linked.client.list().await.unwrap().is_empty());
 }
