@@ -55,16 +55,8 @@ fn daily() -> tempfile::TempDir {
 }
 
 fn copy(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).expect("a directory");
-    for entry in std::fs::read_dir(from).expect("a readable fixture") {
-        let entry = entry.expect("an entry");
-        let path = entry.path();
-        if path.is_dir() {
-            copy(&path, &to.join(entry.file_name()));
-        } else {
-            std::fs::copy(&path, to.join(entry.file_name())).expect("a copy");
-        }
-    }
+    // Fixtures are tracked under neutral names (#2089).
+    purlis_core::testfixture::copy(from, to).unwrap();
 }
 
 fn root(tmp: &tempfile::TempDir) -> PathBuf {
@@ -1738,6 +1730,68 @@ fn the_list_prints_each_task_s_persona_name_place_state_and_age() {
 }
 
 #[test]
+fn a_read_prints_what_the_task_said_and_ran_and_a_refused_one_says_why() {
+    // #1981: the app's answer, printed whole and quoted, under purlis's own sentence.
+    let tmp = daily();
+    let (app, _reading, _asked) = an_app_answering_tasks(&tmp, |what| match what {
+        What::Output { of: 9 } => Answer::Task(Box::new(Answered::Output {
+            of: 9,
+            name: "check the queue".to_owned(),
+            finals: vec!["Forty are stuck.".to_owned()],
+            ran: vec![purlis_core::dispatched::Ran::shown(
+                "kubectl get pods",
+                Some(0),
+                false,
+            )],
+        })),
+        What::Output { of } => Answer::No {
+            why: purlis_core::dispatched::not_yours(*of),
+        },
+        _ => Answer::Task(Box::new(Answered::Noted)),
+    });
+
+    let out = purlis_as(
+        &root(&tmp),
+        Some(&app),
+        ASKING,
+        &["dispatch", "read", "9"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!(
+            "{}\n",
+            purlis_core::dispatched::output_text(
+                "check the queue",
+                9,
+                &["Forty are stuck.".to_owned()],
+                &[purlis_core::dispatched::Ran::shown(
+                    "kubectl get pods",
+                    Some(0),
+                    false
+                )],
+            )
+        )
+    );
+    assert!(text(&out.stdout).contains("\n> Forty are stuck.\n"));
+
+    let out = purlis_as(
+        &root(&tmp),
+        Some(&app),
+        ASKING,
+        &["dispatch", "read", "4"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("chat 4 is not a task this chat dispatched"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
 fn a_cancel_says_what_happens_next_and_a_refused_one_says_why() {
     let tmp = daily();
     let (app, _reading, _asked) = an_app_answering_tasks(&tmp, |what| match what {
@@ -1865,8 +1919,9 @@ fn a_follow_up_names_the_task_and_carries_the_text_and_nothing_about_the_sender(
     assert_eq!(out.status.code(), Some(0));
     assert_eq!(
         text(&out.stdout),
-        "purlis dispatch: follow-up sent to 'check the queue' (chat 9). It reaches that chat's \
-         next turn, quoted as data from this chat.\n"
+        "purlis dispatch: follow-up sent to 'check the queue' (chat 9), quoted as data from \
+         this chat. If it is at rest, purlis starts its turn on it now; if it is mid-turn, it \
+         reads it when that turn ends.\n"
     );
     assert_eq!(
         the_task_asks(&asked)

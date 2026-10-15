@@ -198,6 +198,10 @@ pub enum Outcome {
     /// the Close of a task that had not reported. The app's own record, and not a failure of
     /// the work either.
     Stopped,
+    /// **A report purlis made from its last message** (#1981): its turns ended without a
+    /// report, it was asked once, and purlis sent what it last said in its place. The app's
+    /// own record. A later report of the task's own takes its place.
+    LastMessage,
 }
 
 impl Outcome {
@@ -208,6 +212,8 @@ impl Outcome {
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
             Self::Stopped => "stopped",
+            // One word, as every other: what the window keys how it reads on.
+            Self::LastMessage => "last_message",
         }
     }
 }
@@ -1079,6 +1085,9 @@ pub enum Finished {
     StoppedWithTheTaskAbove,
     /// purlis stopped it because its session reached its token limit (#1512, #1457).
     StoppedAtItsTokenLimit,
+    /// Its turns ended without a report, and purlis sent its last message in its place
+    /// (#1981).
+    FromItsLastMessage,
 }
 
 impl Finished {
@@ -1119,6 +1128,7 @@ impl Finished {
             Outcome::Blocked => Self::Blocked,
             Outcome::Stopped => Self::ClosedByThePerson,
             Outcome::Failed => Self::Failed,
+            Outcome::LastMessage => Self::FromItsLastMessage,
         })
     }
 
@@ -1146,6 +1156,7 @@ impl Finished {
             Self::StoppedAtItsTimeLimit => "stopped at its time limit",
             Self::StoppedWithTheTaskAbove => "stopped with the task above it",
             Self::StoppedAtItsTokenLimit => "stopped at its session's token limit",
+            Self::FromItsLastMessage => crate::handback::LAST_MESSAGE,
         }
     }
 
@@ -1163,6 +1174,7 @@ impl Finished {
             Self::StoppedAtItsTimeLimit => "stopped_at_limit",
             Self::StoppedWithTheTaskAbove => "stopped_with_above",
             Self::StoppedAtItsTokenLimit => "stopped_at_token_limit",
+            Self::FromItsLastMessage => "last_message",
         }
     }
 

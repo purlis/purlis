@@ -71,6 +71,10 @@ pub fn normalised(what: GrantWhat, target: &str) -> Option<String> {
         GrantWhat::Write | GrantWhat::Socket | GrantWhat::Service => {
             (!target.is_empty()).then(|| target.to_owned())
         }
+        // A service on this Mac by its one port, as the core judges one (qw384).
+        GrantWhat::Port => purlis_core::sandbox::localport::port(target)
+            .ok()
+            .map(|port| port.to_string()),
         // Neither is ever a block's: each is granted from its own Notice (#1430, #1362).
         GrantWhat::Vault | GrantWhat::PersonaHosts => None,
     }
@@ -399,6 +403,7 @@ pub fn held_of(told: &crate::hooks::ChatBlocked) -> Option<HeldBlock> {
         crate::hooks::BlockOffer::Write => GrantWhat::Write,
         crate::hooks::BlockOffer::Socket => GrantWhat::Socket,
         crate::hooks::BlockOffer::Service => GrantWhat::Service,
+        crate::hooks::BlockOffer::Port => GrantWhat::Port,
         // Nothing to allow yet, and something the person may choose.
         _ => {
             return told
@@ -410,6 +415,12 @@ pub fn held_of(told: &crate::hooks::ChatBlocked) -> Option<HeldBlock> {
         None if what == GrantWhat::Host => {
             Some(HeldBlock::unnamed_host(&told.operation, &told.kind))
         }
+        // A port the refusal did not name (qw384): the person types it, as a host.
+        None if what == GrantWhat::Port => Some(HeldBlock::unnamed(
+            &told.operation,
+            &told.kind,
+            GrantWhat::Port,
+        )),
         None => None,
         Some(target) => Some(HeldBlock {
             operation: told.operation.clone(),
@@ -450,7 +461,9 @@ pub fn shown_one(blocks: &Blocks, session: u32, shown: &BlockShown) -> Result<He
         what,
         target,
     });
-    let typed = (what == GrantWhat::Host).then(|| HeldBlock::unnamed_host(operation, kind));
+    // A host or a port the person typed, where the block named none (qw384 for a port).
+    let typed = matches!(what, GrantWhat::Host | GrantWhat::Port)
+        .then(|| HeldBlock::unnamed(operation, kind, what));
     named
         .into_iter()
         .chain(typed)

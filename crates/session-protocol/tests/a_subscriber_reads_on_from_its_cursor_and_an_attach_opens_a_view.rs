@@ -11,6 +11,7 @@ use bytes::Bytes;
 use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::link;
 use purlis_session_protocol::link::Acceptor;
+use purlis_session_protocol::session::ViewKind;
 use purlis_session_protocol::session::{
     self, Answer, Attached, Client, Command, Event, Events, Host, Peer, Pushed, Refusal, Since,
     Told,
@@ -48,8 +49,8 @@ struct Logged {
 impl Host for Logged {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         match command {
-            Command::Attach { chat } if chat == "01J9ZQ3V7K8M2N4P6R8T0V2X4Z" => {
-                let feed = Attacher::new(peer.views().clone(), Limits::default())
+            Command::AttachView { program: chat, .. } if chat == "01J9ZQ3V7K8M2N4P6R8T0V2X4Z" => {
+                let feed = Attacher::new(peer.opener().clone(), Limits::default())
                     .attach(ViewId(3), Bytes::from_static(b"$ "))
                     .await
                     .map_err(|e| Refusal {
@@ -62,6 +63,7 @@ impl Host for Logged {
                     view: 3,
                     cols: 80,
                     rows: 24,
+                    kind: Some(ViewKind::Terminal),
                 }))
             }
             _ => Err(Refusal {
@@ -174,7 +176,8 @@ async fn an_attach_answers_with_the_view_it_opened_beside_the_lane() {
         Attached {
             view: 3,
             cols: 80,
-            rows: 24
+            rows: 24,
+            kind: None,
         }
     );
     let mut reader = Viewer::default()

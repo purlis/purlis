@@ -135,7 +135,7 @@ pub type Handler = fn(&Hook) -> Answer;
 pub fn handler(name: &str) -> Option<Handler> {
     Some(match name {
         "pretooluse-read" => toolhooks::pretooluse_read,
-        "pretooluse-edit" => toolhooks::pretooluse_edit,
+        "pretooluse-edit" => pretooluse_edit,
         "pretooluse-dispatch" => toolhooks::pretooluse_dispatch,
         "posttooluse" => toolhooks::posttooluse,
         "posttooluse-skill" => toolhooks::posttooluse_skill,
@@ -144,6 +144,15 @@ pub fn handler(name: &str) -> Option<Handler> {
         // took once it has ([`told_after`]), never from here.
         BLOCKED | BLOCKED_ON_FAILURE => says_nothing,
         _ => return None,
+    })
+}
+
+/// `pretooluse-edit`: the state-directory guard, and a sandboxed Claude Code chat's edit of
+/// purlis's own configuration handed to the app as a proposed change (#1975), which the window
+/// shows the person to apply ([`toolhooks::pretooluse_edit_proposing`]).
+fn pretooluse_edit(hook: &Hook) -> Answer {
+    toolhooks::pretooluse_edit_proposing(hook, &|ask| {
+        crate::brokered::proposal_taken(purlis_core::hookwire::Ask::Propose(Box::new(ask)))
     })
 }
 
@@ -248,8 +257,11 @@ pub fn blocks(
     let here = Where::here();
     let cwd = absolute(payload["cwd"].as_str().map(str::to_owned)).unwrap_or_else(|| chat.clone());
     let home = absolute(env("HOME"));
+    let harness = env(purlis_core::hookwire::HARNESS_ENV);
+    // A wrapped harness's sandbox writes no violation report: one in its result is printed.
+    let reported = purlis_core::sandboxblock::as_its_harness_reports(payload, harness.as_deref());
     let found = detect(
-        payload,
+        &reported,
         &Place {
             root: &here.root,
             chat: &chat,
@@ -258,10 +270,7 @@ pub fn blocks(
         },
     );
     // A chat purlis wraps has its refused hosts told by purlis's own proxy, by name (#1663).
-    purlis_core::sandboxblock::the_hooks_own(
-        found,
-        env(purlis_core::hookwire::HARNESS_ENV).as_deref(),
-    )
+    purlis_core::sandboxblock::the_hooks_own(found, harness.as_deref())
 }
 
 /// The decision an answer gave: a denial is one; a line said is whatever permission it names,

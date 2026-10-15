@@ -204,6 +204,11 @@
       "why": "It writes the window's tabs, which no lane's read draws."
     },
     {
+      "at": "proposals.rs apply_in",
+      "writes": "the project's manifest and its local settings",
+      "by": ["applyProposedChange"]
+    },
+    {
       "at": "sandboxing.rs acknowledge",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["acknowledgeProjectHosts"]
@@ -389,6 +394,12 @@
       "at": "settings.rs save",
       "writes": "the project's manifest and its local settings",
       "by": ["choosePlaneMode", "saveProjectSettings"]
+    },
+    {
+      "at": "settings.rs seen_by_you",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["saveProjectSettings", "moveProjectSettings"],
+      "why": "It records the hosts and presets this window wrote as seen by the person who wrote them, through a method call (`pending.seen_by_you(`), which the guard does not follow: its commands are named here by hand."
     },
     {
       "at": "taskblocks.rs allow_sandbox_block_for_tasks",

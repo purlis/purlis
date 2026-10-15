@@ -733,3 +733,59 @@ fn a_host_allowed_already_is_found_at_the_scope_that_holds_it() {
         None
     );
 }
+
+/// qw384: a service on this Mac allowed for one chat reaches that chat's start alone, as one
+/// port: its sandbox connects to it directly, and its proxy carries exactly that address and
+/// port of this machine, never another.
+#[test]
+fn a_port_on_this_mac_allowed_for_a_chat_reaches_its_start_as_that_port_alone() {
+    let project = project();
+    let mut chat = Grants::default();
+    chat.add(&What::Port(50795));
+    chat.add(&What::Port(50795));
+    assert_eq!(chat.ports, vec![50795]);
+    assert!(!chat.is_empty());
+
+    let granted = compiled_with(&project, Os::MacOs, &chat);
+    assert_eq!(granted.widened.ports, vec![50795]);
+    let own: [std::net::IpAddr; 0] = [];
+    let loopback: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+    let v6: std::net::IpAddr = "::1".parse().unwrap();
+    assert!(granted.reach.lists_exactly(loopback, 50795));
+    assert!(granted.reach.lists_exactly(v6, 50795));
+    assert!(
+        granted
+            .reach
+            .decide("localhost", 50795, &[443], &own)
+            .carries()
+    );
+    assert!(!granted.reach.lists_exactly(loopback, 50796));
+    // Never a host a harness's own allowlist names.
+    assert!(!granted.hosts.iter().any(|host| host.contains("50795")));
+
+    let mut own_rules = crate::sandbox::seatbelt::Own::default();
+    crate::sandbox::seatbelt::widen(&mut own_rules, &granted.widened).expect("widens");
+    assert!(
+        own_rules
+            .after
+            .contains(&"(allow network-outbound (remote ip \"localhost:50795\"))".to_owned())
+    );
+
+    let other = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert!(other.widened.ports.is_empty());
+    assert!(!other.reach.lists_exactly(loopback, 50795));
+}
+
+#[test]
+fn a_port_grant_is_told_and_audited_by_its_number() {
+    let what = What::Port(50795);
+    assert_eq!(what.word(), "port");
+    assert_eq!(what.target(), "50795");
+    assert!(what.machine_only());
+    assert!(!what.machine_wide());
+    assert_eq!(
+        what.to_string(),
+        "connecting to the service on this Mac at port 50795"
+    );
+    assert!(told(&what, Level::Chat).contains("at port `50795` for this chat"));
+}

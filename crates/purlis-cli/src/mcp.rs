@@ -126,7 +126,15 @@ impl ServerHandler for Server {
             return Ok(done(blocking(move || workspace_write(&name, &args)).await));
         }
         if name == chattools::PERSONA_WHERE {
-            return Ok(done(blocking(crate::whereworking::tool).await));
+            let (said, attached) = tokio::task::spawn_blocking(crate::whereworking::tool)
+                .await
+                .unwrap_or_else(|e| {
+                    (
+                        Err(format!("the tool failed inside purlis: {e}")),
+                        Vec::new(),
+                    )
+                });
+            return Ok(done_with(said, attached));
         }
         if name == chattools::DISPATCH {
             return Ok(done(blocking(move || dispatch(&args)).await));
@@ -135,6 +143,9 @@ impl ServerHandler for Server {
             return Ok(done(
                 blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why))).await,
             ));
+        }
+        if name == chattools::DISPATCH_READ {
+            return Ok(done(blocking(move || dispatch_read(&args)).await));
         }
         if name == chattools::DISPATCH_REPORT {
             return Ok(done(blocking(move || dispatch_report(&args)).await));
@@ -210,8 +221,8 @@ fn session_record(args: &serde_json::Map<String, serde_json::Value>) -> Result<S
 ///
 /// **This server runs outside the chat's sandbox, so in a chat the app started it never writes
 /// itself.** It writes only where there is no app that could have: no chat, or an app that has
-/// gone. A harness that hands it no connection to the app (Codex), an app that dropped the ask,
-/// or one that did not answer, is refused in a sentence: a write made here would be one no
+/// gone. A server handed no connection to the app, an app that dropped the ask, or one that did
+/// not answer, is refused in a sentence: a write made here would be one no
 /// sandbox bounds, no rate holds and the trace does not credit.
 fn persona_remember(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     use crate::brokered::Forwarded;
@@ -323,9 +334,9 @@ fn workspace_write(
 /// ([`crate::dispatch::send`]), so the app that started the chat decides and starts the persona
 /// chat (#1436). Answered with what the command prints; a refusal is a tool error.
 ///
-/// **Only the app starts a chat**, so where this server has no connection to it (under Codex,
-/// which hands it only [`chattools::SCOPE_ENV`]) nothing is started, and the answer says to run
-/// the command in the chat.
+/// **Only the app starts a chat**, so where this server has no connection to it (it was handed
+/// no [`chattools::CONNECTION_ENV`]) nothing is started, and the answer says to run the command
+/// in the chat.
 fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let (to, name, brief) = chattools::dispatch_args(args)?;
     let profile = chattools::dispatch_profile(args)?;
@@ -348,6 +359,13 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
 
 /// `dispatch_report`: the one operation `purlis dispatch report` performs
 /// ([`crate::dispatch::report`]).
+/// `dispatch_read` (#2084): what task `chat` said last and the commands it ran, as
+/// `purlis dispatch read` prints it.
+fn dispatch_read(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
+    let chat = chattools::dispatch_read_args(args)?;
+    crate::dispatch::read(chat).map_err(|why| in_the_chat(&why))
+}
+
 fn dispatch_report(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let (outcome, text, changed) = chattools::dispatch_report_args(args)?;
     crate::dispatch::report(&outcome, &text, changed.as_deref()).map_err(|why| in_the_chat(&why))
@@ -383,9 +401,38 @@ fn tool(spec: &chattools::Tool) -> Tool {
 
 /// A tool's answer, or its refusal as an error the model reads.
 fn done(answered: Result<String, String>) -> CallToolResponse {
-    match answered {
-        Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
-        Err(why) => CallToolResult::error(vec![ContentBlock::text(why)]),
+    done_with(answered, Vec::new())
+}
+
+/// [`done`], with what the app attached to its answer after the text (#1996): an image as an
+/// image, anything else as an embedded resource of its media type, each base64 as MCP carries
+/// bytes.
+fn done_with(
+    answered: Result<String, String>,
+    attached: Vec<purlis_core::hookwire::framed::Attached>,
+) -> CallToolResponse {
+    let (ok, text) = match answered {
+        Ok(text) => (true, text),
+        Err(why) => (false, why),
+    };
+    let mut content = vec![ContentBlock::text(text)];
+    for (n, one) in attached.into_iter().enumerate() {
+        let data = one.base64();
+        content.push(if one.media_type.starts_with("image/") {
+            ContentBlock::image(data, one.media_type)
+        } else {
+            ContentBlock::resource(rmcp::model::ResourceContents::BlobResourceContents {
+                uri: format!("purlis:attached/{}", n + 1),
+                mime_type: Some(one.media_type),
+                blob: data,
+                meta: None,
+            })
+        });
+    }
+    if ok {
+        CallToolResult::success(content)
+    } else {
+        CallToolResult::error(content)
     }
     .into()
 }
@@ -619,7 +666,7 @@ impl Drop for Asked<'_> {
 }
 
 /// Says the wait or its end on the chat's hook socket, where this server was handed one. A
-/// server with no socket (Codex hands it none) says nothing, and the question still asks.
+/// server with no socket says nothing, and the question still asks.
 fn tell_the_app(waits: bool) {
     use purlis_core::hookwire;
     let Some(socket) = purlis_core::envvar::var_os(hookwire::SOCKET_ENV).filter(|s| !s.is_empty())
@@ -801,5 +848,34 @@ mod tests {
             run(blocking(|| Ok("done".to_owned()))),
             Ok("done".to_owned())
         );
+    }
+
+    #[test]
+    fn what_the_app_attaches_reaches_the_model_after_the_text_an_image_as_an_image() {
+        use purlis_core::hookwire::framed::Attached;
+        let CallToolResponse::Complete(result) = done_with(
+            Ok("where it works".to_owned()),
+            vec![
+                Attached {
+                    media_type: "image/png".to_owned(),
+                    bytes: vec![0, 255, 10],
+                },
+                Attached {
+                    media_type: "application/pdf".to_owned(),
+                    bytes: vec![1],
+                },
+            ],
+        ) else {
+            panic!("a complete answer");
+        };
+        assert_eq!(result.is_error, Some(false));
+        let content = serde_json::to_value(&result.content).expect("JSON");
+        assert_eq!(content[0]["text"], "where it works");
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["data"], "AP8K");
+        assert_eq!(content[1]["mimeType"], "image/png");
+        assert_eq!(content[2]["type"], "resource");
+        assert_eq!(content[2]["resource"]["blob"], "AQ==");
+        assert_eq!(content[2]["resource"]["mimeType"], "application/pdf");
     }
 }

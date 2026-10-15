@@ -1309,6 +1309,31 @@ pub enum Ask {
     /// answers [`Answer::No`] with the sentence that says the person has been asked, or why
     /// they were not. No ticket, for a record's reason: nothing is made or removed by the ask.
     Removal(RemovalAsk),
+    /// Show the person a change to one of purlis's own configuration files, which only they
+    /// apply, in the window (#1975, [`crate::proposed`]): what a Claude Code chat's edit of such
+    /// a file and `purlis propose` hand over. **The app writes nothing for it**: it holds the
+    /// proposal for the person and answers [`Answer::No`] with the sentence that says they have
+    /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
+    /// file's whole new content.
+    Propose(Box<ProposeAsk>),
+}
+
+/// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
+/// in the project, the base the change was worked out against, and the change. Nothing else travels: whose it is is the app's record of the chat whose token the
+/// line carries, and what the person sees as the file now is the app's own read of it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The file, relative to the project root, as [`crate::proposed::proposable`] took it.
+    pub path: String,
+    /// The SHA-256 of the file as the change was worked out against it, in hex; none where it
+    /// was not there. Checked at Apply; never trusted to show what the file holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// What it changes: the tool's own edits, which the app makes to the file as it reads it,
+    /// or the file's whole new content.
+    pub change: crate::proposed::Change,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -1467,12 +1492,21 @@ pub enum Stage {
     Paths(Vec<String>),
 }
 
-/// What a [`GitAsk`] asks for: one of the two commands, with its arguments.
+/// What a [`GitAsk`] asks for: one of the commands, with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitWork {
     /// `purlis clone <repo>…`.
     Clone { repos: Vec<String> },
+    /// `purlis workspace create <name> <repo>… [--vision]`: the workspace the ask names, which
+    /// must not be there yet, made as a chat's plain create makes one, and the repos cloned
+    /// into it (qw387). The one git ask that names a workspace the chat does not work in, and
+    /// only one this ask makes.
+    Create {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vision: Option<String>,
+        repos: Vec<String>,
+    },
     /// `purlis worktree add <repo> <piece> [--branch]`.
     WorktreeAdd {
         repo: String,
@@ -1480,6 +1514,49 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<String>,
     },
+    /// `purlis worktree add <repo> <piece> [--base <branch>] [--branch]` (qw387): cut from
+    /// `base`, a branch of the clone by name, or `HEAD` for the clone's HEAD; with no base, from
+    /// the branch the remote names its default where the clone has one. A kind of its own, so
+    /// an app that does not know it answers nothing rather than cutting from the clone's HEAD.
+    WorktreeCut {
+        repo: String,
+        piece: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// `purlis worktree update [--base <branch>] [--continue | --abort]` (qw387): the branch
+    /// folder `<repo>/<piece>` brought up to its base, which the chat stands in or above.
+    WorktreeUpdate {
+        repo: String,
+        piece: String,
+        step: UpdateStep,
+    },
+    /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
+    /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
+    WorktreePush {
+        repo: String,
+        piece: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        lease: bool,
+    },
+}
+
+/// What a [`GitWork::WorktreeUpdate`] does.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateStep {
+    /// Fetch, bring the base up to its remote where it may be, and rebase onto it: the base
+    /// named, or the one recorded when the piece was cut.
+    Start {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// Stage the files a stopped rebase named, once resolved, and go on.
+    Continue,
+    /// Put the branch back where it was before the rebase began.
+    Abort,
 }
 
 /// A session record a chat asks the app to write for it, as `purlis session record` and the
@@ -1888,9 +1965,35 @@ enum Line {
     Blocked(SandboxBlocked),
     /// After every other kind: it requires `doing`, which none of them carries.
     Doing(Doing),
+    /// After every other kind: it requires `turn_output`, which none of them carries.
+    Output(TurnOutput),
     /// After every other kind: it requires `secret_exec`, which none of them carries. Held on
     /// its connection for as long as the command runs (#1407).
     SecretExec(crate::secrets::brokered::Ask),
+    /// After every other kind: it requires `frames`, which none of them carries. The
+    /// connection carries frames from the app's acceptance on ([`framed`], #1996).
+    Frames(framed::Hello),
+}
+
+impl Ask {
+    /// The chat this ask says it comes from, which its token has to be the token of.
+    pub fn chat(&self) -> u32 {
+        match self {
+            Self::Ticket { chat } => *chat,
+            Self::Open(open) => open.chat,
+            Self::Report(back) => back.chat,
+            Self::SessionRecord(record) => record.chat,
+            Self::Write(write) => write.chat,
+            Self::Git(git) => git.chat,
+            Self::Commit(commit) => commit.chat,
+            Self::Vaults { chat } | Self::Keys { chat, .. } => *chat,
+            Self::WhereWorking(asks) => asks.chat,
+            Self::Dispatch(dispatch) => dispatch.chat,
+            Self::Task(asked) => asked.chat,
+            Self::Removal(removal) => removal.chat,
+            Self::Propose(proposed) => proposed.chat,
+        }
+    }
 }
 
 impl Line {
@@ -1898,18 +2001,7 @@ impl Line {
     fn chat(&self) -> u32 {
         match self {
             Self::Report(report) => report.chat,
-            Self::Ask(Ask::Ticket { chat }) => *chat,
-            Self::Ask(Ask::Open(open)) => open.chat,
-            Self::Ask(Ask::Report(back)) => back.chat,
-            Self::Ask(Ask::SessionRecord(record)) => record.chat,
-            Self::Ask(Ask::Write(write)) => write.chat,
-            Self::Ask(Ask::Git(git)) => git.chat,
-            Self::Ask(Ask::Commit(commit)) => commit.chat,
-            Self::Ask(Ask::Vaults { chat } | Ask::Keys { chat, .. }) => *chat,
-            Self::Ask(Ask::WhereWorking(asks)) => asks.chat,
-            Self::Ask(Ask::Dispatch(dispatch)) => dispatch.chat,
-            Self::Ask(Ask::Task(asked)) => asked.chat,
-            Self::Ask(Ask::Removal(removal)) => removal.chat,
+            Self::Ask(ask) => ask.chat(),
             Self::ByHand(notice) => notice.chat,
             Self::Saved(saved) => saved.chat,
             Self::Refused(refused) => refused.chat,
@@ -1918,7 +2010,9 @@ impl Line {
             Self::Touching(touching) => touching.chat,
             Self::Blocked(blocked) => blocked.chat,
             Self::Doing(doing) => doing.chat,
+            Self::Output(output) => output.chat,
             Self::SecretExec(ask) => ask.chat,
+            Self::Frames(hello) => hello.chat,
         }
     }
 }
@@ -2142,6 +2236,148 @@ pub struct Doing {
 /// What hears a [`Doing`]. Nothing is answered: the hook does not wait for it.
 pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 
+/// What a chat's turn ended saying (#1981): the harness's own last message of the turn, as its
+/// `Stop` hook is handed it. What a task that ended its turns without a report is reported
+/// from, as **a report purlis made from its last message**.
+///
+/// **The line itself is never recorded**, as a [`Doing`] is not: a line of its own, sent once
+/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for a task alone,
+/// until its next turn begins or its chat closes. The text is the chat's own words: the host
+/// masks what looks like a credential before it keeps any of it, and hands it on only quoted
+/// as data. **A report purlis makes from it is recorded, by design**: that masked text is the
+/// report, left for the chat that asked and kept on the task's dispatch record as any report is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TurnOutput {
+    /// The app's number for the chat the hook ran in, from [`CHAT_ENV`].
+    pub chat: u32,
+    /// What it said.
+    pub turn_output: Output,
+    /// The harness run the hook ran under (#1601), judged against the run the chat adopted: a
+    /// harness nested in the chat says nothing for it.
+    #[serde(default, skip_serializing_if = "Speaker::is_no_one")]
+    pub speaker: Speaker,
+}
+
+/// One thing a chat's turn put out ([`TurnOutput`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "is", rename_all = "snake_case")]
+pub enum Output {
+    /// The last message of a turn that has ended.
+    Final {
+        /// The message, cut to [`Output::MOST_BYTES`] by the hook.
+        text: String,
+    },
+    /// A shell command the turn ran, as its tool's hook heard it come back (#1981): what
+    /// `purlis dispatch read` lists of a task.
+    Ran {
+        /// The command line, cut to [`Output::MOST_COMMAND_BYTES`] by the hook.
+        command: String,
+        /// Its exit status, where the harness said one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit: Option<i32>,
+        /// Whether its harness said it failed, with or without a status.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        failed: bool,
+    },
+}
+
+impl Output {
+    /// The most bytes of a message the hook sends: a report's text is far shorter, and what is
+    /// kept is cut again to it.
+    pub const MOST_BYTES: usize = 16 * 1024;
+
+    /// The most bytes of a command line the hook sends.
+    pub const MOST_COMMAND_BYTES: usize = 1024;
+
+    /// The command a shell tool's post hook `word` heard come back, from its `payload`, or none
+    /// for any other hook or tool (#1981). `harness` is the chat's harness, by the word the
+    /// project calls it ([`HARNESS_ENV`]).
+    ///
+    /// **The status is the harness's word, where it says one**: opencode's (purlis's plugin
+    /// sends `exit_code`); Claude Code's, whose `PostToolUse` fires for a command that
+    /// succeeded and `PostToolUseFailure` for one that did not, with "Exit code N" in its
+    /// error. A command left running in the background has no status yet.
+    pub fn of_ran(word: &str, payload: &serde_json::Value, harness: Option<&str>) -> Option<Self> {
+        if !word.starts_with("posttooluse") {
+            return None;
+        }
+        if !crate::doing::is_a_command(payload["tool_name"].as_str()?) {
+            return None;
+        }
+        let input = &payload["tool_input"];
+        let command = match &input["command"] {
+            serde_json::Value::String(line) => line.trim().to_owned(),
+            serde_json::Value::Array(words) => words
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => return None,
+        };
+        if command.is_empty() {
+            return None;
+        }
+        let mut end = command.len().min(Self::MOST_COMMAND_BYTES);
+        while !command.is_char_boundary(end) {
+            end -= 1;
+        }
+        let failure = word.starts_with("posttoolusefailure");
+        let background = input["run_in_background"].as_bool() == Some(true);
+        let exit = payload["exit_code"]
+            .as_i64()
+            .and_then(|code| i32::try_from(code).ok())
+            .or_else(|| {
+                failure
+                    .then(|| payload["error"].as_str().and_then(exit_code_in))
+                    .flatten()
+            })
+            .or_else(|| {
+                (!failure && !background && harness == Some(BACKGROUND_TASKS_HARNESS)).then_some(0)
+            });
+        Some(Self::Ran {
+            command: command[..end].to_owned(),
+            exit,
+            failed: failure || exit.is_some_and(|code| code != 0),
+        })
+    }
+
+    /// The last message `text` of a turn, cut on a character to [`Self::MOST_BYTES`], or none
+    /// for one with nothing in it.
+    pub fn last_message(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let mut end = text.len().min(Self::MOST_BYTES);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        Some(Self::Final {
+            text: text[..end].to_owned(),
+        })
+    }
+
+    /// The last message a `Stop` hook's `payload` hands it, where the harness hands one: Claude
+    /// Code's and Codex's `last_assistant_message`, which purlis's opencode plugin sends too.
+    pub fn of_stop(payload: &str) -> Option<Self> {
+        let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
+        Self::last_message(read.get("last_assistant_message")?.as_str()?)
+    }
+}
+
+/// The status in a Claude Code `PostToolUseFailure` error: "Exit code N" at its start.
+fn exit_code_in(error: &str) -> Option<i32> {
+    let rest = error.trim_start().strip_prefix("Exit code ")?;
+    let digits: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
+    digits.parse().ok()
+}
+
+/// What hears a [`TurnOutput`]. Nothing is answered: the hook does not wait for it.
+pub type OutputHeard = Box<dyn Fn(TurnOutput) + Send + Sync + 'static>;
+
 /// A chat's sandbox blocked an operation (#1338): what the window shows as a notice on the
 /// chat's tab, and what `purlis doctor` counts.
 ///
@@ -2178,6 +2414,12 @@ pub struct SandboxBlocked {
     /// to answer. A chat can send either; what `true` buys is a quieter Notice on its own tab.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_back: bool,
+    /// **A port the command's own printed words name** for a refused service on this Mac whose
+    /// [`Self::target`] is none (qw384, [`crate::sandboxblock::printed_port`]): only ever
+    /// pre-filled in the Notice's port field, said to come from the command's output for the
+    /// person to check, and judged again as a grant before anything is allowed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested: Option<String>,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -2222,6 +2464,8 @@ pub struct Hearing {
     pub blocked: Blocked,
     /// Every [`Doing`].
     pub doing: DoingHeard,
+    /// Every [`TurnOutput`].
+    pub output: OutputHeard,
     /// Every brokered `secret exec`: held on its connection while the command runs.
     pub secret_exec: SecretExecuting,
 }
@@ -2293,6 +2537,19 @@ pub fn tell_doing(
     doing: &Doing,
 ) -> io::Result<()> {
     one_line_with_a_deadline(path, token, doing)
+}
+
+/// Tells the app at `path` what its chat's turn put out (#1981). Answers whether it was written.
+///
+/// [`tell`]'s shape and deadline, and **never spooled**, as a [`Doing`] is not: a spool is a
+/// file the chat's words would then be in.
+#[cfg(unix)]
+pub fn tell_turn_output(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    output: &TurnOutput,
+) -> io::Result<()> {
+    one_line_with_a_deadline(path, token, output)
 }
 
 /// Tells the app at `path` its chat's sandbox blocked an operation (#1338). Answers whether it
@@ -2633,10 +2890,14 @@ mod off_unix;
 pub mod spool;
 
 pub mod permission;
+
+pub mod framed;
+#[cfg(unix)]
+pub use framed::Framed;
 #[cfg(not(unix))]
 pub use off_unix::{
-    Asking, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send, tell,
-    tell_saved,
+    Asking, Framed, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send,
+    tell, tell_saved,
 };
 pub use permission::{PermissionAsked, Permitting, ask_permission};
 
@@ -2840,6 +3101,7 @@ impl Listener {
             permission: Box::new(|_| None),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             secret_exec: Box::new(|_, _, writer| {
                 crate::secrets::brokered::not_answered(writer);
@@ -3268,29 +3530,7 @@ fn serve(
         // carry it ends the connection unread, said so and never acted on. The chat's number
         // is said in the app's log (#647); the token is not.
         let chat = line.chat();
-        // The peer as the socket names it now, and as it named it at the accept: both must be
-        // inside the chat, so a line finished by a process the first one handed the connection
-        // to is judged by that process too.
-        let now = purlis_same_user::peer_process_of(&writer)
-            .ok()
-            .map(|(_, pid)| pid);
-        // The process that connected and the one the socket names now (a connection handed on
-        // mid-line names its new holder on macOS): each must run inside the chat, read from
-        // the kernel only once the line's token has checked (D-1407-10).
-        let senders: Vec<u32> = match (peer, now) {
-            (Some(peer), Some(now)) if peer != now => vec![peer, now],
-            (Some(pid), _) | (None, Some(pid)) => vec![pid],
-            (None, None) => Vec::new(),
-        };
-        let admission = tokens.admission_by(
-            chat,
-            token.as_deref(),
-            (!senders.is_empty()).then_some(senders),
-            &|senders, program| {
-                Seen::all(senders).is_some_and(|seen| seen.iter().all(|one| one.inside(program)))
-            },
-        );
-        match admission {
+        match admission_of(tokens, chat, token.as_deref(), peer, &writer) {
             // A chat heard from is running: a key of its, or another's, that a busy lock kept
             // out as its token was issued is recorded now, if the lock is free (#1426).
             Admission::Admitted => tokens.record_unrecorded(),
@@ -3385,6 +3625,7 @@ fn serve(
             Line::Touching(touching) => (hearing.touching)(touching),
             Line::Blocked(blocked) => (hearing.blocked)(blocked),
             Line::Doing(doing) => (hearing.doing)(doing),
+            Line::Output(output) => (hearing.output)(output),
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -3393,6 +3634,24 @@ fn serve(
                 let _ = writer.set_read_timeout(None);
                 let _ = writer.set_write_timeout(Some(A_FRAME_WRITE_TAKES_AT_MOST));
                 (hearing.secret_exec)(ask, Box::new(reader), Box::new(writer));
+                return;
+            }
+            Line::Frames(hello) => {
+                // Held for as long as its asks take, as one ask is: the turn is let go first.
+                turn.finish();
+                serve_frames(
+                    Greeting {
+                        hello,
+                        token: token.as_deref(),
+                        peer,
+                        this,
+                    },
+                    tokens,
+                    hearing,
+                    reader,
+                    writer,
+                    &deadline,
+                );
                 return;
             }
         }
@@ -3423,6 +3682,152 @@ fn serve(
             turn.finish();
         }
     }
+}
+
+/// Whether a line or a framed ask naming `chat` and carrying `token` is admitted
+/// (D-1407-6, D-1407-10): the token must be the chat's, and the process that connected (`peer`)
+/// and the one the socket names now must each run inside the chat, so one finished by a process
+/// the first handed the connection to is judged by that process too. The processes are read
+/// from the kernel only once the token has checked. The chat's number is said in the app's log
+/// (#647); the token is not.
+#[cfg(unix)]
+fn admission_of(
+    tokens: &ChatTokens,
+    chat: u32,
+    token: Option<&str>,
+    peer: Option<u32>,
+    connection: &std::os::unix::net::UnixStream,
+) -> Admission {
+    let now = purlis_same_user::peer_process_of(connection)
+        .ok()
+        .map(|(_, pid)| pid);
+    // A connection handed on mid-line names its new holder on macOS.
+    let senders: Vec<u32> = match (peer, now) {
+        (Some(peer), Some(now)) if peer != now => vec![peer, now],
+        (Some(pid), _) | (None, Some(pid)) => vec![pid],
+        (None, None) => Vec::new(),
+    };
+    tokens.admission_by(
+        chat,
+        token,
+        (!senders.is_empty()).then_some(senders),
+        &|senders, program| {
+            Seen::all(senders).is_some_and(|seen| seen.iter().all(|one| one.inside(program)))
+        },
+    )
+}
+
+/// How long one framed ask may take to arrive, from when it begins to be read: an ask is at
+/// most a line, so this bounds only a sender dripping.
+#[cfg(unix)]
+const A_FRAMED_ASK_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The hello a framed connection was admitted on: its chat and token, the process that
+/// connected, and the connection's number.
+#[cfg(unix)]
+struct Greeting<'a> {
+    hello: framed::Hello,
+    token: Option<&'a str>,
+    peer: Option<u32>,
+    this: u64,
+}
+
+/// A connection whose hello was admitted (#1996): accepted on one line, then served as a framed
+/// stream for the hello's chat ([`framed::serve`]). Each ask is admitted again as a line is
+/// ([`admission_of`], with the hello's token and the process the socket names then), and
+/// answered as a line's is, by `hearing.answer` told this connection's number.
+#[cfg(unix)]
+fn serve_frames(
+    greeting: Greeting<'_>,
+    tokens: &ChatTokens,
+    hearing: &Hearing,
+    mut reader: std::io::BufReader<Deadlined>,
+    mut writer: std::os::unix::net::UnixStream,
+    deadline: &std::sync::Mutex<Option<std::time::Instant>>,
+) {
+    use std::io::Write;
+
+    let Greeting {
+        hello,
+        token,
+        peer,
+        this,
+    } = greeting;
+    fn say(writer: &mut std::os::unix::net::UnixStream, line: &impl serde::Serialize) -> bool {
+        serde_json::to_vec(line).is_ok_and(|mut said| {
+            said.push(b'\n');
+            writer.write_all(&said).is_ok()
+        })
+    }
+    if hello.frames != framed::VERSION {
+        say(
+            &mut writer,
+            &Answer::No {
+                why: format!(
+                    "the app speaks frames version {}, and this asked for {}",
+                    framed::VERSION,
+                    hello.frames
+                ),
+            },
+        );
+        return;
+    }
+    if !say(&mut writer, &framed::Accepted::now()) {
+        return;
+    }
+    // An answer may be a frame at its bound, and an asker is given as long to take it as a
+    // brokered command's output is.
+    let _ = writer.set_write_timeout(Some(A_FRAME_WRITE_TAKES_AT_MOST));
+    let Ok(connection) = writer.try_clone() else {
+        return;
+    };
+    let chat = hello.chat;
+    let mut arm = || {
+        *deadline
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(std::time::Instant::now() + A_FRAMED_ASK_TAKES_AT_MOST);
+    };
+    let mut admit = || {
+        *deadline
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        match admission_of(tokens, chat, token, peer, &connection) {
+            Admission::Admitted => Ok(()),
+            Admission::NoToken => Err(format!(
+                "this ask does not carry chat {chat}'s token, so nothing was done"
+            )),
+            refused => {
+                tracing::warn!(
+                    "purlis: a framed ask for chat {chat} carried its token and was refused \
+                     ({refused:?})"
+                );
+                Err(refused
+                    .refusal()
+                    .unwrap_or("this ask was refused, so nothing was done")
+                    .to_owned())
+            }
+        }
+    };
+    let _ = framed::serve(
+        &mut reader,
+        &mut writer,
+        framed::Serving {
+            chat,
+            asks: A_CONNECTION_SAYS_AT_MOST,
+            an_ask_is_at_most: u32::try_from(A_LINE_IS_AT_MOST).unwrap_or(u32::MAX),
+            arm: &mut arm,
+            admit: &mut admit,
+        },
+        &mut |ask| {
+            if let Ok(asker) = connection.try_clone() {
+                tokens.answering(this, asker);
+            }
+            let answer = (hearing.answer)(this, ask);
+            tokens.answered(this);
+            framed::Reply::from(answer)
+        },
+    );
 }
 
 /// A connection read with one deadline for a whole line: each read is given what is left of it,
@@ -3476,7 +3881,7 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
             taken: false,
             refused: Some(why.to_owned()),
         }),
-        Line::Ask(_) => serde_json::to_vec(&Answer::No {
+        Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),
         Line::Permission(_) => serde_json::to_vec(&permission::Chosen { chosen: None }),
@@ -3488,7 +3893,8 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
         | Line::Saved(_)
         | Line::Touching(_)
         | Line::Blocked(_)
-        | Line::Doing(_) => return,
+        | Line::Doing(_)
+        | Line::Output(_) => return,
     };
     if let Ok(mut said) = said {
         said.push(b'\n');
@@ -4250,6 +4656,31 @@ mod tests {
     }
 
     #[test]
+    fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
+        // #1975: a proposal at its largest, every byte a control character JSON spells in six,
+        // with the longest path and a base, is read whole: never cut. A whole content carries
+        // as many bytes as edits do, and less of the change's own words.
+        let ask = Ask::Propose(Box::new(ProposeAsk {
+            chat: u32::MAX,
+            path: "\u{1}".repeat(crate::proposed::MOST_PATH_BYTES),
+            base: Some("f".repeat(64)),
+            change: crate::proposed::Change::Edits {
+                edits: vec![crate::proposed::Edit {
+                    old: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    new: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    every: true,
+                }],
+            },
+        }));
+        let line = line_with(Some(&ChatToken("t".repeat(64))), &ask).expect("a line");
+        assert!(
+            (line.len() as u64) < A_LINE_IS_AT_MOST,
+            "{} bytes does not fit in {A_LINE_IS_AT_MOST}",
+            line.len()
+        );
+    }
+
+    #[test]
     fn a_written_answer_reads_back_as_written() {
         let answer = Answer::Written {
             to: "alpha".to_owned(),
@@ -4293,6 +4724,33 @@ mod tests {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
                 branch: Some("feature/p1".to_owned()),
+            },
+            GitWork::Create {
+                vision: Some("Ship the importer".to_owned()),
+                repos: vec!["widget".to_owned()],
+            },
+            GitWork::WorktreeCut {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                branch: None,
+                base: Some("main".to_owned()),
+            },
+            GitWork::WorktreePush {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                lease: true,
+            },
+            GitWork::WorktreeUpdate {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                step: UpdateStep::Start {
+                    base: Some("main".to_owned()),
+                },
+            },
+            GitWork::WorktreeUpdate {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                step: UpdateStep::Continue,
             },
         ] {
             let ask = Ask::Git(Box::new(GitAsk {
@@ -6126,6 +6584,174 @@ mod tests {
         );
     }
 
+    /// A framed conversation for chat 3 with the app at `path`, which must speak frames.
+    fn framed_on(path: &std::path::Path, token: &ChatToken) -> Framed {
+        match Framed::on(path, Some(token), 3, std::time::Duration::from_secs(5))
+            .expect("connected")
+        {
+            framed::Greeted::Framed(framed) => framed,
+            framed::Greeted::Older => panic!("the app did not speak frames"),
+            framed::Greeted::Refused(why) => panic!("refused: {why}"),
+        }
+    }
+
+    #[test]
+    fn an_answer_past_a_line_comes_back_whole_on_the_framed_stream_and_lines_still_work() {
+        // #1996: a client that says hello gets frames; one that never does is unaffected.
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let cap = usize::try_from(A_REPORT_IS_AT_MOST).unwrap();
+        let large = Answer::No {
+            why: "w".repeat(3 * cap),
+        };
+        let path = dir.path().join("hooks.sock");
+        let (_reading, token) = an_app_answering(&path, dir.path(), large.clone());
+
+        let mut framed = framed_on(&path, &token);
+        let reply = framed
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect("a reply past a line");
+        assert_eq!(reply.answer, large);
+        // A second ask on the same stream.
+        let again = framed.ask(&Ask::Ticket { chat: 3 }, within).expect("again");
+        assert_eq!(again.answer, large);
+
+        // A line client of the same app is still answered in lines, and its reader stops at
+        // its cap: what it read is the answer's first line cut short, never a frame.
+        let in_lines = Asking::on(&path, Some(token))
+            .expect("connected")
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect_err("an answer past the line cap is not read");
+        assert!(
+            in_lines.to_string().contains("EOF while parsing"),
+            "{in_lines}"
+        );
+    }
+
+    #[test]
+    fn a_hello_without_its_chats_token_is_refused_and_never_accepted() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let (_reading, _token) = an_app_answering(
+            &path,
+            dir.path(),
+            Answer::Ticket {
+                ticket: "t".to_owned(),
+            },
+        );
+        for token in [None, Some(ChatToken::from("nope"))] {
+            match Framed::on(&path, token.as_ref(), 3, within).expect("connected") {
+                framed::Greeted::Refused(why) => assert!(why.contains("token"), "{why}"),
+                framed::Greeted::Framed(_) => panic!("accepted"),
+                framed::Greeted::Older => panic!("read as an older app"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_hello_at_another_version_is_answered_no_and_never_accepted() {
+        use std::io::{BufRead, Write};
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let (_reading, token) = an_app_answering(
+            &path,
+            dir.path(),
+            Answer::Ticket {
+                ticket: "t".to_owned(),
+            },
+        );
+        let hello = framed::Hello {
+            frames: framed::VERSION + 1,
+            chat: 3,
+        };
+        let mut socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        socket
+            .write_all(&line_with(Some(&token), &hello).unwrap())
+            .unwrap();
+        let mut said = String::new();
+        std::io::BufReader::new(&socket)
+            .read_line(&mut said)
+            .unwrap();
+        assert!(
+            matches!(
+                serde_json::from_str::<Answer>(&said),
+                Ok(Answer::No { why }) if why.contains("version")
+            ),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_framed_ask_for_another_chat_is_answered_no_and_never_reaches_the_app() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let token = listener.tokens().issue_to_this_process(3).expect("a token");
+        let _four = listener.tokens().issue_to_this_process(4).expect("a token");
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&asked);
+        let _reading = listener.each_answering(
+            Box::new(|_| {}),
+            Box::new(move |_, _| {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Answer::Ticket {
+                    ticket: "t".to_owned(),
+                }
+            }),
+        );
+        let reply = framed_on(&path, &token)
+            .ask(&Ask::Ticket { chat: 4 }, within)
+            .expect("a refusal");
+        assert!(
+            matches!(&reply.answer, Answer::No { why } if why.contains("chat 4")),
+            "{reply:?}"
+        );
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn every_framed_ask_is_checked_against_the_chat_s_token_as_it_stands_then() {
+        // The hello's token is checked again at each ask: one the chat no longer holds (it was
+        // started again, and given a new one) speaks for nothing on a stream opened with it.
+        let dir = tempfile::tempdir().expect("a directory");
+        let within = std::time::Duration::from_secs(5);
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let tokens = listener.tokens();
+        let token = tokens.issue_to_this_process(3).expect("a token");
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&asked);
+        let _reading = listener.each_answering(
+            Box::new(|_| {}),
+            Box::new(move |_, _| {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Answer::Ticket {
+                    ticket: "t".to_owned(),
+                }
+            }),
+        );
+        let mut framed = framed_on(&path, &token);
+        assert!(matches!(
+            framed.ask(&Ask::Ticket { chat: 3 }, within).unwrap().answer,
+            Answer::Ticket { .. }
+        ));
+
+        let _anew = tokens.issue_to_this_process(3).expect("a new token");
+        let reply = framed
+            .ask(&Ask::Ticket { chat: 3 }, within)
+            .expect("a refusal");
+        assert!(
+            matches!(&reply.answer, Answer::No { why } if why.contains("token")),
+            "{reply:?}"
+        );
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn an_open_carrying_the_largest_first_message_arrives_and_a_longer_line_does_not() {
         let dir = tempfile::tempdir().expect("a directory");
@@ -6226,7 +6852,8 @@ mod tests {
                     | Ask::WhereWorking(_)
                     | Ask::Dispatch(_)
                     | Ask::Task(_)
-                    | Ask::Removal(_) => Answer::No {
+                    | Ask::Removal(_)
+                    | Ask::Propose(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }
@@ -6839,6 +7466,7 @@ mod tests {
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             each: Box::new(|_| panic!("no report was sent")),
             answer: Box::new(|_, _| panic!("no ask was sent")),
@@ -6900,6 +7528,7 @@ mod tests {
             tool: Box::new(|_| panic!("no tool call was sent")),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(move |touching| tx.lock().unwrap().send(touching).unwrap()),
             permission: Box::new(|_| None),
         });
@@ -6914,6 +7543,154 @@ mod tests {
                 .is_err(),
             "the line without the chat's token was dropped"
         );
+    }
+
+    #[test]
+    fn what_a_turn_ended_saying_is_its_own_line_and_no_other_line_reads_as_it() {
+        // #1981: the last message a task's turn ended on, for a report purlis makes from it.
+        let output = TurnOutput {
+            chat: 4,
+            turn_output: Output::last_message("  Done: 3 files.\n").expect("a message"),
+            speaker: Speaker::default(),
+        };
+        let line = serde_json::to_string(&output).unwrap();
+        assert_eq!(
+            line,
+            r#"{"chat":4,"turn_output":{"is":"final","text":"Done: 3 files."}}"#
+        );
+        assert!(
+            matches!(serde_json::from_str::<Line>(&line), Ok(Line::Output(read)) if read == output),
+            "{line}"
+        );
+        for other in [
+            r#"{"chat":4,"event":"stop"}"#.to_owned(),
+            r#"{"chat":4,"doing":{"is":"began","kind":"command","name":"cargo"}}"#.to_owned(),
+            // A kind this build does not know is no line at all.
+            r#"{"chat":4,"turn_output":{"is":"screen","text":"x"}}"#.to_owned(),
+            r#"{"chat":4,"turn_output":"x"}"#.to_owned(),
+        ] {
+            assert!(
+                !matches!(serde_json::from_str::<Line>(&other), Ok(Line::Output(_))),
+                "no other line reads as this one: {other}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stop_s_last_message_is_read_from_the_payload_the_harness_hands_its_hook() {
+        assert_eq!(
+            Output::of_stop(CLAUDE_STOP),
+            Some(Output::Final {
+                text: "pong".to_owned()
+            })
+        );
+        for none in [
+            r#"{"hook_event_name":"Stop"}"#,
+            r#"{"last_assistant_message":null}"#,
+            r#"{"last_assistant_message":"   "}"#,
+            "not json",
+        ] {
+            assert_eq!(Output::of_stop(none), None, "{none}");
+        }
+    }
+
+    #[test]
+    fn a_command_s_end_is_read_with_the_status_each_harness_says() {
+        let claude = |word: &str, more: serde_json::Value| {
+            let mut payload = serde_json::json!({
+                "tool_name": "Bash",
+                "tool_input": {"command": "cargo test -p core"},
+            });
+            for (key, value) in more.as_object().unwrap() {
+                payload[key] = value.clone();
+            }
+            Output::of_ran(word, &payload, Some("claude-code"))
+        };
+        let ran = |exit: Option<i32>, failed: bool| {
+            Some(Output::Ran {
+                command: "cargo test -p core".to_owned(),
+                exit,
+                failed,
+            })
+        };
+        // Claude Code: its post hook fires for a command that succeeded.
+        assert_eq!(
+            claude("posttooluse-blocked", serde_json::json!({})),
+            ran(Some(0), false)
+        );
+        // And its failure hook for one that did not, with the status in its error.
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Exit code 101\nerror: test failed"})
+            ),
+            ran(Some(101), true)
+        );
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Interrupted"})
+            ),
+            ran(None, true)
+        );
+        // A command left running in the background has no status yet.
+        let background = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "sleep 60", "run_in_background": true},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &background, Some("claude-code")),
+            Some(Output::Ran {
+                command: "sleep 60".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // opencode: purlis's plugin sends the status.
+        let opencode = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "exit_code": 2,
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &opencode, Some("opencode")),
+            Some(Output::Ran {
+                command: "ls".to_owned(),
+                exit: Some(2),
+                failed: true
+            })
+        );
+        // Codex: its shell's words, and no status it says.
+        let codex = serde_json::json!({
+            "tool_name": "shell",
+            "tool_input": {"command": ["bash", "-lc", "make"]},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &codex, Some("codex")),
+            Some(Output::Ran {
+                command: "bash -lc make".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // Not a command's end: nothing.
+        assert_eq!(claude("pretooluse", serde_json::json!({})), None);
+        let edit = serde_json::json!({"tool_name": "Edit", "tool_input": {"command": "x"}});
+        assert_eq!(
+            Output::of_ran("posttooluse", &edit, Some("claude-code")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_turn_s_last_message_is_cut_on_a_character_and_an_empty_one_is_none() {
+        assert_eq!(Output::last_message(" \n\t"), None);
+        let long = "é".repeat(Output::MOST_BYTES);
+        let Some(Output::Final { text }) = Output::last_message(&long) else {
+            panic!("a message");
+        };
+        assert!(text.len() <= Output::MOST_BYTES);
+        assert!(text.chars().all(|c| c == 'é'));
     }
 
     #[test]
@@ -6983,6 +7760,7 @@ mod tests {
             touching: Box::new(|_| panic!("no file was touched")),
             blocked: Box::new(|_| panic!("nothing was blocked")),
             doing: Box::new(move |doing| tx.lock().unwrap().send(doing).unwrap()),
+            output: Box::new(|_| panic!("no turn's output was sent")),
             permission: Box::new(|_| None),
         });
         // Forged, with every field set: no token, a token nobody was issued, another chat's
@@ -7044,6 +7822,7 @@ mod tests {
             harness: Some("claude".to_owned()),
             target: None,
             read_back: false,
+            suggested: None,
         };
         let line = serde_json::to_string(&blocked).unwrap();
         assert_eq!(
@@ -7081,6 +7860,7 @@ mod tests {
             refused: Box::new(|_| panic!("no commit was refused")),
             tool: Box::new(|_| panic!("no tool call was sent")),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| panic!("no file was touched")),
             blocked: Box::new(move |blocked| tx.lock().unwrap().send(blocked).unwrap()),
             permission: Box::new(|_| None),
@@ -7161,6 +7941,7 @@ mod tests {
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             each: Box::new(|_| panic!("no report was sent")),
             answer: Box::new(|_, _| panic!("no ask was sent")),

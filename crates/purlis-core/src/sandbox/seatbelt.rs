@@ -17,6 +17,10 @@ use std::path::{Path, PathBuf};
 
 use super::{Access, Denial, PLANTED, Reach, real};
 
+/// What the system starts a program with, and the refusal of a start longer than that: the
+/// terminal's, which refuses a chat's start the same way (#1425, #1995).
+pub use purlis_terminal::exec::{Exec, TOO_LONG, exec_size, fits_exec};
+
 /// Why a profile could not be written: a path holding a control character, which a rule could
 /// not state exactly.
 pub const CONTROL: &str = "purlis cannot write a sandbox profile for a path holding a control \
@@ -26,21 +30,13 @@ pub const CONTROL: &str = "purlis cannot write a sandbox profile for a path hold
 pub const TOO_LARGE: &str = "purlis cannot hand the sandbox a profile this long: the project's \
                              configs name more paths than one chat's sandbox can hold";
 
-/// Why a chat could not be started: its program's words and environment together are longer
-/// than the system starts a program with ([`fits_exec`], #1425), which it would refuse with
-/// `E2BIG`.
-pub const TOO_LONG: &str = "the chat's first message, its other words and its environment \
-                            together are longer than this system starts a program with";
-
 /// What a person can do about a refusal `why` of [`profile`] or [`fits_exec`], where there is
 /// something. `opt_out` is whether they may start the chat without the sandbox: where an
 /// administrator's policy forbids it, the way out does not name it.
 pub(crate) fn way_out(why: &str, opt_out: bool) -> Option<&'static str> {
     if why == TOO_LONG {
         // The sandbox is not what is too long, so leaving it off is no way on.
-        return Some(
-            "Start it with a shorter first message, and send the rest once it has started.",
-        );
+        return Some(purlis_terminal::exec::TOO_LONG_WAY_OUT);
     }
     (why == TOO_LARGE).then_some(if opt_out {
         "Have the configs name fewer scripts, or start this chat without the sandbox from the \
@@ -48,77 +44,6 @@ pub(crate) fn way_out(why: &str, opt_out: bool) -> Option<&'static str> {
     } else {
         "Have the configs name fewer scripts."
     })
-}
-
-/// What the system starts a program with (#1425): at most `total` bytes of words and
-/// environment together, and, where it holds one, at most `word` bytes in any one of them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Exec {
-    pub total: usize,
-    pub word: Option<usize>,
-}
-
-impl Exec {
-    /// This system's: macOS's `ARG_MAX` (1 MiB, fixed in its kernel); on Linux, the 2 MiB a
-    /// default 8 MiB stack gives (a quarter of it) and the 128 KiB any one string may be
-    /// (`MAX_ARG_STRLEN`). Each less a margin for what the system adds itself (the program's
-    /// own path, macOS's `apple` strings).
-    pub const HERE: Self = if cfg!(target_os = "macos") {
-        Self {
-            total: 1024 * 1024 - EXEC_MARGIN,
-            word: None,
-        }
-    } else {
-        Self {
-            total: 2 * 1024 * 1024 - EXEC_MARGIN,
-            word: Some(128 * 1024 - 1),
-        }
-    };
-}
-
-/// What [`Exec::HERE`] leaves for what the system adds to a start itself.
-const EXEC_MARGIN: usize = 16 * 1024;
-
-/// How many bytes starting `program` with `args` and `env` takes of what the system starts a
-/// program with: each string with its closing NUL and a pointer to it, and each list's closing
-/// null pointer. An environment entry is one `KEY=value` string.
-pub fn exec_size(program: &str, args: &[String], env: &[(String, String)]) -> usize {
-    const POINTER: usize = std::mem::size_of::<usize>();
-    let words = std::iter::once(program.len())
-        .chain(args.iter().map(String::len))
-        .chain(env.iter().map(|(key, value)| key.len() + 1 + value.len()));
-    words.fold(2 * POINTER, |sum, len| {
-        sum.saturating_add(len).saturating_add(1 + POINTER)
-    })
-}
-
-/// Whether starting `program` with `args` and `env`, the whole environment it starts with,
-/// fits `exec` ([`Exec::HERE`] for this system): [`TOO_LONG`] where it does not, said in plain
-/// words before the system refuses the start with `E2BIG` (#1425). Refused rather than
-/// started another way: handing the first message over by a file is a harness's protocol,
-/// not purlis's to change (D-1425-2).
-pub fn fits_exec(
-    program: &str,
-    args: &[String],
-    env: &[(String, String)],
-    exec: Exec,
-) -> Result<(), &'static str> {
-    if let Some(most) = exec.word {
-        let longest = args
-            .iter()
-            .map(String::len)
-            .chain(env.iter().map(|(key, value)| key.len() + 1 + value.len()))
-            .chain(std::iter::once(program.len()))
-            .max()
-            .unwrap_or(0);
-        if longest > most {
-            return Err(TOO_LONG);
-        }
-    }
-    if exec_size(program, args, env) > exec.total {
-        return Err(TOO_LONG);
-    }
-    Ok(())
 }
 
 /// The refusal of a chat whose profile could not be written for `why`: after `lead`, what
@@ -293,6 +218,11 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
             "(allow mach-lookup (global-name {}))",
             string(service)?
         ));
+    }
+    // Each service on this Mac a person allowed this chat (qw384): connect to that one loopback
+    // port, which a Go client reaches directly, never through the proxy.
+    for port in &widened.ports {
+        own.after.push(super::localport::seatbelt_rule(*port));
     }
     Ok(())
 }

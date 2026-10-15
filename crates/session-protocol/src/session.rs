@@ -3,9 +3,9 @@
 
 //! The session protocol: what a control lane's frames mean (FD-26, ADR 0068 §4).
 //!
-//! **It is small, public and versioned.** A handful of commands (list, attach and detach,
-//! write, resize, answer, stop, start, subscribe and unsubscribe) and the events the host
-//! pushes. It is the half of the control lane that carries the compatibility promise (E5): a
+//! **It is small, public and versioned.** A handful of commands (list, start a hosted
+//! program, attach and detach a view of a kind, write, resize, answer, stop, subscribe and
+//! unsubscribe) and the events the host pushes. It is the half of the control lane that carries the compatibility promise (E5): a
 //! client and a host one version apart (N−1) always talk. `charter attach`, the fleet MCP and
 //! a runner's link are its clients, and LV-2a publishes it on its own.
 //!
@@ -39,6 +39,14 @@
 //! Terminal bytes never cross as JSON: an attach opens a view ([`crate::view`]) on a stream of
 //! its own, and only the bytes typed into a chat ride the lane, in base64.
 //!
+//! **The host holds hosted programs, each with views of a kind** (ADR 0068, amended for
+//! #1994). A chat's harness and a shell are hosted programs, and so is a browser from spec 2;
+//! a terminal view is one kind of view, and a browser view another. So the commands say "start
+//! a hosted program" ([`Command::StartProgram`]) and "attach a view of kind X"
+//! ([`Command::AttachView`]), never "start a chat". The 1.0 words a client one version behind
+//! still sends, `start`, `attach` and `detach`, are carried out as those, and answered in their
+//! own words: a [`Host`] never hears them.
+//!
 //! `tests/fixtures/session-protocol.jsonl` records a frame of every kind this version says.
 //! A test reads each back as it was recorded, so a change that would stop an older peer
 //! reading one fails CI: that file is the compatibility promise, written down. Each variant's
@@ -59,9 +67,13 @@ use crate::grants::Power;
 use crate::link::{Acceptor, Link, LinkError, Opener};
 use crate::ui;
 use crate::version::{Speaks, Version};
+use crate::view::{Limits, Views};
 
 /// The session protocol's current version.
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+///
+/// 1.1 added hosted programs and views of a kind (#1994): `start_program`, `attach_view`,
+/// `detach_view`, the `program_started` answer and an `attached` view's `kind`.
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -110,10 +122,10 @@ pub const NOT_ALLOWED: &str = "not_allowed";
 pub enum Command {
     /// The chats the host holds.
     List,
-    /// Open a view of a chat's terminal: the host opens a stream for it ([`crate::view`]),
-    /// whose snapshot then live bytes follow, and answers [`Answer::Attached`].
+    /// 1.0's word for [`Command::AttachView`] of kind [`ViewKind::Terminal`]. Never reaches a
+    /// [`Host`].
     Attach { chat: String },
-    /// Close a view the client attached. The chat keeps running.
+    /// 1.0's word for [`Command::DetachView`]. Never reaches a [`Host`].
     Detach { chat: String, view: u32 },
     /// Bytes typed into a chat's terminal, as they are: text, or a mouse report that is not
     /// text at all.
@@ -134,8 +146,17 @@ pub enum Command {
     },
     /// End a chat and everything it started.
     Stop { chat: String },
-    /// Start a chat.
+    /// 1.0's word for [`Command::StartProgram`] of kind [`ProgramKind::Harness`], answered with
+    /// [`Answer::Started`]. Never reaches a [`Host`].
     Start(Start),
+    /// Start a hosted program of a kind, and answer [`Answer::ProgramStarted`] with its id.
+    StartProgram(StartProgram),
+    /// Open a view of `kind` on a hosted program: the host opens a stream for it
+    /// ([`crate::view::Views::open`]), whose snapshot then live bytes follow, and answers
+    /// [`Answer::Attached`] with the view's `kind`.
+    AttachView { program: String, kind: ViewKind },
+    /// Close a view the client attached. The program keeps running.
+    DetachView { program: String, view: u32 },
     /// Every event after `since`, then each as it is written ([`Pushed`]): ADR 0066's
     /// `subscribe(since)`.
     Subscribe { since: Since },
@@ -157,6 +178,41 @@ pub struct Start {
     pub harness: Option<String>,
 }
 
+/// What a [`Command::StartProgram`] asks for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartProgram {
+    /// The project it is in, by its stable id ([`Start::project`]).
+    pub project: String,
+    /// What kind of hosted program it is.
+    pub kind: ProgramKind,
+    /// Its workspace, or the project's root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// For a [`ProgramKind::Harness`], which harness, or the project's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+}
+
+/// What kind of program a session host holds. A later minor adds one (a browser, spec 2); a
+/// host that does not know a kind refuses the command it came in as `malformed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgramKind {
+    /// A chat's harness.
+    Harness,
+    /// A shell, with no harness.
+    Shell,
+}
+
+/// What kind of view a client attaches: what its stream's snapshot and live bytes are. A
+/// later minor adds one (a browser view, spec 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewKind {
+    /// A terminal's bytes: the snapshot draws its scrollback, screen, cursor and modes.
+    Terminal,
+}
+
 /// A subscription's cursor: for each device, the last `seq` the client holds of it (ADR 0066).
 /// Empty is from the start.
 pub type Since = BTreeMap<String, u64>;
@@ -169,8 +225,10 @@ pub enum Answer {
     Chats(Vec<Chat>),
     /// The view it opened: [`Command::Attach`].
     Attached(Attached),
-    /// The chat it started: [`Command::Start`].
+    /// The chat it started: 1.0's answer to [`Command::Start`].
     Started { chat: String },
+    /// The hosted program it started: [`Command::StartProgram`].
+    ProgramStarted { program: String },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -205,6 +263,10 @@ pub struct Attached {
     /// The size its snapshot was drawn for.
     pub cols: u16,
     pub rows: u16,
+    /// Its kind, in the answer to [`Command::AttachView`]. Absent from 1.0's answer to
+    /// [`Command::Attach`], whose view is a terminal's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ViewKind>,
 }
 
 /// Why the host refused a command: a code a program reads, and a sentence a person reads.
@@ -243,6 +305,9 @@ wire_words!(Command {
     Answer => "answer",
     Stop => "stop",
     Start => "start",
+    StartProgram => "start_program",
+    AttachView => "attach_view",
+    DetachView => "detach_view",
     Subscribe => "subscribe",
     Unsubscribe => "unsubscribe",
 });
@@ -254,12 +319,15 @@ impl Command {
     pub fn power(&self) -> Power {
         match self {
             Command::List => Power::List,
-            Command::Attach { .. } | Command::Detach { .. } => Power::View,
+            Command::Attach { .. }
+            | Command::Detach { .. }
+            | Command::AttachView { .. }
+            | Command::DetachView { .. } => Power::View,
             Command::Write { .. } => Power::Write,
             Command::Resize { .. } => Power::Resize,
             Command::Answer { .. } => Power::Answer,
             Command::Stop { .. } => Power::Stop,
-            Command::Start(_) => Power::Start,
+            Command::Start(_) | Command::StartProgram(_) => Power::Start,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -269,6 +337,7 @@ wire_words!(Answer {
     Chats => "chats",
     Attached => "attached",
     Started => "started",
+    ProgramStarted => "program_started",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -347,7 +416,8 @@ impl Frame {
 pub struct Peer {
     scope: Scope,
     version: Version,
-    views: Opener,
+    opener: Opener,
+    views: Views,
 }
 
 impl Peer {
@@ -361,16 +431,30 @@ impl Peer {
         self.version
     }
 
-    /// Where an attach opens its view ([`crate::view::Attacher::new`]).
-    pub fn views(&self) -> &Opener {
+    /// The link's views, of any kind: where an attach opens one ([`Views::open`]) and a detach
+    /// closes it. Every one is closed when the link ends, before [`Host::link_ended`].
+    pub fn views(&self) -> &Views {
         &self.views
+    }
+
+    /// What opens a stream on the link, for a host that holds its views itself
+    /// ([`crate::view::Attacher::new`]).
+    ///
+    /// **One numberer of views per link.** A view's number is what a client tells its views
+    /// apart by, so a link's views are numbered by [`Peer::views`] or by the host's own
+    /// [`crate::view::Attacher`], never by both: a host that opens views itself on a link opens
+    /// none through [`Peer::views`] on it.
+    pub fn opener(&self) -> &Opener {
+        &self.opener
     }
 }
 
 /// What answers the session protocol: the host (FD-5).
 pub trait Host: Send + Sync + 'static {
     /// Answer one command. [`Command::Subscribe`] and [`Command::Unsubscribe`] never come
-    /// here: they go to [`Host::subscribe`], and the link holds the subscription.
+    /// here: they go to [`Host::subscribe`], and the link holds the subscription. Nor do 1.0's
+    /// [`Command::Start`], [`Command::Attach`] and [`Command::Detach`]: they come as
+    /// [`Command::StartProgram`], [`Command::AttachView`] and [`Command::DetachView`].
     fn call(
         &self,
         command: Command,
@@ -382,6 +466,15 @@ pub trait Host: Send + Sync + 'static {
     fn elicits_a_secret(&self, chat: &str, ask: &str) -> impl Future<Output = bool> + Send {
         let _ = (chat, ask);
         async { true }
+    }
+
+    /// The link `peer` came on has ended (the client closed it, or died). By now every view
+    /// [`Peer::views`] holds on it has been cancelled, and its stream ends where it is, whatever
+    /// it had queued; what the link started runs on. Calls it sent may still be carried out
+    /// after this ([`serve`]).
+    fn link_ended(&self, peer: &Peer) -> impl Future<Output = ()> + Send {
+        let _ = peer;
+        async {}
     }
 
     /// Every event after `since`, then each as it is written, until the receiver is dropped.
@@ -424,6 +517,9 @@ pub const MOST_CALLS_IN_FLIGHT: usize = 32;
 ///
 /// **At most [`MOST_CALLS_IN_FLIGHT`] at once**, counting those waiting their chat's turn.
 ///
+/// **When the link ends** (the client closes it, or dies and the transport closes), every view
+/// on it is closed at once ([`Views::end`]) and the host is told ([`Host::link_ended`]).
+///
 /// **A command the host took up is carried out** even when its link ends first: `serve`
 /// returns once each has finished, and what a link asked for is not undone by its closing (a
 /// `start` cut off halfway would leave a chat nobody holds). A host that must stop at once
@@ -436,11 +532,16 @@ pub async fn serve<H: Host>(
     let peer = Arc::new(Peer {
         scope: link.scope(),
         version: link.version(),
-        views: link.opener(),
+        opener: link.opener(),
+        views: Views::new(link.opener(), Limits::default()),
     });
     let host = Arc::new(host);
     let mut calls = Calls::default();
     let served = answer(&mut link, &host, &peer, ui::Serving::new(ui), &mut calls).await;
+    // The client is gone: nobody watches its views, so they close now, not once a view's
+    // queue has filled; then the host is told.
+    peer.views().end();
+    host.link_ended(&peer).await;
     // Nobody is left to hear these answers; the commands are carried out all the same.
     while calls.next().await.is_some() {}
     served
@@ -522,6 +623,45 @@ async fn carry_out<H: Host>(id: u64, command: Command, host: &H, peer: &Peer) ->
         // The link holds the subscription, so its loop takes these two up when they finish.
         Command::Subscribe { since } => Finished::Subscribed(id, host.subscribe(since, peer).await),
         Command::Unsubscribe => Finished::Unsubscribed(id),
+        // 1.0's words: carried out as the hosted-program commands, answered in their own.
+        Command::Start(Start {
+            project,
+            workspace,
+            harness,
+        }) => {
+            let start = Command::StartProgram(StartProgram {
+                project,
+                kind: ProgramKind::Harness,
+                workspace,
+                harness,
+            });
+            let answer = host.call(start, peer).await.map(|answer| match answer {
+                Answer::ProgramStarted { program } => Answer::Started { chat: program },
+                other => other,
+            });
+            Finished::Answered(reply(id, answer))
+        }
+        Command::Attach { chat } => {
+            let attach = Command::AttachView {
+                program: chat,
+                kind: ViewKind::Terminal,
+            };
+            let answer = host.call(attach, peer).await.map(|answer| match answer {
+                Answer::Attached(attached) => Answer::Attached(Attached {
+                    kind: None,
+                    ..attached
+                }),
+                other => other,
+            });
+            Finished::Answered(reply(id, answer))
+        }
+        Command::Detach { chat, view } => {
+            let detach = Command::DetachView {
+                program: chat,
+                view,
+            };
+            Finished::Answered(reply(id, host.call(detach, peer).await))
+        }
         command => Finished::Answered(reply(id, host.call(command, peer).await)),
     }
 }
@@ -549,8 +689,8 @@ enum Finished {
 /// What a link's calls keep their order within ([`serve`]).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Lane {
-    /// The commands about one chat.
-    Chat(String),
+    /// The commands about one hosted program (a chat is one).
+    Program(String),
     /// `subscribe` and `unsubscribe`.
     Subscription,
 }
@@ -560,13 +700,15 @@ impl Lane {
     /// exhaustive `match`, so a command added later says which it is.
     fn of(command: &Command) -> Option<Lane> {
         match command {
-            Command::List | Command::Start(_) => None,
-            Command::Attach { chat }
-            | Command::Detach { chat, .. }
-            | Command::Write { chat, .. }
-            | Command::Resize { chat, .. }
-            | Command::Answer { chat, .. }
-            | Command::Stop { chat } => Some(Lane::Chat(chat.clone())),
+            Command::List | Command::Start(_) | Command::StartProgram(_) => None,
+            Command::Attach { chat: program }
+            | Command::Detach { chat: program, .. }
+            | Command::AttachView { program, .. }
+            | Command::DetachView { program, .. }
+            | Command::Write { chat: program, .. }
+            | Command::Resize { chat: program, .. }
+            | Command::Answer { chat: program, .. }
+            | Command::Stop { chat: program } => Some(Lane::Program(program.clone())),
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
         }
     }
@@ -875,6 +1017,38 @@ impl Client {
             Answer::Started { chat } => Ok(chat),
             other => Err(unexpected(&other)),
         }
+    }
+
+    /// Start a hosted program, and answer with its id. A host one version behind refuses it
+    /// `unknown_command`; [`Client::start`] is its word for a harness.
+    pub async fn start_program(&self, start: StartProgram) -> Result<String, CallError> {
+        match self.call(Command::StartProgram(start)).await? {
+            Answer::ProgramStarted { program } => Ok(program),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Attach a view of `kind` on `program`: its stream comes on the [`Acceptor`]
+    /// [`Client::new`] gave. A host one version behind refuses it `unknown_command`;
+    /// [`Client::attach`] is its word for a terminal view.
+    pub async fn attach_view(&self, program: &str, kind: ViewKind) -> Result<Attached, CallError> {
+        let attach = Command::AttachView {
+            program: program.into(),
+            kind,
+        };
+        match self.call(attach).await? {
+            Answer::Attached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Close a view this client attached. The program keeps running.
+    pub async fn detach_view(&self, program: &str, view: u32) -> Result<(), CallError> {
+        self.done(Command::DetachView {
+            program: program.into(),
+            view,
+        })
+        .await
     }
 
     /// Subscribe from `since`: the events come on the [`Events`] [`Client::new`] gave. A

@@ -108,6 +108,9 @@ pub(crate) enum How {
     StoppedWithAbove,
     /// purlis stopped it because its session reached its token limit (#1512, #1457).
     StoppedAtTokenLimit,
+    /// Its turns ended without a report, and purlis sent its last message in its place
+    /// (#1981).
+    LastMessage,
 }
 
 impl From<Finished> for How {
@@ -123,6 +126,7 @@ impl From<Finished> for How {
             Finished::StoppedAtItsTimeLimit => Self::StoppedAtLimit,
             Finished::StoppedWithTheTaskAbove => Self::StoppedWithAbove,
             Finished::StoppedAtItsTokenLimit => Self::StoppedAtTokenLimit,
+            Finished::FromItsLastMessage => Self::LastMessage,
         }
     }
 }
@@ -267,7 +271,8 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
                 | Finished::ClosedByThePerson
                 | Finished::StoppedAtItsTimeLimit
                 | Finished::StoppedWithTheTaskAbove
-                | Finished::StoppedAtItsTokenLimit => how.said_to_a_chat().to_owned(),
+                | Finished::StoppedAtItsTokenLimit
+                | Finished::FromItsLastMessage => how.said_to_a_chat().to_owned(),
             },
             age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
                 .ok()

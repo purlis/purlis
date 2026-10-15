@@ -58,7 +58,8 @@ pub mod dispatchwithin;
 pub mod docsrc;
 pub mod doctor;
 pub mod doing;
-pub mod engine;
+/// The terminal engine, from the crate that holds it without the rest of the core (#1995).
+pub use purlis_terminal::engine;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;
@@ -134,6 +135,7 @@ pub mod personas;
 pub mod personaverbs;
 pub mod piececmd;
 pub mod pieces;
+pub mod pieceupdate;
 pub mod plane;
 pub mod planechange;
 pub mod planegit;
@@ -147,6 +149,7 @@ pub mod profiles;
 pub mod profiletrust;
 pub mod programs;
 pub mod projectgit;
+pub mod proposed;
 pub mod proseguard;
 pub mod provenance;
 pub mod publishproject;
@@ -176,7 +179,9 @@ pub mod scaffold;
 pub mod scanallow;
 pub mod secrets;
 pub mod secretshape;
-pub mod session;
+/// A program in its own pseudo-terminal, from the crate that holds it without the rest of the
+/// core (#1995).
+pub use purlis_terminal::session;
 pub mod sessionrecord;
 pub mod sessionresume;
 pub mod settings;
@@ -185,6 +190,7 @@ pub mod shellseg;
 pub mod shellsubst;
 pub mod shellwrap;
 pub mod shown;
+pub mod silence;
 pub mod skills;
 pub mod skilluse;
 pub mod standings;
@@ -193,6 +199,10 @@ pub mod state;
 pub(crate) mod steer;
 pub mod taskchanges;
 pub mod template;
+// Public, and not `cfg(test)`: the integration tests of every crate copy the fixture planes
+// through it (#2089). Nothing in the product calls it.
+#[doc(hidden)]
+pub mod testfixture;
 #[cfg(test)]
 mod testgit;
 // Public, and not `cfg(test)`, for one reason: purlis-core's integration tests are separate

@@ -56,6 +56,8 @@ export const LANES = {
       "declineProjectExpects",
       "allowPersonaHosts",
       "allowPersonaGrants",
+      // A proposed change applied to the project's manifest (#1975).
+      "applyProposedChange",
       // It drops a listed folder that resolves elsewhere now, so it writes as it reads.
       "grantableFolders",
       "listGrantableFolder",
@@ -159,11 +161,15 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "the network record is a look back, read again at the next look.",
   addProjectForge:
     "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
-    "the file again after it.",
+    "the file again after it. The read it answers with drops the confirmed hosts the file no " +
+    "longer lists, as projectSettings does: a tidy-up of what no read of the sandbox's lane " +
+    "would count anyway.",
   removeProjectForge: "As addProjectForge.",
   addProjectProfile:
     "It writes the manifest's profiles, which no read of the sandbox's lane draws; Settings reads " +
-    "the file again after it.",
+    "the file again after it. The read it answers with drops the confirmed hosts the file no " +
+    "longer lists, as projectSettings does: a tidy-up of what no read of the sandbox's lane " +
+    "would count anyway.",
   removeProjectProfile: "As addProjectProfile.",
   renameProjectProfile: "As addProjectProfile.",
   choosePlaneMode:

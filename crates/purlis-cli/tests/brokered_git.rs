@@ -195,6 +195,15 @@ fn chat_3<'a>(socket: &'a Path, token: &'a ChatToken) -> [(&'a str, &'a str); 3]
 /// Its git reads no global config, so the stand-in forge's rewrite is handed to it on top of
 /// the identity, which is all the app hands it.
 fn the_broker(root: PathBuf, forge: &Path) -> impl Fn(Ask) -> Answer + Send + Sync + 'static {
+    the_broker_at(root.clone(), root, forge)
+}
+
+/// [`the_broker`], for chat 3 standing at `cwd`.
+fn the_broker_at(
+    root: PathBuf,
+    cwd: PathBuf,
+    forge: &Path,
+) -> impl Fn(Ask) -> Answer + Send + Sync + 'static {
     let isolation = git::Isolated::identity(Some("Tester"), Some("t@e.invalid")).also(
         &format!("url.file://{}/acme/.insteadOf", forge.display()),
         "https://github.com/acme/",
@@ -204,7 +213,7 @@ fn the_broker(root: PathBuf, forge: &Path) -> impl Fn(Ask) -> Answer + Send + Sy
             &root,
             &Asker {
                 chat: 3,
-                cwd: Some(root.clone()),
+                cwd: Some(cwd.clone()),
                 persona: Some("steward".to_owned()),
                 harnessed: true,
                 unsandboxed: false,
@@ -357,10 +366,11 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
     };
     assert_eq!(
         git.work,
-        GitWork::WorktreeAdd {
+        GitWork::WorktreeCut {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
             branch: None,
+            base: None,
         }
     );
     let piece = brokered.join("workspaces/alpha/.worktrees/widget/p1");
@@ -378,6 +388,201 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
     assert_eq!(claimed["event"], "claimed");
     assert_eq!(claimed["session"], "3");
     assert_eq!(claimed["persona"], "steward");
+}
+
+const CREATING: &str =
+    "a_sandboxed_chats_create_with_repos_is_made_by_the_app_whole_and_only_there";
+
+#[test]
+fn a_sandboxed_chats_create_with_repos_is_made_by_the_app_whole_and_only_there() {
+    // qw387: `workspace create <name> <repo>` in a sandboxed chat ran in the chat's own
+    // process, said the workspace was ready, and made nothing.
+    purlis_core::unsteered!();
+    let Some(base) = std::env::var_os(IN_THE_CHILD) else {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(tmp.path()).unwrap().join("home");
+        purlis_core::testrun::rerun(
+            &[CREATING],
+            &[
+                (IN_THE_CHILD, tmp.path().as_os_str()),
+                ("HOME", home.as_os_str()),
+            ],
+        );
+        return;
+    };
+    let world = World::at(Path::new(&base));
+    world.widget();
+    let root = world.plane("creating", "[\"forge\"]");
+    // The chat works in `alpha`.
+    let (_reading, token, socket, asked) = an_app(
+        &world.base,
+        the_broker_at(root.clone(), root.join("workspaces/alpha"), &world.forge),
+    );
+    let mut chat = chat_3(&socket, &token).to_vec();
+    chat.push((SANDBOXED_ENV, "1"));
+
+    // The workspace and its clone, made by the app in one ask.
+    let made = world.purlis(
+        &root,
+        &[
+            "workspace",
+            "create",
+            "beta",
+            "widget",
+            "--vision",
+            "Ship it",
+        ],
+        &chat,
+    );
+    assert!(made.status.success(), "{}", err(&made));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!(
+            "the app was not asked to make the workspace: {}",
+            err(&made)
+        );
+    };
+    assert_eq!(git.workspace, "beta");
+    assert_eq!(
+        git.work,
+        GitWork::Create {
+            vision: Some("Ship it".to_owned()),
+            repos: vec!["widget".to_owned()],
+        }
+    );
+    let beta = root.join("workspaces/beta");
+    let charter = std::fs::read_to_string(beta.join("workspace.md")).expect("a charter");
+    assert!(charter.contains("Ship it"), "{charter}");
+    for written in [".git/config", ".vscode/settings.json", "README.md"] {
+        assert!(
+            beta.join("widget").join(written).is_file(),
+            "{written} is not in the clone: {}",
+            err(&made)
+        );
+    }
+
+    // Made once: the same ask again is refused, and so is a clone into the workspace now that
+    // it is there, as a clone into any workspace the chat does not work in is.
+    let again = world.purlis(&root, &["workspace", "create", "beta", "widget"], &chat);
+    assert_eq!(again.status.code(), Some(1), "{}", err(&again));
+    assert!(err(&again).contains("already there"), "{}", err(&again));
+    let cloned = world.purlis(&root, &["clone", "widget", "-w", "beta"], &chat);
+    assert_eq!(cloned.status.code(), Some(1), "{}", err(&cloned));
+    assert!(
+        err(&cloned).contains("this chat works in workspace 'alpha'"),
+        "{}",
+        err(&cloned)
+    );
+
+    // What the app does not do for a chat is refused before anything is asked or made.
+    while asked.try_recv().is_ok() {}
+    for (args, names) in [
+        (
+            &["workspace", "create", "gamma", "--live"][..],
+            "purlis workspace live gamma",
+        ),
+        (&["workspace", "create", "gamma", "--use"][..], "-w gamma"),
+        (
+            &["workspace", "create", "gamma", "widget", "--use", "--force"][..],
+            "-w gamma",
+        ),
+    ] {
+        let ran = world.purlis(&root, args, &chat);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", err(&ran));
+        assert!(err(&ran).contains("nothing was created"), "{}", err(&ran));
+        assert!(err(&ran).contains(names), "{}", err(&ran));
+        assert!(!err(&ran).contains("ready"), "{}", err(&ran));
+    }
+    assert!(asked.try_recv().is_err(), "the app was asked");
+    assert!(!root.join("workspaces/gamma").exists());
+}
+
+const UPDATING: &str = "a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app";
+
+#[test]
+fn a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app() {
+    // qw387: a chat may not write a branch folder's git directory, so its own fetch and rebase
+    // fail there; `purlis worktree update` and `push` hand the work to the app.
+    purlis_core::unsteered!();
+    let Some(base) = std::env::var_os(IN_THE_CHILD) else {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(tmp.path()).unwrap().join("home");
+        purlis_core::testrun::rerun(
+            &[UPDATING],
+            &[
+                (IN_THE_CHILD, tmp.path().as_os_str()),
+                ("HOME", home.as_os_str()),
+            ],
+        );
+        return;
+    };
+    let world = World::at(Path::new(&base));
+    world.widget();
+    let root = world.plane("updating", "[\"forge\"]");
+    for args in [
+        &["clone", "widget", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "p1", "-w", "alpha"][..],
+    ] {
+        let made = world.purlis(&root, args, &[]);
+        assert!(made.status.success(), "{args:?}: {}", err(&made));
+    }
+    let piece = root.join("workspaces/alpha/.worktrees/widget/p1");
+    let (_reading, token, socket, asked) = an_app(
+        &world.base,
+        the_broker_at(root.clone(), root.join("workspaces/alpha"), &world.forge),
+    );
+    let run = |args: &[&str]| {
+        support::purlis()
+            .args(args)
+            .current_dir(&piece)
+            .env_clear()
+            .env("CHARTER_ROOT", &root)
+            .env("HOME", &world.home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("USER", "tester")
+            .env(SANDBOXED_ENV, "1")
+            .envs(chat_3(&socket, &token))
+            .output()
+            .expect("the binary runs")
+    };
+
+    let ran = run(&["worktree", "update"]);
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to update: {}", err(&ran));
+    };
+    assert_eq!(git.workspace, "alpha");
+    assert_eq!(
+        git.work,
+        GitWork::WorktreeUpdate {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            step: hookwire::UpdateStep::Start { base: None },
+        }
+    );
+    assert!(err(&ran).contains("already on main"), "{}", err(&ran));
+
+    let ran = run(&["worktree", "push"]);
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to push: {}", err(&ran));
+    };
+    assert_eq!(
+        git.work,
+        GitWork::WorktreePush {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            lease: false,
+        }
+    );
+    assert_eq!(
+        git_said(
+            &world.forge.join("acme/widget.git"),
+            &["rev-parse", "refs/heads/p1"]
+        ),
+        git_said(&piece, &["rev-parse", "HEAD"]),
+        "{}",
+        err(&ran)
+    );
 }
 
 #[test]

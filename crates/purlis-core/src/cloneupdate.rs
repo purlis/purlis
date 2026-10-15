@@ -23,6 +23,12 @@
 //! commit the command moves it to, and refuses only where one of them is a path the sandbox
 //! denies. The refusal names those paths. A move that touches none of them runs.
 //!
+//! **A path git will not write is not counted.** Where a sparse checkout is on in the folder
+//! (`core.sparseCheckout`, as git reads it there), git writes no path its patterns leave out,
+//! whatever the move changes, so the arm asks git which of the denied paths those are
+//! (`git sparse-checkout check-rules`) and drops them: only where nothing on the line can
+//! change that checkout ([`Place::sparse`]). Where git does not answer, every one counts.
+//!
 //! **Where the other commit cannot be named before the command runs**, the arm falls back to
 //! what [`crate::rootupdate`] does: it refuses where the repository tracks a denied path at
 //! all, and says how to make the move one it can check. That is a `pull`, which fetches its
@@ -33,7 +39,8 @@
 //! **A mistake guard, not the boundary**: the sandbox already refuses the writes. So it reads
 //! only what is tracked, by name, and never asks the kernel. Every question is put to git
 //! through the one hardened runner ([`crate::worktree::git`]), reading no global or system
-//! configuration, and only plumbing that compares trees: nothing here reads a file's content
+//! configuration, and only plumbing that compares trees or reads the sparse patterns: nothing
+//! here reads a file's content
 //! through a filter or starts a program a repository's configuration names.
 
 use std::path::{Path, PathBuf};
@@ -452,6 +459,9 @@ pub trait Asks {
     /// Every path changed by a commit the current branch has and `onto` lacks: what a rebase
     /// onto it replays. `None` where git could not say.
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>>;
+    /// [`Asks::replayed`], for the commits `head` has and `onto` lacks, whatever HEAD is:
+    /// what a rebase of exactly `head` replays.
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>>;
     /// Every path `commit` tracks, or `None` where git could not say.
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>>;
     /// Which of `paths`, each tracked by the current commit, are not in the folder as that
@@ -459,6 +469,10 @@ pub trait Asks {
     fn changed(&self, top: &str, paths: &[String]) -> Option<Vec<String>>;
     /// Whether something is at `path`.
     fn is_there(&self, path: &Path) -> bool;
+    /// Which of `paths` git leaves out of the working tree at `top` because a sparse checkout
+    /// is on there and its patterns leave them out: git writes none of them, whatever a move
+    /// changes. Empty where no sparse checkout is on, and `None` where git could not say.
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>>;
 }
 
 /// [`Asks`], answered by git through the hardened runner, with no global or system
@@ -466,9 +480,16 @@ pub trait Asks {
 pub struct Asked;
 
 impl Asked {
+    /// The isolation each question is asked under: the one the thread holds where purlis runs
+    /// git for a chat (pinned to the repository it checked), and otherwise none of the global
+    /// or system configuration.
+    fn held() -> git::Isolated {
+        git::isolation().unwrap_or_default()
+    }
+
     /// One question's answer, where git answered it.
     fn git(dir: &str, args: &[&str]) -> Option<String> {
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run(Path::new(dir), args, crate::doctor::CHECK_TIMEOUT)
         })
         .ok()?;
@@ -570,7 +591,14 @@ impl Asks for Asked {
     }
 
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
-        let range = format!("{onto}..HEAD");
+        self.replayed_from(top, onto, "HEAD")
+    }
+
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        if onto.starts_with('-') || head.starts_with('-') {
+            return None;
+        }
+        let range = format!("{onto}..{head}");
         let commits = Self::git(top, &["rev-list", &range, "--"])?;
         if commits.trim().is_empty() {
             return Some(Vec::new());
@@ -588,7 +616,7 @@ impl Asks for Asked {
             "--no-renames",
             "-z",
         ];
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &args,
@@ -655,7 +683,7 @@ impl Asks for Asked {
             input.push('\n');
         }
         let args = ["hash-object", "--no-filters", "--stdin-paths"];
-        let asked = git::isolated(&git::Isolated::default(), || {
+        let asked = git::isolated(&Self::held(), || {
             git::run_with_input(
                 Path::new(top),
                 &args,
@@ -679,6 +707,50 @@ impl Asks for Asked {
 
     fn is_there(&self, path: &Path) -> bool {
         std::fs::symlink_metadata(path).is_ok()
+    }
+
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+        if paths.is_empty() {
+            return Some(Vec::new());
+        }
+        // Only where git applies the patterns: with no sparse checkout on, a bit set by hand
+        // keeps no file a move changes from being written.
+        let on = Self::git(
+            top,
+            &["config", "--type=bool", "--get", "core.sparseCheckout"],
+        )?;
+        if on.trim() != "true" {
+            return Some(Vec::new());
+        }
+        // git's own reading of the patterns, the paths on standard input and never arguments.
+        // It answers the paths the patterns keep; the rest are left out.
+        let mut input = Vec::new();
+        for path in paths {
+            input.extend_from_slice(path.as_bytes());
+            input.push(0);
+        }
+        let asked = git::isolated(&Self::held(), || {
+            git::run_with_input(
+                Path::new(top),
+                &["sparse-checkout", "check-rules", "-z"],
+                input,
+                crate::doctor::CHECK_TIMEOUT,
+            )
+        })
+        .ok()?;
+        if asked.code != Some(0) {
+            return None;
+        }
+        let kept = String::from_utf8_lossy(&asked.out);
+        let kept: std::collections::HashSet<&str> =
+            kept.split('\0').filter(|path| !path.is_empty()).collect();
+        Some(
+            paths
+                .iter()
+                .filter(|path| !kept.contains(path.as_str()))
+                .cloned()
+                .collect(),
+        )
     }
 }
 
@@ -883,6 +955,143 @@ pub fn said_clone(denied: &[String]) -> String {
     )
 }
 
+/// The refusal a rebase of exactly `head` onto exactly `onto`, both commit ids, earns in the
+/// working tree at `top` (qw387), or `None`: what it writes is what differs between the two
+/// and what each commit `head` has and `onto` lacks changed, read for those ids and never for
+/// whatever HEAD names by then. What purlis runs for a chat is judged as it will run.
+pub fn judged_rebase(
+    top: &str,
+    onto: &str,
+    head: &str,
+    place: &Place<'_>,
+    asks: &dyn Asks,
+) -> Option<String> {
+    let (Some(mut paths), Some(replayed)) = (
+        asks.differ(top, head, onto),
+        asks.replayed_from(top, onto, head),
+    ) else {
+        return Some(said_unread("rebase", NO_ANSWER));
+    };
+    paths.extend(replayed);
+    let denies = Denies::of(top, place.root, place.chat_dir);
+    let mut denied = each_once(paths, &|path: &str| denies.path(path, asks));
+    if place.sparse
+        && let Some(out) = asks.left_out(top, &denied)
+        && !out.is_empty()
+    {
+        let out: std::collections::HashSet<String> = out.into_iter().collect();
+        denied.retain(|path| !out.contains(path));
+    }
+    (!denied.is_empty()).then(|| said_writes("rebase", &denied, top))
+}
+
+/// The refusal an app-run cut earns for a sandboxed chat (qw387), or `None`: a new branch
+/// folder at `folder` checked out from `start` in the clone at `clone`, judged as the chat's
+/// own checkout of it would be. Every file of `start` is written there, so a denied path it
+/// tracks is refused where its content is not what the clone already has checked out at that
+/// path, or where the clone has nothing there. `root` and `chat_dir` say which manifests the
+/// chat's sandbox holds. Fails closed: where git does not answer, the cut is refused.
+pub fn judged_cut(
+    clone: &Path,
+    start: &str,
+    folder: &Path,
+    root: &Path,
+    chat_dir: Option<&Path>,
+) -> Option<String> {
+    let unread = || {
+        Some(format!(
+            "purlis could not read what the new branch folder would hold ({}), so the app did \
+             not cut it for this chat. Ask the person to run the command in their own terminal",
+            crate::shown::short(start)
+        ))
+    };
+    if start.is_empty() || start.starts_with('-') {
+        return unread();
+    }
+    let clone_s = clone.to_string_lossy();
+    let Some(listing) = Asked::git(
+        &clone_s,
+        &["ls-tree", "-r", "-z", "--full-tree", start, "--"],
+    ) else {
+        return unread();
+    };
+    let denies = Denies::of(&folder.to_string_lossy(), &root.to_string_lossy(), chat_dir);
+    let nothing_there = NothingThere(&Asked);
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
+        let Some((meta, path)) = entry.split_once('\t') else {
+            return unread();
+        };
+        if !denies.path(path, &nothing_there) {
+            continue;
+        }
+        let mut meta = meta.split(' ');
+        let (mode, oid) = (meta.next().unwrap_or(""), meta.nth(1).unwrap_or(""));
+        wanted.push((path.to_owned(), format!("{mode} {oid}")));
+    }
+    if wanted.is_empty() {
+        return None;
+    }
+    // What the clone holds at each path now: a plain file's bytes as git would store them,
+    // through no filter; anything else (gone, a folder, a link) is not the same.
+    let mut differ: Vec<String> = Vec::new();
+    let mut plain: Vec<&(String, String)> = Vec::new();
+    for want in &wanted {
+        let file = clone.join(&want.0);
+        let is_file = std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file());
+        if is_file && want.1.starts_with("100") && !want.0.contains(['\n', '\r']) {
+            plain.push(want);
+        } else {
+            differ.push(want.0.clone());
+        }
+    }
+    if !plain.is_empty() {
+        let mut input = String::new();
+        for (path, _) in &plain {
+            input.push_str(path);
+            input.push('\n');
+        }
+        let asked = git::isolated(&Asked::held(), || {
+            git::run_with_input(
+                clone,
+                &["hash-object", "--no-filters", "--stdin-paths"],
+                input.into_bytes(),
+                crate::doctor::CHECK_TIMEOUT,
+            )
+        });
+        let Ok(asked) = asked else {
+            return unread();
+        };
+        let now = String::from_utf8_lossy(&asked.out).into_owned();
+        let now: Vec<&str> = now.lines().collect();
+        if asked.code != Some(0) || now.len() != plain.len() {
+            return unread();
+        }
+        for ((path, meta), oid) in plain.into_iter().zip(now) {
+            // The mode as git would record the file there: executable or not.
+            let mode = {
+                use std::os::unix::fs::PermissionsExt as _;
+                let exec = std::fs::metadata(clone.join(path))
+                    .is_ok_and(|found| found.permissions().mode() & 0o111 != 0);
+                if exec { "100755" } else { "100644" }
+            };
+            if *meta != format!("{mode} {}", oid.trim()) {
+                differ.push(path.clone());
+            }
+        }
+    }
+    (!differ.is_empty()).then(|| {
+        format!(
+            "the new branch folder would be checked out from {} with {}, which differ from what \
+             the clone has checked out, and {WHY} The app checks a folder out for this chat as \
+             the chat's own checkout would be judged, so nothing was cut. Ask the person to run \
+             the command in their own terminal",
+            crate::shown::short(start),
+            listed(&differ)
+        )
+    })
+}
+
 /// What the chat is told of a command that would write the files of a folder that has none
 /// of them yet (cloned without a checkout): the whole tree is written, whatever commit the
 /// folder is already at.
@@ -978,6 +1187,11 @@ pub struct Place<'a> {
     /// Whether no other git that writes is on the line, and nothing on it went unread: the
     /// commit a name stands for is then the one git will read too.
     pub alone: bool,
+    /// Whether the folder's own sparse checkout decides what git writes: the command is
+    /// [`Place::alone`], and nothing on the line changes its sparsity (configuration it sets,
+    /// an option that ignores the patterns, a `git sparse-checkout` beside it). Only then are
+    /// the paths the patterns leave out dropped.
+    pub sparse: bool,
 }
 
 /// Whether `git <sub> <post…>` writes tracked files as the commit the folder is at has them:
@@ -1060,7 +1274,20 @@ pub fn judged(
     };
     let denies = Denies::of(&top, place.root, place.chat_dir);
     let denied_path = |path: &str| denies.path(path, asks);
-    let denied = |paths: Vec<String>| each_once(paths, &denied_path);
+    // What git will write of them: a sparse checkout leaves some out, and git writes none of
+    // those whatever the move changes. Where git could not say, every one counts.
+    let written_of =
+        |paths: Vec<String>| match place.sparse.then(|| asks.left_out(&top, &paths)).flatten() {
+            Some(out) if !out.is_empty() => {
+                let out: std::collections::HashSet<String> = out.into_iter().collect();
+                paths
+                    .into_iter()
+                    .filter(|path| !out.contains(path))
+                    .collect()
+            }
+            _ => paths,
+        };
+    let denied = |paths: Vec<String>| written_of(each_once(paths, &denied_path));
     // The commit the folder is at. Where git did not say, nothing is known of it.
     let head = match asks.head(&top) {
         Head::At(oid) => Some(oid),
@@ -1097,7 +1324,7 @@ pub fn judged(
         // In a folder that was checked out it writes only what was changed there, and git
         // names any file it could not write. In one that never was, it writes everything.
         if head.is_some() && holds.is_none() {
-            return match held() {
+            return match held().map(|lacks| written_of(lacks.to_vec())) {
                 Some(lacks) => (!lacks.is_empty()).then(|| said_unchecked(sub, &lacks, &top)),
                 None => Some(said_unread(sub, NO_ANSWER)),
             };
@@ -1218,7 +1445,7 @@ pub fn judged(
             let denied = denied(paths);
             (!denied.is_empty()).then(|| said_writes(sub, &denied, &top))
         }
-        None => match held() {
+        None => match held().map(|held| written_of(held.to_vec())) {
             Some(held) => (!held.is_empty()).then(|| said_unnamed(sub, &held, &top, why)),
             // A commit git did not list: not known, so not started.
             None => Some(said_unread(sub, NO_ANSWER)),
@@ -1349,6 +1576,9 @@ impl Asks for NothingThere<'_> {
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         self.0.replayed(top, onto)
     }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        self.0.replayed_from(top, onto, head)
+    }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         self.0.tracked(top, commit)
     }
@@ -1357,6 +1587,9 @@ impl Asks for NothingThere<'_> {
     }
     fn is_there(&self, _: &Path) -> bool {
         false
+    }
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+        self.0.left_out(top, paths)
     }
 }
 
@@ -1458,6 +1691,9 @@ impl Asks for Once<'_> {
     fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
         self.asks.replayed(top, onto)
     }
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        self.asks.replayed_from(top, onto, head)
+    }
     fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
         self.asks.tracked(top, commit)
     }
@@ -1466,6 +1702,9 @@ impl Asks for Once<'_> {
     }
     fn is_there(&self, path: &Path) -> bool {
         self.asks.is_there(path)
+    }
+    fn left_out(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+        self.asks.left_out(top, paths)
     }
 }
 
@@ -1499,6 +1738,70 @@ pub fn refusal_with(
     let root = planeroot::plane_root(root);
     let line = planeroot::line_git(cmd, cwd, &root);
     refusal_of(&line, cwd, &root, chat_dir, asks)
+}
+
+/// The options any move may carry and still be judged by its folder's sparse checkout.
+const SPARSE_KEEPS_ANY: [&str; 4] = ["-q", "--quiet", "-v", "--verbose"];
+
+/// Those of a `checkout` or `switch`, beside [`BRANCHING_FLAGS`].
+const SPARSE_KEEPS_CHECKOUT: [&str; 9] = [
+    "-f", "--force", "--detach", "-b", "-B", "-c", "-C", "-m", "--merge",
+];
+
+/// Those of a `reset`.
+const SPARSE_KEEPS_RESET: [&str; 5] = ["--hard", "--keep", "--merge", "--soft", "--mixed"];
+
+/// Those of a `rebase`, beside [`REBASE_FLAGS`]: signing only.
+const SPARSE_KEEPS_REBASE: [&str; 2] = ["-S", "--gpg-sign"];
+
+/// Those of a `cherry-pick` or `revert`, beside [`PICK_FLAGS`]: signing only.
+const SPARSE_KEEPS_PICK: [&str; 2] = ["-S", "--gpg-sign"];
+
+/// Those of a `restore`.
+const SPARSE_KEEPS_RESTORE: [&str; 5] = ["-s", "--staged", "-S", "--worktree", "-W"];
+
+/// Whether every option of `git <sub> <post…>` is one its own subcommand's list holds, spelled
+/// out whole, each one that changes nothing about which paths git writes. Any other option, an
+/// abbreviation or a bundle of short options included, and the paths the folder's sparse
+/// checkout leaves out count again ([`Place::sparse`]). A flag one subcommand reads as
+/// harmless may be another's command to run, so no list is shared between them.
+fn sparse_keeps(sub: &str, post: &[String]) -> bool {
+    let own: &[&str] = match sub {
+        "checkout" | "switch" => &[&SPARSE_KEEPS_CHECKOUT[..], &BRANCHING_FLAGS[..]].concat(),
+        "reset" => &SPARSE_KEEPS_RESET,
+        "merge" | "pull" => &MERGE_FLAGS,
+        "rebase" => &[&REBASE_FLAGS[..], &SPARSE_KEEPS_REBASE[..]].concat(),
+        "cherry-pick" | "revert" => &[&PICK_FLAGS[..], &SPARSE_KEEPS_PICK[..]].concat(),
+        "restore" => &SPARSE_KEEPS_RESTORE,
+        _ => &[],
+    };
+    post.iter()
+        .take_while(|word| word.as_str() != "--")
+        .filter(|word| word.starts_with('-'))
+        .all(|word| {
+            let word = word.as_str();
+            SPARSE_KEEPS_ANY.contains(&word)
+                || own.contains(&word)
+                || (sub == "restore" && word.starts_with("--source="))
+        })
+}
+
+/// What, set on the line, may run a program or change a setting in the middle of a move: the
+/// editors git asks for a message or a todo list.
+const EDITOR_ENV: [&str; 4] = ["GIT_EDITOR=", "GIT_SEQUENCE_EDITOR=", "EDITOR=", "VISUAL="];
+
+/// Whether `inv` sets git configuration on the line: `-c`, `--config-env`, or any `GIT_*`
+/// variable or an editor among the assignments and exports it runs with.
+fn configures(inv: &RootInvocation) -> bool {
+    inv.pre
+        .iter()
+        .any(|word| word.starts_with("-c") || word.starts_with("--config-env"))
+        || inv.env.iter().chain(&inv.own_env).any(|assign| {
+            // Any of git's own variables may change what it does mid-move: its config, its
+            // directories, a program it starts (an askpass, a proxy, an ssh).
+            let assign = assign.trim_start_matches("export ");
+            assign.starts_with("GIT_") || EDITOR_ENV.iter().any(|editor| assign.starts_with(editor))
+        })
 }
 
 /// How many folders one line's ways back are asked about ([`refusal_of`]). The way back is
@@ -1538,9 +1841,21 @@ pub fn refusal_of(
             &inv.env,
             &inv.own_env,
         );
+        // The shell's redirections are its own, never git's words: `git rebase <upstream>
+        // 2>&1` names one commit, as `git rebase <upstream>` does.
+        // A quoted word spelled like one is an operand: then nothing is dropped.
+        let words = |post: &[String]| -> Vec<String> {
+            if line.quoted_redirection {
+                return post.to_vec();
+            }
+            shellwrap::without_redirections(post)
+                .into_iter()
+                .cloned()
+                .collect()
+        };
         Some(match end {
-            AliasEnd::Resolved | AliasEnd::Unasked => (sub, post, false),
-            AliasEnd::Unread | AliasEnd::TooDeep => (inv.sub.clone(), inv.post.clone(), true),
+            AliasEnd::Resolved | AliasEnd::Unasked => (sub, words(&post), false),
+            AliasEnd::Unread | AliasEnd::TooDeep => (inv.sub.clone(), words(&inv.post), true),
         })
     };
     let hinted = |inv: &RootInvocation, why: String| {
@@ -1566,6 +1881,18 @@ pub fn refusal_of(
     // are put once for a folder ([`Once`]), and only the folders are bounded.
     let mut moves_asked = 0usize;
     let mut folders: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    // The folder's own sparse checkout decides only where nothing on the line can change it:
+    // no configuration set anywhere on it, no alias the guard did not read, and no git that
+    // is `git sparse-checkout` once its alias is read.
+    let line_leaves_sparsity = line
+        .elsewhere
+        .iter()
+        .map(|each| &each.inv)
+        .chain(&line.root)
+        .all(|inv| {
+            !configures(inv)
+                && read(inv).is_some_and(|(sub, _, unread)| !unread && sub != "sparse-checkout")
+        });
     for each in &line.elsewhere {
         let Some((sub, post, unread_alias)) = read(&each.inv) else {
             continue;
@@ -1585,10 +1912,12 @@ pub fn refusal_of(
             }
         }
         // What comes before it on the line may move what a name stands for.
+        let alone = !each.after_a_writer && !line.too_deep;
         let place = Place {
             root,
             chat_dir,
-            alone: !each.after_a_writer && !line.too_deep,
+            alone,
+            sparse: alone && line_leaves_sparsity && sparse_keeps(&sub, &post),
         };
         for dir in &each.dirs {
             if !moves_from_another && folders.insert(dir.as_str()) && folders.len() > MAX_FOLDERS {
@@ -1610,6 +1939,7 @@ pub fn refusal_of(
         root,
         chat_dir,
         alone: false,
+        sparse: false,
     };
     for inv in &line.root {
         let Some((sub, post, unread_alias)) = read(inv) else {

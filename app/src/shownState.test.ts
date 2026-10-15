@@ -99,6 +99,13 @@ describe("a task", () => {
     expect(said({ board: "running", task: sent(null) })).toBe("ring working");
   });
 
+  it("says a report purlis made from its last message as that, and counts it as come to nothing", () => {
+    // #1981: its turns ended without a report, and purlis sent what it last said.
+    expect(said({ board: "waiting", task: sent("last_message") })).toBe(
+      "triangle a report purlis made from its last message",
+    );
+  });
+
   it("reads failed when it reported that it could not go on", () => {
     expect(said({ board: "waiting", task: sent("blocked") })).toBe("cross failed");
   });
@@ -357,6 +364,7 @@ describe("the four counts a session's tasks are summed into (#1488)", () => {
   it("counts failed, blocked and ended without a report as failed", () => {
     expect(bucket({ board: "waiting", task: sent("failed") })).toBe("failed");
     expect(bucket({ board: "waiting", task: sent("blocked") })).toBe("failed");
+    expect(bucket({ board: "waiting", task: sent("last_message") })).toBe("failed");
     expect(bucket({ board: "done", task: inItsPlace(null) })).toBe("failed");
     expect(bucket({ board: "failed", task: OWED })).toBe("failed");
   });

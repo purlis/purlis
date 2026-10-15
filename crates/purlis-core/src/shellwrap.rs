@@ -1515,7 +1515,7 @@ const SOURCING: [&str; 2] = ["source", "."];
 
 /// `argv` with its redirections taken out: each operator, the word it takes, and a file
 /// descriptor's number in front of it (`2>/dev/null` lexes to `2`, `>`, `/dev/null`).
-fn without_redirections(argv: &[String]) -> Vec<&String> {
+pub fn without_redirections(argv: &[String]) -> Vec<&String> {
     let mut words: Vec<&String> = Vec::new();
     let mut skip = false;
     for w in argv {

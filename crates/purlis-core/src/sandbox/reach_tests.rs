@@ -198,3 +198,113 @@ fn a_host_policy_pins_never_allowed_is_refused_never_asked() {
     );
     assert_eq!(pinned.decide("example.org", 443, HTTPS, &[]), Decision::Ask);
 }
+
+// qw384b: a service on this Mac reached by name, through the proxy, for a client that never
+// proxies this machine's own addresses (Claude Code's NO_PROXY, Go's built-in bypass). The
+// names are a fixed list, never looked up (#2097 review).
+
+/// What `localport::reach_entries` lists for a port granted for this chat.
+fn granted(port: u16) -> Reach {
+    Reach::of(
+        super::localport::reach_entries(port)
+            .into_iter()
+            .map(|entry| (entry, By::Chat))
+            .collect(),
+    )
+}
+
+#[test]
+fn the_names_of_this_mac_are_a_fixed_list() {
+    assert_eq!(super::localport::THIS_MAC, "this-mac.internal");
+    assert_eq!(
+        super::localport::NAMES_OF_THIS_MAC,
+        [
+            "this-mac.internal",
+            "kubernetes.docker.internal",
+            "host.docker.internal"
+        ]
+    );
+}
+
+#[test]
+fn each_name_of_this_mac_is_carried_to_a_granted_port_at_the_layer_that_granted_it() {
+    let reach = granted(50795);
+    for name in super::localport::NAMES_OF_THIS_MAC {
+        assert_eq!(
+            reach.decide_by_name(name, 50795, HTTPS, &[]),
+            Decision::Allowed(By::Chat),
+            "{name}"
+        );
+        // Pinned to this machine's loopback, on that port alone: never looked up.
+        assert_eq!(
+            reach.address_of(name, 50795),
+            Some(std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, 50795))),
+            "{name}"
+        );
+    }
+    // Any spelling of a name: a trailing dot, capitals.
+    assert_eq!(
+        reach.decide_by_name("This-Mac.Internal.", 50795, HTTPS, &[]),
+        Decision::Allowed(By::Chat)
+    );
+    assert_eq!(reach.address_of("example.org", 443), None);
+}
+
+#[test]
+fn a_name_of_this_mac_on_a_port_not_granted_is_refused_as_this_machine_never_asked() {
+    let held = granted(50795);
+    for name in super::localport::NAMES_OF_THIS_MAC {
+        for port in [50796, 443, 22] {
+            assert_eq!(
+                held.decide_by_name(name, port, HTTPS, &[]),
+                Decision::Refused(Refused::LocalAddress),
+                "{name}:{port}"
+            );
+            assert_eq!(held.address_of(name, port), None, "{name}:{port}");
+        }
+        // A chat with no port at all: the same, and never asked about as a host.
+        assert_eq!(
+            reach().decide_by_name(name, 50795, HTTPS, &[]),
+            Decision::Refused(Refused::LocalAddress)
+        );
+    }
+}
+
+#[test]
+fn any_other_name_is_decided_as_before_in_a_chat_that_holds_a_port() {
+    let held = granted(6443);
+    for (name, port) in [
+        ("example.org", 6443),
+        ("evil.example", 6443),
+        ("kubernetes.docker.internal.example.com", 6443),
+        ("localhost.example", 6443),
+    ] {
+        assert_eq!(
+            held.decide_by_name(name, port, HTTPS, &[]),
+            held.decide(name, port, HTTPS, &[]),
+            "{name}"
+        );
+        // Connected to where it resolves at connect, as before, held to the local-address check.
+        assert_eq!(held.address_of(name, port), None, "{name}");
+    }
+}
+
+#[test]
+fn a_withdrawn_port_is_carried_no_longer_by_name_or_by_address() {
+    let reach = granted(50795);
+    let carrying = reach.clone();
+    reach.withdraw(50795);
+    // Every copy of it: the proxy's own is a copy of the one compiled.
+    for one in [&reach, &carrying] {
+        assert_eq!(
+            one.decide_by_name(super::localport::THIS_MAC, 50795, HTTPS, &[]),
+            Decision::Refused(Refused::LocalAddress)
+        );
+        assert_eq!(
+            one.decide("127.0.0.1", 50795, HTTPS, &[]),
+            Decision::Refused(Refused::LocalAddress)
+        );
+        assert!(!one.lists_exactly(IpAddr::V4(Ipv4Addr::LOCALHOST), 50795));
+        assert_eq!(one.address_of(super::localport::THIS_MAC, 50795), None);
+    }
+}

@@ -85,7 +85,7 @@ pub const HANDLERS: [Handler; 15] = [
         name: "pretooluse-dispatch",
         event: "PreToolUse",
         matcher: Some(
-            "Task|Agent|mcp__purlis__dispatch|mcp__purlis__dispatch_list|mcp__purlis__dispatch_report",
+            "Task|Agent|mcp__purlis__dispatch|mcp__purlis__dispatch_list|mcp__purlis__dispatch_read|mcp__purlis__dispatch_report",
         ),
         timeout: 5,
     },

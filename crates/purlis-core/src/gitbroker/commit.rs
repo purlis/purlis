@@ -361,7 +361,7 @@ pub fn trailers_ok(message: &str) -> Result<(), String> {
 }
 
 /// The lock of the branch folder whose git directory is `git_dir`, for this process's life.
-fn lock_of(git_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
+pub(crate) fn lock_of(git_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
     static FOLDERS: std::sync::LazyLock<
         std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
     > = std::sync::LazyLock::new(Default::default);

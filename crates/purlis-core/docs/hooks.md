@@ -23,10 +23,10 @@ each is wired to.
 | --- | --- |
 | `sessionstart`, `userpromptsubmit`, `notification`, `subagentstop`, `stop`, `sessionend` | reports what the session just did to the app that started it, which is how the window knows which chat needs you. Outside the app it has nobody to tell, except that `sessionstart` starts a background forge refresh |
 | `sessionstart`, in a plane | also briefs the session, as `additionalContext`: the workspace gate (confirm a workspace before repo work, unless the session is locked to one or `$PURLIS_WORKSPACE` pins it; a plane-root chat, `$PURLIS_PLANE_ROOT_SESSION=1`, is told it is at the root instead, and is shown every workspace as one it may manage in place of a workspace's todos and neighbours), the persona it was started as and a digest of that persona's memory, memory not yet shared, the workspace's oldest open todos, the plane's other workspaces, the piece the session stands in, and, in a chat the app started, where it is working: who asked for it, its sibling tasks and the other chats running as its persona (see [personas.md](personas.md)). It also freezes each persona's `tools:` for the persona tool gate below |
-| `userpromptsubmit`, in a plane | also adds, as `additionalContext`, the commitment gate: a prompt that asks for work and leaves a real fork open (open-ended wording, a broad scope, something irreversible, a long many-part ask) is told to scout first, then ask the operator at the fork before building. Never on a question, on work with nothing to ask about, or on a slash command; never in an unattended run (`permission_mode: bypassPermissions`); and quiet for the three prompts after it fires. A report a handed-off chat sent back rides the same context, and so does one line when where the chat is working has changed since it was last told |
+| `userpromptsubmit`, in a plane | also adds, as `additionalContext`, the commitment gate: a prompt that asks for work and leaves a real fork open (open-ended wording, a broad scope, something irreversible, a long many-part ask) is told to scout first, then ask the operator at the fork before building. Only on the first prompt of a harness session and on a later prompt that asks for a code change, one that opens with the ask itself ("please", "ok, now" or "can you" before it at most), so never on a short reply, the answer to a question or a design answer such as "agree at all, but …" (#1988). The first prompt is known from the gate's own record of the session, `commit-gate/<sid>`, keyed by the session id every harness that runs the hook hands it; a record the gate cannot write makes the prompt a later one. A chat resumed under the same session id is past its first prompt; one its harness resumes under a new session id has its next prompt read as that session's first. Never on a question, on work with nothing to ask about, or on a slash command; never in an unattended run (`permission_mode: bypassPermissions`); and quiet for the three prompts after it fires. A report a handed-off chat sent back rides the same context, and so does one line when where the chat is working has changed since it was last told |
 | `pretooluse` on `Bash` | the guards below, then the persona tool gate |
 | `pretooluse-read` on `Read`/`Grep` | the vault guard on those tools (*Vault read*, below) |
-| `pretooluse-edit` on `Write`/`Edit`/`MultiEdit` | the state-directory guard (*A hand-written state file*, below) |
+| `pretooluse-edit` on `Write`/`Edit`/`MultiEdit` | the state-directory guard (*A hand-written state file*, below); in a sandboxed Claude Code chat, an edit of purlis's own configuration handed to the app as a proposed change, and the tool refused (#1975, `toolhooks::pretooluse_edit_proposing`) |
 | `pretooluse-dispatch` on `Task`/`Agent` and on purlis's `dispatch` tools | refuses a sub-agent call whose type is a persona, and names the dispatch route (*A sub-agent named for a persona*, below), and refuses purlis's `dispatch` and `dispatch_report` tools to a sub-agent (*A dispatch from a sub-agent*, below) |
 | `posttooluse` on `Write`/`Edit`/`MultiEdit`, in a plane | warns when a memory or ref just written looks like it holds a secret; says what the workspace flow expects on the first edit in a LIVE workspace's clone; and every twelfth change without a memory, reminds the session to record one |
 | `posttooluse-skill`, in a plane | logs which skill the active persona used |
@@ -342,6 +342,20 @@ rule while one who reads a bare refusal files an issue.
   asked about the branch of a name before a tag of it, and about the one remote branch of a
   name nothing else has, as git reads it there.
 
+  A redirection on the line (`2>&1`, `> /dev/null`, a pipe into `tail`) is the shell's, not
+  git's: `git rebase <upstream> 2>&1 | tail -5` is judged as `git rebase <upstream>`.
+
+  A path the folder's own sparse checkout leaves out is one git does not write, and is not
+  counted, where nothing on the line can change that checkout: the move is the only git that
+  writes on its line, every option it takes is on its own subcommand's short list of options
+  spelled out whole that change nothing about which paths git writes, no configuration and no
+  editor is set anywhere on the line (`-c`, `--config-env`, any `GIT_*` variable, `EDITOR`,
+  `VISUAL`, an export of one), and every git on the line is
+  read, its alias included, and none is `git sparse-checkout`. Then, where `core.sparseCheckout` is on in the folder, git's own `sparse-checkout
+  check-rules` says which paths those are. Otherwise, or where git does not answer, every path
+  counts. A word spelled like a redirection but quoted (`'>'`) is an operand: on such a line
+  nothing is read as a redirection.
+
   A folder with no commit yet (after `git init` and a `fetch`) has nothing to compare with:
   a move there answers for the whole tree of the commit it lands on. So does any checkout,
   hard reset or restore in a folder that has a commit and was never checked out (a clone
@@ -363,7 +377,8 @@ rule while one who reads a bare refusal files an issue.
   person's `git -C <folder> restore --source=HEAD --staged --worktree -- :/`.
 
   git is asked through the hardened runner alone, with no global or system configuration,
-  and only by plumbing that compares commits: no file is read through a filter and no
+  and only by plumbing that compares commits or reads the sparse patterns: no file is read
+  through a filter and no
   program a repository's configuration names is started. A path that reads as prose is
   counted in a refusal and never repeated.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the

@@ -337,9 +337,33 @@ pub(crate) mod pretend {
         /// How many starts are under way now, and the most there were at once.
         starting: AtomicU32,
         most_starting: AtomicU32,
+        /// Whether ending every session waits until a test lets it go
+        /// ([`Pretend::holds_its_end`]): a chat that ignores its end.
+        end_held: Mutex<bool>,
+        end_let_go: std::sync::Condvar,
+        /// How many ends of every session are under way now, and the most there were at once.
+        ending: AtomicU32,
+        most_ending: AtomicU32,
     }
 
     impl Pretend {
+        /// Ending every session waits, from now on, until [`Self::lets_its_end_go`]: its chats
+        /// ignore their end, as a slow program does.
+        pub fn holds_its_end(&self) {
+            *lock(&self.seen.end_held) = true;
+        }
+
+        /// The most ends of every session that were under way at once.
+        pub fn most_ending_at_once(&self) -> u32 {
+            self.seen.most_ending.load(Ordering::SeqCst)
+        }
+
+        /// Lets every end waiting in [`Self::holds_its_end`] go on.
+        pub fn lets_its_end_go(&self) {
+            *lock(&self.seen.end_held) = false;
+            self.seen.end_let_go.notify_all();
+        }
+
         /// Every session it was asked to start, by number and program.
         pub fn asked(&self) -> Vec<(u32, String)> {
             lock(&self.seen.asked).clone()
@@ -492,7 +516,19 @@ pub(crate) mod pretend {
             Ok(())
         }
         fn end_all(&self) {
+            let now = self.seen.ending.fetch_add(1, Ordering::SeqCst) + 1;
+            self.seen.most_ending.fetch_max(now, Ordering::SeqCst);
+            let mut held = lock(&self.seen.end_held);
+            while *held {
+                held = self
+                    .seen
+                    .end_let_go
+                    .wait(held)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+            drop(held);
             lock(&self.seen.running).clear();
+            self.seen.ending.fetch_sub(1, Ordering::SeqCst);
         }
         fn stop_every_program(&self) -> usize {
             lock(&self.seen.running).len()

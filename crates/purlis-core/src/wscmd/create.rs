@@ -26,6 +26,9 @@ pub struct Request<'a> {
     pub force: bool,
     /// Repos to clone into it, by inventory name — `charter clone`'s argument.
     pub repos: &'a [String],
+    /// The hosts those clones may reach, where the app makes them for a sandboxed chat
+    /// ([`crate::repocmd::clone::Request::hosts`]); `None`, no limit, anywhere else.
+    pub hosts: Option<&'a [String]>,
     pub now: chrono::DateTime<chrono::Utc>,
     pub ids: &'a crate::active::Ids,
 }
@@ -37,19 +40,38 @@ pub struct Request<'a> {
 /// not a workspace.
 pub fn create(request: &Request, say: Sink) -> u8 {
     let author = ensure::author();
-    if let Err(why) = ensure::ensure(request.root, request.name, request.now, &author) {
-        say(Say::Fail(why));
-        return 1;
-    }
+    let rows = match ensure::ensure(request.root, request.name, request.now, &author) {
+        Ok(rows) => rows,
+        Err(why) => {
+            say(Say::Fail(why));
+            return 1;
+        }
+    };
     let name = request.name;
+    // Every write is checked before the workspace is called ready: one that failed is said,
+    // and the command fails.
+    let mut failed: Vec<String> = ensure::blocked(&rows);
     if let Some(text) = request.vision {
-        let plane = crate::workspaces::Plane::open(request.root);
-        if let Ok(workspace) = plane.workspace(name) {
-            let _ = workspace.set_vision(text);
+        let set = crate::workspaces::Plane::open(request.root)
+            .workspace(name)
+            .map_err(|why| why.to_string())
+            .and_then(|workspace| workspace.set_vision(text).map_err(|why| why.to_string()));
+        if let Err(why) = set {
+            failed.push(format!("workspace.md ({why})"));
         }
     }
-    if request.live {
-        let _ = wscmd::set_live(request.root, name, true);
+    if request.live
+        && let Err(why) = wscmd::set_live(request.root, name, true)
+    {
+        failed.push(format!("the project's .gitignore ({why})"));
+    }
+    if !failed.is_empty() {
+        say(Say::Fail(format!(
+            "workspace '{name}' is not ready: purlis could not write {} in workspaces/{name}/. \
+             `purlis workspace reinit {name}` repairs what it can, and names what is in the way",
+            failed.join(", ")
+        )));
+        return 1;
     }
 
     // The MODE is read off the flag, not off the workspace: `create` on a workspace that is
@@ -79,6 +101,13 @@ pub fn create(request: &Request, say: Sink) -> u8 {
     if request.use_it {
         let before = wscmd::select::is_locked(request.root, request.ids);
         match wscmd::select::set_active(request.root, name, request.ids, request.force) {
+            wscmd::select::Scope::Unwritten => {
+                say(Say::Fail(wscmd::select::unwritten_msg(name)));
+                say(Say::Info(format!(
+                    "Workspace '{name}' was created; it is not selected."
+                )));
+                return 1;
+            }
             wscmd::select::Scope::Locked => {
                 let held = before.unwrap_or_else(|| "?".to_string());
                 say(Say::Fail(wscmd::select::locked_msg(name, &held)));
@@ -141,7 +170,7 @@ pub fn create(request: &Request, say: Sink) -> u8 {
                 repos: request.repos,
                 now: request.now,
                 author: &author,
-                hosts: None,
+                hosts: request.hosts,
             },
             say,
         );
@@ -186,6 +215,7 @@ mod tests {
                 use_it: false,
                 force: false,
                 repos: &[],
+                hosts: None,
                 now: now(),
                 ids: &crate::active::Ids::default(),
             },
@@ -236,6 +266,37 @@ mod tests {
             ignore.contains("!/workspaces/gamma/workspace.json"),
             "{ignore}"
         );
+    }
+
+    #[test]
+    fn a_workspace_whose_folder_cannot_be_made_is_never_called_ready() {
+        let dir = plane();
+        std::fs::remove_dir(dir.path().join("workspaces")).unwrap();
+        std::fs::write(dir.path().join("workspaces"), "not a folder\n").unwrap();
+        let (code, lines) = run(dir.path(), "gamma", Some("Ship it"), false);
+        assert_eq!(code, 1, "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("ready (")), "{lines:?}");
+        assert!(
+            lines[0].contains("purlis could not make workspaces/gamma"),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn a_baseline_write_that_failed_fails_the_create_and_names_the_path() {
+        // A folder that is there and refuses every write below it, as a sandbox does.
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = plane();
+        let ws = dir.path().join("workspaces/gamma");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::set_permissions(&ws, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let (code, lines) = run(dir.path(), "gamma", None, false);
+        std::fs::set_permissions(&ws, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(code, 1, "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("ready (")), "{lines:?}");
+        let said = lines.join("\n");
+        assert!(said.contains("is not ready"), "{said}");
+        assert!(said.contains("workspace reinit gamma"), "{said}");
     }
 
     #[test]

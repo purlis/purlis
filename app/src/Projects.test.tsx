@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { forgetLateAnswers, saidOfLate, timed } from "./answerWatch";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -70,6 +71,8 @@ afterEach(() => {
   clearMocks();
   vi.restoreAllMocks();
   panes.clear();
+  // A late answer a test left unanswered is the module's, not the next window's.
+  forgetLateAnswers();
 });
 
 declare global {
@@ -678,12 +681,53 @@ describe("a window holding more than one project", () => {
       }),
     );
 
-    // Not answered yet, and the tab is gone.
+    // Not answered yet, and the tab is gone. The strip says one close is still letting go, for
+    // whoever waits on it (the scenario specs).
     await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    expect(stripNamed("Projects").closest("[data-letting-go]")).toHaveAttribute(
+      "data-letting-go",
+      "1",
+    );
     expect(asked.filter((one) => one.cmd === "close_plane")).toHaveLength(1);
     answer(null);
     await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    await waitFor(() =>
+      expect(stripNamed("Projects").closest("[data-letting-go]")).toHaveAttribute(
+        "data-letting-go",
+        "0",
+      ),
+    );
     expect(asked.filter((one) => one.cmd === "close_plane")).toHaveLength(1);
+  });
+
+  it("says on the window's line when the core has not answered a command for a while (#1949)", async () => {
+    core({ launch: ONE, chats: { [ONE]: [chat({ session: 1, name: "one.1" })] } });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    // A command the window asked, never answered: timed as every command is.
+    void timed("createProject", () => new Promise(() => {}), 10)("/home/dev/made");
+    expect(
+      await screen.findByText(saidOfLate({ command: "createProject", at: 0, ms: undefined })),
+    ).toBeInTheDocument();
+  });
+
+  it("takes the late line away once the answer comes (#2029's review)", async () => {
+    core({ launch: ONE, chats: { [ONE]: [chat({ session: 1, name: "one.1" })] } });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    let answer: (said: string) => void = () => {};
+    const asked = timed(
+      "createProject",
+      () => new Promise<string>((said) => (answer = said)),
+      10,
+    )("/home/dev/made");
+    const late = saidOfLate({ command: "createProject", at: 0, ms: undefined });
+    expect(await screen.findByText(late)).toBeInTheDocument();
+    await act(async () => {
+      answer("made");
+      await asked;
+    });
+    await waitFor(() => expect(screen.queryByText(late)).toBeNull());
   });
 
   it("opens a project it is still letting go of only once that is done, and keeps it (#1949)", async () => {

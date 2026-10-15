@@ -73,6 +73,112 @@ pub fn sync(root: &Path, scope: Scope, say: Sink) -> u8 {
     0
 }
 
+/// Where remote `remote` of the clone at `clone`, in the project at `root`, is, and the one
+/// credential helper git may ask for it, as [`sync`] reaches a remote (qw387): over HTTPS, with
+/// the forge's own credential for a host the project manages and none for another, never over
+/// SSH to a host it does not manage, and where `hosts` is given (a sandboxed chat's internet
+/// access) only on a host in it. `pushing` asks for the helper a push gets. Why not, where not.
+pub fn reach(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    hosts: Option<&[String]>,
+    pushing: bool,
+) -> Result<(String, Option<String>), String> {
+    if remote.is_empty() || remote.starts_with('-') || remote.chars().any(char::is_control) {
+        return Err(format!(
+            "'{}' cannot name a remote",
+            crate::shown::short(remote)
+        ));
+    }
+    // The address the clone records, as written: what it names is what the project manages
+    // and the chat's sandbox allows, whatever a rewrite in git's config makes of it.
+    let key = format!("remote.{remote}.url");
+    let url = git::run(clone, &["config", "--get", &key], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.line().trim().to_owned())
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| format!("the clone has no remote '{remote}'"))?;
+    let managed = forge::resolve_host(&url, root);
+    if managed.is_none() && is_ssh(&url) {
+        return Err(format!(
+            "remote '{remote}' is an SSH address on a host this project does not manage, and \
+             purlis reaches a remote over HTTPS with a forge's token only (docs/git-policy.md)"
+        ));
+    }
+    // What git dials too, as its own config rewrites the address, to fetch and to push.
+    let dialled: Vec<String> = [
+        &["remote", "get-url", remote][..],
+        &["remote", "get-url", "--push", remote],
+    ]
+    .iter()
+    .filter_map(|args| {
+        git::run(clone, args, git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.line().trim().to_owned())
+    })
+    .collect();
+    if let Some(hosts) = hosts {
+        for other in &dialled {
+            let host = forge::host_of(other);
+            if !host.is_empty() && !crate::sandbox::egress::allows(hosts, &host) {
+                return Err(format!(
+                    "remote '{remote}' reaches '{}', which this chat's sandbox may not reach. The \
+                     project's `[sandbox] egress` in {} says which hosts a chat reaches",
+                    crate::shown::escaped(&host),
+                    crate::plane::MANIFEST
+                ));
+            }
+        }
+        let host = forge::host_of(&url);
+        if !crate::sandbox::egress::allows(hosts, &host) {
+            return Err(format!(
+                "remote '{remote}' is on '{}', which this chat's sandbox may not reach. The \
+                 project's `[sandbox] egress` in {} says which hosts a chat reaches",
+                crate::shown::escaped(&host),
+                crate::plane::MANIFEST
+            ));
+        }
+    }
+    let helper = managed
+        .as_ref()
+        .map(|forge| {
+            if pushing {
+                forge::gitcredential::helper_for_push(forge, clone, &url)
+            } else {
+                forge::gitcredential::helper_for_fetch(forge, clone)
+            }
+        })
+        .transpose()?;
+    Ok((url, helper))
+}
+
+/// Fetches remote `remote` of the clone at `clone`, reached as [`reach`] reaches it.
+pub fn fetch_remote(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    hosts: Option<&[String]>,
+) -> Result<(), String> {
+    let (_, helper) = reach(root, clone, remote, hosts, false)?;
+    let fetched = git::run_network(
+        clone,
+        helper.as_deref(),
+        &["fetch", "--prune", "--no-recurse-submodules", remote],
+    )
+    .map_err(|e| e.to_string())?;
+    if fetched.ok() {
+        Ok(())
+    } else {
+        Err(format!(
+            "git could not fetch from '{remote}' (access or network): {}",
+            fetched.err.lines().next().unwrap_or("").trim()
+        ))
+    }
+}
+
 /// Whether a remote URL goes over SSH: `ssh://…`, or scp-style `host:path`.
 fn is_ssh(url: &str) -> bool {
     if url.starts_with("ssh://") || url.starts_with("git+ssh://") || url.starts_with("ssh+git://") {

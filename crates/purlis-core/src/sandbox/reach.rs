@@ -25,10 +25,13 @@
 //! it and the chat's sandbox raises a Block with an Allow on it. A host policy pins as never
 //! allowed is refused and never asked about ([`Refused::Policy`]).
 
-use std::net::IpAddr;
+use std::collections::BTreeSet;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use super::egress::{allows_on, entry_parts};
 use super::hosts::{Host, refused_address};
+use super::localport;
 
 /// The layer that lists a host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,7 +130,39 @@ pub struct Reach {
     listed: Vec<(String, By)>,
     /// The hosts policy pins as never allowed (#1666): refused, never asked about.
     never: Vec<Host>,
+    /// The ports of this machine whose grant was removed while the chat runs ([`Self::withdraw`]):
+    /// shared by every copy, so the proxy's copy hears it.
+    withdrawn: Withdrawn,
 }
+
+/// [`Reach::withdrawn`]: one set, shared by every copy of a reach.
+#[derive(Debug, Clone, Default)]
+struct Withdrawn(Arc<Mutex<BTreeSet<u16>>>);
+
+impl Withdrawn {
+    fn holds(&self, port: u16) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&port)
+    }
+
+    fn ports(&self) -> BTreeSet<u16> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+/// Two reaches are alike where they withdrew the same ports, whether or not they share them.
+impl PartialEq for Withdrawn {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.ports() == other.ports()
+    }
+}
+
+impl Eq for Withdrawn {}
 
 impl Reach {
     /// `listed`: each entry a host as [`super::egress::allows_on`] reads one, put in the order
@@ -143,6 +178,7 @@ impl Reach {
         Self {
             listed,
             never: Vec::new(),
+            withdrawn: Withdrawn::default(),
         }
     }
 
@@ -160,7 +196,11 @@ impl Reach {
     /// in the order the layers decide.
     #[must_use]
     pub fn and(self, more: impl IntoIterator<Item = (String, By)>) -> Self {
-        let Self { mut listed, never } = self;
+        let Self {
+            mut listed,
+            never,
+            withdrawn,
+        } = self;
         for one in more {
             if !listed.contains(&one) {
                 listed.push(one);
@@ -168,6 +208,7 @@ impl Reach {
         }
         Self {
             never,
+            withdrawn,
             ..Self::of(listed)
         }
     }
@@ -234,7 +275,61 @@ impl Reach {
         self.exactly(ip, port).is_some()
     }
 
+    /// **[`Self::decide`], with a service on this Mac reached by name** (qw384b): what the
+    /// chat's proxy asks. A client that never sends this machine's own addresses to a proxy
+    /// (Claude Code's `NO_PROXY`, every Go client's built-in bypass) still sends a name, so a
+    /// name of this Mac ([`localport::NAMES_OF_THIS_MAC`], a fixed list, never looked up) on a
+    /// port is that port of this machine's loopback: carried at the layer that granted it, and
+    /// refused as this machine where none did, never asked about as a host. Any other name is
+    /// decided as [`Self::decide`] decides it, and no name is resolved here.
+    ///
+    /// Only while the port stands: one [`Self::withdraw`]n is carried no longer.
+    pub fn decide_by_name(
+        &self,
+        host: &str,
+        port: u16,
+        defaults: &[u16],
+        own: &[IpAddr],
+    ) -> Decision {
+        if localport::is_a_name_of_this_mac(host) {
+            return self.on_this_mac(port);
+        }
+        self.decide(host, port, defaults, own)
+    }
+
+    /// **Where the proxy connects for `host` on `port`, never looking it up**: this machine's
+    /// loopback, for a name of this Mac on a port the chat holds. Pinned, so no lookup at
+    /// connect can send such a connection anywhere else (#2097 review).
+    pub fn address_of(&self, host: &str, port: u16) -> Option<SocketAddr> {
+        (localport::is_a_name_of_this_mac(host) && self.on_this_mac(port).carries())
+            .then(|| SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+    }
+
+    /// **`port` of this machine is carried no longer**, by any copy of this reach (the chat's
+    /// proxy holds one): its grant was removed while the chat runs (qw384b).
+    pub fn withdraw(&self, port: u16) {
+        self.withdrawn
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(port);
+    }
+
+    /// The decision for `port` of this machine's loopback, by whichever name it was reached.
+    fn on_this_mac(&self, port: u16) -> Decision {
+        match self
+            .exactly(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+            .or_else(|| self.exactly(IpAddr::V6(Ipv6Addr::LOCALHOST), port))
+        {
+            Some(by) => Decision::of(by),
+            None => Decision::Refused(Refused::LocalAddress),
+        }
+    }
+
     fn exactly(&self, ip: IpAddr, port: u16) -> Option<By> {
+        if ip.is_loopback() && self.withdrawn.holds(port) {
+            return None;
+        }
         self.listed.iter().find_map(|(entry, by)| {
             let (name, held) = entry_parts(entry);
             (held == Some(port) && name.parse::<IpAddr>().is_ok_and(|listed| listed == ip))

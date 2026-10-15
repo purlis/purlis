@@ -1205,15 +1205,24 @@ pub struct LineGit {
     pub elsewhere: Vec<Elsewhere>,
     /// A string a shell is handed was not read, and may name git.
     pub too_deep: bool,
+    /// A word on the line is spelled like a redirection but quoted or escaped (`'>'`), so it is
+    /// an operand, and a reader that drops redirections by their spelling would drop it too.
+    pub quoted_redirection: bool,
 }
 
 /// [`plane_root_git`]'s walk, answering the invocations that act elsewhere too.
 pub fn line_git(cmd: &str, cwd: &str, root: &str) -> LineGit {
     let walk = walked(cmd, cwd, root, Some(Vec::new()));
+    // Read off the source, where quoting is still known; a line the lexer refuses counts.
+    let quoted_redirection = crate::shellseg::lex(cmd).map_or(true, |toks| {
+        toks.iter()
+            .any(|tok| !tok.bare && shellwrap::is_redirect_token(&tok.text))
+    });
     LineGit {
         root: walk.out,
         elsewhere: walk.elsewhere.unwrap_or_default(),
         too_deep: walk.too_deep,
+        quoted_redirection,
     }
 }
 

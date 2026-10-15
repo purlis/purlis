@@ -38,8 +38,8 @@ pub enum Forwarded {
 pub enum NotTaken {
     /// This is no chat the app started: no chat number.
     NotAChat,
-    /// A chat the app started, whose harness gave this process no connection to the app: the
-    /// MCP server under Codex, which hands it only [`purlis_core::chattools::SCOPE_ENV`].
+    /// A chat the app started, whose harness gave this process no connection to the app: none
+    /// of [`purlis_core::chattools::CONNECTION_ENV`] reached it.
     NoConnection,
     /// The app's socket is not there, or nothing listens on it: the app has gone.
     AppGone,
@@ -129,26 +129,55 @@ pub fn forwarded(write: Write) -> Forwarded {
     }
 }
 
+/// This chat's number and its hook socket, or why it has no connection to the app.
+fn the_chat_s_connection() -> Result<(u32, std::ffi::OsString), NotTaken> {
+    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
+    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
+        .filter(|s| !s.is_empty())
+        .ok_or(NotTaken::NoConnection)?;
+    Ok((chat, socket))
+}
+
+/// Why connecting to the app failed, as a write that was not taken.
+fn not_connected(e: &std::io::Error) -> NotTaken {
+    use std::io::ErrorKind;
+    if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
+        NotTaken::AppGone
+    } else {
+        NotTaken::Dropped
+    }
+}
+
 /// The app's answer to the ask `make` builds for this chat's number, or why no app can be
 /// asked.
 pub fn asked(
     make: impl FnOnce(u32) -> Ask,
     within: std::time::Duration,
 ) -> Result<std::io::Result<Answer>, NotTaken> {
-    let chat = crate::session::chat_number().ok_or(NotTaken::NotAChat)?;
-    let socket = purlis_core::envvar::var_os(SOCKET_ENV)
-        .filter(|s| !s.is_empty())
-        .ok_or(NotTaken::NoConnection)?;
+    let (chat, socket) = the_chat_s_connection()?;
     let mut asking = hookwire::Asking::on(Path::new(&socket), hookwire::ChatToken::from_env())
-        .map_err(|e| {
-            use std::io::ErrorKind;
-            if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) {
-                NotTaken::AppGone
-            } else {
-                NotTaken::Dropped
-            }
-        })?;
+        .map_err(|e| not_connected(&e))?;
     Ok(asking.ask(&make(chat), within))
+}
+
+/// The app's reply to the ask `make` builds for this chat's number, over the hook channel's
+/// framed stream where the app speaks it (#1996), so an answer larger than a line comes back
+/// whole with what the app attaches; in lines, as [`asked`], where the app is older. Said with
+/// the chat's own token, as every line of the chat's is.
+pub fn replied(
+    make: impl FnOnce(u32) -> Ask,
+    within: std::time::Duration,
+) -> Result<std::io::Result<hookwire::framed::Reply>, NotTaken> {
+    use hookwire::framed::Greeted;
+    let (chat, socket) = the_chat_s_connection()?;
+    let token = hookwire::ChatToken::from_env();
+    match hookwire::Framed::on(Path::new(&socket), token.as_ref(), chat, within) {
+        Ok(Greeted::Framed(mut framed)) => Ok(framed.ask(&make(chat), within)),
+        Ok(Greeted::Older) => asked(make, within).map(|answer| answer.map(Into::into)),
+        // The app read the hello and said no: its sentence, as a refused ask's.
+        Ok(Greeted::Refused(why)) => Ok(Ok(Answer::No { why }.into())),
+        Err(e) => Err(not_connected(&e)),
+    }
 }
 
 /// Whether asking failed the way an app that never took the ask fails: it ended the
@@ -215,6 +244,83 @@ pub fn not_its_persona(named: &str, own: Option<&str>) -> String {
     )
 }
 
+/// How long a proposed change waits for the app to take it: inside the edit hook's own budget.
+const A_PROPOSAL_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(4);
+
+/// **Whether the app took a proposed change** (#1975): it answers [`Answer::Said`] when it holds
+/// it for the person. Anything else (no chat, no connection, an app older than the ask, one that
+/// refused it) is not taken, and the chat is refused its edit as before.
+pub fn proposal_taken(ask: Ask) -> bool {
+    matches!(
+        asked(|_| ask, A_PROPOSAL_TAKES_AT_MOST),
+        Ok(Ok(Answer::Said { code: 0, .. }))
+    )
+}
+
+/// **`purlis propose <file> --from <draft>`** (#1975, PC-2): in a chat the app started, hand the
+/// app `draft`, a file in the chat's own folder, as the whole new content of `file`, one of
+/// purlis's own configuration files in the project at `root`, for the person to apply in the
+/// window. Nothing is written here. What the app says is printed; where nothing took it, why.
+pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
+    use purlis_core::proposed;
+    let not_a_chat = || {
+        "purlis propose is for a chat the app started: there is nobody here to show the change \
+         to. Edit the file yourself."
+            .to_owned()
+    };
+    let chat_dir = purlis_core::envvar::var(purlis_core::sandboxblock::CHAT_DIR_ENV)
+        .filter(|dir| Path::new(dir).is_absolute())
+        .ok_or_else(not_a_chat)?;
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Err(why);
+    }
+    let here = std::env::current_dir().map_err(|e| e.to_string())?;
+    let rel = proposed::proposable(root, &here.join(file))?;
+    // The draft is the chat's own: in its folder, by the path the kernel names it by.
+    let real =
+        |path: &Path| std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()));
+    let draft = real(&here.join(draft))?;
+    if !draft.starts_with(real(Path::new(&chat_dir))?) {
+        return Err(format!(
+            "the draft {} is not in this chat's own folder: write it there, then propose it",
+            draft.display()
+        ));
+    }
+    let content = std::fs::read(&draft).map_err(|e| format!("{}: {e}", draft.display()))?;
+    if content.len() > proposed::MOST_BYTES {
+        return Err(format!(
+            "the draft is longer than the {} bytes a proposed change may be",
+            proposed::MOST_BYTES
+        ));
+    }
+    let content = String::from_utf8(content)
+        .map_err(|_| "the draft is not text purlis can show".to_owned())?;
+    let proposal = proposed::read_and_apply(root, &rel, proposed::Change::Whole { content })?;
+    let answered = asked(
+        |chat| {
+            Ask::Propose(Box::new(hookwire::ProposeAsk {
+                chat,
+                path: proposal.path.display().to_string(),
+                base: proposal.base,
+                change: proposal.change,
+            }))
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            Ok(code)
+        }
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err("the app answered something purlis did not ask for".to_owned()),
+        Ok(Err(e)) => Err(format!("the app did not answer: {e}")),
+        Err(_) => Err(not_a_chat()),
+    }
+}
+
 /// The sentence a sandboxed chat is refused with when a command would change a workspace other
 /// than its own, or every workspace (#1408): nothing is changed, and `instead`, the way round,
 /// is named.
@@ -279,13 +385,39 @@ pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {
 /// started under the sandbox (#1408): the folder's files go before git's record of it, which a
 /// sandboxed chat cannot finish.
 pub fn no_piece_removal_in_a_sandbox(repo: &str, piece: &str) -> String {
-    format!(
-        "a sandboxed chat does not remove a branch folder: removing '{} · {}' deletes its files \
-         and git's record of it, which a sandboxed chat cannot finish, so nothing was removed. \
-         Ask the person to remove it from the window",
+    let (repo, piece) = (
         purlis_core::shown::short(repo),
-        purlis_core::shown::short(piece)
+        purlis_core::shown::short(piece),
+    );
+    format!(
+        "a sandboxed chat does not remove a branch folder: removing '{repo} · {piece}' deletes \
+         its files and git's record of it, which a sandboxed chat cannot finish, so nothing was \
+         removed. Ask the person to remove it from the window: Remove folder {piece} in {repo}, \
+         in the palette"
     )
+}
+
+/// Why `purlis workspace create <name>` is refused whole in a sandboxed chat, before anything is
+/// made, or `None` (qw387). The app makes the workspace and clones into it for the chat, but
+/// `--live` writes the project's ignore file, which no chat writes, and `--use` (with its
+/// `--force`) moves the chat into another workspace, which a sandboxed chat does not do.
+pub fn create_refused(name: &str, live: bool, uses: bool) -> Option<String> {
+    let name = purlis_core::shown::short(name);
+    if live {
+        return Some(format!(
+            "--live changes the project's ignore file, which the app does not write for a \
+             chat, so nothing was created. Create '{name}' without --live, then ask the person \
+             to run `purlis workspace live {name}` in their own terminal"
+        ));
+    }
+    uses.then(|| {
+        format!(
+            "--use would move this chat into '{name}', and a sandboxed chat stays in the place it \
+             was started in, so nothing was created. Create it without --use, then name it with \
+             -w {name} on each command, or hand the work to a chat there with `purlis handoff \
+             {name} \"<brief>\"`"
+        )
+    })
 }
 
 /// Whether a command that deletes `target`, a folder of the project at `root`, is held in this
@@ -377,6 +509,28 @@ mod tests {
         assert!(removal_held_by(true, || true));
         // Neither: a terminal, or a chat the app started without the sandbox.
         assert!(!removal_held_by(false, || false));
+    }
+
+    #[test]
+    fn a_create_the_app_cannot_finish_for_a_chat_is_refused_naming_the_way() {
+        assert_eq!(create_refused("beta", false, false), None);
+        let live = create_refused("beta", true, false).expect("refused");
+        assert!(live.contains("nothing was created"), "{live}");
+        assert!(live.contains("purlis workspace live beta"), "{live}");
+        let uses = create_refused("beta", false, true).expect("refused");
+        assert!(uses.contains("nothing was created"), "{uses}");
+        assert!(uses.contains("-w beta"), "{uses}");
+        assert!(uses.contains("purlis handoff beta"), "{uses}");
+    }
+
+    #[test]
+    fn a_branch_folder_a_chat_cannot_remove_is_named_by_its_palette_row() {
+        let said = no_piece_removal_in_a_sandbox("charter", "probe");
+        assert!(said.contains("nothing was removed"), "{said}");
+        assert!(
+            said.ends_with("Remove folder probe in charter, in the palette"),
+            "{said}"
+        );
     }
 
     #[test]

@@ -487,3 +487,161 @@ describe("Keep blocked on a block that is not a host (#1987)", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 });
+
+describe("a service on this Mac's Notice (qw384)", () => {
+  const CLUSTER: ChatBlocked = {
+    ...UNNAMED,
+    harness: "codex",
+    kind: "local-service",
+    said: "a connection to a service on this Mac",
+    offer: "port",
+    target: "50795",
+    route:
+      "Allowing it lets this chat connect to whatever listens on that port on this Mac, as you; " +
+      "a container engine's or a cluster's port can reach much of your machine.",
+    levels: ["chat", "you"],
+  };
+
+  it("names the port, says what allowing it means, and sends that one port", async () => {
+    const { sent } = drawn(CLUSTER);
+
+    expect(screen.getByText("50795")).toBeTruthy();
+    expect(screen.getByText(/whatever listens on that port on this Mac/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "connect", kind: "local-service", what: "port", target: "50795" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+
+  it("pre-fills a port only the command's output named, and says to check it", async () => {
+    const { sent } = drawn({ ...CLUSTER, target: null, suggested: "50795" });
+    const box = screen.getByRole("textbox", { name: "Port to allow" });
+    expect(box).toHaveValue("50795");
+    expect(box).toHaveAccessibleDescription(/from the command's output: check it/);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "connect", kind: "local-service", what: "port", target: "50795" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+
+  describe("in a Claude Code chat (qw384b)", () => {
+    const CLAUDE: ChatBlocked = {
+      ...CLUSTER,
+      harness: "claude",
+      route: `${CLUSTER.route} In a Claude Code chat a command reaches it through this chat's proxy, by the name this-mac.internal and that port.`,
+    };
+    const CONTEXTS = [
+      { name: "kind-kind", server: "https://127.0.0.1:50795", port: 50795, refused: null },
+      {
+        name: "prod",
+        server: "https://api.prod.example.com",
+        port: null,
+        refused: "https://api.prod.example.com is not a cluster on this Mac.",
+      },
+    ];
+
+    function drawnClaude(block: ChatBlocked = CLAUDE) {
+      const asked: { cmd: string; args: unknown }[] = [];
+      mockIPC((cmd, args) => {
+        asked.push({ cmd, args });
+        if (cmd === "allow_sandbox_block")
+          return { said: "Allowed only for this chat.", live: false };
+        if (cmd === "kube_contexts") return CONTEXTS;
+        if (cmd === "point_kubectl")
+          return "kubectl in this chat now uses its own copy of kind-kind.";
+        return null;
+      });
+      const onAllowed = vi.fn();
+      render(
+        <SandboxBlockNotice
+          block={block}
+          asks={askOfBlock(block)}
+          more={0}
+          onDismiss={vi.fn()}
+          onAllowed={onAllowed}
+          onRestarted={vi.fn()}
+        />,
+      );
+      return {
+        onAllowed,
+        sent: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
+      };
+    }
+
+    it("offers the same Allow, saying the name its proxy carries the port by", async () => {
+      const { sent } = drawnClaude();
+      expect(screen.getByText(/this-mac\.internal/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /without the sandbox/ })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+      await waitFor(() => expect(sent("allow_sandbox_block")).toHaveLength(1));
+    });
+
+    it("once allowed, points the chat's kubectl at a context on this Mac on the person's press", async () => {
+      const { sent, onAllowed } = drawnClaude();
+      // Nothing is read before the person asks.
+      expect(screen.queryByRole("button", { name: "Point kubectl at it…" })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Point kubectl at it…" }));
+      expect(sent("kube_contexts")).toHaveLength(1);
+      expect(sent("point_kubectl")).toEqual([]);
+      // Before any press, it says the chat gets that context's credentials, which it can read.
+      expect(
+        screen.getByText(
+          /gets its own copy of the context you choose, its credentials included: this chat can read them/,
+        ),
+      ).toBeTruthy();
+      // A context elsewhere is listed with why, and never pressable.
+      expect(screen.getByText(/api\.prod\.example\.com is not a cluster on this Mac/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /prod/ })).toBeNull();
+      onAllowed.mockClear();
+      await userEvent.click(screen.getByRole("button", { name: "Use kind-kind" }));
+      await waitFor(() =>
+        expect(sent("point_kubectl")).toEqual([{ plane: PLANE, session: 4, context: "kind-kind" }]),
+      );
+      expect(await screen.findByText(/now uses its own copy of kind-kind/)).toBeTruthy();
+      // The chat restarts to take it, as after an Allow.
+      expect(onAllowed).toHaveBeenCalledTimes(1);
+    });
+
+    it("never offers it in a chat of purlis's own wrap, which reaches the port as itself", async () => {
+      drawnClaude({ ...CLAUDE, harness: "codex" });
+      await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+      await screen.findByText(/Allowed only for this chat/);
+      expect(screen.queryByRole("button", { name: "Point kubectl at it…" })).toBeNull();
+    });
+  });
+
+  it("asks for the port in a form row where the refusal named none", async () => {
+    const { sent } = drawn({ ...CLUSTER, target: null });
+    const box = screen.getByRole("textbox", { name: "Port to allow" });
+    expect(box).toHaveAttribute("placeholder", "6443");
+    await userEvent.type(box, "50795");
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "connect", kind: "local-service", what: "port", target: "50795" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+});

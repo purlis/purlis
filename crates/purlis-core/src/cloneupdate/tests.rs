@@ -37,6 +37,10 @@ struct Fake {
     guessed: Vec<(&'static str, &'static str)>,
     /// What is in the folder.
     there: Vec<&'static str>,
+    /// The paths a sparse checkout leaves out of the folder.
+    left_out: Vec<&'static str>,
+    /// A commit, a head, and the paths the commits that head has and the commit lacks changed.
+    replayed_from: Vec<(&'static str, &'static str, Vec<&'static str>)>,
 }
 
 fn owned(paths: &[&'static str]) -> Vec<String> {
@@ -95,6 +99,19 @@ impl Asks for Fake {
             .map(|(_, paths)| owned(paths))
     }
 
+    fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+        if let Some((_, _, paths)) = self
+            .replayed_from
+            .iter()
+            .find(|(base, tip, _)| *base == onto && *tip == head)
+        {
+            return Some(owned(paths));
+        }
+        (self.commit(top, "HEAD").as_deref() == Some(head))
+            .then(|| self.replayed(top, onto))
+            .flatten()
+    }
+
     fn tracked(&self, _: &str, commit: &str) -> Option<Vec<String>> {
         self.tracked
             .iter()
@@ -116,6 +133,20 @@ impl Asks for Fake {
         self.there
             .iter()
             .any(|there| Path::new(TOP).join(there) == path || Path::new(there) == path)
+    }
+
+    fn left_out(&self, _: &str, paths: &[String]) -> Option<Vec<String>> {
+        Some(
+            paths
+                .iter()
+                .filter(|path| {
+                    self.left_out
+                        .iter()
+                        .any(|out| path.as_str() == *out || path.starts_with(&format!("{out}/")))
+                })
+                .cloned()
+                .collect(),
+        )
     }
 }
 
@@ -174,6 +205,7 @@ fn place(alone: bool) -> Place<'static> {
         root: "/project",
         chat_dir: Some(Path::new("/project/workspaces/ide")),
         alone,
+        sparse: alone,
     }
 }
 
@@ -399,6 +431,34 @@ fn a_merge_or_a_rebase_is_refused_only_where_the_other_commit_touches_a_denied_f
 }
 
 #[test]
+fn a_rebase_purlis_runs_is_judged_for_the_head_it_is_handed_whatever_head_says() {
+    // qw387: HEAD answers `h` while it is judged, which replays nothing denied; the rebase is
+    // handed `t`, whose own commits carry an editor's tasks file. What is judged is `t`.
+    let pinned = Fake {
+        differ: vec![
+            ("t", "p", vec!["src/a.rs"]),
+            ("h", "p", vec!["src/a.rs", "docs/new.md"]),
+        ],
+        replayed_from: vec![("p", "t", vec!["app/.vscode/tasks.json"])],
+        ..a_clone()
+    };
+    let said = judged_rebase(TOP, "p", "t", &place(true), &pinned).expect("refused");
+    assert!(
+        said.contains("would write `app/.vscode/tasks.json`"),
+        "{said}"
+    );
+    // Judged by HEAD, it would have run.
+    assert_eq!(judge("rebase origin/plain", &pinned), None);
+    // A head whose commits touch nothing denied runs.
+    let plain = Fake {
+        differ: vec![("t", "p", vec!["src/a.rs"])],
+        replayed_from: vec![("p", "t", vec!["src/mine.rs"])],
+        ..a_clone()
+    };
+    assert_eq!(judged_rebase(TOP, "p", "t", &place(true), &plain), None);
+}
+
+#[test]
 fn a_rebase_answers_for_every_commit_it_replays() {
     // The two commits differ in no denied file, but a commit of the branch's own changed a
     // hook, which the rebase writes again.
@@ -420,6 +480,174 @@ fn a_rebase_answers_for_every_commit_it_replays() {
         said.contains("purlis could not name before it runs"),
         "{said}"
     );
+}
+
+#[test]
+fn a_sparse_checkout_that_leaves_the_denied_files_out_is_not_refused_for_them() {
+    // The clone's sparse checkout leaves out the folders that hold the denied files, so git
+    // writes none of them, whatever the move changes.
+    let sparse = Fake {
+        left_out: vec!["app", "fixtures"],
+        changed: vec!["app/.vscode/tasks.json", "fixtures/.claude/settings.json"],
+        ..a_clone()
+    };
+    for kept in [
+        "checkout tasks",
+        "switch tasks",
+        "merge origin/tasks",
+        "rebase origin/tasks",
+        "reset --hard tasks",
+        "reset --hard",
+        "checkout -f main",
+        "pull",
+        "pull --rebase origin main",
+    ] {
+        assert_eq!(judge(kept, &sparse), None, "git {kept}");
+    }
+    // A sparse checkout that keeps one of them in: only that one is named.
+    let partly = Fake {
+        left_out: vec!["fixtures"],
+        ..sparse.clone()
+    };
+    let said = judge("checkout tasks", &partly).expect("refused");
+    assert!(
+        said.contains("would write `app/.vscode/tasks.json`"),
+        "{said}"
+    );
+    let said = judge("pull", &partly).expect("refused");
+    assert!(said.contains("app/.vscode/tasks.json"), "{said}");
+    assert!(!said.contains("settings.json"), "{said}");
+    // Where git could not say what the sparse checkout leaves out, every file counts.
+    struct Unsaid(Fake);
+    impl Asks for Unsaid {
+        fn top(&self, dir: &str) -> Top {
+            self.0.top(dir)
+        }
+        fn head(&self, top: &str) -> Head {
+            self.0.head(top)
+        }
+        fn has_index(&self, top: &str) -> bool {
+            self.0.has_index(top)
+        }
+        fn commit(&self, top: &str, name: &str) -> Option<String> {
+            self.0.commit(top, name)
+        }
+        fn guessed(&self, top: &str, word: &str) -> Option<String> {
+            self.0.guessed(top, word)
+        }
+        fn differ(&self, top: &str, from: &str, to: &str) -> Option<Vec<String>> {
+            self.0.differ(top, from, to)
+        }
+        fn replayed(&self, top: &str, onto: &str) -> Option<Vec<String>> {
+            self.0.replayed(top, onto)
+        }
+        fn replayed_from(&self, top: &str, onto: &str, head: &str) -> Option<Vec<String>> {
+            self.0.replayed_from(top, onto, head)
+        }
+        fn tracked(&self, top: &str, commit: &str) -> Option<Vec<String>> {
+            self.0.tracked(top, commit)
+        }
+        fn changed(&self, top: &str, paths: &[String]) -> Option<Vec<String>> {
+            self.0.changed(top, paths)
+        }
+        fn is_there(&self, path: &Path) -> bool {
+            self.0.is_there(path)
+        }
+        fn left_out(&self, _: &str, _: &[String]) -> Option<Vec<String>> {
+            None
+        }
+    }
+    let unsaid = Unsaid(sparse);
+    let mut words = ["checkout", "tasks"].map(str::to_string).into_iter();
+    let sub = words.next().expect("a subcommand");
+    let post: Vec<String> = words.collect();
+    let said = judged(&sub, &post, TOP, &place(true), &unsaid).expect("refused");
+    assert!(
+        said.contains("would write `app/.vscode/tasks.json`"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_sparse_checkout_counts_only_where_nothing_on_the_line_can_change_it() {
+    // The folder's own patterns decide what git writes only where the line leaves them be.
+    let sparse = Fake {
+        left_out: vec!["app", "fixtures"],
+        ..a_clone()
+    };
+    let f = folders();
+    for kept in [
+        "git checkout tasks",
+        "git rebase origin/tasks",
+        "git checkout -q tasks",
+        "git reset --hard tasks",
+        "git rebase --no-gpg-sign origin/tasks",
+    ] {
+        assert_eq!(f.asked(kept, &sparse), None, "{kept}");
+    }
+    for stopped in [
+        // Configuration given on the line.
+        "git -c core.sparseCheckout=false checkout tasks",
+        "git --config-env=core.sparseCheckout=OFF checkout tasks",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.sparseCheckout GIT_CONFIG_VALUE_0=false git \
+         checkout tasks",
+        "GIT_CONFIG_PARAMETERS=\"'core.sparsecheckout'='false'\" git checkout tasks",
+        // An option that checks out past the patterns.
+        "git checkout --ignore-skip-worktree-bits tasks -- .",
+        "git restore --ignore-skip-worktree-bits --source tasks .",
+        "git read-tree -mu --no-sparse-checkout tasks",
+        // The patterns changed on the same line.
+        "git sparse-checkout disable && git checkout tasks",
+        "printf '/*' > ../.git/info/sparse-checkout; git checkout tasks",
+        // An option abbreviated, which git takes for the whole of it.
+        "git checkout --ignore-skip tasks -- .",
+        "git checkout --ignore tasks -- .",
+        "git restore --ignore-skip --source tasks .",
+        "git read-tree -mu --no-sparse tasks",
+        "git checkout -fq tasks",
+        // An alias set on the line, and configuration exported before the move.
+        "git -c alias.sc=sparse-checkout sc disable && git checkout tasks",
+        "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.sparseCheckout \
+         GIT_CONFIG_VALUE_0=false; git checkout tasks",
+        "export GIT_CONFIG_COUNT=1; git checkout tasks",
+        // A flag harmless to one subcommand that is another's command to run.
+        "git rebase -x true origin/tasks",
+        "git rebase --exec true origin/tasks",
+        "git rebase -i origin/tasks",
+        "git checkout -x tasks",
+        // An editor set on the line, which git may start in the middle of a move.
+        "GIT_EDITOR=true git rebase origin/tasks",
+        "GIT_SEQUENCE_EDITOR=true git rebase origin/tasks",
+        "EDITOR=true git rebase origin/tasks",
+        "export VISUAL=true; git rebase origin/tasks",
+        // Any of git's own variables, set or exported on the line.
+        "GIT_ASKPASS=/bin/true git pull",
+        "GIT_PROXY_COMMAND=/bin/true git pull origin main",
+        "GIT_SSH_COMMAND=true git pull",
+        "GIT_INDEX_FILE=/tmp/i git checkout tasks",
+        "export GIT_TRACE=1; git checkout tasks",
+    ] {
+        let (_, said) = f
+            .asked(stopped, &sparse)
+            .unwrap_or_else(|| panic!("{stopped}: allowed"));
+        assert!(said.contains("app/.vscode/tasks.json"), "{stopped}: {said}");
+    }
+}
+
+#[test]
+fn a_quoted_word_spelled_like_a_redirection_is_an_operand() {
+    // `'>'` is a file name to git, and the path after it is named for the command.
+    let f = folders();
+    for line in [
+        "git checkout main -- '>' app/.vscode/tasks.json",
+        "git checkout main -- \\> app/.vscode/tasks.json",
+        "git checkout main -- \">\" app/.vscode/tasks.json",
+    ] {
+        let (_, said) = f
+            .asked(line, &a_clone())
+            .unwrap_or_else(|| panic!("{line}: allowed"));
+        assert!(said.contains("app/.vscode/tasks.json"), "{line}: {said}");
+    }
 }
 
 // (b) A checkout of a branch that differs in a denied path.
@@ -801,6 +1029,80 @@ impl Folders {
 }
 
 #[test]
+fn a_plain_rebase_onto_an_upstream_is_judged_by_what_it_writes_however_it_is_spelled() {
+    // qw387: a lane's `git rebase origin/main`, with its output piped or redirected, was
+    // refused as a commit the guard could not name, though neither the upstream's commit nor
+    // the commits it replays touch a denied file.
+    let f = folders();
+    let clone = a_clone();
+    let parent = Path::new(&f.clone).parent().unwrap().display().to_string();
+    for line in [
+        "git rebase origin/plain".to_owned(),
+        "git -c commit.gpgsign=false rebase origin/plain".to_owned(),
+        "git rebase origin/plain 2>&1".to_owned(),
+        "git rebase origin/plain 2>&1 | tail -5".to_owned(),
+        "git rebase origin/plain > /dev/null 2>&1".to_owned(),
+        "git rebase -q origin/plain 2>/dev/null".to_owned(),
+        format!("git -C {} rebase origin/plain", f.clone),
+        format!("cd {} && git rebase origin/plain 2>&1 | tail -3", f.clone),
+    ] {
+        assert_eq!(
+            f.asked_in(&line, &parent_or(&line, &parent, &f.clone), &clone),
+            None,
+            "{line}"
+        );
+    }
+    // And one that does touch a denied file is still told so, by name, however spelled.
+    for line in [
+        "git rebase origin/tasks 2>&1 | tail -5",
+        "git rebase origin/tasks > /dev/null 2>&1",
+    ] {
+        let (_, said) = f
+            .asked(line, &clone)
+            .unwrap_or_else(|| panic!("{line}: allowed"));
+        assert!(
+            said.contains("would write `app/.vscode/tasks.json`"),
+            "{line}: {said}"
+        );
+    }
+}
+
+#[test]
+fn a_rebase_that_only_signs_or_skips_hooks_is_judged_by_what_it_writes() {
+    // qw387: `git -C <clone> rebase --no-gpg-sign origin/main`, as a lane wrote it. Signing
+    // and hooks change no file the rebase writes.
+    let f = folders();
+    let parent = Path::new(&f.clone).parent().unwrap().display().to_string();
+    for (flags, after) in [
+        ("--no-gpg-sign", ""),
+        ("-S", ""),
+        ("--gpg-sign", ""),
+        ("--no-verify", ""),
+        ("--no-gpg-sign", " 2>&1"),
+    ] {
+        let kept = format!("git -C {} rebase {flags} origin/plain{after}", f.clone);
+        assert_eq!(f.asked_in(&kept, &parent, &a_clone()), None, "{kept}");
+        let stopped = format!("git -C {} rebase {flags} origin/tasks{after}", f.clone);
+        let (_, said) = f
+            .asked_in(&stopped, &parent, &a_clone())
+            .unwrap_or_else(|| panic!("{stopped}: allowed"));
+        assert!(
+            said.contains("would write `app/.vscode/tasks.json`"),
+            "{stopped}: {said}"
+        );
+    }
+}
+
+/// Where a test line runs: from the clone's parent where it names the clone itself.
+fn parent_or(line: &str, parent: &str, clone: &str) -> String {
+    if line.contains(clone) {
+        parent.to_owned()
+    } else {
+        clone.to_owned()
+    }
+}
+
+#[test]
 fn a_move_in_a_clone_is_judged_however_the_line_reaches_it() {
     let f = folders();
     let (clone, ws, scratch) = (&f.clone, &f.workspace, &f.scratch);
@@ -1066,6 +1368,43 @@ fn on_a_repository_git_says_which_files_a_move_would_write() {
         said.contains("would write `app/.vscode/tasks.json`"),
         "{said}"
     );
+}
+
+#[test]
+fn on_a_sparse_repository_git_says_which_files_it_leaves_out() {
+    let f = a_repository();
+    let top = Path::new(&f.scratch);
+    let asked = |cmd: &str| refusal(cmd, &f.scratch, &f.root, Some(Path::new(&f.workspace)));
+    // Before: the editor's tasks are written by these.
+    assert!(asked("git checkout tasks").is_some());
+    // A sparse checkout that leaves the editor's folder out. Every pattern is git's to read.
+    git(
+        top,
+        &["sparse-checkout", "set", "--no-cone", "/*", "!/app/"],
+    );
+    let paths = vec!["app/.vscode/tasks.json".to_string(), "src/a.rs".to_string()];
+    assert_eq!(
+        Asked.left_out(&f.scratch, &paths),
+        Some(vec!["app/.vscode/tasks.json".to_string()])
+    );
+    for kept in [
+        "git checkout tasks",
+        "git merge --ff-only tasks",
+        "git reset --hard tasks",
+        "git reset --hard plain",
+        "git rebase tasks",
+        "git pull",
+    ] {
+        assert_eq!(asked(kept), None, "{kept}");
+    }
+    // Off again, the file counts again, though the index still marks it left out: with no
+    // sparse checkout on, git writes a file a move changes whatever its bit says.
+    git(
+        top,
+        &["config", "--worktree", "core.sparseCheckout", "false"],
+    );
+    assert_eq!(Asked.left_out(&f.scratch, &paths), Some(Vec::new()));
+    assert!(asked("git checkout tasks").is_some());
 }
 
 #[test]

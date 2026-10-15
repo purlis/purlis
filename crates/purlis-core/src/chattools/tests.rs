@@ -118,6 +118,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "change_status",
             "dispatch",
             "dispatch_list",
+            "dispatch_read",
             "dispatch_report",
             "ask_operator",
         ]
@@ -920,6 +921,28 @@ fn a_fifo_in_a_store_is_refused_at_once_and_the_store_is_let_go() {
 }
 
 #[test]
+fn dispatch_read_names_the_task_by_its_chat_number_and_nothing_else() {
+    // #2084: the same one argument `purlis dispatch read <chat>` takes.
+    let args = |value: Value| value.as_object().cloned().unwrap_or_default();
+    assert_eq!(dispatch_read_args(&args(json!({"chat": 9}))), Ok(9));
+    for bad in [
+        json!({}),
+        json!({"chat": "9"}),
+        json!({"chat": -1}),
+        json!({"chat": 5_000_000_000_u64}),
+    ] {
+        let said = dispatch_read_args(&args(bad.clone())).expect_err("refused");
+        assert!(said.contains("dispatch_list"), "{bad}: {said}");
+    }
+    let tool = TOOLS
+        .iter()
+        .find(|tool| tool.name == DISPATCH_READ)
+        .expect("a tool");
+    assert!(tool.read_only);
+    assert_eq!((tool.schema)()["required"], json!(["chat"]));
+}
+
+#[test]
 fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
     // V79: the pre-allowed tools are the five reads, and `persona_where` beside them
     // (V98a, #1450) and `dispatch_list` (#1463): each a tool the server offers and marks
@@ -934,6 +957,7 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "change_status",
             "persona_where",
             "dispatch_list",
+            "dispatch_read",
         ]
     );
     for name in PRE_ALLOWED {
@@ -947,13 +971,17 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
 }
 
 #[test]
-fn an_acp_session_is_handed_the_server_with_the_chat_s_place_and_nothing_else_of_charter_s() {
-    // ADR 0080 §1 and HP-7's note on #669: a stdio server, charter's own binary, `mcp`, and
-    // the scope variables alone: never the chat's token or its hook socket.
+fn an_acp_session_is_handed_the_server_with_the_chat_s_place_and_its_connection_to_the_app() {
+    // ADR 0080 §1, and #1996: a stdio server, purlis's own binary, `mcp`, the scope variables,
+    // and the chat's hook socket, number, token and harness, the very values its environment
+    // holds, so the server reaches the app as the chat's hooks do. Nothing else of the chat's.
     let env = vec![
         ("PURLIS_ROOT".into(), "/p".into()),
         (crate::active::WORKSPACE_ENV.into(), "ws".into()),
-        ("PURLIS_CHAT_TOKEN".into(), "secret".into()),
+        (crate::hookwire::TOKEN_ENV.into(), "the-chat-s-own".into()),
+        (crate::hookwire::SOCKET_ENV.into(), "/p/hooks.sock".into()),
+        (crate::hookwire::CHAT_ENV.into(), "7".into()),
+        (crate::hookwire::HARNESS_ENV.into(), "opencode".into()),
         ("PATH".into(), "/bin".into()),
     ];
     let server =
@@ -967,8 +995,24 @@ fn an_acp_session_is_handed_the_server_with_the_chat_s_place_and_nothing_else_of
             "env": [
                 {"name": "PURLIS_ROOT", "value": "/p"},
                 {"name": crate::active::WORKSPACE_ENV, "value": "ws"},
+                {"name": crate::hookwire::SOCKET_ENV, "value": "/p/hooks.sock"},
+                {"name": crate::hookwire::CHAT_ENV, "value": "7"},
+                {"name": crate::hookwire::TOKEN_ENV, "value": "the-chat-s-own"},
+                {"name": crate::hookwire::HARNESS_ENV, "value": "opencode"},
             ],
         })
+    );
+}
+
+#[test]
+fn an_acp_chat_with_no_connection_to_the_app_hands_its_server_none() {
+    // A chat the app has no socket for carries no token, and its server is handed none.
+    let env = vec![("PURLIS_ROOT".into(), "/p".into())];
+    let server =
+        serde_json::to_value(acp_server(std::path::Path::new("/bin/charter"), &env)).expect("JSON");
+    assert_eq!(
+        server["env"],
+        json!([{"name": "PURLIS_ROOT", "value": "/p"}])
     );
 }
 
@@ -980,9 +1024,10 @@ fn an_acp_session_s_server_is_handed_each_scope_variable_once_with_the_chat_s_va
     let env = vec![
         ("PURLIS_ROOT".into(), "/the-app-s".into()),
         (crate::active::SESSION_ID_ENV.into(), "1".into()),
-        ("PURLIS_CHAT_TOKEN".into(), "secret".into()),
+        ("PURLIS_CHAT_TOKEN".into(), "the-app-s-own".into()),
         ("PURLIS_ROOT".into(), "/the-chat-s".into()),
         (crate::active::SESSION_ID_ENV.into(), "7".into()),
+        ("PURLIS_CHAT_TOKEN".into(), "the-chat-s-own".into()),
     ];
     let server =
         serde_json::to_value(acp_server(std::path::Path::new("/bin/charter"), &env)).expect("JSON");
@@ -991,6 +1036,7 @@ fn an_acp_session_s_server_is_handed_each_scope_variable_once_with_the_chat_s_va
         json!([
             {"name": "PURLIS_ROOT", "value": "/the-chat-s"},
             {"name": crate::active::SESSION_ID_ENV, "value": "7"},
+            {"name": crate::hookwire::TOKEN_ENV, "value": "the-chat-s-own"},
         ])
     );
 }

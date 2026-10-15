@@ -75,6 +75,9 @@ type Asked = { cmd: string; args: unknown };
 function core(answers: {
   identity: () => DoctorRow;
   fixIdentity?: (args: Record<string, unknown>) => unknown;
+  /** The `personas` row, where a test is about it. */
+  personas?: () => DoctorRow;
+  fix?: (args: Record<string, unknown>) => unknown;
 }): Asked[] {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
@@ -97,7 +100,13 @@ function core(answers: {
         persona: "steward",
         unfiled: [],
       };
-    if (cmd === "plane_doctor") return report([row("git", "ok"), answers.identity()]);
+    if (cmd === "plane_doctor")
+      return report([
+        row("git", "ok"),
+        answers.identity(),
+        ...(answers.personas ? [answers.personas()] : []),
+      ]);
+    if (cmd === "plane_doctor_fix") return answers.fix?.(given) ?? null;
     if (cmd === "plane_doctor_identity") return { name: "Bea Terminal", email: "" };
     if (cmd === "plane_doctor_fix_identity") return answers.fixIdentity?.(given) ?? null;
     if (cmd === "opened_chats" || cmd === "chat_states" || cmd === "running_sessions") return [];
@@ -300,5 +309,54 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
     await new Promise((done) => setTimeout(done, 50));
 
     expect(document.querySelector('[data-cause^="doctor-finding:"]')).toBeNull();
+  });
+});
+
+describe("the persona sub-agent files purlis generated, as a Notice (#1990, Q67)", () => {
+  const leftover = row("personas", "warn", {
+    detail: "1 generated sub-agent file(s) remain in .claude/agents/",
+    fix: "persona-agents",
+  });
+  const gone = row("personas", "ok", { detail: "1 persona(s), all clean" });
+
+  it("stands once in the Inbox, its Fix runs the doctor's fix, and it goes with the files", async () => {
+    let removed = false;
+    const asked = core({
+      identity: () => set,
+      personas: () => (removed ? gone : leftover),
+      fix: () => {
+        removed = true;
+        return {
+          fix: "persona-agents",
+          refused: null,
+          said: ["- .claude/agents/ops.md (removed)"],
+          complete: true,
+        };
+      },
+    });
+    render(<App />);
+
+    const found = await screen.findAllByText(
+      /^personas: 1 generated sub-agent file\(s\) remain in \.claude\/agents\//,
+    );
+    expect(found).toHaveLength(1);
+    const notice = found[0].closest("[data-cause]") as HTMLElement;
+    expect(notice).toHaveAttribute("data-cause", "doctor-finding:persona-agents");
+    if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
+      await userEvent.click(
+        within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+          name: "Inbox",
+        }),
+      );
+    await settle();
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Fix" }));
+
+    expect(asked).toContainEqual({
+      cmd: "plane_doctor_fix",
+      args: { plane: PLANE, fix: "persona-agents" },
+    });
+    await waitFor(() => expect(screen.queryByText(/generated sub-agent file/)).toBeNull());
+    expect(asked.filter((one) => one.cmd === "plane_doctor").length).toBeGreaterThan(1);
   });
 });

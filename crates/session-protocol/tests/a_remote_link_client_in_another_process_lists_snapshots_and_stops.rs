@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use purlis_session_protocol::link::{self, ProvenDevice};
+use purlis_session_protocol::session::ViewKind;
 use purlis_session_protocol::session::{
     self, Answer, Attached, Chat, Command, Host, Peer, Refusal,
 };
@@ -46,8 +47,8 @@ impl Host for OneChat {
                 title: Some("fix the login".into()),
                 state: "needs_you".into(),
             }])),
-            Command::Attach { .. } => {
-                let feed = Attacher::new(peer.views().clone(), Limits::default())
+            Command::AttachView { .. } => {
+                let feed = Attacher::new(peer.opener().clone(), Limits::default())
                     .attach(ViewId(1), Bytes::from_static(SNAPSHOT))
                     .await
                     .map_err(|e| Refusal {
@@ -60,6 +61,7 @@ impl Host for OneChat {
                     view: 1,
                     cols: 80,
                     rows: 24,
+                    kind: Some(ViewKind::Terminal),
                 }))
             }
             _ => Ok(Answer::Done),
@@ -137,8 +139,8 @@ async fn a_stub_remote_link_lists_snapshots_and_stops_and_is_refused_what_it_is_
     );
     assert_eq!(
         host.heard.lock().unwrap().clone(),
-        ["list", "attach", "stop"],
-        "the host never heard the answer"
+        ["list", "attach_view", "stop"],
+        "the host never heard the answer, and heard 1.0's attach as a terminal view"
     );
     assert!(
         app.called.lock().unwrap().is_empty(),

@@ -32,6 +32,7 @@ export type ShownKind =
   | "stopped-at-limit"
   | "stopped-with-above"
   | "unreported"
+  | "last-message"
   | "reported"
   | "idle"
   | "unheard";
@@ -154,6 +155,14 @@ const UNREPORTED: Shown = {
   shape: "triangle",
   token: "state.unreadable",
 };
+/** **A report purlis made from its last message** (#1981): the task's turns ended without a
+ *  report, and purlis sent what it last said. Its words, never the task's own report. */
+const LAST_MESSAGE: Shown = {
+  kind: "last-message",
+  word: "a report purlis made from its last message",
+  shape: "triangle",
+  token: "state.unreadable",
+};
 const IDLE: Shown = { kind: "idle", word: "idle", shape: "pause", token: "text.muted" };
 const REPORTED: Shown = { kind: "reported", word: "reported", shape: "dot", token: "text.muted" };
 
@@ -167,6 +176,7 @@ const BY_OUTCOME: ReadonlyMap<string, Shown> = new Map([
   ["failed", FAILED],
   ["blocked", FAILED],
   ["cancelled", CANCELLED],
+  ["last_message", LAST_MESSAGE],
 ]);
 
 /**

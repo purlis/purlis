@@ -26,13 +26,16 @@
 //!    frames, the commands and events) and any number of streams, each with **its own credit
 //!    flow control**, so a pane that stops reading stops only itself. The control lane is a
 //!    **priority lane**: its frames are sent ahead of every stream's still waiting.
-//! 4. [`view`]: a terminal's bytes to one client: a header, the snapshot, then the live bytes,
-//!    raw. The host holds a view to two bounds: it writes no more than a **high watermark**
-//!    ahead of what the client has drawn (xterm.js's flow control, with acknowledgements), and
-//!    it queues no more than a bound in bytes. A view that falls behind that bound is dropped,
-//!    and the host's [`view::Attacher`] attaches it again with a fresh snapshot at the next
-//!    epoch, after a growing pause when its client drew nothing. A client that acknowledges
-//!    more than it was sent loses the view.
+//! 4. [`view`]: a hosted program's bytes to one client, in a view of a kind (a terminal's now,
+//!    a browser's from spec 2): a header, the snapshot, then the live bytes, raw. A link's
+//!    views are the crate's ([`view::Views`]): each follows its program's source on a task,
+//!    and every one closes at once when the link ends. The host holds a view to two bounds:
+//!    it writes no more than a **high watermark** ahead of what the client has drawn
+//!    (xterm.js's flow control, with acknowledgements), and it queues no more than a bound in
+//!    bytes. A view that falls behind that bound is dropped, and the host's
+//!    [`view::Attacher`] attaches it again with a fresh snapshot at the next epoch, after a
+//!    growing pause when its client drew nothing. A client that acknowledges more than it was
+//!    sent loses the view.
 //!
 //! **Why these pieces, and not others.** ADR 0068 asked for an existing multiplexer rather than
 //! a new one. Yamux is the standard one for a single reliable, ordered connection that is not
@@ -63,8 +66,8 @@
 //!    scope only, excluded from that promise.
 //!
 //! **What this crate does not decide.** Where a view's bytes and snapshot come from, and what
-//! each command does, is the host's (FD-5): `Engine::snapshot`, the session's output, and a
-//! [`session::Host`]. What each scope may call is [`grants`]' one table (FD-27), which
+//! each command does, is the host's (FD-5): a [`view::Source`] for each kind of view (a
+//! terminal's from `Engine::snapshot` and the session's output), and a [`session::Host`]. What each scope may call is [`grants`]' one table (FD-27), which
 //! [`session::serve`] checks before any host hears of a command.
 
 pub mod auth;

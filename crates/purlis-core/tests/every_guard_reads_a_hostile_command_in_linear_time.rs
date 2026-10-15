@@ -576,6 +576,9 @@ impl cloneupdate::Asks for ManyDenied {
     fn replayed(&self, _: &str, _: &str) -> Option<Vec<String>> {
         Some(self.paths.clone())
     }
+    fn replayed_from(&self, _: &str, _: &str, _: &str) -> Option<Vec<String>> {
+        Some(self.paths.clone())
+    }
     fn tracked(&self, _: &str, _: &str) -> Option<Vec<String>> {
         Some(self.paths.clone())
     }
@@ -584,6 +587,9 @@ impl cloneupdate::Asks for ManyDenied {
     }
     fn is_there(&self, _: &Path) -> bool {
         true
+    }
+    fn left_out(&self, _: &str, _: &[String]) -> Option<Vec<String>> {
+        Some(Vec::new())
     }
 }
 
@@ -598,6 +604,7 @@ fn the_clone_update_guard_reads_a_repository_in_time_proportional_to_its_paths()
         root: "/project",
         chat_dir: None,
         alone: true,
+        sparse: true,
     };
     let words = |line: &str| -> (String, Vec<String>) {
         let mut words = line.split_whitespace().map(str::to_string);
