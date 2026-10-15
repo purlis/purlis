@@ -150,13 +150,8 @@ async fn no_link_but_the_windows_writes_in_the_event_log() {
     let kept = Kept::default();
     let hosting = a_host(&StandIns::default(), &kept);
 
-    for scope in [
-        Scope::Terminal,
-        Scope::FleetMcp,
-        Scope::Approval,
-        Scope::Editor,
-        Scope::RemoteLink,
-    ] {
+    // Every other scope's row is the protocol's own test; these are the ones a host admits.
+    for scope in [Scope::Terminal, Scope::FleetMcp, Scope::Approval] {
         let other = a_link(&hosting, scope).await;
 
         let refused = other

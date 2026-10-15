@@ -697,16 +697,16 @@ thread_local! {
 
 /// **Carries `entry` back to the host with the reply to the line this thread is hearing**
 /// (#2003): the window's hearing asks the event log for `entry` where it hears a line the host
-/// handed on, and the host, which writes the log, records it. `Err` hands `entry` back where no
+/// handed on, and the host, which writes the log, records it. `entry` is handed back where no
 /// such line is being heard on this thread, or one was carried for it already: the window then
-/// writes it as it writes anything else.
-pub fn carry(entry: Entry) -> Result<(), Entry> {
+/// writes it as it writes anything else. `None` once it is carried.
+pub fn carry(entry: Entry) -> Option<Entry> {
     CARRIED.with(|carried| match &mut *carried.borrow_mut() {
         Some(slot @ None) => {
             *slot = Some(entry);
-            Ok(())
+            None
         }
-        _ => Err(entry),
+        _ => Some(entry),
     })
 }
 

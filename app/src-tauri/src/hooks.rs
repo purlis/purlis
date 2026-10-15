@@ -2597,7 +2597,13 @@ impl ChatBoard for Hooks {
     fn commit_refused(&self, session: u32, what: &str) -> Option<Moved> {
         // An event in the log, as a chat's own refused commit records one. The item is raised
         // whether or not the log could be written: the commit was refused either way.
-        if let Err(e) = record(&self.events, |log| log.refused(self.plane.root(), session)) {
+        if let Err(e) = record(
+            &self.events,
+            Entry::Refused {
+                plane: self.plane.root().to_path_buf(),
+                chat: session,
+            },
+        ) {
             tracing::warn!("purlis: a refused commit of chat {session} was not logged: {e}");
         }
         moving(&mut self.board(), &self.plane, session, |board| {
@@ -2863,7 +2869,7 @@ fn record(events: &Mutex<Option<Events>>, entry: Entry) -> std::io::Result<()> {
     if purlis_core::hookwire::recorded_already() {
         return Ok(());
     }
-    let Err(entry) = purlis_core::hookwire::relay::carry(entry) else {
+    let Some(entry) = purlis_core::hookwire::relay::carry(entry) else {
         return Ok(());
     };
     let Some(held) = events

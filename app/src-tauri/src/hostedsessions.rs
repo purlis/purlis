@@ -137,7 +137,7 @@ impl Connection {
     }
 
     /// The link, once it is ready, waiting at most `within`; or why there is none.
-    fn wait(&self, within: Duration) -> Result<Arc<HostLink>, String> {
+    pub(crate) fn wait(&self, within: Duration) -> Result<Arc<HostLink>, String> {
         let deadline = Instant::now() + within;
         let mut state = lock(&self.state);
         loop {

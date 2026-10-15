@@ -10645,7 +10645,7 @@ mod tests {
         let (run, children) = a_chat_with_sub_agents(&events, plane, 4, &["agent-1", "agent-2"]);
 
         its_children_end(
-            &events,
+            events.held().expect("held here"),
             plane,
             4,
             RunState::Failed,
@@ -10671,7 +10671,7 @@ mod tests {
         // A stop by the host is `stopped`, for the stop's own cause.
         let (run, children) = a_chat_with_sub_agents(&events, plane, 5, &["agent-3"]);
         its_children_end(
-            &events,
+            events.held().expect("held here"),
             plane,
             5,
             RunState::Stopped,
@@ -10689,7 +10689,7 @@ mod tests {
 
         // Ended once: a second end of the same run writes nothing more.
         its_children_end(
-            &events,
+            events.held().expect("held here"),
             plane,
             5,
             RunState::Completed,
@@ -10707,7 +10707,7 @@ mod tests {
         a_chat_with_sub_agents(&events, plane, 4, &[]);
 
         its_children_end(
-            &events,
+            events.held().expect("held here"),
             plane,
             4,
             RunState::Completed,
@@ -10715,7 +10715,7 @@ mod tests {
         );
         // And a chat the log never heard of is no error.
         its_children_end(
-            &events,
+            events.held().expect("held here"),
             plane,
             9,
             RunState::Completed,

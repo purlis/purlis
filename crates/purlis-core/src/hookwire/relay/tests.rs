@@ -376,8 +376,8 @@ fn the_windows_carrying(window: &Arc<Window>) -> Hearing {
         Box::new(move |report| {
             window.said(format!("report {}", report.chat));
             match carry(a_report_entry(report.chat)) {
-                Ok(()) => Ok(()),
-                Err(_) => Err(io::Error::other("nothing carried it")),
+                None => Ok(()),
+                Some(_) => Err(io::Error::other("nothing carried it")),
             }
         })
     };
@@ -478,15 +478,15 @@ fn a_line_the_window_could_not_take_is_recorded_nowhere_and_its_hook_spools_it()
 fn an_entry_carried_with_no_line_being_heard_is_handed_back_to_be_written_as_anything_else_is() {
     let entry = a_report_entry(3);
 
-    assert_eq!(carry(entry.clone()), Err(entry.clone()));
+    assert_eq!(carry(entry.clone()), Some(entry.clone()));
     let ((), carried) = carrying(|| {
-        assert_eq!(carry(entry.clone()), Ok(()));
+        assert_eq!(carry(entry.clone()), None);
         assert_eq!(
             carry(entry.clone()),
-            Err(entry.clone()),
+            Some(entry.clone()),
             "one line carries one entry"
         );
     });
     assert_eq!(carried, Some(entry.clone()));
-    assert_eq!(carry(entry.clone()), Err(entry), "not past the line");
+    assert_eq!(carry(entry.clone()), Some(entry), "not past the line");
 }

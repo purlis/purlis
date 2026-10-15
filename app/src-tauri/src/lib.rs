@@ -369,7 +369,7 @@ fn events() -> Option<hooks::Events> {
         }),
     });
     match opened {
-        Ok(recorder) => Some(std::sync::Arc::new(std::sync::Mutex::new(recorder))),
+        Ok(recorder) => Some(hooks::Events::here(recorder)),
         Err(why) => {
             tracing::warn!("purlis: no event log ({why}); hook calls are not recorded");
             None
