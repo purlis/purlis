@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792074137035,
+  "lastUpdate": 1792076483647,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12516,6 +12516,48 @@ window.BENCHMARK_DATA = {
             "value": 105.5061665,
             "unit": "ms",
             "extra": "median of 5 runs: 104.576, 105.008, 105.506, 105.692, 107.216 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e6b3a4292a1bfec9abdcbec79ee061fc102a5988",
+          "message": "feat(sandbox): every level starts as chosen, and the title bar shows the chat in front's (#2071, wiring part 2) (#2145)\n\n* feat(sandbox): every level starts as chosen, and the title bar shows the level of the chat in front\n\n- Your level now starts the chat at it in either kind of project: on the full sandbox (in a\n  project that has not turned it on, with the defaults its file would have), floor the floor\n  (in a project at the full sandbox, unless a policy forbids the opt-out). sandbox::for_start_at\n  applies it; the level is read through your_level and bounded, unchanged.\n- An unconfirmed level is measured from the project's own (personal::base): in a project at the\n  full sandbox a floor the file alone says waits for Confirm, as off does.\n- The title bar shows the level of the chat in front of the project in front, as its tab does.\n- Review nits of #2122: one rule for whose level a recorded chat's start reads (chats::level_as_of);\n  a chat's first start reads the chain its record keeps, as every later one does, and a chat the\n  person asked for from a tab is theirs at both; ADR 0096 §8 says a later Settings change reaches\n  the chats running chats ask for.\n\nPart of #2071 (wiring, part 2).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* perf(sandbox): a start reads your level once, and asks git only where the file sets one\n\nFifty chats starting at once each read your level twice per start, and once per running chat\nwhen the window checks them against their next start, and every read asked git whether it\nwould carry purlis.local.toml. A start now reads the level once (sandbox::yours), and the\nreader asks git only where the file holds a [sandbox] table (settings::local_layer_holding),\nas the harness declarations' reader does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(settings): the Sandbox summary says your level, with Change your level\n\nSettings › Project › Sandbox said \"On for everyone in this project. To run one chat without\nit, use that chat's tab.\" whatever your own level, and nothing led to where you set it. The\nsummary now says the project's level and, where your own level starts your chats otherwise,\nyours (\"Off for you: your level, confirmed on this machine.\", \"Floor for you: …\"), read through\nthe one seam a start reads it through (sandbox_state's new `yours`). Its Change your level\nbutton goes straight to Sandbox › Your level. A project that has not turned the sandbox on\nsays its chats start at the floor, no longer that it is off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(settings): Change your level wears its class, and reading your levels is listed as a read\n\nThe control guard (#1837) wants every button classed; the write-sites guard counts each\nsandbox::local function a write until it is listed as a read, and confirmed_levels only reads.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(#2145): a chosen full sandbox is the full sandbox or no start, and the floor arms the project's tools\n\n- In a project that has not turned the full sandbox on, your on starts the full sandbox or is\n  refused with why, as in a project at the full sandbox: it never ends as a start with no\n  sandbox where the full one cannot be applied.\n- At the floor, a persona's tools are the ones the project declares, whether or not it turned\n  the full sandbox on (sandbox::floor_personas), so a floor in a project at the full sandbox\n  arms the same tools for brokered secret exec.\n- Settings says your floor only where a start takes it: a policy that forbids the opt-out keeps\n  it at the full sandbox, and the page says no level of yours (sandbox::floor_below_full_allowed,\n  asked by both).\n- A test of the title bar's level in the window: the chat in front, the one brought to the\n  front, and none for a view.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(sandbox): your level within the team's bound, which starts a full project at the full sandbox\n\nOn main with the team's policy (#2139):\n- The team's bound starts a chat whose person chose no level at the full sandbox in a project\n  that turned it on, so only a level of theirs takes it lower; without this every chat of a full\n  project would have started at the floor once each level started as chosen.\n- A floor in a project at the full sandbox, and the level an unconfirmed one is measured from\n  (personal::base), are read through the team's bound, so policy = \"never\" holds both at the full\n  sandbox as an administrator's policy does.\n- Settings says your level only where you chose one and it is not the project's own.\n- The wording that only a person turns the sandbox off, for one chat, is gone from Settings'\n  hint and the plane-format row of the local [sandbox], which now names your level; ADR 0067's\n  2026-10-06 section points to ADR 0096 and the 2026-10-15 section.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(sandbox): the team's off starts at the floor by default, not the full sandbox\n\nA committed mode = \"off\" is read as a sandbox policy for whoever keeps it on, so the full\nproject's default must not reach it: until the person accepts the off their chats start at\nthe floor, then with no sandbox (#2139's tests). And the title bar's window test answers the\nSettings tab it opens without a workspace's settings, rather than leaving it to crash later.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(e2e): reading what the window holds waits for the project in front too\n\nThe store is written after each switch, and the read stopped at the first answer whose list\nmatched, which a switch back to the first project had not reached yet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(#2145): a chain purlis cannot read never starts a chat below the project's own level\n\n- A start another chat asked for whose chain purlis cannot read whole, or that does not say\n  how it was made, is held to the project's own level as well: never lower than the same start\n  with its chain read.\n- \"Not set\" is the project's own level, not always the floor: the Your level page names it\n  (\"not set — the project's level (full sandbox)\"), and so do personal.rs, your_level and the\n  plane-format row of [sandbox].level, which also names policy = \"never\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test: a profile made here in #2169's test says how it signs in\n\n#2152 added MachineProfile.sign_in beside #2169's new test, which built one without it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T19:00:08+04:00",
+          "tree_id": "2361845fb4770879a73613c48f5d60f199c60c88",
+          "url": "https://github.com/purlis/purlis/commit/e6b3a4292a1bfec9abdcbec79ee061fc102a5988"
+        },
+        "date": 1792076482657,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6039915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.590, 0.592, 0.604, 0.608, 0.611 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.043472,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.902, 15.982, 16.043, 16.102, 16.306 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.953176,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.808, 100.187, 101.953, 102.139, 102.980 ms"
           }
         ]
       }
