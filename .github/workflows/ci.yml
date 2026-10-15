@@ -819,11 +819,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Whether macOS's sandbox matches a name as typed or as it is on disk, measured, and that the
-      # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107).
-      - name: macOS's sandbox and a name spelled in another case
-        if: runner.os == 'macOS' && matrix.extras
-        run: tools/seatbelt-case.sh
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
       # purlis makes runs its chats sandboxed (ADR 0067 §1).
       # Cached and bounded, as the `rust` job's (#1477): this is the step that took 1,285 s on
@@ -860,6 +855,18 @@ jobs:
             echo "SCCACHE_GHA_ENABLED=true"
             echo "SCCACHE_GHA_RW_MODE=$MODE"
           } >> "$GITHUB_ENV"
+      # Whether macOS's sandbox matches a name as typed or as it is on disk, measured; that the
+      # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107); and
+      # the profiles a wrapped chat starts under, at the full sandbox and at the floor, built by
+      # the core and applied whole to the same operations (#2128). After the toolchain and the
+      # caches, since the core's test writes those profiles out.
+      - name: macOS's sandbox and a name spelled in another case
+        if: runner.os == 'macOS' && matrix.extras
+        env:
+          PURLIS_SEATBELT_OUT: ${{ runner.temp }}/seatbelt-emitted
+        run: |
+          cargo test --locked -p purlis-core --test the_profiles_a_wrapped_chat_starts_under_are_written_out
+          tools/seatbelt-case.sh "$PURLIS_SEATBELT_OUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
