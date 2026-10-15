@@ -27,8 +27,13 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
     }
     let data = tempfile::tempdir().unwrap();
     let programs = tempfile::tempdir().unwrap();
-    for harness in ["claude", "opencode"] {
-        stand_in::program(programs.path(), harness, "#!/bin/sh\n");
+    // Each answers `--version` as its harness does, as a sandboxed start asks it to.
+    for (harness, version) in [("claude", "2.1.288 (Claude Code)"), ("opencode", "1.18.32")] {
+        stand_in::program(
+            programs.path(),
+            harness,
+            &format!("#!/bin/sh\necho '{version}'\n"),
+        );
     }
     let path = std::env::join_paths(std::iter::once(programs.path().to_path_buf()).chain(
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
