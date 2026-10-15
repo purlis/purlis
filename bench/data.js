@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792041358608,
+  "lastUpdate": 1792042461991,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11844,6 +11844,48 @@ window.BENCHMARK_DATA = {
             "value": 105.4479375,
             "unit": "ms",
             "extra": "median of 5 runs: 103.013, 104.627, 105.448, 105.758, 105.838 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5c6100b2aeb3936cb5eb6f4eb70c7c6ab2fb30e0",
+          "message": "A stale workspace repo is a Notice with a one-click Fix (#1985, part 3) (#2095)\n\n* A stale workspace repo is a Notice with a one-click Fix (#1985, part 3)\n\nA workspace's repo left on a branch purlis cut for a chat or a task, not\non its default branch, or on a remote the forge said moved, is one Notice\nin the Inbox. Its Fix switches the repo back only when nothing would be\nlost (clean tree, every commit kept elsewhere, no chat mid-turn in it), or\npoints origin at the forge's new address; otherwise it says what blocks\nit and does nothing. purlis's own fetches from origin keep the forge's\nredirect for it.\n\nRefs #1985\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Stale repo review round: any other branch, the shown address, mid-turn (#1985)\n\n- Any branch of the repo itself other than its default counts; the\n  Notice says \"is on x, not main\" with what it means now.\n- The remote fix sets only the address the Notice shows, rebuilt from\n  checked parts on origin's own host and port.\n- The branch fix waits for a chat in the repo that is running, asking,\n  stopped on a prompt or not yet heard from.\n- A dismissal is keyed by the repo and each finding.\n- What could not be read is said, not dropped.\n\nRefs #1985\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T09:19:03+04:00",
+          "tree_id": "b4fa927af6baf00bc2e18eec4767c138111abe8a",
+          "url": "https://github.com/purlis/purlis/commit/5c6100b2aeb3936cb5eb6f4eb70c7c6ab2fb30e0"
+        },
+        "date": 1792042460675,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2760825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.268, 0.274, 0.276, 0.290, 0.296 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5845685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.408, 16.524, 16.585, 16.664, 16.709 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5737005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.078, 101.297, 101.574, 101.778, 101.983 ms"
           }
         ]
       }
