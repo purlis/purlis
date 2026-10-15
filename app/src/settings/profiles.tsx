@@ -304,7 +304,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                     {profile.commands_can_read_sign_in !== null && (
                       <span className="ui-setting-help">{profile.commands_can_read_sign_in}</span>
                     )}
-                    {profile.origin === "made" && (
+                    {profile.origin === "made" && !profile.sandbox_only && (
                       <EntryButton
                         label="Import again"
                         spoken={`Import the settings of ${profile.name} again`}

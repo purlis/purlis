@@ -222,6 +222,10 @@ describe("Settings › You › Profiles", () => {
       }),
     );
     expect(await screen.findByText("Claude Code, for sandboxed chats only")).toBeTruthy();
+    // Its settings are purlis's: nothing to import again.
+    expect(
+      screen.queryByRole("button", { name: "Import the settings of codex-sandbox again" }),
+    ).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("made for sandboxed chats only");
   });
 
