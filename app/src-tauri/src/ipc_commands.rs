@@ -100,6 +100,8 @@ macro_rules! app_commands {
                 vaultroute::allow_refused_vault,
                 vaultroute::keep_vault_blocked,
                 removalasks::keep_asked_workspace,
+                proposals::apply_proposed_change,
+                proposals::dismiss_proposed_change,
                 mcpfailed::mcp_failures,
                 mcpfailed::put_away_mcp_failure,
                 silence::task_quiet,

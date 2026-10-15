@@ -1128,6 +1128,14 @@ Network page with Remove. A Claude Code chat reaches it through its proxy by the
 `this-mac.internal:<port>`, and its kubectl through a copy of one context purlis makes for it.
 _Avoid_: localhost (in UI text), local port grant, loopback
 
+**A proposed change**:
+An edit a chat makes to purlis's own configuration (the project's manifest, a persona's
+`mcp.json` or `persona.md`, a skill's files), which only the person applies, in the window. The
+chat's edit is held, the change shown whole against the file as it is, and **Apply** writes it as
+the person; **Dismiss** writes nothing. Distinct from an edit ask, where the person allows and the
+harness writes.
+_Avoid_: patch, suggestion, edit ask (that is the harness's own)
+
 **Block**:
 One refused reach: a sandboxed chat was refused a host and port, a local socket, a service on
 this Mac, a lookup or a file. purlis records the chat, what was refused, the time and why in this machine's network

@@ -1319,8 +1319,7 @@ pub enum Ask {
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
-/// in the project, the base the change was worked out against, and the file's whole new
-/// content. Nothing else travels: whose it is is the app's record of the chat whose token the
+/// in the project, the base the change was worked out against, and the change. Nothing else travels: whose it is is the app's record of the chat whose token the
 /// line carries, and what the person sees as the file now is the app's own read of it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProposeAsk {
@@ -1332,8 +1331,9 @@ pub struct ProposeAsk {
     /// was not there. Checked at Apply; never trusted to show what the file holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<String>,
-    /// The file's whole new content.
-    pub content: String,
+    /// What it changes: the tool's own edits, which the app makes to the file as it reads it,
+    /// or the file's whole new content.
+    pub change: crate::proposed::Change,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -4658,12 +4658,19 @@ mod tests {
     #[test]
     fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
         // #1975: a proposal at its largest, every byte a control character JSON spells in six,
-        // with the longest path and a base, is read whole: never cut.
+        // with the longest path and a base, is read whole: never cut. A whole content carries
+        // as many bytes as edits do, and less of the change's own words.
         let ask = Ask::Propose(Box::new(ProposeAsk {
             chat: u32::MAX,
             path: "\u{1}".repeat(crate::proposed::MOST_PATH_BYTES),
             base: Some("f".repeat(64)),
-            content: "\u{1}".repeat(crate::proposed::MOST_BYTES),
+            change: crate::proposed::Change::Edits {
+                edits: vec![crate::proposed::Edit {
+                    old: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    new: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    every: true,
+                }],
+            },
         }));
         let line = line_with(Some(&ChatToken("t".repeat(64))), &ask).expect("a line");
         assert!(

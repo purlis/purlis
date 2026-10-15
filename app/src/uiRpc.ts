@@ -385,6 +385,8 @@ export const commands = {
 	allowRefusedVault: __WINDOW_ONLY_RESULT,
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	applyProposedChange: __WINDOW_ONLY_RESULT,
+	dismissProposedChange: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
@@ -1957,6 +1959,11 @@ export type AnswerPath =
  *  own count.
  */
 { via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
+/**
+ *  `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
+ *  proposal `id` (#1975).
+ */
+{ via: "proposed-change"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2061,6 +2068,11 @@ export type AskSource =
  *  (qw356).
  */
 "workspace-removal" | 
+/**
+ *  A change a chat proposed to purlis's own configuration, which only the person applies
+ *  (#1975).
+ */
+"proposed-change" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */

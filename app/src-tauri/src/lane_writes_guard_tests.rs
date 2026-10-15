@@ -25,6 +25,8 @@ use serde_json::Value;
 /// the module and the functions each is spelled with: each is `<module>::<function>(`.
 const LANE_FILE_WRITES: &[(&str, &[&str])] = &[
     ("settings", &["save", "move_keys"]),
+    // A proposed change, applied (#1975): it may be the project's manifest.
+    ("proposed", &["write_pinned"]),
     ("forges", &["add", "remove"]),
     (
         "harness_profiles",

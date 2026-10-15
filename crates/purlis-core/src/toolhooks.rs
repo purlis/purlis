@@ -422,7 +422,7 @@ fn proposing(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) ->
             chat,
             path: proposed.path.display().to_string(),
             base: proposed.base,
-            content: proposed.content,
+            change: proposed.change,
         })
         .then(|| deny(crate::proposed::PROPOSED_SAID.to_owned())),
     }

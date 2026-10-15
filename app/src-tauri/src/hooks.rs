@@ -1931,6 +1931,32 @@ impl Hooks {
             .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
     }
 
+    /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
+    /// before the file is written, so nothing is applied unrecorded.
+    pub fn record_proposed(
+        &self,
+        root: &Path,
+        number: u32,
+        applied: &purlis_core::proposed::Applied<'_>,
+    ) -> Result<(), String> {
+        let Some(events) = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+        else {
+            return Err(
+                "purlis's event log is not open on this machine, so nothing was written: every \
+                 applied change is recorded"
+                    .to_owned(),
+            );
+        };
+        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
+        log.proposed_applied(root, number, applied)
+            .map(|_| ())
+            .map_err(|why| format!("the event log refused it ({why}), so nothing was written"))
+    }
+
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
     /// was there (#1507): the same event with no chat, whose body says `from: "away"`.
     pub fn record_dispatch_grant_from_away(

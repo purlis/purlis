@@ -124,7 +124,7 @@ fn only(input: &Map<String, Value>, known: &[&str]) -> Option<()> {
 }
 
 /// Why `changes` cannot be drawn whole, or none where they can.
-fn unshown(changes: &[Written]) -> Option<Unshown> {
+pub fn unshown(changes: &[Written]) -> Option<Unshown> {
     let texts: Vec<&str> = changes
         .iter()
         .flat_map(|change| match change {
