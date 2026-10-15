@@ -2178,19 +2178,42 @@ pub fn save(request: &Request, say: Sink) -> u8 {
 static RUNNING: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
 
-/// A save or a fetch running in one plane, for as long as it is held.
+/// The file in a repository's git directory whose lock a save or a fetch of it holds, so that
+/// two processes never run one at once (#2002): the window, `purlis save` in a terminal and
+/// the session host's auto-save are three.
+pub const SAVE_LOCK: &str = "purlis-save.lock";
+
+/// A save or a fetch running in one plane, for as long as it is held: in this process, and,
+/// where the plane is a repository, against every other process too ([`SAVE_LOCK`]).
 #[derive(Debug)]
-pub struct Claim(PathBuf);
+pub struct Claim {
+    root: PathBuf,
+    /// The lock other processes see, held while the claim is.
+    across: Option<std::fs::File>,
+}
 
 impl Claim {
-    /// The plane at `root`, unless something already holds it.
+    /// The plane at `root`, unless something already holds it, in this process or another.
     pub fn of(root: &Path) -> Option<Self> {
-        let mut running = RUNNING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        running
-            .insert(root.to_path_buf())
-            .then(|| Self(root.to_path_buf()))
+        let running = || {
+            RUNNING
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        };
+        if !running().insert(root.to_path_buf()) {
+            return None;
+        }
+        // The file is opened with no lock of this process's held: it is a read of the disk.
+        match across_processes(root) {
+            Ok(across) => Some(Self {
+                root: root.to_path_buf(),
+                across,
+            }),
+            Err(HeldElsewhere) => {
+                running().remove(root);
+                None
+            }
+        }
     }
 
     /// The plane at `root`, waiting up to `bound` for whatever holds it to let go.
@@ -2208,15 +2231,47 @@ impl Claim {
     }
 }
 
+/// Another process holds the plane's [`SAVE_LOCK`].
+struct HeldElsewhere;
+
+/// The lock on the [`SAVE_LOCK`] of the repository at `root`, or [`HeldElsewhere`] when another process
+/// holds it. A folder that is no repository has no git directory to lock and nothing a save
+/// could race on, and a lock file that cannot be made or locked for another reason leaves the
+/// claim to this process alone, as it was before there was a lock: neither is a refusal.
+fn across_processes(root: &Path) -> Result<Option<std::fs::File>, HeldElsewhere> {
+    let Some(git_dir) = root
+        .to_str()
+        .and_then(crate::gitconfig::git_dir_at)
+        .map(PathBuf::from)
+    else {
+        return Ok(None);
+    };
+    let Ok(lock) = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(git_dir.join(SAVE_LOCK))
+    else {
+        return Ok(None);
+    };
+    match lock.try_lock() {
+        Ok(()) => Ok(Some(lock)),
+        Err(std::fs::TryLockError::WouldBlock) => Err(HeldElsewhere),
+        Err(std::fs::TryLockError::Error(_)) => Ok(None),
+    }
+}
+
 impl Drop for Claim {
     fn drop(&mut self) {
+        // Other processes first: once this process lets go, a save of its own may start.
+        drop(self.across.take());
         RUNNING
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&self.0);
+            .remove(&self.root);
         // Every save and fetch of a plane or a clone holds its claim, so letting go of one is
         // when what it committed, pushed or fetched is there to be read (FD-11).
-        touch(&self.0);
+        touch(&self.root);
     }
 }
 

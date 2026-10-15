@@ -3091,6 +3091,66 @@ fn a_second_save_of_a_plane_while_one_runs_is_refused_and_leaves_no_journal_line
     );
 }
 
+/// Another process's hold on the plane's save lock: a lock taken through a file of its own,
+/// as `flock` sees another process's (#2002).
+fn held_elsewhere(root: &Path) -> std::fs::File {
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(root.join(".git").join(SAVE_LOCK))
+        .expect("the lock file opens");
+    lock.try_lock().expect("nobody holds it yet");
+    lock
+}
+
+#[test]
+fn a_save_another_process_is_running_refuses_a_second_and_the_next_one_goes_ahead() {
+    // The window's Save, `purlis save` in a terminal and the session host's auto-save are
+    // three processes: each claims the plane through a lock in its git directory.
+    let fixture = Fixture::plane();
+    std::fs::write(fixture.root.join("work.md"), "work").unwrap();
+    let elsewhere = held_elsewhere(&fixture.root);
+    let before = fixture.commits();
+
+    assert!(
+        Claim::of(&fixture.root).is_none(),
+        "the plane was claimed twice"
+    );
+    let (code, said) = fixture.just_save();
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("A save of this plane is already running"),
+        "{said}"
+    );
+    assert_eq!(fixture.commits(), before);
+
+    drop(elsewhere);
+    assert_eq!(
+        fixture.just_save().0,
+        0,
+        "the next save, once the other is done"
+    );
+}
+
+#[test]
+fn a_claim_holds_the_plane_against_every_other_process_until_it_is_let_go_of() {
+    let fixture = Fixture::plane();
+    let claim = Claim::of(&fixture.root).expect("nobody holds it");
+
+    let other = std::fs::OpenOptions::new()
+        .write(true)
+        .open(fixture.root.join(".git").join(SAVE_LOCK))
+        .expect("the claim's lock file is in the git directory");
+    assert!(
+        matches!(other.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
+        "another process could save while this one holds the claim"
+    );
+
+    drop(claim);
+    other.try_lock().expect("let go of with the claim");
+}
+
 #[test]
 fn a_fetch_waits_its_turn_behind_a_running_save() {
     let fixture = Fixture::plane();
