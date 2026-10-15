@@ -112,8 +112,25 @@ struct Terminal {
 /// sending them would leave its pane inside an open synchronized update.
 struct Watcher {
     id: u64,
-    sends: Sender<Vec<u8>>,
+    sends: Sends,
     held: Vec<u8>,
+}
+
+/// Where a view's bytes go: a queue a thread of the reader's reads ([`Session::attach`]), or a
+/// stream a task follows ([`Session::follow`]). Neither ever makes the session wait.
+enum Sends {
+    Blocking(Sender<Vec<u8>>),
+    Following(futures_channel::mpsc::UnboundedSender<Vec<u8>>),
+}
+
+impl Sends {
+    /// Hands `bytes` over. Answers whether the view's reader is still there.
+    fn send(&self, bytes: Vec<u8>) -> bool {
+        match self {
+            Sends::Blocking(sends) => sends.send(bytes).is_ok(),
+            Sends::Following(sends) => sends.unbounded_send(bytes).is_ok(),
+        }
+    }
 }
 
 impl Terminal {
@@ -160,7 +177,7 @@ impl Terminal {
             // the engine reassembles a sequence split across reads, which the held bytes
             // cannot show by themselves. So bytes that say nothing either way end one here.
             match update_after(&held) {
-                UpdateAfter::Ended => view.sends.send(held).is_ok(),
+                UpdateAfter::Ended => view.sends.send(held),
                 UpdateAfter::Opened | UpdateAfter::Unchanged => send_ending_the_update(view, held),
             }
         });
@@ -206,6 +223,34 @@ impl View {
     /// holds the queue.
     pub fn into_parts(self) -> (Attachment, Size, Receiver<Vec<u8>>) {
         (self.open, self.size, self.output)
+    }
+}
+
+/// A view taken apart for a host that follows it without a thread ([`Session::follow`]).
+pub struct Following {
+    /// The bytes that draw the screen as it is now into a blank terminal.
+    pub snapshot: Vec<u8>,
+    /// The size that screen was drawn for.
+    pub size: Size,
+    /// Everything the program writes after the snapshot, in order.
+    pub live: Live,
+}
+
+/// A followed view's live bytes: a stream that ends when the program does. Dropping it closes
+/// the view.
+pub struct Live {
+    live: futures_channel::mpsc::UnboundedReceiver<Vec<u8>>,
+    _open: Attachment,
+}
+
+impl futures_core::Stream for Live {
+    type Item = Vec<u8>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Vec<u8>>> {
+        std::pin::Pin::new(&mut self.live).poll_next(cx)
     }
 }
 
@@ -370,7 +415,49 @@ impl Session {
     /// that has already ended is its last screen, and then it closes, as every view did when
     /// the program ended.
     pub fn attach(&self) -> View {
-        let (output, answers, size, id) = {
+        let (sender, output) = mpsc::channel();
+        let (size, id) = self.open_view(Sends::Blocking(sender));
+        View {
+            size,
+            output,
+            open: Attachment {
+                terminal: Arc::downgrade(&self.terminal),
+                id,
+            },
+        }
+    }
+
+    /// Opens a view of this session for a host that follows it without a thread of its own
+    /// (#1998): the screen as it is now, apart from an asynchronous stream of everything the
+    /// program writes after it, taken together so nothing is lost or doubled between them.
+    /// The stream ends when the program does, and letting go of it closes the view.
+    pub fn follow(&self) -> Following {
+        let (sender, mut live) = futures_channel::mpsc::unbounded();
+        let (size, id) = self.open_view(Sends::Following(sender));
+        // The snapshot went in first, under the lock, before any output could follow it.
+        let snapshot = live.try_recv().unwrap_or_default();
+        Following {
+            snapshot,
+            size,
+            live: Live {
+                live,
+                _open: Attachment {
+                    terminal: Arc::downgrade(&self.terminal),
+                    id,
+                },
+            },
+        }
+    }
+
+    /// How many views are open on this session.
+    pub fn views(&self) -> usize {
+        lock(&self.terminal).views.len()
+    }
+
+    /// Opens a view whose bytes go to `sends`: the screen as it is first, then the output.
+    /// Answers the size the screen was drawn for, and the view's id.
+    fn open_view(&self, sends: Sends) -> (Size, u64) {
+        let (answers, size, id) = {
             let mut terminal = lock(&self.terminal);
             let snapshot = terminal.engine.snapshot();
             // The snapshot ends any open update, so the views already watching are left
@@ -380,12 +467,11 @@ impl Session {
             terminal.give_up_if_the_engine_has();
             let size = terminal.engine.screen().size;
             let answers = terminal.engine.take_replies();
-            let (sender, output) = mpsc::channel();
             terminal.opened += 1;
             let id = terminal.opened;
             let mut watcher = Watcher {
                 id,
-                sends: sender,
+                sends,
                 held: Vec::new(),
             };
             // The screen goes in first, ahead of any output the reading thread sends once
@@ -399,18 +485,10 @@ impl Session {
             if terminal.ended {
                 terminal.close_views();
             }
-            (output, answers, size, id)
-        };
-        let view = View {
-            size,
-            output,
-            open: Attachment {
-                terminal: Arc::downgrade(&self.terminal),
-                id,
-            },
+            (answers, size, id)
         };
         self.answer(answers);
-        view
+        (size, id)
     }
 
     /// Hands the program what its terminal owes it: answers the engine gathered while
@@ -880,7 +958,7 @@ fn read_until_the_output_ends(
 fn send(view: &mut Watcher, bytes: Vec<u8>) -> bool {
     match update_after(&bytes) {
         // Nothing in these bytes leaves the pane inside an update, so nothing is added.
-        UpdateAfter::Ended | UpdateAfter::Unchanged => view.sends.send(bytes).is_ok(),
+        UpdateAfter::Ended | UpdateAfter::Unchanged => view.sends.send(bytes),
         UpdateAfter::Opened => send_ending_the_update(view, bytes),
     }
 }
@@ -892,7 +970,7 @@ fn send(view: &mut Watcher, bytes: Vec<u8>) -> bool {
 fn send_ending_the_update(view: &mut Watcher, mut bytes: Vec<u8>) -> bool {
     view.held = bytes.split_off(whole_sequences_end(&bytes));
     bytes.extend_from_slice(END_UPDATE);
-    view.sends.send(bytes).is_ok()
+    view.sends.send(bytes)
 }
 
 /// Where the whole escape sequences in `bytes` end: `bytes.len()`, or where a sequence the
@@ -1733,7 +1811,7 @@ mod tests {
         let (sends, output) = mpsc::channel();
         lock(&terminal).views.push(Watcher {
             id: 1,
-            sends,
+            sends: Sends::Blocking(sends),
             held: Vec::new(),
         });
         let (replies, input_gone) = mpsc::sync_channel(INPUT_QUEUE);

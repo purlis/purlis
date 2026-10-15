@@ -787,7 +787,45 @@ fn serve() -> ExitCode {
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
     );
-    ExitCode::from(u8::try_from(purlis_host::serve_alone(&place)).unwrap_or(1))
+    ExitCode::from(
+        u8::try_from(purlis_host::serve_alone(
+            &place,
+            purlis_host::FromTheWindow(launched),
+        ))
+        .unwrap_or(1),
+    )
+}
+
+/// A chat a window composed, as the window would start it: the core's composition, against the
+/// environment this host was started with (#1998).
+#[cfg(unix)]
+fn launched(
+    launch: &purlis_host::protocol::session::Launch,
+    number: u32,
+    size: purlis_core::engine::Size,
+) -> Result<purlis_core::session::Spec, String> {
+    purlis_core::chatspec::launched(
+        std::env::vars_os(),
+        &purlis_core::chatspec::Launched {
+            program: &launch.program,
+            args: &launch.args,
+            cwd: launch.cwd.as_deref(),
+            set: &launch.set,
+            strip: &launch.strip,
+            pass: &launch.pass,
+            declared: &launch.declared,
+            harness: launch.harness.as_deref(),
+            git_hooks: launch.git_hooks.as_deref(),
+            reporting: launch.reporting.as_ref().map(|reporting| {
+                purlis_core::chatspec::Reporting {
+                    socket: std::path::Path::new(&reporting.socket),
+                    token: &reporting.token,
+                }
+            }),
+        },
+        number,
+        size,
+    )
 }
 
 /// What a command may do on a project that is read-only to this purlis (FR-24).

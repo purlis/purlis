@@ -46,6 +46,7 @@ impl Host for OneChat {
                 project_path: None,
                 title: Some("fix the login".into()),
                 state: "needs_you".into(),
+                ..Chat::default()
             }])),
             Command::AttachView { .. } => {
                 let feed = Attacher::new(peer.opener().clone(), Limits::default())

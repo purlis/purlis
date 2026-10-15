@@ -51,9 +51,12 @@ impl Host for Board {
                 project_path: None,
                 title: None,
                 state: "needs_you".into(),
+                ..Chat::default()
             }]),
             Command::StartProgram(_) => Answer::ProgramStarted {
                 program: CHAT.into(),
+                number: None,
+                process: None,
             },
             Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,
@@ -130,12 +133,11 @@ fn every_command() -> Vec<Command> {
             workspace: None,
             harness: None,
         }),
-        Command::StartProgram(session::StartProgram {
-            project: "01J9PRJCT00000000000000000".into(),
-            kind: session::ProgramKind::Shell,
+        Command::StartProgram(Box::new(session::StartProgram {
             workspace: None,
             harness: None,
-        }),
+            ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
+        })),
         Command::AttachView {
             program: CHAT.into(),
             kind: session::ViewKind::Terminal,
@@ -148,6 +150,35 @@ fn every_command() -> Vec<Command> {
             since: session::Since::new(),
         },
         Command::Unsubscribe,
+        Command::HoldProject {
+            project: "01J9PRJCT00000000000000000".into(),
+            project_path: "/home/me/project".into(),
+        },
+        Command::LetGoOfProject {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::Close {
+            program: CHAT.into(),
+        },
+        Command::Readiness {
+            program: CHAT.into(),
+        },
+        // A start the window composed: the window's alone.
+        Command::StartProgram(Box::new(session::StartProgram {
+            launch: Some(session::Launch {
+                program: "/bin/sh".into(),
+                args: Vec::new(),
+                cwd: None,
+                set: Vec::new(),
+                strip: Vec::new(),
+                pass: Vec::new(),
+                declared: Vec::new(),
+                harness: None,
+                git_hooks: None,
+                reporting: None,
+            }),
+            ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
+        })),
     ]
 }
 
@@ -169,6 +200,11 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "detach_view",
             "subscribe",
             "unsubscribe",
+            "hold_project",
+            "let_go_of_project",
+            "close",
+            "readiness",
+            "start_program",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",
@@ -183,9 +219,26 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "detach_view",
             "subscribe",
             "unsubscribe",
+            "close",
+            "readiness",
         ],
-        Scope::FleetMcp => &["list", "stop", "subscribe", "unsubscribe"],
-        Scope::Approval => &["list", "answer", "stop", "subscribe", "unsubscribe"],
+        Scope::FleetMcp => &[
+            "list",
+            "stop",
+            "subscribe",
+            "unsubscribe",
+            "close",
+            "readiness",
+        ],
+        Scope::Approval => &[
+            "list",
+            "answer",
+            "stop",
+            "subscribe",
+            "unsubscribe",
+            "close",
+            "readiness",
+        ],
         Scope::Editor => &[],
     }
 }

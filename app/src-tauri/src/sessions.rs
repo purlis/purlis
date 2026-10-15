@@ -13,18 +13,18 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::engine::{AlacrittyEngine, Size};
-use purlis_core::hookwire::{CHAT_ENV, ChatTokens, SOCKET_ENV, TOKEN_ENV};
-use purlis_core::session::{Attachment, Session, Spec};
+use purlis_core::hookwire::ChatTokens;
+use purlis_core::session::{Attachment, Session};
 
 use crate::host::{Ends, Opening, Readiness, SessionHost, Sink, Watching};
 
-/// How many lines of history each session keeps. The pane showing it is told, so its own
-/// terminal keeps the same.
-pub const SCROLLBACK: u32 = 5_000;
+/// How many lines of history each session keeps, in the window or in the session host. The pane
+/// showing it is told, so its own terminal keeps the same.
+pub const SCROLLBACK: u32 = purlis_core::engine::SCROLLBACK;
 
 /// What a pane is sent once its view has closed, so a screen that will never change again
 /// does not look like one that might. A pane whose own view closed writes it and is gone.
-const ENDED: &str = "\r\n\x1b[2m— the program has ended —\x1b[0m\r\n";
+pub(crate) const ENDED: &str = "\r\n\x1b[2m— the program has ended —\x1b[0m\r\n";
 
 /// Why a start was refused while the kill switch is thrown (OV-1).
 pub const STOPPED: &str = "Every chat purlis started is stopped. Re-arm from the title bar to \
@@ -163,12 +163,24 @@ impl SessionHost for Sessions {
             return Err(STOPPED.to_owned());
         }
         let program = opening.program.clone().unwrap_or_else(shell);
-        let mut spec = Spec::new(program, opening.size).args(&opening.args);
-        spec.cwd = opening.cwd.as_ref().map(Into::into);
         // The id is chosen BEFORE the program starts, because the program's own hooks have
         // to carry it: a chat that learned its number afterwards would have a first turn
         // nothing could attribute.
         let id = self.number_for(wanted);
+        // **And the chat's own token**, which every line its hooks and commands write on the
+        // socket carries, and which the socket checks before it believes the chat number the
+        // line names. A fresh one for every start, so a chat put back under the number it had
+        // gets a token of its own too. Kept in memory only: it is never logged, never written
+        // to the plane or to a record, and never shown.
+        let token = match &self.reporting {
+            Some(reporting) => Some(
+                reporting
+                    .tokens
+                    .issue(id)
+                    .map_err(|err| format!("no token for the chat: {err}"))?,
+            ),
+            None => None,
+        };
         // **A chat starts from an empty environment plus a keep-list**, not from the app's
         // whole one minus what charter knows to remove: whatever the app inherited — from a
         // terminal, `launchctl setenv`, a login item — is not the chat's unless
@@ -176,62 +188,37 @@ impl SessionHost for Sessions {
         // for this plane. The chat's own come after, so a profile's value wins over the app's;
         // a profile's `OP_*`, and any identity variable a vault declares, is dropped with the
         // app's own (#237, and #271 review U6); and charter's git hooks (SQ-16, ADR 0074) are
-        // armed last. The same composition starts a level-3 agent (ADR 0080 §1).
-        spec.env_clear = true;
-        spec.env = purlis_core::chatenv::compose(
-            std::env::vars_os(),
-            &purlis_core::chatenv::Starting {
-                harness: opening.harness,
-                operator: &opening.env_pass,
-                strip: &opening.env_strip,
-                set: &opening.env,
-                git_hooks: opening.git_hooks.as_ref(),
-                declared: &opening.declared_env,
-            },
-        );
-        // **The chat is what charter's per-session state is keyed on, and this is what says
-        // so** — charter-app#63. Without it `active::session_id` falls to the harness's own
-        // `$CLAUDE_CODE_SESSION_ID`, which names the CONVERSATION: `/clear` starts a new one
-        // inside the same chat, so `.charter/sessions/<sid>.workspace` becomes a key nothing
-        // reads again and the workspace the operator picked stops deciding. It is the same
-        // mechanism the tmux frame used (`-e CHARTER_SESSION_ID=<chat id>`, ADR 0019), which
-        // is why every process in a frame answered identically for the life of the chat.
+        // armed last. The same composition starts a level-3 agent (ADR 0080 §1), and a chat
+        // in the session host (`purlis_core::chatspec`, #1998).
         //
-        // **Unconditional, and above the `reporting` block on purpose.** `CHARTER_CHAT` is
-        // set only when the app has a socket to hear about the chat on, because without one
-        // there is nothing to report to. This is not a report — it is the chat's identity,
-        // and an app whose channel would not open still owns fifty ptys that each need a key
-        // of their own. It also keeps the LAST rung of `active::terminal_id` from ever
-        // deciding here: the app sets none of `$TERM_SESSION_ID`/`$TMUX_PANE`/`$STY`/
-        // `$SSH_TTY`, so that rung is `ttyname(0)` — a device name the kernel RECYCLES, which
-        // is the sharing hazard `WINDOWID` was taken out of `PANE_ID_VARS` for, one layer
-        // down.
-        //
-        // It is set here rather than in `purlis_core::start::environment` because the
-        // number does not exist yet where that runs: `start::ready` resolves a launch before
-        // any session is opened, and the id is chosen above. The value is the one
-        // `CHARTER_CHAT` carries, so the two can never name different chats.
-        spec.env.push((
-            purlis_core::active::SESSION_ID_ENV.into(),
-            id.to_string().into(),
-        ));
-        // **And the chat's own token**, which every line its hooks and commands write on the
-        // socket carries, and which the socket checks before it believes the chat number the
-        // line names. A fresh one for every start, so a chat put back under the number it had
-        // gets a token of its own too. Kept in memory only: it is never logged, never written
-        // to the plane or to a record, and never shown.
-        if let Some(reporting) = &self.reporting {
-            let token = reporting
-                .tokens
-                .issue(id)
-                .map_err(|err| format!("no token for the chat: {err}"))?;
-            spec.env
-                .push((SOCKET_ENV.into(), reporting.socket.clone().into()));
-            spec.env.push((CHAT_ENV.into(), id.to_string().into()));
-            spec.env.push((TOKEN_ENV.into(), token.expose().into()));
-        }
-        // What the host added, under both names too (V93k), as `compose` gave the rest.
-        spec.env = purlis_core::envvar::twinned(std::mem::take(&mut spec.env));
+        // **The chat is what charter's per-session state is keyed on** (charter-app#63), so
+        // its number goes in whether or not there is a socket to report to: an app whose
+        // channel would not open still owns fifty ptys that each need a key of their own.
+        let spec =
+            purlis_core::chatspec::spec(
+                std::env::vars_os(),
+                &purlis_core::chatspec::Terminal {
+                    program: &program,
+                    args: &opening.args,
+                    cwd: opening.cwd.as_deref(),
+                    size: opening.size,
+                    starting: purlis_core::chatenv::Starting {
+                        harness: opening.harness,
+                        operator: &opening.env_pass,
+                        strip: &opening.env_strip,
+                        set: &opening.env,
+                        git_hooks: opening.git_hooks.as_ref(),
+                        declared: &opening.declared_env,
+                    },
+                    number: id,
+                    reporting: self.reporting.as_ref().zip(token.as_ref()).map(
+                        |(reporting, token)| purlis_core::chatspec::Reporting {
+                            socket: &reporting.socket,
+                            token: token.expose(),
+                        },
+                    ),
+                },
+            );
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let engine = AlacrittyEngine::new(opening.size, SCROLLBACK as usize);
@@ -437,12 +424,12 @@ pub fn shell() -> String {
 /// where the core's own terminal reads them as the controls they are. No harness is known to
 /// write them; the alternative is sending every chunk as an array of numbers over IPC.
 #[derive(Default)]
-struct Utf8Stream {
+pub(crate) struct Utf8Stream {
     waiting: Vec<u8>,
 }
 
 impl Utf8Stream {
-    fn push(&mut self, bytes: &[u8]) -> String {
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> String {
         let mut rest = std::mem::take(&mut self.waiting);
         rest.extend_from_slice(bytes);
         let mut text = String::new();
@@ -532,6 +519,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+    use purlis_core::hookwire::TOKEN_ENV;
 
     const SIZE: Size = Size {
         columns: 40,

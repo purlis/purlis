@@ -23,3 +23,20 @@
 {"reply":{"re":7,"refused":{"code":"no_such_chat","why":"no chat 01J9ZQ3V7K8M2N4P6R8T0V2X4Z on this host"}}}
 {"pushed":{"event":{"v":1,"device_id":"01J9DEVCE00000000000000000","seq":4183,"ulid":"01J9ZQ6000000000000000000B","chat":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","run":"01J9ZQ7000000000000000000C","parent_run":null,"kind":"run.started","body":{"harness":"claude"}}}}
 {"pushed":{"missed":{"device":"01J9DEVCE00000000000000000","after":4182,"resumes_at":5000}}}
+{"call":{"id":16,"command":"hold_project","project":"01J9PRJCT00000000000000000","project_path":"/home/me/project"}}
+{"call":{"id":17,"command":"let_go_of_project","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":18,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","workspace":"login","harness":"claude","program":"01J9ZQ5000000000000000000A","run":"01J9ZQ7000000000000000000C","number":7,"persona":"steward","profile":"work","cols":120,"rows":40,"resume":"5f3c2a10-0000-4000-8000-000000000000","first_message":"fix the login","without_sandbox":true}}
+{"call":{"id":19,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"shell","number":8,"cols":80,"rows":24,"launch":{"program":"/bin/zsh","args":["-l"],"cwd":"/home/me/project","set":[["PURLIS_ROOT","/home/me/project"]],"strip":["DEPLOY_IDENTITY"],"pass":["JAVA_HOME"],"declared":["MYTOOL_HOME"],"harness":"claude","git_hooks":"/home/me/.config/purlis/git-hooks","reporting":{"socket":"/home/me/project/.purlis/app/hooks.sock","token":"x"}}}}
+{"call":{"id":20,"command":"close","program":"01J9ZQ5000000000000000000A"}}
+{"call":{"id":21,"command":"readiness","program":"01J9ZQ5000000000000000000A"}}
+{"reply":{"re":18,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000A","number":7,"process":4242}}}}
+{"reply":{"re":21,"ok":{"readiness":{"edits_lines":false,"quiet_for_ms":1500}}}}
+{"reply":{"re":1,"ok":{"chats":[{"chat":"01J9ZQ5000000000000000000A","project":"01J9PRJCT00000000000000000","state":"ended","number":7,"run":"01J9ZQ7000000000000000000C"}]}}}
+{"pushed":{"ended":{"program":"01J9ZQ5000000000000000000A","run":"01J9ZQ7000000000000000000C","exit":{"code":0}}}}
+{"pushed":{"ended":{"program":"01J9ZQ5000000000000000000A","exit":{"signal":"Hangup"}}}}
+{"pushed":{"view_ended":{"view":4,"why":"program_ended"}}}
+{"reply":{"re":41,"refused":{"code":"unknown_command","why":"this host does not know the command `fork`"}}}
+{"reply":{"re":42,"refused":{"code":"malformed","why":"a `resize` command this host cannot read"}}}
+{"reply":{"re":16,"refused":{"code":"no_such_project","why":"this session host does not hold project 01J9PRJCT00000000000000000"}}}
+{"reply":{"re":18,"refused":{"code":"not_allowed","why":"a `terminal` link may not `hold_project`"}}}
+{"reply":{"re":19,"refused":{"code":"not_started","why":"there is no persona nobody in this project"}}}

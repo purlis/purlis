@@ -2033,8 +2033,8 @@ pub struct PlaneClosed {
     pub plane: PlaneId,
 }
 
-/// Makes a plane's session host, given where its chats are to report.
-pub type Hosting = Arc<dyn Fn(Option<Reporting>) -> Box<dyn SessionHost> + Send + Sync>;
+/// Makes a plane's session host, given where its chats are to report and where the plane is.
+pub type Hosting = Arc<dyn Fn(Option<Reporting>, &Path) -> Box<dyn SessionHost> + Send + Sync>;
 
 /// Where the launch's question stands (charter-app#250): what it holds back until the
 /// operator answers, and what the answer was.
@@ -2115,7 +2115,7 @@ impl Planes {
             quiet: Arc::new(|_| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
-            hosting: Arc::new(|reporting| Box::new(Sessions::reporting_to(reporting))),
+            hosting: Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting))),
             events: None,
             sweep: Arc::new(|root| {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
@@ -2191,8 +2191,8 @@ impl Planes {
         self.network.as_ref()
     }
 
-    /// Runs every plane's sessions on the hosts `hosting` makes, rather than in this process.
-    #[cfg(test)]
+    /// Runs every plane's sessions on the hosts `hosting` makes, rather than in this process:
+    /// the session host, behind the start-time switch (`crate::hostedsessions`, #1998).
     pub fn running_sessions_on(mut self, hosting: Hosting) -> Self {
         self.hosting = hosting;
         self
@@ -3384,7 +3384,7 @@ impl Planes {
             Box::new(move |record| records.write(record))
         };
         // The project every chat started here is of, sandbox and all (#1410).
-        let mut chats = Chats::on_host(recorder, (self.hosting)(reporting), root.clone());
+        let mut chats = Chats::on_host(recorder, (self.hosting)(reporting, &root), root.clone());
         chats.arming_with(self.shipped.clone());
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
@@ -10191,7 +10191,9 @@ mod tests {
     fn planes_on(host: &Pretend) -> (Planes, Arc<Mutex<Vec<Moved>>>) {
         let (planes, told) = planes_telling();
         let host = host.clone();
-        let planes = planes.running_sessions_on(Arc::new(move |_| Box::new(host.clone())));
+        let planes = planes.running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+            Box::new(host.clone())
+        }));
         (planes, told)
     }
 
@@ -10269,7 +10271,7 @@ mod tests {
         let (planes, _told) = planes_telling();
         let planes = planes.running_sessions_on(Arc::new({
             let (stuck, well) = (stuck.clone(), well.clone());
-            move |_| {
+            move |_, _: &std::path::Path| {
                 let host = if made.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
                     stuck.clone()
                 } else {
@@ -10429,7 +10431,9 @@ mod tests {
                 crate::Shipped::default(),
                 Some(config.clone()),
             )
-            .running_sessions_on(Arc::new(move |_| Box::new(host.clone())))
+            .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+                Box::new(host.clone())
+            }))
             .recording_behind_the_window()
         };
         let plane = planes.open(&root);

@@ -14,7 +14,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use purlis_host::{HostError, Place, Window, serve};
+use purlis_host::{ComposesNothing, HostError, Hosting, Place, Window, serve};
 use purlis_session_protocol::auth::{Credential, Scope};
 use purlis_session_protocol::link::{self, Link};
 use purlis_session_protocol::session;
@@ -45,6 +45,7 @@ async fn hosting(
         serve(
             &place,
             window,
+            Hosting::new(ComposesNothing),
             move || {
                 let _ = ready.send(());
             },
@@ -164,6 +165,7 @@ async fn a_second_host_leaves_the_one_serving_alone() {
     let second = serve(
         &place,
         None,
+        Hosting::new(ComposesNothing),
         || panic!("a second host became ready"),
         async {},
     )
@@ -207,10 +209,84 @@ async fn a_socket_folder_that_is_a_link_is_refused() {
     std::fs::create_dir(&elsewhere).unwrap();
     std::os::unix::fs::symlink(&elsewhere, place.socket.parent().unwrap()).unwrap();
 
-    let refused = serve(&place, None, || panic!("it became ready"), async {}).await;
+    let refused = serve(
+        &place,
+        None,
+        Hosting::new(ComposesNothing),
+        || panic!("it became ready"),
+        async {},
+    )
+    .await;
     assert!(
         matches!(refused, Err(HostError::Unsafe { .. })),
         "{refused:?}"
     );
     assert!(!place.credentials.exists(), "credentials were minted");
+}
+
+/// Runs every start as `/bin/true`, for a host whose programs are stand-ins.
+struct True;
+
+impl purlis_host::Compose for True {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_terminal::session::Spec, String> {
+        Ok(purlis_terminal::session::Spec::new(
+            "/bin/true",
+            starting.size,
+        ))
+    }
+}
+
+#[tokio::test]
+async fn a_host_that_stops_ends_every_program_it_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let runs = purlis_host::standin::StandIns::default();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let (ready, is_ready) = oneshot::channel::<()>();
+    let host = tokio::spawn({
+        let place = place.clone();
+        let hosting = Hosting::running_with(True, runs.clone());
+        async move {
+            serve(
+                &place,
+                Some(this_process()),
+                hosting,
+                move || {
+                    let _ = ready.send(());
+                },
+                async move {
+                    let _ = stopped.await;
+                },
+            )
+            .await
+        }
+    });
+    is_ready.await.expect("the host became ready");
+    let credential = Credential::read(&place.credentials, Scope::LocalUi).unwrap();
+    let link = connect(&place, Scope::LocalUi, &credential).await.unwrap();
+    let (client, _views, _events) = session::Client::new(link);
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    client
+        .hold_project("01J9PRJCT00000000000000000", project.to_str().unwrap())
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        client
+            .start_program(session::StartProgram::of(
+                "01J9PRJCT00000000000000000",
+                session::ProgramKind::Shell,
+            ))
+            .await
+            .unwrap();
+    }
+
+    stop.send(()).unwrap();
+    host.await.unwrap().expect("the host ended cleanly");
+
+    assert_eq!(runs.ran().len(), 2);
+    assert!(runs.ran().iter().all(|(_, run)| run.seen().stopped));
 }

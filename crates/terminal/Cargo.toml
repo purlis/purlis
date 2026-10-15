@@ -24,6 +24,10 @@ memchr = "2"
 unicode-width = "0.2"
 portable-pty.workspace = true
 thiserror.workspace = true
+# A view a session host follows without a thread of its own (#1998): its live bytes as an
+# asynchronous stream, from the channel and the trait the protocol's `futures` already brings.
+futures-channel = "0.3"
+futures-core = "0.3"
 
 [target."cfg(unix)".dependencies]
 # A session's program group: whether it still runs, and ending it (`waitid`, `killpg`).
@@ -39,6 +43,8 @@ test-support = []
 
 [dev-dependencies]
 proptest = "1"
+# A followed view's live bytes, read in a test.
+futures = "0.3"
 # The guard on this crate's own dependency tree reads `cargo metadata`.
 serde_json.workspace = true
 # A test that writes a program and then runs it goes through this and nothing else

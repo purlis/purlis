@@ -20,6 +20,10 @@
 //! | `stop` | yes | yes | yes | yes | | yes |
 //! | `start_program`, and 1.0's `start` | yes | yes | | | | yes |
 //! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes |
+//! | `close` (1.2) | yes | yes | yes | yes | | yes |
+//! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
+//! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | |
+//! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -27,6 +31,14 @@
 //! - **Vault values and settings writes are `local-ui`'s alone** (V7). The session protocol has
 //!   no command that reads a value or writes a setting; both are the app's commands, which ride
 //!   only the UI RPC, and the UI RPC opens for `local-ui` only.
+//! - **A start's `launch` is the window's alone** (1.2). It is what the window composed above
+//!   its seam, the program, its words and its environment, while what composes a chat's start
+//!   still lives in the window (#1998). No other scope hands the host a program and an
+//!   environment to run; each starts by persona, profile and harness, which the host composes.
+//! - **`close` is a stop that also forgets**, and `readiness` a read like `list`: each goes
+//!   with the row it is like.
+//! - **Holding a project is the window's alone** (1.2): a hold says where the project is on the
+//!   host's machine, and only the window, whose projects they are, says so or lets go.
 //! - **Only a human scope answers an ask, and a secret's ask only in the window** (V16, V75):
 //!   `local-ui` and `approval`. Whether an ask elicits a secret is the host's to say
 //!   ([`crate::session::Host::elicits_a_secret`]), and a host that does not say is taken to
@@ -71,6 +83,11 @@ pub enum Power {
     Subscribe,
     /// The UI RPC: the app's own commands, vault values and settings writes among them.
     UiRpc,
+    /// `hold_project` and `let_go_of_project` (1.2): where a project is on the host's machine.
+    Hold,
+    /// A start's `launch` (1.2): a program, its words and its environment as the window composed
+    /// them.
+    Launch,
 }
 
 impl Scope {
@@ -104,6 +121,14 @@ mod tests {
                 scope == Scope::LocalUi,
                 "{scope}"
             );
+        }
+    }
+
+    #[test]
+    fn only_the_window_hands_the_host_a_composed_launch_or_holds_a_project() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Launch), scope == Scope::LocalUi, "{scope}");
+            assert_eq!(scope.may(Power::Hold), scope == Scope::LocalUi, "{scope}");
         }
     }
 

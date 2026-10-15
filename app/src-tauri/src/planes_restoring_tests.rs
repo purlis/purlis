@@ -55,7 +55,7 @@ fn planes_on(hosts: &[&Pretend], config: &Path) -> Planes {
         Some(config.to_path_buf()),
     )
     .restoring_behind_the_window()
-    .running_sessions_on(Arc::new(move |_| {
+    .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
         Box::new(
             hosts
                 .lock()

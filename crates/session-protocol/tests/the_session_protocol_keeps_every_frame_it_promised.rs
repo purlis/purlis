@@ -3,8 +3,8 @@
 
 //! The session protocol's compatibility promise (E5, ADR 0068 §4), held in CI.
 //!
-//! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says, 1.1's hosted
-//! programs and views of a kind (#1994) beside 1.0's. Each must read
+//! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says: 1.0's, 1.1's
+//! hosted programs and views of a kind (#1994), and 1.2's chats in the host (#1998). Each must read
 //! back as it was recorded, by this build and so by every later one, which is what lets a
 //! client and a host one version apart talk. A frame kind added without being recorded fails
 //! here, so the promise grows on purpose. The UI RPC is not in it: it is private to one build
@@ -177,15 +177,20 @@ fn every_word_on_the_wire_is_snake_case() {
         }
         walk(&line, "");
     }
-    for code in [
-        session::UNKNOWN_COMMAND,
-        session::MALFORMED,
-        session::NO_SUCH_CHAT,
-        session::NO_SUCH_PROJECT,
-        session::NOT_ALLOWED,
-    ] {
+    for code in session::REFUSALS {
         assert!(snake(code), "{code}");
     }
+}
+
+#[test]
+fn every_refusal_code_this_version_says_is_recorded() {
+    let recorded: BTreeSet<String> = recorded()
+        .iter()
+        .filter_map(|line| line.pointer("/reply/refused/code"))
+        .filter_map(|code| code.as_str().map(str::to_owned))
+        .collect();
+    let said: BTreeSet<String> = session::REFUSALS.iter().map(|c| (*c).to_owned()).collect();
+    assert_eq!(recorded, said);
 }
 
 #[test]

@@ -77,7 +77,9 @@ fn planes_kept_in(host: &Pretend, config: &Path) -> Planes {
         crate::Shipped::default(),
         Some(config.to_path_buf()),
     )
-    .running_sessions_on(Arc::new(move |_| Box::new(host.clone())))
+    .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+        Box::new(host.clone())
+    }))
 }
 
 /// The steward chat is resumed from its session record at `path`, as Resume does: a new chat,

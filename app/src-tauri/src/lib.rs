@@ -67,6 +67,10 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
+#[cfg(all(test, unix))]
+mod behaviour;
+#[cfg(unix)]
+mod hostedsessions;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -2900,7 +2904,32 @@ fn refuse_beside_the_old_app() {
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
-    purlis_host::serve_for_the_window_if_asked(sessionhost::place)
+    purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
+        purlis_host::FromTheWindow(sessionhost::launched)
+    })
+}
+
+/// Where every project's chats run, chosen once as the app starts: in the window's own
+/// process, the default, or in the session host the window started, behind the start-time
+/// switch (`hostedsessions`, #1998). With the switch on and no host of the window's own, its
+/// chats are refused with the reason, never run in the window instead (ADR 0068, Ruled 3).
+fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
+    #[cfg(unix)]
+    if hostedsessions::chats_run_in_the_host() {
+        tracing::info!("purlis: chats run in the session host on this launch");
+        let connection = app.state::<sessionhost::SessionHost>().connection();
+        return planes.running_sessions_on(std::sync::Arc::new(
+            move |reporting, root: &std::path::Path| {
+                Box::new(hostedsessions::HostedSessions::new(
+                    std::sync::Arc::clone(&connection),
+                    root,
+                    reporting,
+                ))
+            },
+        ));
+    }
+    let _ = app;
+    planes
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -3392,7 +3421,8 @@ pub fn run() {
             // The registry is managed BEFORE a plane is opened, because opening one starts
             // programs, and a program that dies at once tells the board, which tells the
             // window, which asks this registry what the chat is called.
-            app.manage(
+            app.manage(where_chats_run(
+                app,
                 Planes::telling(
                     {
                         let window = app.handle().clone();
@@ -3623,7 +3653,7 @@ pub fn run() {
                         );
                     })
                 }),
-            );
+            ));
 
             // The working directory, resolved ONCE, to decide which plane the first window
             // opens. Everything after this names its plane; nothing asks the working
@@ -3694,18 +3724,20 @@ pub fn run() {
                 // that asked (`purlis_core::executor`).
                 app.state::<views::Views>().stop_all();
                 app.state::<heard::Heard>().stop_all();
-                // No chat runs in the session host yet, so it ends at once; it would end all the
-                // same when this process does, since it holds the host's standard input.
-                #[cfg(unix)]
-                if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
-                    host.end();
-                }
                 // Every plane, not "the" plane: each one writes its own record into itself
                 // and ends its own sessions. A failure is not worth refusing to exit over —
                 // the next launch of that plane reads no record and starts empty.
                 // Letting go of every plane also saves each one whose auto-save is on, and gives
                 // its push a few seconds (`Planes::let_go_of_every_plane`, ADR 0051).
                 app.state::<Planes>().let_go_of_all();
+                // Then the session host, once every plane has written its record and ended its
+                // chats, wherever they ran (#1998): it ends what is left as it stops, and would
+                // end all the same when this process does, since it holds the host's standard
+                // input.
+                #[cfg(unix)]
+                if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
+                    host.end();
+                }
                 // A secret a vault's Copy put on the clipboard does not outlive the app: its
                 // clear was waiting on a timer that ends here.
                 app.state::<vaults::SystemClipboard>().clear_at_exit();
@@ -3754,7 +3786,9 @@ mod tests {
             Shipped::default(),
             None,
         )
-        .running_sessions_on(std::sync::Arc::new(move |_| Box::new(host.clone())));
+        .running_sessions_on(std::sync::Arc::new(move |_, _: &std::path::Path| {
+            Box::new(host.clone())
+        }));
         let plane = planes.open(&root);
         let held = planes.held(&plane).expect("held");
         let chat = purlis_core::reopen::Chat {

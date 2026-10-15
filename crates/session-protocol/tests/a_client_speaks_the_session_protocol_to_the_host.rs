@@ -32,6 +32,7 @@ impl Host for Board {
                 project_path: Some("/home/me/project".into()),
                 title: Some("fix the login".into()),
                 state: "working".into(),
+                ..Chat::default()
             }])),
             Command::StartProgram(start) if start.project.is_empty() => Err(Refusal {
                 code: session::NO_SUCH_PROJECT.into(),
@@ -39,6 +40,8 @@ impl Host for Board {
             }),
             Command::StartProgram(_) => Ok(Answer::ProgramStarted {
                 program: "01J9ZQ5000000000000000000A".into(),
+                number: None,
+                process: None,
             }),
             Command::Stop { chat } if chat == "nobody" => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
@@ -106,12 +109,14 @@ async fn every_command_reaches_the_host_as_it_was_sent() {
                 rows: 40,
             },
             Command::Stop { chat: chat.into() },
-            Command::StartProgram(session::StartProgram {
-                project: "01J9PRJCT00000000000000000".into(),
-                kind: session::ProgramKind::Harness,
+            Command::StartProgram(Box::new(session::StartProgram {
                 workspace: Some("login".into()),
                 harness: Some("claude".into()),
-            }),
+                ..session::StartProgram::of(
+                    "01J9PRJCT00000000000000000",
+                    session::ProgramKind::Harness
+                )
+            })),
         ]
     );
 }

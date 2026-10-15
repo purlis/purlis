@@ -20,11 +20,26 @@ tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "rt",
 
 [target."cfg(unix)".dependencies]
 purlis-session-protocol = { path = "../session-protocol" }
+# The programs it hosts: each in a terminal of its own, with nothing of git, HTTP or the keyring
+# (#1995), its views followed without a thread (#1998).
+purlis-terminal.workspace = true
+bytes = "1"
+futures = "0.3"
+# A program's id where the client names none: a ULID, as a chat's is (ADR 0066). The version
+# the core mints chats' with.
+ulid = "3"
 purlis-same-user.workspace = true
 # `O_NOFOLLOW` for the host's lock: the version and features purlis-same-user already links.
 nix = { version = "0.31", default-features = false, features = ["fs"] }
 
+[features]
+# `standin`: a program that stands in for a terminal's, for tests of what drives the host.
+test-support = []
+
 [dev-dependencies]
+purlis-host = { path = ".", features = ["test-support"] }
+# In-memory links for the tests of what the host does with its programs (`link::serve_any`).
+purlis-session-protocol = { path = "../session-protocol", features = ["any-stream"] }
 tempfile.workspace = true
 serde_json.workspace = true
 bytes = "1"

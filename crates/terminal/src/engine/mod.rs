@@ -14,6 +14,10 @@ mod snapshot;
 
 pub use alacritty::AlacrittyEngine;
 
+/// How many lines of history a chat's terminal keeps, wherever it runs: in the window or in the
+/// session host. The pane showing it is told, so its own terminal keeps the same.
+pub const SCROLLBACK: u32 = 5_000;
+
 /// A terminal's size in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
