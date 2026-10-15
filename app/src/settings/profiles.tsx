@@ -11,7 +11,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
  * project here. **Add profile** makes one, with a folder of its own in purlis's data home and
- * its settings imported from this machine's harness settings, never its sign-in; each made
+ * this machine's harness settings files copied in as they are, and no sign-in file; each made
  * profile says when they were imported and offers **Import again**. **Remove…** asks first,
  * naming the conversations that go, and an adopted harness folder is never deleted: purlis only
  * forgets the profile, and the question says so.
@@ -320,7 +320,7 @@ export function RemoveProfile({
 const add: LiveSetting = {
   id: "you.profiles.add",
   label: "Add profile",
-  help: "A new profile of a harness, for a second account or a client's. Its settings are imported from this machine's harness settings, never its sign-in, and its first chat signs in through the harness's own sign-in.",
+  help: "A new profile of a harness, for a second account or a client's. This machine's harness settings files are copied into it as they are, and its first chat signs in through the harness's own sign-in.",
   writes: "this machine",
   useControl: function useAdd() {
     const now = useSyncExternalStore(subscribe, () => held);

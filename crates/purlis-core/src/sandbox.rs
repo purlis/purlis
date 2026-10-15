@@ -1458,6 +1458,16 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             );
         }
     }
+    // This machine's profiles (ADR 0095, #2034): the folders purlis made, each holding a
+    // profile's sign-in, settings and conversations. A chat neither reads nor writes them; their
+    // records are in the config home above.
+    if let Some(data) = Homes::charter_data(machine) {
+        deny(
+            Class::HumanPowers,
+            data.join(crate::profilestore::DIR),
+            Access::ReadWrite,
+        );
+    }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();
     for denial in &paths {

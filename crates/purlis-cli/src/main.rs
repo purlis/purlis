@@ -919,8 +919,8 @@ enum ProfileCommand {
     /// refused.
     List,
     /// Make a profile of this machine's, available in every project: a folder of its own in
-    /// purlis's data home, its settings imported from this machine's harness settings and never
-    /// its sign-in. Its first chat signs in through the harness's own sign-in.
+    /// purlis's data home, with this machine's harness settings files copied in as they are.
+    /// Its first chat signs in through the harness's own sign-in.
     Create {
         /// The profile's name: letters, digits, '-' and '_'.
         name: String,
@@ -928,8 +928,8 @@ enum ProfileCommand {
         #[arg(long)]
         harness: String,
     },
-    /// Import a profile's settings again from this machine's harness settings, never its
-    /// sign-in. Its conversations stay.
+    /// Copy this machine's harness settings files into a profile again, as they are. Its
+    /// sign-in and conversations stay.
     Import {
         /// The profile's name.
         name: String,

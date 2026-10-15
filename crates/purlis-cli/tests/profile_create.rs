@@ -3,7 +3,7 @@
 
 //! `purlis profile create`, `import` and `remove` (#2034, spec #2030): a profile of this
 //! machine's, made in purlis's data home with its settings imported from the machine's harness
-//! settings and never its sign-in, listed in every project, and removed only once what goes
+//! settings files and no sign-in file, listed in every project, and removed only once what goes
 //! has been said.
 
 mod support;

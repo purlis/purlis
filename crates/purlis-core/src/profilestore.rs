@@ -648,7 +648,6 @@ fn import_into(allowed: &Allowed, from: &Path, folder: &Path, config: &Path) -> 
     private_dirs_within(folder, &dest)?;
     for name in allowed.files {
         entry(
-            &source,
             folder,
             &source.join(name),
             &dest.join(name),
@@ -660,7 +659,6 @@ fn import_into(allowed: &Allowed, from: &Path, folder: &Path, config: &Path) -> 
     }
     for name in allowed.folders {
         entry(
-            &source,
             folder,
             &source.join(name),
             &dest.join(name),
@@ -673,11 +671,10 @@ fn import_into(allowed: &Allowed, from: &Path, folder: &Path, config: &Path) -> 
     Ok(copied)
 }
 
-/// Copies one entry of the settings: a file, or (where `folder_ok`) a folder's files. A link is
-/// followed only to a file inside `source`.
-#[allow(clippy::too_many_arguments)]
+/// Copies one entry of the settings: a file, or (where `folder_ok`) a folder's files. A link
+/// is never followed, and a file that has another name on the disk (a hard link) is never
+/// copied, so what is copied is only ever a file of the name the list or the folder gives.
 fn entry(
-    source: &Path,
     folder: &Path,
     from: &Path,
     to: &Path,
@@ -691,28 +688,39 @@ fn entry(
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e),
     };
-    let (from, meta) = if meta.file_type().is_symlink() {
-        let Ok(target) = from.canonicalize() else {
-            copied.skipped.push(format!("{shown}: a link to nothing"));
+    if meta.file_type().is_symlink() {
+        copied
+            .skipped
+            .push(format!("{shown}: a link, which an import never follows"));
+        return Ok(());
+    }
+    if meta.is_file() {
+        // Opened without following a link, and judged by what was opened: a name swapped for
+        // a link since the look above is refused by the open itself.
+        let mut file =
+            match crate::contain::nofollow(std::fs::OpenOptions::new().read(true)).open(from) {
+                Ok(file) => file,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(_) => {
+                    copied
+                        .skipped
+                        .push(format!("{shown}: a link, which an import never follows"));
+                    return Ok(());
+                }
+            };
+        let opened = file.metadata()?;
+        if !opened.is_file() {
+            copied.skipped.push(format!("{shown}: not a settings file"));
             return Ok(());
-        };
-        if !target.starts_with(source) {
+        }
+        if other_names(&opened) {
             copied
                 .skipped
-                .push(format!("{shown}: a link out of {}", source.display()));
+                .push(format!("{shown}: a file with another name on this disk"));
             return Ok(());
         }
-        let meta = std::fs::metadata(&target)?;
-        if !meta.is_file() {
-            copied.skipped.push(format!("{shown}: a link to a folder"));
-            return Ok(());
-        }
-        (target, meta)
-    } else {
-        (from.to_path_buf(), meta)
-    };
-    if meta.is_file() {
-        let bytes = std::fs::read(&from)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut bytes)?;
         crate::rewrite::replace(folder, to, &bytes, crate::rewrite::Mode::Private)?;
         copied.copied.push(shown.to_owned());
         return Ok(());
@@ -728,7 +736,7 @@ fn entry(
         return Ok(());
     }
     private_dir_within(folder, to)?;
-    let mut names: Vec<_> = std::fs::read_dir(&from)?
+    let mut names: Vec<_> = std::fs::read_dir(from)?
         .filter_map(Result::ok)
         .map(|e| e.file_name())
         .collect();
@@ -745,7 +753,6 @@ fn entry(
             continue;
         }
         entry(
-            source,
             folder,
             &from.join(text),
             &to.join(text),
@@ -756,6 +763,21 @@ fn entry(
         )?;
     }
     Ok(())
+}
+
+/// Whether the file `meta` describes has another name on its disk: a hard link, which may be a
+/// sign-in under a settings file's name.
+fn other_names(meta: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        meta.nlink() > 1
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        false
+    }
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.

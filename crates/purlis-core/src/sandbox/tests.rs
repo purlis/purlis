@@ -1099,7 +1099,44 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
+            // This machine's profiles' folders (#2034).
+            Homes::charter_data(&machine(Os::Linux))
+                .expect("a data home")
+                .join(crate::profilestore::DIR),
         ]
+    );
+}
+
+#[test]
+fn no_chat_reads_or_writes_the_folders_of_this_machines_profiles() {
+    // A profile purlis made keeps its sign-in in its folder (ADR 0095 §1, #2034).
+    let profiles = Homes::charter_data(&machine(Os::MacOs))
+        .expect("a data home")
+        .join(crate::profilestore::DIR);
+    let (_plane, denied) = denied_with(None, Os::MacOs);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&profiles),
+        "{:?}",
+        denied.paths
+    );
+    let named = super::real(&profiles).display().to_string();
+    let settings = claude::settings(&compiled(denied.clone(), Os::MacOs)).expect("compiles");
+    for key in ["denyRead", "denyWrite"] {
+        assert!(
+            settings.sandbox["filesystem"][key]
+                .as_array()
+                .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+            "{key}: {}",
+            settings.sandbox["filesystem"][key]
+        );
+    }
+    let wrap = codex::wrap(&compiled(denied, Os::MacOs)).expect("compiles");
+    assert!(
+        wrap.denied
+            .iter()
+            .any(|it| it.path == profiles && it.access == Access::ReadWrite),
+        "{:?}",
+        wrap.denied
     );
 }
 

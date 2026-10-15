@@ -197,21 +197,63 @@ fn an_import_follows_no_link_out_of_the_settings_folder() {
     write(&outside, "elsewhere\n");
     std::os::unix::fs::symlink(&outside, source.join("settings.json")).unwrap();
     write(&source.join("CLAUDE.md"), "Be brief.\n");
-    fs::create_dir_all(source.join("agents")).unwrap();
-    std::os::unix::fs::symlink(source.join("CLAUDE.md"), source.join("agents/brief.md")).unwrap();
     std::os::unix::fs::symlink(machine.home.join("."), source.join("commands")).unwrap();
 
     let made = machine.create("work", "claude", 100).unwrap();
 
-    assert_eq!(
-        files(&made.record.folders.config),
-        ["CLAUDE.md", "agents/brief.md"]
-    );
+    assert_eq!(files(&made.record.folders.config), ["CLAUDE.md"]);
+    for name in ["settings.json", "commands"] {
+        assert!(
+            made.copied
+                .skipped
+                .iter()
+                .any(|s| s.starts_with(&format!("{name}: a link"))),
+            "{name}: {:?}",
+            made.copied.skipped
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_import_copies_no_sign_in_through_a_link_inside_the_settings_folder() {
+    let mut machine = Machine::new();
+    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
+    write(&source.join(".credentials.json"), "not imported\n");
+    write(&source.join("auth.json"), "not imported\n");
+    std::os::unix::fs::symlink(".credentials.json", source.join("settings.json")).unwrap();
+    fs::create_dir_all(source.join("skills")).unwrap();
+    std::os::unix::fs::symlink("../auth.json", source.join("skills/notes.md")).unwrap();
+    write(&source.join("CLAUDE.md"), "Be brief.\n");
+
+    let made = machine.create("work", "claude", 100).unwrap();
+
+    assert_eq!(files(&made.record.folders.config), ["CLAUDE.md"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_import_copies_no_file_that_has_another_name_on_the_disk() {
+    let mut machine = Machine::new();
+    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
+    write(&source.join(".credentials.json"), "not imported\n");
+    fs::create_dir_all(source.join("skills")).unwrap();
+    fs::hard_link(
+        source.join(".credentials.json"),
+        source.join("skills/notes.md"),
+    )
+    .unwrap();
+    fs::hard_link(source.join(".credentials.json"), source.join("CLAUDE.md")).unwrap();
+    write(&source.join("settings.json"), "{}\n");
+
+    let made = machine.create("work", "claude", 100).unwrap();
+
+    assert_eq!(files(&made.record.folders.config), ["settings.json"]);
     assert!(
         made.copied
             .skipped
             .iter()
-            .any(|s| s.starts_with("settings.json: a link out of")),
+            .any(|s| s.starts_with("CLAUDE.md: a file with another name")),
         "{:?}",
         made.copied.skipped
     );
