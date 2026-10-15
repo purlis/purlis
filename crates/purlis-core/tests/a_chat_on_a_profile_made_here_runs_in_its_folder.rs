@@ -69,6 +69,7 @@ fn start_on(name: &str, root: &Path) -> Start {
         without_sandbox: None,
         held: None,
         grants: Default::default(),
+        made: purlis_core::sandbox::Made::Window,
     }
 }
 
