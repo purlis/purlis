@@ -44,9 +44,19 @@ pub const PROPOSED_SAID: &str = "purlis showed this change to the person as a pr
 /// the asking chat is then refused its edit as before.
 pub const NOT_HELD: &str = "this app does not show proposed changes to the person";
 
-/// The most bytes a proposed file may hold: far past any configuration file, and small enough
-/// to send whole over the hook channel and show.
-pub const MOST_BYTES: usize = 512 * 1024;
+/// **The most bytes a proposed file may hold**: what the hook channel carries whole on one line
+/// at its worst, every byte a character JSON spells in six, beside the longest path
+/// ([`MOST_PATH_BYTES`]) and the base. A proposal is never cut: a longer one is not made
+/// (`hookwire`'s test holds the two together).
+pub const MOST_BYTES: usize = 12 * 1024;
+
+/// The longest path a proposal names, in bytes.
+pub const MOST_PATH_BYTES: usize = 256;
+
+/// **What a chat is told of an edit that could not be made a proposal**, whatever the reason:
+/// fixed words, which say nothing of what the file holds.
+pub const UNPREPARED: &str = "this edit could not be prepared as a proposed change, so nothing \
+     was proposed and nothing was written. Make the change yourself, or ask the person to.";
 
 /// **Whether `path` is a file a chat may propose a change to** in the project at `root`, judged
 /// on its lexical path and on the disk: the path relative to `root` where it is one, or why not.
@@ -61,7 +71,9 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
             _ => "\u{0}",
         })
         .collect();
-    if parts.iter().any(|part| *part == "\u{0}" || part.is_empty()) {
+    if rel.as_os_str().len() > MOST_PATH_BYTES
+        || parts.iter().any(|part| *part == "\u{0}" || part.is_empty())
+    {
         return Err(not_proposable(path));
     }
     let manifest = |name: &str| {
@@ -70,11 +82,16 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
             .any(|one| one == name)
     };
     let a_name = |name: &str| !name.starts_with('.');
+    // Below `.claude/skills`, skill files alone: no part a program would load as its own (a
+    // dot-file or dot-folder: `.envrc`, `.git`, `.vscode`), no package manifest and no hooks
+    // folder, which PC-1 leaves for the person to change.
     let skills = |rest: &[&str]| {
         rest.len() >= 3
             && rest[0] == ".claude"
             && rest[1] == "skills"
-            && rest[2..].iter().all(|p| *p != "..")
+            && rest[2..]
+                .iter()
+                .all(|p| !p.starts_with('.') && !SKILL_NEVER.contains(p))
     };
     let ours = match parts.as_slice() {
         [name] => manifest(name),
@@ -100,6 +117,9 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
     }
     Ok(rel)
 }
+
+/// Names never proposed below `.claude/skills` (PC-1): what a program runs as its own.
+const SKILL_NEVER: [&str; 2] = ["package.json", "hooks"];
 
 /// Why `path` is not a file a chat may propose a change to: the way that works instead.
 pub fn not_proposable(path: &Path) -> String {
@@ -147,6 +167,7 @@ pub fn apply_edit(tool: &str, input: &Value, now: Option<&str>) -> Result<String
             let edits = input
                 .get("edits")
                 .and_then(Value::as_array)
+                .filter(|edits| !edits.is_empty())
                 .ok_or_else(|| "the edit's input has no edits".to_owned())?;
             let mut text = now.unwrap_or("").to_owned();
             for edit in edits {
@@ -182,6 +203,9 @@ fn replace(now: &str, input: &Map<String, Value>) -> Result<String, String> {
     if old.is_empty() {
         return Err("the text to replace is empty".to_owned());
     }
+    if old == new {
+        return Err("the edit changes nothing".to_owned());
+    }
     match now.matches(old).count() {
         0 => Err("the text to replace is not in the file".to_owned()),
         1 => Ok(now.replacen(old, new, 1)),
@@ -216,9 +240,13 @@ pub fn from_edit(root: &Path, payload: &Value, cwd: &Path) -> Option<Result<Prop
     let named = payload["tool_input"]["file_path"].as_str()?;
     let path = cwd.join(named);
     let rel = proposable(root, &path).ok()?;
-    Some(read_and_apply(root, &rel, |now| {
-        apply_edit(tool, &payload["tool_input"], now)
-    }))
+    // Why it could not be made is never said: it could depend on what the file holds.
+    Some(
+        read_and_apply(root, &rel, |now| {
+            apply_edit(tool, &payload["tool_input"], now)
+        })
+        .map_err(|_| UNPREPARED.to_owned()),
+    )
 }
 
 /// A proposal, as a hook or `purlis propose` hands it over: the file relative to the project,
@@ -231,35 +259,88 @@ pub struct Proposed {
 }
 
 /// The file at `rel` as it is now, and `change` made to it: the proposal, or why there is none.
+/// The file is read only as [`read_pinned`] reads it.
 pub fn read_and_apply(
     root: &Path,
     rel: &Path,
     change: impl FnOnce(Option<&str>) -> Result<String, String>,
 ) -> Result<Proposed, String> {
-    let now = match std::fs::read(root.join(rel)) {
-        Ok(bytes) => Some(bytes),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(format!("purlis could not read {}: {e}", rel.display())),
-    };
-    if now.as_ref().is_some_and(|bytes| bytes.len() > MOST_BYTES) {
-        return Err(format!(
-            "{} is longer than the {MOST_BYTES} bytes a proposed change may be",
-            rel.display()
-        ));
-    }
+    let now = read_pinned(root, rel).map_err(|Unpinned| UNPREPARED.to_owned())?;
     let text = match &now {
         None => None,
-        Some(bytes) => Some(
-            std::str::from_utf8(bytes)
-                .map_err(|_| format!("{} is not text purlis can show", rel.display()))?,
-        ),
+        Some(bytes) => Some(std::str::from_utf8(bytes).map_err(|_| UNPREPARED.to_owned())?),
     };
     let content = change(text)?;
+    if content.len() > MOST_BYTES {
+        return Err(UNPREPARED.to_owned());
+    }
     Ok(Proposed {
         path: rel.to_path_buf(),
         base: base_of(now.as_deref()),
         content,
     })
+}
+
+/// Why a file was not read: it is not the one regular file its name says (a link, a second
+/// name, a pipe or a device, a longer file), or it could not be opened. Never said to a chat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Unpinned;
+
+/// **The file at `rel` under `root`, read only where it is the file the name says**: each
+/// folder from `root` down opened without following a link, the file itself opened without
+/// following one and without waiting on it, and taken only where the open handle is a regular
+/// file with one name, at most [`MOST_BYTES`] long. None where nothing is there; refused for
+/// anything else (a link, a second name, a pipe or a device, a longer file).
+#[cfg(unix)]
+pub fn read_pinned(root: &Path, rel: &Path) -> Result<Option<Vec<u8>>, Unpinned> {
+    use rustix::fs::{CWD, FileType, Mode, OFlags, fstat, openat};
+    use std::io::Read as _;
+    let parts: Vec<&std::ffi::OsStr> = rel
+        .components()
+        .map(|part| match part {
+            Component::Normal(name) => Ok(name),
+            _ => Err(Unpinned),
+        })
+        .collect::<Result<_, _>>()?;
+    let (leaf, folders) = parts.split_last().ok_or(Unpinned)?;
+    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut at = openat(CWD, root, folder, Mode::empty()).map_err(|_| Unpinned)?;
+    for name in folders {
+        at = match openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()) {
+            Ok(next) => next,
+            Err(rustix::io::Errno::NOENT) => return Ok(None),
+            Err(_) => return Err(Unpinned),
+        };
+    }
+    let file = match openat(
+        &at,
+        *leaf,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(file) => file,
+        Err(rustix::io::Errno::NOENT) => return Ok(None),
+        Err(_) => return Err(Unpinned),
+    };
+    let stat = fstat(&file).map_err(|_| Unpinned)?;
+    if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile || stat.st_nlink != 1 {
+        return Err(Unpinned);
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::from(file)
+        .take(MOST_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| Unpinned)?;
+    if bytes.len() > MOST_BYTES {
+        return Err(Unpinned);
+    }
+    Ok(Some(bytes))
+}
+
+/// [`read_pinned`] where no folder can be opened without following a link: never.
+#[cfg(not(unix))]
+pub fn read_pinned(_root: &Path, _rel: &Path) -> Result<Option<Vec<u8>>, Unpinned> {
+    Err(Unpinned)
 }
 
 #[cfg(test)]

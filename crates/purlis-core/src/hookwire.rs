@@ -4656,6 +4656,24 @@ mod tests {
     }
 
     #[test]
+    fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
+        // #1975: a proposal at its largest, every byte a control character JSON spells in six,
+        // with the longest path and a base, is read whole: never cut.
+        let ask = Ask::Propose(Box::new(ProposeAsk {
+            chat: u32::MAX,
+            path: "\u{1}".repeat(crate::proposed::MOST_PATH_BYTES),
+            base: Some("f".repeat(64)),
+            content: "\u{1}".repeat(crate::proposed::MOST_BYTES),
+        }));
+        let line = line_with(Some(&ChatToken("t".repeat(64))), &ask).expect("a line");
+        assert!(
+            (line.len() as u64) < A_LINE_IS_AT_MOST,
+            "{} bytes does not fit in {A_LINE_IS_AT_MOST}",
+            line.len()
+        );
+    }
+
+    #[test]
     fn a_written_answer_reads_back_as_written() {
         let answer = Answer::Written {
             to: "alpha".to_owned(),

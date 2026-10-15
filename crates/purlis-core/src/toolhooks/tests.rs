@@ -902,9 +902,9 @@ fn an_edit_that_is_no_proposal_is_left_to_the_chat_s_own_sandbox() {
     crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
 }
 
-/// A change the tool could not make is refused with why, so the chat reads the file again.
+/// A change the tool could not make is refused in fixed words that say nothing of the file.
 #[test]
-fn an_edit_whose_text_is_not_in_the_file_is_refused_with_why() {
+fn an_edit_whose_text_is_not_in_the_file_is_refused_in_fixed_words() {
     let plane = sandboxed_claude(Plane::new());
     let payload = serde_json::json!({
         "tool_name": "Edit",
@@ -917,9 +917,5 @@ fn an_edit_whose_text_is_not_in_the_file_is_refused_with_why() {
     let Answer::Deny(verdict) = answer else {
         panic!("refused, not {answer:?}");
     };
-    assert!(
-        verdict.denial.contains("not in the file"),
-        "{}",
-        verdict.denial
-    );
+    assert_eq!(verdict.denial, crate::proposed::UNPREPARED);
 }

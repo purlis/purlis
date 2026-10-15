@@ -156,3 +156,131 @@ fn a_hook_s_edit_of_a_proposable_file_is_a_proposal_against_the_file_as_it_is() 
     let read = json!({"tool_name": "Read", "tool_input": {"file_path": "purlis.toml"}});
     assert_eq!(from_edit(&root, &read, &root), None);
 }
+
+/// PC-1: below `.claude/skills`, skill files alone; and no name in another case, and no `..`
+/// that leaves the skills.
+#[test]
+fn below_the_skills_nothing_a_program_loads_as_its_own_is_proposable() {
+    let (_dir, root) = project();
+    for no in [
+        ".claude/skills/x/.envrc",
+        ".claude/skills/x/.vscode/tasks.json",
+        ".claude/skills/x/.git/hooks/pre-commit",
+        ".claude/skills/x/.git/config",
+        ".claude/skills/x/package.json",
+        ".claude/skills/x/hooks/run.sh",
+        ".claude/skills/.hidden/SKILL.md",
+        "workspaces/alpha/.claude/skills/x/.envrc",
+        ".claude/skills/../settings.json",
+        "Purlis.toml",
+        "Personas/devops/persona.md",
+        "personas/devops/Persona.md",
+    ] {
+        assert!(proposable(&root, &root.join(no)).is_err(), "{no}");
+    }
+    assert!(proposable(&root, &root.join(".claude/skills/x/scripts/run.py")).is_ok());
+}
+
+/// A proposal is read only from the file its name says: never through a second name, never a
+/// pipe, and never what a chat could not be told why, in words that depend on the file.
+#[cfg(unix)]
+#[test]
+fn a_second_name_or_a_pipe_at_a_proposable_path_is_never_read() {
+    let (dir, root) = project();
+    let elsewhere = dir.path().join("secret.json");
+    std::fs::write(&elsewhere, "{\"token\": \"x\"}").expect("a file");
+    std::fs::hard_link(&elsewhere, root.join("personas/devops/mcp.json")).expect("a hard link");
+    let edit = serde_json::json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "personas/devops/mcp.json", "old_string": "{", "new_string": "["},
+    });
+    assert_eq!(
+        from_edit(&root, &edit, &root),
+        Some(Err(UNPREPARED.to_owned()))
+    );
+
+    let fifo = root.join("personas/devops/persona.md");
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&fifo))
+        .expect("mkfifo runs");
+    assert!(made.success(), "a pipe");
+    let started = std::time::Instant::now();
+    let write = serde_json::json!({
+        "tool_name": "Write",
+        "tool_input": {"file_path": "personas/devops/persona.md", "content": "x"},
+    });
+    assert_eq!(
+        from_edit(&root, &write, &root),
+        Some(Err(UNPREPARED.to_owned()))
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "never waited on"
+    );
+}
+
+/// Why an edit could not be made is never said: one fixed sentence, whatever the file holds.
+#[test]
+fn an_edit_that_cannot_be_made_is_said_in_fixed_words() {
+    let (_dir, root) = project();
+    let missing = serde_json::json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "purlis.toml", "old_string": "absent", "new_string": "x"},
+    });
+    let twice = serde_json::json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "purlis.toml", "old_string": "a", "new_string": "b"},
+    });
+    std::fs::write(root.join("purlis.toml"), "[plane]\nname = \"a a\"\n").expect("manifest");
+    for edit in [missing, twice] {
+        assert_eq!(
+            from_edit(&root, &edit, &root),
+            Some(Err(UNPREPARED.to_owned()))
+        );
+    }
+}
+
+/// What Claude Code itself would refuse is refused: an edit that changes nothing, no edits, and
+/// a MultiEdit one of whose edits fails.
+#[test]
+fn an_edit_claude_code_would_refuse_is_refused() {
+    let now = Some("a b c");
+    for (tool, input) in [
+        (
+            "Edit",
+            serde_json::json!({"file_path": "x", "old_string": "a", "new_string": "a"}),
+        ),
+        (
+            "MultiEdit",
+            serde_json::json!({"file_path": "x", "edits": []}),
+        ),
+        (
+            "MultiEdit",
+            serde_json::json!({"file_path": "x", "edits": [
+                {"old_string": "a", "new_string": "z"},
+                {"old_string": "missing", "new_string": "y"}
+            ]}),
+        ),
+    ] {
+        assert!(apply_edit(tool, &input, now).is_err(), "{tool} {input}");
+    }
+}
+
+/// The size cap is a boundary, not a cut: a file of [`MOST_BYTES`] is proposed whole, one byte
+/// more is not proposed at all.
+#[test]
+fn a_proposal_is_never_cut_at_the_size_cap() {
+    let (_dir, root) = project();
+    let rel = Path::new("personas/devops/persona.md");
+    let at_most = "x".repeat(MOST_BYTES);
+    let whole = read_and_apply(&root, rel, |_| Ok(at_most.clone())).expect("whole");
+    assert_eq!(whole.content.len(), MOST_BYTES);
+    assert_eq!(
+        read_and_apply(&root, rel, |_| Ok(format!("{at_most}x"))),
+        Err(UNPREPARED.to_owned())
+    );
+    std::fs::write(root.join(rel), format!("{at_most}x")).expect("a long file");
+    assert_eq!(
+        read_and_apply(&root, rel, |now| Ok(now.unwrap_or_default().to_owned())),
+        Err(UNPREPARED.to_owned())
+    );
+}
