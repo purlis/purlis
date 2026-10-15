@@ -138,7 +138,7 @@ fn a_chat_its_profile_hands_credentials_is_never_started_in_the_host() {
     // #2036: what a profile hands its chat is set on a program the window starts, and never
     // goes over the link.
     let (_dir, root) = a_project();
-    let sessions = HostedSessions::new(Arc::new(Connection::default()), &root, None);
+    let sessions = HostedSessions::new(Arc::new(Connection::default()), &root);
     let announced = Mutex::new(Vec::new());
     let handed = Opening {
         handed: purlis_core::profilesignin::Handed::of(vec![(
@@ -589,6 +589,13 @@ fn reported(chat: u32, event: purlis_core::state::Event) -> purlis_core::hookwir
         agent: None,
         detail: purlis_core::state::Detail::default(),
     }
+}
+
+#[test]
+fn the_windows_launch_never_says_where_a_chat_reports() {
+    let launch = launch_of(&a_shell("true"), "/bin/sh".to_owned());
+
+    assert_eq!(launch.reporting, None);
 }
 
 #[test]

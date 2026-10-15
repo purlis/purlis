@@ -489,22 +489,36 @@ fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target
     target.sessions.close(id).expect("it closes");
 }
 
-/// The harnesses whose hooks report and ask through `purlis hook`, by the word a chat's
-/// environment names each with (`PURLIS_HARNESS`), and a permission ask's payload as each one's
-/// hook is handed it.
-const HOOKED_HARNESSES: [(&str, &str); 3] = [
-    (
-        "claude-code",
-        r#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
-    ),
-    (
-        "codex",
-        r#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
-    ),
-    (
-        "opencode",
-        r#"{"permission":"bash","patterns":["npm test"]}"#,
-    ),
+/// A harness whose hooks report and ask through `purlis hook`: the word a chat's environment
+/// names it with (`PURLIS_HARNESS`), a permission ask's payload as its hook is handed it, the
+/// option the window answers it with, and what its hook then prints for the harness.
+struct Hooked {
+    harness: &'static str,
+    payload: &'static str,
+    option: &'static str,
+    prints: &'static str,
+}
+
+const HOOKED_HARNESSES: [Hooked; 3] = [
+    Hooked {
+        harness: "claude-code",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
+        option: "allow",
+        prints: r#""behavior":"allow""#,
+    },
+    Hooked {
+        harness: "codex",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
+        option: "allow",
+        prints: r#""behavior":"allow""#,
+    },
+    // opencode's shell line is answered only with a refusal from the window (#1691).
+    Hooked {
+        harness: "opencode",
+        payload: r#"{"permission":"bash","patterns":["npm test"]}"#,
+        option: "reject",
+        prints: r#"{"reply":"reject"}"#,
+    },
 ];
 
 /// Started as the window starts a chat: its number on the board before its program runs, so
@@ -519,7 +533,7 @@ fn a_chat_on_the_board(target: &Target, opening: &Opening) -> u32 {
 }
 
 fn a_chat_whose_turn_ends_needs_you_on_every_harness(target: &Target) {
-    for (harness, _) in HOOKED_HARNESSES {
+    for Hooked { harness, .. } in HOOKED_HARNESSES {
         let id = a_chat_on_the_board(
             target,
             &a_shell(&format!(
@@ -543,7 +557,13 @@ fn a_chat_whose_turn_ends_needs_you_on_every_harness(target: &Target) {
 }
 
 fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target) {
-    for (harness, payload) in HOOKED_HARNESSES {
+    for Hooked {
+        harness,
+        payload,
+        option,
+        prints,
+    } in HOOKED_HARNESSES
+    {
         let id = a_chat_on_the_board(
             target,
             &a_shell(&format!(
@@ -567,22 +587,12 @@ fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target
                 std::thread::sleep(Duration::from_millis(10));
             }
         };
-        let option = ask.ask.options.first().expect("an option").id.clone();
-
         target
             .hooks
-            .answer(id, &ask.id.to_string(), &option)
+            .answer(id, &ask.id.to_string(), option)
             .expect("answered in the window");
 
-        let source = purlis_core::harness::hooked::Source::of_harness(Some(harness))
-            .expect("a hooked harness");
-        let decision = purlis_core::harness::hooked::decision(
-            source,
-            &serde_json::from_str(payload).expect("a payload"),
-            &option,
-        )
-        .expect("a decision");
-        pane.shows(&decision);
+        pane.shows(prints);
         pane.shows("decided.");
         target.sessions.close(id).expect("it closes");
     }
@@ -643,7 +653,7 @@ impl Drop for Beside {
 }
 
 fn a_hook_refuses_a_listener_that_is_not_its_chats_ancestor(target: &Target) {
-    let (_, payload) = HOOKED_HARNESSES[0];
+    let payload = HOOKED_HARNESSES[0].payload;
     let id = a_chat_on_the_board(
         target,
         &a_shell(&format!(

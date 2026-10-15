@@ -871,7 +871,10 @@ impl SessionHost for HostedSessions {
     fn deal(&self) -> u32 {
         self.dealt_by_the_host().unwrap_or_else(|why| {
             tracing::warn!("purlis: the session host dealt no number ({why})");
-            self.opened.fetch_add(1, Ordering::Relaxed) + 1
+            // Never wrapped round to a chat's that runs: past the last number, the last.
+            self.opened
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .map_or(u32::MAX, |was| was + 1)
         })
     }
 

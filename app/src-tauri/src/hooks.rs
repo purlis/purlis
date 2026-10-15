@@ -2873,6 +2873,11 @@ impl SpoolWatch {
 /// The thread ends with the hearers, when the project stops listening; a look still pending
 /// then is let go, and the chat's spool is drained at its end or the next open.
 ///
+/// **With chats in the session host, a line taken late can be recorded twice** (#2000). The
+/// host takes the live line, and this drain records the copy its hook spooled. Which copy was
+/// recorded already (#952) is known per process, so each process records its own. This holds
+/// until the event log is written in the host (#2003).
+///
 /// [`spool::holds_lines`]: purlis_core::hookwire::spool::holds_lines
 /// [`spool::drain_running`]: purlis_core::hookwire::spool::drain_running
 fn watching_spools(dir: PathBuf, plane: PlaneId, events: Arc<Mutex<Option<Events>>>) -> SpoolWatch {

@@ -301,6 +301,35 @@ async fn numbers_are_dealt_by_the_host_never_twice_and_never_one_that_went_out_b
 }
 
 #[tokio::test]
+async fn past_the_last_number_none_is_dealt_and_nothing_starts() {
+    let linked = linked().await;
+    linked.hold().await;
+    linked
+        .client
+        .call(Command::DealtAlready {
+            project: PROJECT.into(),
+            dealt: u32::MAX,
+        })
+        .await
+        .unwrap();
+
+    let dealt = linked.client.deal(PROJECT).await.unwrap_err();
+    let started = linked
+        .client
+        .start_program_told(the_windows_start(None))
+        .await
+        .unwrap_err();
+
+    for refused in [dealt, started] {
+        assert_eq!(
+            refused.refusal().map(|r| r.code.as_str()),
+            Some(session::NOT_STARTED)
+        );
+    }
+    assert!(linked.runs.ran().is_empty());
+}
+
+#[tokio::test]
 async fn a_number_is_dealt_only_in_a_held_project() {
     let linked = linked().await;
 

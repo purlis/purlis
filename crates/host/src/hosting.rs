@@ -504,7 +504,10 @@ impl Hosting {
             let dealt = state.dealt.get(&start.project).copied().unwrap_or(0);
             let number = match start.number {
                 Some(wanted) if wanted > 0 && !in_use(wanted, &state) => wanted,
-                _ => dealt + 1,
+                _ => match dealt.checked_add(1) {
+                    Some(next) if !in_use(next, &state) => next,
+                    _ => return Err(no_number_left(&start.project)),
+                },
             };
             state.dealt.insert(start.project.clone(), dealt.max(number));
             (program, number, path)
@@ -640,7 +643,9 @@ impl Hosting {
             return Err(no_such_project(project));
         }
         let dealt = state.dealt.entry(project.to_owned()).or_default();
-        *dealt += 1;
+        *dealt = dealt
+            .checked_add(1)
+            .ok_or_else(|| no_number_left(project))?;
         Ok(Answer::Dealt { number: *dealt })
     }
 
@@ -810,6 +815,15 @@ fn no_such_project(project: &str) -> Refusal {
     Refusal {
         code: session::NO_SUCH_PROJECT.into(),
         why: format!("this session host does not hold project {project}"),
+    }
+}
+
+/// A project whose numbers have all been dealt: none is dealt again, so none wraps round to
+/// a chat's that is running.
+fn no_number_left(project: &str) -> Refusal {
+    Refusal {
+        code: session::NOT_STARTED.into(),
+        why: format!("project {project} has no chat number left to deal"),
     }
 }
 
