@@ -1997,7 +1997,6 @@ impl Chats {
         has: &dyn Fn(&str) -> bool,
     ) -> Option<OlderSandbox> {
         use purlis_core::sandbox::Decided;
-        let debug_t = std::time::Instant::now();
         // Each read out from under its lock, one at a time: compiling reads the project's
         // files, and no lock here is taken while another is held.
         let owed: std::collections::HashSet<u32> = lock(&self.owed).keys().copied().collect();
@@ -2086,11 +2085,6 @@ impl Chats {
                 });
             }
         }
-        tracing::info!(
-            "[DEBUG-2157] on_older_sandbox {} ms, {} compiled",
-            debug_t.elapsed().as_millis(),
-            compiled.len()
-        );
         if chats.is_empty() {
             return None;
         }

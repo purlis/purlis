@@ -2363,13 +2363,7 @@ fn machine_held(machine: &Machine) -> std::sync::Arc<Vec<PathBuf>> {
     }) {
         return found;
     }
-    let debug_t = std::time::Instant::now();
     let found = Arc::new(machine_held_now(path.as_deref(), machine.home.as_deref()));
-    tracing::info!(
-        "[DEBUG-2157] machine_held {} ms, {} held",
-        debug_t.elapsed().as_millis(),
-        found.len()
-    );
     if let Ok(mut kept) = kept.lock() {
         *kept = Some((
             path,
@@ -5231,22 +5225,6 @@ fn yours_lifted(root: &Path, person: &Person<'_>, locks: &policy::Locks) -> Opti
 
 /// [`decide`], for a chat a person let do `chat` besides (#1342).
 pub fn decide_granted(
-    harness: Harness,
-    root: &Path,
-    machine: &Machine,
-    has: &dyn Fn(&str) -> bool,
-    person: &Person<'_>,
-    persona: Option<&str>,
-    chat: &grant::Grants,
-) -> Result<Option<Decided>, NotStarted> {
-    let debug_t = std::time::Instant::now();
-    let debug_r = decide_granted_timed(harness, root, machine, has, person, persona, chat);
-    tracing::info!("[DEBUG-2157] decide {} ms", debug_t.elapsed().as_millis());
-    debug_r
-}
-
-/// [DEBUG-2157] the body of [`decide_granted`].
-fn decide_granted_timed(
     harness: Harness,
     root: &Path,
     machine: &Machine,

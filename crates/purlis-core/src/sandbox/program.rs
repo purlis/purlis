@@ -532,20 +532,6 @@ fn answer_within(
     seen: &mut dyn FnMut(u32),
 ) -> Result<String, Unanswered> {
     let failed = Unanswered::Failed;
-    let debug_t = Instant::now();
-    let debug_r = answer_within_timed(words, chat, patience, seen, failed);
-    tracing::info!("[DEBUG-2157] probe {} ms", debug_t.elapsed().as_millis());
-    debug_r
-}
-
-/// [DEBUG-2157] the body of [`answer_within`].
-fn answer_within_timed(
-    words: &[String],
-    chat: Chat<'_>,
-    patience: Duration,
-    seen: &mut dyn FnMut(u32),
-    failed: Unanswered,
-) -> Result<String, Unanswered> {
     let (program, rest) = words.split_first().ok_or(failed)?;
     // D-88k: inside charter's own wrap, which writes nothing but its own temp directory and
     // reaches no network. On macOS; the Linux wrap is #1040, and there it runs as before.
