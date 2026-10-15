@@ -72,8 +72,9 @@ and Apple's app sandbox do.
   log name the socket; so does a **failed** command's own error (Go's `dial unix <path>: connect:
   operation not permitted`, Docker's sentence on macOS), the one place a client says the path.
   What a command that succeeded printed (`cat` of a log, a file that quotes the words) raises a
-  block that names no socket, so no Allow (replaced 2026-10-15 by #1972: it raises none). **A line that runs a container engine's client is
-  read as one that failed** (2026-10-13): a chat runs `docker run … 2>&1 | tail`, the pipe ends
+  block that names no socket, so no Allow (replaced 2026-10-15 by #1972: it raises none).
+  **A line that runs a container engine's client is read as one that failed** (2026-10-13): a
+  chat runs `docker run … 2>&1 | tail`, the pipe ends
   with `tail`'s status, and the harness hands the result over with no failure beside it, so
   the refusal named no socket and its Notice had no Allow. No harness says how each program of
   a line ended, so the one signal left is the line itself: where one of its own programs is

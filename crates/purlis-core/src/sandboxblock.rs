@@ -45,8 +45,9 @@
 //! `grep`, `git show`) merely printed what it handed back, and raises no refusal of the network
 //! from it, on either stream or as one string. Nor does a background command's output read back
 //! later, with the harness's file tool or its own tool for it: nothing beside it says how that
-//! command ended. A failed command's error, the sandbox's own report and purlis's own proxy are
-//! read whatever the line runs.
+//! command ended, unless the harness's own record of the task says it failed
+//! ([`background`], #2203), when it is that command's own error. A failed command's error, the
+//! sandbox's own report and purlis's own proxy are read whatever the line runs.
 //!
 //! **What a command printed on standard output never names a host to allow**: a file or a
 //! server's page can say any host. A refused lookup names the host the program said it looked
@@ -494,26 +495,59 @@ pub fn detect_with_targets(
     payload: &serde_json::Value,
     place: &Place<'_>,
 ) -> Vec<(Block, Option<String>)> {
+    detect_with_record(payload, place, Ended::Unrecorded)
+}
+
+/// **How the background command whose output a result read back ended**, by the harness's own
+/// record of it ([`background::how_it_ended`], #2203).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Ended {
+    /// No record says: the command still runs, the harness keeps none, or the result read no
+    /// background command's output back.
+    #[default]
+    Unrecorded,
+    /// The harness's record says the command failed.
+    Failed,
+}
+
+/// [`detect_with_targets`], with how the background command whose output `payload` read back by
+/// file ended (#2203): a file tool's read of a background command's output file
+/// ([`background::outputs_read`]), or a line whose every program only reads or prints that
+/// reads one, is that command's own error where its record says it failed, read as a failed
+/// command's is. With no record it merely printed what it handed back, as before.
+pub fn detect_with_record(
+    payload: &serde_json::Value,
+    place: &Place<'_>,
+    ended: Ended,
+) -> Vec<(Block, Option<String>)> {
     let mut found: Vec<(Block, Option<String>)> = Vec::new();
     let client = runs_a_container_client(payload);
+    let read_back_failed = ended == Ended::Failed && !background::outputs_read(payload).is_empty();
     // A result with no failure beside it says nothing of how each program of its line ended
     // (a pipe drops a status), so its line is the one signal left (#1972): a line whose every
     // program only reads or prints merely printed what it handed back, and raises nothing
     // from it; any other line may have met the refusal its programs said.
     let runs = runs_a_program(payload);
-    let said = if bash_output_failed(payload) {
+    let may_run = may_run_a_program(payload);
+    let said = if bash_output_failed(payload) || (read_back_failed && !may_run) {
         Said::Failed
     } else if client {
         Said::Client
-    } else if may_run_a_program(payload) {
+    } else if may_run {
         Said::Unsaid
     } else {
         Said::Printed
     };
-    // A file tool's read is no command's result, a background command's output file included
-    // (#1972): nothing it read says how a command ended, so nothing it read is a block.
+    // A file tool's read is no command's result (#1972): nothing it read says how a command
+    // ended, so nothing it read is a block, but a background command's output file whose
+    // record says it failed: that command's own error (#2203).
     if payload["tool_name"].as_str() == Some(READ_TOOL) {
-        return Vec::new();
+        if let Some(content) = payload["tool_response"]["file"]["content"].as_str()
+            && said == Said::Failed
+        {
+            found.extend(on_stdout(content, place, Said::Failed));
+        }
+        return at_most(found);
     }
     match &payload["tool_response"] {
         serde_json::Value::String(mixed) => {
@@ -814,17 +848,58 @@ fn may_run_a_program(payload: &serde_json::Value) -> bool {
 
 /// Whether a reader's call, `base` with `argv` (the program first), can start a program of its
 /// own: `find` with `-exec`, `-execdir`, `-ok` or `-okdir`; `awk`, whose script can run one
-/// (`system()`, a pipe); and `sed` with any script but a list of lines to print or delete,
-/// since GNU `sed` runs one with `e`.
+/// (`system()`, a pipe); `sed` with any script but a list of lines to print or delete, since
+/// GNU `sed` runs one with `e`; `rg` with `--pre`; `sort` with `--compress-program`; and `less`
+/// and `more`, whose input preprocessor (`LESSOPEN`) is a program the environment names
+/// (#2203).
 fn starts_a_program(base: &str, argv: &[String]) -> bool {
+    let has_option =
+        |full: &str, shortest: &str| argv.iter().any(|word| long_option(word, full, shortest));
     match base {
         "find" => argv
             .iter()
             .any(|word| matches!(word.as_str(), "-exec" | "-execdir" | "-ok" | "-okdir")),
-        "awk" | "gawk" => true,
+        "awk" | "gawk" | "less" | "more" => true,
         "sed" => !sed_only_prints(&argv[1.min(argv.len())..]),
+        // ripgrep takes a long option only whole; GNU sort takes any unambiguous prefix.
+        "rg" => has_option("--pre", "--pre"),
+        "sort" => has_option("--compress-program", "--co"),
         _ => false,
     }
+}
+
+/// Whether `word` gives the long option `full`, by its whole name or by any prefix of it at
+/// least as long as `shortest`, the shortest the program takes as that option alone; with its
+/// value after `=` or not.
+fn long_option(word: &str, full: &str, shortest: &str) -> bool {
+    let name = word.split('=').next().unwrap_or_default();
+    name.starts_with(shortest) && full.starts_with(name)
+}
+
+/// **Whether a `git` call that only reads can start a program of its own** (#2203): `env`, its
+/// assignments, and the `globals` and `rest` of its argv ([`crate::shellwrap::git_globals`]).
+/// Configuration given on the line (`-c`, `--config-env`, or `GIT_CONFIG_*` in its environment)
+/// can name one (`diff.external`, `core.fsmonitor`), as can `GIT_EXTERNAL_DIFF`, `--ext-diff`,
+/// and a `grep` that opens its files in a pager (`-O`, `--open-files-in-pager`).
+fn git_starts_a_program(env: &[String], globals: &[String], rest: &[String]) -> bool {
+    let configured = globals
+        .iter()
+        .any(|word| word.starts_with("-c") || word.starts_with("--config-env"));
+    let in_env = env.iter().any(|assignment| {
+        let name = assignment.split('=').next().unwrap_or_default();
+        name.starts_with("GIT_CONFIG") || name == "GIT_EXTERNAL_DIFF"
+    });
+    let args = rest.get(1..).unwrap_or(&[]);
+    // git takes any unambiguous prefix of a subcommand's long option.
+    let external = args
+        .iter()
+        .any(|word| long_option(word, "--ext-diff", "--ext"));
+    let pager = rest.first().is_some_and(|word| word == "grep")
+        && args.iter().any(|word| {
+            long_option(word, "--open-files-in-pager", "--op")
+                || (word.starts_with("-O") && !word.starts_with("--"))
+        });
+    configured || in_env || external || pager
 }
 
 /// Whether `sed`'s arguments only print or delete lines by their number (`sed -n 1,80p f`,
@@ -885,10 +960,11 @@ fn reads_past_readers(line: &str, shells: usize, reading: Reading) -> bool {
                 return unread && starts_a_program(&base, &call.argv);
             }
             if base == "git" {
-                let (_, rest) = crate::shellwrap::git_globals(&call.argv);
+                let (globals, rest) = crate::shellwrap::git_globals(&call.argv);
                 return !rest
                     .first()
-                    .is_some_and(|word| GIT_READERS.contains(&word.as_str()));
+                    .is_some_and(|word| GIT_READERS.contains(&word.as_str()))
+                    || (unread && git_starts_a_program(&call.env, &globals, &rest));
             }
             // A shell handed a string runs what the string does; one handed none runs a file.
             let scripts = crate::shellwrap::shell_scripts_of(&call.prog, &call.argv);
@@ -2056,6 +2132,9 @@ pub fn named_host(target: &str) -> Option<String> {
 #[path = "sandboxblock_denial.rs"]
 pub mod denial;
 
+#[path = "sandboxblock_background.rs"]
+pub mod background;
+
 #[cfg(test)]
 #[path = "sandboxblock_tests.rs"]
 mod tests;
@@ -2067,3 +2146,7 @@ mod network_tests;
 #[cfg(test)]
 #[path = "sandboxblock_printed_tests.rs"]
 mod printed_tests;
+
+#[cfg(test)]
+#[path = "sandboxblock_background_tests.rs"]
+mod background_tests;
