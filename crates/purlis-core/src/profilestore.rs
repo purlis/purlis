@@ -7,7 +7,8 @@
 //! profile in a clone's `charter.local.toml` belongs to that clone ([`crate::profiles`]). This
 //! module is the one place the file is read and written, under one lock: every change is an
 //! [`update`] of the whole [`Store`]. The profiles the window makes (#2034) are records in it
-//! too. A kind of record is a field of [`MachineProfile`] (`adopted` is the first); a field a
+//! too ([`made`]). A kind of record is a field of [`MachineProfile`] (`adopted`, and `imported`
+//! for a profile purlis made); a field a
 //! build does not know is kept in [`MachineProfile::rest`] and written back as it was, and a
 //! record a build cannot read at all is kept as written.
 //!
@@ -67,6 +68,9 @@ pub struct MachineProfile {
     /// When and how it was adopted, for a profile that was; `None` for one purlis made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adopted: Option<Adopted>,
+    /// When its settings were imported and from where, for a profile purlis made (#2034).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported: Option<Imported>,
     /// Every field of the record this build does not know, written back as it was read.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -93,6 +97,15 @@ pub struct Adopted {
     /// starts as it did on the built-in, so purlis sets none of them today.
     #[serde(default)]
     pub variables: Vec<String>,
+}
+
+/// When a made profile's settings were imported, and from where.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Imported {
+    /// Seconds since the epoch.
+    pub at: u64,
+    /// The folder they were read from.
+    pub from: PathBuf,
 }
 
 /// The whole store, as one [`update`] changes it.
@@ -433,6 +446,7 @@ pub fn adopt(
                     at: now(),
                     variables,
                 }),
+                imported: None,
                 rest: Map::new(),
             };
             store.profiles.push(profile.clone());
@@ -451,6 +465,9 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
     };
     adopt(&config, &home, &crate::envvar::var)
 }
+
+mod made;
+pub use made::*;
 
 #[cfg(test)]
 mod tests;

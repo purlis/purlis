@@ -643,6 +643,7 @@ describe("the one list of actions", () => {
       "Your settings: Notifications",
       "Your settings: This machine",
       "Your settings: Accounts",
+      "Your settings: Profiles",
     ]);
     const hands = doing();
     await run(alone, "settings.group:you.editor", hands);
@@ -2386,8 +2387,9 @@ describe("the palette at fifty chats", () => {
     // 907 since #1814: Your settings: Accounts.
     // 908 since #2071: the project's Your level page, under Sandbox.
     // 909 since #1989: Your settings: Notifications.
+    // 910 since #2034: Your settings: Profiles.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(909);
+    expect(offers).toHaveLength(910);
   });
 
   /**

@@ -469,6 +469,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". The Accounts group's lines (#1814): a sign-out's or a read's refusal, and what was " +
       "just done; its Sign in with a token and Sign out are the way on",
   },
+  "settings/profiles.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". The Profiles group's lines (#2034): the list's read refusal, and what was just done; " +
+      "its Add profile, Import again and Remove… are the way on",
+  },
   "settings/Collection.tsx": {
     count: 3,
     why:

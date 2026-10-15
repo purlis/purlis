@@ -251,8 +251,11 @@ fn a_sandboxed_chat_may_read_and_run_charters_git_hooks_and_never_rewrite_them()
         );
     }
     let settings = claude::settings(&compiled(denied, Os::MacOs)).expect("compiles");
-    let deny_read = settings.sandbox["filesystem"]["denyRead"].to_string();
-    assert!(!deny_read.contains("Library"), "{deny_read}");
+    let deny_read = &settings.sandbox["filesystem"]["denyRead"];
+    for denied in deny_read.as_array().expect("a list") {
+        let denied = std::path::Path::new(denied.as_str().expect("a path"));
+        assert!(!hooks.starts_with(denied), "{deny_read}");
+    }
 }
 
 #[test]
@@ -1099,7 +1102,73 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
+            // This machine's profiles' folders (#2034).
+            Homes::charter_data(&machine(Os::Linux))
+                .expect("a data home")
+                .join(crate::profilestore::DIR),
         ]
+    );
+}
+
+#[test]
+fn no_chat_reads_or_writes_the_folders_of_this_machines_profiles() {
+    // A profile purlis made keeps its sign-in in its folder (ADR 0095 §1, #2034).
+    let profiles = Homes::charter_data(&machine(Os::MacOs))
+        .expect("a data home")
+        .join(crate::profilestore::DIR);
+    let (_plane, denied) = denied_with(None, Os::MacOs);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&profiles),
+        "{:?}",
+        denied.paths
+    );
+    let named = super::real(&profiles).display().to_string();
+    let settings = claude::settings(&compiled(denied.clone(), Os::MacOs)).expect("compiles");
+    for key in ["denyRead", "denyWrite"] {
+        assert!(
+            settings.sandbox["filesystem"][key]
+                .as_array()
+                .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+            "{key}: {}",
+            settings.sandbox["filesystem"][key]
+        );
+    }
+    for (harness, wrapped) in [
+        (
+            "codex",
+            codex::wrap(&compiled(denied.clone(), Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+        (
+            "opencode",
+            opencode::wrap(&compiled(denied, Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+    ] {
+        assert!(
+            wrapped
+                .iter()
+                .any(|it| it.path == profiles && it.access == Access::ReadWrite),
+            "{harness}: {wrapped:?}"
+        );
+    }
+}
+
+#[test]
+fn a_chats_sandbox_finds_the_data_home_where_the_profile_store_does() {
+    // A relative `$PURLIS_DATA_HOME` is taken from the directory purlis was started in, by the
+    // store and the sandbox alike, so the folder a chat is denied is the one profiles are in.
+    let machine = mac_with(&[(crate::datahome::HOME_VAR, "relative/data")]);
+    let env = |name: &str| machine.env.get(name);
+    assert_eq!(
+        Homes::charter_data(&machine),
+        crate::datahome::root_in(&env)
+    );
+    assert_eq!(
+        Homes::charter_data(&machine),
+        std::path::absolute("relative/data").ok()
     );
 }
 

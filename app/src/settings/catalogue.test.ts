@@ -34,6 +34,7 @@ const BUILDERS = [
   "thisMachine.tsx",
   "notifications.tsx",
   "accounts.tsx",
+  "profiles.tsx",
   "yourLevel.tsx",
 ];
 

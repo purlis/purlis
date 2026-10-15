@@ -1306,6 +1306,16 @@ export const commands = {
 	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
 	 */
 	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
+	/**  This machine's profiles, in the order they were made. */
+	machineProfiles: () => typedError<MachineProfileRow[], string>(__TAURI_INVOKE("machine_profiles")),
+	/**  Makes the profile `name` of the harness `kind`, its settings imported from this machine's. */
+	machineProfileCreate: (name: string, kind: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_create", { name, kind })),
+	/**  Imports `name`'s settings again from this machine's. */
+	machineProfileImport: (name: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_import", { name })),
+	/**  What removing `name` takes away, for the window to ask about. */
+	machineProfileRemoval: (name: string) => typedError<MachineProfileRemoval, string>(__TAURI_INVOKE("machine_profile_removal", { name })),
+	/**  Removes `name`, only if `shown` is what removing it takes away now. */
+	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
 	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
@@ -6216,6 +6226,47 @@ export type LocalModelRow = {
 	base_url: string,
 	/**  The harness that can use it with no account (`opencode`). */
 	harness: string,
+};
+
+/**  A profile made or imported into, and what its import did. */
+export type MachineProfileImported = {
+	profile: MachineProfileRow,
+	/**  The settings copied, as paths under the folder they were read from. */
+	copied: string[],
+	/**  What was left out, each with why. */
+	skipped: string[],
+};
+
+/**
+ *  What removing a profile takes away, as the window asks about it. Sent back as it was shown,
+ *  so the core removes only that.
+ */
+export type MachineProfileRemoval = {
+	name: string,
+	/**  Adopted: only the record goes, and the folder stays. */
+	adopted: boolean,
+	folder: string,
+	/**  The conversations that go, as paths under the folder; null where they cannot be listed. */
+	conversations: string[] | null,
+	/**  The confirmation's sentence, the core's. */
+	says: string,
+};
+
+/**  One of this machine's profiles, as Settings lists it. */
+export type MachineProfileRow = {
+	name: string,
+	/**  The harness, as a profile's kind names it: `claude`, `codex` or `opencode`. */
+	kind: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+	/**  `made` (its folder is purlis's) or `adopted` (the harness's own folder). */
+	origin: string,
+	/**  The folder its harness is pointed at. */
+	folder: string,
+	/**  When its settings were imported, in seconds since the epoch, for a made profile. */
+	imported_at: number | null,
+	/**  The folder they were imported from. */
+	imported_from: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

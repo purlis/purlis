@@ -541,6 +541,21 @@ moves:
 The pattern can refuse an innocent name — `KEYBOARD_LAYOUT` holds `KEY` — and a wrapper
 script on `PATH` can still export a key. purlis declines to hold one; it cannot prevent one.
 
+### Profiles of this machine
+
+Every sign-in a chat uses is a profile's (ADR 0095). A profile made in the window
+(Settings › You › Profiles, Add profile) or with `purlis profile create <name> --harness
+<claude|codex|opencode>` gets a folder of its own in purlis's data home, and purlis sets the
+harness's folder variables to it, so the harness keeps its sign-in there. It is signed in
+through the harness's own sign-in, in its first chat. Its settings are imported from this
+machine's harness settings by a list of settings files per harness, copied as they are; a
+sign-in file, a link and a file with another name on the disk are never copied, and
+`purlis profile import <name>` or Import again takes them once more. `purlis profile remove
+<name>` says what goes, the conversations in its folder among it, and removes it only with
+`--yes`; the window asks the same question first. A profile adopted from the harness's own
+folder is only forgotten, and its folder stays. A chat may not make, import or remove a
+profile.
+
 ### Kept out of git, and checked
 
 `purlis init` writes `/charter.local.toml` into a new plane's `.gitignore`, and

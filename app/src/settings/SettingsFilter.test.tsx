@@ -60,6 +60,7 @@ describe("filtering the Settings tab by name", () => {
       "Notifications",
       "This machine",
       "Accounts",
+      "Profiles",
     ]);
     expect(box().compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -142,6 +143,7 @@ describe("filtering the Settings tab by name", () => {
       "Notifications",
       "This machine",
       "Accounts",
+      "Profiles",
     ]);
     expect(group("Editor")).toHaveAttribute("aria-current", "true");
     expect(count()).toHaveTextContent(/^$/);
@@ -160,6 +162,7 @@ describe("filtering the Settings tab by name", () => {
       "Notifications",
       "This machine",
       "Accounts",
+      "Profiles",
     ]);
   });
 });
