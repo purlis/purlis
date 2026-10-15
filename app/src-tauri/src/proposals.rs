@@ -406,12 +406,13 @@ pub fn apply_in(
 /// Window-only.
 #[tauri::command]
 #[specta::specta]
-pub fn dismiss_proposed_change(
+pub async fn dismiss_proposed_change(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     id: u32,
 ) -> Result<(), String> {
-    dismissed(&*planes.held(&plane)?, id)
+    let held = planes.held(&plane)?;
+    crate::off_the_window("dismissing a proposed change", move || dismissed(&held, id)).await
 }
 
 /// [`dismiss_proposed_change`]'s work, for project `held`.
