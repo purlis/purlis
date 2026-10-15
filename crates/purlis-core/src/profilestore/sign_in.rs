@@ -28,15 +28,16 @@
 //! **What a harness says is remembered for a minute** ([`REMEMBERED`]), so many chats opened at
 //! once ask it once; Sign in forgets it ([`forget`]).
 //!
-//! **opencode is signed in to a provider purlis names** ([`providers`]): ChatGPT or GitHub
-//! Copilot, by its own `--provider`, and never Anthropic, whose plan opencode may not carry
-//! (#2039).
+//! **opencode is signed in to a plan its declaration lists** ([`providers`], `[sign_in] plans`,
+//! #2039): ChatGPT or GitHub Copilot, by its own `--provider`, and never Anthropic, whose plan
+//! only Claude Code's own declaration may list.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::MachineProfile;
+use crate::harness_declaration::Plan;
 use crate::profiles::{Profile, Source};
 
 /// How long a status command has to answer: as long as a program's `--version`
@@ -126,40 +127,16 @@ enum Status {
     },
 }
 
-/// A provider a harness signs a subscription in to, where the harness serves several.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Provider {
-    /// The harness's own id for it, as its sign-in takes it.
-    pub id: &'static str,
-    /// What people call the plan.
-    pub title: &'static str,
-}
-
 /// A harness's own sign-in, and how its status is told.
 struct Flow {
     kind: &'static str,
     /// The words after its program that sign it in, in its own terminal flow.
     login: &'static [&'static str],
-    /// The flag that names the provider, followed by one of [`Flow::providers`]' ids, for a
-    /// harness that serves several. Empty for one that serves its own vendor's plan alone.
+    /// The flag that names the provider, followed by one of [`providers`]' ids, for a harness
+    /// whose declaration lists plans. Empty for one that serves its own vendor's plan alone.
     provider_flag: &'static str,
-    /// The providers a subscription is signed in to through it. Empty: its own vendor's alone.
-    providers: &'static [Provider],
     status: Status,
 }
-
-/// The plans opencode signs in to, by its own provider ids: never Anthropic, whose plan a
-/// third-party harness may not carry (#2039, ADR 0095 §3).
-const OPENCODE_PLANS: &[Provider] = &[
-    Provider {
-        id: "openai",
-        title: "ChatGPT",
-    },
-    Provider {
-        id: "github-copilot",
-        title: "GitHub Copilot",
-    },
-];
 
 /// The harnesses purlis ships, each by its own documentation and help: Claude Code 2.1's
 /// `auth login` and `auth status`, Codex's `login` and `login status`, and opencode's
@@ -170,14 +147,12 @@ const FLOWS: [Flow; 3] = [
         kind: "claude",
         login: &["auth", "login"],
         provider_flag: "",
-        providers: &[],
         status: Status::Command(&["auth", "status"]),
     },
     Flow {
         kind: "codex",
         login: &["login"],
         provider_flag: "",
-        providers: &[],
         status: Status::Command(&["login", "status"]),
     },
     Flow {
@@ -185,7 +160,6 @@ const FLOWS: [Flow; 3] = [
         login: &["auth", "login"],
         // opencode 1.18.33's `auth login --provider`: provider selection skipped.
         provider_flag: "--provider",
-        providers: OPENCODE_PLANS,
         status: Status::Named {
             own: "opencode",
             file: "auth.json",
@@ -197,11 +171,15 @@ fn flow(kind: &str) -> Option<&'static Flow> {
     FLOWS.iter().find(|flow| flow.kind == kind)
 }
 
-/// The providers a subscription of harness `kind` is signed in to, where it serves several and
-/// purlis names the one: opencode's ChatGPT and GitHub Copilot. Empty for a harness that serves
-/// its own vendor's plan alone, or one purlis does not ship.
-pub fn providers(kind: &str) -> &'static [Provider] {
-    flow(kind).map_or(&[], |flow| flow.providers)
+/// The plans a subscription of harness `kind` is signed in to, where it serves several and
+/// purlis names the one: its declaration's `[sign_in] plans` (#2039), opencode's ChatGPT and
+/// GitHub Copilot, and never a Claude plan but in Claude Code's own. Empty for a harness that
+/// serves its own vendor's plan alone, or one purlis does not ship.
+pub fn providers(kind: &str) -> &'static [Plan] {
+    if flow(kind).is_none() {
+        return &[];
+    }
+    crate::harness_declaration::builtin(kind).map_or(&[], |declared| &declared.sign_in.plans)
 }
 
 /// The value `profile` sets its harness's `variable` to, from its declared folder variables.
@@ -472,7 +450,7 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
         ));
     };
     let mut args: Vec<String> = flow.login.iter().map(|w| (*w).to_owned()).collect();
-    match (flow.providers, provider) {
+    match (providers(&profile.kind), provider) {
         ([], None) => {}
         ([], Some(_)) => {
             return Err(format!(
@@ -480,13 +458,13 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
                 profile.kind
             ));
         }
-        (plans, Some(id)) if plans.iter().any(|p| p.id == id) => {
+        (plans, Some(id)) if plans.iter().any(|p| p.provider == id) => {
             args.extend([flow.provider_flag.to_owned(), id.to_owned()]);
         }
         (plans, _) => {
             let named: Vec<String> = plans
                 .iter()
-                .map(|p| format!("{} ({})", p.title, p.id))
+                .map(|p| format!("{} ({})", p.title, p.provider))
                 .collect();
             return Err(format!(
                 "{} signs a plan in to the provider you choose: {}. A Claude plan is never \

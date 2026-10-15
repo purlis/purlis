@@ -559,7 +559,7 @@ A made profile is signed in through its harness's own sign-in (ADR 0095 §3): **
 its row in Settings or on its Ask in the Inbox, opens a shell tab that runs `claude auth login`,
 `codex login` or `opencode auth login --provider <plan>` with the profile's folder set, and
 `purlis profile sign-in <name>` runs the same in your own terminal (`--provider openai` or
-`--provider github-copilot` for opencode, which is never signed in to a Claude plan). You drive the harness's own
+`--provider github-copilot` for opencode, which is never signed in to a Claude plan: the plans its declaration's `[sign_in] plans` lists, and `anthropic` is refused in any declaration but Claude Code's own). You drive the harness's own
 browser page or code there; the harness keeps the result in the profile's folder, and purlis
 reads none of what it prints and opens no file it writes. Whether a profile is signed in on
 this device is the harness's own answer: how `claude auth status` or `codex login status`

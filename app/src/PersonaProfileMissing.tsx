@@ -46,6 +46,8 @@ export function PersonaProfileMissing({
   const [kind, setKind] = useState(HARNESSES[0].value);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string>();
+  /** What Create did, in a sentence, until it is dismissed. */
+  const [made, setMade] = useState<string>();
   const form = useId();
 
   useEffect(() => {
@@ -62,7 +64,12 @@ export function PersonaProfileMissing({
   }, [plane, persona, changed, round]);
 
   const named = read?.named ?? null;
-  if (named === null || read === undefined || (read.offered ?? []).includes(named)) return null;
+  if (named === null || read === undefined || (read.offered ?? []).includes(named))
+    return made === undefined ? null : (
+      <Notice cause={`persona-profile-made:${persona}`} onDismiss={() => setMade(undefined)}>
+        {made}
+      </Notice>
+    );
 
   const create = async () => {
     if (busy) return;
@@ -77,6 +84,7 @@ export function PersonaProfileMissing({
       return;
     }
     setOpen(false);
+    setMade(madeSays(named, done.data));
     setRound((n) => n + 1);
     onMade();
   };
@@ -135,7 +143,20 @@ export function PersonaProfileMissing({
         )
       }
     >
-      {`${persona} names the profile ${named}, which this machine does not have, so a chat handed to it starts on the asking chat's profile.`}
+      {`${persona} names the profile ${named}, which this machine does not have.`}
     </Notice>
   );
+}
+
+/** What Create says it made: what it imported, as Add profile says it, and what comes next. */
+function madeSays(
+  name: string,
+  done: { copied: string[]; profile: { imported_from: string | null } },
+) {
+  const from = done.profile.imported_from ?? "this machine";
+  const imported =
+    done.copied.length === 0
+      ? `found no settings to import in ${from}`
+      : `imported ${done.copied.length === 1 ? "1 file" : `${done.copied.length} files`} of settings from ${from}`;
+  return `Made the profile ${name} for this machine and ${imported}. Its first chat asks you to sign it in.`;
 }

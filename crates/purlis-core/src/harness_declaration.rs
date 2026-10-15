@@ -219,7 +219,34 @@ pub struct SignInFacts {
     /// Whether its credential files can be kept from the commands it runs: only a yes counts,
     /// and silence is [`Answer::Unknown`], which reads as no.
     pub kept_from_commands: Answer,
+    /// The plans a subscription is signed in to, where the harness serves several and purlis
+    /// names the one (`[sign_in] plans`, #2039): an allow-list, so a provider the harness adds
+    /// later is not offered until it is declared. None: its own vendor's plan alone.
+    pub plans: Vec<Plan>,
 }
+
+/// One plan a subscription of a harness is signed in to (`[sign_in] plans`, #2039).
+///
+/// **A Claude plan is never one of them, but in Claude Code's own declaration**
+/// ([`ANTHROPIC`]): Anthropic's terms let no other harness carry it, and a project may declare
+/// harnesses of its own, so the rule is purlis's and no declaration lifts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plan {
+    /// The harness's own id for the provider, as its sign-in takes it (`openai`).
+    pub provider: String,
+    /// What people call the plan (`ChatGPT`).
+    pub title: String,
+}
+
+/// The provider whose plan only Claude Code's own declaration may list ([`Plan`]).
+pub const ANTHROPIC: &str = "anthropic";
+
+/// The name of Claude Code's own declaration (`claude.toml`), the one that may list
+/// [`ANTHROPIC`]. Written out: it is asked while the built-ins are being read.
+const CLAUDE_CODE: &str = "claude";
+
+/// The most characters of a plan's provider id.
+const MOST_PROVIDER: usize = 64;
 
 /// The variables that set where a declared harness keeps its own files (`[folders]`, #2031):
 /// what purlis sets to a profile's folder. None declared: purlis sets none. A harness may keep
@@ -863,6 +890,15 @@ struct RawSignIn {
     #[serde(default)]
     kinds: Vec<String>,
     kept_from_commands: Option<String>,
+    #[serde(default)]
+    plans: Vec<RawPlan>,
+}
+
+#[derive(serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct RawPlan {
+    provider: String,
+    title: String,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -1112,10 +1148,10 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
         None => raw.env,
     };
     let sign_in = match (replaces, raw.sign_in) {
-        (None, raw_sign_in) => sign_in(raw_sign_in.unwrap_or_default(), &at)?,
+        (None, raw_sign_in) => sign_in(raw_sign_in.unwrap_or_default(), &raw.name, &at)?,
         (Some(replaced), None) => replaced.sign_in.clone(),
         (Some(replaced), Some(raw_sign_in)) => kept_as_built(
-            sign_in(raw_sign_in, &at)?,
+            sign_in(raw_sign_in, &raw.name, &at)?,
             &replaced.sign_in,
             "[sign_in]",
             replaced,
@@ -1219,9 +1255,10 @@ fn kept_as_built<T: PartialEq>(
     ))
 }
 
-/// A declaration's `[sign_in]`: each kind one of the four words, once; and whether its
-/// credentials can be kept from its commands, unknown where it does not say.
-fn sign_in(raw: RawSignIn, at: &dyn Fn(&str) -> String) -> Result<SignInFacts, String> {
+/// A declaration's `[sign_in]`, of the harness `name`: each kind one of the four words, once;
+/// whether its credentials can be kept from its commands, unknown where it does not say; and
+/// the plans a subscription signs in to ([`plans`]).
+fn sign_in(raw: RawSignIn, name: &str, at: &dyn Fn(&str) -> String) -> Result<SignInFacts, String> {
     let mut kinds = Vec::new();
     for word in &raw.kinds {
         let Some(kind) = SignInKind::of_word(word) else {
@@ -1245,10 +1282,63 @@ fn sign_in(raw: RawSignIn, at: &dyn Fn(&str) -> String) -> Result<SignInFacts, S
         None => Answer::Unknown,
         Some(value) => answer(value, &at("[sign_in] kept_from_commands"))?,
     };
+    let plans = plans(raw.plans, &kinds, name, at)?;
     Ok(SignInFacts {
         kinds,
         kept_from_commands,
+        plans,
     })
+}
+
+/// `[sign_in] plans` of the harness `name`: only beside a `subscription` kind; each provider
+/// the harness's own id, a word its sign-in is typed with, named once; each title words a
+/// window draws; and [`ANTHROPIC`] in Claude Code's own declaration alone.
+fn plans(
+    raw: Vec<RawPlan>,
+    kinds: &[SignInKind],
+    name: &str,
+    at: &dyn Fn(&str) -> String,
+) -> Result<Vec<Plan>, String> {
+    let here = at("[sign_in] plans");
+    if !raw.is_empty() && !kinds.contains(&SignInKind::Subscription) {
+        return Err(format!(
+            "{here} names the plans a subscription signs in to, and [sign_in] kinds lists no \
+             subscription. List subscription in kinds, or remove plans."
+        ));
+    }
+    let mut plans: Vec<Plan> = Vec::new();
+    for RawPlan { provider, title } in raw {
+        let id_shaped = provider.len() <= MOST_PROVIDER
+            && provider
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && provider
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "-_.".contains(c));
+        if !id_shaped {
+            return Err(format!(
+                "{here} holds {}, which is not a provider's id: lower-case letters, digits, \
+                 '-', '_' and '.', starting with a letter or digit, at most {MOST_PROVIDER}. \
+                 Write the id the harness's own sign-in takes.",
+                shown::short(&provider)
+            ));
+        }
+        if provider == ANTHROPIC && name != CLAUDE_CODE {
+            return Err(format!(
+                "{here} names {ANTHROPIC}, and a Claude plan is signed in only through Claude \
+                 Code's own sign-in. Remove it."
+            ));
+        }
+        if plans.iter().any(|plan| plan.provider == provider) {
+            return Err(format!("{here} names {provider} twice. Remove one."));
+        }
+        if let Some(why) = drawn_refusal(&title, MOST_TITLE) {
+            return Err(format!("{here}' title {why}"));
+        }
+        plans.push(Plan { provider, title });
+    }
+    Ok(plans)
 }
 
 /// A declaration's `[folders]`: each a variable's whole name, and for a harness purlis does

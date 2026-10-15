@@ -435,3 +435,117 @@ kept_from_commands = "no: Codex and the commands it runs are wrapped in one sand
         );
     }
 }
+
+// ----- the plans a subscription signs in to (`[sign_in] plans`, #2039) ---------------------
+
+fn plan(provider: &str, title: &str) -> Plan {
+    Plan {
+        provider: provider.to_owned(),
+        title: title.to_owned(),
+    }
+}
+
+/// `[sign_in]` of a harness a project declares, `name`, as its one refusal or its plans.
+fn plans_of(name: &str, sign_in: &str) -> Result<Vec<Plan>, String> {
+    let text = format!("name = \"{name}\"\nprogram = \"{name}\"\n[sign_in]\n{sign_in}");
+    parse(&text, Origin::Project, &format!("harnesses/{name}.toml")).map(|d| d.sign_in.plans)
+}
+
+#[test]
+fn opencode_signs_a_subscription_in_to_the_plans_its_declaration_lists() {
+    assert_eq!(
+        of(Harness::Opencode).sign_in.plans,
+        [
+            plan("openai", "ChatGPT"),
+            plan("github-copilot", "GitHub Copilot")
+        ]
+    );
+}
+
+#[test]
+fn a_harness_declaring_a_subscription_with_no_plans_signs_in_to_its_own_vendors_plan_alone() {
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        let declared = of(harness);
+        assert!(declared.sign_in.kinds.contains(&SignInKind::Subscription));
+        assert_eq!(declared.sign_in.plans, [], "{harness:?}");
+    }
+}
+
+#[test]
+fn a_project_declared_harness_lists_its_own_plans() {
+    assert_eq!(
+        plans_of(
+            "shelly",
+            "kinds = [\"subscription\"]\n\
+             plans = [{ provider = \"openai\", title = \"ChatGPT\" }]\n"
+        ),
+        Ok(vec![plan("openai", "ChatGPT")])
+    );
+}
+
+#[test]
+fn anthropic_is_refused_in_the_plans_of_any_harness_but_claude_codes() {
+    let why = plans_of(
+        "shelly",
+        "kinds = [\"subscription\"]\n\
+         plans = [{ provider = \"anthropic\", title = \"Claude\" }]\n",
+    )
+    .expect_err("refused");
+    assert_eq!(
+        why,
+        "harnesses/shelly.toml's [sign_in] plans names anthropic, and a Claude plan is signed \
+         in only through Claude Code's own sign-in. Remove it."
+    );
+    // This machine's own table is held to it too.
+    let local = parse(
+        "name = \"shelly\"\nprogram = \"shelly\"\n[sign_in]\nkinds = [\"subscription\"]\n\
+         plans = [{ provider = \"anthropic\", title = \"Claude\" }]\n",
+        Origin::Local,
+        "charter.local.toml",
+    );
+    assert!(local.unwrap_err().contains("names anthropic"));
+}
+
+#[test]
+fn plans_are_a_subscriptions_and_each_is_a_providers_own_id_once() {
+    assert_eq!(
+        plans_of(
+            "shelly",
+            "kinds = [\"api-key\"]\nplans = [{ provider = \"openai\", title = \"ChatGPT\" }]\n"
+        ),
+        Err(
+            "harnesses/shelly.toml's [sign_in] plans names the plans a subscription signs in \
+             to, and [sign_in] kinds lists no subscription. List subscription in kinds, or \
+             remove plans."
+                .to_owned()
+        )
+    );
+    for provider in ["", "Open AI", "openai;x", "op'enai", "-p"] {
+        let why = plans_of(
+            "shelly",
+            &format!(
+                "kinds = [\"subscription\"]\nplans = [{{ provider = \"{provider}\", title = \"A\" }}]\n"
+            ),
+        )
+        .expect_err(provider);
+        assert!(why.contains("is not a provider's id"), "{provider}: {why}");
+    }
+    let twice = plans_of(
+        "shelly",
+        "kinds = [\"subscription\"]\nplans = [{ provider = \"openai\", title = \"A\" }, \
+         { provider = \"openai\", title = \"B\" }]\n",
+    )
+    .expect_err("twice");
+    assert!(twice.contains("names openai twice"), "{twice}");
+    let drawn = plans_of(
+        "shelly",
+        "kinds = [\"subscription\"]\nplans = [{ provider = \"openai\", title = \"A\\nB\" }]\n",
+    )
+    .expect_err("title");
+    assert!(drawn.contains("[sign_in] plans' title"), "{drawn}");
+}
+
+#[test]
+fn the_one_declaration_that_may_list_anthropic_is_claude_codes_own() {
+    assert_eq!(of(Harness::ClaudeCode).name, CLAUDE_CODE);
+}

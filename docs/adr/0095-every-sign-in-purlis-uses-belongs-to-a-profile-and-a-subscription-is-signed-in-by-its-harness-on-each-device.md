@@ -160,7 +160,8 @@ The code does not change with this record.
 | #2036 | `api-key` and `cloud` profiles from the vault; a model choice is a profile plus a model |
 | #2037 | A profile's credential files denied to the agent's commands. `SECURITY.md` (*What Codex keeps for itself*) says a sandboxed Codex chat keeps its state in its profile's folder |
 | #2038 | A profile pins its harness version |
-| #2039 | Personas, teammates, and the rules that stay: X12 (its store, `.charter/unattended-logins.json` in `docs/plane-format.md`, keyed as ADR 0087 keys it), the permission-flag refusal, dispatch lists and approval |
+| #2039 | Personas, teammates, and the rules that stay: the permission-flag refusal, dispatch lists and approval; `[sign_in] plans` in harness declarations (ADR 0073, amended 2026-10-15) |
+| #2168 | X12: the acknowledgement before a subscription runs unattended, and its store, `.charter/unattended-logins.json` in `docs/plane-format.md`, keyed as ADR 0087 keys it |
 
 ## What this costs
 
@@ -235,7 +236,9 @@ The implementer decided it on 2026-10-15, to be confirmed by the operator:
   asked again every few seconds after Sign in), or when the person dismisses it.
 - **opencode is signed in to a plan purlis names**: the Ask and the profile page offer ChatGPT
   and GitHub Copilot, passed as opencode's own `--provider`, and never Anthropic, so a Claude
-  plan is never signed in through opencode (#2039).
+  plan is never signed in through opencode (#2039). Since #2039 the plans are opencode's declaration's
+  `[sign_in] plans`, and `anthropic` is refused in any declaration but Claude Code's own (ADR
+  0073, amended 2026-10-15).
 - **What a harness says is remembered for a minute**, and forgotten by Sign in, so reopening many
   chats on one profile asks it once.
 - **No sign-in is typed on Windows**, whose shells have no `env`; a word with a quote, a

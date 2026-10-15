@@ -90,7 +90,7 @@ describe("a persona whose profile this machine does not have", () => {
 
     const notice = await screen.findByRole("status", { name: /qa-bot/ });
     expect(notice).toHaveTextContent(
-      "qa names the profile qa-bot, which this machine does not have, so a chat handed to it starts on the asking chat's profile.",
+      "qa names the profile qa-bot, which this machine does not have.",
     );
     await userEvent.click(within(notice).getByRole("button", { name: "Create profile qa-bot…" }));
     // Opening the form makes nothing.
@@ -127,6 +127,14 @@ describe("a persona whose profile this machine does not have", () => {
 
     await waitFor(() => expect(screen.queryByRole("status", { name: /qa-bot/ })).toBeNull());
     expect(asked.filter((cmd) => cmd === "open_view").length).toBeGreaterThan(1);
+    // What it made, as Add profile says it, until it is dismissed.
+    expect(
+      screen.getByText(
+        "Made the profile qa-bot for this machine and found no settings to import in /home/dev/.claude. Its first chat asks you to sign it in.",
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/Made the profile qa-bot/)).toBeNull();
   });
 
   it("says the core's refusal under the form, and keeps the offer", async () => {
