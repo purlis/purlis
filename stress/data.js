@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792025269237,
+  "lastUpdate": 1792027244851,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2298,6 +2298,42 @@ window.BENCHMARK_DATA = {
             "value": 287,
             "unit": "MB",
             "extra": "median of 6 samples: 286.8, 285.5, 286, 287.3, 288, 394.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "93945919aa909c441422e02389ad1272bf586fad",
+          "message": "dispatch: reading a task is a tool too, and asks nobody (#2101)\n\nThe dispatch_read chat tool reads what a task the chat dispatched said\nlast and ran, as the read command does. Both join the pre-allowed reads\n(ADR 0064, amended), and a helper is still refused either. The\ndispatch_report description says what follows a turn without a report.\nCONTEXT.md names reading a task and a quiet note.\n\nRefs #2084\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T04:23:16+04:00",
+          "tree_id": "a5127c65246a4baf367612bb66a894a5d340d89b",
+          "url": "https://github.com/purlis/purlis/commit/93945919aa909c441422e02389ad1272bf586fad"
+        },
+        "date": 1792027243793,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 824,
+            "unit": "MB",
+            "extra": "median of 3 samples: 771, 824, 913 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 190.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 211.6, 231.2, 198.8, 181.7, 182.5, 125.3 MB"
           }
         ]
       }
