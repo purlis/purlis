@@ -101,3 +101,11 @@ updates:
     schedule: { interval: weekly }
     groups:
       actions: { patterns: ["*"] }
+
+  # The runner image's bases, pinned by digest (`runner-image/`, #2043). Dependabot moves the
+  # digest of the same tag, so a base's security fixes reach the next build of `main`.
+  - package-ecosystem: docker
+    directory: /runner-image
+    schedule: { interval: weekly }
+    groups:
+      runner-image: { patterns: ["*"] }

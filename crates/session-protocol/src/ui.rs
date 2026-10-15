@@ -529,6 +529,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
     "sandbox_levels_waiting",
     "confirm_sandbox_level",
+    // A browser started, watched and ended (#2012): a program started as the person, in their
+    // own window. Chats get browser tools of their own later (#2013).
+    "open_browser",
+    "watch_browser",
+    "unwatch_browser",
+    "close_browser",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

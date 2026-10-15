@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use super::blank::{Rect, paint_over};
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
+use super::screencast::Screencast;
 use super::settle::{Activity, Settle, activity};
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
 use super::{
@@ -333,11 +334,15 @@ enum FollowUp {
     Release(String),
 }
 
-struct Inner {
-    devtools: Arc<dyn DevTools>,
+pub(crate) struct Inner {
+    pub(crate) devtools: Arc<dyn DevTools>,
     state: Mutex<State>,
     changed: Condvar,
     limits: Limits,
+    /// Frames for the person to watch (#2012).
+    pub(crate) cast: Screencast,
+    /// Who is told once the engine has ended, however it ended.
+    ends: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -392,7 +397,10 @@ impl Browser {
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             limits: limits.clone(),
+            cast: Screencast::new(),
+            ends: Mutex::new(None),
         });
+        Screencast::start(&inner);
         let reading = inner.clone();
         thread::Builder::new()
             .name("browser-events".to_owned())
@@ -402,6 +410,10 @@ impl Browser {
                 }
                 lock(&reading.state).ended = true;
                 reading.changed.notify_all();
+                let tell = lock(&reading.ends).take();
+                if let Some(tell) = tell {
+                    tell();
+                }
             })
             .map_err(|e| Refusal::Engine(e.to_string()))?;
         inner
@@ -473,6 +485,45 @@ impl Browser {
             }),
             Begin::Reused => Err(Refusal::IdReused(id.as_str().to_owned())),
         }
+    }
+
+    /// The engine's own pid, while this browser holds its engine.
+    #[cfg(unix)]
+    pub fn process(&self) -> Option<u32> {
+        self.engine.as_ref().map(crate::process::Engine::pid)
+    }
+
+    /// Calls `tell` once the engine has ended, however it ended: at once if it has.
+    pub fn when_it_ends(&self, tell: Box<dyn FnOnce() + Send>) {
+        let now = {
+            let state = lock(&self.inner.state);
+            if state.ended {
+                Some(tell)
+            } else {
+                *lock(&self.inner.ends) = Some(tell);
+                None
+            }
+        };
+        if let Some(tell) = now {
+            tell();
+        }
+    }
+
+    /// Starts the frames of its current page for the person to watch, each JPEG handed to
+    /// `frames` as the engine paints it, until [`Browser::hide`] (#2012). Returns at once.
+    pub fn show(&self, frames: Arc<dyn Fn(Vec<u8>) + Send + Sync>) {
+        self.inner.cast.show(frames);
+    }
+
+    /// Asks the engine for a frame no more often than `every` (zero: as often as the page
+    /// changes). Returns at once.
+    pub fn pace(&self, every: Duration) {
+        self.inner.cast.pace(every);
+    }
+
+    /// Stops its frames. Returns at once.
+    pub fn hide(&self) {
+        self.inner.cast.hide();
     }
 
     /// Adds the element `target` names to the blanked set: from now on no snapshot, find, wait
@@ -1542,8 +1593,24 @@ impl Browser {
 }
 
 impl Inner {
+    /// Whether the engine has ended.
+    pub(crate) fn ended(&self) -> bool {
+        lock(&self.state).ended
+    }
+
+    /// The DevTools session of the current page, once it is attached.
+    pub(crate) fn current_session(&self) -> Option<String> {
+        let state = lock(&self.state);
+        let current = state.current.as_deref()?;
+        state.page(current)?.session.clone()
+    }
+
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
+        if event.method == "Page.screencastFrame" {
+            self.cast.frame(&event.params, event.session_id.as_deref());
+            return;
+        }
         let now = Instant::now();
         let mut follow = Vec::new();
         {
