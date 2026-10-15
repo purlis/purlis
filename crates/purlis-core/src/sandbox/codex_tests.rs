@@ -64,13 +64,28 @@ fn profile_home(machine: &Machine) -> Option<PathBuf> {
 /// [`for_start`] for a Codex chat on `machine`, on that profile, as a start applies it.
 fn codex_start(plane: &Path, machine: &Machine) -> Result<Option<Applied>, NotStarted> {
     let mut applied = for_start(Harness::Codex, plane, machine, &|_| true)?;
+    // The profile's folder, as its store makes it: this user's, 0700.
+    if let Some(folder) = profile_home(machine) {
+        made(&folder);
+    }
     if let Some(applied) = &mut applied {
         applied.on_profile(&signin::ProfileFolders {
             config: profile_home(machine),
             data: None,
+            sandbox_only: Some("codex-sandbox".to_owned()),
         });
     }
     Ok(applied)
+}
+
+/// `folder` and the folders above it made, as the profile store makes a profile's.
+fn made(folder: &Path) {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(folder)
+        .expect("a profile's folder");
 }
 
 fn real(path: &Path) -> PathBuf {
@@ -310,12 +325,12 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_a_codex_turn_wri
     }
     // And they are among the places a program must not lie.
     let writable = applied.writable();
-    assert!(writable.contains(&named.join("sessions")), "{writable:?}");
-    assert!(!writable.contains(&named), "{writable:?}");
+    assert!(writable.contains(&codex.join("sessions")), "{writable:?}");
+    assert!(!writable.contains(&codex), "{writable:?}");
     // Codex is pointed at it, and never at the operator's own.
     assert!(
         line.env
-            .contains(&("CODEX_HOME".to_owned(), named.display().to_string())),
+            .contains(&("CODEX_HOME".to_owned(), codex.display().to_string())),
         "{:?}",
         line.env
     );
@@ -370,9 +385,10 @@ fn a_codex_chat_runs_in_its_profiles_folder_and_the_operators_home_follows_codex
             "{:?}",
             wrap.denied
         );
+        // As the kernel names it.
         assert_eq!(
             wrap.home.as_deref(),
-            Some(data.path().join("profiles/codex-sandbox/config").as_path())
+            Some(real(&data.path().join("profiles/codex-sandbox/config")).as_path())
         );
     }
 }
@@ -382,10 +398,25 @@ fn a_codex_chat_on_the_operators_own_home_or_any_folder_purlis_did_not_make_has_
     let plane = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
     let machine = machine_at(home.path(), Os::MacOs);
-    for folder in [
-        home.path().join(".codex"),
-        home.path().join("elsewhere"),
-        Homes::of(&machine).profiles.expect("a data home"),
+    let profiles = Homes::of(&machine).profiles.expect("a data home");
+    made(&profiles.join("codex-sandbox/config"));
+    made(&profiles.join("work/config"));
+    std::fs::create_dir_all(home.path().join(".codex")).expect("the operator's home");
+    std::os::unix::fs::symlink(home.path().join(".codex"), profiles.join("linked"))
+        .expect("a link");
+    for (name, folder) in [
+        ("codex-sandbox", home.path().join(".codex")),
+        ("codex-sandbox", home.path().join("elsewhere")),
+        ("codex-sandbox", profiles.clone()),
+        // Another profile's folder, under this profile's name.
+        ("codex-sandbox", profiles.join("work/config")),
+        // A climb out and back in.
+        (
+            "codex-sandbox",
+            profiles.join("codex-sandbox/config/../../work/config"),
+        ),
+        // A profile's folder that is a link to the operator's own home.
+        ("linked", profiles.join("linked/config")),
     ] {
         let mut applied = for_start(Harness::Codex, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -393,6 +424,7 @@ fn a_codex_chat_on_the_operators_own_home_or_any_folder_purlis_did_not_make_has_
         applied.on_profile(&signin::ProfileFolders {
             config: Some(folder.clone()),
             data: None,
+            sandbox_only: Some(name.to_owned()),
         });
         let Form::Codex(wrap) = applied.form() else {
             panic!("a Codex wrap");
@@ -610,7 +642,7 @@ fn a_codex_chat_on_no_profile_for_sandboxed_chats_is_refused_with_the_way_out() 
 
 #[test]
 fn a_refused_chat_readies_no_home() {
-    // Review F6: the home is made only once the line is known to start.
+    // Review F6: the home is readied only once the line is known to start.
     let plane = plane_saying(ON);
     let home = plane.path().join("home");
     std::fs::create_dir(&home).expect("a home inside the plane");
@@ -619,7 +651,9 @@ fn a_refused_chat_readies_no_home() {
         .expect("sandboxed");
     let confinement = applied.confine().expect("confined").expect("a wrap");
     line_in(&applied, plane.path(), "", &confinement).expect_err("refused");
-    assert!(!chat_home(plane.path(), &home).exists());
+    let chat = chat_home(plane.path(), &home);
+    assert!(!chat.join("config.toml").exists());
+    assert!(!chat.join("sessions").exists());
 }
 
 /// What charter arms a Codex chat with: its hooks, as its adapter hands them over.

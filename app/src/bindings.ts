@@ -1354,6 +1354,18 @@ export const commands = {
 	 */
 	machineProfilePin: (name: string, version: string) => typedError<MachineProfileRow, string>(__TAURI_INVOKE("machine_profile_pin", { name, version })),
 	/**
+	 *  **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*** (#2037, the
+	 *  operator's ruling of 2026-10-15): makes a sandbox-only Codex profile, with nothing imported,
+	 *  and puts the Ask away. The window then opens Codex's own sign-in for it in a shell tab
+	 *  ([`type_profile_sign_in`]). The profile's name.
+	 */
+	makeSandboxOnlyProfile: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("make_sandbox_only_profile", { plane })),
+	/**
+	 *  Puts away project `plane`'s Ask *Codex needs a sandbox-only profile here* (#2037): Dismiss. A
+	 *  sandboxed Codex chat's next start asks again while this machine has no such profile.
+	 */
+	dismissSandboxOnly: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("dismiss_sandbox_only", { plane })),
+	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
 	 */
@@ -3355,6 +3367,12 @@ export type AnswerPath =
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
  */
 { via: "sign-in"; profile: string } | 
+/**
+ *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
+ *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
+ *  `dismiss_sandbox_only`.
+ */
+{ via: "sandbox-only" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3472,7 +3490,12 @@ export type AskSource =
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
  */
-"sign-in";
+"sign-in" | 
+/**
+ *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
+ *  making one and running Codex's own sign-in in it.
+ */
+"sandbox-only";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

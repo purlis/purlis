@@ -34,9 +34,8 @@ hooks = true
 # A Claude plan through Claude Code's own /login; an Anthropic key; Bedrock or Vertex.
 kinds = ["subscription", "api-key", "cloud"]
 # Read out of its sandbox as purlis compiles it (#2037): purlis denies its sign-in file in the
-# config folder to the commands its Bash tool runs and to its Read and Edit tools, and on macOS
-# Claude Code keeps its sign-in in the login keychain instead, as a keychain item.
-kept_from_commands = "no: on macOS Claude Code keeps its sign-in in the keychain, which purlis cannot keep from the commands it runs"
+# config folder to the commands its Bash tool runs and to its Read and Edit tools.
+kept_from_commands = "no: on macOS purlis cannot keep Claude Code's sign-in from the commands it runs"
 
 [folders]
 # Its settings, its sign-in and its conversations.

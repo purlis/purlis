@@ -510,6 +510,7 @@ mod made;
 pub use made::*;
 
 pub mod pin;
+pub mod sandbox_only;
 pub mod sign_in;
 
 #[cfg(test)]

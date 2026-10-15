@@ -100,7 +100,10 @@ describe("a persona whose profile this machine does not have", () => {
 
     await waitFor(() =>
       expect(asked.filter((one) => one.cmd === "machine_profile_create")).toEqual([
-        { cmd: "machine_profile_create", args: { name: "qa-bot", kind: "claude" } },
+        {
+          cmd: "machine_profile_create",
+          args: { name: "qa-bot", kind: "claude", sandboxOnly: false },
+        },
       ]),
     );
   });

@@ -653,6 +653,8 @@ export const commands = {
 	typeProfileSignIn: __WINDOW_ONLY_RESULT,
 	dismissSignIn: __WINDOW_ONLY_RESULT,
 	machineProfilePin: __WINDOW_ONLY_RESULT,
+	makeSandboxOnlyProfile: __WINDOW_ONLY_RESULT,
+	dismissSandboxOnly: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -2004,6 +2006,12 @@ export type AnswerPath =
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
  */
 { via: "sign-in"; profile: string } | 
+/**
+ *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
+ *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
+ *  `dismiss_sandbox_only`.
+ */
+{ via: "sandbox-only" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2121,7 +2129,12 @@ export type AskSource =
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
  */
-"sign-in";
+"sign-in" | 
+/**
+ *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
+ *  making one and running Codex's own sign-in in it.
+ */
+"sandbox-only";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

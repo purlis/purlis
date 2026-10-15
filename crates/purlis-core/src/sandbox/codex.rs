@@ -166,17 +166,16 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
 }
 
 impl Wrap {
-    /// This wrap for a chat whose profile's Codex folder is `folder`: Codex's home, where it is
-    /// a folder purlis made for a profile (under [`Self::profiles`]) and not the operator's own
-    /// home. Any other folder leaves the chat with no home, and it is not started.
-    pub fn on_profile(&mut self, folder: &Path) {
+    /// This wrap for a chat on the sandbox-only profile `name`, whose Codex folder its
+    /// environment names `folder`: Codex's home, where that is the folder purlis made for that
+    /// profile ([`crate::profilestore::sandbox_home`]: `<profiles>/<name>/config`, no `..`, no
+    /// link, this user's), as the kernel names it. Anything else leaves the chat with no home,
+    /// and it is not started.
+    pub fn on_profile(&mut self, name: &str, folder: &Path) {
         let Some(profiles) = &self.profiles else {
             return;
         };
-        let made_here = folder.starts_with(profiles) && folder != profiles.as_path();
-        if made_here && self.operator.as_deref() != Some(folder) {
-            self.home = Some(folder.to_path_buf());
-        }
+        self.home = crate::profilestore::sandbox_home(profiles, name, folder);
     }
 
     /// Every path the chat is denied, as the profile is written: the folders of this machine's
@@ -194,7 +193,7 @@ impl Wrap {
     /// The folder of this machine's profiles, where the chat's home is one of them.
     fn carved(&self) -> Option<&Path> {
         let (home, profiles) = (self.home.as_deref()?, self.profiles.as_deref()?);
-        home.starts_with(profiles).then_some(profiles)
+        (home.starts_with(profiles) || home.starts_with(super::real(profiles))).then_some(profiles)
     }
 
     /// What the wrap lets a chat write in its Codex home, besides its state databases.
@@ -253,17 +252,20 @@ pub const BROUGHT: &str = "conversations-brought-to";
 /// file of at the same place, copied, never through a link and never over a file. Its sign-in,
 /// config and every other file stay where they are. Once done, [`BROUGHT`] in `former` names
 /// `home`, and nothing is brought again.
+#[cfg(unix)]
 pub fn bring_conversations(former: &Path, home: &Path) {
-    let regular_dir = |path: &Path| {
-        std::fs::symlink_metadata(path)
-            .ok()
-            .is_some_and(|meta| meta.is_dir())
+    use rustix::fs::{Mode, OFlags};
+    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let Ok(root) = rustix::fs::open(former, folder, Mode::empty()) else {
+        return;
     };
-    if !regular_dir(former) || std::fs::symlink_metadata(former.join(BROUGHT)).is_ok() {
+    if rustix::fs::statat(&root, BROUGHT, rustix::fs::AtFlags::SYMLINK_NOFOLLOW).is_ok() {
         return;
     }
     for dir in DAY_DIRS {
-        copy_days(&former.join(dir), &home.join(dir), 3);
+        if let Ok(days) = rustix::fs::openat(&root, dir, folder, Mode::empty()) {
+            copy_days(&days, &home.join(dir), 3);
+        }
     }
     replace(
         &former.join(BROUGHT),
@@ -272,34 +274,62 @@ pub fn bring_conversations(former: &Path, home: &Path) {
     );
 }
 
-/// Below `from`, without following a link: each regular file copied to the same place below
-/// `to` where none is there, in folders `folders` deep in a day's tree (`YYYY/MM/DD`).
-fn copy_days(from: &Path, to: &Path, folders: usize) {
-    let Ok(entries) = std::fs::read_dir(from) else {
+/// Nothing is brought where there is no descriptor-relative open to read it with safely; no
+/// Codex chat is wrapped there either.
+#[cfg(not(unix))]
+pub fn bring_conversations(_former: &Path, _home: &Path) {}
+
+#[cfg(unix)]
+/// Below the folder open at `from`, read by descriptor and never through a link: each regular
+/// file copied to the same place below `to` where none is there, in folders `folders` deep in
+/// a day's tree (`YYYY/MM/DD`). Every name is opened relative to its folder with `O_NOFOLLOW`
+/// and judged by `fstat` on what was opened, so a name swapped for a link meanwhile fails to
+/// open rather than leading anywhere.
+fn copy_days(from: &std::os::fd::OwnedFd, to: &Path, folders: usize) {
+    use rustix::fs::{FileType, Mode, OFlags};
+    let Ok(listed) = rustix::fs::Dir::read_from(from) else {
         return;
     };
     let width = [4, 2, 2];
     let level = 3 - folders.min(3);
-    for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else {
+    for entry in listed.flatten() {
+        let name = entry.file_name().to_owned();
+        let Ok(text) = name.to_str() else { continue };
+        if text == "." || text == ".." {
+            continue;
+        }
+        let Ok(fd) = rustix::fs::openat(
+            from,
+            name.as_c_str(),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) else {
             continue;
         };
-        let name = entry.file_name();
-        let target = to.join(&name);
-        if kind.is_file() {
-            if std::fs::symlink_metadata(&target).is_err()
-                && std::fs::create_dir_all(to).is_ok()
-                && let Ok(bytes) = std::fs::read(entry.path())
-            {
-                write_new(&target, &bytes);
+        let Ok(stat) = rustix::fs::fstat(&fd) else {
+            continue;
+        };
+        let target = to.join(text);
+        match FileType::from_raw_mode(stat.st_mode) {
+            FileType::RegularFile => {
+                if std::fs::symlink_metadata(&target).is_err()
+                    && std::fs::create_dir_all(to).is_ok()
+                {
+                    let mut bytes = Vec::new();
+                    if std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes).is_ok()
+                    {
+                        write_new(&target, &bytes);
+                    }
+                }
             }
-        } else if kind.is_dir()
-            && folders > 0
-            && name.to_str().is_some_and(|name| {
-                name.len() == width[level] && name.bytes().all(|b| b.is_ascii_digit())
-            })
-        {
-            copy_days(&entry.path(), &target, folders - 1);
+            FileType::Directory
+                if folders > 0
+                    && text.len() == width[level]
+                    && text.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                copy_days(&fd, &target, folders - 1);
+            }
+            _ => {}
         }
     }
 }

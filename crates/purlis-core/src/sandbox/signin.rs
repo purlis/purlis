@@ -35,6 +35,9 @@ pub struct ProfileFolders {
     /// Its data, where the harness declares a folder of its own for it: opencode's XDG data
     /// folder.
     pub data: Option<PathBuf>,
+    /// The profile's name, where it is one this machine keeps for sandboxed chats only
+    /// (#2037): what a wrapped Codex's home is checked against.
+    pub sandbox_only: Option<String>,
 }
 
 impl ProfileFolders {
@@ -58,6 +61,7 @@ impl ProfileFolders {
         Self {
             config: set(&folders.config_env).or(config),
             data: set(&folders.data_env).or(data),
+            sandbox_only: None,
         }
     }
 }

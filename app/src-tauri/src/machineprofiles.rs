@@ -411,3 +411,40 @@ pub fn dismiss_sign_in(
     held.hooks().asks_teller()();
     Ok(())
 }
+
+/// **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*** (#2037, the
+/// operator's ruling of 2026-10-15): makes a sandbox-only Codex profile, with nothing imported,
+/// and puts the Ask away. The window then opens Codex's own sign-in for it in a shell tab
+/// ([`type_profile_sign_in`]). The profile's name.
+#[tauri::command]
+#[specta::specta]
+pub async fn make_sandbox_only_profile(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let teller = held.hooks().asks_teller();
+    let made = blocking(move || {
+        let made = profilestore::sandbox_only::make(&store()?, purlis_core::halt::now())?;
+        profilestore::sandbox_only::dismiss(&root);
+        Ok(made)
+    })
+    .await?;
+    teller();
+    Ok(made.record.name)
+}
+
+/// Puts away project `plane`'s Ask *Codex needs a sandbox-only profile here* (#2037): Dismiss. A
+/// sandboxed Codex chat's next start asks again while this machine has no such profile.
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_sandbox_only(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    profilestore::sandbox_only::dismiss(held.root());
+    held.hooks().asks_teller()();
+    Ok(())
+}

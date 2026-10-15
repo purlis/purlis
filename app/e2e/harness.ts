@@ -569,6 +569,64 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
 }
 
 /**
+ * **A sandbox-only Codex profile that runs `program`** (#2037, the operator's ruling of
+ * 2026-10-15): a sandboxed Codex chat, the floor's included, runs only on a profile this machine
+ * keeps for sandboxed chats only. So the run's machine store (`configHome`, `dataHome`) gets one,
+ * named `scenario`, with its folder made as the store makes it, and `plane`'s local settings make
+ * it the default. Its program is `codex` on the folder this answers, which goes first on the
+ * app's `PATH`: it answers Codex's `login status` as signed in, and runs the profile's command
+ * (`theProfilesProgram`) for everything else. Beside the plane, never in it, as
+ * `declareAProfile`'s program is.
+ */
+export function declareASandboxOnlyCodexProfile(
+  plane: string,
+  program: string,
+  configHome: string,
+  dataHome: string,
+): string {
+  const wrapper = theProfilesWrapper(plane);
+  mkdirSync(dirname(wrapper), { recursive: true });
+  writeFileSync(wrapper, theProfilesProgram(program));
+  chmodSync(wrapper, 0o755);
+  const bin = join(`${plane}.programs`, "bin");
+  mkdirSync(bin, { recursive: true });
+  const codex = join(bin, "codex");
+  writeFileSync(
+    codex,
+    [
+      "#!/bin/sh",
+      "# Written by the scenario tests: Codex, as a sandbox-only profile runs it.",
+      'case "$1" in login) exit 0 ;; esac',
+      `exec ${JSON.stringify(wrapper)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(codex, 0o755);
+  const folder = join(dataHome, "profiles", "scenario", "config");
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const store = join(configHome, "charter");
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(store, "profiles.json"),
+    JSON.stringify({
+      version: 1,
+      profiles: [
+        {
+          name: "scenario",
+          harness: "codex",
+          title: "scenario",
+          folders: { config: folder },
+          sandbox_only: true,
+        },
+      ],
+    }) + "\n",
+    { mode: 0o600 },
+  );
+  writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
+  return bin;
+}
+
+/**
  * Where `declareAProfile` puts the profile's program for `plane`: beside the plane, never in
  * it. A chat's sandbox, the floor included, starts no program the chat could have written
  * (#2071), and a chat writes its own project.

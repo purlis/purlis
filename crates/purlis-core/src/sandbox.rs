@@ -3167,9 +3167,9 @@ impl Applied {
         // A wrapped Codex runs in its profile's folder: one purlis made for sandboxed chats
         // only (#2037, ruled 2026-10-15), never the person's own Codex home.
         if let Form::Codex(wrap) = &mut *self.form
-            && let Some(folder) = &folders.config
+            && let (Some(name), Some(folder)) = (&folders.sandbox_only, &folders.config)
         {
-            wrap.on_profile(folder);
+            wrap.on_profile(name, folder);
         }
         let Form::ClaudeCode(settings) = &mut *self.form else {
             return;
@@ -5083,13 +5083,11 @@ pub(crate) fn applied_for(
 /// sandboxed chats only, whose folder is Codex's home (#2037); every other harness as compiled.
 #[cfg(test)]
 pub(crate) fn on_a_profile(mut applied: Applied, machine: &Machine) -> Applied {
-    if applied.harness == Harness::Codex {
-        applied.on_profile(&signin::ProfileFolders {
-            config: Homes::of(machine)
-                .profiles
-                .map(|profiles| profiles.join("codex-sandbox/config")),
-            data: None,
-        });
+    // Its home as a start checks it on disk; these tests' machines are paths only.
+    if let Form::Codex(wrap) = &mut *applied.form {
+        wrap.home = Homes::of(machine)
+            .profiles
+            .map(|profiles| profiles.join("codex-sandbox/config"));
     }
     applied
 }

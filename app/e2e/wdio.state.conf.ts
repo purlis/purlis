@@ -1,12 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { delimiter } from "node:path";
+import process from "node:process";
 import { config as base } from "./wdio.conf.js";
 import {
   anEmptyRecord,
   built,
   copyFixturePlane,
-  declareAProfile,
+  declareASandboxOnlyCodexProfile,
   theRunsEnvironment,
   writeReportingShell,
 } from "./harness.js";
@@ -28,8 +30,20 @@ import { PANIC_LOG } from "./processes.js";
 const plane = copyFixturePlane();
 const harness = writeReportingShell(built("fake-harness"), built("charter"));
 // `codex`, because that is the kind this stand-in behaves like: it reports no pid and no
-// conversation id, which is exactly the rule Codex chats are judged by.
-declareAProfile(plane, harness, "codex");
+// conversation id, which is exactly the rule Codex chats are judged by. A sandboxed Codex chat,
+// the floor's included, runs only on a sandbox-only profile (#2037), so the run's machine store
+// gets one, and its program goes first on the app's `PATH`.
+const environment = theRunsEnvironment(plane, {
+  SHELL: harness,
+  CHARTER_PANIC_LOG: PANIC_LOG,
+});
+const programs = declareASandboxOnlyCodexProfile(
+  plane,
+  harness,
+  environment.CHARTER_CONFIG_HOME,
+  environment.CHARTER_DATA_HOME,
+);
+environment.PATH = [programs, process.env.PATH ?? ""].join(delimiter);
 
 export const config: WebdriverIO.Config = {
   ...base,
@@ -52,10 +66,7 @@ export const config: WebdriverIO.Config = {
         // sharing either with the base run or with the runner's home is a test that passes
         // once (see `aConfigHomeOfItsOwn`). `theRunsEnvironment` gives it both, and the
         // fence that makes forgetting either of them a dead app rather than a poisoned plane.
-        env: theRunsEnvironment(plane, {
-          SHELL: harness,
-          CHARTER_PANIC_LOG: PANIC_LOG,
-        }),
+        env: environment,
       },
     ],
   ],

@@ -495,6 +495,38 @@ fn own_folder(homes: &Homes, record: &MachineProfile) -> Result<PathBuf, String>
     Ok(folder)
 }
 
+/// **The Codex home a wrapped chat on the sandbox-only profile `name` runs in** (#2037), as the
+/// kernel names it: `folder`, where it is exactly `<profiles>/<name>/config` with no `..` in it,
+/// neither it nor the profile's folder is a link, both are folders this user owns, and the
+/// profile's folder sits directly in `profiles`. `None` for anything else, and the chat is not
+/// started.
+pub fn sandbox_home(profiles: &Path, name: &str, folder: &Path) -> Option<PathBuf> {
+    if !crate::profiles::name_ok(name)
+        || folder
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        || folder != profiles.join(name).join(CONFIG)
+    {
+        return None;
+    }
+    let ours = |path: &Path| {
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if meta.uid() != rustix::process::getuid().as_raw() {
+                return None;
+            }
+        }
+        meta.file_type().is_dir().then_some(())
+    };
+    let profile = profiles.join(name);
+    ours(&profile)?;
+    ours(folder)?;
+    let (dir, found) = (profiles.canonicalize().ok()?, folder.canonicalize().ok()?);
+    (found == dir.join(name).join(CONFIG)).then_some(found)
+}
+
 /// Where `allowed`'s settings go in a profile whose `config_env` is `config`: under the folder
 /// of its own name, for a harness that keeps one.
 fn settings_dest(allowed: &Allowed, config: &Path) -> PathBuf {

@@ -637,3 +637,50 @@ fn a_profile_made_for_every_chat_is_not_sandbox_only_and_says_nothing_of_it_on_d
     let text = fs::read_to_string(crate::profilestore::path(machine.store.config_root())).unwrap();
     assert!(!text.contains("sandbox_only"), "{text}");
 }
+
+#[test]
+fn a_sandbox_only_profiles_home_is_its_own_config_folder_and_nothing_else() {
+    // #2037 review: what a wrapped Codex is pointed at is the folder purlis made for that
+    // profile, by its name, as the kernel names it.
+    let machine = Machine::new();
+    let made = create_sandbox_only(&machine.store, "codex-sandbox", "codex", 100).unwrap();
+    let other = create_sandbox_only(&machine.store, "other", "codex", 100).unwrap();
+    let profiles = machine.store.dir();
+    let own = made.record.folders.config.clone();
+
+    assert_eq!(
+        sandbox_home(profiles, "codex-sandbox", &own),
+        Some(own.canonicalize().unwrap())
+    );
+    // Another profile's folder, under this profile's name.
+    assert_eq!(
+        sandbox_home(profiles, "codex-sandbox", &other.record.folders.config),
+        None
+    );
+    // A path that climbs out with `..` and back in.
+    let climbing = own.join("../../codex-sandbox/config");
+    assert_eq!(sandbox_home(profiles, "codex-sandbox", &climbing), None);
+    // A name that is no profile's.
+    assert_eq!(sandbox_home(profiles, "../x", &own), None);
+    // A link in place of the profile's folder, to the person's own Codex home.
+    // The person's own Codex home, under another name here: a sandbox keeps tests from making
+    // a `.codex` folder.
+    let person = machine.home.join("person-codex");
+    fs::create_dir_all(&person).unwrap();
+    let linked = profiles.join("linked");
+    std::os::unix::fs::symlink(&person, &linked).unwrap();
+    assert_eq!(
+        sandbox_home(profiles, "linked", &linked.join("config")),
+        None
+    );
+    fs::create_dir_all(person.join("config")).unwrap();
+    assert_eq!(
+        sandbox_home(profiles, "linked", &linked.join("config")),
+        None
+    );
+    // And a link in place of the config folder itself.
+    let inner = profiles.join("inner");
+    fs::create_dir_all(&inner).unwrap();
+    std::os::unix::fs::symlink(&person, inner.join("config")).unwrap();
+    assert_eq!(sandbox_home(profiles, "inner", &inner.join("config")), None);
+}

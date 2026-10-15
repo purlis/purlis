@@ -62,13 +62,11 @@ fn each_built_in_says_its_folder_variables() {
 
 #[test]
 fn each_built_in_says_whether_its_credentials_can_be_kept_from_its_commands() {
-    // Read out of its sandbox as purlis compiles it (#2037): its sandbox holds a file, and on
-    // macOS its sign-in is a keychain item.
+    // Read out of its sandbox as purlis compiles it (#2037).
     assert_eq!(
         of(Harness::ClaudeCode).sign_in.kept_from_commands,
         Answer::No(
-            "on macOS Claude Code keeps its sign-in in the keychain, which purlis cannot keep \
-             from the commands it runs"
+            "on macOS purlis cannot keep Claude Code's sign-in from the commands it runs"
                 .to_owned()
         )
     );

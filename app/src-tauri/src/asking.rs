@@ -136,6 +136,9 @@ pub enum AskSource {
     /// A profile a chat could not start on, because its harness says it is not signed in on
     /// this device (#2035): answered by running the harness's own sign-in in a shell tab.
     SignIn,
+    /// A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
+    /// making one and running Codex's own sign-in in it.
+    SandboxOnly,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -171,6 +174,10 @@ pub enum AnswerPath {
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
     /// the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
     SignIn { profile: String },
+    /// Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
+    /// Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
+    /// `dismiss_sandbox_only`.
+    SandboxOnly,
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -898,6 +905,40 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
     }
 }
 
+/// The option id of Make one on the Ask for a sandbox-only Codex profile (#2037).
+pub const MAKE_SANDBOX_ONLY: &str = "make";
+
+/// **The sandbox-only adapter** (#2037, the operator's ruling of 2026-10-15): a project where a
+/// sandboxed Codex chat was refused for want of a sandbox-only profile, as one Ask about no
+/// chat. It offers Make one, which makes the profile and opens Codex's own sign-in in it, and
+/// Dismiss.
+pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Shown {
+    use purlis_core::profilestore::sandbox_only::ASK;
+    Shown {
+        session: 0,
+        ask: "sandbox-only:codex".to_owned(),
+        says: said_inertly(&format!(
+            "{ASK}: a sandboxed Codex chat runs only on a profile for sandboxed chats only, so \
+             your own Codex is never written by one. Make one makes it and runs Codex's own \
+             sign-in in a shell tab"
+        )),
+        options: vec![
+            Offered {
+                id: MAKE_SANDBOX_ONLY.to_owned(),
+                label: "Make one".to_owned(),
+                allows: true,
+            },
+            refuses(DISMISS, "Dismiss"),
+        ],
+        source: AskSource::SandboxOnly,
+        chain: vec![said_inertly("Codex")],
+        answer: AnswerPath::SandboxOnly,
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -955,6 +996,8 @@ pub struct Waiting<'a> {
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The profiles a start was refused on because they are not signed in here (#2035).
     pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
+    /// Whether a sandboxed Codex chat here waits for a sandbox-only profile (#2037).
+    pub sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -1005,6 +1048,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
     asks.extend(waiting.sign_ins.iter().map(sign_in));
+    asks.extend(waiting.sandbox_only.iter().map(sandbox_only));
     asks.extend(
         waiting
             .queue
@@ -1034,7 +1078,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     }));
     for (at, ask) in asks.iter_mut().enumerate() {
         // A profile's Ask is about no chat: its chain is the profile, as its adapter said.
-        let profiles = signing..signing + waiting.sign_ins.len();
+        let profiles =
+            signing..signing + waiting.sign_ins.len() + usize::from(waiting.sandbox_only.is_some());
         if !profiles.contains(&at) {
             ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
         }
@@ -1156,7 +1201,15 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &sign_ins {
         since.insert(format!("sign-in:{}", one.profile.name), one.since);
     }
+    let sandbox_only = purlis_core::profilestore::sandbox_only::waiting(
+        root,
+        &purlis_core::profilestore::listed_here(),
+    );
+    if let Some(one) = &sandbox_only {
+        since.insert("sandbox-only:codex".to_owned(), one.since);
+    }
     let waiting = Waiting {
+        sandbox_only,
         sign_ins,
         removals,
         proposals,
