@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792092602315,
+  "lastUpdate": 1792095905406,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12978,6 +12978,48 @@ window.BENCHMARK_DATA = {
             "value": 101.63124450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.217, 101.317, 101.631, 101.961, 102.069 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "62b6b36d4aa89a74272eb2f9c407ac4b525ab8d7",
+          "message": "Profiles: sign-ins kept from the agent's commands (#2155)\n\n* Profiles: a Claude Code chat's commands cannot read its profile's sign-in file\n\nA profile's sign-in files are a fixed class per harness (sandbox::signin):\nClaude Code's .credentials.json, Codex's auth.json, opencode's auth.json and\nmcp-auth.json, in the chat's own profile folders. Applied::on_profile denies\nthem to the agent's commands and to Claude Code's Read and Edit tools where\nthe harness runs its commands apart from itself (Claude Code); a wrapped\nharness reads its own, so its wrap is left as compiled.\n\nClaude Code's declaration now answers kept_from_commands no, decided from\nits sandbox as purlis compiles it, and Settings > You > Profiles says plainly\non each profile whose sign-in the commands its chats run can read.\n\nRefs #2037\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: the UI RPC client carries the sign-in warning; stand-ins outside the temp folders\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a sandboxed Codex chat runs on a profile for sandboxed chats only\n\nRuled 2026-10-15 on #2037. A profile purlis makes can be for sandboxed chats\nonly (`sandbox_only` in profiles.json): nothing is imported into it, it is\nsigned in through Codex's own sign-in in its folder, and no chat starts on it\nwithout the sandbox. A sandboxed Codex chat runs with that profile's folder as\nCodex's home and is refused on any other profile, with the way out; the\nwindow's picker locks the opt-out for such a profile and says the refusal\nahead. The wrap no longer copies the person's Codex sign-in, denies every\nother profile's folder and the projects' former Codex homes, and brings a\nproject's former conversations to the profile once, never its sign-in.\nADR 0067's D-88q guarantee holds: no unsandboxed run uses that folder.\n\nSettings > You > Profiles gains \"For sandboxed chats only\", and\n`purlis profile create --sandbox-only` makes one from the terminal.\n\nCloses #2037\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a sandbox-only profile offers no Import again; main's sign-in rows beside it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: the compiler tests start a sandboxed Codex chat on a sandbox-only profile\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a Codex chat at the floor on a profile for every chat starts without it, saying why\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: the picker leaves a Codex chat at the floor to start without it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a sandboxed Codex chat waits on one Ask for a sandbox-only profile\n\nRuled 2026-10-15 (D-2037-10 replaced): a sandboxed Codex chat, the floor's\nincluded, on a profile for every chat is refused and leaves one Ask per\nproject, \"Codex needs a sandbox-only profile here\", whose Make one makes a\nsandbox-only Codex profile and opens Codex's own sign-in for it. No Codex\nchat starts without the floor because of it.\n\nReview fixes:\n- The wrap takes as Codex's home only <profiles>/<name>/config of the chat's\n  sandbox-only profile, as the kernel names it, with no `..`, no link and\n  owned by this user (profilestore::sandbox_home).\n- A former home's sessions are read by descriptor with O_NOFOLLOW and fstat.\n- A start-level test refuses an opted-out start on a sandbox-only profile.\n- ADR 0067 keeps the ruled text apart from what implementation decided.\n- The state scenario run starts its Codex stand-in on a sandbox-only profile.\n\nRefs #2037\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: main's API-key and cloud records beside sandbox_only\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a notification names the sandbox-only Ask by its kind\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: the state run's Codex profile is sandbox-only where the floor wraps Codex\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: main's version pins beside sandbox_only\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: a refused start tells the window its asks may have moved\n\nRe-review of #2155:\n- A start refused in the window's picker or a handoff tells the project's\n  window its asks may have moved, so the sandbox-only Ask (and a sign-in\n  Ask) appears at once; making a sandbox-only profile in Settings tells\n  every open project, so a stale Ask clears.\n- sandbox_home's owner check has a test of its own.\n- The ADR 0067 and ADR 0073 amendments are files of their own (#2195).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T00:23:36+04:00",
+          "tree_id": "4e985365077985295ff75d0a2df0d34a7676905c",
+          "url": "https://github.com/purlis/purlis/commit/62b6b36d4aa89a74272eb2f9c407ac4b525ab8d7"
+        },
+        "date": 1792095903883,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.400714,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.379, 0.381, 0.401, 0.402, 0.409 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.770746000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.513, 16.744, 16.771, 16.775, 16.843 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.51705000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.950, 101.952, 102.517, 102.863, 103.157 ms"
           }
         ]
       }
