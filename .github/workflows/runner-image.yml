@@ -8,14 +8,17 @@ run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}
 # purlis's runner image (#2043, spec #2041): `purlis serve`, the session host, for linux/amd64
 # and linux/arm64, kept in the GitHub Container Registry as a PRIVATE package of this
 # organisation, recorded by digest and signed by keyless cosign through this run's GitHub OIDC
-# identity. No signing key is stored anywhere. The package stays private until the operator rules
-# to publish it (ruling of 2026-10-14); `index` refuses to tag or sign an image anyone can pull
-# without signing in.
+# identity. No signing key is stored anywhere; the signature's entry in Sigstore's public
+# transparency log names the image and its digest, which the operator accepted (ruling of
+# 2026-10-15). The package stays private until the operator rules to publish it (ruling of
+# 2026-10-14): `image` pushes only into a package the packages API shows private, and `index`
+# tags and signs only when that still holds and the registry refuses an anonymous pull.
 #
 # Three ways in, and what each makes:
 #
 #   `ci` green on `main`   -> the image of that commit: built, checked against the contract,
-#                             pushed, tagged `main` and `sha-<commit>`, signed, verified, and
+#                             pushed, tagged `sha-<commit>` (and `main` when that moves it
+#                             forward), signed, verified, and
 #                             its digest recorded in the run's summary and its `runner-image`
 #                             artifact. The same gate as the dev channel's build (`release.yml`),
 #                             so the image and the dev build are of the same commits.
@@ -27,7 +30,9 @@ run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}
 # `ubuntu-24.04-arm`), with no emulation, and the binary is compiled the way `release.yml`
 # compiles the Linux one: the pinned toolchain, `cargo auditable`, the `dev-release` profile,
 # no cache. The compile runs in a job that holds no write permission; the image jobs hold
-# `packages: write`, and only `index`, which signs, can mint an OIDC token.
+# `packages: write`, and only `index`, which signs, can mint an OIDC token. What the registry
+# and the forge are asked before a push, a tag or a signature is `tools/runner-image-registry.mjs`,
+# which fails closed.
 #
 # **Nothing is tagged or signed that was not checked.** `image` pushes each architecture's
 # image by digest only, untagged, pulls that digest back, and runs the contract
@@ -38,7 +43,7 @@ on:
   pull_request:
     paths:
       - runner-image/**
-      - tools/runner-image-contract.*
+      - tools/runner-image-*
       - .github/workflows/runner-image.yml
   workflow_run:
     workflows: [ci]
@@ -185,6 +190,37 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # **No image is pushed into a package that is not private.** The packages API says so
+      # immediately before the push. On the first run there is no package yet: a placeholder
+      # (one small text file, nothing of purlis) is pushed to create it, and the package is
+      # shown private before the image's own bytes go in. Anything else stops the job here.
+      - name: The package is private before anything of purlis is pushed
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          state=$(node tools/runner-image-registry.mjs visibility)
+          if [ "$state" = absent ]; then
+            placeholder="$RUNNER_TEMP/placeholder"
+            mkdir -p "$placeholder"
+            echo "The purlis runner image's package, made private before the image is pushed." > "$placeholder/README"
+            printf 'FROM scratch\nCOPY README /README\n' | docker buildx build \
+              --platform "linux/$ARCH" --provenance=false \
+              --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+              --file - "$placeholder"
+            for _ in 1 2 3 4 5 6; do
+              state=$(node tools/runner-image-registry.mjs visibility)
+              [ "$state" = absent ] || break
+              sleep 10
+            done
+          fi
+          if [ "$state" != private ]; then
+            echo "::error::the package is $state, not private, so nothing is pushed"
+            exit 1
+          fi
+          echo "the package is private"
 
       - name: Build the runner image, to check it here
         if: env.PUBLISH != 'true'
@@ -262,13 +298,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # `id-token` mints the OIDC token cosign signs with, through Sigstore's public-good
-    # instance; nothing else in the workflow can mint one.
+    # instance; nothing else in the workflow can mint one. `contents: read` is for the checkout
+    # of the commit's own tools and for comparing two commits of `main`.
     permissions:
+      contents: read
       packages: write
       id-token: write
     env:
       SHA: ${{ needs.plan.outputs.sha }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
       # By name, never by pattern: a pattern takes whatever any job of the run uploaded under
       # a name that matches.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -287,37 +333,41 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # The package stays private until the operator rules to publish it. A registry that
-      # answers an anonymous pull of these images is refused here, before anything is tagged
-      # or signed, and so is one that cannot be asked.
+      # The package stays private until the operator rules to publish it. Before anything is
+      # tagged or signed, the packages API has to say `private` and the registry has to refuse
+      # both images to a puller who has not signed in. An answer that shows neither stops the
+      # run (`tools/runner-image-registry.mjs` fails closed).
       - name: The images are private
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          repository=${IMAGE#ghcr.io/}
-          # The anonymous token the registry hands anyone who asks; none at all is asked as none.
-          token=$(curl -sS --max-time 30 "https://ghcr.io/token?scope=repository:$repository:pull" | jq -r '.token // empty' || true)
-          anonymous=()
-          if [ -n "$token" ]; then anonymous=(-H "Authorization: Bearer $token"); fi
-          for arch in amd64 arm64; do
-            digest=$(cat "$RUNNER_TEMP/digests/$arch")
-            status=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
-              "${anonymous[@]}" \
-              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
-              "https://ghcr.io/v2/$repository/manifests/$digest")
-            case "$status" in
-              401|403|404) echo "$arch: an anonymous pull is refused ($status)" ;;
-              200) echo "::error::$IMAGE@$digest can be pulled without signing in: the package is public. Make it private in the organisation's package settings; it is published only on the operator's ruling."; exit 1 ;;
-              *) echo "::error::the registry answered an anonymous pull with $status, so this run cannot show the package is private"; exit 1 ;;
-            esac
-          done
+          state=$(node tools/runner-image-registry.mjs visibility)
+          if [ "$state" != private ]; then
+            echo "::error::the package is $state, not private"
+            exit 1
+          fi
+          node tools/runner-image-registry.mjs anonymous \
+            "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")"
 
-      - name: One index for both architectures, tagged main and sha-<commit>
+      # `main` only moves forward, as the dev channel does (`tools/dev-build-order.mjs`): `ci`
+      # runs end out of commit order, so the image of an older commit can finish last. It is
+      # still tagged `sha-<commit>` and signed; `main` stays on the later one.
+      - name: One index for both architectures, tagged sha-<commit>, and main when it moves forward
         id: index
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          docker buildx imagetools create \
-            --tag "$IMAGE:main" \
-            --tag "$IMAGE:sha-$SHA" \
+          order=$(node tools/runner-image-registry.mjs order "$SHA")
+          echo "$order"
+          tags=(--tag "$IMAGE:sha-$SHA")
+          case "$order" in
+            main:*) tags+=(--tag "$IMAGE:main") ;;
+            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }" ;;
+            *) echo "::error::tools/runner-image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
+          esac
+          docker buildx imagetools create "${tags[@]}" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")"
           digest=$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest}}' | jq -r .digest)
@@ -328,6 +378,7 @@ jobs:
             exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          case "$order" in main:*) echo "main=true" ;; *) echo "main=false" ;; esac >> "$GITHUB_OUTPUT"
 
       # Keyless: the certificate names this workflow on `main` as the signer, and the
       # signature goes in Sigstore's public transparency log. `--recursive` signs each
@@ -349,8 +400,11 @@ jobs:
       - name: Record the digest
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
+          MAIN: ${{ steps.index.outputs.main }}
         run: |
           set -euo pipefail
+          tags="\`sha-$SHA\`"
+          if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
           mkdir -p "$RUNNER_TEMP/record"
           echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/runner-image.txt"
           {
@@ -358,7 +412,7 @@ jobs:
             echo
             echo "\`$IMAGE@$DIGEST\`"
             echo
-            echo "Commit \`$SHA\`, tagged \`main\` and \`sha-$SHA\`, linux/amd64 and linux/arm64, signed and verified."
+            echo "Commit \`$SHA\`, tagged $tags, linux/amd64 and linux/arm64, signed and verified."
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

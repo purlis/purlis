@@ -11,8 +11,10 @@
 //! - the workflow grants nothing, the compile holds no write permission, the image jobs may
 //!   write packages and nothing more, and only `index` may mint the OIDC token cosign signs
 //!   with; no job restores a cache, since what it builds is signed;
-//! - nothing is pushed, tagged or signed except on a publishing run, and nothing is tagged
-//!   or signed before the contract passed and the images were shown private;
+//! - nothing is pushed, tagged or signed except on a publishing run; nothing is pushed into a
+//!   package the packages API does not show private; nothing is tagged or signed before the
+//!   contract passed and the images were shown private again;
+//! - `main` is tagged only when `tools/runner-image-registry.mjs order` says it moves forward;
 //! - each base image is pinned by digest, and each image's user is a number other than 0.
 
 mod workflow;
@@ -127,7 +129,7 @@ fn a_pull_request_runs_it_only_when_the_image_files_change() {
         paths,
         [
             "runner-image/**",
-            "tools/runner-image-contract.*",
+            "tools/runner-image-*",
             ".github/workflows/runner-image.yml"
         ]
     );
@@ -157,7 +159,11 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
     );
     assert_eq!(
         job_named(&jobs, "index", FILE).permissions(),
-        Some(pairs(&[("id-token", "write"), ("packages", "write")]))
+        Some(pairs(&[
+            ("contents", "read"),
+            ("id-token", "write"),
+            ("packages", "write")
+        ]))
     );
     let minting: Vec<&str> = jobs
         .iter()
@@ -253,6 +259,24 @@ fn the_contract_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
         "{push} {pull} {contract} {record}"
     );
     assert!(example < record);
+    let private = position(&|s| {
+        s[0].contains("name: The package is private before anything of purlis is pushed")
+    });
+    assert_eq!(
+        step_condition(&steps[private]),
+        Some("env.PUBLISH == 'true'")
+    );
+    assert!(
+        run_lines(&steps[private])
+            .iter()
+            .any(|l| l == "state=$(node tools/runner-image-registry.mjs visibility)"),
+        "{:#?}",
+        steps[private]
+    );
+    assert!(
+        private < push,
+        "the package is shown private before the push"
+    );
 
     let index = job_named(&jobs, "index", FILE);
     let steps = index.steps();
@@ -268,6 +292,27 @@ fn the_contract_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
     let verify = named("The signature verifies");
     let record = named("Record the digest");
     assert!(private < tag && tag < sign && sign < verify && verify < record);
+    let checks = run_lines(&steps[private]);
+    assert!(
+        checks.contains(&"state=$(node tools/runner-image-registry.mjs visibility)".to_owned())
+            && checks.contains(&"node tools/runner-image-registry.mjs anonymous \\".to_owned()),
+        "{checks:#?}"
+    );
+    let tagging = run_lines(&steps[tag]);
+    assert!(
+        tagging
+            .contains(&"order=$(node tools/runner-image-registry.mjs order \"$SHA\")".to_owned()),
+        "{tagging:#?}"
+    );
+    let main_tags: Vec<&String> = tagging
+        .iter()
+        .filter(|l| l.contains("$IMAGE:main"))
+        .collect();
+    assert_eq!(
+        main_tags,
+        [&"main:*) tags+=(--tag \"$IMAGE:main\") ;;".to_owned()],
+        "`main` is tagged only when the order check says it moves forward"
+    );
     assert_eq!(
         run_lines(&steps[sign]),
         ["cosign sign --yes --recursive \"$IMAGE@$DIGEST\""],
