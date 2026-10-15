@@ -459,6 +459,9 @@ pub struct Chats {
     /// Every open sandboxed Claude Code chat's project settings files, watched and screened
     /// again on each change (ADR 0067 as amended 2026-10-16, [`crate::projectsettings`]).
     project_settings: crate::projectsettings::Watch,
+    /// The size each open chat's terminal was last given: what a restart the core drives itself
+    /// starts it at ([`Self::restart_for_project_settings`]).
+    sizes: Mutex<HashMap<u32, Size>>,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
     /// Why each chat that runs with no sandbox where the floor could not be applied does
     /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
@@ -912,6 +915,7 @@ impl Chats {
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
+            sizes: Mutex::new(HashMap::new()),
             floorless: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
@@ -1618,6 +1622,28 @@ impl Chats {
             session,
             purlis_core::harness::claude::project::RESCREENED.to_owned(),
         );
+    }
+
+    /// **Restarts chat `session` because its project settings no longer pass** (ADR 0067 as
+    /// amended 2026-10-16), at the size its terminal was last given, whether or not a window
+    /// is there to drive it. The caller ends the old run, in the new one's place or alone where
+    /// this is refused.
+    pub fn restart_for_project_settings(&self, session: u32) -> Result<u32, String> {
+        self.project_settings_changed(session);
+        let size = lock(&self.sizes).get(&session).copied().unwrap_or(Size {
+            columns: 80,
+            rows: 24,
+        });
+        self.restart(session, size)
+    }
+
+    /// Resizes chat `session`'s terminal, and keeps the size for a restart the core drives.
+    pub fn resize(&self, session: u32, size: Size) -> Result<(), String> {
+        self.sessions.resize(session, size)?;
+        if lock(&self.open).contains_key(&session) {
+            lock(&self.sizes).insert(session, size);
+        }
+        Ok(())
     }
 
     /// Every watched chat's project settings, screened again now.
@@ -2771,6 +2797,7 @@ impl Chats {
                 },
             },
         );
+        lock(&self.sizes).insert(session, size);
         if let Some(Ok(cwd)) = &settings_watched {
             self.project_settings.chat(session, cwd);
         }
@@ -2789,6 +2816,7 @@ impl Chats {
         lock(&self.starting_as).remove(&session);
         let gone = lock(&self.open).remove(&session);
         self.project_settings.forget(session);
+        lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
         lock(&self.told).remove(&session);
@@ -6927,6 +6955,23 @@ pub(crate) mod tests {
         chats.screen_project_settings_again();
         assert_eq!(*lock(&told), [session]);
         chats.close(started).expect("ends");
+    }
+
+    #[test]
+    fn a_change_caught_as_the_chat_is_first_screened_is_contained_too() {
+        // Between its arming and its first screen: the start loaded the files, and they changed.
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, _host, told) = chats_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(*lock(&told), [session]);
+        assert_eq!(chats.owed_restarts(), [session]);
+        chats.close(session).expect("ends");
     }
 
     #[test]

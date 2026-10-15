@@ -112,3 +112,82 @@ fn a_chat_forgotten_is_told_nothing() {
     std::thread::sleep(Duration::from_millis(1000));
     assert!(told.lock().expect("told").is_empty());
 }
+
+#[test]
+fn a_file_renamed_over_the_settings_is_heard() {
+    // How an editor saves, and how a checkout writes a file.
+    let dir = tempfile::tempdir().expect("a project");
+    write(dir.path(), KEPT);
+    let (watch, told) = telling();
+    watch.prepare(dir.path()).expect("watched");
+    watch.chat(4, dir.path());
+    let saved = dir.path().join(".claude/.settings.json.tmp");
+    std::fs::write(&saved, NOT_KEPT).expect("written beside it");
+    std::fs::rename(&saved, dir.path().join(".claude/settings.json")).expect("renamed over it");
+    assert!(told_within(&told, 4));
+}
+
+#[test]
+fn a_settings_folder_taken_away_and_made_again_is_still_watched() {
+    // As a checkout of a branch without it, and back, does.
+    let dir = tempfile::tempdir().expect("a project");
+    write(dir.path(), KEPT);
+    let (watch, told) = telling();
+    watch.prepare(dir.path()).expect("watched");
+    watch.chat(6, dir.path());
+    std::fs::remove_dir_all(dir.path().join(".claude")).expect("taken away");
+    std::thread::sleep(Duration::from_millis(1000));
+    write(dir.path(), KEPT);
+    std::thread::sleep(Duration::from_millis(1000));
+    assert!(told.lock().expect("told").is_empty(), "it passed each time");
+    // A later change inside the folder made again is heard.
+    std::fs::write(dir.path().join(".claude/settings.json"), NOT_KEPT).expect("written");
+    assert!(told_within(&told, 6));
+}
+
+#[test]
+fn the_local_file_at_the_top_of_the_repository_is_watched() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let repo = dir.path().join("repo");
+    let chat = repo.join("src");
+    std::fs::create_dir_all(repo.join(".git")).expect("a repository");
+    std::fs::create_dir_all(repo.join(".claude")).expect(".claude");
+    std::fs::create_dir_all(&chat).expect("the chat's folder");
+    let (watch, told) = telling();
+    watch.prepare(&chat).expect("watched");
+    watch.chat(8, &chat);
+    std::fs::write(repo.join(".claude/settings.local.json"), NOT_KEPT).expect("written");
+    assert!(told_within(&told, 8));
+}
+
+#[test]
+fn reads_and_other_files_are_not_screened_for() {
+    use notify::event::{AccessKind, CreateKind, EventKind};
+    let event = |kind: EventKind, path: &str| {
+        Ok(notify::Event {
+            kind,
+            paths: vec![PathBuf::from(path)],
+            attrs: notify::event::EventAttributes::new(),
+        })
+    };
+    assert!(!screened_for(&event(
+        EventKind::Access(AccessKind::Any),
+        "/p/.claude/settings.json"
+    )));
+    assert!(!screened_for(&event(
+        EventKind::Create(CreateKind::File),
+        "/p/README.md"
+    )));
+    for path in [
+        "/p/.claude",
+        "/p/.CLAUDE",
+        "/p/.claude/settings.json",
+        "/p/.claude/Settings.Local.json",
+    ] {
+        assert!(
+            screened_for(&event(EventKind::Create(CreateKind::Any), path)),
+            "{path}"
+        );
+    }
+    assert!(screened_for(&Err(notify::Error::generic("lost"))));
+}

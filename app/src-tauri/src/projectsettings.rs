@@ -8,9 +8,10 @@
 //! what a chat keeps (`purlis_core::harness::claude::project`). That is decided at its start,
 //! and the files can change while it runs: a pull or a save of the window's, or the person's
 //! own editor. So each such chat's files are watched from before it starts, and screened again
-//! on every change. One that no longer passes is told ([`Told`]): the chat is owed a restart
-//! on its conversation, which starts it on the person's settings and purlis's, with the same
-//! Notice a start gives. One that still passes is left as it is.
+//! on every change. One that no longer passes is told ([`Told`]): the core starts the chat again
+//! on its conversation at once, on the person's settings and purlis's, with the same Notice a
+//! start gives, or ends it where it cannot be started again; the window only redraws. One that
+//! still passes is left as it is.
 //!
 //! **Fail closed.** Where the watch cannot be set up, the chat is not started on its project's
 //! files at all ([`Watch::prepare`] refuses, and the start limits it).
@@ -31,21 +32,64 @@ use crate::planes::PlaneId;
 const SETTLING: std::time::Duration = std::time::Duration::from_millis(150);
 
 /// The longest a run of changes is waited out before the files are screened anyway.
-const SETTLED_AT_MOST: std::time::Duration = std::time::Duration::from_secs(2);
+const SETTLED_AT_MOST: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// The names whose change is screened: a settings folder and the files in it, in any case.
+const NAMES: [&str; 3] = [".claude", "settings.json", "settings.local.json"];
+
+/// Whether `event` is one the files are screened again for: a change to a name of [`NAMES`],
+/// never a read or an open. An error says nothing of what changed, so it is screened for.
+fn screened_for(event: &notify::Result<notify::Event>) -> bool {
+    let Ok(event) = event else {
+        return true;
+    };
+    if matches!(event.kind, notify::EventKind::Access(_)) {
+        return false;
+    }
+    event.paths.is_empty()
+        || event.paths.iter().any(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| NAMES.iter().any(|one| one.eq_ignore_ascii_case(name)))
+        })
+}
+
+/// What a folder listened to is on disk: its device and inode where the system says, so a folder
+/// taken away and made again is listened to again.
+fn identity(folder: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        std::fs::metadata(folder)
+            .ok()
+            .map(|meta| (meta.dev(), meta.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::metadata(folder).ok().map(|_| (0, 0))
+    }
+}
 
 /// The event the window hears a chat's project settings changed on.
 pub const EVENT: &str = "chat-project-settings-changed";
 
-/// **A chat whose project's Claude Code settings changed so that it no longer loads them**, as
-/// the window hears it: it is owed a restart, which the window drives at once.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
-pub struct Rescreened {
-    pub plane: PlaneId,
-    pub session: u32,
+/// **A chat the core started again, or ended, because its project's Claude Code settings no
+/// longer pass**, as the window redraws it.
+#[derive(serde::Serialize, specta::Type)]
+pub(crate) struct Rescreened {
+    pub(crate) plane: PlaneId,
+    /// The chat as it was.
+    pub(crate) session: u32,
+    /// The chat started again in its place, as the window draws it; none where it was ended.
+    pub(crate) chat: Option<crate::OpenChat>,
+    /// What the new run's start found to say on its tab.
+    pub(crate) notices: Vec<String>,
+    /// Why it could not be started again, and was ended: said on its tab.
+    pub(crate) ended: Option<String>,
 }
 
 /// Told each [`Rescreened`], as the window shows it.
-pub type Teller = Arc<dyn Fn(Rescreened) + Send + Sync + 'static>;
+pub(crate) type Teller = Arc<dyn Fn(Rescreened) + Send + Sync + 'static>;
 
 /// Told the number of each chat whose project's settings no longer pass.
 pub type Told = Arc<dyn Fn(u32) + Send + Sync + 'static>;
@@ -61,8 +105,11 @@ struct Inner {
     /// Whether a watcher could not be made: every prepare is refused then.
     unmade: bool,
     chats: HashMap<u32, Watched>,
-    /// Each folder listened to.
-    listened: BTreeSet<PathBuf>,
+    /// Each folder listened to, and what it was on disk when it was.
+    listened: HashMap<PathBuf, Option<(u64, u64)>>,
+    /// Run as a chat is watched, before it is screened: for a test to change its files then.
+    #[cfg(test)]
+    before_chat: Option<Box<dyn Fn() + Send>>,
 }
 
 /// The watch of every open sandboxed Claude Code chat's project settings files.
@@ -97,6 +144,12 @@ impl Watch {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Runs `before` once, as the next chat is watched and before it is screened.
+    #[cfg(test)]
+    pub fn changing_before_the_next_chat(&self, before: impl Fn() + Send + 'static) {
+        self.lock().before_chat = Some(Box::new(before));
     }
 
     /// Who is told, from now on, each chat whose project settings no longer pass.
@@ -146,8 +199,10 @@ impl Watch {
             let made = screening
                 .map_err(|why| notify::Error::generic(&why.to_string()))
                 .and_then(|_| {
-                    notify::recommended_watcher(move |_: notify::Result<notify::Event>| {
-                        let _ = changed.send(());
+                    notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                        if screened_for(&event) {
+                            let _ = changed.send(());
+                        }
                     })
                 });
             match made {
@@ -167,8 +222,25 @@ impl Watch {
     /// Listens to every folder `cwd`'s settings files are in, and the one above each.
     fn listen(inner: &mut Inner, cwd: &Path) -> Result<(), String> {
         for folder in folders(cwd) {
-            if inner.listened.contains(&folder) || !folder.is_dir() {
+            let now = identity(&folder);
+            if now.is_none() {
+                // Gone: listened to afresh when it is made again.
+                inner.listened.remove(&folder);
                 continue;
+            }
+            // inotify lets go of a folder's watch when the folder goes, and a folder made again
+            // may take the same inode, so on Linux each is listened to again at every screen,
+            // which inotify takes as a no-op while its watch stands. Elsewhere, a folder is
+            // listened to again when it is not what it was.
+            let again = cfg!(target_os = "linux");
+            match inner.listened.get(&folder) {
+                Some(was) if *was == now && !again => continue,
+                Some(was) if *was != now => {
+                    if let Some(watcher) = inner.watcher.as_mut() {
+                        let _ = watcher.unwatch(&folder);
+                    }
+                }
+                _ => {}
             }
             let Some(watcher) = inner.watcher.as_mut() else {
                 return Err("no watcher could be made".to_owned());
@@ -176,7 +248,7 @@ impl Watch {
             watcher
                 .watch(&folder, RecursiveMode::NonRecursive)
                 .map_err(|why| format!("{} cannot be watched ({why})", folder.display()))?;
-            inner.listened.insert(folder);
+            inner.listened.insert(folder, now);
         }
         Ok(())
     }
@@ -184,6 +256,13 @@ impl Watch {
     /// Chat `session`, started in `cwd` on its project's files, is watched from now: and
     /// screened at once, so a change since [`Self::prepare`] is not missed.
     pub fn chat(&self, session: u32, cwd: &Path) {
+        #[cfg(test)]
+        {
+            let before = self.lock().before_chat.take();
+            if let Some(before) = before {
+                before();
+            }
+        }
         self.lock().chats.insert(
             session,
             Watched {
@@ -204,7 +283,12 @@ impl Watch {
             .values()
             .flat_map(|chat| folders(&chat.cwd))
             .collect();
-        let gone: Vec<PathBuf> = inner.listened.difference(&needed).cloned().collect();
+        let gone: Vec<PathBuf> = inner
+            .listened
+            .keys()
+            .filter(|folder| !needed.contains(*folder))
+            .cloned()
+            .collect();
         for folder in gone {
             if let Some(watcher) = inner.watcher.as_mut() {
                 let _ = watcher.unwatch(&folder);

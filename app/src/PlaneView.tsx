@@ -5136,20 +5136,31 @@ export const PlaneView = memo(function PlaneView({
     [plane, chatRestarted],
   );
   /**
-   * **A chat whose project's Claude Code settings changed so that it no longer loads them**
-   * (ADR 0067 as amended 2026-10-16): the core owes it a restart on its conversation, and it is
-   * restarted at once, as Restart now does, never left to its next pause. Filtered on the plane,
-   * as `chat-moved` is.
+   * **A chat the core started again, or ended, because its project's Claude Code settings no
+   * longer pass** (ADR 0067 as amended 2026-10-16): the core has done it already, whatever this
+   * window was doing, and the window only redraws, as after its own restart. Filtered on the
+   * plane, as `chat-moved` is.
    */
-  // Read through a ref, so the listener is set up once for the plane and never again as the
-  // restart step is made anew.
-  const restartAtOnce = useRef<(session: number) => void>(() => undefined);
+  const redrawRescreened = useRef<(told: Rescreened) => void>(() => undefined);
   useEffect(() => {
-    restartAtOnce.current = (session: number) => {
-      oweRestart(session);
-      restartOwed(session);
+    redrawRescreened.current = (told: Rescreened) => {
+      setOwedRestarts((owed) => owed.filter((one) => one !== told.session));
+      setRestartNotYet((was) => withoutKey(was, told.session));
+      if (told.chat !== null) {
+        const chat = told.chat;
+        setRestartTrouble((was) => withoutKey(was, told.session));
+        chatRestarted(told.session, chat);
+        if (told.notices.length > 0)
+          setStartNotes((was) => ({
+            ...was,
+            [chat.session]: { notes: told.notices, agentsMd: [] },
+          }));
+      } else if (told.ended !== null) {
+        const why = told.ended;
+        setRestartTrouble((was) => ({ ...was, [told.session]: why }));
+      }
     };
-  }, [oweRestart, restartOwed]);
+  }, [chatRestarted]);
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;
@@ -5158,7 +5169,7 @@ export const PlaneView = memo(function PlaneView({
         const unlisten = await listen<Rescreened>("chat-project-settings-changed", (event) => {
           const told = event.payload;
           if (gone || told.plane !== plane) return;
-          restartAtOnce.current(told.session);
+          redrawRescreened.current(told);
         });
         if (gone) unlisten();
         else stop = unlisten;

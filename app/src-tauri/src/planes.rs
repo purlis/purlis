@@ -1131,6 +1131,41 @@ impl Held {
         Ok(started)
     }
 
+    /// **Chat `session`'s project settings no longer pass** (ADR 0067 as amended 2026-10-16):
+    /// started again in its place now, by the core, whatever the window is doing. What it asked
+    /// the person is refused (the asks were the old run's), a stop of it gives way, and the new
+    /// run starts on the person's settings and purlis's. Where it cannot be started again (no
+    /// conversation to resume, a start refused), the old run is ended all the same, and why is
+    /// answered for its tab.
+    pub fn contain_project_settings(&self, session: u32) -> Result<u32, String> {
+        for ask in self
+            .asks()
+            .asks
+            .into_iter()
+            .filter(|ask| ask.session == session)
+        {
+            if let Err(why) = self.answer_ask(session, &ask.ask, "deny") {
+                tracing::warn!("purlis: chat {session}'s ask was not refused ({why})");
+            }
+        }
+        match self.chats.restart_for_project_settings(session) {
+            Ok(started) => {
+                self.in_its_place(session, started);
+                Ok(started)
+            }
+            Err(why) => {
+                if let Err(ended) = self.end_chat(session) {
+                    tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
+                }
+                Err(format!(
+                    "This project's Claude Code settings changed and a sandboxed chat does not \
+                     load them as they are now, so purlis ended this chat: it could not be \
+                     started again on its conversation ({why}). Start it again to go on."
+                ))
+            }
+        }
+    }
+
     /// **A chat the person is stopping is not started again** (#1448): a restart gives it a new
     /// number, which would take it out of its stop with nobody told.
     fn not_while_stopping(&self, session: u32) -> Result<(), String> {
@@ -2334,7 +2369,7 @@ impl Planes {
     /// Tells `told` each chat, in a plane this registry holds, whose project's Claude Code
     /// settings changed so that it no longer loads them, so the window restarts it (ADR 0067 as
     /// amended 2026-10-16).
-    pub fn telling_project_settings(mut self, told: crate::projectsettings::Teller) -> Self {
+    pub(crate) fn telling_project_settings(mut self, told: crate::projectsettings::Teller) -> Self {
         self.project_settings = told;
         self
     }
@@ -2795,18 +2830,28 @@ impl Planes {
                 });
             })
         });
-        // A chat whose project's Claude Code settings no longer pass is owed its restart, and
-        // the window is told to drive it (ADR 0067 as amended 2026-10-16). Weak for the
-        // handoff's reason.
+        // A chat whose project's Claude Code settings no longer pass is started again by the
+        // core itself, or ended, and the window is told to redraw it (ADR 0067 as amended
+        // 2026-10-16). Weak for the handoff's reason.
         held.chats().tell_project_settings_to({
             let weak = Arc::downgrade(&held);
             let (plane, told) = (id.clone(), Arc::clone(&self.project_settings));
             Arc::new(move |session| {
                 if let Some(strong) = weak.upgrade() {
-                    strong.chats().project_settings_changed(session);
+                    let (chat, notices, ended) = match strong.contain_project_settings(session) {
+                        Ok(started) => (
+                            crate::drawn(&strong, started).ok(),
+                            strong.chats().start_notes(started),
+                            None,
+                        ),
+                        Err(why) => (None, Vec::new(), Some(why)),
+                    };
                     told(crate::projectsettings::Rescreened {
                         plane: plane.clone(),
                         session,
+                        chat,
+                        notices,
+                        ended,
                     });
                 }
             })
@@ -7623,6 +7668,80 @@ mod tests {
             ),
         );
         (program.display().to_string(), ready, typed)
+    }
+
+    /// Raises a permission ask on chat `chat`, as its harness's hook does.
+    fn an_ask_open_on(held: &Held, chat: u32) {
+        held.hooks()
+            .asks()
+            .raise(
+                &chat.to_string(),
+                purlis_core::harness::hooked::Source::ClaudeCode,
+                &serde_json::json!({
+                    "hook_event_name": "PermissionRequest",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "npm test"},
+                }),
+                std::time::Instant::now(),
+            )
+            .expect("the ask is held for the window");
+        assert!(held.asks_open_for(chat));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_chat_whose_project_settings_stop_passing_is_started_again_by_the_core_with_no_window() {
+        // ADR 0067 as amended 2026-10-16: no window is open here, and an ask of the old run's
+        // is still open; the core starts it again in its place all the same.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("plane"));
+        let (planes, _told) = planes_telling();
+        let held = planes.held(&planes.open(&root)).expect("it is held");
+        let (chat, _) = a_claude_stand_in(&held, dir.path(), "chat", None);
+        an_ask_open_on(&held, chat);
+
+        let started = held
+            .contain_project_settings(chat)
+            .expect("started again on its conversation");
+        assert!(!held.asks_open_for(chat), "the old run's ask is refused");
+        let open: Vec<u32> = held
+            .chats()
+            .open_now()
+            .iter()
+            .map(|one| one.session)
+            .collect();
+        assert!(open.contains(&started) && !open.contains(&chat), "{open:?}");
+        held.close_chat(started).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_chat_that_cannot_start_again_for_its_project_settings_is_ended_and_says_why() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("plane"));
+        let (planes, _told) = planes_telling();
+        let held = planes.held(&planes.open(&root)).expect("it is held");
+        // A program with no conversation to resume.
+        let (program, ready, _) = a_harness_writing_down_its_input(dir.path());
+        let session = held
+            .chats()
+            .start(&one_chat_on(&program).chats[0], STARTING)
+            .expect("it starts");
+        assert!(becomes(|| ready.exists()), "the stand-in never started");
+        an_ask_open_on(&held, session);
+
+        let why = held
+            .contain_project_settings(session)
+            .expect_err("nothing to start again on");
+        assert!(why.contains("ended this chat"), "{why}");
+        assert!(!held.asks_open_for(session));
+        assert!(
+            held.chats()
+                .open_now()
+                .iter()
+                .all(|one| one.session != session),
+            "the old run does not go on"
+        );
     }
 
     #[cfg(unix)]

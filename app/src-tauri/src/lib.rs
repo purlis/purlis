@@ -2598,7 +2598,6 @@ fn resize_session(
     planes
         .held(&plane)?
         .chats()
-        .sessions()
         .resize(session, Size { columns, rows })
 }
 

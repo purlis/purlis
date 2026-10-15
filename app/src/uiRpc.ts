@@ -7033,12 +7033,19 @@ export type RepoStates = {
 };
 
 /**
- *  **A chat whose project's Claude Code settings changed so that it no longer loads them**, as
- *  the window hears it: it is owed a restart, which the window drives at once.
+ *  **A chat the core started again, or ended, because its project's Claude Code settings no
+ *  longer pass**, as the window redraws it.
  */
 export type Rescreened = {
 	plane: PlaneId,
+	/**  The chat as it was. */
 	session: number,
+	/**  The chat started again in its place, as the window draws it; none where it was ended. */
+	chat: OpenChat | null,
+	/**  What the new run's start found to say on its tab. */
+	notices: string[],
+	/**  Why it could not be started again, and was ended: said on its tab. */
+	ended: string | null,
 };
 
 /**  [`purlis_core::restartends::Ends`], as the window reads it. */
