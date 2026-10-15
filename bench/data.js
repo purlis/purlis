@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792045816692,
+  "lastUpdate": 1792048225687,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12012,6 +12012,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9511965,
             "unit": "ms",
             "extra": "median of 5 runs: 99.886, 100.661, 101.951, 103.003, 103.552 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99c1d670b0dca249d3fa584e4a12bf45ebaf9ebc",
+          "message": "feat(sandbox): your confirmed level off starts the chat without the sandbox (#2071, wiring part 1) (#2122)\n\n* feat(sandbox): your confirmed level off starts the chat without the sandbox\n\nA chat's start reads your own level through sandbox::your_level: personal::in_force (what\nyou set or confirmed in Settings on this machine, never the file's word alone), bounded by\npolicy. A confirmed off, for the project or the chat's persona, starts the chat as \"Start\nwithout the sandbox\" does: every class lifted, audited as the person's (by: your-level),\ncounted as an opt-out, its folder check skipped, and its tab says \"No sandbox — your\nsetting\". An off a chat wrote into purlis.local.toml changes nothing. on and floor start the\nfull sandbox until the floor lands, and the Settings page says so. A policy that forbids the\nopt-out forbids off too; sandbox::bounded is the seam the team policy plugs into.\n\nAdds the test that no harness lets a sandboxed chat write this machine's sandbox-grants.\n\nPart of #2071 (part 1 of the wiring).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(#2122): a start a chat asks for runs at the stricter of the two levels, and the audit says how it was made\n\n- Every start says how it was made (sandbox::Made: the window, a resume, a relaunch, or asked\n  for by another chat, naming its persona from the app's record). sandbox::your_level reads a\n  start another chat asked for, a dispatch under a grant or not or a handoff, at the stricter\n  of the asking chat's level and the target's, at its first start and every later one. A start\n  that does not say how it was made, or whose asker the record cannot name, never takes off.\n- The your-level audit names how the start was made and who made it: the person in the window,\n  purlis for a relaunch, a chat for one a chat asked for.\n- A chat that names no persona takes the project's level, never the default persona's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* review(#2122): a chat asked for is held to the strictest level across the whole chain that asked\n\nMade::Asked carries the chain of chats above the new one, nearest first, the chat the person\nstarted last, from the app's record (dispatchdecision::chain_asking at a dispatch or handoff,\nthe record's own chain at every later start). sandbox::your_level holds the new chat to the\nstrictest level across that chain, so a chat reaches no further than any chat above it,\nhowever many hops away. An unknown or empty chain never takes off. A chain entry naming the\ndefault persona, which stands for a chat on none, is held to the project's level too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(sandbox): your confirmed level off lifts the floor too, through the same seam\n\nWith the floor (#2081) the default where a project has not turned the full sandbox on, a\nstart there reads your level through the same seam (sandbox::yours_lifted, your_level,\nbounded) as one in a project at the full sandbox: a confirmed off, held to the chain of chats\nthat asked, starts the chat without the sandbox; anything else starts it at the floor. The\nSettings page, ADR 0096 §8, the plane-format row and the fragment say where Floor and Full\nsandbox start now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T11:09:13+04:00",
+          "tree_id": "7a740c06f30cab8e2043c775b23900e7fde5d1c6",
+          "url": "https://github.com/purlis/purlis/commit/99c1d670b0dca249d3fa584e4a12bf45ebaf9ebc"
+        },
+        "date": 1792048224802,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48645499999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.471, 0.472, 0.486, 0.488, 0.517 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.33374,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.116, 16.301, 16.334, 16.487, 16.554 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7433465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.581, 100.728, 101.743, 102.876, 103.545 ms"
           }
         ]
       }
