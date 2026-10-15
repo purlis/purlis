@@ -1134,17 +1134,21 @@ fn a_chat_dispatched_by_another_chat_starts_where_its_asker_runs(target: &Target
     let asker = a_chat_on_the_board(
         target,
         &a_shell(&format!(
-            "printf 'Look at the queue.' | '{}' dispatch --name 'look at the queue'; \
+            "cd '{}' && printf 'Look at the queue.' | '{}' dispatch --name 'look at the queue'; \
              printf 'dispatched.'; read line",
+            target.root.display(),
             purlis()
         )),
     );
 
-    Pane::on(target, asker).shows("dispatched.");
-    let task = opened
-        .lock()
-        .expect("the task")
-        .expect("the dispatch started a chat");
+    let pane = Pane::on(target, asker);
+    pane.shows("dispatched.");
+    let task = opened.lock().expect("the task").unwrap_or_else(|| {
+        panic!(
+            "the dispatch started no chat; the asker's pane drew {:?}",
+            pane.seen.lock().expect("the pane")
+        )
+    });
     Pane::on(target, task).shows("TASK-READY");
     if let Some(host) = &target.host {
         let listed = host
