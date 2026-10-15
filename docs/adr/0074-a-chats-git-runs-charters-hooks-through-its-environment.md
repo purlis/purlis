@@ -176,17 +176,6 @@ waits on keystroke by keystroke.
 | the app's `Opening::git_hooks` | which chats are armed: every chat on a harness, no shell |
 | `docs/plane-format.md` | `<app data>/git-hooks/`, Machine, device-bound, rebuildable |
 
-## Ruled (V26, 2026-10-01)
-
-The operator accepted both recommendations:
-
-1. **V26a: a refused commit's needs-you item clears on the chat's next prompt,** the way a
-   report back does. The audit chain (AU-1, ADR 0075) is the lasting record of a refusal, not
-   the queue.
-2. **V26b: `git cherry-pick`, `git rebase` and `git am` are not scanned for now.** This is a
-   recorded gap: they mostly replay commits that were already scanned, and a check that could
-   only warn after the fact adds noise without a guarantee.
-
 ## The message hook (amended 2026-10-03, V67, GL-8)
 
 **A third hook starts `purlis`: `commit-msg`, which stamps an agent's own commit with its
@@ -315,3 +304,10 @@ made in their own terminal, which is not armed, or one `cherry-pick`, `rebase` o
 | `charter_core::diffscan::pushed` | the commits a push sends, scanned |
 | `purlis git-hook pre-push` | the refusal |
 | `charter_core::commitguard` | `git push --no-verify` and its prefixes, `git send-pack` |
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0074/`](0074/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

@@ -207,15 +207,6 @@ would only bring back a snapshot of a chat that is gone.
   foreign file. A chat without the file still has its hook briefing.
 - **The whole briefing.** See §2.
 
-## Ruled (V34d, V35, 2026-10-01)
-
-- **V34d.** purlis may write a git-excluded, redacted `AGENTS.md` into a chat's own worktree when the repository has none. It never writes one into a shared clone, and it steps aside when the repository has its own. This reverses `docs/plane-format.md`'s "purlis writes no project-instructions file". The operator confirmed it directly on 2026-10-01.
-- **V35.** The file is hidden by a line in the common `info/exclude`, the way the rest of the guest layer is hidden. `purlis doctor` and every chat start report an untracked `AGENTS.md` that purlis's line hides and purlis did not write. Two alternatives are rejected:
-  - (b) worktreeConfig, because it changes the repository's configuration and drops the operator's own global ignores;
-  - (c) no exclude, because the file would sit one command from a commit.
-
-  (d), no file, is also rejected.
-
 ## Later decisions
 
 - **NO-4 (#1231, 2026-10-05): Open file and Move aside… for the `AGENTS.md` V35 reports.** The
@@ -233,3 +224,10 @@ would only bring back a snapshot of a chat that is gone.
     file is refused.
 
   A file that fails any of these is refused here. It opens only where the general rule allows.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0085/`](0085/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

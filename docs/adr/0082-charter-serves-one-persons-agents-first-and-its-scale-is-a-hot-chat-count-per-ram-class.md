@@ -295,10 +295,9 @@ The code does not change with this record.
    measurement ticket still to be filed, read at each planning pass. §6's table sorts the SC
    tickets by what their own rows say.
 
-## Decided (dispatcher, 2026-10-01)
+## Amendments
 
-- **D-0082a:** Q1's "about 50" is the count for the top RAM class. This applies V8; it does not
-  amend Q1.
-- **D-0082b:** no public scale number is published until SC-8 and a release measurement confirm
-  it. **This record does not own publishing.** The ticket that writes the product's public copy
-  does, and it holds to this rule.
+The amendments to this decision are files of their own in [`0082/`](0082/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

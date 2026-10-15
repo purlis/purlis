@@ -155,6 +155,14 @@ A change to a decision that is already recorded goes through a new record in
 [`docs/adr/`](docs/adr/). Read the records near what you are changing first: they say why
 things are the way they are.
 
+An amendment to a record is a file of its own, as a changelog entry is a fragment:
+`docs/adr/<NNNN>/<yyyy-mm-dd>-<slug>.md`, its first line the amendment's `# ` heading. The
+record links to its folder and lists nothing, so two pull requests that amend the same record
+add two files and never conflict; the docs site lists the folder under the record, in the order
+of the names. Amendments of one day read in name order; where that order matters, start the slug
+with a two-digit number (`2026-10-14-02-…`). Adding a dated `## Amended …` section to a record
+fails CI (`tools/adr-amendments.mjs`).
+
 ### How maintainers land work: trains
 
 A pull request from outside the maintainers is reviewed and merged on its own, as above.

@@ -466,17 +466,9 @@ The code does not change with this record.
 - **Stopping every agent when the cap is reached.** A full disk would become the product's most
   common outage. An org may choose it later through policy.
 
-## Ruled (V25, 2026-10-01)
+## Amendments
 
-The operator accepted all five questions as recommended:
-
-1. **V25a: the audit lives in purlis's data home, `<data>`.** ADR 0069 §1 gains it as a fourth
-   Machine location.
-2. **V25b: retention defaults are one year and 2 GiB.** A segment is pruned only once a checkpoint
-   covers it and, where a sink exists, once the sink has it. When none qualifies, the store grows
-   past the cap with an alert. P3-24's "kept until exported" is rejected.
-3. **V25c: AU-18 moves ahead of AU-3 and of any write to the audit store**, to `Next ★`. Until then
-   ADR 0067's and ADR 0070's writers keep their current behaviour.
-4. **V25d: E9 is narrowed, and telemetry may read the event log.** An extension's CPU and memory
-   are telemetry, and its capability use and crashes are audit. Telemetry may derive its OTel
-   logs from the event log, and never reads the audit store.
+The amendments to this decision are files of their own in [`0075/`](0075/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
