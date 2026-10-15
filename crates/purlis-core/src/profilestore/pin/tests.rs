@@ -136,7 +136,7 @@ fn a_made_profile_follows_a_minor_or_patch_update_and_its_tab_says_so() {
         patch.as_ref().map(Option::as_deref),
         Ok(Some(
             "The profile 'work' moved from Claude Code 2.1.283 to 2.1.300, and its pin with it: \
-             purlis follows a profile's harness to a newer version of the same major version."
+             its chats follow its harness to a newer version of the same major version."
         ))
     );
     assert_eq!(pin_of(&config, "work").as_deref(), Some("2.1.300"));
@@ -160,7 +160,7 @@ fn a_new_chat_on_another_major_version_is_refused_with_the_way_out() {
     assert_eq!(
         refused,
         "The profile 'work' is pinned to Claude Code 2.1.283, and Claude Code 3.0.0 is \
-         installed: purlis follows a profile's harness only to a newer version of the same \
+         installed: a profile's chats follow its harness only to a newer version of the same \
          major version, so nothing was started. To run its chats on 3.0.0, press Update the \
          pin in Settings › You › Profiles, or install Claude Code 2.1.283 again."
     );

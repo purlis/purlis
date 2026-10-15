@@ -178,7 +178,7 @@ fn moved(record: &MachineProfile, pinned: &str, installed: &Version, resuming: b
     } else {
         format!(
             "The profile '{name}' is pinned to {harness} {pinned}, and {harness} {installed} is \
-             installed: purlis follows a profile's harness only to a newer version of the same \
+             installed: a profile's chats follow its harness only to a newer version of the same \
              major version, so nothing was started. To run its chats on {installed}, press Update \
              the pin in Settings › You › Profiles, or install {harness} {pinned} again."
         )
@@ -203,8 +203,8 @@ fn unread(record: &MachineProfile, pinned: &str) -> String {
 fn followed(record: &MachineProfile, from: &str, to: &Version) -> String {
     if record.adopted.is_none() {
         return format!(
-            "The profile '{}' moved from {} {from} to {to}, and its pin with it: purlis follows a \
-             profile's harness to a newer version of the same major version.",
+            "The profile '{}' moved from {} {from} to {to}, and its pin with it: its chats \
+             follow its harness to a newer version of the same major version.",
             crate::shown::short(&record.name),
             harness_title(record)
         );
