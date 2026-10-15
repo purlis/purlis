@@ -672,7 +672,7 @@ struct Settled {
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
 /// two chats alike in all of it compile to the same sandbox in one ask (#2157).
 #[derive(Debug, PartialEq, Eq)]
-struct Compares {
+struct StartKey {
     harness: purlis_core::harness::Harness,
     /// The persona whose grants it takes.
     persona: Option<String>,
@@ -680,6 +680,15 @@ struct Compares {
     level_as: Option<String>,
     made: purlis_core::sandbox::Made,
     grants: purlis_core::sandbox::grant::Grants,
+}
+
+/// What a start would compile now, for [`StartKey`]: the sandbox it settles to, none at all,
+/// or no answer, where it could not be compiled.
+#[derive(Debug, Clone)]
+enum CompiledNow {
+    Sandboxed(Settled),
+    Unconfined,
+    Refused,
 }
 
 impl Settled {
@@ -2024,7 +2033,7 @@ impl Chats {
         // **Each distinct start is compiled once per ask** (#2157): the window asks whenever a
         // chat opens or closes, and chats started alike (most of them) compile alike, so a
         // compile per chat made the asks grow with the square of the chats open.
-        let mut compiled: Vec<(Compares, Option<Option<Settled>>)> = Vec::new();
+        let mut compiled: Vec<(StartKey, CompiledNow)> = Vec::new();
         for (session, chat, harness, started, with) in running {
             // A chat on a profile takes a persona's grants (#1362); one on no profile, none.
             let persona = chat.profile.as_ref().and_then(|_| {
@@ -2035,7 +2044,7 @@ impl Chats {
                 purlis_core::start::runs_with(&as_started, &self.project)
             });
             // Everything the compile below reads of the chat, and nothing else.
-            let compares = Compares {
+            let key = StartKey {
                 harness,
                 persona,
                 level_as: chat.persona.clone(),
@@ -2045,33 +2054,38 @@ impl Chats {
             };
             let known = compiled
                 .iter()
-                .find(|(one, _)| *one == compares)
+                .find(|(one, _)| *one == key)
                 .map(|(_, now)| now.clone());
             let now = known.unwrap_or_else(|| {
-                let now = purlis_core::sandbox::decide_granted(
-                    compares.harness,
+                let now = match purlis_core::sandbox::decide_granted(
+                    key.harness,
                     &self.project,
                     machine,
                     has,
                     &purlis_core::sandbox::Person {
                         opt_out: None,
-                        level_as: compares.level_as.as_deref(),
-                        made: &compares.made,
+                        level_as: key.level_as.as_deref(),
+                        made: &key.made,
                     },
-                    compares.persona.as_deref(),
-                    &compares.grants,
-                )
-                .ok()
-                .map(|decided| match decided {
-                    Some(Decided::Sandboxed(applied)) => Some(Settled::of(applied.confines())),
-                    Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None => None,
-                });
-                compiled.push((compares, now.clone()));
+                    key.persona.as_deref(),
+                    &key.grants,
+                ) {
+                    Ok(Some(Decided::Sandboxed(applied))) => {
+                        CompiledNow::Sandboxed(Settled::of(applied.confines()))
+                    }
+                    Ok(Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None) => {
+                        CompiledNow::Unconfined
+                    }
+                    Err(_) => CompiledNow::Refused,
+                };
+                compiled.push((key, now.clone()));
                 now
             });
-            // A chat whose sandbox could not be compiled now is not counted.
-            let Some(now) = now else {
-                continue;
+            let now = match now {
+                CompiledNow::Sandboxed(settled) => Some(settled),
+                CompiledNow::Unconfined => None,
+                // A chat whose sandbox could not be compiled now is not counted.
+                CompiledNow::Refused => continue,
             };
             if now != started {
                 // Policy is the cause where the chat runs unconfined and policy requires the
@@ -6792,6 +6806,85 @@ pub(crate) mod tests {
         assert_eq!(older(&chats), None, "it restarted on what is there");
         let _ = chats.close(started);
         let _ = chats.close(shell);
+    }
+
+    /// #2157: **chats started differently are compiled each for itself**: a chat the person
+    /// allowed a host for is compared under its own grants, never under its neighbour's
+    /// compile, and only the chat whose sandbox fell behind is listed.
+    #[test]
+    fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
+        let plane = a_sandboxed_plane();
+        let chats = restartable_chats_of(plane.path(), Pretend::default());
+        let granted = purlis_core::sandbox::grant::Grants {
+            hosts: vec![
+                purlis_core::sandbox::hosts::Host::parse("granted.example").expect("a host"),
+            ],
+            ..Default::default()
+        };
+        let compiled_with = |grants: &purlis_core::sandbox::grant::Grants| {
+            let decided = purlis_core::sandbox::decide_granted(
+                Harness::ClaudeCode,
+                plane.path(),
+                &a_machine(),
+                &|_| true,
+                &purlis_core::sandbox::Person {
+                    opt_out: None,
+                    level_as: None,
+                    made: &purlis_core::sandbox::Made::Relaunch,
+                },
+                None,
+                grants,
+            )
+            .expect("compiles");
+            match decided {
+                Some(purlis_core::sandbox::Decided::Sandboxed(applied)) => {
+                    applied.confines().clone()
+                }
+                other => panic!("not sandboxed: {other:?}"),
+            }
+        };
+        // Each chat as its start recorded it, with the grants it started with.
+        let open_as = |session: u32, grants: purlis_core::sandbox::grant::Grants| {
+            lock(&chats.open).insert(
+                session,
+                Running {
+                    chat: a_resumable_chat_in(plane.path()),
+                    how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                    harness: Some(Harness::ClaudeCode),
+                    declared: None,
+                    workspace: None,
+                    confinement: None,
+                    confines: Some(compiled_with(&grants)),
+                    started_with: StartedWith { held: None, grants },
+                },
+            );
+        };
+        open_as(1, Default::default());
+        open_as(2, granted.clone());
+        assert!(reaches(
+            &chats.confines_of(2).expect("sandboxed"),
+            "granted.example"
+        ));
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let counted = |_: &str| {
+            asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            true
+        };
+        assert_eq!(
+            chats.on_older_sandbox_on(&a_machine(), &counted),
+            None,
+            "each compared under its own grants"
+        );
+        assert_eq!(asked.into_inner(), 2, "two starts, compiled once each");
+
+        // Only the granted chat's recorded sandbox falls behind.
+        lock(&chats.open)
+            .get_mut(&2)
+            .and_then(|running| running.confines.as_mut())
+            .expect("sandboxed")
+            .hosts
+            .push("gone.example".to_owned());
+        assert_eq!(older(&chats).expect("one behind").sessions(), [2]);
     }
 
     /// #2157: **asking which chats run on an older sandbox compiles each distinct start once**,
