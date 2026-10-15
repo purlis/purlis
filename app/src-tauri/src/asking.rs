@@ -870,7 +870,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         plans
             .iter()
             .map(|plan| Offered {
-                id: format!("{SIGN_IN}:{}", plan.id),
+                id: format!("{SIGN_IN}:{}", plan.provider),
                 label: format!("Sign in to {}", plan.title),
                 allows: true,
             })

@@ -346,6 +346,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 3,
     why: ACTION + ". Also its read refusal: " + READ_ONCE + ". And " + READING,
   },
+  "PersonaProfileMissing.tsx": {
+    count: 1,
+    why: "Create's refusal, inside the form its Notice's fix opened: " + ACTION,
+  },
   "ProfileApproval.tsx": {
     count: 1,
     why: WARNING,

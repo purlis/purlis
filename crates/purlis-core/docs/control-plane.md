@@ -559,7 +559,7 @@ A made profile is signed in through its harness's own sign-in (ADR 0095 §3): **
 its row in Settings or on its Ask in the Inbox, opens a shell tab that runs `claude auth login`,
 `codex login` or `opencode auth login --provider <plan>` with the profile's folder set, and
 `purlis profile sign-in <name>` runs the same in your own terminal (`--provider openai` or
-`--provider github-copilot` for opencode, which is never signed in to a Claude plan). You drive the harness's own
+`--provider github-copilot` for opencode, which is never signed in to a Claude plan: the plans its declaration's `[sign_in] plans` lists, and `anthropic` is refused in any declaration but Claude Code's own). You drive the harness's own
 browser page or code there; the harness keeps the result in the profile's folder, and purlis
 reads none of what it prints and opens no file it writes. Whether a profile is signed in on
 this device is the harness's own answer: how `claude auth status` or `codex login status`
@@ -568,6 +568,15 @@ harness says is signed out is refused before it starts and leaves one Ask, Sign 
 in the Inbox, which goes once the harness says it is signed in; where the harness cannot say,
 the chat starts. What the harness says is remembered for a minute. `purlis profile sign-in <name> --check` says which. A
 profile adopted from the harness's own folder is signed in by your own sign-in and never asked.
+
+A persona names the profile it prefers (`profile: qa-bot`), and a profile is the person's, so a
+teammate may not have one of that name. The persona's tab then says so and offers **Create
+profile qa-bot…**: pick the harness and press Create, and the profile is made as Add profile
+makes one, under that name, for this machine. Nothing is made until then. Until it is, a chat
+handed to the persona starts on the asking chat's profile and says so. A profile made this way
+is held to the project's dispatch list for the persona, and a profile the clone's own local
+file declares under that name is still the clone's and still asked about before its command
+runs.
 
 ### Kept out of git, and checked
 

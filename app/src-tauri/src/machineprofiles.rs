@@ -82,8 +82,8 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
             plans: sign_in::providers(&record.harness)
                 .iter()
                 .map(|plan| PlanRow {
-                    id: plan.id.to_owned(),
-                    title: plan.title.to_owned(),
+                    id: plan.provider.clone(),
+                    title: plan.title.clone(),
                 })
                 .collect(),
         }

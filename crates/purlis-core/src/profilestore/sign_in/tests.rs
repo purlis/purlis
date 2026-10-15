@@ -360,7 +360,11 @@ fn opencode_is_signed_in_only_to_a_provider_purlis_names_and_never_to_anthropic(
         let why = login_for(&opencode, "/bin/opencode", refused).expect_err("refused");
         assert!(why.contains("never"), "{why}");
     }
-    assert!(providers("opencode").iter().all(|p| p.id != "anthropic"));
+    assert!(
+        providers("opencode")
+            .iter()
+            .all(|p| p.provider != "anthropic")
+    );
     assert!(providers("claude").is_empty());
     assert!(login_for(&profile("claude"), "/bin/claude", Some("openai")).is_err());
 }
@@ -473,4 +477,29 @@ fn a_folder_with_a_line_break_is_never_typed_into_a_shell() {
     .unwrap();
 
     assert!(login.line().is_err());
+}
+
+#[test]
+fn the_plans_sign_in_offers_are_the_ones_the_harnesss_declaration_lists() {
+    let declared: Vec<&str> = crate::harness_declaration::builtin("opencode")
+        .unwrap()
+        .sign_in
+        .plans
+        .iter()
+        .map(|plan| plan.provider.as_str())
+        .collect();
+    assert_eq!(declared, ["openai", "github-copilot"]);
+    let offered: Vec<&str> = providers("opencode")
+        .iter()
+        .map(|plan| plan.provider.as_str())
+        .collect();
+    assert_eq!(offered, declared);
+    for id in declared {
+        let login = login_for(&profile("opencode"), "/bin/opencode", Some(id)).unwrap();
+        assert_eq!(login.args, ["auth", "login", "--provider", id]);
+    }
+    // A harness whose declaration lists none signs in to its own vendor's plan, naming none.
+    assert!(providers("codex").is_empty());
+    let codex = login_for(&profile("codex"), "/bin/codex", None).unwrap();
+    assert_eq!(codex.args, ["login"]);
 }

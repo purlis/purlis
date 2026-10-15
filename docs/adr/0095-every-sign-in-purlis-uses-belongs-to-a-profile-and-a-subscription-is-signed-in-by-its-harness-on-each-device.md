@@ -160,7 +160,8 @@ The code does not change with this record.
 | #2036 | `api-key` and `cloud` profiles from the vault; a model choice is a profile plus a model |
 | #2037 | A profile's credential files denied to the agent's commands. `SECURITY.md` (*What Codex keeps for itself*) says a sandboxed Codex chat keeps its state in its profile's folder |
 | #2038 | A profile pins its harness version |
-| #2039 | Personas, teammates, and the rules that stay: X12 (its store, `.charter/unattended-logins.json` in `docs/plane-format.md`, keyed as ADR 0087 keys it), the permission-flag refusal, dispatch lists and approval |
+| #2039 | Personas, teammates, and the rules that stay: the permission-flag refusal, dispatch lists and approval; `[sign_in] plans` in harness declarations (ADR 0073, amended 2026-10-15) |
+| #2168 | X12: the acknowledgement before a subscription runs unattended, and its store, `.charter/unattended-logins.json` in `docs/plane-format.md`, keyed as ADR 0087 keys it |
 
 ## What this costs
 
@@ -235,7 +236,9 @@ The implementer decided it on 2026-10-15, to be confirmed by the operator:
   asked again every few seconds after Sign in), or when the person dismisses it.
 - **opencode is signed in to a plan purlis names**: the Ask and the profile page offer ChatGPT
   and GitHub Copilot, passed as opencode's own `--provider`, and never Anthropic, so a Claude
-  plan is never signed in through opencode (#2039).
+  plan is never signed in through opencode (#2039). Since #2039 the plans are opencode's declaration's
+  `[sign_in] plans`, and `anthropic` is refused in any declaration but Claude Code's own (ADR
+  0073, amended 2026-10-15).
 - **What a harness says is remembered for a minute**, and forgotten by Sign in, so reopening many
   chats on one profile asks it once.
 - **No sign-in is typed on Windows**, whose shells have no `env`; a word with a quote, a
@@ -250,3 +253,24 @@ The implementer decided it on 2026-10-15, to be confirmed by the operator:
   folder is signed in by the person's own sign-in and never asked again, a built-in or a clone's
   profile runs as it always did, a profile handed a key or a cloud switch is not asked, and a
   harness that cannot say, or does not answer in time, never stops a chat that might work.
+
+How a teammate is offered the profile a persona names (§1, #2039) was not ruled beyond §1 above.
+The implementer decided it on 2026-10-15, to be confirmed by the operator:
+
+- **It is an offer on the persona's tab, not an Ask.** Opening a persona is no wait: nothing is
+  held until the person answers, and a chat handed to the persona meanwhile starts on the asking
+  chat's profile and says so (D-1445-8). So the tab of a persona whose `profile:` names a profile
+  this project does not offer on this machine carries a Notice, *Create profile <name>…*, and
+  nothing is raised in the Inbox. A `model:` line names a model, and is never offered.
+- **Nothing is made until the person presses Create.** The offer opens a form with the name fixed
+  to the one the definition names and the harness to pick, and Create runs the command
+  Settings › You › Profiles' Add profile runs, so the profile is made, imported and kept exactly
+  as one made there. Signing it in is its own Ask (#2035), raised by the first chat on it.
+- **The rules that stay hold for it as for any profile**: the project's dispatch list for the
+  persona, the approval of a profile a clone's own local file declares under that name (which
+  takes the place of the machine's), and the refusal of a command that switches the harness's
+  permission prompts off. A profile made here runs its harness's own program with its folder
+  variables set, so it carries no command to approve and no flag.
+- **X12's acknowledgement** (§6) is #2168's, with its store as `docs/plane-format.md` records it
+  and keyed as ADR 0087 keys it; a profile made here with a subscription is one of the logins it
+  asks about.
