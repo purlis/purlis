@@ -1807,6 +1807,15 @@ export const commands = {
 	 */
 	keepRecordedRemote: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string[], string>(__TAURI_INVOKE("keep_recorded_remote", { plane, workspace, repo })),
 	/**
+	 *  Every stale repo of the project's workspaces, workspace by workspace.
+	 * 
+	 *  On a blocking thread: it asks git a few questions per repo, and runs nothing that reaches a
+	 *  network.
+	 */
+	staleClones: (plane: PlaneId) => typedError<StaleClones, string>(__TAURI_INVOKE("stale_clones", { plane })),
+	/**  The person's Fix on a stale repo's Notice: answers what was done, or what blocks it. */
+	fixStaleClone: (plane: PlaneId, workspace: string, repo: string, fix: StaleFix, shown: string | null) => typedError<string, string>(__TAURI_INVOKE("fix_stale_clone", { plane, workspace, repo, fix, shown })),
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -9064,6 +9073,38 @@ export type SmartClosing = {
 	 *  plane's records.
 	 */
 	record: SavedRecord | null,
+};
+
+export type StaleBranch = {
+	branch: string,
+	default: string,
+};
+
+/**  One stale repo, as the Inbox draws it. */
+export type StaleClone = {
+	workspace: string,
+	repo: string,
+	/**  Off its default branch: the branch it is on, and the remote's default. */
+	branch: StaleBranch | null,
+	/**  On a remote the forge said moved: where it is now, and where it went. */
+	remote: StaleRemote | null,
+};
+
+/**  What the Inbox is given: every stale repo, and what could not be read. */
+export type StaleClones = {
+	stale: StaleClone[],
+	/**  A sentence for each workspace or repo purlis could not read. */
+	unread: string[],
+};
+
+/**  Which way out the person pressed. */
+export type StaleFix = "branch" | "remote";
+
+export type StaleRemote = {
+	/**  `origin` as `<host>/<owner>/<repo>`: a recorded address can carry a user, never drawn. */
+	origin: string,
+	/**  The address the Fix sets, whole, as it is set. */
+	now: string,
 };
 
 /**  Everything the picker draws, read from the plane when it is opened. */

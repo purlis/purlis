@@ -110,6 +110,7 @@ mod settings;
 mod silence;
 mod slowstart;
 mod smartclose;
+mod staleclones;
 mod stopping;
 mod taskblocks;
 mod taskbrief;

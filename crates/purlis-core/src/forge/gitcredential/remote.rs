@@ -152,6 +152,20 @@ pub fn keep(_host: &HostScope, config_root: &Path, clone: &Path) -> Result<Strin
     }
 }
 
+/// The person moved `clone`'s `origin` from `was` to `now` (both `<host>/<owner>/<repo>`) on the
+/// forge's word that the repository moved there (#1985): a record of `was` as the remote its
+/// saves push to becomes a record of `now`. A clone with no record, or with another, keeps what
+/// it has, so a move never records a remote that was not recorded before.
+pub fn moved(_host: &HostScope, config_root: &Path, clone: &Path, was: &str, now: &str) {
+    let key = crate::sandbox::local::clone_key(clone);
+    let mut recorded = super::read_push_remotes(config_root);
+    if recorded.get(&key).map(String::as_str) == Some(was) {
+        recorded.insert(key, now.to_owned());
+        // Not recorded: the next Save from the window asks about the new remote, as before.
+        let _ = super::write_push_remotes(config_root, &recorded);
+    }
+}
+
 /// Records `now` as the remote of `clone`, and answers it.
 pub(crate) fn record(config_root: &Path, clone: &Path, now: String) -> Result<String, String> {
     let key = crate::sandbox::local::clone_key(clone);

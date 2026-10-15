@@ -264,6 +264,8 @@ macro_rules! app_commands {
                 saving::save_repo,
                 remotequestion::confirm_remote,
                 remotequestion::keep_recorded_remote,
+                staleclones::stale_clones,
+                staleclones::fix_stale_clone,
                 workspaces::workspace_create,
                 live::workspace_live_preview,
                 live::workspace_live,

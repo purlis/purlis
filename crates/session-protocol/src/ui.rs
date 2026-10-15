@@ -501,6 +501,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // The Fix on a stale repo's Notice (#1985): it switches a workspace's repo to another
+    // branch, or points its `origin` at another address. The person's own press in the window.
+    "fix_stale_clone",
     // The plain-file vaults offered to move into the keychain before a person turns their
     // sandbox down (#2071): read in their window alone.
     "plain_file_vaults",
@@ -803,6 +806,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "smart_close_offer",
     "smart_closing",
+    "stale_clones",
     "start_options",
     "stopping_chats",
     "tab_shows",
