@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Late-loading data</title></head>
+<body>
+  <p id="data">Waiting for data</p>
+  <script>
+    fetch('/slow-data').then((r) => r.json()).then((d) => {
+      document.getElementById('data').textContent = 'Data arrived: ' + d.answer;
+    });
+  </script>
+</body></html>

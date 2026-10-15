@@ -24,6 +24,7 @@
 
 mod address;
 pub mod cdp;
+pub mod drive;
 pub mod install;
 pub mod keeper;
 pub mod launch;

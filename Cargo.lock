@@ -5229,10 +5229,12 @@ dependencies = [
 name = "purlis-browser-engine"
 version = "0.4.2"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "minisign",
  "minisign-verify",
  "nix 0.31.3",
+ "png 0.18.1",
  "purlis-same-user",
  "serde",
  "serde_json",

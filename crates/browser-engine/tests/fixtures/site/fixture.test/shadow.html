@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Shadow content</title></head>
+<body>
+  <open-card></open-card>
+  <closed-card></closed-card>
+  <script>
+    customElements.define('open-card', class extends HTMLElement {
+      constructor() {
+        super();
+        const root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = '<button>Shadow button</button><p id="said">Not clicked</p>';
+        root.querySelector('button').addEventListener('click', () => {
+          root.getElementById('said').textContent = 'Shadow clicked';
+        });
+      }
+    });
+    customElements.define('closed-card', class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'closed' }).innerHTML = '<p>Closed shadow text</p>';
+      }
+    });
+  </script>
+</body></html>
