@@ -64,16 +64,18 @@ pub const READY: &str = "ready";
 
 /// When the window's binary was started as its session host ([`SERVE_FOR_THE_WINDOW`]), serve
 /// at the place `place` names until the window closes this process's standard input, composing
-/// each start with what `compose` gives, and give the code to exit with; otherwise `None`,
-/// before anything is read or opened.
+/// each start with what `compose` gives and saving each project the window asks it to with what
+/// `save` gives, and give the code to exit with; otherwise `None`, before anything is read or
+/// opened.
 ///
 /// The window is this process's parent, and every chat it runs is below it, so a peer below it
 /// is inside a chat ([`Window`]). The ready line goes to standard output and what the host has
 /// to say to standard error, which the window keeps in its log.
 #[cfg(unix)]
-pub fn serve_for_the_window_if_asked<C: Compose>(
+pub fn serve_for_the_window_if_asked<C: Compose, S: Save>(
     place: impl FnOnce() -> Option<Place>,
     compose: impl FnOnce() -> C,
+    save: impl FnOnce() -> S,
 ) -> Option<i32> {
     if std::env::args_os().nth(1)? != SERVE_FOR_THE_WINDOW {
         return None;
@@ -83,7 +85,7 @@ pub fn serve_for_the_window_if_asked<C: Compose>(
         Some(place) => run(
             &place,
             Some(window),
-            Hosting::new(compose()),
+            Hosting::new(compose()).saving_with(save()),
             until_the_window_closes_its_end(),
         ),
         None => {

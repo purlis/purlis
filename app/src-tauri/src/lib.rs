@@ -71,6 +71,8 @@ mod machineprofiles;
 mod behaviour;
 #[cfg(unix)]
 mod hostedsessions;
+#[cfg(unix)]
+mod hostsaving;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -2919,9 +2921,11 @@ fn refuse_beside_the_old_app() {
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
-    purlis_host::serve_for_the_window_if_asked(sessionhost::place, || {
-        purlis_host::FromTheWindow(sessionhost::launched)
-    })
+    purlis_host::serve_for_the_window_if_asked(
+        sessionhost::place,
+        || purlis_host::FromTheWindow(sessionhost::launched),
+        || hostsaving::InTheHost,
+    )
 }
 
 /// Where every project's chats run, chosen once as the app starts: in the window's own

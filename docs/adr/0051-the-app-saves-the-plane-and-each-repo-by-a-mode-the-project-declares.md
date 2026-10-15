@@ -241,6 +241,11 @@ Commits an agent makes with plain git are fine: the next save pushes them.
 
 **Auto-save lives in the app**, because there is no daemon (ADR 0025). When `autosave` is on:
 
+> **Amended 2026-10-15 (#2002, spec #1974).** Where a project's chats run in the session host,
+> behind the start-time switch, the host runs this auto-save and the plane's watcher for it, by
+> the same code, and the window starts none: exactly one saves a project. Everything below holds
+> as written; ADR 0068's amendment for #2002 says how.
+
 - **It saves:**
   - `autosave_after` of quiet after the last change (default `30s`)
   - when a session ends

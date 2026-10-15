@@ -43,16 +43,28 @@ const PATIENCE: Duration = Duration::from_secs(20);
 /// One place a chat runs, as the window reaches it.
 pub(crate) struct Target {
     pub sessions: Box<dyn SessionHost>,
+    /// The project its chats run in, and that it saves.
+    pub root: PathBuf,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
 
 /// A chat in the window's own process: the switch off, the default.
 pub(crate) fn in_the_window() -> Target {
+    let (project, root) = a_project();
     Target {
         sessions: Box::new(Sessions::new()),
-        _keeps: Vec::new(),
+        root,
+        _keeps: vec![Box::new(project)],
     }
+}
+
+/// A folder for a project, with its manifest, as the disk spells it.
+fn a_project() -> (tempfile::TempDir, PathBuf) {
+    let project = tempfile::tempdir().expect("a project");
+    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    (project, root)
 }
 
 static HELD: std::sync::LazyLock<Credentials> =
@@ -60,7 +72,7 @@ static HELD: std::sync::LazyLock<Credentials> =
 
 /// A chat in the session host: the switch on. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
-/// composes them.
+/// composes them, and its projects saved as the window's binary saves them.
 pub(crate) fn in_the_host() -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -68,7 +80,8 @@ pub(crate) fn in_the_host() -> Target {
         .build()
         .expect("a runtime");
     let hosting =
-        purlis_host::Hosting::new(purlis_host::FromTheWindow(crate::sessionhost::launched));
+        purlis_host::Hosting::new(purlis_host::FromTheWindow(crate::sessionhost::launched))
+            .saving_with(crate::hostsaving::InTheHost);
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
         let (client, served) = tokio::join!(
@@ -95,11 +108,10 @@ pub(crate) fn in_the_host() -> Target {
     });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link));
-    let project = tempfile::tempdir().expect("a project");
-    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
-    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    let (project, root) = a_project();
     Target {
         sessions: Box::new(HostedSessions::new(connection, &root, None)),
+        root,
         _keeps: vec![Box::new(project), Box::new(runtime)],
     }
 }
@@ -430,6 +442,115 @@ fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target
     target.sessions.close(id).expect("it closes");
 }
 
+/// Makes `root` a plane that commits by itself after a second of quiet: a repository with one
+/// commit and its own identity, and no remote.
+fn a_plane_saved_after_a_second(root: &Path) {
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[plane]\nmode = \"commit\"\nautosave_after = \"1s\"\n",
+    )
+    .expect("the plane's settings");
+    std::fs::write(root.join(".gitignore"), ".charter/\n.purlis/\n").expect("its ignores");
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.name", "t"]);
+    git(root, &["config", "user.email", "t@example.invalid"]);
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "one"]);
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let mut command = std::process::Command::new("git");
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    let out = purlis_core::forklock::output(&mut command).expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// What the window was told each look did.
+fn told_of_looks() -> (
+    crate::autosave::Told,
+    Arc<Mutex<Vec<crate::autosave::Looked>>>,
+) {
+    let looks = Arc::new(Mutex::new(Vec::new()));
+    let told: crate::autosave::Told = {
+        let looks = Arc::clone(&looks);
+        Arc::new(move |looked| looks.lock().expect("the looks").push(looked))
+    };
+    (told, looks)
+}
+
+/// How long a save after a second of quiet may take: its looks are two seconds apart, and the
+/// standing it decides on may be read again only after `planegit::SHARED_FOR`.
+const A_SAVE_WITHIN: Duration = Duration::from_secs(60);
+
+fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told(target: &Target) {
+    a_plane_saved_after_a_second(&target.root);
+    let (told, looks) = told_of_looks();
+    let _saving = target.sessions.keep_saving(&target.root, told);
+
+    std::fs::write(target.root.join("note.md"), "a note\n").expect("written");
+
+    let deadline = Instant::now() + A_SAVE_WITHIN;
+    while !looks
+        .lock()
+        .expect("the looks")
+        .iter()
+        .any(|looked| looked.saved)
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the window was never told of a save"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let journal = purlis_core::planegit::journal(&target.root);
+    let saved = journal
+        .iter()
+        .find(|line| line["outcome"] == "committed")
+        .expect("a save was journalled");
+    assert_eq!(saved["trigger"], "quiet");
+    let tracked = purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&target.root)
+            .args(["ls-files", "note.md"]),
+    )
+    .expect("git runs");
+    assert_eq!(String::from_utf8_lossy(&tracked.stdout).trim(), "note.md");
+}
+
+fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &Target) {
+    a_plane_saved_after_a_second(&target.root);
+    let (told, _looks) = told_of_looks();
+    let saving = target.sessions.keep_saving(&target.root, told);
+
+    until("a saver runs", || {
+        crate::autosave::running::on(&target.root) == 1
+    });
+    // Whatever was to start has had the time to.
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        crate::autosave::running::on(&target.root),
+        1,
+        "the window and the host both save the project"
+    );
+
+    drop(saving);
+
+    until("the saver stops", || {
+        crate::autosave::running::on(&target.root) == 0
+    });
+}
+
 /// Each behaviour, as a test of its own on every target.
 macro_rules! on_every_target {
     ($($behaviour:ident),* $(,)?) => {
@@ -459,4 +580,6 @@ on_every_target!(
     a_closed_chat_is_ended_and_gone,
     a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key,
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
+    a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
+    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped,
 );

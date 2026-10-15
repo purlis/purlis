@@ -63,6 +63,14 @@ impl PlaneId {
     }
 }
 
+impl PlaneId {
+    /// The id the session host's watch of a project it saves is started under (#2002): that
+    /// watch tells nobody by it, and no registry of the host's holds it.
+    pub(crate) fn saved_in_the_host(root: &Path) -> Self {
+        Self::of(root)
+    }
+}
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -230,9 +238,10 @@ pub struct Held {
     /// What the sidebar draws, kept current by what the watch and auto-save say moved
     /// (FD-10b, [`purlis_core::planemodel`]). In memory only.
     model: Arc<Mutex<Model>>,
-    /// The plane's auto-save worker (charter-app#296): saves it after a quiet period and when
-    /// a chat ends, and fetches what comes in. Stopped when the plane is let go of.
-    autosave: Mutex<Option<crate::autosave::Worker>>,
+    /// The plane's auto-save (charter-app#296): saves it after a quiet period and when a chat
+    /// ends, and fetches what comes in. It runs where the plane's chats run: here, or in the
+    /// session host (#2002). Stopped when the plane is let go of.
+    autosave: Mutex<Option<Box<dyn crate::autosave::Saver>>>,
     /// What each open chat read of the plane's instructions when it started (charter#369), so
     /// the window can mark a chat still running on ones that have since changed.
     started_on: StartedOn,
@@ -3469,13 +3478,23 @@ impl Planes {
         // name (FD-10b).
         let model = Arc::new(Mutex::new(Model::read(&root)));
         let changes = applying(Arc::clone(&model), root.clone(), Arc::clone(&self.changes));
-        // Before a chat can end, so its end is one the worker hears.
-        let autosave = crate::autosave::Worker::start(
-            id.clone(),
-            root.clone(),
-            Arc::clone(&changes),
-            Arc::clone(&self.saves),
-        );
+        // Before a chat can end, so its end is one the worker hears. Where the chats run: in
+        // the session host, the host saves the plane, and this window starts none of its own.
+        let autosave = chats.sessions().keep_saving(&root, {
+            let changes = Arc::clone(&changes);
+            let saves = Arc::clone(&self.saves);
+            let plane = id.clone();
+            let root = root.clone();
+            Arc::new(move |looked: crate::autosave::Looked| {
+                changes(
+                    plane.clone(),
+                    crate::autosave::what_it_did(looked.moved_tree),
+                );
+                if looked.saved {
+                    saves(plane.clone(), root.clone());
+                }
+            })
+        });
         // No hook can report a program dying (the process is gone), so the operating system
         // does. That is not charter reading a harness's output (ADR 0018) — it is the
         // process's own exit status, and the only honest source for `failed`.

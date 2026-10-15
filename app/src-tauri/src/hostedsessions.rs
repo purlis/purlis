@@ -20,6 +20,12 @@
 //!
 //! **One link for every project.** The window's link to its host ([`HostLink`]) carries every
 //! project's chats: their views come on it, and so does word that a program ended.
+//!
+//! **The host saves the project too** (#2002): the window asks it to as the project opens
+//! ([`HostedSessions`]'s `keep_saving`), and starts no auto-save of its own, so exactly one
+//! saves it. What each look did comes back over the link, and the window reads its standing
+//! again as it did when its own worker told it. A quit stops the host's saving before the
+//! window's own save at quit runs; a window that is gone without a quit leaves it saving.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -153,6 +159,8 @@ struct Shared {
     views: Mutex<Views>,
     /// Who is told as each program ends, by its id.
     ends: Mutex<HashMap<String, TellEnd>>,
+    /// Who is told what each look of a project's auto-save did, by the project's id (#2002).
+    savings: Mutex<HashMap<String, crate::autosave::Told>>,
 }
 
 /// Told once, as a program ends.
@@ -352,6 +360,19 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>) {
                     tell(exit);
                 }
             }
+            Told::Pushed(Pushed::Saving {
+                project,
+                saved,
+                moved_tree,
+            }) => {
+                let told = lock(&shared.savings).get(&project).cloned();
+                if let Some(told) = told {
+                    // What it tells reads the plane's model and the window: off the runtime.
+                    tokio::task::spawn_blocking(move || {
+                        told(crate::autosave::Looked { saved, moved_tree });
+                    });
+                }
+            }
             Told::Pushed(Pushed::ViewEnded { view, .. }) => {
                 let drained = lock(&shared.views)
                     .drawing
@@ -389,7 +410,7 @@ pub struct HostedSessions {
     connection: Arc<Connection>,
     root: PathBuf,
     /// The project's stable id, once the host holds it.
-    held: Mutex<Option<String>>,
+    held: Arc<Mutex<Option<String>>>,
     reporting: Option<Reporting>,
     running: Arc<Mutex<HashMap<u32, Program>>>,
     /// The highest number dealt so far: it only rises ([`crate::sessions::Sessions`]).
@@ -405,7 +426,7 @@ impl HostedSessions {
         HostedSessions {
             connection,
             root: root.to_path_buf(),
-            held: Mutex::new(None),
+            held: Arc::default(),
             reporting,
             running: Arc::default(),
             opened: AtomicU32::new(0),
@@ -416,21 +437,7 @@ impl HostedSessions {
 
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
-        let link = self.connection.wait(LINK_WITHIN)?;
-        let mut held = lock(&self.held);
-        if let Some(project) = &*held {
-            return Ok((link, project.clone()));
-        }
-        let project =
-            purlis_core::scaffold::planefile::ensure_project_id(&self.root).map_err(|why| {
-                format!("this project has no id the session host can name it by: {why}")
-            })?;
-        link.call(Command::HoldProject {
-            project: project.clone(),
-            project_path: self.root.display().to_string(),
-        })?;
-        *held = Some(project.clone());
-        Ok((link, project))
+        held_on(&self.connection, &self.held, &self.root)
     }
 
     /// The link, and the host's id of chat `id`.
@@ -492,6 +499,143 @@ impl HostedSessions {
             let _ = answer.recv_timeout(ANSWER_WITHIN);
         }
         asked
+    }
+}
+
+/// The link `connection` reaches, with the project at `root` held on it: `held` keeps its id
+/// once it is.
+fn held_on(
+    connection: &Connection,
+    held: &Mutex<Option<String>>,
+    root: &Path,
+) -> Result<(Arc<HostLink>, String), String> {
+    let link = connection.wait(LINK_WITHIN)?;
+    let mut held = lock(held);
+    if let Some(project) = &*held {
+        return Ok((link, project.clone()));
+    }
+    let project = purlis_core::scaffold::planefile::ensure_project_id(root)
+        .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
+    link.call(Command::HoldProject {
+        project: project.clone(),
+        project_path: root.display().to_string(),
+    })?;
+    *held = Some(project.clone());
+    Ok((link, project))
+}
+
+/// A project the session host saves for the window (#2002): asked for once the link is ready,
+/// off the thread that opened the project, and stopped when this is dropped.
+struct SavedInTheHost {
+    asked: Arc<Mutex<Asked>>,
+    poke: std::sync::mpsc::Sender<crate::autosave::Poke>,
+}
+
+#[derive(Default)]
+struct Asked {
+    /// Dropped: nothing more is asked of the host.
+    stopped: bool,
+    /// The host saves the project, on this link.
+    saving: Option<(Arc<HostLink>, String)>,
+}
+
+impl SavedInTheHost {
+    fn start(
+        connection: Arc<Connection>,
+        held: Arc<Mutex<Option<String>>>,
+        root: PathBuf,
+        told: crate::autosave::Told,
+    ) -> SavedInTheHost {
+        let asked: Arc<Mutex<Asked>> = Arc::default();
+        let (poke, poked) = std::sync::mpsc::channel();
+        let asking = Arc::clone(&asked);
+        let started = std::thread::Builder::new()
+            .name("saved in the session host".into())
+            .spawn(move || {
+                let (link, project) = match held_on(&connection, &held, &root) {
+                    Ok(held) => held,
+                    Err(why) => {
+                        tracing::warn!(
+                            "purlis: {} is not saved by itself on this launch: {why}",
+                            root.display()
+                        );
+                        return;
+                    }
+                };
+                // The window reads the standing again as the host says it moved, as it did
+                // when its own worker said so.
+                lock(&link.shared.savings).insert(project.clone(), {
+                    let root = root.clone();
+                    Arc::new(move |looked| {
+                        purlis_core::planegit::touch(&root);
+                        told(looked);
+                    })
+                });
+                let mut asked = lock(&asking);
+                if asked.stopped {
+                    lock(&link.shared.savings).remove(&project);
+                    return;
+                }
+                match link.call(Command::StartSaving {
+                    project: project.clone(),
+                }) {
+                    Ok(_) => asked.saving = Some((link, project)),
+                    Err(why) => {
+                        lock(&link.shared.savings).remove(&project);
+                        tracing::warn!(
+                            "purlis: the session host does not save {}: {why}",
+                            root.display()
+                        );
+                    }
+                }
+                drop(asked);
+                // What the window pokes: a fetch is the host's to make. A chat's end the host
+                // hears for itself, as its program ends.
+                while let Ok(poke) = poked.recv() {
+                    let asked = lock(&asking);
+                    if asked.stopped {
+                        return;
+                    }
+                    if let (crate::autosave::Poke::Fetch, Some((link, project))) =
+                        (poke, &asked.saving)
+                    {
+                        link.send(Command::FetchProject {
+                            project: project.clone(),
+                        });
+                    }
+                }
+            });
+        if let Err(why) = started {
+            tracing::warn!("purlis: the project's saving was not asked of the session host: {why}");
+        }
+        SavedInTheHost { asked, poke }
+    }
+}
+
+impl crate::autosave::Saver for SavedInTheHost {
+    fn poker(&self) -> std::sync::mpsc::Sender<crate::autosave::Poke> {
+        self.poke.clone()
+    }
+
+    /// The host asks who works in the project of what it runs, not the window.
+    fn asks_mid_turn_of(&self, _ask: crate::autosave::MidTurn) {}
+}
+
+/// Stops the host's saving and answers once the host has: a quit's own save comes after, so
+/// the project is never saved by both.
+impl Drop for SavedInTheHost {
+    fn drop(&mut self) {
+        let mut asked = lock(&self.asked);
+        asked.stopped = true;
+        if let Some((link, project)) = asked.saving.take() {
+            lock(&link.shared.savings).remove(&project);
+            if let Err(why) = link.call(Command::StopSaving { project }) {
+                tracing::warn!("purlis: the session host did not stop saving: {why}");
+            }
+        }
+        drop(asked);
+        // Wakes the poke thread, which sees it is stopped.
+        let _ = self.poke.send(crate::autosave::Poke::Fetch);
     }
 }
 
@@ -786,6 +930,21 @@ impl SessionHost for HostedSessions {
         self.reporting
             .as_ref()
             .map(|reporting| reporting.socket.clone())
+    }
+
+    /// Saved in the session host, where this project's chats run: the window starts no worker
+    /// of its own (#2002).
+    fn keep_saving(
+        &self,
+        root: &Path,
+        told: crate::autosave::Told,
+    ) -> Box<dyn crate::autosave::Saver> {
+        Box::new(SavedInTheHost::start(
+            Arc::clone(&self.connection),
+            Arc::clone(&self.held),
+            root.to_path_buf(),
+            told,
+        ))
     }
 }
 

@@ -643,6 +643,30 @@ impl Watch {
     }
 }
 
+/// Every watch the session host runs (#2002): no window is beside it, so its watches never
+/// look for themselves and cost nothing at rest; their events alone keep its saver's standing
+/// current, and the standing is read again by itself after [`purlis_core::planegit::SHARED_FOR`].
+static IN_THE_HOST: LazyLock<Arc<Windows>> = LazyLock::new(|| {
+    let windows = Windows::new();
+    windows.shown_when(|| false);
+    windows
+});
+
+impl Watch {
+    /// Starts watching `root` in the session host, for its saver (`crate::hostsaving`): what
+    /// moved marks the plane's git standing to be read again, and nobody else is told.
+    pub fn in_the_host(root: &Path) -> notify::Result<Self> {
+        Self::start_with(
+            crate::planes::PlaneId::saved_in_the_host(root),
+            root,
+            Arc::new(|_, _| {}),
+            platform_config(),
+            Arc::clone(&IN_THE_HOST),
+            SWEEP_EVERY,
+        )
+    }
+}
+
 impl<W: notify::Watcher> Watch<W> {
     /// Whether this watch tells everything the panels and the sidebar read, and whether it
     /// has since it was last asked. `WholeAgain` is said once: asking again says `Whole`.

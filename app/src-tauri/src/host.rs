@@ -211,6 +211,18 @@ pub trait SessionHost: Send + Sync {
     fn reports_to(&self) -> Option<std::path::PathBuf> {
         None
     }
+
+    /// Saves the project at `root` from now on, where its chats run: its auto-save, telling
+    /// `told` what each look that did something did. Dropping what it answers stops it. One
+    /// per project: the window starts none of its own where its chats run in the session host,
+    /// which saves the project there (#2002). This one is the window's own worker.
+    fn keep_saving(
+        &self,
+        root: &std::path::Path,
+        told: crate::autosave::Told,
+    ) -> Box<dyn crate::autosave::Saver> {
+        crate::autosave::here(root.to_path_buf(), told)
+    }
 }
 
 /// One chat as the board has it, read under one hold so the three agree.
