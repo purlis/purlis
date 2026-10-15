@@ -190,6 +190,56 @@ export async function everyCloseHasLetGo(): Promise<void> {
   );
 }
 
+/** The trust question's title for a project this machine has approved nothing about (ADR 0035). */
+export const FIRST_ASK = "Open this project?";
+
+/**
+ * Whether the page shows a dialog titled `title`, looked for afresh. **Run in the page**, by
+ * `browser.execute`, so it closes over nothing: what it needs is its argument and `document`.
+ *
+ * A dialog's title is what its `aria-labelledby` names, as a Radix dialog draws it. A dialog
+ * mid-fade is shown once its opacity is past zero; `checkVisibility` says so where the engine has
+ * it.
+ */
+export function showsTheQuestion(title: string): boolean {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    const named = (dialog.getAttribute("aria-labelledby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+      .join(" ");
+    if (named !== title) continue;
+    const seen = dialog as Element & { checkVisibility?: (options?: object) => boolean };
+    if (
+      typeof seen.checkVisibility !== "function" ||
+      seen.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    )
+      return true;
+  }
+  return false;
+}
+
+/**
+ * Waits for the trust question and answers it **Open project** (ADR 0035): the end of every
+ * path that opens a project this machine has approved nothing about.
+ *
+ * **Waited for by its words, read again at every look** (#2126). Making a project ends in two
+ * dialogs, one in the other's place: New project, still up while it says "Creating…", then this
+ * question. A wait that took `$('[role="dialog"]')` when it began could take the first and keep
+ * asking about it after it had gone: the driver inside the app hands a script a node that has
+ * left the page without calling it stale, so WebdriverIO never looks for the selector again, and
+ * the spec waited out 30 s with the question on screen. A look done by one `browser.execute`
+ * holds no node (`reading.ts` is the same lesson for lists).
+ */
+export async function openThroughTheTrustQuestion(): Promise<void> {
+  await browser.waitUntil(async () => browser.execute(showsTheQuestion, FIRST_ASK), {
+    timeout: 30_000,
+    timeoutMsg: `the trust question ("${FIRST_ASK}") was never drawn`,
+  });
+  // Found in the question, and only now that it is up: the opener's path box has an Open project
+  // of its own.
+  await $('[role="dialog"][aria-labelledby="approve-plane"]').$("button=Open project").click();
+}
+
 /**
  * Puts away whatever dialog a spec left up, so the next one starts on the window itself and not
  * behind a modal: Escape, a few times, while one is shown.

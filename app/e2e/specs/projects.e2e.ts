@@ -5,7 +5,13 @@ import { existsSync, realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { THE_RUNS_TREE, anEmptyRecord, copyFixturePlane } from "../harness.js";
-import { answerTheAsk, closeProject, noDialogIsLeftUp, pressAndStart } from "../opening.js";
+import {
+  answerTheAsk,
+  closeProject,
+  noDialogIsLeftUp,
+  openThroughTheTrustQuestion,
+  pressAndStart,
+} from "../opening.js";
 import { attributesOfEach } from "../reading.js";
 
 /**
@@ -234,10 +240,7 @@ describe("a window holding more than one project", function () {
 
     // **A tab is an open, and an open goes through the gate.** A project nobody has approved
     // is described and not opened; there is no third way in (ADR 0035).
-    const question = await $('[role="dialog"]');
-    await question.waitForDisplayed({ timeout: 30_000 });
-    await expect(question).toHaveText("Open this project?", { containing: true });
-    await $('[role="dialog"]').$("button=Open project").click();
+    await openThroughTheTrustQuestion();
 
     await stripBecomes([
       { path: first, front: false },
@@ -328,11 +331,9 @@ describe("a window holding more than one project", function () {
 
       // **A plane charter made a second ago is still one this machine has approved nothing
       // about** (ADR 0035). There is no shortcut past the ask, and this is the assertion that
-      // says so from the outside.
-      const question = await $('[role="dialog"]');
-      await question.waitForDisplayed({ timeout: 30_000 });
-      await expect(question).toHaveText("Open this project?", { containing: true });
-      await $('[role="dialog"]').$("button=Open project").click();
+      // says so from the outside. The New project dialog is still up, saying "Creating…", when
+      // the press lands, and the question takes its place: waited for by its words (#2126).
+      await openThroughTheTrustQuestion();
 
       // The operator's second ruling on #178: it opens in THIS window, selected. Pressing create
       // was the asking; a second dialog would be a third confirmation of something asked twice.
