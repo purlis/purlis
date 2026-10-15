@@ -4,9 +4,9 @@
 //! The session protocol's compatibility promise (E5, ADR 0068 §4), held in CI.
 //!
 //! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says: 1.0's, 1.1's
-//! hosted programs and views of a kind (#1994), and 1.2's chats in the host (#1998). Each must read
-//! back as it was recorded, by this build and so by every later one, which is what lets a
-//! client and a host one version apart talk. A frame kind added without being recorded fails
+//! hosted programs and views of a kind (#1994), 1.2's chats in the host (#1998), and 1.3's
+//! saving in the host (#2002). Each must read back as it was recorded, by this build and so by
+//! every later one, which is what lets a client and a host one version apart talk. A frame kind added without being recorded fails
 //! here, so the promise grows on purpose. The UI RPC is not in it: it is private to one build
 //! of the app, and excluded from this promise (V7).
 //!

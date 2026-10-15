@@ -80,7 +80,11 @@ use crate::view::{Limits, Views};
 /// the sandbox, and the window's own [`Launch`]), `close` beside `stop`, `readiness`, a started
 /// program's number and process, a listed chat's number and run, and two pushed notices: a
 /// program `ended`, and a view `view_ended` for good.
-pub const VERSION: Version = Version { major: 1, minor: 2 };
+///
+/// 1.3 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
+/// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
+/// project's auto-save did.
+pub const VERSION: Version = Version { major: 1, minor: 3 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -200,6 +204,17 @@ pub enum Command {
     /// Whether a hosted program is ready to be typed at, as its terminal and the clock say it,
     /// never what it wrote (1.2): answered [`Answer::Readiness`].
     Readiness { program: String },
+    /// Save a held project from now on: the host runs its watcher and its auto-save, as the
+    /// project's settings say, until [`Command::StopSaving`] or the host ends (1.3). A link
+    /// that ends does not stop it, so the project goes on being saved while the window is
+    /// gone. A project the host already saves is not saved twice. Each look that did something
+    /// is pushed as [`Pushed::Saving`].
+    StartSaving { project: String },
+    /// Stop saving a project, and answer once its auto-save has been told to stop (1.3).
+    StopSaving { project: String },
+    /// Fetch what came in for a project the host saves, unless it fetched a moment ago: the
+    /// window came back into focus (1.3).
+    FetchProject { project: String },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -517,6 +532,15 @@ pub enum Pushed {
         view: u32,
         why: ViewEnd,
     },
+    /// One look of a project's auto-save did something (1.3): it `saved` the project, or only
+    /// fetched, pushed or looked at a request; `moved_tree` when what it did moved files in the
+    /// tree (a fast-forward, a save's rebase), so a client reads everything again, and only the
+    /// git standing otherwise.
+    Saving {
+        project: String,
+        saved: bool,
+        moved_tree: bool,
+    },
 }
 
 wire_words!(Command {
@@ -537,6 +561,9 @@ wire_words!(Command {
     LetGoOfProject => "let_go_of_project",
     Close => "close",
     Readiness => "readiness",
+    StartSaving => "start_saving",
+    StopSaving => "stop_saving",
+    FetchProject => "fetch_project",
 });
 
 impl Command {
@@ -555,7 +582,11 @@ impl Command {
             Command::Answer { .. } => Power::Answer,
             Command::Stop { .. } | Command::Close { .. } => Power::Stop,
             Command::Start(_) | Command::StartProgram(_) => Power::Start,
-            Command::HoldProject { .. } | Command::LetGoOfProject { .. } => Power::Hold,
+            Command::HoldProject { .. }
+            | Command::LetGoOfProject { .. }
+            | Command::StartSaving { .. }
+            | Command::StopSaving { .. }
+            | Command::FetchProject { .. } => Power::Hold,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -588,6 +619,7 @@ wire_words!(Pushed {
     Missed => "missed",
     Ended => "ended",
     ViewEnded => "view_ended",
+    Saving => "saving",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -928,6 +960,9 @@ enum Lane {
     Program(String),
     /// `subscribe` and `unsubscribe`.
     Subscription,
+    /// The commands about one project's saving (1.3): a stop is never overtaken by the start
+    /// before it.
+    Saving(String),
 }
 
 impl Lane {
@@ -951,6 +986,9 @@ impl Lane {
             | Command::Close { program }
             | Command::Readiness { program } => Some(Lane::Program(program.clone())),
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
+            Command::StartSaving { project }
+            | Command::StopSaving { project }
+            | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
         }
     }
 }
@@ -1326,6 +1364,30 @@ impl Client {
         .await
     }
 
+    /// Save `project` from now on, in the host (1.3).
+    pub async fn start_saving(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::StartSaving {
+            project: project.into(),
+        })
+        .await
+    }
+
+    /// Stop saving `project` in the host (1.3).
+    pub async fn stop_saving(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::StopSaving {
+            project: project.into(),
+        })
+        .await
+    }
+
+    /// Fetch what came in for `project`, which the host saves (1.3).
+    pub async fn fetch_project(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::FetchProject {
+            project: project.into(),
+        })
+        .await
+    }
+
     /// End `program` and forget it (1.2).
     pub async fn close(&self, program: &str) -> Result<(), CallError> {
         self.done(Command::Close {
@@ -1469,7 +1531,7 @@ impl Subscribed {
                         .insert(device.clone(), resumes_at.saturating_sub(1));
                 }
                 // Neither is an event of the log: the cursor stays where it is.
-                Pushed::Ended { .. } | Pushed::ViewEnded { .. } => {}
+                Pushed::Ended { .. } | Pushed::ViewEnded { .. } | Pushed::Saving { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

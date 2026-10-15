@@ -163,6 +163,15 @@ fn every_command() -> Vec<Command> {
         Command::Readiness {
             program: CHAT.into(),
         },
+        Command::StartSaving {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::StopSaving {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::FetchProject {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
         // A start the window composed: the window's alone.
         Command::StartProgram(Box::new(session::StartProgram {
             launch: Some(session::Launch {
@@ -204,6 +213,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "let_go_of_project",
             "close",
             "readiness",
+            "start_saving",
+            "stop_saving",
+            "fetch_project",
             "start_program",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
