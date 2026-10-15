@@ -32,6 +32,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -158,7 +159,7 @@ pub enum StartError {
 pub struct Engine {
     pid: Pid,
     reaped: bool,
-    connection: Option<Connection>,
+    connection: Option<Arc<Connection>>,
     events: Option<Receiver<Event>>,
     group: EngineGroup,
 }
@@ -191,7 +192,7 @@ impl Engine {
         let engine = Self {
             pid,
             reaped: false,
-            connection: Some(connection),
+            connection: Some(Arc::new(connection)),
             events: Some(events),
             group,
         };
@@ -208,6 +209,14 @@ impl Engine {
     pub(crate) fn devtools(&self) -> &Connection {
         self.connection
             .as_ref()
+            .expect("the connection lives as long as the engine")
+    }
+
+    /// The same connection, for this crate's driver of pages ([`crate::drive`]), which keeps it
+    /// while the engine runs.
+    pub(crate) fn devtools_shared(&self) -> Arc<Connection> {
+        self.connection
+            .clone()
             .expect("the connection lives as long as the engine")
     }
 
