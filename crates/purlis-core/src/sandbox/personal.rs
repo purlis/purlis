@@ -328,7 +328,8 @@ pub fn confirm(root: &Path, persona: Option<&str>, shown: Choice) -> Result<Choi
 }
 
 /// Records `choice` for the slot as yours: Settings' save of a level, and its Confirm, never a
-/// chat (a sandboxed chat cannot write the record).
+/// chat (a sandboxed chat cannot write the record). Refused, with the policy's sentence, for a
+/// level the project's policy or this machine's forbids ([`super::team::allowed_levels`]).
 pub fn set_by_you(
     root: &Path,
     persona: Option<&str>,
@@ -341,6 +342,16 @@ pub fn set_by_you(
             "'{}' cannot be a persona",
             crate::shown::short(name)
         ));
+    }
+    // A level the project's policy forbids is never yours to set (#2071 PR C): the sentence
+    // names the policy.
+    if let Some(choice) = choice {
+        let bound = super::team::allowed_levels(root);
+        if !bound.allows(choice) {
+            return Err(bound.why.unwrap_or_else(|| {
+                format!("{} is not a level you may choose here", choice.said())
+            }));
+        }
     }
     super::local::change_levels(root, |mine| mine.set(persona, choice))
         .map_err(|why| format!("purlis could not keep your level on this machine: {why}"))

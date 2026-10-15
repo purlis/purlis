@@ -38,14 +38,35 @@ fn a_plane_that_turns_the_sandbox_on_gets_the_default_egress() {
 }
 
 #[test]
-fn a_plane_can_never_carry_off_and_saying_it_leaves_the_sandbox_on() {
+fn a_plane_s_off_is_the_team_s_and_its_hosts_still_hold_for_a_full_sandbox() {
+    // #2071 PR C (the operator's ruling of 2026-10-15): `mode = "off"` turns the sandbox off
+    // for the team, reaching each person only on their Accept (`team::team_off`). Its policy
+    // is still read, for a person who keeps the full sandbox.
     let said = said("[sandbox]\nmode = \"off\"\n");
+    assert_eq!(said.policy, default_policy());
+    assert!(said.refused.is_empty(), "{:?}", said.refused);
+}
+
+#[test]
+fn off_under_a_never_policy_is_refused_naming_the_policy_and_leaves_the_sandbox_on() {
+    let said = said("[sandbox]\nmode = \"off\"\npolicy = \"never\"\n");
     assert_eq!(said.policy, default_policy());
     assert_eq!(said.refused, [Refusal::ModeOff]);
     assert_eq!(
         said.refused[0].to_string(),
-        "sandbox.mode in charter.toml cannot be \"off\": a committed file may turn the sandbox \
-         on and never off — only a person turns it off, for one chat; so the sandbox is on"
+        "sandbox.mode in charter.toml cannot be \"off\": the project's sandbox.policy is \
+         \"never\", so nobody turns the sandbox off; so the sandbox is on"
+    );
+}
+
+#[test]
+fn a_policy_that_is_not_never_or_local_is_refused_and_read_as_never() {
+    let said = said("[sandbox]\nmode = \"on\"\npolicy = \"team-off\"\n");
+    assert_eq!(said.refused, [Refusal::PolicyUnknown]);
+    assert_eq!(
+        said.refused[0].to_string(),
+        "sandbox.policy in charter.toml is not \"never\" or \"local\", so it is read as \
+         \"never\": nobody turns the sandbox down until it says one"
     );
 }
 
@@ -113,7 +134,7 @@ fn a_key_the_schema_does_not_have_is_refused() {
 #[test]
 fn this_machine_s_file_holds_its_own_hosts_and_never_the_mode() {
     let off = "[sandbox]\nmode = \"off\"\n";
-    assert_eq!(refusals(off, "charter.toml").len(), 1);
+    assert_eq!(refusals(off, "charter.toml").len(), 0);
     assert_eq!(
         refusals(off, "charter.local.toml"),
         [

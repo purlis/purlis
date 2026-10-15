@@ -509,8 +509,9 @@ fn neither_file_may_turn_charters_own_plugin_off() {
 }
 
 #[test]
-fn the_shared_file_may_turn_the_sandbox_on_and_never_off() {
-    // ADR 0067: a committed file may restrict what a chat is confined to, never loosen it.
+fn the_shared_file_may_turn_the_sandbox_off_for_the_team_unless_its_policy_is_never() {
+    // ADR 0067 as amended 2026-10-15 (#2071): `mode = "off"` is the team's off, which reaches
+    // each person on their Accept; under `policy = "never"` it is refused.
     let dir = plane(COMMENTED);
     assert_eq!(
         refusals(dir.path(), Which::Shared, "[sandbox]\nmode = \"on\"\n"),
@@ -518,10 +519,17 @@ fn the_shared_file_may_turn_the_sandbox_on_and_never_off() {
     );
     assert_eq!(
         refusals(dir.path(), Which::Shared, "[sandbox]\nmode = \"off\"\n"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        refusals(
+            dir.path(),
+            Which::Shared,
+            "[sandbox]\nmode = \"off\"\npolicy = \"never\"\n"
+        ),
         [
-            "sandbox.mode in charter.toml cannot be \"off\": a committed file may turn the \
-          sandbox on and never off — only a person turns it off, for one chat; so the \
-          sandbox is on"
+            "sandbox.mode in charter.toml cannot be \"off\": the project's sandbox.policy is \
+          \"never\", so nobody turns the sandbox off; so the sandbox is on"
         ]
     );
 }
@@ -1536,7 +1544,7 @@ fn each_reader_of_the_committed_file_gives_the_key_of_its_refusal() {
                   [harness_plugins.nope]\n\
                   [harness_plugins.codex]\n\"one\" = 3\n\
                   [theme]\nuse = 3\nfoo = 1\n\
-                  [sandbox]\nmode = \"off\"\negress = \"web\"\n\
+                  [sandbox]\nmode = \"off\"\npolicy = \"never\"\negress = \"web\"\n\
                   [sandbox.personas.ghost]\nhosts = []\n\
                   [dispatch]\ndepth = \"deep\"\n\
                   [dispatch.personas.devops]\nbogus = 1\n\
