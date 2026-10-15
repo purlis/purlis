@@ -7032,6 +7032,15 @@ export type RepoStates = {
 	cache_refused: string | null,
 };
 
+/**
+ *  **A chat whose project's Claude Code settings changed so that it no longer loads them**, as
+ *  the window hears it: it is owed a restart, which the window drives at once.
+ */
+export type Rescreened = {
+	plane: PlaneId,
+	session: number,
+};
+
 /**  [`purlis_core::restartends::Ends`], as the window reads it. */
 export type RestartEnds = {
 	/**  Each program below the chat listening on a TCP port, by port. */

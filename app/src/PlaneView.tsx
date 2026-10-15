@@ -361,6 +361,7 @@ import type {
   ExtensionView,
   Offered,
   PanelView,
+  Rescreened,
   RowAction,
   SavedRecord,
   Shown,
@@ -5134,6 +5135,34 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, chatRestarted],
   );
+  /**
+   * **A chat whose project's Claude Code settings changed so that it no longer loads them**
+   * (ADR 0067 as amended 2026-10-16): the core owes it a restart on its conversation, and it is
+   * restarted at once, as Restart now does, never left to its next pause. Filtered on the plane,
+   * as `chat-moved` is.
+   */
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<Rescreened>("chat-project-settings-changed", (event) => {
+          const told = event.payload;
+          if (gone || told.plane !== plane) return;
+          oweRestart(told.session);
+          restartOwed(told.session);
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane, oweRestart, restartOwed]);
   // **Only at the chat's next pause between turns** (#1342, #1986): mid-turn it would lose
   // what it was doing; a harness that reports no state is never restarted behind the person's
   // back, and its pane offers Restart now instead. A chat whose program ended first is

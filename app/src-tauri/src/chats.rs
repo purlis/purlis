@@ -456,6 +456,9 @@ pub struct Chats {
     trusting: Mutex<Option<Trusting>>,
     /// What a start found to say on a chat's tab after the core's start had spoken: that its
     /// trust event could not be written. Taken by the window's start ([`Self::start_notes`]).
+    /// Every open sandboxed Claude Code chat's project settings files, watched and screened
+    /// again on each change (ADR 0067 as amended 2026-10-16, [`crate::projectsettings`]).
+    project_settings: crate::projectsettings::Watch,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
     /// Why each chat that runs with no sandbox where the floor could not be applied does
     /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
@@ -908,6 +911,7 @@ impl Chats {
             beginning: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            project_settings: crate::projectsettings::Watch::new(),
             floorless: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
@@ -1599,6 +1603,35 @@ impl Chats {
         }
     }
 
+    /// Who is told, from now on, each chat whose project's Claude Code settings changed so that
+    /// it no longer loads them (ADR 0067 as amended 2026-10-16): the project wires it to
+    /// [`Self::project_settings_changed`] and to the window.
+    pub fn tell_project_settings_to(&self, told: crate::projectsettings::Told) {
+        self.project_settings.telling(told);
+    }
+
+    /// **Chat `session`'s project settings no longer pass** (ADR 0067 as amended 2026-10-16):
+    /// it is owed a restart on its conversation, which starts it on the person's settings and
+    /// purlis's, and its tab says why, as a start does.
+    pub fn project_settings_changed(&self, session: u32) {
+        self.owe_restart(
+            session,
+            purlis_core::harness::claude::project::RESCREENED.to_owned(),
+        );
+    }
+
+    /// Every watched chat's project settings, screened again now.
+    #[cfg(test)]
+    pub fn screen_project_settings_again(&self) {
+        self.project_settings.screen_all();
+    }
+
+    /// The project settings of chats started from now are watched by `watch`.
+    #[cfg(test)]
+    pub fn watching_project_settings_with(&mut self, watch: crate::projectsettings::Watch) {
+        self.project_settings = watch;
+    }
+
     /// Owes chat `session` a restart on its conversation that tells it `told` (#1342): a grant
     /// of any level reaches a running chat that way.
     /// A chat that is not open is owed nothing: what was allowed reaches it at its next start.
@@ -2147,6 +2180,7 @@ impl Chats {
         if !restarting {
             lock(&self.owed).remove(&session);
         }
+        self.project_settings.forget(session);
     }
 
     /// Starts a chat, and remembers what it was started as.
@@ -2441,6 +2475,24 @@ impl Chats {
         // rest on (M8.3) — then the state hooks, then charter's own words: a chat's recorded
         // arguments may end in a positional prompt that nothing may come after.
         // `purlis_core::start::Ready::command_line` is the one place that order is decided.
+        // A sandboxed Claude Code chat that loads its project's own settings has them watched
+        // from before it starts (ADR 0067 as amended 2026-10-16). Where they cannot be, it is
+        // started without them.
+        let settings_watched = match chat.cwd.as_deref() {
+            Some(cwd)
+                if sandbox.is_some()
+                    && harness == Some(Harness::ClaudeCode)
+                    && purlis_core::harness::claude::project::screen(Some(cwd))
+                        .loads_the_project() =>
+            {
+                Some(
+                    self.project_settings
+                        .prepare(cwd)
+                        .map(|()| cwd.to_path_buf()),
+                )
+            }
+            _ => None,
+        };
         let (hooks, armed) = self.state_hooks(
             harness,
             chat.cwd.as_deref(),
@@ -2448,6 +2500,17 @@ impl Chats {
             sandbox,
             runs_as.as_deref(),
         )?;
+        let hooks = match &settings_watched {
+            Some(Err(why)) => {
+                tracing::warn!("purlis: a chat's project settings are not watched ({why})");
+                late.push(purlis_core::harness::claude::project::UNWATCHED.to_owned());
+                purlis_core::harness::claude::project::limited(
+                    hooks,
+                    &purlis_core::harness::claude::project::screen(chat.cwd.as_deref()),
+                )?
+            }
+            _ => hooks,
+        };
         // What the run this start begins is, for its `run.started` (ADR 0066, #868), its model
         // source its profile's sign-in kind (ADR 0087 as amended, #2036).
         let mut attributes = run_attributes(
@@ -2708,6 +2771,9 @@ impl Chats {
                 },
             },
         );
+        if let Some(Ok(cwd)) = &settings_watched {
+            self.project_settings.chat(session, cwd);
+        }
         self.write_it_down();
         // A close that began while this started, past the check above, has ended every chat
         // it found: this one is ended as well, so nothing runs in a project nobody holds.
@@ -2722,6 +2788,7 @@ impl Chats {
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         let gone = lock(&self.open).remove(&session);
+        self.project_settings.forget(session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
         lock(&self.told).remove(&session);
@@ -6780,6 +6847,117 @@ pub(crate) mod tests {
             "restarted, it is on the sandbox of now"
         );
         chats.close(started).expect("ends");
+    }
+
+    /// The project at `plane` holds `settings` in its `.claude/settings.json`.
+    fn project_settings_become(plane: &std::path::Path, settings: &str) {
+        std::fs::create_dir_all(plane.join(".claude")).expect(".claude");
+        std::fs::write(plane.join(".claude/settings.json"), settings).expect("settings");
+    }
+
+    /// Whether the last chat `host` started was limited to the person's settings and purlis's.
+    fn limited_to_the_person_s(host: &Pretend) -> bool {
+        let opened = host.openings();
+        let args = &opened.last().expect("a start").args;
+        args.windows(2)
+            .any(|pair| pair[0] == "--setting-sources" && pair[1] == "user")
+    }
+
+    /// Chats of a sandboxed project whose own Claude Code settings hold only what a chat keeps,
+    /// each told chat owed its restart as the project wires it.
+    fn chats_on_kept_project_settings(
+        watch: crate::projectsettings::Watch,
+    ) -> (tempfile::TempDir, Arc<Chats>, Pretend, Arc<Mutex<Vec<u32>>>) {
+        let plane = a_sandboxed_plane();
+        project_settings_become(
+            plane.path(),
+            r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}}"#,
+        );
+        let host = Pretend::default();
+        let mut chats = restartable_chats_of(plane.path(), host.clone());
+        chats.watching_project_settings_with(watch);
+        let chats = Arc::new(chats);
+        let told = Arc::new(Mutex::new(Vec::new()));
+        chats.tell_project_settings_to({
+            let (weak, told) = (Arc::downgrade(&chats), Arc::clone(&told));
+            Arc::new(move |session| {
+                if let Some(chats) = weak.upgrade() {
+                    chats.project_settings_changed(session);
+                }
+                lock(&told).push(session);
+            })
+        });
+        (plane, chats, host, told)
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_stop_passing_is_restarted_on_the_person_s_settings() {
+        // ADR 0067 as amended 2026-10-16.
+        let (plane, chats, host, told) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert!(!limited_to_the_person_s(&host), "its project's files load");
+        assert!(chats.owed_restarts().is_empty());
+
+        project_settings_become(plane.path(), r#"{"permissions": {"allow": ["Bash"]}}"#);
+        chats.screen_project_settings_again();
+        assert_eq!(*lock(&told), [session], "the window is told");
+        assert_eq!(chats.owed_restarts(), [session], "owed its restart");
+
+        let started = chats.restart(session, SIZE).expect("restarts");
+        chats.close(session).expect("the old run ends");
+        assert!(
+            limited_to_the_person_s(&host),
+            "on the person's settings now"
+        );
+        let notes = chats.start_notes(started);
+        assert!(
+            notes.iter().any(|note| note.contains("permissions.allow")),
+            "its tab says why: {notes:?}"
+        );
+        // Started on the person's settings, it is watched no more: nothing is owed again.
+        project_settings_become(plane.path(), r#"{"hooks": {"Stop": []}}"#);
+        chats.screen_project_settings_again();
+        assert_eq!(*lock(&told), [session]);
+        chats.close(started).expect("ends");
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_still_pass_is_left_as_it_is() {
+        let (plane, chats, host, told) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        project_settings_become(
+            plane.path(),
+            r#"{"permissions": {"ask": ["Bash(git push *)"]}, "model": "sonnet"}"#,
+        );
+        chats.screen_project_settings_again();
+        assert!(lock(&told).is_empty());
+        assert!(chats.owed_restarts().is_empty());
+        assert!(!limited_to_the_person_s(&host));
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_cannot_be_watched_starts_on_the_person_s_settings() {
+        let (plane, chats, host, _) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::unable());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert!(limited_to_the_person_s(&host), "fail closed");
+        let notes = chats.start_notes(session);
+        assert!(
+            notes
+                .iter()
+                .any(|note| note == purlis_core::harness::claude::project::UNWATCHED),
+            "{notes:?}"
+        );
+        chats.close(session).expect("ends");
     }
 
     #[test]

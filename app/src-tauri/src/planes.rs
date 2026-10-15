@@ -1875,6 +1875,9 @@ pub struct Planes {
     arranged: Arc<ArrangedBehind>,
     /// Told how many hosts a chat's proxy refused past the ones it names (#1353).
     refused_more: hooks::RefusedMoreTeller,
+    /// Told each chat whose project's Claude Code settings no longer pass (ADR 0067 as amended
+    /// 2026-10-16).
+    project_settings: crate::projectsettings::Teller,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
@@ -2130,6 +2133,7 @@ impl Planes {
             blocks: Arc::new(|_| {}),
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
+            project_settings: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
@@ -2325,6 +2329,14 @@ impl Planes {
     /// window's thread and outlives the registry's borrow (#1949).
     pub(crate) fn block_teller(&self) -> hooks::BlockTeller {
         Arc::clone(&self.blocks)
+    }
+
+    /// Tells `told` each chat, in a plane this registry holds, whose project's Claude Code
+    /// settings changed so that it no longer loads them, so the window restarts it (ADR 0067 as
+    /// amended 2026-10-16).
+    pub fn telling_project_settings(mut self, told: crate::projectsettings::Teller) -> Self {
+        self.project_settings = told;
+        self
     }
 
     /// Tells `more` how many hosts a chat's proxy refused past the ones it names, in a plane this
@@ -2781,6 +2793,22 @@ impl Planes {
                     session,
                     more,
                 });
+            })
+        });
+        // A chat whose project's Claude Code settings no longer pass is owed its restart, and
+        // the window is told to drive it (ADR 0067 as amended 2026-10-16). Weak for the
+        // handoff's reason.
+        held.chats().tell_project_settings_to({
+            let weak = Arc::downgrade(&held);
+            let (plane, told) = (id.clone(), Arc::clone(&self.project_settings));
+            Arc::new(move |session| {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().project_settings_changed(session);
+                    told(crate::projectsettings::Rescreened {
+                        plane: plane.clone(),
+                        session,
+                    });
+                }
             })
         });
         // A permission hook's ask is read by the harness this app started its chat as, never
