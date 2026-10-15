@@ -377,6 +377,7 @@ fn a_project_made_from_each_template_starts_a_chat_in_its_repo_under_each_of_its
                     without_sandbox: None,
                     held: None,
                     grants: Default::default(),
+                    made: purlis_core::sandbox::Made::Window,
                 },
                 &root,
             );

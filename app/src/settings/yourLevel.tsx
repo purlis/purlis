@@ -32,7 +32,7 @@ export const LEVEL_SAID: Readonly<Record<(typeof LEVELS)[number], string>> = {
 
 /** What the group says above its rows. */
 export function yourLevelHelp(file: string): string {
-  return `How much the sandbox holds for your chats in this project, on this machine only. Kept in ${file}, never in a committed file. A chat takes it at its next start; a chat already running keeps the level it started with. A level set here counts as yours; a lower one written into the file any other way waits for your Confirm below, and a chat starts at what you confirmed, or the floor, until then. Full sandbox is the project's hosts, folders and Allow asks. Floor reaches every host and folder, but never a vault's files or a file a program runs later. No sandbox holds nothing: a chat can read any file on disk, a plain-file vault's included.`;
+  return `How much the sandbox holds for your chats in this project, on this machine only. Kept in ${file}, never in a committed file. A chat takes it at its next start; a chat already running keeps the level it started with. A level set here counts as yours; a lower one written into the file any other way waits for your Confirm below, and a chat starts at what you confirmed, or the floor, until then. Full sandbox is the project's hosts, folders and Allow asks. Floor reaches every host and folder, but never a vault's files or a file a program runs later: it is where a chat starts when the project has not turned the full sandbox on. Note: where the project has turned the full sandbox on, Floor starts a chat in it for now. No sandbox holds nothing: a chat can read any file on disk, a plain-file vault's included, and its tab says no sandbox — your setting.`;
 }
 
 /**

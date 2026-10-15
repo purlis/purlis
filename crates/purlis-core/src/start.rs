@@ -71,6 +71,11 @@ pub struct Start {
     /// What a person let this one chat do past its project's sandbox, from a block's Notice
     /// (#1342): held by the app for that chat alone, and empty for every other start.
     pub grants: crate::sandbox::grant::Grants,
+    /// **How this start was made, and by which chat where one asked** (#2071): what the
+    /// person's own level is read through ([`crate::sandbox::your_level`]) and what its audit
+    /// names. Set by the app from its own record, never from a request. The default,
+    /// [`crate::sandbox::Made::Unnamed`], never takes a level of `off`.
+    pub made: crate::sandbox::Made,
 }
 
 /// **The persona grants the recorded chat `chat` runs with** in the project at `root`: what
@@ -392,7 +397,13 @@ fn ready_given(
             root,
             machine,
             has,
-            start.without_sandbox.as_ref(),
+            &crate::sandbox::Person {
+                opt_out: start.without_sandbox.as_ref(),
+                // The chat's own persona, and the project's for one that names none: never the
+                // default persona its grants fall back to (#2071).
+                level_as: start.persona.as_deref(),
+                made: &start.made,
+            },
             // A persona's own hosts reach its chats and no other's (#1362).
             grants_persona(start.held.as_ref(), persona.as_deref(), || {
                 persona_for_a_new_chat(root)

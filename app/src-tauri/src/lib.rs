@@ -1552,6 +1552,8 @@ fn start_chat_in(
         without_sandbox,
         held: None,
         grants: Default::default(),
+        // The person's new chat, from the window's picker (#2071).
+        made: purlis_core::sandbox::Made::Window,
     };
     let ready = purlis_core::start::ready(&start, root)?;
     let chat = Chat {

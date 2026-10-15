@@ -509,6 +509,9 @@ pub(crate) fn reopening(
             cwd: Some(cwd.clone()),
             resume: Some(resume),
             held: held_grants.clone(),
+            // The person's Reopen of a finished task, from the window: an ordinary chat of
+            // theirs from now on (#2071).
+            made: purlis_core::sandbox::Made::Window,
             ..Default::default()
         },
         root,

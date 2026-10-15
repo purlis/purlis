@@ -4808,6 +4808,10 @@ impl OptOut {
 pub enum By {
     /// A person, in the window, for this chat ([`OptOut`]).
     Person,
+    /// A person, by their own level for this project or the chat's persona, as they set or
+    /// confirmed it in Settings on this machine (#2071, ADR 0096; [`your_level`]), at a start
+    /// made [`Via`] this way.
+    YourLevel(Via),
     /// Charter itself, because this operating system has no sandbox backend yet (Windows,
     /// M46, #565; ruling V21 3). The audit names charter as the actor, never the operator (ruling V78 b).
     NoBackend(Os),
@@ -4831,6 +4835,11 @@ impl Lifted {
         match self.by {
             By::Person => "This chat runs without the sandbox: you turned it off for this chat \
                            only. A new or resumed chat does not inherit it."
+                .to_owned(),
+            By::YourLevel(_) => "No sandbox — your setting. This chat runs without the sandbox \
+                              because your level for this project, on this machine, is no \
+                              sandbox (Settings › Sandbox › Your level). Every chat it covers \
+                              starts this way until you change it."
                 .to_owned(),
             // The Windows backend is M46, #565.
             By::NoBackend(os) => format!(
@@ -4886,6 +4895,25 @@ impl Change {
                 "reason": reason,
                 "lifted": classes,
             }),
+            // The person's own setting, confirmed on this machine, at a start made `via`: the
+            // actor is whoever made the start, never the person for a start a chat asked for.
+            Self::Off(Lifted {
+                by: By::YourLevel(via),
+                reason,
+            }) => {
+                let (actor_kind, actor, scope) = via.actor();
+                serde_json::json!({
+                    "actor_kind": actor_kind,
+                    "actor": actor,
+                    "scope": scope,
+                    "by": "your-level",
+                    "made": via.word(),
+                    "harness": harness,
+                    "persona": persona,
+                    "reason": reason,
+                    "lifted": classes,
+                })
+            }
             Self::Off(Lifted {
                 by: By::NoBackend(os),
                 reason,
@@ -4974,10 +5002,185 @@ pub fn decide(
         root,
         machine,
         has,
-        opt_out,
+        &Person {
+            opt_out,
+            level_as: persona,
+            made: &Made::Window,
+        },
         persona,
         &grant::Grants::default(),
     )
+}
+
+/// **How a start was made** (#2071): what a person's own level is read through at it, and what
+/// its audit names. Set by whoever builds the start, from the app's own record and never from
+/// a request.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Made {
+    /// A start that does not say how it was made. **A person's `off` is never honoured at it**:
+    /// a builder that forgot to say starts the chat sandboxed, never unsandboxed.
+    #[default]
+    Unnamed,
+    /// The person, in the window: the new-chat picker, a curation action, a finished task
+    /// reopened.
+    Window,
+    /// The person, resuming a session record from the Sessions panel.
+    Resume,
+    /// The app, starting a chat again from its record: a relaunch, a restart, a start in the
+    /// place of one that could not resume. A chat another chat asked for is [`Self::Asked`]
+    /// at every later start too.
+    Relaunch,
+    /// Another chat asked for it.
+    Asked {
+        how: Asking,
+        /// **The chats above it, nearest first**, the chat the person started last: each one's
+        /// persona, `None` for one on none (the project's level), from the app's record and
+        /// never from a request. `None`, or an empty chain, where the record cannot say, and
+        /// then a person's `off` is not honoured.
+        above: Option<Vec<Option<String>>>,
+    },
+}
+
+/// How another chat asked for a chat (#1434).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Asking {
+    Dispatch,
+    Handoff,
+}
+
+/// [`Made`], as a chat's audit names it: a start a person's level lifted the sandbox at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    Window,
+    Resume,
+    Relaunch,
+    Dispatch,
+    Handoff,
+}
+
+impl Via {
+    /// How the start was made, as the audit's `made` says it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Window => "local-ui",
+            Self::Resume => "resume",
+            Self::Relaunch => "relaunch",
+            Self::Dispatch => "dispatch",
+            Self::Handoff => "handoff",
+        }
+    }
+
+    /// Who made the start, as the audit names an actor (ADR 0075 §3): the kind, the actor and
+    /// its scope.
+    fn actor(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Window | Self::Resume => ("human", "operator", "local-ui"),
+            Self::Relaunch => ("host", "purlis", "relaunch"),
+            Self::Dispatch | Self::Handoff => ("agent", "a chat", self.word()),
+        }
+    }
+}
+
+impl Made {
+    /// How the audit names it; `None` for [`Self::Unnamed`], which never lifts anything.
+    fn via(&self) -> Option<Via> {
+        match self {
+            Self::Unnamed => None,
+            Self::Window => Some(Via::Window),
+            Self::Resume => Some(Via::Resume),
+            Self::Relaunch => Some(Via::Relaunch),
+            Self::Asked {
+                how: Asking::Dispatch,
+                ..
+            } => Some(Via::Dispatch),
+            Self::Asked {
+                how: Asking::Handoff,
+                ..
+            } => Some(Via::Handoff),
+        }
+    }
+}
+
+/// What a person brings to one start: their opt-out for it, the persona their level is read
+/// for (the chat's own, `None` for a chat that names none: the project's), and how the start
+/// was made.
+#[derive(Debug, Clone, Copy)]
+pub struct Person<'a> {
+    pub opt_out: Option<&'a OptOut>,
+    pub level_as: Option<&'a str>,
+    pub made: &'a Made,
+}
+
+/// **The level a person's own setting starts a chat at** (#2071, ADR 0096): their level for
+/// the project at `root`, or for `persona`, as they set or confirmed it on this machine
+/// ([`personal::in_force`], never the file's word alone), within what policy lets a person
+/// choose ([`bounded`]), and for a start another chat asked for, **the strictest level across
+/// the chain of chats that asked** — the level each of them runs at — so no chat reaches past
+/// its own by asking for another, however many hops away. A start that does not say how it was
+/// made, or whose chain the record cannot name whole, never takes `off`.
+pub fn your_level(
+    root: &Path,
+    persona: Option<&str>,
+    locks: &policy::Locks,
+    made: &Made,
+) -> Option<personal::Choice> {
+    let in_force = personal::in_force(root);
+    let own = bounded(in_force.for_persona(persona), locks);
+    let not_off = |level: Option<personal::Choice>| level.filter(|l| *l != personal::Choice::Off);
+    // Not set reads as the floor, which is what a chat with no level starts at.
+    let floor = personal::Choice::Floor;
+    match made {
+        Made::Unnamed | Made::Asked { above: None, .. } => not_off(own),
+        Made::Asked {
+            above: Some(above), ..
+        } if above.is_empty() => not_off(own),
+        Made::Asked {
+            above: Some(above), ..
+        } => {
+            // A chat on no persona is kept in the chain under the default persona's name, so
+            // an entry naming it is held to the project's level too.
+            let default = crate::start::persona_for_a_new_chat(root);
+            let project = bounded(in_force.for_persona(None), locks).unwrap_or(floor);
+            let theirs = above
+                .iter()
+                .map(|one| {
+                    let level =
+                        bounded(in_force.for_persona(one.as_deref()), locks).unwrap_or(floor);
+                    if one.is_some() && *one == default {
+                        level.min(project)
+                    } else {
+                        level
+                    }
+                })
+                .min()
+                .unwrap_or(personal::Choice::On);
+            Some(own.unwrap_or(floor).min(theirs))
+        }
+        Made::Window | Made::Resume | Made::Relaunch => own,
+    }
+}
+
+/// `level`, within what policy lets a person choose: an administrator's policy that forbids
+/// the opt-out forbids `off` too, and the chat starts as it would with no level of theirs.
+/// **The seam for the team's policy** (#2071, PR C): what it bounds, it bounds here, the one
+/// place a start reads a person's level through.
+pub fn bounded(level: Option<personal::Choice>, locks: &policy::Locks) -> Option<personal::Choice> {
+    match level {
+        Some(personal::Choice::Off) if locks.opt_out_refused().is_some() => None,
+        level => level,
+    }
+}
+
+/// What `person`'s own level lifts at this start: every class where it is `off`
+/// ([`your_level`]), named by how the start was made; nothing otherwise. The level is read for
+/// the chat's own persona ([`Person::level_as`]), never for whose grants it holds.
+fn yours_lifted(root: &Path, person: &Person<'_>, locks: &policy::Locks) -> Option<Lifted> {
+    let off = your_level(root, person.level_as, locks, person.made) == Some(personal::Choice::Off);
+    let via = person.made.via()?;
+    off.then_some(Lifted {
+        by: By::YourLevel(via),
+        reason: None,
+    })
 }
 
 /// [`decide`], for a chat a person let do `chat` besides (#1342).
@@ -4986,10 +5189,11 @@ pub fn decide_granted(
     root: &Path,
     machine: &Machine,
     has: &dyn Fn(&str) -> bool,
-    opt_out: Option<&OptOut>,
+    person: &Person<'_>,
     persona: Option<&str>,
     chat: &grant::Grants,
 ) -> Result<Option<Decided>, NotStarted> {
+    let opt_out = person.opt_out;
     // A file that cannot be read may say `[sandbox]`, so it never reads as "not set", and nor
     // does one that has gone (D-1410e): each falls through to a refusal below, which the
     // opt-out sits inside.
@@ -5003,6 +5207,10 @@ pub fn decide_granted(
                 by: By::Person,
                 reason: opt_out.kept_reason(),
             })));
+        }
+        // Your own level, through the one seam as in a project at the full sandbox.
+        if let Some(lifted) = yours_lifted(root, person, &locks) {
+            return Ok(Some(Decided::Unsandboxed(lifted)));
         }
         if !machine.os.has_backend() {
             return Ok(Some(Decided::Floorless(
@@ -5033,6 +5241,11 @@ pub fn decide_granted(
             by: By::Person,
             reason: opt_out.kept_reason(),
         })));
+    }
+    // Your own level (#2071): a confirmed `off` starts the chat as the opt-out does. `on` and
+    // `floor` start it as below, the full sandbox, until a later change applies `floor` here.
+    if let Some(lifted) = yours_lifted(root, person, &locks) {
+        return Ok(Some(Decided::Unsandboxed(lifted)));
     }
     if !machine.os.has_backend() {
         // A policy that requires the sandbox is never met by starting without one (D-1423-1,
@@ -5144,7 +5357,8 @@ pub fn at_start(
         Some(lifted) => (
             Some(Change::Off(lifted.clone())),
             counted(match lifted.by {
-                By::Person => local::Started::OptedOut,
+                // Your level is a person's opt-out too, counted as one.
+                By::Person | By::YourLevel(_) => local::Started::OptedOut,
                 By::NoBackend(_) => local::Started::NoBackend,
             }),
         ),

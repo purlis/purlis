@@ -49,9 +49,30 @@ makes the floor every chat's default where a project has not turned the full san
    list of waiting levels are the window's alone. A chat that is already unsandboxed runs as
    the person and can write the record too, for this project or another: nothing here holds
    against a chat at `off`, which is what `off` means.
-8. **A chat's start reads it once the floor lands.** This record's first change saves, shows
-   and confirms the level; a chat's start reads it through `personal::in_force` once PR A
-   (#2081) merges, and the level mark in the title bar comes with that wiring.
+8. **What a start does with it** (2026-10-15, the first wiring, with the floor of #2081). A
+   start reads the level only through `sandbox::your_level`: `personal::in_force`, then
+   `sandbox::bounded`, the one place a policy bounds it. An administrator's policy that forbids
+   the opt-out forbids `off` too; the team's policy (#2071, PR C) bounds it there as well.
+   - A confirmed `off`, for the project or the chat's persona, starts the chat as "Start
+     without the sandbox" does: every class lifted, audited as the person's
+     (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its tab says
+     *no sandbox — your setting*, and the folder check an opt-out skips is skipped.
+   - **A start another chat asks for** (a dispatch, under a grant or not, or a handoff) runs
+     at the stricter of its own level and the strictest level across the chain of chats that
+     asked, from the asking chat up to the one the person started, at its first start and
+     every later one, so no chat reaches past its own level by asking for another, however
+     many hops away. A start that does not say how it was made, or whose chain the record
+     cannot name whole, never takes `off`.
+   - The audit names how the start was made (`made`: local-ui, resume, relaunch, dispatch or
+     handoff) and its actor: the person for their own start in the window, purlis for a
+     relaunch, a chat for one a chat asked for.
+   - A chat that names no persona takes the project's level, never the default persona's.
+   - A project that has not turned the full sandbox on starts its chats at the floor (#2081),
+     and a confirmed `off` lifts that too, through the same seam.
+   - In a project that has turned the full sandbox on, `on` starts it, as before, and so does
+     `floor` until the next change starts the floor there; the Settings page says so. In one
+     that has not, `on` starts the floor until that change too.
+   - The title-bar level mark comes with the floor's level plumbing.
 
 ## Consequences
 
