@@ -14,6 +14,7 @@
 //! purlis dispatch --name "<task>" --wait [--timeout <seconds>] <<'BRIEF' …
 //! purlis dispatch wait <chat> [--timeout <seconds>]
 //! purlis dispatch list
+//! purlis dispatch read <chat>
 //! purlis dispatch cancel <chat>
 //!
 //! purlis dispatch tell <chat> "<text>"        (the asking chat, to a task still working)
@@ -38,7 +39,9 @@
 //!
 //! **Asking after a task** (#1441): `--wait` and `wait` hold the command until the task's report
 //! lands, and print the report as the next turn would have been handed it; `list` prints the
-//! tasks this chat dispatched; `cancel` ends one's turn and asks it for a short report. Each is
+//! tasks this chat dispatched; `read` prints what one said last and the commands it ran, as its
+//! harness handed them to purlis (#1981); `cancel` ends one's turn and asks it for a short
+//! report. Each is
 //! one ask on the chat's hook socket with no ticket, which names a chat by the app's number
 //! for it. Whether that chat is this chat's task is the app's record, never anything said here
 //! ([`purlis_core::dispatched`]).
@@ -115,6 +118,14 @@ pub enum DispatchCommand {
     /// works, its state and how long ago it started. A task ends at its report, and stays
     /// listed as finished until its row is cleared or this chat closes.
     List,
+    /// Read what a task this chat dispatched said last and the commands it ran, with their
+    /// exit codes, as its harness handed them to purlis: quoted as data, credential shapes
+    /// masked. Only a task this chat dispatched can be read by it; the whole conversation is
+    /// the person's, in the task's tab.
+    Read {
+        /// The task's chat, by its number in `purlis dispatch list`.
+        chat: u32,
+    },
     /// Cancel a task this chat dispatched: its turn is ended and it is asked for one short
     /// report of what it did, which arrives with the outcome `cancelled`. Only a task this
     /// chat dispatched can be cancelled by it.
@@ -656,6 +667,7 @@ pub fn run(command: &DispatchCommand) -> ExitCode {
         } => said(report(outcome, text, changed.as_deref())),
         DispatchCommand::Wait { chat, timeout } => said(wait(*chat, *timeout)),
         DispatchCommand::List => said(list()),
+        DispatchCommand::Read { chat } => said(read(*chat)),
         DispatchCommand::Cancel { chat } => said(cancel(*chat)),
         DispatchCommand::Tell { chat, text } => said(tell(*chat, text)),
         DispatchCommand::Answer { chat, text } => said(answer(*chat, text)),
@@ -993,6 +1005,19 @@ pub fn list() -> Result<String, String> {
     match asked(What::List, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
         Answered::Listed { rows } => Ok(dispatched::list_text(&rows)),
         _ => Err(format!("{SAYS} the purlis app did not answer the list.")),
+    }
+}
+
+/// `purlis dispatch read <chat>`: what task `of` said last and the commands it ran (#1981).
+pub fn read(of: u32) -> Result<String, String> {
+    match asked(What::Output { of }, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
+        Answered::Output {
+            of,
+            name,
+            finals,
+            ran,
+        } => Ok(dispatched::output_text(&name, of, &finals, &ran)),
+        _ => Err(format!("{SAYS} the purlis app did not answer the read.")),
     }
 }
 

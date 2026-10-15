@@ -1309,6 +1309,31 @@ pub enum Ask {
     /// answers [`Answer::No`] with the sentence that says the person has been asked, or why
     /// they were not. No ticket, for a record's reason: nothing is made or removed by the ask.
     Removal(RemovalAsk),
+    /// Show the person a change to one of purlis's own configuration files, which only they
+    /// apply, in the window (#1975, [`crate::proposed`]): what a Claude Code chat's edit of such
+    /// a file and `purlis propose` hand over. **The app writes nothing for it**: it holds the
+    /// proposal for the person and answers [`Answer::No`] with the sentence that says they have
+    /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
+    /// file's whole new content.
+    Propose(Box<ProposeAsk>),
+}
+
+/// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
+/// in the project, the base the change was worked out against, and the change. Nothing else travels: whose it is is the app's record of the chat whose token the
+/// line carries, and what the person sees as the file now is the app's own read of it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The file, relative to the project root, as [`crate::proposed::proposable`] took it.
+    pub path: String,
+    /// The SHA-256 of the file as the change was worked out against it, in hex; none where it
+    /// was not there. Checked at Apply; never trusted to show what the file holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// What it changes: the tool's own edits, which the app makes to the file as it reads it,
+    /// or the file's whole new content.
+    pub change: crate::proposed::Change,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -1966,6 +1991,7 @@ impl Ask {
             Self::Dispatch(dispatch) => dispatch.chat,
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
+            Self::Propose(proposed) => proposed.chat,
         }
     }
 }
@@ -2241,12 +2267,79 @@ pub enum Output {
         /// The message, cut to [`Output::MOST_BYTES`] by the hook.
         text: String,
     },
+    /// A shell command the turn ran, as its tool's hook heard it come back (#1981): what
+    /// `purlis dispatch read` lists of a task.
+    Ran {
+        /// The command line, cut to [`Output::MOST_COMMAND_BYTES`] by the hook.
+        command: String,
+        /// Its exit status, where the harness said one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit: Option<i32>,
+        /// Whether its harness said it failed, with or without a status.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        failed: bool,
+    },
 }
 
 impl Output {
     /// The most bytes of a message the hook sends: a report's text is far shorter, and what is
     /// kept is cut again to it.
     pub const MOST_BYTES: usize = 16 * 1024;
+
+    /// The most bytes of a command line the hook sends.
+    pub const MOST_COMMAND_BYTES: usize = 1024;
+
+    /// The command a shell tool's post hook `word` heard come back, from its `payload`, or none
+    /// for any other hook or tool (#1981). `harness` is the chat's harness, by the word the
+    /// project calls it ([`HARNESS_ENV`]).
+    ///
+    /// **The status is the harness's word, where it says one**: opencode's (purlis's plugin
+    /// sends `exit_code`); Claude Code's, whose `PostToolUse` fires for a command that
+    /// succeeded and `PostToolUseFailure` for one that did not, with "Exit code N" in its
+    /// error. A command left running in the background has no status yet.
+    pub fn of_ran(word: &str, payload: &serde_json::Value, harness: Option<&str>) -> Option<Self> {
+        if !word.starts_with("posttooluse") {
+            return None;
+        }
+        if !crate::doing::is_a_command(payload["tool_name"].as_str()?) {
+            return None;
+        }
+        let input = &payload["tool_input"];
+        let command = match &input["command"] {
+            serde_json::Value::String(line) => line.trim().to_owned(),
+            serde_json::Value::Array(words) => words
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => return None,
+        };
+        if command.is_empty() {
+            return None;
+        }
+        let mut end = command.len().min(Self::MOST_COMMAND_BYTES);
+        while !command.is_char_boundary(end) {
+            end -= 1;
+        }
+        let failure = word.starts_with("posttoolusefailure");
+        let background = input["run_in_background"].as_bool() == Some(true);
+        let exit = payload["exit_code"]
+            .as_i64()
+            .and_then(|code| i32::try_from(code).ok())
+            .or_else(|| {
+                failure
+                    .then(|| payload["error"].as_str().and_then(exit_code_in))
+                    .flatten()
+            })
+            .or_else(|| {
+                (!failure && !background && harness == Some(BACKGROUND_TASKS_HARNESS)).then_some(0)
+            });
+        Some(Self::Ran {
+            command: command[..end].to_owned(),
+            exit,
+            failed: failure || exit.is_some_and(|code| code != 0),
+        })
+    }
 
     /// The last message `text` of a turn, cut on a character to [`Self::MOST_BYTES`], or none
     /// for one with nothing in it.
@@ -2270,6 +2363,16 @@ impl Output {
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
         Self::last_message(read.get("last_assistant_message")?.as_str()?)
     }
+}
+
+/// The status in a Claude Code `PostToolUseFailure` error: "Exit code N" at its start.
+fn exit_code_in(error: &str) -> Option<i32> {
+    let rest = error.trim_start().strip_prefix("Exit code ")?;
+    let digits: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
+    digits.parse().ok()
 }
 
 /// What hears a [`TurnOutput`]. Nothing is answered: the hook does not wait for it.
@@ -4553,6 +4656,31 @@ mod tests {
     }
 
     #[test]
+    fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
+        // #1975: a proposal at its largest, every byte a control character JSON spells in six,
+        // with the longest path and a base, is read whole: never cut. A whole content carries
+        // as many bytes as edits do, and less of the change's own words.
+        let ask = Ask::Propose(Box::new(ProposeAsk {
+            chat: u32::MAX,
+            path: "\u{1}".repeat(crate::proposed::MOST_PATH_BYTES),
+            base: Some("f".repeat(64)),
+            change: crate::proposed::Change::Edits {
+                edits: vec![crate::proposed::Edit {
+                    old: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    new: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    every: true,
+                }],
+            },
+        }));
+        let line = line_with(Some(&ChatToken("t".repeat(64))), &ask).expect("a line");
+        assert!(
+            (line.len() as u64) < A_LINE_IS_AT_MOST,
+            "{} bytes does not fit in {A_LINE_IS_AT_MOST}",
+            line.len()
+        );
+    }
+
+    #[test]
     fn a_written_answer_reads_back_as_written() {
         let answer = Answer::Written {
             to: "alpha".to_owned(),
@@ -6724,7 +6852,8 @@ mod tests {
                     | Ask::WhereWorking(_)
                     | Ask::Dispatch(_)
                     | Ask::Task(_)
-                    | Ask::Removal(_) => Answer::No {
+                    | Ask::Removal(_)
+                    | Ask::Propose(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }
@@ -7463,6 +7592,94 @@ mod tests {
         ] {
             assert_eq!(Output::of_stop(none), None, "{none}");
         }
+    }
+
+    #[test]
+    fn a_command_s_end_is_read_with_the_status_each_harness_says() {
+        let claude = |word: &str, more: serde_json::Value| {
+            let mut payload = serde_json::json!({
+                "tool_name": "Bash",
+                "tool_input": {"command": "cargo test -p core"},
+            });
+            for (key, value) in more.as_object().unwrap() {
+                payload[key] = value.clone();
+            }
+            Output::of_ran(word, &payload, Some("claude-code"))
+        };
+        let ran = |exit: Option<i32>, failed: bool| {
+            Some(Output::Ran {
+                command: "cargo test -p core".to_owned(),
+                exit,
+                failed,
+            })
+        };
+        // Claude Code: its post hook fires for a command that succeeded.
+        assert_eq!(
+            claude("posttooluse-blocked", serde_json::json!({})),
+            ran(Some(0), false)
+        );
+        // And its failure hook for one that did not, with the status in its error.
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Exit code 101\nerror: test failed"})
+            ),
+            ran(Some(101), true)
+        );
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Interrupted"})
+            ),
+            ran(None, true)
+        );
+        // A command left running in the background has no status yet.
+        let background = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "sleep 60", "run_in_background": true},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &background, Some("claude-code")),
+            Some(Output::Ran {
+                command: "sleep 60".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // opencode: purlis's plugin sends the status.
+        let opencode = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "exit_code": 2,
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &opencode, Some("opencode")),
+            Some(Output::Ran {
+                command: "ls".to_owned(),
+                exit: Some(2),
+                failed: true
+            })
+        );
+        // Codex: its shell's words, and no status it says.
+        let codex = serde_json::json!({
+            "tool_name": "shell",
+            "tool_input": {"command": ["bash", "-lc", "make"]},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &codex, Some("codex")),
+            Some(Output::Ran {
+                command: "bash -lc make".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // Not a command's end: nothing.
+        assert_eq!(claude("pretooluse", serde_json::json!({})), None);
+        let edit = serde_json::json!({"tool_name": "Edit", "tool_input": {"command": "x"}});
+        assert_eq!(
+            Output::of_ran("posttooluse", &edit, Some("claude-code")),
+            None
+        );
     }
 
     #[test]

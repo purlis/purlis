@@ -600,6 +600,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "sandbox-write": "Asks to write in a folder",
   "sandbox-local": "Asks to reach a service on this machine",
   "workspace-removal": "Asks you to remove a workspace",
+  "proposed-change": "Proposes a change for you to apply",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };

@@ -521,13 +521,14 @@ pub const DISPATCH_ALLOW: [&str; 4] = [
 /// **Each reaches only what the app's own record lets its caller reach**
 /// (`crate::dispatched::owned`, `crate::dispatchtalk::up`): `wait`, `cancel`, `tell` and
 /// `answer` name a task the chat itself dispatched, and are refused for any other chat;
-/// `list` lists those tasks; `note` and `ask` name nobody, and go to the one chat that
+/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084); `note` and `ask` name nobody, and go to the one chat that
 /// dispatched the caller. None starts a chat. `--wait` is the dispatch itself, waited on: it
 /// is matched only where the flag comes first, and asked about otherwise.
-pub const DISPATCH_TASK_ALLOW: [&str; 8] = [
+pub const DISPATCH_TASK_ALLOW: [&str; 9] = [
     "Bash(purlis dispatch --wait *)",
     "Bash(purlis dispatch wait *)",
     "Bash(purlis dispatch list)",
+    "Bash(purlis dispatch read *)",
     "Bash(purlis dispatch cancel *)",
     "Bash(purlis dispatch tell *)",
     "Bash(purlis dispatch note *)",
@@ -878,7 +879,12 @@ mod tests {
         ] {
             assert!(bash_allowed(allow, command), "{command:?} asks: {allow:?}");
         }
-        for tool in ["persona_where", "dispatch_list", "dispatch_report"] {
+        for tool in [
+            "persona_where",
+            "dispatch_list",
+            "dispatch_read",
+            "dispatch_report",
+        ] {
             let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
             assert!(allow.contains(&rule), "{rule} asks");
         }

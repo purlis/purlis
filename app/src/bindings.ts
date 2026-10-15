@@ -536,6 +536,17 @@ export const commands = {
 	 */
 	keepSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<null, string>(__TAURI_INVOKE("keep_sandbox_block", { plane, session, shown })),
 	/**
+	 *  **The contexts of the person's kubeconfig** (qw384b), as kubectl reads it (every file
+	 *  `KUBECONFIG` names), each with whether a chat can be pointed at it. Data a context holds
+	 *  (keys, certificates) is left out by kubectl itself.
+	 */
+	kubeContexts: () => typedError<KubeContext[], string>(__TAURI_INVOKE("kube_contexts")),
+	/**
+	 *  **Points chat `session`'s kubectl at `context`** (qw384b): a cluster on this Mac only, any
+	 *  other refused with why. What the Notice says once it is done.
+	 */
+	pointKubectl: (plane: PlaneId, session: number, context: string) => typedError<string, string>(__TAURI_INVOKE("point_kubectl", { plane, session, context })),
+	/**
 	 *  **What the person may choose from** for the unnamed block `shown` of chat `session` (#1884):
 	 *  the sockets purlis finds on this machine that a grant may name, or the services it can
 	 *  allow. The app's own discovery, in its own order; nothing a chat sent is in it. The
@@ -623,6 +634,17 @@ export const commands = {
 	 *  next turn that the person kept the workspace, and not to ask again unless they ask.
 	 */
 	keepAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<null, string>(__TAURI_INVOKE("keep_asked_workspace", { plane, session, workspace })),
+	/**
+	 *  **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
+	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
+	 *  Window-only.
+	 */
+	applyProposedChange: (plane: PlaneId, id: number) => typedError<string, string>(__TAURI_INVOKE("apply_proposed_change", { plane, id })),
+	/**
+	 *  **Dismiss** on a proposed change: nothing is written, and the chat is told on its next turn.
+	 *  Window-only.
+	 */
+	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	/**
@@ -630,6 +652,10 @@ export const commands = {
 	 *  chat's restart: puts it away, and changes nothing else.
 	 */
 	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
+	/**  Task `session`'s quiet note for its tab, where it has one. */
+	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
+	/**  Puts task `session`'s quiet note away: the task goes on, and a later stretch is noted again. */
+	putAwayTaskQuiet: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_task_quiet", { plane, session })),
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -637,6 +663,17 @@ export const commands = {
 	 *  On a blocking thread: the Local file's check asks git whether it is ignored.
 	 */
 	dispatchLimits: (plane: PlaneId) => typedError<DispatchLimits, string>(__TAURI_INVOKE("dispatch_limits", { plane })),
+	/**  The plain-file vaults the project registers. Never a value. */
+	plainFileVaults: (plane: PlaneId) => typedError<PlainFileVault[], string>(__TAURI_INVOKE("plain_file_vaults", { plane })),
+	/**  Moves plain-file vault `name` into the system keychain, or says why it was not moved. */
+	moveVaultToKeychain: (plane: PlaneId, name: string) => typedError<string, string>(__TAURI_INVOKE("move_vault_to_keychain", { plane, name })),
+	/**  The levels of the project that wait for your Confirm. */
+	sandboxLevelsWaiting: (plane: PlaneId) => typedError<LevelWaiting[], string>(__TAURI_INVOKE("sandbox_levels_waiting", { plane })),
+	/**
+	 *  Confirms `level`, the level the row showed for `persona` (the project's for `None`), as
+	 *  yours: refused where the file no longer says it.
+	 */
+	confirmSandboxLevel: (plane: PlaneId, persona: string | null, level: string) => typedError<string, string>(__TAURI_INVOKE("confirm_sandbox_level", { plane, persona, level })),
 	/**
 	 *  The dispatches of chat `session` waiting on the person, for the Notice on its tab.
 	 * 
@@ -3236,6 +3273,11 @@ export type AnswerPath =
  *  own count.
  */
 { via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
+/**
+ *  `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
+ *  proposal `id` (#1975).
+ */
+{ via: "proposed-change"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3340,6 +3382,11 @@ export type AskSource =
  *  (qw356).
  */
 "workspace-removal" | 
+/**
+ *  A change a chat proposed to purlis's own configuration, which only the person applies
+ *  (#1975).
+ */
+"proposed-change" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -5953,6 +6000,18 @@ export type KeptBlocked = {
 	at: number,
 };
 
+/**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
+export type KubeContext = {
+	/**  Its name, as kubectl knows it. */
+	name: string,
+	/**  Its cluster's server, as the kubeconfig names it. */
+	server: string,
+	/**  The port of this Mac it reaches, where purlis can point a chat at it. */
+	port: number | null,
+	/**  Why purlis would not point a chat at it, where it would not: never pressable then. */
+	refused: string | null,
+};
+
 /**
  *  What a Land would do, before it does any of it: the request, the head its checks passed at,
  *  and how it lands. Handed back whole by the yes.
@@ -6052,6 +6111,14 @@ export type LeftOut = {
 	what: string,
 	/**  The core's whole sentence. */
 	why: string,
+};
+
+/**  A level the file says that waits for your Confirm. */
+export type LevelWaiting = {
+	/**  The persona's level, or the project's for `None`. */
+	persona: string | null,
+	/**  What the file says: `on`, `floor` or `off`. */
+	level: string,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -7181,6 +7248,13 @@ export type Pins = {
 	 *  let go only on a certain answer (NO-2, D-NO2-10).
 	 */
 	certain: boolean,
+};
+
+/**  A plain-file vault, and whether this machine may move it. */
+export type PlainFileVault = {
+	name: string,
+	/**  `false` for one the team's file registers, which is the team's to move. */
+	movable: boolean,
 };
 
 /**  One open project's alerts. */

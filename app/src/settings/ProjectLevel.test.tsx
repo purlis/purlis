@@ -350,6 +350,7 @@ describe("the Project level", () => {
         "work",
         "Sandbox",
         "Your hosts",
+        "Your level",
         "Persona hosts",
         "Network",
         "Dispatch",
@@ -1192,7 +1193,7 @@ describe("the Project level of a read-only project (#826)", () => {
       }
     }
     // Every one is charter.local.toml's (the default profile, the environment, the profiles and
-    // a profile's page, Your hosts), this machine's own (Network's folders), or writes nothing
+    // a profile's page, Your hosts, Your level), this machine's own (Network's folders), or writes nothing
     // (a link, a Notice's Dismiss). A control that writes the
     // committed file, or one this list does not name yet, fails here.
     expect(on).toEqual([
@@ -1209,6 +1210,7 @@ describe("the Project level of a read-only project (#826)", () => {
       "work: Reset",
       "work: work: environment",
       "Your hosts: Add host",
+      "Your level: This project",
       // This machine's folders, the Notice saying the mock core answered nothing, and the link
       // to the Dispatch page (#1759).
       "Network: Folders a block's Allow may name",

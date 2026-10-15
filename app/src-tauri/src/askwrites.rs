@@ -119,6 +119,44 @@ fn shown(change: &Written) -> ChangeShown {
     }
 }
 
+/// What a proposed change says it does (#1975).
+pub const PROPOSES: &str = "The file as it is, and as the change would make it";
+
+/// What follows the reason a proposed change is not shown (#1975, PC-7): no Apply is offered
+/// where it is not shown whole.
+pub const NOT_APPLIED_HERE: &str = "It is not applied from here: dismiss it, or make the change \
+                                    yourself.";
+
+/// **A proposed change as its row draws it** (#1975): the file `path` as the app read it,
+/// `before`, and as the change makes it, `after`, shown whole by the same rules an edit ask's
+/// change is ([`purlis_core::harness::asked::edit::unshown`]), or why not.
+pub fn proposed(path: &str, before: &str, after: &str) -> WritesShown {
+    let changes = [Written::Replace {
+        before: before.to_owned(),
+        after: after.to_owned(),
+        every: false,
+    }];
+    if let Some(why) = purlis_core::harness::asked::edit::unshown(&changes) {
+        return WritesShown::NotShown {
+            why: format!("{} {NOT_APPLIED_HERE}", why_said(why)),
+        };
+    }
+    let says = if ends_a_line_in_crlf(before) || ends_a_line_in_crlf(after) {
+        format!("{PROPOSES} ({CRLF_MARKED})")
+    } else {
+        PROPOSES.to_owned()
+    };
+    WritesShown::Whole {
+        path: path.to_owned(),
+        changes: vec![ChangeShown {
+            says,
+            before: drawn(before),
+            after: drawn(after),
+            hunks: vec![whole(before, after)],
+        }],
+    }
+}
+
 /// The one hunk that is the whole of `before` and of `after`, in git's numbers: a side with no
 /// lines names line 0, the top, as the hunk comes after it.
 fn whole(before: &str, after: &str) -> GitHunk {

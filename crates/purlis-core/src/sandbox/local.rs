@@ -291,6 +291,12 @@ struct OnDisk {
     /// kept. A list that changed since grants nothing until it is allowed again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     persona_hosts_mine: Vec<PersonaHostsAllowed>,
+    /// Your own sandbox levels for this project, and for its personas, as you set or confirmed
+    /// them in Settings on this machine (#2071, ADR 0096 §7): what `purlis.local.toml`'s
+    /// `[sandbox] level` and `[sandbox.personas]` are honoured down to
+    /// ([`super::personal::in_force`]). A chat can write that file; it cannot write this one.
+    #[serde(default, skip_serializing_if = "super::personal::Personal::is_empty")]
+    levels_mine: super::personal::Personal,
 }
 
 /// One dispatch grant that holds in one workspace only (#1505), as this file keeps it.
@@ -930,6 +936,23 @@ pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize
         held.hosts_mine.retain(|one| listed.contains(one));
     })?;
     Ok(gone)
+}
+
+// ---- your own levels, as you set or confirmed them (#2071) ------------------------------------
+
+/// Your own levels for the project at `root` that you set or confirmed in Settings on this
+/// machine.
+pub fn confirmed_levels(root: &Path) -> super::personal::Personal {
+    read(root).levels_mine
+}
+
+/// Changes the record of your levels: Settings' save and Confirm, never a chat (a sandboxed
+/// chat cannot write this file).
+pub fn change_levels(
+    root: &Path,
+    how: impl FnOnce(&mut super::personal::Personal),
+) -> io::Result<()> {
+    change(root, |held| how(&mut held.levels_mine))
 }
 
 // ---- the folders you let every chat write (#1342) --------------------------------------------

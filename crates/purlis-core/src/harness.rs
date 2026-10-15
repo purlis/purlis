@@ -957,6 +957,7 @@ mod tests {
                 "Bash(purlis dispatch --wait *)",
                 "Bash(purlis dispatch wait *)",
                 "Bash(purlis dispatch list)",
+                "Bash(purlis dispatch read *)",
                 "Bash(purlis dispatch cancel *)",
                 "Bash(purlis dispatch tell *)",
                 "Bash(purlis dispatch note *)",
@@ -979,6 +980,7 @@ mod tests {
                 "mcp__purlis__change_status",
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
+                "mcp__purlis__dispatch_read",
             ]})
         );
     }
@@ -1010,6 +1012,7 @@ mod tests {
                 "Bash(purlis dispatch --wait *)",
                 "Bash(purlis dispatch wait *)",
                 "Bash(purlis dispatch list)",
+                "Bash(purlis dispatch read *)",
                 "Bash(purlis dispatch cancel *)",
                 "Bash(purlis dispatch tell *)",
                 "Bash(purlis dispatch note *)",
@@ -1044,7 +1047,7 @@ mod tests {
             } else {
                 assert!(
                     [
-                        "report", "wait", "list", "cancel", "tell", "note", "ask", "answer"
+                        "report", "wait", "list", "read", "cancel", "tell", "note", "ask", "answer"
                     ]
                     .contains(&first),
                     "{first}"
@@ -1143,6 +1146,9 @@ mod tests {
             // And the list of the chat's own tasks (#1463), which `purlis dispatch list`
             // already runs without asking.
             "dispatch_list",
+            // And reading one of those tasks (#2084), which `purlis dispatch read` runs
+            // without asking too.
+            "dispatch_read",
             "session_record",
             // And a dispatch (V98b): the app asks the person, so the harness does not.
             "dispatch",
@@ -1371,6 +1377,7 @@ mod tests {
                 "Bash(purlis dispatch --wait *)",
                 "Bash(purlis dispatch wait *)",
                 "Bash(purlis dispatch list)",
+                "Bash(purlis dispatch read *)",
                 "Bash(purlis dispatch cancel *)",
                 "Bash(purlis dispatch tell *)",
                 "Bash(purlis dispatch note *)",
@@ -1393,6 +1400,7 @@ mod tests {
                 "mcp__purlis__change_status",
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
+                "mcp__purlis__dispatch_read",
             ])
         );
         assert_eq!(

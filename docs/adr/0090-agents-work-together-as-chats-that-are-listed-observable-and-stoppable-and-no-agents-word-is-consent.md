@@ -1196,3 +1196,33 @@ task never started, and the person relayed by hand.
   report of its own later reaches the chat that asked too, and takes this one's place on its
   dispatch record. The chat that asked is flagged for the person, as for a task that came to
   nothing, and the count puts it there.
+- **The chat that asked can read what its task said and ran** (D-2): `purlis dispatch read
+  <chat>`, for its own tasks alone, by the app's record of whose task it is, while the task runs
+  and after it closed. It prints the task's last three messages and its last twenty shell
+  commands with the status its harness said, each line quoted as data under purlis's sentence,
+  masked as tool output is. The commands reach the app from the shell tool's post hooks on the
+  line the last message travels on, never spooled or recorded, and are kept in memory for a
+  task alone. The full conversation stays the person's, in the task's tab. Claude Code still
+  asks the person before `read` runs: it joins the pre-allowed dispatch words of ADR 0064 only
+  when that is ruled.
+  - **An exception the operator ruled** (#1981, D-2) to the rule of ADR 0066 and ADR 0075 that
+    the app keeps a tool call's arguments only as a digest: for a task alone, a command line,
+    masked, is held in memory so the chat that asked can read it. Nothing of it is written.
+  - **Implementation choices, to be confirmed by the operator:** the counts kept (the last
+    three messages and twenty commands); that they are kept after the task closes, for the
+    chat that asked, until that chat closes; and that purlis's opencode plugin waits up to
+    3 seconds for opencode's client before a turn's end is sent without its last message.
+- **Silence, not heartbeats** (D-6). The chat that asked never polls. purlis watches each
+  task's last activity: what its harness tells purlis's hooks (a turn beginning or ending, a
+  tool starting or coming back, a notification, a turn's last message), never its terminal's
+  bytes, which a spinner keeps redrawing. While a task's turn runs and shows the person no
+  prompt, a stretch with nothing heard for `quiet-note-minutes` (15 by default) is noted, and
+  one shell command that has not come back for `one-command-note-minutes` (30 by default) is
+  noted by its program where the hook named one from purlis's fixed list. One note a stretch:
+  any activity starts a new one. The note goes to the chat that asked, in purlis's own words on
+  its next turn and in the line purlis types where it may, and to the task's tab as a Notice
+  that comes down when the task is heard from again. It never ends the task. Both limits are
+  settings in the `[dispatch]` table, beside the dispatch limits, with the same levels: a
+  workspace's and a persona's override the project's, this machine's only lowers them, and a
+  policy is a ceiling. A task whose program exits, or whose chat is closed, is reported at once
+  as ended, as before (#1443).

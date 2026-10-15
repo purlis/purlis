@@ -49,6 +49,7 @@
 //!     "vault-grants": false,
 //!     "live-asks": false,
 //!     "socket-grants": false,
+//!     "proposed-changes": "off",
 //!     "allow-scopes": ["you", "machine"],
 //!     "never-hosts": ["*.paste.example"]
 //!   },
@@ -93,6 +94,9 @@
 //! - `socket-grants`: `false` forbids every local socket and system service a block's Allow
 //!   would let a chat reach (D-sock-1), and takes away any already made, the certificate check
 //!   among them: also where the project's `certificate-checks` turns it on.
+//! - `proposed-changes`: `"off"` turns proposed changes off (#1975, PC-14): a chat's change to
+//!   purlis's own configuration is refused as before, with the way that works, and never shown
+//!   to the person to apply. `"on"` is the same as absent.
 //! - `allow-scopes`: the scopes an Allow may keep anything at, of `once` (this chat's next run
 //!   alone: a local socket or a system service only), `chat` (only this chat), `you` (this
 //!   project on this machine), `machine` (this machine, for every project: a local socket or a
@@ -174,6 +178,9 @@ pub struct Locks {
     /// Whether every socket and service grant is forbidden, the certificate check's included
     /// (D-sock-1).
     no_socket_grants: bool,
+    /// Whether proposed changes are turned off (#1975, PC-14): a chat's edit of purlis's own
+    /// configuration is then refused as before, never shown to the person to apply.
+    no_proposed_changes: bool,
     /// The scopes an Allow may keep anything at, where the policy fixes them (#1666): `machine`
     /// among them only where the policy names it (ruling C3).
     allow_scopes: Option<Vec<grant::Level>>,
@@ -260,6 +267,7 @@ impl Locks {
             no_vault_grants: true,
             no_live_asks: true,
             no_socket_grants: true,
+            no_proposed_changes: true,
             allow_scopes: Some(Vec::new()),
             never_hosts: Vec::new(),
             dispatch: crate::dispatchlimits::ceiling_when_refused(),
@@ -591,6 +599,19 @@ impl Locks {
         })
     }
 
+    /// Why no chat's change to purlis's own configuration is shown to the person to apply,
+    /// where policy turns proposed changes off (#1975, PC-14): the chat is then refused as
+    /// before.
+    pub fn proposed_changes_refused(&self) -> Option<String> {
+        self.no_proposed_changes.then(|| {
+            format!(
+                "Policy turns proposed changes off, so a chat's change to purlis's own \
+                 configuration is not shown to you to apply. {}",
+                self.locked_by()
+            )
+        })
+    }
+
     /// Whether policy forbids letting a persona's chats use a vault it is not tagged for.
     pub fn forbids_vault_grants(&self) -> bool {
         self.no_vault_grants
@@ -645,7 +666,7 @@ impl Locks {
 }
 
 /// The keys `sandbox` may hold, each a lock.
-const KEYS: [&str; 12] = [
+const KEYS: [&str; 13] = [
     "presets",
     "hosts",
     "personal-hosts",
@@ -656,6 +677,7 @@ const KEYS: [&str; 12] = [
     "vault-grants",
     "live-asks",
     "socket-grants",
+    "proposed-changes",
     "allow-scopes",
     "never-hosts",
 ];
@@ -747,6 +769,14 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
             })
             .transpose()
     };
+    // `"off"` or `"on"` (PC-14, the operator's ruling of 2026-10-14): a word, not true or
+    // false, as the ruling wrote it.
+    let no_proposed_changes = match sandbox.get("proposed-changes") {
+        None => false,
+        Some(serde_json::Value::String(word)) if word == "off" => true,
+        Some(serde_json::Value::String(word)) if word == "on" => false,
+        Some(_) => return Err("its \"proposed-changes\" is not \"on\" or \"off\"".to_owned()),
+    };
     let hosts = hosts_of("hosts")?;
     let never_hosts = hosts_of("never-hosts")?.unwrap_or_default();
     let allow_scopes = words("allow-scopes")?
@@ -784,6 +814,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_vault_grants: forbids("vault-grants")?,
         no_live_asks: forbids("live-asks")?,
         no_socket_grants: forbids("socket-grants")?,
+        no_proposed_changes,
         allow_scopes,
         never_hosts,
         dispatch,

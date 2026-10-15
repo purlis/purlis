@@ -1790,16 +1790,17 @@ fn sparse_keeps(sub: &str, post: &[String]) -> bool {
 /// editors git asks for a message or a todo list.
 const EDITOR_ENV: [&str; 4] = ["GIT_EDITOR=", "GIT_SEQUENCE_EDITOR=", "EDITOR=", "VISUAL="];
 
-/// Whether `inv` sets git configuration on the line: `-c`, `--config-env`, or a `GIT_CONFIG*`
-/// variable among the assignments and exports it runs with.
+/// Whether `inv` sets git configuration on the line: `-c`, `--config-env`, or any `GIT_*`
+/// variable or an editor among the assignments and exports it runs with.
 fn configures(inv: &RootInvocation) -> bool {
     inv.pre
         .iter()
         .any(|word| word.starts_with("-c") || word.starts_with("--config-env"))
         || inv.env.iter().chain(&inv.own_env).any(|assign| {
+            // Any of git's own variables may change what it does mid-move: its config, its
+            // directories, a program it starts (an askpass, a proxy, an ssh).
             let assign = assign.trim_start_matches("export ");
-            assign.starts_with("GIT_CONFIG")
-                || EDITOR_ENV.iter().any(|editor| assign.starts_with(editor))
+            assign.starts_with("GIT_") || EDITOR_ENV.iter().any(|editor| assign.starts_with(editor))
         })
 }
 

@@ -898,7 +898,7 @@ pub fn chat_is_sandboxed_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
 /// The harness [`crate::hookwire::HARNESS_ENV`] names: the profile's registry name
 /// (`claude-code`, `codex`, `opencode`; [`crate::profiles::KINDS`]), which is what a chat's start
 /// puts there, and not the kind word a profile is written with.
-fn harness_of_registry(registry: &str) -> Option<Harness> {
+pub fn harness_of_registry(registry: &str) -> Option<Harness> {
     crate::profiles::KINDS
         .iter()
         .find(|kind| kind.registry == registry)
@@ -3029,6 +3029,9 @@ pub struct Confinement {
     /// The folder a Claude Code chat's route was written in, where no chat writes
     /// ([`Self::proxy_only_routed`]): removed as this ends.
     routed: Option<tempfile::TempDir>,
+    /// A folder of the chat's own made for what it keeps ([`Self::keep_own`]) where it has
+    /// neither of the two above: removed as this ends.
+    kept: Option<tempfile::TempDir>,
 }
 
 impl Confinement {
@@ -3061,6 +3064,7 @@ impl Confinement {
             asks,
             ssh,
             routed: None,
+            kept: None,
         })
     }
 
@@ -3075,6 +3079,7 @@ impl Confinement {
             asks,
             ssh: None,
             routed: None,
+            kept: None,
         })
     }
 
@@ -3127,6 +3132,47 @@ impl Confinement {
     /// The chat's own temp directory, which a proxy-only one has none of.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(tempfile::TempDir::path)
+    }
+
+    /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
+    /// for as long as it runs: its temp directory, or else the folder its ssh route was
+    /// written in, where no chat writes, or else a folder made for it. Readable by its owner
+    /// alone. Where the file is.
+    pub fn keep_own(&mut self, name: &str, text: &str) -> std::io::Result<PathBuf> {
+        let dir = match (&self.tmp, &self.routed, &self.kept) {
+            (Some(own), _, _) | (None, Some(own), _) | (None, None, Some(own)) => {
+                own.path().to_path_buf()
+            }
+            (None, None, None) => {
+                let made = tempfile::Builder::new().prefix("purlis-chat-").tempdir()?;
+                let path = made.path().to_path_buf();
+                self.kept = Some(made);
+                path
+            }
+        };
+        let path = dir.join(name);
+        // Made new each time, never through whatever stands at the path: a file kept before is
+        // taken away first (a link itself, never what it points at), and the open neither
+        // follows a link nor takes a file that is there already (#2097 review).
+        match std::fs::remove_file(&path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err),
+            _ => {}
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        std::io::Write::write_all(&mut options.open(&path)?, text.as_bytes())?;
+        Ok(path)
+    }
+
+    /// **`port` of this machine is carried by its proxy no longer** (qw384b): its grant was
+    /// removed while the chat runs.
+    pub fn withdraw_port(&self, port: u16) {
+        self.proxy.withdraw_port(port);
     }
 }
 
@@ -3988,18 +4034,25 @@ fn local_refusals(text: &str) -> Vec<crate::settings::Refusal> {
     };
     let mut out: Vec<Keyed> = table
         .keys()
-        .filter(|key| *key != hosts::KEY)
+        .filter(|key| ![hosts::KEY, personal::LEVEL, personal::PERSONAS].contains(&key.as_str()))
         .map(|key| {
             Keyed::at(
                 format!(
                     "{TABLE}.{key} in {local} is not read — this machine's [{TABLE}] holds \
-                     hosts, and only hosts. Whether chats run sandboxed, and the presets, are \
-                     the project's, in {FILE}."
+                     hosts and your own level ({}, {}), and nothing else. The project's mode \
+                     and presets are the project's, in {FILE}.",
+                    personal::LEVEL,
+                    personal::PERSONAS
                 ),
                 &[TABLE, key.as_str()],
             )
         })
         .collect();
+    // Your own level for this project (#2071): a value that is not one is refused.
+    out.extend(personal::read(table, local).1.into_iter().map(|refused| {
+        let key: Vec<&str> = refused.key.iter().map(String::as_str).collect();
+        Keyed::at(refused.why, &key)
+    }));
     match hosts::read(table.get(hosts::KEY)) {
         Ok(hosts::Listed { refused, .. }) => {
             out.extend(refused.into_iter().map(|(written, why)| {
@@ -4587,10 +4640,12 @@ pub mod egress;
 pub mod grant;
 pub mod held;
 pub mod hosts;
+pub mod kubeconfig;
 pub mod local;
 pub mod localport;
 pub mod opencode;
 pub mod persona;
+pub mod personal;
 pub mod planted;
 pub mod policy;
 pub mod program;

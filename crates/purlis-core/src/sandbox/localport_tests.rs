@@ -197,3 +197,24 @@ fn a_port_purlis_took_is_freed_before_the_service_is_started_again() {
         "{TAKEN_SAID}"
     );
 }
+
+/// qw384b: a name of this Mac names its port too, from the fixed list alone; no name is looked
+/// up (#2097 review).
+#[test]
+fn a_name_of_this_mac_names_its_port_and_no_other_name_does() {
+    assert_eq!(loopback_port("this-mac.internal:50795"), Some(50795));
+    assert_eq!(loopback_port("THIS-MAC.internal.:6443"), Some(6443));
+    assert_eq!(named_port("kubernetes.docker.internal:6443"), Some(6443));
+    assert_eq!(named_port("host.docker.internal:8080"), Some(8080));
+    assert_eq!(named_port("this-mac.internal:1"), Some(1));
+    assert_eq!(named_port("127.0.0.1:2"), Some(2));
+    for never in [
+        "example.com:6443",
+        "evil.example:6443",
+        "kubernetes.docker.internal.example.com:6443",
+        "kubernetes.docker.internal",
+        "kubernetes.docker.internal:0",
+    ] {
+        assert_eq!(named_port(never), None, "{never}");
+    }
+}

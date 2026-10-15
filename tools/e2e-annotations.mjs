@@ -88,15 +88,20 @@ export function evidenceOf(record) {
     let lines = log.map((line) => String(line).replace(ANSI, ""));
     while (lines.length > 1 && lines.join("\n").length > room)
       lines = lines.slice(1);
-    logPart = `${header}${lines.join("\n")}`;
+    // One line longer than the room on its own keeps its newest end, cut to the room, so the
+    // cut below never reaches the late commands; with no room left, the log goes.
+    const kept = lines.join("\n");
+    if (room <= 0) logPart = "";
+    else
+      logPart = `${header}${kept.length > room ? kept.slice(kept.length - room) : kept}`;
   }
   const parts = [late, logPart, covers].filter(Boolean);
   // A block recorded with nothing in it says so: a quiet core reads apart from no block at all.
   if (parts.length === 0)
     parts.push("no command was late; the core logged nothing");
   const text = parts.join("\n");
-  // Only a single log line longer than the room, or late commands and covers past the budget
-  // on their own, still need cutting: the newest end is kept.
+  // Only late commands and covers past the budget on their own still need cutting: the newest
+  // end is kept.
   return text.length > EVIDENCE_CHARS
     ? text.slice(text.length - EVIDENCE_CHARS)
     : text;

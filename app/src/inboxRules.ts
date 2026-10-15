@@ -109,6 +109,7 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "sandbox-write",
   "sandbox-local",
   "workspace-removal",
+  "proposed-change",
 ]);
 
 /**

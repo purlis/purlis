@@ -267,7 +267,7 @@ and none takes a workspace, a project or a path:
 | `session_record_list`, `session_record_read` | The session records where the chat works, by file name |
 | `workspace_vision`, `workspace_section` | For a write outside a smart close, which keeps its own way of writing `workspace.md`: the `## Vision` of the workspace's `workspace.md`, replaced, and one entry added to its `## Context & decisions` (`decisions`) or `## Glossary` (`glossary`), with what is there kept; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there (under Codex, run `purlis workspace vision` in the chat) |
 | `change_status` | The workspace's cross-repo changes, from their records; the forge is not asked |
-| `dispatch`, `dispatch_list`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does |
+| `dispatch`, `dispatch_list`, `dispatch_read`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, what one of them said last and the commands it ran, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does |
 | `ask_operator` | A question put to you through the harness's own prompt; the model never answers it |
 
 The server runs where each harness runs its MCP servers, which for Claude Code and Codex is

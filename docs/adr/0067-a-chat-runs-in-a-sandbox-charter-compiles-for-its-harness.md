@@ -1460,9 +1460,9 @@ Decided under delegation; the operator confirms or changes it.
   profile is fixed when the chat starts, so an Allow restarts the chat on its conversation, as a
   socket's does.
 - **Claude Code.** Its sandbox lets a command reach this machine's loopback on the proxy's two
-  ports, or on every port (`allowLocalBinding`), and on no one port alone, so purlis cannot hand
-  it one port. Its Notice says so and offers Start without the sandbox. A route that gives a
-  Claude Code chat one port is follow-up work.
+  ports, or on every port (`allowLocalBinding`), and on no one port alone, so purlis never sets
+  `allowLocalBinding` and hands its sandbox no port. The port is carried by name instead
+  (amendment qw384b below).
 - **Policy.** `sandbox.socket-grants = false` holds a service on this Mac as it holds a socket,
   and `allow-scopes` holds its two scopes as any other.
 
@@ -1504,6 +1504,94 @@ same core code a terminal runs:
    and the remote's default branch is asked of the remote.
 
 The brokered commit's "It only commits" stands for `purlis worktree commit` itself.
+
+## Amended (2026-10-15, qw384b; extends the qw384 amendment): a Claude Code chat reaches a service on this Mac by name — to be confirmed
+
+Decided under delegation (option A of qw384's follow-up); the operator confirms or changes it.
+
+- **By name, through the chat's proxy.** Claude Code sends a command's connections to purlis's
+  proxy, but its `NO_PROXY` keeps `localhost`, `127.0.0.1`, `::1` and the private ranges off it,
+  and every Go client never proxies `localhost` or a loopback literal. A name it does send. So
+  the chat's proxy carries the names of this Mac (a fixed list: `this-mac.internal`,
+  `kubernetes.docker.internal` and `host.docker.internal`) on a port to `127.0.0.1:<port>`:
+  - only while the chat holds that port (granted for it, or for every chat of the project on
+    this machine), at the layer that granted it; on any other port it is this machine, refused
+    as such and never asked about as a host;
+  - never looked up: the connection is made to this machine's loopback on that port and
+    nowhere else. No other name is looked up on this account, and any other name is decided as
+    before;
+  - each connection kept in the network record by the name it was reached by. The decision is
+    the reach table's (`Reach::decide_by_name`); the proxy only asks it.
+- **Removal.** Removing a port's grant stops every new connection to it from every open chat's
+  proxy at once (but a chat that holds it for itself), by any name. A connection already open
+  (a `kubectl get --watch`) runs until it ends or the chat restarts; the Seatbelt rule of a
+  Codex or opencode chat goes at its next start, as before.
+- **The Notice.** A Claude Code chat's port Block offers the same Allow as Codex and opencode,
+  saying the name its commands reach it by. The chat restarts on its conversation to take it
+  and is told the name.
+- **kubectl: Point kubectl at it.** After the Allow, on the person's press, the Notice lists the
+  contexts of their kubeconfig (as `kubectl config view` reads it) and copies the one they pick
+  for that chat alone:
+  - before a context is chosen, the Notice says the chat gets its own copy of it, its
+    credentials included, which the chat can read;
+  - only a context whose server is on this Mac (`127.0.0.1`, `localhost` or
+    `kubernetes.docker.internal`, over HTTPS); any other is listed with why and cannot be pressed,
+    and one that names a proxy of its own or skips the certificate check is refused;
+  - its server becomes `https://this-mac.internal:<port>` and `tls-server-name` the name it had,
+    so the certificate is still checked against the name it was made for;
+  - the copy is written into the chat's own folder at each of its starts, made new each time and
+    never through a link, readable by its owner only, named by `KUBECONFIG` for that chat alone, and removed when the chat ends; held in
+    memory by the chat's id, as a chat's own grant is;
+  - purlis never writes `~/.kube` or any kubeconfig of the person's. The chat restarts on its
+    conversation to take it.
+- **What it does not reach.** A program that uses no proxy (psql, redis-cli, mysql) cannot reach
+  a service on this Mac from a Claude Code chat this way. A brokered run for those is a separate
+  ticket.
+
+
+## Amended (2026-10-15, #1975; the operator's rulings PC-1..PC-14 of 2026-10-14): a chat's change to purlis's own configuration is a proposed change the person applies
+
+Ruled by the operator. A chat may not write the files a later program loads settings from
+(section 5); for purlis's own configuration its edit becomes **a proposed change**, which only
+the person applies.
+
+- **Which files** (PC-1, PC-11): the project's manifest at its root and in each workspace, a
+  persona's `mcp.json` and `persona.md`, and a `.claude/skills` folder's files at the root, in a
+  workspace or in a persona. Plane only. Below `.claude/skills`, skill files alone. Files that
+  run as code the moment they are there stay the person's to change, and a repo clone's files go
+  through its own review.
+- **How it is proposed** (PC-2): a sandboxed Claude Code chat's own `Write`, `Edit` or
+  `MultiEdit` of such a file is refused by its edit hook and handed to the app as a proposal;
+  another harness runs `purlis propose <file> --from <draft>`. **What travels is the change**:
+  an edit's own replacements, or a whole new content, with the hash of the file as it was read.
+- **Made and written by the app** (PC-3): the app reads the file itself, only as the one
+  regular file its name says, makes the change to it, shows the file before and after, and on
+  **Apply** writes exactly that, as the person, only while the file is still what the proposal
+  was worked out against. Nothing the chat sent is taken for what the file holds.
+- **Audited** (PC-4): `trust.proposed.apply`, once before the file is written (`intent`) and once
+  after (`applied`, `stale`, or `failed` with why). The file then rides the person's next save
+  (PC-12: git history and Changes' discard undo it).
+- **Apply judges again**: the change is made to the file as the app reads it, shown whole by the
+  row's own rules, and written under one lock per project held from the read to the rename, so
+  of two Applies against the file as it was, the second is stale.
+- **No new persona or workspace** (the dispatcher's decision, to be confirmed): a proposal makes
+  no folder but a skill's (`.claude/skills` and below). A file in a persona or a workspace that
+  is not there is refused; a new persona or workspace is made with purlis's own ways first.
+- **Allows nothing** (PC-5): a tool or host the change declares still asks its own Allow.
+- **Stale** (PC-8): a file changed since its proposal is not written; the proposal offers
+  Dismiss alone and the chat is told to read it again and propose again. Never merged.
+- **One a file a chat** (PC-9): a newer proposal replaces the chat's older one for that file;
+  applying one makes the others to that file stale.
+- **The chat hears fixed words** (PC-10): applied, dismissed or stale, on its next turn. Its
+  proposals end with it.
+- **Shown whole** (PC-7): Apply is offered only beside a change the window shows whole. A change
+  too long to show in a row offers Dismiss; a comparison tab that shows it whole, with Apply, is
+  follow-up work.
+- **Never "always apply"** (PC-13).
+- **Policy** (PC-14): `sandbox.proposed-changes = "off"` holds none, and a chat's edit is refused
+  as before.
+- **Live check, for the operator**: a hook runs before Claude Code's own deny rules, so the edit
+  hook sees an edit those rules deny. To be confirmed on a live Claude Code chat.
 
 ## Amended (2026-10-14, #1986, the operator's ruling Q63; amends section 3): a grant's restart waits for the chat's next pause and says what it will end
 

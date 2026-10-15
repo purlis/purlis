@@ -148,6 +148,7 @@ pub mod profiles;
 pub mod profiletrust;
 pub mod programs;
 pub mod projectgit;
+pub mod proposed;
 pub mod proseguard;
 pub mod provenance;
 pub mod publishproject;
@@ -189,6 +190,7 @@ pub mod shellseg;
 pub mod shellsubst;
 pub mod shellwrap;
 pub mod shown;
+pub mod silence;
 pub mod skills;
 pub mod skilluse;
 pub mod standings;
@@ -197,6 +199,10 @@ pub mod state;
 pub(crate) mod steer;
 pub mod taskchanges;
 pub mod template;
+// Public, and not `cfg(test)`: the integration tests of every crate copy the fixture planes
+// through it (#2089). Nothing in the product calls it.
+#[doc(hidden)]
+pub mod testfixture;
 #[cfg(test)]
 mod testgit;
 // Public, and not `cfg(test)`, for one reason: purlis-core's integration tests are separate
