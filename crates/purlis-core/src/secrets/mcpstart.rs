@@ -344,8 +344,11 @@ pub fn error_shown(raw: &str) -> String {
     format!("…{kept}")
 }
 
-/// `text` with each stretch the masks find replaced by `***`.
-fn masked(text: &str) -> String {
+/// `text` with each stretch the masks find replaced by `***`: every vault value this process
+/// read ([`super::seen::found_in`]) and every credential-shaped stretch
+/// ([`crate::secretshape::leak_spans`]). What a chat's words are masked by before purlis hands
+/// them to another chat (#1981, [`crate::handback::last_message_summary`]).
+pub fn masked(text: &str) -> String {
     let mut spans: Vec<std::ops::Range<usize>> = super::seen::found_in(text);
     spans.extend(
         crate::secretshape::leak_spans(text)

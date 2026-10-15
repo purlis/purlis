@@ -661,7 +661,9 @@ impl Tunnel {
         reach: Reach,
         reached: Option<Reached>,
     ) -> io::Result<Self> {
-        let listener = TcpListener::bind((LOOPBACK, 0))?;
+        // Never a port given to a chat as a service on this Mac, and purlis's own while it
+        // listens (qw384).
+        let listener = super::localport::bind_loopback()?;
         let addr = listener.local_addr()?;
         let carrying = Arc::new(Carrying {
             host: pointed.host().to_owned(),
@@ -715,6 +717,7 @@ impl Drop for Tunnel {
         // Wakes the accept, which then sees the end and closes its listener.
         let _ = TcpStream::connect_timeout(&self.addr, Duration::from_secs(1));
         self.carrying.tell(Tally::ended);
+        super::localport::release(self.addr.port());
     }
 }
 

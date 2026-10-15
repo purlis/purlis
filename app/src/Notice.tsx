@@ -80,6 +80,9 @@ type Ways = {
   copy?: string;
   /** Hides the Notice. */
   onDismiss?: () => void;
+  /** What Dismiss does, where it is more than putting the line away: said as its tooltip
+   *  (qw386). */
+  dismissSays?: string;
 };
 
 /** At least one way out, said in the type: a Notice with none does not compile. */
@@ -127,7 +130,7 @@ export const NoticeOf = createContext<{
 
 export function Notice(props: NoticeProps) {
   const { cause, tone = "news", at = "inbox", label, persona, children, under } = props;
-  const { fixes, link, copy, onDismiss } = props as Ways;
+  const { fixes, link, copy, onDismiss, dismissSays } = props as Ways;
   const list = useContext(Listed);
   const provided = useContext(NoticeOf);
   // Only on a pane: a Notice a pane's chat sends to the Inbox is the project's.
@@ -224,6 +227,7 @@ export function Notice(props: NoticeProps) {
           type="button"
           className="notice-dismiss ui-button ui-button-sm ui-button-ghost"
           tabIndex={0}
+          title={dismissSays}
           onClick={onDismiss}
         >
           Dismiss

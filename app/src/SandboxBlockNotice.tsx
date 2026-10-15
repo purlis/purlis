@@ -8,6 +8,7 @@ import {
   type BlockReport,
   type GrantLevel,
   type GrantWhat,
+  type KubeContext,
   type Offered,
   type OpenChat,
   type Shown,
@@ -145,7 +146,7 @@ export function SandboxBlockNotice({
         ? [{ what: block.choose, target: "" }]
         : isAnAsk(block)
           ? eachHost(block).map((one) => ({
-              what: block.offer as "host" | "write" | "socket" | "service",
+              what: block.offer as "host" | "write" | "socket" | "service" | "port",
               target: one.target ?? "",
             }))
           : [];
@@ -317,6 +318,10 @@ const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "machine", "projec
 
 const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
 
+/** What a port field pre-filled from the command's own output says (qw384): the sandbox did not
+ *  name it, so the person checks it before allowing. */
+const PORT_FROM_OUTPUT = "This port is from the command's output: check it.";
+
 /** What a block names, drawn apart from purlis's words and safely (`inertly`). */
 const Target = ({ of }: { of: string }) => (
   <code className="block-allow-target">{inertly(of)}</code>
@@ -345,6 +350,103 @@ function RanWith({ vault }: { vault: string | null | undefined }) {
       {" "}
       while running a command with vault <code className="block-vault">{vault}</code>
     </>
+  );
+}
+
+/**
+ * **What Use <context> gives the chat** (#2097 review), said before any press: the copy holds
+ * the context's credentials, as the person's kubeconfig does, and the chat can read it.
+ */
+export const KUBECTL_COPY_SAID =
+  "This chat gets its own copy of the context you choose, its credentials included: this chat can read them. Your own kubeconfig is not changed.";
+
+/** The harness word a Claude Code chat's blocks carry. */
+const CLAUDE_CODE = "claude";
+
+/**
+ * **Point kubectl at it** (qw384b): after a Claude Code chat is allowed a service on this Mac,
+ * its kubectl still connects to `127.0.0.1` or `localhost` itself, which never reaches the
+ * chat's proxy. On the person's press, the contexts of their kubeconfig are listed, and one on
+ * this Mac is copied for this chat alone, its server named as the proxy carries it. Nothing is
+ * read before the press; a context elsewhere is listed with why, never pressable; and the
+ * person's own kubeconfig is never written. The chat restarts to take it, as after an Allow.
+ */
+function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () => void }) {
+  const id = useId();
+  const [contexts, setContexts] = useState<readonly KubeContext[]>();
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [pointed, setPointed] = useState(false);
+  if (!inTheWindow(commands, "kubeContexts") || !inTheWindow(commands, "pointKubectl")) return null;
+  const list = () => {
+    setBusy(true);
+    void commands
+      .kubeContexts()
+      .then((answer) => {
+        if (answer.status === "error") setSaid(answer.error);
+        else setContexts(answer.data);
+      })
+      .finally(() => setBusy(false));
+  };
+  const point = (context: string) => {
+    setBusy(true);
+    void commands
+      .pointKubectl(block.plane, block.session, context)
+      .then((answer) => {
+        if (answer.status === "error") setSaid(answer.error);
+        else {
+          setSaid(answer.data);
+          setPointed(true);
+          sandboxCommandReturned();
+          onPointed();
+        }
+      })
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="block-kubectl ui-inline-surface" id={id}>
+      {pointed ? null : contexts === undefined ? (
+        <div className="ui-button-row">
+          <button
+            type="button"
+            className="ui-button ui-button-sm"
+            tabIndex={0}
+            disabled={busy}
+            onClick={list}
+          >
+            Point kubectl at it…
+          </button>
+        </div>
+      ) : contexts.length === 0 ? (
+        <p>Your kubeconfig holds no context.</p>
+      ) : (
+        <>
+          <p>{KUBECTL_COPY_SAID}</p>
+          <ul className="block-kubectl-contexts">
+            {contexts.map((context) => (
+              <li key={context.name}>
+                {context.refused === null ? (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-sm"
+                    tabIndex={0}
+                    disabled={busy}
+                    onClick={() => point(context.name)}
+                  >
+                    Use {inertly(context.name)}
+                  </button>
+                ) : (
+                  <>
+                    <code>{inertly(context.name)}</code>: {inertly(context.refused)}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {said !== undefined && <p>{said}</p>}
+    </div>
   );
 }
 
@@ -377,7 +479,10 @@ function AllowNotice({
   onWay?: (words: string, ask: Shown) => void;
 }) {
   const id = useId();
-  const [typed, setTyped] = useState(block.target ?? "");
+  /** A port only the command's own output named (qw384): pre-filled for the person to check,
+   *  never taken as the refusal's own word. */
+  const suggested = block.target === null ? (block.suggested ?? undefined) : undefined;
+  const [typed, setTyped] = useState(block.target ?? suggested ?? "");
   const [alwaysOpen, setAlways] = useState(false);
   const [allowed, setAllowed] = useState<Allowed>();
   /** The hosts an Allow on this Notice allowed (#1637). */
@@ -396,7 +501,10 @@ function AllowNotice({
   /** The hosts the chat's proxy refused past the ones it names (#1353): said, never offered. */
   const moreRefused = useRefusedMore(block.plane, block.session);
   const what: GrantWhat =
-    block.offer === "host" || block.offer === "socket" || block.offer === "service"
+    block.offer === "host" ||
+    block.offer === "socket" ||
+    block.offer === "service" ||
+    block.offer === "port"
       ? block.offer
       : "write";
   const target = block.target ?? typed.trim();
@@ -733,7 +841,8 @@ function AllowNotice({
     block.offer !== "host" &&
     block.offer !== "write" &&
     block.offer !== "socket" &&
-    block.offer !== "service"
+    block.offer !== "service" &&
+    block.offer !== "port"
   )
     return (
       <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
@@ -762,6 +871,9 @@ function AllowNotice({
         )}
         {allowed.said}
         {said !== undefined && ` ${said}`}
+        {what === "port" && block.harness === CLAUDE_CODE && (
+          <PointKubectl block={block} onPointed={onAllowed} />
+        )}
       </>
     );
     return owedRetry ? (
@@ -793,11 +905,17 @@ function AllowNotice({
   const named =
     block.target === null ? (
       <SettingRow
-        label={what === "host" ? "Host to allow" : "Folder to allow"}
+        label={
+          what === "host" ? "Host to allow" : what === "port" ? "Port to allow" : "Folder to allow"
+        }
         help={
           what === "host"
             ? "An Allow lets the chat reach the host you type here."
-            : "An Allow lets the chat write in the folder you type here and everything in it."
+            : what === "port"
+              ? suggested !== undefined && typed.trim() === suggested
+                ? `${PORT_FROM_OUTPUT} An Allow lets the chat connect to whatever listens on this Mac at that port, as you.`
+                : "An Allow lets the chat connect to whatever listens on this Mac at the port you type here, as you."
+              : "An Allow lets the chat write in the folder you type here and everything in it."
         }
         control={(ids) => (
           <Field
@@ -805,7 +923,7 @@ function AllowNotice({
             ids={ids}
             value={typed}
             onChange={setTyped}
-            placeholder={what === "host" ? "api.example.com" : undefined}
+            placeholder={what === "host" ? "api.example.com" : what === "port" ? "6443" : undefined}
           />
         )}
       />
@@ -813,6 +931,12 @@ function AllowNotice({
       <p>
         {what === "host" ? (
           <>Allow reaching {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />}</>
+        ) : what === "port" ? (
+          // qw384: one port, named whole, with what allowing it means, in purlis's words.
+          <>
+            Allow connecting to the service on this Mac at port <Target of={block.target} />.{" "}
+            {block.route}
+          </>
         ) : what === "socket" || what === "service" ? (
           // D-sock-6: named whole, with what allowing it means, in purlis's words.
           <>

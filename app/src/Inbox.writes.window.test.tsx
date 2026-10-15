@@ -166,3 +166,65 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(buttons()).toEqual(["Deny", "Go to chat"]);
   });
 });
+
+describe("a proposed change in the Inbox (#1975)", () => {
+  const proposal = (writes: Shown["writes"], options: Shown["options"]): Shown => ({
+    session: 3,
+    ask: "proposal:7",
+    says: "Proposes a change to purlis.toml, which only you apply",
+    options,
+    source: "proposed-change",
+    chain: ["steward 3"],
+    answer: { via: "proposed-change", id: 7 },
+    writes,
+  });
+  const both: Shown["options"] = [
+    { id: "apply", label: "Apply", allows: true },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ];
+
+  it("counts no Apply pressed as the change is drawn, and one pressed once it was read", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // A window that has drawn no change yet: the merge view's chunk is still to load.
+    vi.resetModules();
+    const { Inbox: Fresh } = await import("./Inbox");
+    const calls: string[] = [];
+    draw(
+      [
+        proposal(
+          {
+            kind: "whole",
+            path: "purlis.toml",
+            changes: [
+              {
+                says: "The file as it is, and as the change would make it",
+                before: "[plane]\n",
+                after: '[plane]\nmode = "pr"\n',
+                hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 }],
+              },
+            ],
+          },
+          both,
+        ),
+      ],
+      calls,
+      Fresh,
+    );
+    act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+    const apply = await screen.findByRole("button", { name: "Apply" }, { timeout: 5000 });
+    await userEvent.click(apply);
+    expect(screen.getByText(MOVED_JUST_NOW)).toBeTruthy();
+    expect(calls).not.toContain("apply_proposed_change");
+
+    act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+    await userEvent.click(apply);
+    await vi.waitFor(() => expect(calls).toContain("apply_proposed_change"));
+  });
+
+  it("never offers Apply beside a change it does not show, whatever the ask lists", () => {
+    draw([
+      proposal({ kind: "not-shown", why: "This change holds what looks like a credential." }, both),
+    ]);
+    expect(buttons()).toEqual(["Dismiss", "Go to chat"]);
+  });
+});

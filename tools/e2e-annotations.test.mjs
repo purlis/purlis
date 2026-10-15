@@ -17,6 +17,7 @@ import {
   LIMIT,
   MESSAGE_CHARS,
   annotations,
+  evidenceOf,
   lineOf,
   readRecords,
 } from "./e2e-annotations.mjs";
@@ -199,4 +200,123 @@ test("only the first few failures carry the evidence, each held to its own size"
       `annotation ${n} is too long`,
     );
   }
+});
+
+test("a failure that carried an empty block says so, and one that carried none says nothing", () => {
+  // A quiet core and a block that was never recorded read differently (#2029's review).
+  const [quiet] = annotations([failure({ late: [], coreLog: [] })], {
+    root,
+    read: noSource,
+  });
+  assert.ok(
+    quiet.includes("no command was late; the core logged nothing"),
+    quiet,
+  );
+  const [none] = annotations([failure()], { root, read: noSource });
+  assert.ok(!none.includes("%0A%0A"), none);
+});
+
+test("only failures that carried a block count towards the first few that show it", () => {
+  // The left-chats guard writes a record of its own, with no block: it does not use up a place.
+  const records = [
+    failure({ title: "first", late: [], coreLog: ["purlis: one"] }),
+    failure({ title: "the guard's own record" }),
+    ...Array.from({ length: EVIDENCE_FOR }, (_, n) =>
+      failure({ title: `after ${n}`, late: [], coreLog: ["purlis: one"] }),
+    ),
+  ];
+  const lines = annotations(records, { root, read: noSource });
+  const shown = lines.filter((line) =>
+    line.includes("the core's last log lines"),
+  ).length;
+  assert.equal(shown, EVIDENCE_FOR);
+  assert.ok(EVIDENCE_FOR >= 5);
+});
+
+test("what covered the element a test could not press is said", () => {
+  const record = failure({
+    message: 'element ("button=New tab") still not clickable after 20000ms',
+    late: [],
+    coreLog: [],
+    covers: [
+      "at its centre: div.palette-backdrop",
+      "focused: input#palette",
+      "open: [role=dialog] Switch project",
+    ],
+  });
+  const [line] = annotations([record], { root, read: noSource });
+  assert.ok(
+    line.includes(
+      "what covered it:%0Aat its centre: div.palette-backdrop%0Afocused: input#palette%0Aopen: [role=dialog] Switch project",
+    ),
+    line,
+  );
+});
+
+test("a long log is cut to the room the late commands and the covers leave, which stay whole", () => {
+  const coreLog = Array.from(
+    { length: 400 },
+    (_, n) =>
+      `2026-10-15T00:00:${String(n).padStart(3, "0")} INFO purlis: line ${n}`,
+  );
+  const covers = [
+    "at its centre: div.palette-backdrop",
+    "focused: input#palette",
+  ];
+  const text = evidenceOf({
+    late: [{ command: "close_plane", ms: null }],
+    coreLog,
+    covers,
+  });
+  assert.ok(text.length <= EVIDENCE_CHARS, `${text.length}`);
+  assert.ok(
+    text.startsWith("the window waited for: close_plane (never answered)\n"),
+    text.slice(0, 200),
+  );
+  assert.ok(
+    text.includes("\nthe core's last log lines:\n"),
+    "the log's header",
+  );
+  assert.ok(
+    text.endsWith(`what covered it:\n${covers.join("\n")}`),
+    "the covers whole",
+  );
+  // The newest line is kept, the oldest cut.
+  assert.ok(text.includes("purlis: line 399\n"));
+  assert.ok(!text.includes("purlis: line 0\n"));
+});
+
+test("a cover that looks like it holds a secret is said redacted, as the core's log is", () => {
+  // Made up, and built here so the repository holds no token-shaped text.
+  const token = ["ghp", "_", "0123456789abcdefghij", "ABCDEFGHIJ012345"].join(
+    "",
+  );
+  const text = evidenceOf({
+    late: [],
+    coreLog: [],
+    covers: [
+      `at its centre: div.toast “${token}”`,
+      "focused: input#token “access_token=s3cr3tvalue1234”",
+      "open: [role=dialog] Switch project",
+    ],
+  });
+  assert.ok(!text.includes(token.slice(0, 14)), text);
+  assert.ok(!text.includes("s3cr3tvalue1234"), text);
+  assert.ok(text.includes("[redacted: a line that looks like it holds"), text);
+  assert.ok(text.includes("open: [role=dialog] Switch project"), text);
+});
+
+test("one log line longer than the room left is cut to it, and the late commands stay whole", () => {
+  const record = {
+    late: [{ command: "chats", ms: 12000 }],
+    coreLog: [`old line\n`, `${"x".repeat(EVIDENCE_CHARS * 2)} newest end`],
+  };
+  const said = evidenceOf(record);
+  assert.ok(said.length <= EVIDENCE_CHARS, `${said.length}`);
+  assert.ok(
+    said.startsWith("the window waited for: chats (answered after 12 s)"),
+    said.slice(0, 80),
+  );
+  assert.ok(said.includes("the core's last log lines:\n"));
+  assert.ok(said.endsWith(" newest end"));
 });

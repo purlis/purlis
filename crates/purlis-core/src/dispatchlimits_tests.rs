@@ -1207,6 +1207,59 @@ fn the_settings_save_refuses_a_depth_of_nine() {
     );
 }
 
+// ---- when a quiet task is noted (#1981) ---------------------------------------------------------
+
+#[test]
+fn a_quiet_task_is_noted_after_fifteen_minutes_and_one_command_after_thirty_unless_set() {
+    let limits = committed("");
+    assert_eq!(
+        (limits.quiet_note_minutes, limits.one_command_note_minutes),
+        (15, 30)
+    );
+    let limits = committed(
+        "[dispatch]\nquiet-note-minutes = 5\n\n[dispatch.personas.steward]\n\
+         one-command-note-minutes = 90\n",
+    );
+    assert_eq!(
+        (limits.quiet_note_minutes, limits.one_command_note_minutes),
+        (5, 90)
+    );
+    // A note limits no dispatch.
+    assert_eq!(decide(&limits, &quiet()), Decision::Allowed);
+    // A 0 would be a note every look: it is refused as written, and switches nothing off.
+    let read = read(Some("[dispatch]\nquiet-note-minutes = 0\n"), FILE);
+    assert_eq!(read.table.project.get(Limit::QuietNoteMinutes), None);
+    assert!(
+        read.refused
+            .join("\n")
+            .contains("quiet note after is a whole number of minutes, 1 or more"),
+        "{:?}",
+        read.refused
+    );
+    assert_eq!(Limit::QuietNoteMinutes.least(), 1);
+    // A policy file nobody could read switches dispatch off, and leaves the notes as they are:
+    // never a note every look.
+    let refused = in_force(
+        &table("[dispatch]\nquiet-note-minutes = 20\n"),
+        Some("alpha"),
+        Some("steward"),
+        Some("devops"),
+        &nothing(),
+        &ceiling_when_refused(),
+    );
+    assert_eq!(refused.running, 0, "dispatch is off");
+    assert_eq!(
+        (refused.quiet_note_minutes, refused.one_command_note_minutes),
+        (20, 30)
+    );
+    assert_eq!(ceiling_when_refused().get(Limit::QuietNoteMinutes), None);
+    assert_eq!(
+        ceiling_when_refused().get(Limit::OneCommandNoteMinutes),
+        None
+    );
+    assert!(!Limit::OneCommandNoteMinutes.persona_only());
+}
+
 // ---- a session's tokens and a task's time (#1512) ------------------------------------------------
 
 #[test]

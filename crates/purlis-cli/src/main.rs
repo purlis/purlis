@@ -127,6 +127,10 @@ enum Command {
     #[command(subcommand)]
     Harness(HarnessCommand),
 
+    /// Profiles: one identity of a harness each, and how it signs in.
+    #[command(subcommand)]
+    Profile(ProfileCommand),
+
     /// purlis's plugin for a `claude` or `codex` started outside the app: its hooks, the Bash
     /// guard and its skills. The app arms its own chats; this is for the others.
     #[command(subcommand)]
@@ -325,6 +329,20 @@ enum Command {
         /// Pin the instant every entry is stamped with, for tests only.
         #[arg(long, hide = true)]
         now: Option<String>,
+    },
+
+    /// Propose a change to one of purlis's own configuration files, for the person to apply.
+    ///
+    /// In a chat the app started: `file` is the project's manifest, a persona's `mcp.json` or
+    /// `persona.md`, or a `.claude/skills` file; `--from` is the whole new content, written in
+    /// this chat's own folder. The window shows the person the change whole, and only they
+    /// apply it. Nothing is written here (#1975).
+    Propose {
+        /// The configuration file to change.
+        file: std::path::PathBuf,
+        /// The file in this chat's own folder that holds its whole new content.
+        #[arg(long, value_name = "DRAFT")]
+        from: std::path::PathBuf,
     },
 
     /// Claude Code's footer, from the per-turn JSON on stdin.
@@ -901,6 +919,13 @@ enum HarnessCommand {
         /// The harness's declared name, as a profile's `kind` names it.
         name: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ProfileCommand {
+    /// Every profile purlis read, how each signs in, the file it came from, and why any was
+    /// refused.
+    List,
 }
 
 /// The two `version` verbs that move a PUBLISHED `charter-cp` release.
@@ -1583,6 +1608,25 @@ fn tell_the_host_about_the_tool_call(
             },
         );
     }
+    // A shell command of the chat's own that came back, with its status (#1981): what
+    // `purlis dispatch read` lists of a task. On a line of its own, sent once and never spooled.
+    if call.agent.is_none()
+        && let Some(turn_output) = hookwire::Output::of_ran(
+            word,
+            &data,
+            purlis_core::envvar::var(hookwire::HARNESS_ENV).as_deref(),
+        )
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            token.as_ref(),
+            &hookwire::TurnOutput {
+                chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(payload, &purlis_core::envvar::var),
+            },
+        );
+    }
 }
 
 /// Each sandbox block a block word found in the call's result, to the host, when one is
@@ -1612,12 +1656,20 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
+        // A refused service on this Mac whose port only printed words name: offered to the
+        // person to check, never as the target (qw384).
+        let suggested = (block.kind == purlis_core::sandboxblock::Kind::LocalService
+            && target.is_none())
+        .then(|| purlis_core::sandboxblock::printed_port(&data))
+        .flatten()
+        .map(|port| port.to_string());
         let blocked = hookwire::SandboxBlocked {
             chat,
             sandbox_blocked: block,
             harness: harness.clone(),
             target,
             read_back,
+            suggested,
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
             Ok(()) => taken.push(block),
@@ -1827,6 +1879,24 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             "purlis: this {} names no chat (`${}` is not a chat number), so the app was not told",
             event.word(),
             hookwire::CHAT_ENV
+        );
+    }
+    // What the turn ended saying (#1981), before the report, so the app has it as it hears the
+    // turn end: a task that ended its turns without a report is reported from it. The chat's
+    // own run alone, on a line of its own, sent once and never spooled.
+    if event == Event::Stop
+        && let Some(report) = &report
+        && report.agent.is_none()
+        && let Some(turn_output) = hookwire::Output::of_stop(&text)
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            hookwire::ChatToken::from_env().as_ref(),
+            &hookwire::TurnOutput {
+                chat: report.chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(&text, &purlis_core::envvar::var),
+            },
         );
     }
     if let Some(report) = &report
@@ -2452,12 +2522,14 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             // same reason; the rung it tests for is spelled here as the two pointer rungs,
             // which are `session`/`active-file` in charter's own vocabulary.
             if code == 0 {
-                reset_active_after_removal(&here, name, say);
+                let reset = reset_active_after_removal(&here, name, say);
                 heard.push(ExtensionEvent::WorkspaceRemoved {
                     workspace: name.clone(),
                 });
+                reset
+            } else {
+                code
             }
-            code
         }
         WorkspaceCommand::Rename { old, new } => {
             // The chats the app has open in it, under either name so a rename finished after
@@ -2748,13 +2820,15 @@ fn pinned(now: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {
 /// caller is standing in are the operator's own and are not purlis's to rewrite; a pointer
 /// purlis wrote is, and one naming a directory that no longer exists is how the next write
 /// re-creates the workspace that was just deleted.
+///
+/// Answers the exit code: a pointer that could not be written is said as that, never as a
+/// reset (#2103).
 fn reset_active_after_removal(
     here: &Here,
     removed: &str,
     say: &mut dyn FnMut(purlis_core::repocmd::Say),
-) {
+) -> u8 {
     use purlis_core::active::WorkspaceRung;
-    use purlis_core::repocmd::Say;
 
     let active = purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
     if active.name != removed
@@ -2763,15 +2837,18 @@ fn reset_active_after_removal(
             WorkspaceRung::SessionPointer | WorkspaceRung::TerminalPointer
         )
     {
-        return;
+        return 0;
     }
     let fallback = purlis_core::active::plane_default_workspace(here.plane.root());
     // `force`, because the session is locked to the workspace that just went away and that
     // lock can refuse nothing useful now.
-    purlis_core::wscmd::select::set_active(here.plane.root(), &fallback, &here.ids, true);
-    say(Say::Info(format!(
-        "Active workspace reset to '{fallback}'."
-    )));
+    purlis_core::wscmd::select::reset_after_removal(
+        here.plane.root(),
+        removed,
+        &fallback,
+        &here.ids,
+        say,
+    )
 }
 
 fn run(command: Command) -> Result<u8, String> {
@@ -2824,6 +2901,9 @@ fn run(command: Command) -> Result<u8, String> {
         }
         Command::Root => {
             println!("{}", here.plane.root().display());
+        }
+        Command::Propose { file, from } => {
+            return brokered::propose(here.plane.root(), &file, &from);
         }
         Command::Workspace(WorkspaceCommand::Current) => {
             // The name alone on stdout, for a script; the rung that decided it on stderr, for
@@ -2896,7 +2976,19 @@ fn run(command: Command) -> Result<u8, String> {
             // a config read, so no hook pays a git call per tool call.
             let check = profiles::ignore_check(&root);
             let set = profiles::with_ignore_check(profiles::current(&root), &check);
-            eprint!("{}", harness_listing(&set, &check));
+            eprint!("{}", harness_listing(&set, &check, None));
+        }
+        Command::Profile(ProfileCommand::List) => {
+            let root = here.plane.root().to_path_buf();
+            // As `harness list`: a person typed this, so the git check runs here.
+            let check = profiles::ignore_check(&root);
+            let set = profiles::with_ignore_check(profiles::current(&root), &check);
+            let declared = purlis_core::harness_declaration::read(&root);
+            let passed = purlis_core::chatenv::read(&root);
+            eprint!(
+                "{}",
+                harness_listing(&set, &check, Some((&declared, &passed)))
+            );
         }
         Command::Harness(HarnessCommand::Show { name }) => {
             return Ok(harness_show(here.plane.root(), &name));
@@ -4120,7 +4212,10 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
     0
 }
 
-/// The profile listing, as `purlis harness list` prints it on stderr.
+/// The profile listing, as `purlis harness list` prints it on stderr, and with `declared`, as
+/// `purlis profile list` does: a SIGN-IN column, the kind of sign-in purlis can see a profile
+/// has, from its harness's declaration, its `env` and `[chat_env] pass` (`passed`), or
+/// `unknown` where it cannot tell (#2031).
 ///
 /// Built-ins first in registry order — a declared replacement keeps its kind's place — then
 /// declared profiles by name. **Every width is measured from the cells about to be printed**
@@ -4131,7 +4226,11 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 /// Every cell that came out of the file has already been contained by the time it arrives
 /// here (`profiles::display`, `shown::readable`): a command is text a chat can write, and a
 /// carriage return in one would otherwise redraw this line.
-fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
+fn harness_listing(
+    set: &ProfileSet,
+    check: &profiles::IgnoreCheck,
+    declared: Option<(&purlis_core::harness_declaration::Declarations, &[String])>,
+) -> String {
     let order: Vec<String> = profiles::builtins().into_iter().map(|p| p.name).collect();
     let mut rows: Vec<&purlis_core::profiles::Profile> = set.profiles().iter().collect();
     rows.sort_by_key(|p| {
@@ -4139,10 +4238,32 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
         (place.is_none(), place.unwrap_or(0), p.name.clone())
     });
 
-    let heads = ["NAME", "KIND", "COMMAND"];
-    let body: Vec<[String; 3]> = rows
+    let sign_in =
+        |p: &purlis_core::profiles::Profile,
+         (declared, passed): (&purlis_core::harness_declaration::Declarations, &[String])| {
+            declared
+                .get(&p.kind)
+                .and_then(|declaration| declaration.profile_sign_in(&p.env, passed))
+                // Through the closure, and never by the kind's type name: this binary names no
+                // forge sign-in, and `a_forge_token_never_reaches_a_chat.rs` holds its sources to
+                // that by the type's word.
+                .map_or("unknown", |kind| kind.word())
+                .to_owned()
+        };
+    let heads: Vec<&str> = match declared {
+        Some(_) => vec!["NAME", "KIND", "SIGN-IN", "COMMAND"],
+        None => vec!["NAME", "KIND", "COMMAND"],
+    };
+    let body: Vec<Vec<String>> = rows
         .iter()
-        .map(|p| [shown::short(&p.name), p.kind.clone(), profiles::display(p)])
+        .map(|p| {
+            let mut row = vec![shown::short(&p.name), p.kind.clone()];
+            if let Some(declared) = declared {
+                row.push(sign_in(p, declared));
+            }
+            row.push(profiles::display(p));
+            row
+        })
         .collect();
     // Each column is its header, its widest cell, and the gap to the next one — counted
     // inside the width so a caller pads once rather than padding and then adding spaces.
@@ -4160,7 +4281,7 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
         })
         .collect();
 
-    let line = |mark: &str, cells: [&str; 3], last: &str| {
+    let line = |mark: &str, cells: &[&str], last: &str| {
         let mut out = mark.to_owned();
         for (cell, width) in cells.iter().zip(&widths) {
             out.push_str(cell);
@@ -4173,7 +4294,7 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
         format!("{}\n", out.trim_end())
     };
 
-    let mut out = line("  ", heads, "FROM");
+    let mut out = line("  ", &heads, "FROM");
     for (p, cells) in rows.iter().zip(&body) {
         // The row the selector starts on, marked. It launches nothing by itself.
         let mark = if set.default.as_deref() == Some(p.name.as_str()) {
@@ -4182,7 +4303,8 @@ fn harness_listing(set: &ProfileSet, check: &profiles::IgnoreCheck) -> String {
             "  "
         };
         let source = p.source.as_str();
-        out.push_str(&line(mark, [&cells[0], &cells[1], &cells[2]], source));
+        let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
+        out.push_str(&line(mark, &cells, source));
     }
     if !set.refused.is_empty() {
         out.push_str("refused:\n");

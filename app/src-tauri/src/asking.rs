@@ -126,6 +126,9 @@ pub enum AskSource {
     /// A workspace a chat asked the person to remove, which only their press removes
     /// (qw356).
     WorkspaceRemoval,
+    /// A change a chat proposed to purlis's own configuration, which only the person applies
+    /// (#1975).
+    ProposedChange,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -158,6 +161,9 @@ pub enum AnswerPath {
         memories: u32,
         todos: u32,
     },
+    /// `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
+    /// proposal `id` (#1975).
+    ProposedChange { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -540,6 +546,69 @@ pub fn sandbox_block(
     sandbox_host(session, block, locks)
         .or_else(|| sandbox_write(session, block, locks))
         .or_else(|| sandbox_local(session, block, locks))
+        .or_else(|| sandbox_port(session, block, locks))
+}
+
+/// **The service-on-this-Mac adapter** (qw384): a port of this machine chat `session`'s
+/// sandbox refused, held now, is an ask as a host is. Allow is offered for this chat and for
+/// the person (never once, never everyone's: it is this machine's and lasts past a run), at
+/// each level `locks` leaves open; then Keep blocked. A port the block did not name is typed in
+/// its Notice, so it is answered there ([`AnswerPath::InItsPane`]).
+pub fn sandbox_port(
+    session: u32,
+    block: &crate::taskblocks::HeldBlock,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Option<Shown> {
+    use crate::sandboxing::{GrantLevel, GrantWhat};
+    use purlis_core::sandbox::grant::What;
+    if block.what != GrantWhat::Port {
+        return None;
+    }
+    let order = [GrantLevel::Chat, GrantLevel::You];
+    let named: Option<u16> = block.target.parse().ok();
+    let levels: Vec<GrantLevel> = order
+        .into_iter()
+        .filter(|level| match named {
+            Some(port) => locks
+                .refuses_grant(&What::Port(port), (*level).into())
+                .is_none(),
+            None => {
+                locks.port_grants_refused().is_none()
+                    && locks.scope_removed((*level).into()).is_none()
+            }
+        })
+        .collect();
+    let says = match named {
+        Some(port) => format!(
+            "The sandbox refused the service on this Mac at port {port}. Allowing it {}.",
+            purlis_core::sandbox::localport::RISK
+        ),
+        None => "The sandbox refused a service on this Mac at a port it did not name".to_owned(),
+    };
+    Some(Shown {
+        session,
+        ask: block_key(session, block),
+        says: said_inertly(&says),
+        options: allows(&levels, true)
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        source: AskSource::SandboxLocal,
+        chain: Vec::new(),
+        answer: match named {
+            Some(_) => AnswerPath::SandboxBlock {
+                shown: crate::taskblocks::BlockShown {
+                    operation: block.operation.clone(),
+                    kind: block.kind.clone(),
+                    what: GrantWhat::Port,
+                    target: block.target.clone(),
+                },
+            },
+            None => AnswerPath::InItsPane,
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    })
 }
 
 /// **The socket and service adapter** (D-sock-1): a local socket or a system service chat
@@ -698,6 +767,69 @@ pub fn workspace_removal(
     }
 }
 
+/// The id of Apply on a proposed change (#1975).
+pub const APPLY: &str = "apply";
+/// The id of Dismiss on a proposed change.
+pub const DISMISS: &str = "dismiss";
+
+/// The key of chat `session`'s proposal `id`.
+fn proposal_key(id: u32) -> String {
+    format!("proposal:{id}")
+}
+
+/// **The proposed change adapter** (#1975): a change a chat proposed to purlis's own
+/// configuration, held now, with the file as the app reads it and as the change makes it.
+/// **Apply** is offered only where the change is shown whole and still applies (PC-7, PC-8);
+/// **Dismiss** always. Never "always apply" (PC-13).
+pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals::Now) -> Shown {
+    use crate::proposals::Now;
+    let path = &one.path;
+    let (says, writes, applies) = match now {
+        Now::Made { before, after } => {
+            let writes = crate::askwrites::proposed(path, before, after);
+            let whole = matches!(writes, crate::askwrites::WritesShown::Whole { .. });
+            (
+                format!("Proposes a change to {path}, which only you apply"),
+                Some(writes),
+                whole,
+            )
+        }
+        Now::Stale => (
+            format!(
+                "Proposed a change to {path}, which changed since: it can no longer be applied"
+            ),
+            None,
+            false,
+        ),
+        Now::Unprepared => (
+            format!("Proposed a change to {path}, which can no longer be made"),
+            None,
+            false,
+        ),
+    };
+    let mut options = Vec::new();
+    if applies {
+        options.push(Offered {
+            id: APPLY.to_owned(),
+            label: "Apply".to_owned(),
+            allows: true,
+        });
+    }
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: one.session,
+        ask: proposal_key(one.id),
+        says: said_inertly(&says),
+        options,
+        source: AskSource::ProposedChange,
+        chain: Vec::new(),
+        answer: AnswerPath::ProposedChange { id: one.id },
+        since: None,
+        held_until: None,
+        writes,
+    }
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -751,6 +883,8 @@ pub struct Waiting<'a> {
     pub blocks: Vec<(u32, crate::taskblocks::HeldBlock)>,
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
+    /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
+    pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -788,6 +922,14 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .removals
             .iter()
             .map(|(waits, holds)| workspace_removal(waits, *holds)),
+    );
+    // A chat that proposed a change waits on the person's answer, as one that asked them to
+    // remove a workspace does (#1975).
+    asks.extend(
+        waiting
+            .proposals
+            .iter()
+            .map(|(one, now)| proposed_change(one, now)),
     );
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     asks.extend(
@@ -927,8 +1069,15 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             (waits, holds)
         })
         .collect();
+    let proposals: Vec<_> = crate::proposals::waiting(held)
+        .into_iter()
+        .inspect(|(one, _)| {
+            since.insert(proposal_key(one.id), one.since);
+        })
+        .collect();
     let waiting = Waiting {
         removals,
+        proposals,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,

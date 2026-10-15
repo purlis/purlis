@@ -36,6 +36,21 @@ refused:
 A `purlis <profile>` command that starts a chat from a terminal is not in this version yet
 (#1608).
 
+`purlis profile list` is the same listing with a **SIGN-IN** column: the sign-in purlis can
+see a profile has. A subscription is signed in through the harness's own flow and purlis never
+looks at it, so a profile shows `unknown` unless purlis can tell: `local` (or another kind) for a
+harness that supports that kind alone, `cloud` where the profile's `env` or `[chat_env] pass`
+switches the harness to a cloud (`CLAUDE_CODE_USE_BEDROCK=1`), and `api-key` where they pass a
+provider's key (`ANTHROPIC_API_KEY`):
+
+```
+  NAME         KIND      SIGN-IN  COMMAND                           FROM
+  claude       claude    unknown  claude                            built-in
+  opencode     opencode  unknown  opencode                          built-in
+  codex        codex     unknown  codex                             built-in
+  claude-aws   claude    cloud    CLAUDE_CODE_USE_BEDROCK=1 claude  charter.local.toml
+```
+
 ## Two accounts of one harness, or one version pinned
 
 A harness profile is a named way to launch one harness: its kind, its command, its
@@ -252,7 +267,7 @@ and none takes a workspace, a project or a path:
 | `session_record_list`, `session_record_read` | The session records where the chat works, by file name |
 | `workspace_vision`, `workspace_section` | For a write outside a smart close, which keeps its own way of writing `workspace.md`: the `## Vision` of the workspace's `workspace.md`, replaced, and one entry added to its `## Context & decisions` (`decisions`) or `## Glossary` (`glossary`), with what is there kept; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there (under Codex, run `purlis workspace vision` in the chat) |
 | `change_status` | The workspace's cross-repo changes, from their records; the forge is not asked |
-| `dispatch`, `dispatch_list`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does |
+| `dispatch`, `dispatch_list`, `dispatch_read`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, what one of them said last and the commands it ran, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does |
 | `ask_operator` | A question put to you through the harness's own prompt; the model never answers it |
 
 The server runs where each harness runs its MCP servers, which for Claude Code and Codex is

@@ -418,6 +418,10 @@ describe("a task that came to nothing, on the chat that asked for it (#1491)", (
     expect(taskFailedSaid({ task: "build", how: "did_not_start", why: "" })).toBe(
       "build did not start",
     );
+    // #1981: the person reads what it said, since the task did not send it as its report.
+    expect(taskFailedSaid({ task: "build", how: "last_message", why: "" })).toBe(
+      "build ended its turns without a report: purlis sent its last message as one",
+    );
   });
 
   it("keeps which tasks they were by the chat that asked, so its item can go to their rows", () => {

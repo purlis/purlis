@@ -69,6 +69,7 @@ mod inboxupdates;
 mod instance;
 mod ipc;
 mod killswitch;
+mod kubectl;
 mod lifecycle;
 mod live;
 mod mcpfailed;
@@ -89,6 +90,7 @@ mod planes;
 mod planewatch;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod proposals;
 mod readonly;
 mod rebrief;
 mod references;
@@ -104,6 +106,7 @@ mod saving;
 mod searchfiles;
 mod sessions;
 mod settings;
+mod silence;
 mod slowstart;
 mod smartclose;
 mod stopping;
@@ -126,6 +129,7 @@ mod windows;
 mod worklinks;
 mod workspaces;
 mod worktrees;
+mod yoursandbox;
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -3385,6 +3389,18 @@ pub fn run() {
                 // Each line of a dispatch as the app records it: an open Activity tab adds
                 // it without reading the records again (#1495). To the window holding the
                 // project only: a line carries what a chat said.
+                // A task gone quiet, on its tab (#1981).
+                .telling_task_quiet({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: silence::TaskQuiet| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            silence::EVENT,
+                            &told,
+                        );
+                    })
+                })
                 .telling_activity({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |heard: activity::ActivityHeard| {

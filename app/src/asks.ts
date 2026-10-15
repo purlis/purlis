@@ -237,6 +237,12 @@ export async function answerTaken(
           return allowed;
         }
         break;
+      case "proposed-change":
+        // Apply writes the change the window showed, as the person; Dismiss writes nothing
+        // (#1975). Both tell the chat on its next turn.
+        if (option === "apply") return commands.applyProposedChange(plane, path.id);
+        if (option === "dismiss") return commands.dismissProposedChange(plane, path.id);
+        break;
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

@@ -62,6 +62,7 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
             Ok(())
         }),
         doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         blocked: Box::new(move |blocked| blocks.lock().unwrap().send(blocked).unwrap()),
         permission: Box::new(|_| None),
@@ -187,6 +188,7 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 harness: Some("claude".to_owned()),
                 target: None,
                 read_back: false,
+                suggested: None,
             },
             SandboxBlocked {
                 chat: 7,
@@ -200,6 +202,7 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                 // The sandbox's own line names the one service a grant names (ADR 0093).
                 target: Some("com.apple.trustd.agent".to_owned()),
                 read_back: false,
+                suggested: None,
             },
         ]
     );
@@ -486,6 +489,7 @@ fn a_refusal_a_chat_only_read_back_reaches_the_app_marked_so_and_the_chat_is_not
             harness: Some("claude".to_owned()),
             target: None,
             read_back: true,
+            suggested: None,
         }]
     );
     let told = context_of(&read.said, "PostToolUse");

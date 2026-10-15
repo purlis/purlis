@@ -1309,6 +1309,31 @@ pub enum Ask {
     /// answers [`Answer::No`] with the sentence that says the person has been asked, or why
     /// they were not. No ticket, for a record's reason: nothing is made or removed by the ask.
     Removal(RemovalAsk),
+    /// Show the person a change to one of purlis's own configuration files, which only they
+    /// apply, in the window (#1975, [`crate::proposed`]): what a Claude Code chat's edit of such
+    /// a file and `purlis propose` hand over. **The app writes nothing for it**: it holds the
+    /// proposal for the person and answers [`Answer::No`] with the sentence that says they have
+    /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
+    /// file's whole new content.
+    Propose(Box<ProposeAsk>),
+}
+
+/// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
+/// in the project, the base the change was worked out against, and the change. Nothing else travels: whose it is is the app's record of the chat whose token the
+/// line carries, and what the person sees as the file now is the app's own read of it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The file, relative to the project root, as [`crate::proposed::proposable`] took it.
+    pub path: String,
+    /// The SHA-256 of the file as the change was worked out against it, in hex; none where it
+    /// was not there. Checked at Apply; never trusted to show what the file holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// What it changes: the tool's own edits, which the app makes to the file as it reads it,
+    /// or the file's whole new content.
+    pub change: crate::proposed::Change,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -1489,6 +1514,49 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<String>,
     },
+    /// `purlis worktree add <repo> <piece> [--base <branch>] [--branch]` (qw387): cut from
+    /// `base`, a branch of the clone by name, or `HEAD` for the clone's HEAD; with no base, from
+    /// the branch the remote names its default where the clone has one. A kind of its own, so
+    /// an app that does not know it answers nothing rather than cutting from the clone's HEAD.
+    WorktreeCut {
+        repo: String,
+        piece: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// `purlis worktree update [--base <branch>] [--continue | --abort]` (qw387): the branch
+    /// folder `<repo>/<piece>` brought up to its base, which the chat stands in or above.
+    WorktreeUpdate {
+        repo: String,
+        piece: String,
+        step: UpdateStep,
+    },
+    /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
+    /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
+    WorktreePush {
+        repo: String,
+        piece: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        lease: bool,
+    },
+}
+
+/// What a [`GitWork::WorktreeUpdate`] does.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateStep {
+    /// Fetch, bring the base up to its remote where it may be, and rebase onto it: the base
+    /// named, or the one recorded when the piece was cut.
+    Start {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// Stage the files a stopped rebase named, once resolved, and go on.
+    Continue,
+    /// Put the branch back where it was before the rebase began.
+    Abort,
 }
 
 /// A session record a chat asks the app to write for it, as `purlis session record` and the
@@ -1897,6 +1965,8 @@ enum Line {
     Blocked(SandboxBlocked),
     /// After every other kind: it requires `doing`, which none of them carries.
     Doing(Doing),
+    /// After every other kind: it requires `turn_output`, which none of them carries.
+    Output(TurnOutput),
     /// After every other kind: it requires `secret_exec`, which none of them carries. Held on
     /// its connection for as long as the command runs (#1407).
     SecretExec(crate::secrets::brokered::Ask),
@@ -1921,6 +1991,7 @@ impl Ask {
             Self::Dispatch(dispatch) => dispatch.chat,
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
+            Self::Propose(proposed) => proposed.chat,
         }
     }
 }
@@ -1939,6 +2010,7 @@ impl Line {
             Self::Touching(touching) => touching.chat,
             Self::Blocked(blocked) => blocked.chat,
             Self::Doing(doing) => doing.chat,
+            Self::Output(output) => output.chat,
             Self::SecretExec(ask) => ask.chat,
             Self::Frames(hello) => hello.chat,
         }
@@ -2164,6 +2236,148 @@ pub struct Doing {
 /// What hears a [`Doing`]. Nothing is answered: the hook does not wait for it.
 pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 
+/// What a chat's turn ended saying (#1981): the harness's own last message of the turn, as its
+/// `Stop` hook is handed it. What a task that ended its turns without a report is reported
+/// from, as **a report purlis made from its last message**.
+///
+/// **The line itself is never recorded**, as a [`Doing`] is not: a line of its own, sent once
+/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for a task alone,
+/// until its next turn begins or its chat closes. The text is the chat's own words: the host
+/// masks what looks like a credential before it keeps any of it, and hands it on only quoted
+/// as data. **A report purlis makes from it is recorded, by design**: that masked text is the
+/// report, left for the chat that asked and kept on the task's dispatch record as any report is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TurnOutput {
+    /// The app's number for the chat the hook ran in, from [`CHAT_ENV`].
+    pub chat: u32,
+    /// What it said.
+    pub turn_output: Output,
+    /// The harness run the hook ran under (#1601), judged against the run the chat adopted: a
+    /// harness nested in the chat says nothing for it.
+    #[serde(default, skip_serializing_if = "Speaker::is_no_one")]
+    pub speaker: Speaker,
+}
+
+/// One thing a chat's turn put out ([`TurnOutput`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "is", rename_all = "snake_case")]
+pub enum Output {
+    /// The last message of a turn that has ended.
+    Final {
+        /// The message, cut to [`Output::MOST_BYTES`] by the hook.
+        text: String,
+    },
+    /// A shell command the turn ran, as its tool's hook heard it come back (#1981): what
+    /// `purlis dispatch read` lists of a task.
+    Ran {
+        /// The command line, cut to [`Output::MOST_COMMAND_BYTES`] by the hook.
+        command: String,
+        /// Its exit status, where the harness said one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit: Option<i32>,
+        /// Whether its harness said it failed, with or without a status.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        failed: bool,
+    },
+}
+
+impl Output {
+    /// The most bytes of a message the hook sends: a report's text is far shorter, and what is
+    /// kept is cut again to it.
+    pub const MOST_BYTES: usize = 16 * 1024;
+
+    /// The most bytes of a command line the hook sends.
+    pub const MOST_COMMAND_BYTES: usize = 1024;
+
+    /// The command a shell tool's post hook `word` heard come back, from its `payload`, or none
+    /// for any other hook or tool (#1981). `harness` is the chat's harness, by the word the
+    /// project calls it ([`HARNESS_ENV`]).
+    ///
+    /// **The status is the harness's word, where it says one**: opencode's (purlis's plugin
+    /// sends `exit_code`); Claude Code's, whose `PostToolUse` fires for a command that
+    /// succeeded and `PostToolUseFailure` for one that did not, with "Exit code N" in its
+    /// error. A command left running in the background has no status yet.
+    pub fn of_ran(word: &str, payload: &serde_json::Value, harness: Option<&str>) -> Option<Self> {
+        if !word.starts_with("posttooluse") {
+            return None;
+        }
+        if !crate::doing::is_a_command(payload["tool_name"].as_str()?) {
+            return None;
+        }
+        let input = &payload["tool_input"];
+        let command = match &input["command"] {
+            serde_json::Value::String(line) => line.trim().to_owned(),
+            serde_json::Value::Array(words) => words
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => return None,
+        };
+        if command.is_empty() {
+            return None;
+        }
+        let mut end = command.len().min(Self::MOST_COMMAND_BYTES);
+        while !command.is_char_boundary(end) {
+            end -= 1;
+        }
+        let failure = word.starts_with("posttoolusefailure");
+        let background = input["run_in_background"].as_bool() == Some(true);
+        let exit = payload["exit_code"]
+            .as_i64()
+            .and_then(|code| i32::try_from(code).ok())
+            .or_else(|| {
+                failure
+                    .then(|| payload["error"].as_str().and_then(exit_code_in))
+                    .flatten()
+            })
+            .or_else(|| {
+                (!failure && !background && harness == Some(BACKGROUND_TASKS_HARNESS)).then_some(0)
+            });
+        Some(Self::Ran {
+            command: command[..end].to_owned(),
+            exit,
+            failed: failure || exit.is_some_and(|code| code != 0),
+        })
+    }
+
+    /// The last message `text` of a turn, cut on a character to [`Self::MOST_BYTES`], or none
+    /// for one with nothing in it.
+    pub fn last_message(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let mut end = text.len().min(Self::MOST_BYTES);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        Some(Self::Final {
+            text: text[..end].to_owned(),
+        })
+    }
+
+    /// The last message a `Stop` hook's `payload` hands it, where the harness hands one: Claude
+    /// Code's and Codex's `last_assistant_message`, which purlis's opencode plugin sends too.
+    pub fn of_stop(payload: &str) -> Option<Self> {
+        let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
+        Self::last_message(read.get("last_assistant_message")?.as_str()?)
+    }
+}
+
+/// The status in a Claude Code `PostToolUseFailure` error: "Exit code N" at its start.
+fn exit_code_in(error: &str) -> Option<i32> {
+    let rest = error.trim_start().strip_prefix("Exit code ")?;
+    let digits: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
+    digits.parse().ok()
+}
+
+/// What hears a [`TurnOutput`]. Nothing is answered: the hook does not wait for it.
+pub type OutputHeard = Box<dyn Fn(TurnOutput) + Send + Sync + 'static>;
+
 /// A chat's sandbox blocked an operation (#1338): what the window shows as a notice on the
 /// chat's tab, and what `purlis doctor` counts.
 ///
@@ -2200,6 +2414,12 @@ pub struct SandboxBlocked {
     /// to answer. A chat can send either; what `true` buys is a quieter Notice on its own tab.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_back: bool,
+    /// **A port the command's own printed words name** for a refused service on this Mac whose
+    /// [`Self::target`] is none (qw384, [`crate::sandboxblock::printed_port`]): only ever
+    /// pre-filled in the Notice's port field, said to come from the command's output for the
+    /// person to check, and judged again as a grant before anything is allowed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested: Option<String>,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -2244,6 +2464,8 @@ pub struct Hearing {
     pub blocked: Blocked,
     /// Every [`Doing`].
     pub doing: DoingHeard,
+    /// Every [`TurnOutput`].
+    pub output: OutputHeard,
     /// Every brokered `secret exec`: held on its connection while the command runs.
     pub secret_exec: SecretExecuting,
 }
@@ -2315,6 +2537,19 @@ pub fn tell_doing(
     doing: &Doing,
 ) -> io::Result<()> {
     one_line_with_a_deadline(path, token, doing)
+}
+
+/// Tells the app at `path` what its chat's turn put out (#1981). Answers whether it was written.
+///
+/// [`tell`]'s shape and deadline, and **never spooled**, as a [`Doing`] is not: a spool is a
+/// file the chat's words would then be in.
+#[cfg(unix)]
+pub fn tell_turn_output(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    output: &TurnOutput,
+) -> io::Result<()> {
+    one_line_with_a_deadline(path, token, output)
 }
 
 /// Tells the app at `path` its chat's sandbox blocked an operation (#1338). Answers whether it
@@ -2866,6 +3101,7 @@ impl Listener {
             permission: Box::new(|_| None),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             secret_exec: Box::new(|_, _, writer| {
                 crate::secrets::brokered::not_answered(writer);
@@ -3389,6 +3625,7 @@ fn serve(
             Line::Touching(touching) => (hearing.touching)(touching),
             Line::Blocked(blocked) => (hearing.blocked)(blocked),
             Line::Doing(doing) => (hearing.doing)(doing),
+            Line::Output(output) => (hearing.output)(output),
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -3656,7 +3893,8 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
         | Line::Saved(_)
         | Line::Touching(_)
         | Line::Blocked(_)
-        | Line::Doing(_) => return,
+        | Line::Doing(_)
+        | Line::Output(_) => return,
     };
     if let Ok(mut said) = said {
         said.push(b'\n');
@@ -4418,6 +4656,31 @@ mod tests {
     }
 
     #[test]
+    fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
+        // #1975: a proposal at its largest, every byte a control character JSON spells in six,
+        // with the longest path and a base, is read whole: never cut. A whole content carries
+        // as many bytes as edits do, and less of the change's own words.
+        let ask = Ask::Propose(Box::new(ProposeAsk {
+            chat: u32::MAX,
+            path: "\u{1}".repeat(crate::proposed::MOST_PATH_BYTES),
+            base: Some("f".repeat(64)),
+            change: crate::proposed::Change::Edits {
+                edits: vec![crate::proposed::Edit {
+                    old: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    new: "\u{1}".repeat(crate::proposed::MOST_BYTES / 2),
+                    every: true,
+                }],
+            },
+        }));
+        let line = line_with(Some(&ChatToken("t".repeat(64))), &ask).expect("a line");
+        assert!(
+            (line.len() as u64) < A_LINE_IS_AT_MOST,
+            "{} bytes does not fit in {A_LINE_IS_AT_MOST}",
+            line.len()
+        );
+    }
+
+    #[test]
     fn a_written_answer_reads_back_as_written() {
         let answer = Answer::Written {
             to: "alpha".to_owned(),
@@ -4465,6 +4728,29 @@ mod tests {
             GitWork::Create {
                 vision: Some("Ship the importer".to_owned()),
                 repos: vec!["widget".to_owned()],
+            },
+            GitWork::WorktreeCut {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                branch: None,
+                base: Some("main".to_owned()),
+            },
+            GitWork::WorktreePush {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                lease: true,
+            },
+            GitWork::WorktreeUpdate {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                step: UpdateStep::Start {
+                    base: Some("main".to_owned()),
+                },
+            },
+            GitWork::WorktreeUpdate {
+                repo: "widget".to_owned(),
+                piece: "p1".to_owned(),
+                step: UpdateStep::Continue,
             },
         ] {
             let ask = Ask::Git(Box::new(GitAsk {
@@ -6566,7 +6852,8 @@ mod tests {
                     | Ask::WhereWorking(_)
                     | Ask::Dispatch(_)
                     | Ask::Task(_)
-                    | Ask::Removal(_) => Answer::No {
+                    | Ask::Removal(_)
+                    | Ask::Propose(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }
@@ -7179,6 +7466,7 @@ mod tests {
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             each: Box::new(|_| panic!("no report was sent")),
             answer: Box::new(|_, _| panic!("no ask was sent")),
@@ -7240,6 +7528,7 @@ mod tests {
             tool: Box::new(|_| panic!("no tool call was sent")),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(move |touching| tx.lock().unwrap().send(touching).unwrap()),
             permission: Box::new(|_| None),
         });
@@ -7254,6 +7543,154 @@ mod tests {
                 .is_err(),
             "the line without the chat's token was dropped"
         );
+    }
+
+    #[test]
+    fn what_a_turn_ended_saying_is_its_own_line_and_no_other_line_reads_as_it() {
+        // #1981: the last message a task's turn ended on, for a report purlis makes from it.
+        let output = TurnOutput {
+            chat: 4,
+            turn_output: Output::last_message("  Done: 3 files.\n").expect("a message"),
+            speaker: Speaker::default(),
+        };
+        let line = serde_json::to_string(&output).unwrap();
+        assert_eq!(
+            line,
+            r#"{"chat":4,"turn_output":{"is":"final","text":"Done: 3 files."}}"#
+        );
+        assert!(
+            matches!(serde_json::from_str::<Line>(&line), Ok(Line::Output(read)) if read == output),
+            "{line}"
+        );
+        for other in [
+            r#"{"chat":4,"event":"stop"}"#.to_owned(),
+            r#"{"chat":4,"doing":{"is":"began","kind":"command","name":"cargo"}}"#.to_owned(),
+            // A kind this build does not know is no line at all.
+            r#"{"chat":4,"turn_output":{"is":"screen","text":"x"}}"#.to_owned(),
+            r#"{"chat":4,"turn_output":"x"}"#.to_owned(),
+        ] {
+            assert!(
+                !matches!(serde_json::from_str::<Line>(&other), Ok(Line::Output(_))),
+                "no other line reads as this one: {other}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stop_s_last_message_is_read_from_the_payload_the_harness_hands_its_hook() {
+        assert_eq!(
+            Output::of_stop(CLAUDE_STOP),
+            Some(Output::Final {
+                text: "pong".to_owned()
+            })
+        );
+        for none in [
+            r#"{"hook_event_name":"Stop"}"#,
+            r#"{"last_assistant_message":null}"#,
+            r#"{"last_assistant_message":"   "}"#,
+            "not json",
+        ] {
+            assert_eq!(Output::of_stop(none), None, "{none}");
+        }
+    }
+
+    #[test]
+    fn a_command_s_end_is_read_with_the_status_each_harness_says() {
+        let claude = |word: &str, more: serde_json::Value| {
+            let mut payload = serde_json::json!({
+                "tool_name": "Bash",
+                "tool_input": {"command": "cargo test -p core"},
+            });
+            for (key, value) in more.as_object().unwrap() {
+                payload[key] = value.clone();
+            }
+            Output::of_ran(word, &payload, Some("claude-code"))
+        };
+        let ran = |exit: Option<i32>, failed: bool| {
+            Some(Output::Ran {
+                command: "cargo test -p core".to_owned(),
+                exit,
+                failed,
+            })
+        };
+        // Claude Code: its post hook fires for a command that succeeded.
+        assert_eq!(
+            claude("posttooluse-blocked", serde_json::json!({})),
+            ran(Some(0), false)
+        );
+        // And its failure hook for one that did not, with the status in its error.
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Exit code 101\nerror: test failed"})
+            ),
+            ran(Some(101), true)
+        );
+        assert_eq!(
+            claude(
+                "posttoolusefailure-blocked",
+                serde_json::json!({"error": "Interrupted"})
+            ),
+            ran(None, true)
+        );
+        // A command left running in the background has no status yet.
+        let background = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "sleep 60", "run_in_background": true},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &background, Some("claude-code")),
+            Some(Output::Ran {
+                command: "sleep 60".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // opencode: purlis's plugin sends the status.
+        let opencode = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "exit_code": 2,
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &opencode, Some("opencode")),
+            Some(Output::Ran {
+                command: "ls".to_owned(),
+                exit: Some(2),
+                failed: true
+            })
+        );
+        // Codex: its shell's words, and no status it says.
+        let codex = serde_json::json!({
+            "tool_name": "shell",
+            "tool_input": {"command": ["bash", "-lc", "make"]},
+        });
+        assert_eq!(
+            Output::of_ran("posttooluse-blocked", &codex, Some("codex")),
+            Some(Output::Ran {
+                command: "bash -lc make".to_owned(),
+                exit: None,
+                failed: false
+            })
+        );
+        // Not a command's end: nothing.
+        assert_eq!(claude("pretooluse", serde_json::json!({})), None);
+        let edit = serde_json::json!({"tool_name": "Edit", "tool_input": {"command": "x"}});
+        assert_eq!(
+            Output::of_ran("posttooluse", &edit, Some("claude-code")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_turn_s_last_message_is_cut_on_a_character_and_an_empty_one_is_none() {
+        assert_eq!(Output::last_message(" \n\t"), None);
+        let long = "é".repeat(Output::MOST_BYTES);
+        let Some(Output::Final { text }) = Output::last_message(&long) else {
+            panic!("a message");
+        };
+        assert!(text.len() <= Output::MOST_BYTES);
+        assert!(text.chars().all(|c| c == 'é'));
     }
 
     #[test]
@@ -7323,6 +7760,7 @@ mod tests {
             touching: Box::new(|_| panic!("no file was touched")),
             blocked: Box::new(|_| panic!("nothing was blocked")),
             doing: Box::new(move |doing| tx.lock().unwrap().send(doing).unwrap()),
+            output: Box::new(|_| panic!("no turn's output was sent")),
             permission: Box::new(|_| None),
         });
         // Forged, with every field set: no token, a token nobody was issued, another chat's
@@ -7384,6 +7822,7 @@ mod tests {
             harness: Some("claude".to_owned()),
             target: None,
             read_back: false,
+            suggested: None,
         };
         let line = serde_json::to_string(&blocked).unwrap();
         assert_eq!(
@@ -7421,6 +7860,7 @@ mod tests {
             refused: Box::new(|_| panic!("no commit was refused")),
             tool: Box::new(|_| panic!("no tool call was sent")),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| panic!("no file was touched")),
             blocked: Box::new(move |blocked| tx.lock().unwrap().send(blocked).unwrap()),
             permission: Box::new(|_| None),
@@ -7501,6 +7941,7 @@ mod tests {
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             blocked: Box::new(|_| {}),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             each: Box::new(|_| panic!("no report was sent")),
             answer: Box::new(|_, _| panic!("no ask was sent")),

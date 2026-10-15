@@ -43,16 +43,8 @@ fn daily() -> tempfile::TempDir {
 }
 
 fn copy(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).expect("a directory");
-    for entry in std::fs::read_dir(from).expect("a readable fixture") {
-        let entry = entry.expect("an entry");
-        let path = entry.path();
-        if path.is_dir() {
-            copy(&path, &to.join(entry.file_name()));
-        } else {
-            std::fs::copy(&path, to.join(entry.file_name())).expect("a copy");
-        }
-    }
+    // Fixtures are tracked under neutral names (#2089).
+    purlis_core::testfixture::copy(from, to).unwrap();
 }
 
 fn root(tmp: &tempfile::TempDir) -> PathBuf {
@@ -266,6 +258,7 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
         | Ask::Commit(_)
         | Ask::Vaults { .. }
         | Ask::Keys { .. }
+        | Ask::Propose(_)
         | Ask::WhereWorking(_)
         | Ask::Dispatch(_)
         | Ask::Task(_)

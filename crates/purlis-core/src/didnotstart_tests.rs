@@ -87,6 +87,7 @@ const WAITING: Seen = Seen {
     waiting: true,
     asking: false,
     measured: true,
+    interrupts: true,
     ask_open: false,
 };
 

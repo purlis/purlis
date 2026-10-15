@@ -979,6 +979,7 @@ fn an_app_answering(
         }),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         each: Box::new(|_| Ok(())),
         answer: answerer,
@@ -1355,6 +1356,7 @@ fn from_outside_the_chat_secret_exec_says_why_and_runs_nothing() {
         secret_exec: Box::new(|_, _, _| panic!("nothing outside the chat is run")),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         each: Box::new(|_| Ok(())),
         answer: Box::new(|_, _| crate::hookwire::Answer::No { why: String::new() }),
@@ -2195,6 +2197,7 @@ fn a_host_the_runs_sandbox_refused_raises_the_asking_chats_block_naming_it_whole
                 harness: Some("claude".to_owned()),
                 target: Some(host.to_owned()),
                 read_back: false,
+                suggested: None,
             },
             // #1353: the vault the run was given, by its name, so the Notice can say it.
             vault: "team".to_owned(),

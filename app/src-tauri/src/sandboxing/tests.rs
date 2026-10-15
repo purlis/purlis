@@ -1903,3 +1903,42 @@ fn the_offer_names_each_harness_never_sandboxed_on_this_system() {
         ]
     );
 }
+
+/// qw384: a service on this Mac is one port, for this chat or every chat of this project on
+/// this machine, never once, every project or the project's; and it is judged again, never
+/// taken on the window's word.
+#[test]
+fn a_port_on_this_mac_is_one_port_for_this_chat_or_this_project_here() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let refused = |target: &str, level| {
+        allow(
+            project.path(),
+            &machine(),
+            &chats,
+            3,
+            (GrantWhat::Port, target, level),
+            &no_audit(),
+            100,
+        )
+        .expect_err("refused")
+        .to_string()
+    };
+    for level in [GrantLevel::Once, GrantLevel::Machine, GrantLevel::Project] {
+        assert!(
+            refused("50795", level).contains("for this chat, or for every chat of this project"),
+            "{level:?}"
+        );
+    }
+    for never in ["0", "1-65535", "*", "localhost"] {
+        assert!(
+            refused(never, GrantLevel::You).contains("one port"),
+            "{never}"
+        );
+    }
+    // An unaudited grant is no grant.
+    assert!(refused("50795", GrantLevel::You).contains("event log"));
+    assert!(refused("50795", GrantLevel::Chat).contains("event log"));
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+    assert!(!chats.holds_for(3, &sandbox::grant::What::Port(50795)));
+}

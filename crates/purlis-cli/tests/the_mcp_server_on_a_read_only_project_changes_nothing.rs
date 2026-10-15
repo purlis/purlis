@@ -270,6 +270,7 @@ fn arguments(tool: &str, todo: &str) -> Value {
                   ## How to resume\n\nr\n";
     match tool {
         "todo_list" | "session_record_list" | "persona_where" | "dispatch_list" => json!({}),
+        "dispatch_read" => json!({ "chat": 9 }),
         "todo_add" => json!({ "text": "Polish the widget" }),
         "todo_done" => json!({ "slug": todo }),
         "memory_search" => json!({ "query": "widget" }),

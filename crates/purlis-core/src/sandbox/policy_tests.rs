@@ -1415,3 +1415,35 @@ fn a_refused_policy_file_forbids_persona_tools_too() {
         assert!(under.refuses_tool("devops", "kubectl").is_some(), "{text}");
     }
 }
+
+/// #1975, PC-14: `"off"` turns proposed changes off; `"on"` and absent leave them on; any
+/// other word refuses the file, closed, which turns them off too.
+#[test]
+fn proposed_changes_are_turned_off_by_the_word_off_and_by_a_refused_file() {
+    assert!(
+        locks(r#"{"sandbox": {}}"#)
+            .proposed_changes_refused()
+            .is_none()
+    );
+    assert!(
+        locks(r#"{"sandbox": {"proposed-changes": "on"}}"#)
+            .proposed_changes_refused()
+            .is_none()
+    );
+    let off = locks(r#"{"owner": "Platform", "sandbox": {"proposed-changes": "off"}}"#);
+    let said = off.proposed_changes_refused().expect("off");
+    assert!(
+        said.starts_with("Policy turns proposed changes off"),
+        "{said}"
+    );
+    for refused in [
+        r#"{"sandbox": {"proposed-changes": false}}"#,
+        r#"{"sandbox": {"proposed-changes": "never"}}"#,
+    ] {
+        assert!(
+            locks(refused).proposed_changes_refused().is_some(),
+            "{refused}"
+        );
+    }
+    assert!(Locks::none().proposed_changes_refused().is_none());
+}

@@ -630,6 +630,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
                     harness: Some("claude".to_owned()),
                     target: None,
                     read_back: false,
+                    suggested: None,
                 }
                 .into(),
             )
@@ -655,6 +656,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
             vault: None,
             choose: None,
             quiet: None,
+            suggested: None,
         }]
     );
     // A harness word purlis does not start is no harness.
@@ -666,6 +668,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
             harness: Some("/home/dev/bin/thing".to_owned()),
             target: None,
             read_back: false,
+            suggested: None,
         }
         .into(),
     );
@@ -688,6 +691,7 @@ fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
         harness: None,
         target: None,
         read_back: false,
+        suggested: None,
     };
     for _ in 0..50 {
         heard_block(
@@ -729,6 +733,7 @@ fn the_repeats_held_back_are_told_once_their_minute_is_over() {
         harness: None,
         target: None,
         read_back: false,
+        suggested: None,
     };
     for _ in 0..4 {
         heard_block(&throttle, &slot, &repeated, line.clone().into(), now);
@@ -827,6 +832,7 @@ fn a_host_a_brokered_run_was_refused_is_the_asking_chats_block_to_allow() {
         harness: Some("claude".to_owned()),
         target: Some("api.cluster.example-k8s.com:6443".to_owned()),
         read_back: false,
+        suggested: None,
     };
     let with = |line: &purlis_core::hookwire::SandboxBlocked, vault: &str| RunBlocked {
         block: line.clone(),
@@ -891,6 +897,7 @@ fn a_vault_s_name_on_a_notice_is_drawn_inertly() {
         harness: None,
         target: Some("api.example.com:443".to_owned()),
         read_back: false,
+        suggested: None,
     };
     let said = |vault: &str| {
         blocked(
@@ -930,6 +937,7 @@ fn a_block_s_notice_offers_allow_only_for_a_host_or_a_folder_and_the_way_out_oth
                 harness: None,
                 target: target.map(str::to_owned),
                 read_back: false,
+                suggested: None,
             }
             .into(),
         );
@@ -2455,4 +2463,98 @@ fn a_clear_begins_a_run_the_record_is_told_even_with_no_event_log() {
             .is_some(),
         "{run:?}"
     );
+}
+
+/// qw384: a refused connection to a port on this Mac is offered as that one port, with what
+/// allowing it means, at this chat or every chat of this project on this machine; a port the
+/// refusal did not name is typed; Claude Code's sandbox takes no one port, so there its Notice
+/// offers Start without the sandbox, saying why.
+#[test]
+fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_is_carried_it_by_name() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandbox::localport::RISK;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalService,
+        ours: false,
+    };
+    let named = offered(&root, &refused, Some("50795"));
+    assert_eq!(named.0, BlockOffer::Port);
+    assert_eq!(named.1.as_deref(), Some("50795"));
+    assert!(named.2.as_deref().is_some_and(|said| said.contains(RISK)));
+    let locks = purlis_core::sandbox::policy::Locks::of(&root);
+    let (offer, target, _, levels) = held(&locks, named.clone());
+    assert_eq!(offer, BlockOffer::Port);
+    assert_eq!(target.as_deref(), Some("50795"));
+    assert_eq!(
+        levels,
+        vec![
+            crate::sandboxing::GrantLevel::Chat,
+            crate::sandboxing::GrantLevel::You
+        ]
+    );
+    // Named by nothing: the person types it.
+    assert_eq!(offered(&root, &refused, None).0, BlockOffer::Port);
+    assert_eq!(offered(&root, &refused, None).1, None);
+    // purlis's own wrap takes one port.
+    assert_eq!(
+        for_its_harness(Some(Harness::Opencode), named.clone()).0,
+        BlockOffer::Port
+    );
+    // qw384b: a Claude Code chat is offered the same Allow, its proxy carrying the port by the
+    // name its commands send a proxy, and the Notice says so beside the risk.
+    let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), named);
+    assert_eq!(offer, BlockOffer::Port);
+    assert_eq!(target.as_deref(), Some("50795"));
+    // The route whole: purlis's own two sentences, the risk and how it is reached. Compared,
+    // never printed: it is drawn on the Notice, not logged.
+    let said = format!("Allowing it {RISK}. {CLAUDE_CODE_PORT_SAID}");
+    assert!(why.as_deref() == Some(said.as_str()));
+    assert!(CLAUDE_CODE_PORT_SAID.contains("this-mac.internal"));
+    assert!(CLAUDE_CODE_PORT_SAID.contains("kubectl"));
+}
+
+/// qw384 review: a port only printed words name is pre-filled for the person to check, on a
+/// Notice that asks for one; never where the refusal named the port, never on another Notice,
+/// and never a port no grant could name.
+#[test]
+fn a_printed_port_is_only_ever_a_suggestion_on_a_notice_that_asks_for_one() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let line = |harness: Harness, target: Option<&str>, suggested: Option<&str>| HeardBlock {
+        line: purlis_core::hookwire::SandboxBlocked {
+            chat: 7,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::LocalService,
+                ours: false,
+            },
+            harness: Some(harness.name().to_owned()),
+            target: target.map(str::to_owned),
+            read_back: false,
+            suggested: suggested.map(str::to_owned),
+        },
+        vault: None,
+    };
+    let said = blocked(&plane, &line(Harness::Codex, None, Some("50795")));
+    assert_eq!(said.offer, BlockOffer::Port);
+    assert_eq!(said.target, None);
+    assert_eq!(said.suggested.as_deref(), Some("50795"));
+    // Named already: nothing to suggest.
+    let named = blocked(&plane, &line(Harness::Codex, Some("50795"), Some("6443")));
+    assert_eq!(named.suggested, None);
+    // No port a grant could name.
+    let never = blocked(&plane, &line(Harness::Opencode, None, Some("0")));
+    assert_eq!(never.suggested, None);
+    // A Claude Code chat's Notice asks for the port too since qw384b: suggested alike.
+    let claude = blocked(&plane, &line(Harness::ClaudeCode, None, Some("50795")));
+    assert_eq!(claude.offer, BlockOffer::Port);
+    assert_eq!(claude.suggested.as_deref(), Some("50795"));
 }

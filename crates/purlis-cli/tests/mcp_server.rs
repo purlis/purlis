@@ -166,6 +166,7 @@ fn a_harness_lists_charter_s_tools() {
             "change_status",
             "dispatch",
             "dispatch_list",
+            "dispatch_read",
             "dispatch_report",
             "ask_operator",
         ]
@@ -628,6 +629,7 @@ mod the_server_says_it {
             refused: Box::new(|_| Ok(())),
             tool: Box::new(|_| Ok(())),
             doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
             touching: Box::new(|_| {}),
             blocked: Box::new(|_| {}),
             permission: Box::new(|_| None),
