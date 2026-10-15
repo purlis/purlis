@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792099766139,
+  "lastUpdate": 1792101055767,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13146,6 +13146,48 @@ window.BENCHMARK_DATA = {
             "value": 101.22185350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.462, 101.130, 101.222, 101.594, 102.636 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bbaa8abe52e05b4a0c3782ff9bc53ed333fb6ff1",
+          "message": "A sandboxed Claude Code chat takes its settings from purlis and the person, not from files in the project (#2218)\n\n* A sandboxed Claude Code chat takes its settings from purlis and the person, not from files in the project\n\nAt each start of a sandboxed Claude Code chat, full sandbox or floor, purlis\nreads the project settings files Claude Code would load for the chat's folder.\nThey are loaded as they are while every key is one a chat keeps: deny and ask\nrules, plugins, model, output style, theme. Anything else, or a file that\ncannot be read as settings, starts the chat with `--setting-sources user`;\nthe project's deny and ask rules ride on purlis's own `--settings`, and the\nchat's tab names the keys that were not applied. A chat with no sandbox is\nunchanged.\n\nThe person's own Claude Code settings files are denied to the chat's commands\nand Edit tool at both levels.\n\nADR 0067 amended (2026-10-15-05); the Claude Code probe runs on a sample\nproject with settings of its own, started as purlis starts such a chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Keep purlis's own init entries in a project's Claude Code settings\n\n`init` writes the harness variable and the guard hook into every plane's\n`.claude/settings.json`. A sandboxed chat keeps them, by their exact shape,\nso a plane's own file still loads with its instructions. The off case in\nthe adapter's tests starts with no sandbox, as an off start does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Name a key beyond what a chat keeps with a value in the screen's tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Keep a project's harness variable and plugin choice only in the shape purlis allows\n\n- The harness variable is kept only with the value `init` gives it.\n- `enabledPlugins` is kept only where each plugin it turns on is installed\n  for the person at user scope, or pinned on by purlis, and it turns none\n  of purlis's pins off.\n- The walk up to the repository's local file runs on the folder's real\n  path as well as the path as written.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T01:40:25+04:00",
+          "tree_id": "5b9cad30071dd6f28acc381f8f52c394c5fec262",
+          "url": "https://github.com/purlis/purlis/commit/bbaa8abe52e05b4a0c3782ff9bc53ed333fb6ff1"
+        },
+        "date": 1792101054671,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.44183649999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.425, 0.429, 0.442, 0.444, 0.453 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.433425999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.403, 16.430, 16.433, 16.453, 16.470 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.910794,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.959, 101.570, 101.911, 102.150, 102.386 ms"
           }
         ]
       }
