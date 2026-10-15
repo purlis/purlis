@@ -83,8 +83,13 @@ impl Saving for Kept {
 }
 
 /// This process saves as the window does: it holds its own keyring items, and the person's
-/// forge sign-ins are its forge calls'. Once, at the first project it saves.
+/// forge sign-ins are its forge calls'. Once, at the first project it saves. A test build (every
+/// one is fenced) hands nothing over, as `crate::forgeaccounts::window_git` does: the machine's
+/// store is outside its fence.
 fn as_the_window() {
+    if purlis_core::fence::FENCED {
+        return;
+    }
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         purlis_core::secrets::keyhold::this_process_is_the_app();
