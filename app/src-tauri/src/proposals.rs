@@ -292,6 +292,79 @@ fn tell(held: &Held, session: u32, word: ProposalWord) {
     held.tasks().ledger().talk.proposal_word(session, word);
 }
 
+/// **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
+/// whether Apply is offered there, or why it is not shown.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ProposedWhole {
+    pub path: String,
+    /// The chat that proposed it.
+    pub session: u32,
+    /// The file as the app reads it now, and as the change makes it: drawn whole. Empty where
+    /// it is not shown ([`Self::why`]).
+    pub before: String,
+    pub after: String,
+    /// The one hunk that is the whole of each side, as the merge view takes it.
+    pub hunks: Vec<crate::piecefiles::GitHunk>,
+    /// Whether Apply is offered: shown whole, and it still applies.
+    pub applies: bool,
+    /// Why it is not shown, or not applied, in a sentence.
+    pub why: Option<String>,
+}
+
+/// **Proposal `id` whole, for its own tab** (PC-7). Window-only: what a configuration file
+/// holds is the person's to read.
+#[tauri::command]
+#[specta::specta]
+pub async fn proposed_change(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    id: u32,
+) -> Result<ProposedWhole, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a proposed change", move || {
+        let one = held.proposals().get(id).ok_or(WAITS_NO_MORE)?;
+        Ok(whole_of(&one, &now_of(held.root(), &one)))
+    })
+    .await
+}
+
+/// `one` as its tab draws it, made as `now` says.
+pub fn whole_of(one: &Proposal, now: &Now) -> ProposedWhole {
+    let empty = |why: &str| ProposedWhole {
+        path: one.path.clone(),
+        session: one.session,
+        before: String::new(),
+        after: String::new(),
+        hunks: Vec::new(),
+        applies: false,
+        why: Some(why.to_owned()),
+    };
+    match now {
+        Now::Stale => empty(STALE_SAID),
+        Now::Unprepared => empty(proposed::UNPREPARED),
+        Now::Made { before, after } => {
+            let shown = crate::askwrites::proposed(&one.path, before, after);
+            let whole = matches!(shown, crate::askwrites::WritesShown::Whole { .. });
+            if whole || crate::askwrites::proposed_too_long(before, after) {
+                ProposedWhole {
+                    path: one.path.clone(),
+                    session: one.session,
+                    before: purlis_core::harness::asked::edit::drawn(before),
+                    after: purlis_core::harness::asked::edit::drawn(after),
+                    hunks: vec![crate::askwrites::whole(before, after)],
+                    applies: true,
+                    why: None,
+                }
+            } else {
+                let crate::askwrites::WritesShown::NotShown { why } = shown else {
+                    unreachable!("a change not shown whole is said not shown")
+                };
+                empty(&why)
+            }
+        }
+    }
+}
+
 /// Why an answer found nothing to answer: answered elsewhere, or its chat closed.
 const WAITS_NO_MORE: &str = "That proposed change waits no more: it was answered already, or \
                              its chat closed. Nothing was written.";
@@ -305,13 +378,27 @@ pub async fn apply_proposed_change(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     id: u32,
+    from: From,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("applying a proposed change", move || applied(&held, id)).await
+    crate::off_the_window("applying a proposed change", move || {
+        applied(&held, id, from)
+    })
+    .await
+}
+
+/// **Where Apply was pressed** (PC-7): a row (the Inbox's, a tab's Notice), which shows a change
+/// whole only up to its length, or the change's own tab, which shows it whole however long.
+/// What Apply writes is judged again by the rules of where it was shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum From {
+    Row,
+    Tab,
 }
 
 /// [`apply_proposed_change`]'s work, for project `held`.
-pub fn applied(held: &Held, id: u32) -> Result<String, String> {
+pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
     let one = held.proposals().get(id).ok_or(WAITS_NO_MORE)?;
     let root = held.root();
     let persona = held
@@ -326,6 +413,7 @@ pub fn applied(held: &Held, id: u32) -> Result<String, String> {
         persona.as_deref(),
         &audit,
         held.proposals().applying(),
+        from,
     ) {
         Ok(said) => {
             held.proposals().take(id);
@@ -389,6 +477,7 @@ pub fn apply_in(
     persona: Option<&str>,
     audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
     lock: &Mutex<()>,
+    from: From,
 ) -> Result<String, Refusal> {
     if one.stale {
         return Err(Refusal::Stale);
@@ -407,7 +496,10 @@ pub fn apply_in(
     // made again here, so no caller writes a change never shown.
     let shown =
         crate::askwrites::proposed(&one.path, made.before.as_deref().unwrap_or(""), &made.after);
-    if !matches!(shown, crate::askwrites::WritesShown::Whole { .. }) {
+    let before = made.before.as_deref().unwrap_or("");
+    let whole = matches!(shown, crate::askwrites::WritesShown::Whole { .. })
+        || (from == From::Tab && crate::askwrites::proposed_too_long(before, &made.after));
+    if !whole {
         return Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()));
     }
     let written = proposed::base_of(Some(made.after.as_bytes())).unwrap_or_default();

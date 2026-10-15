@@ -282,6 +282,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // purlis's own configuration, and no chat answers its own proposal (PC-3).
     "apply_proposed_change",
     "dismiss_proposed_change",
+    // And the change whole, for its own tab (PC-7): what the configuration file holds is the
+    // person's to read, never a chat's through the UI's link.
+    "proposed_change",
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",

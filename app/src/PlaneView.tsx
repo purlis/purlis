@@ -150,6 +150,7 @@ import {
   usePlaneChanged,
 } from "./planeChanged";
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
+import { useOpenProposalAsked } from "./proposedChangeOpen";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
@@ -4250,6 +4251,9 @@ export const PlaneView = memo(function PlaneView({
   // Remove… on a chat's question about a workspace opens this same dialog (qw356): the chat
   // asked, and what removes anything is the person's press in it.
   useRemoveWorkspaceAsked(plane, removeWorkspace);
+
+  // Open on a proposed change too long for a row opens its own tab (#1975, PC-7).
+  useOpenProposalAsked(plane, showView);
 
   /** Asks for a workspace's new name. Nothing is renamed until the dialog is answered. */
   const renameWorkspace = useCallback(

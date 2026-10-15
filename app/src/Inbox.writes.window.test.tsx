@@ -175,7 +175,7 @@ describe("a proposed change in the Inbox (#1975)", () => {
     options,
     source: "proposed-change",
     chain: ["steward 3"],
-    answer: { via: "proposed-change", id: 7 },
+    answer: { via: "proposed-change", id: 7, path: "purlis.toml" },
     writes,
   });
   const both: Shown["options"] = [

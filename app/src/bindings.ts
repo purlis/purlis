@@ -639,7 +639,12 @@ export const commands = {
 	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
 	 *  Window-only.
 	 */
-	applyProposedChange: (plane: PlaneId, id: number) => typedError<string, string>(__TAURI_INVOKE("apply_proposed_change", { plane, id })),
+	applyProposedChange: (plane: PlaneId, id: number, from: From) => typedError<string, string>(__TAURI_INVOKE("apply_proposed_change", { plane, id, from })),
+	/**
+	 *  **Proposal `id` whole, for its own tab** (PC-7). Window-only: what a configuration file
+	 *  holds is the person's to read.
+	 */
+	proposedChange: (plane: PlaneId, id: number) => typedError<ProposedWhole, string>(__TAURI_INVOKE("proposed_change", { plane, id })),
 	/**
 	 *  **Dismiss** on a proposed change: nothing is written, and the chat is told on its next turn.
 	 *  Window-only.
@@ -3260,9 +3265,9 @@ export type AnswerPath =
 { via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
 /**
  *  `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
- *  proposal `id` (#1975).
+ *  proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
  */
-{ via: "proposed-change"; id: number } | 
+{ via: "proposed-change"; id: number; path: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5523,6 +5528,13 @@ export type FoundFile = {
 	matched: number[],
 };
 
+/**
+ *  **Where Apply was pressed** (PC-7): a row (the Inbox's, a tab's Notice), which shows a change
+ *  whole only up to its length, or the change's own tab, which shows it whole however long.
+ *  What Apply writes is judged again by the rules of where it was shown.
+ */
+export type From = "row" | "tab";
+
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
 
@@ -7708,6 +7720,28 @@ export type ProjectUpdate = {
 	whole: boolean,
 	/**  What the update said it was doing, in order. */
 	lines: string[],
+};
+
+/**
+ *  **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
+ *  whether Apply is offered there, or why it is not shown.
+ */
+export type ProposedWhole = {
+	path: string,
+	/**  The chat that proposed it. */
+	session: number,
+	/**
+	 *  The file as the app reads it now, and as the change makes it: drawn whole. Empty where
+	 *  it is not shown ([`Self::why`]).
+	 */
+	before: string,
+	after: string,
+	/**  The one hunk that is the whole of each side, as the merge view takes it. */
+	hunks: GitHunk[],
+	/**  Whether Apply is offered: shown whole, and it still applies. */
+	applies: boolean,
+	/**  Why it is not shown, or not applied, in a sentence. */
+	why: string | null,
 };
 
 /**

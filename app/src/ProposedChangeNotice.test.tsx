@@ -32,7 +32,7 @@ const proposal = (more: Partial<Shown> = {}): Shown => ({
   ],
   source: "proposed-change",
   chain: ["steward 3"],
-  answer: { via: "proposed-change", id: 7 },
+  answer: { via: "proposed-change", id: 7, path: "purlis.toml" },
   writes: {
     kind: "whole",
     path: "purlis.toml",
@@ -74,7 +74,9 @@ describe("a change a chat proposed", () => {
     await screen.findByTestId("ask-writes");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() =>
-      expect(sent()).toEqual([{ cmd: "apply_proposed_change", args: { plane: PLANE, id: 7 } }]),
+      expect(sent()).toEqual([
+        { cmd: "apply_proposed_change", args: { plane: PLANE, id: 7, from: "row" } },
+      ]),
     );
   });
 
