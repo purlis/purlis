@@ -83,7 +83,8 @@ use crate::view::{Limits, Views};
 ///
 /// 1.3 added a project's saving in the host (#2002): `start_saving`, `stop_saving` and
 /// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
-/// project's auto-save did.
+/// project's auto-save did; and the host's question to the window of who is mid-turn in a
+/// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
 pub const VERSION: Version = Version { major: 1, minor: 3 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -215,6 +216,14 @@ pub enum Command {
     /// Fetch what came in for a project the host saves, unless it fetched a moment ago: the
     /// window came back into focus (1.3).
     FetchProject { project: String },
+    /// The window's answer to [`Pushed::WhoIsMidTurn`] (1.3): the chats mid-turn that could be
+    /// writing the workspace, by the names the window shows, or none said where the window
+    /// cannot tell, which the host takes as every chat it runs there.
+    MidTurn {
+        question: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        chats: Option<Vec<String>>,
+    },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -541,6 +550,14 @@ pub enum Pushed {
         saved: bool,
         moved_tree: bool,
     },
+    /// The host asks the window which chats are mid-turn in a workspace of a project it saves
+    /// (1.3): a repo's auto-save waits for them (ADR 0051), and the turns are on the window's
+    /// board. Pushed to the window's links only; answered with [`Command::MidTurn`].
+    WhoIsMidTurn {
+        question: u64,
+        project: String,
+        workspace: String,
+    },
 }
 
 wire_words!(Command {
@@ -564,6 +581,7 @@ wire_words!(Command {
     StartSaving => "start_saving",
     StopSaving => "stop_saving",
     FetchProject => "fetch_project",
+    MidTurn => "mid_turn",
 });
 
 impl Command {
@@ -586,7 +604,8 @@ impl Command {
             | Command::LetGoOfProject { .. }
             | Command::StartSaving { .. }
             | Command::StopSaving { .. }
-            | Command::FetchProject { .. } => Power::Hold,
+            | Command::FetchProject { .. }
+            | Command::MidTurn { .. } => Power::Hold,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -620,6 +639,7 @@ wire_words!(Pushed {
     Ended => "ended",
     ViewEnded => "view_ended",
     Saving => "saving",
+    WhoIsMidTurn => "who_is_mid_turn",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -974,7 +994,8 @@ impl Lane {
             | Command::Start(_)
             | Command::StartProgram(_)
             | Command::HoldProject { .. }
-            | Command::LetGoOfProject { .. } => None,
+            | Command::LetGoOfProject { .. }
+            | Command::MidTurn { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -1531,7 +1552,10 @@ impl Subscribed {
                         .insert(device.clone(), resumes_at.saturating_sub(1));
                 }
                 // Neither is an event of the log: the cursor stays where it is.
-                Pushed::Ended { .. } | Pushed::ViewEnded { .. } | Pushed::Saving { .. } => {}
+                Pushed::Ended { .. }
+                | Pushed::ViewEnded { .. }
+                | Pushed::Saving { .. }
+                | Pushed::WhoIsMidTurn { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

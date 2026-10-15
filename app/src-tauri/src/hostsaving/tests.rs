@@ -154,3 +154,71 @@ fn every_program_that_could_be_writing_a_workspace_counts_as_mid_turn_in_it() {
         ["chat 2", "chat 3", "chat 4"]
     );
 }
+
+#[test]
+fn a_stop_that_arrives_mid_save_returns_once_the_save_has_let_go_of_the_repo() {
+    let (_dir, root) = a_plane();
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[repos.widget]\nmode = \"commit\"\nautosave = true\nautosave_after = \"1s\"\n",
+    )
+    .expect("its settings");
+    let clone = root.join("workspaces/alpha/widget");
+    std::fs::create_dir_all(&clone).expect("a workspace");
+    git(&clone, &["init", "-q", "-b", "main"]);
+    git(&clone, &["config", "user.name", "t"]);
+    git(&clone, &["config", "user.email", "t@example.invalid"]);
+    std::fs::write(clone.join("README.md"), "one").expect("written");
+    git(&clone, &["add", "-A"]);
+    git(&clone, &["commit", "-q", "-m", "one"]);
+
+    // The save asks who is mid-turn right before it stages, holding the repo's claim: there it
+    // waits until the test lets it go on.
+    let (mid_save, in_the_save) = std::sync::mpsc::channel();
+    let go_on = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let saving = {
+        let clone = clone.clone();
+        let go_on = std::sync::Arc::clone(&go_on);
+        let mid_save = std::sync::Mutex::new(mid_save);
+        InTheHost
+            .save(ToSave {
+                project: PROJECT.into(),
+                project_path: root.clone(),
+                told: Box::new(|_| {}),
+                working: Box::new(Vec::new),
+                ask_the_window: Box::new(move |_workspace| {
+                    if purlis_core::planegit::Claim::of(&clone).is_none() {
+                        let _ = mid_save.lock().expect("the signal").send(());
+                        while !go_on.load(std::sync::atomic::Ordering::SeqCst) {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                    Some(Vec::new())
+                }),
+            })
+            .expect("it saves")
+    };
+    std::fs::write(clone.join("a.md"), "a").expect("written");
+    purlis_core::planegit::touch(&root);
+    in_the_save
+        .recv_timeout(Duration::from_secs(60))
+        .expect("the repo's save never started");
+
+    let stopping = std::thread::spawn(move || drop(saving));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        !stopping.is_finished(),
+        "the stop returned while a save ran"
+    );
+    assert!(
+        purlis_core::planegit::Claim::of(&clone).is_none(),
+        "the save let go of the repo before it was done"
+    );
+
+    go_on.store(true, std::sync::atomic::Ordering::SeqCst);
+    stopping.join().expect("it stops");
+    assert!(
+        purlis_core::planegit::Claim::of(&clone).is_some(),
+        "the stop returned before the save let go of the repo"
+    );
+}

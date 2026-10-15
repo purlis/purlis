@@ -241,11 +241,6 @@ Commits an agent makes with plain git are fine: the next save pushes them.
 
 **Auto-save lives in the app**, because there is no daemon (ADR 0025). When `autosave` is on:
 
-> **Amended 2026-10-15 (#2002, spec #1974).** Where a project's chats run in the session host,
-> behind the start-time switch, the host runs this auto-save and the plane's watcher for it, by
-> the same code, and the window starts none: exactly one saves a project. Everything below holds
-> as written; ADR 0068's amendment for #2002 says how.
-
 - **It saves:**
   - `autosave_after` of quiet after the last change (default `30s`)
   - when a session ends
@@ -256,6 +251,12 @@ Commits an agent makes with plain git are fine: the next save pushes them.
   whatever was left.
 - **Incoming changes:** it fetches every five minutes and on window focus, and fast-forwards a
   clean tree. With auto-save off, incoming changes are shown and not pulled.
+
+> **Noted 2026-10-15 (#2002, spec #1974), decided in implementation, to be confirmed.** Where a
+> project's chats run in the session host, behind the start-time switch, the host runs this
+> auto-save and the plane's watcher for it, by the same code, and the window starts none:
+> exactly one saves a project. What is listed above holds as written; ADR 0068's amendment for
+> #2002 says how.
 
 **Outside the app, the plane is saved only through `purlis save`** (#375). A chat the app did
 not start (a terminal `claude` or `codex`) has no auto-save and no incoming loop, and no

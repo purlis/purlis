@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
-use purlis_host::standin::StandIns;
+use purlis_host::standin::{Savers, StandIns};
 use purlis_host::{FromTheWindow, Hosting};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link;
@@ -31,6 +31,7 @@ struct Hosted {
     sessions: HostedSessions,
     link: Arc<HostLink>,
     runs: StandIns,
+    savers: Savers,
     root: std::path::PathBuf,
     _dir: tempfile::TempDir,
     _runtime: tokio::runtime::Runtime,
@@ -51,7 +52,9 @@ fn hosted() -> Hosted {
         .build()
         .unwrap();
     let runs = StandIns::default();
-    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone());
+    let savers = Savers::default();
+    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone())
+        .saving_with(savers.clone());
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(256 * 1024);
         let (client, served) = tokio::join!(
@@ -76,6 +79,7 @@ fn hosted() -> Hosted {
         sessions: HostedSessions::new(connection, &root, None),
         link,
         runs,
+        savers,
         root,
         _dir: dir,
         _runtime: runtime,
@@ -430,4 +434,47 @@ fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
     let started = hosted.runs.last();
     until("the host closes it", || started.seen().stopped);
     drop(hosted.link);
+}
+
+fn told_nothing() -> crate::autosave::Told {
+    Arc::new(|_| {})
+}
+
+#[test]
+fn the_project_is_saved_in_the_host_and_the_window_answers_who_is_mid_turn_from_its_board() {
+    let hosted = hosted();
+    let saving = hosted.sessions.keep_saving(&hosted.root, told_nothing());
+    until("the host saves the project", || {
+        hosted.savers.running() == 1
+    });
+    saving.asks_mid_turn_of(Arc::new(|workspace: &str| vec![format!("{workspace} 1")]));
+
+    assert_eq!(
+        hosted.savers.asks_the_window("alpha"),
+        Some(vec!["alpha 1".to_owned()]),
+        "the host did not hear the window's board"
+    );
+    assert_eq!(hosted.savers.started()[0].1, hosted.root);
+}
+
+#[test]
+fn a_quit_that_the_host_does_not_answer_gives_up_on_it_by_the_deadline() {
+    let hosted = hosted();
+    let saving = hosted.sessions.keep_saving(&hosted.root, told_nothing());
+    until("the host saves the project", || {
+        hosted.savers.running() == 1
+    });
+    // Its save never lets go: the host never answers the stop.
+    hosted.savers.mid_save();
+
+    let started = Instant::now();
+    let stopped = saving.stop_by(started + Duration::from_millis(500));
+
+    assert!(!stopped, "a stop the host never answered was taken as done");
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the quit waited {:?} for a host that does not answer",
+        started.elapsed()
+    );
+    hosted.savers.finish_saving();
 }

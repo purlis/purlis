@@ -17,17 +17,28 @@
 //! told it.
 //!
 //! **Who is mid-turn.** A repo's auto-save waits while a chat working in its workspace is
-//! mid-turn (ADR 0051). Until the board lives in the host (#2000), the host cannot tell a turn
-//! from a pause, so every program running in a place that could be the workspace counts as
-//! mid-turn: a repo is saved after its quiet period only while no chat runs there, and when one
-//! ends, never in the middle of a turn.
+//! mid-turn (ADR 0051), and the turns are on the window's board until the board lives in the
+//! host (#2194). So the host asks the window, which answers from its board as its own worker
+//! would have asked it. With no window linked, or one that does not answer in time, nobody can
+//! tell a turn from a pause, and every program running in a place that could be the workspace
+//! counts as mid-turn: a repo is saved then only while no chat runs there, or when one ends,
+//! never in the middle of a turn.
+//!
+//! **A stop waits for the save.** Stopping a project's saving answers once its worker has let
+//! go of the plane, a save it was in the middle of included, for at most [`STOP_WITHIN`]: the
+//! window's save at quit comes after it, and the plane's save lock holds the two apart beyond
+//! that.
 
 use std::path::Path;
 use std::sync::{Arc, Once};
+use std::time::Duration;
 
 use purlis_host::{Looked, Poke, Save, Saving, ToSave, Working};
 
 use crate::autosave::{self, Saver as _};
+
+/// How long stopping a project's saving waits for a save it is in the middle of.
+pub const STOP_WITHIN: Duration = Duration::from_secs(2);
 
 /// The window's binary's [`Save`]: a project's watch and auto-save, in the host.
 pub struct InTheHost;
@@ -55,30 +66,43 @@ impl Save for InTheHost {
                 });
             }),
         );
-        let working = saving.working;
+        let (working, ask) = (saving.working, saving.ask_the_window);
         let plane = root.clone();
         worker.asks_mid_turn_of(Arc::new(move |workspace| {
-            mid_turn_in(&plane, workspace, &working())
+            ask(workspace).unwrap_or_else(|| mid_turn_in(&plane, workspace, &working()))
         }));
         Ok(Box::new(Kept {
-            worker,
+            worker: Some(worker),
             _watch: watch,
         }))
     }
 }
 
-/// A project the host saves: its worker, and its watch. Dropping it stops both.
+/// A project the host saves: its worker, and its watch. Dropping it stops both, and returns
+/// once the worker has let go of the plane, or after [`STOP_WITHIN`].
 struct Kept {
-    worker: autosave::Worker,
+    worker: Option<autosave::Worker>,
     _watch: Option<crate::planewatch::Watch>,
 }
 
 impl Saving for Kept {
     fn poke(&self, poke: Poke) {
-        let _ = self.worker.poker().send(match poke {
-            Poke::ProgramEnded => autosave::Poke::SessionEnded,
-            Poke::Fetch => autosave::Poke::Fetch,
-        });
+        if let Some(worker) = &self.worker {
+            let _ = worker.poker().send(match poke {
+                Poke::ProgramEnded => autosave::Poke::SessionEnded,
+                Poke::Fetch => autosave::Poke::Fetch,
+            });
+        }
+    }
+}
+
+impl Drop for Kept {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take()
+            && !worker.stop_within(STOP_WITHIN)
+        {
+            say("a save was still running as its project's saving stopped; it finishes alone");
+        }
     }
 }
 
@@ -100,7 +124,8 @@ fn as_the_window() {
 /// The programs in `working` that could be writing a clone of `workspace` in the plane at
 /// `root`, by the name a save's journal gives them: each one working in the workspace, in a
 /// worktree of one of its clones, or anywhere in no other workspace, as the window counts them
-/// (`crate::planes::Held::mid_turn_in`). Every one counts as mid-turn: see the module's header.
+/// (`crate::planes::Held::mid_turn_in`). Every one counts as mid-turn: what is said when the
+/// window cannot say (the module's header).
 pub(crate) fn mid_turn_in(root: &Path, workspace: &str, working: &[Working]) -> Vec<String> {
     let on_disk = purlis_core::workspaces::Plane::open(root);
     working

@@ -153,7 +153,7 @@ impl Run for StandIns {
 /// Stands in for a binary's saver: keeps each project it was asked to save, what it was poked
 /// with, and whether its saving still runs.
 #[derive(Clone, Default)]
-pub struct Savers(Arc<Mutex<Saved>>);
+pub struct Savers(Arc<Mutex<Saved>>, Arc<std::sync::atomic::AtomicBool>);
 
 #[derive(Default)]
 struct Saved {
@@ -162,6 +162,7 @@ struct Saved {
     poked: Vec<Poke>,
     told: Vec<Arc<dyn Fn(Looked) + Send + Sync>>,
     working: Vec<Arc<dyn Fn() -> Vec<Working> + Send + Sync>>,
+    asks: Vec<Arc<crate::hosting::AskTheWindow>>,
 }
 
 impl Savers {
@@ -195,6 +196,14 @@ impl Savers {
     }
 }
 
+impl Savers {
+    /// Its last saving asks the window who is mid-turn in `workspace`, and waits.
+    pub fn asks_the_window(&self, workspace: &str) -> Option<Vec<String>> {
+        let ask = self.0.lock().unwrap().asks.last().cloned();
+        ask.and_then(|ask| ask(workspace))
+    }
+}
+
 impl Save for Savers {
     fn save(&self, saving: ToSave) -> Result<Box<dyn Saving>, String> {
         let mut saved = self.0.lock().unwrap();
@@ -202,11 +211,25 @@ impl Save for Savers {
         saved.running += 1;
         saved.told.push(Arc::from(saving.told));
         saved.working.push(Arc::from(saving.working));
-        Ok(Box::new(StoodIn(Arc::clone(&self.0))))
+        saved.asks.push(Arc::from(saving.ask_the_window));
+        Ok(Box::new(StoodIn(Arc::clone(&self.0), Arc::clone(&self.1))))
     }
 }
 
-struct StoodIn(Arc<Mutex<Saved>>);
+impl Savers {
+    /// From now on a saving that is stopped is in the middle of a save, and lets go only once
+    /// [`Self::finish_saving`] says so.
+    pub fn mid_save(&self) {
+        self.1.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The save a stopped saving was in the middle of is done.
+    pub fn finish_saving(&self) {
+        self.1.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+struct StoodIn(Arc<Mutex<Saved>>, Arc<std::sync::atomic::AtomicBool>);
 
 impl Saving for StoodIn {
     fn poke(&self, poke: Poke) {
@@ -216,6 +239,9 @@ impl Saving for StoodIn {
 
 impl Drop for StoodIn {
     fn drop(&mut self) {
+        while self.1.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         self.0.lock().unwrap().running -= 1;
     }
 }

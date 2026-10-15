@@ -135,7 +135,18 @@ pub struct ToSave {
     pub told: Box<dyn Fn(Looked) + Send + Sync>,
     /// The programs running in the project now.
     pub working: Box<dyn Fn() -> Vec<Working> + Send + Sync>,
+    /// The chats mid-turn in a workspace of the project, as the window's board says, by the
+    /// names the window shows; `None` when no window is linked, or it did not answer within
+    /// [`ASK_WITHIN`], or it cannot tell. Asked from the saver's own thread: it waits.
+    pub ask_the_window: Box<AskTheWindow>,
 }
+
+/// Asks the window which chats are mid-turn in a workspace ([`ToSave::ask_the_window`]).
+pub type AskTheWindow = dyn Fn(&str) -> Option<Vec<String>> + Send + Sync;
+
+/// How long the host waits for the window to say who is mid-turn, before the saver takes every
+/// chat it runs there as mid-turn.
+pub const ASK_WITHIN: Duration = Duration::from_secs(2);
 
 /// Saves a held project: its watcher and its auto-save, the binary's, built on the core, so
 /// this crate links none of it (#2002).
@@ -280,7 +291,12 @@ struct State {
     closed: Vec<u32>,
     /// Each project's highest number dealt: it only rises, so a number names one chat.
     dealt: HashMap<String, u32>,
-    subscribers: Vec<mpsc::Sender<Pushed>>,
+    /// Each subscriber, and whether it is the window's (`local-ui`).
+    subscribers: Vec<(bool, mpsc::Sender<Pushed>)>,
+    /// Each question to the window waiting for its answer, by its number.
+    questions: HashMap<u64, std::sync::mpsc::Sender<Option<Vec<String>>>>,
+    /// The last question's number.
+    asked: u64,
     /// The window that started this host, if one did.
     window: Option<Window>,
     /// Each project being saved, by its id: one saver each (#2002).
@@ -355,7 +371,45 @@ impl Hosting {
     fn tell(&self, pushed: &Pushed) {
         self.state()
             .subscribers
-            .retain(|subscriber| subscriber.try_send(pushed.clone()).is_ok());
+            .retain(|(_, subscriber)| subscriber.try_send(pushed.clone()).is_ok());
+    }
+
+    /// Asks the window which chats are mid-turn in `workspace` of `project`, and waits for its
+    /// answer, at most `within`: `None` with no window linked, or none that answered (#2002).
+    fn ask_the_window(
+        &self,
+        project: &str,
+        workspace: &str,
+        within: Duration,
+    ) -> Option<Vec<String>> {
+        let (answered, answer) = std::sync::mpsc::channel();
+        let question = {
+            let mut state = self.state();
+            state.asked += 1;
+            let question = state.asked;
+            let pushed = Pushed::WhoIsMidTurn {
+                question,
+                project: project.to_owned(),
+                workspace: workspace.to_owned(),
+            };
+            let mut asked = false;
+            state.subscribers.retain(|(window, subscriber)| {
+                if !*window {
+                    return true;
+                }
+                let sent = subscriber.try_send(pushed.clone()).is_ok();
+                asked |= sent;
+                sent
+            });
+            if !asked {
+                return None;
+            }
+            state.questions.insert(question, answered);
+            question
+        };
+        let said = answer.recv_timeout(within).ok().flatten();
+        self.state().questions.remove(&question);
+        said
     }
 
     fn running(&self, program: &str) -> Result<Arc<dyn Running>, Refusal> {
@@ -650,19 +704,21 @@ impl Hosting {
                 "this session host was given no way to save a project".into(),
             ));
         };
+        // Each weakly: the saver is the host's, and must not keep it.
         let told = {
-            let hosting = self.clone();
+            let host = Arc::downgrade(&self.inner);
             let project = project.clone();
             Box::new(move |looked: Looked| {
-                hosting.tell(&Pushed::Saving {
-                    project: project.clone(),
-                    saved: looked.saved,
-                    moved_tree: looked.moved_tree,
-                });
+                if let Some(inner) = host.upgrade() {
+                    Hosting { inner }.tell(&Pushed::Saving {
+                        project: project.clone(),
+                        saved: looked.saved,
+                        moved_tree: looked.moved_tree,
+                    });
+                }
             })
         };
         let working = {
-            // Weakly: the saver is the host's, and must not keep it.
             let host = Arc::downgrade(&self.inner);
             let project = project.clone();
             Box::new(move || {
@@ -671,12 +727,22 @@ impl Hosting {
                     .unwrap_or_default()
             })
         };
+        let ask_the_window = {
+            let host = Arc::downgrade(&self.inner);
+            let project = project.clone();
+            Box::new(move |workspace: &str| {
+                host.upgrade().and_then(|inner| {
+                    Hosting { inner }.ask_the_window(&project, workspace, ASK_WITHIN)
+                })
+            })
+        };
         let saving = save
             .save(ToSave {
                 project: project.clone(),
                 project_path: path,
                 told,
                 working,
+                ask_the_window,
             })
             .map_err(not_started)?;
         self.state().saving.insert(project, saving);
@@ -759,6 +825,13 @@ impl session::Host for Hosting {
             Command::StartSaving { project } => self.start_saving(project).await,
             Command::StopSaving { project } => self.stop_saving(&project).await,
             Command::FetchProject { project } => self.fetch(&project),
+            Command::MidTurn { question, chats } => {
+                // An answer nobody waits for any more (it came late) is done all the same.
+                if let Some(waiting) = self.state().questions.remove(&question) {
+                    let _ = waiting.send(chats);
+                }
+                Ok(Answer::Done)
+            }
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -783,10 +856,11 @@ impl session::Host for Hosting {
     async fn subscribe(
         &self,
         _since: Since,
-        _peer: &Peer,
+        peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
         let (told, notices) = mpsc::channel(MOST_NOTICES_QUEUED);
-        self.state().subscribers.push(told);
+        let window = peer.scope() == purlis_session_protocol::auth::Scope::LocalUi;
+        self.state().subscribers.push((window, told));
         Ok(notices)
     }
 }

@@ -44,3 +44,5 @@
 {"call":{"id":23,"command":"stop_saving","project":"01J9PRJCT00000000000000000"}}
 {"call":{"id":24,"command":"fetch_project","project":"01J9PRJCT00000000000000000"}}
 {"pushed":{"saving":{"project":"01J9PRJCT00000000000000000","saved":true,"moved_tree":false}}}
+{"call":{"id":25,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
+{"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}

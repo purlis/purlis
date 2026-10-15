@@ -2234,10 +2234,11 @@ impl Claim {
 /// Another process holds the plane's [`SAVE_LOCK`].
 struct HeldElsewhere;
 
-/// The lock on the [`SAVE_LOCK`] of the repository at `root`, or [`HeldElsewhere`] when another process
-/// holds it. A folder that is no repository has no git directory to lock and nothing a save
-/// could race on, and a lock file that cannot be made or locked for another reason leaves the
-/// claim to this process alone, as it was before there was a lock: neither is a refusal.
+/// The lock on the [`SAVE_LOCK`] of the repository at `root`, or [`HeldElsewhere`] when
+/// another process holds it. A folder that is no repository has no git directory to lock and
+/// nothing a save could race on, and a lock file that cannot be made or locked for another
+/// reason leaves the claim to this process alone, as it was before there was a lock: neither is
+/// a refusal.
 fn across_processes(root: &Path) -> Result<Option<std::fs::File>, HeldElsewhere> {
     let Some(git_dir) = root
         .to_str()

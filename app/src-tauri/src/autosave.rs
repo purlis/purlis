@@ -83,9 +83,8 @@ pub struct Worker {
     poke: Sender<Poke>,
     stop: Arc<AtomicBool>,
     mid_turn: MidTurnSlot,
-    /// Never joined: a worker mid-save is left to finish rather than holding a plane's close
-    /// open. Kept so a test can see the loop end.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read only by the stop test"))]
+    /// Never joined by a drop: a worker mid-save is left to finish rather than holding a
+    /// plane's close open. [`Worker::stop_within`] waits for it, bounded.
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -122,6 +121,14 @@ pub trait Saver: Send + Sync {
 
     /// Who it asks which chats are mid-turn in a workspace, where it asks the window.
     fn asks_mid_turn_of(&self, ask: MidTurn);
+
+    /// Stops it as the app quits, by `deadline`: whether whoever saves the project said it had
+    /// stopped by then (#2002). The window's own worker is dropped, as it always was: the save
+    /// at quit waits on its claim.
+    fn stop_by(self: Box<Self>, deadline: Instant) -> bool {
+        let _ = deadline;
+        true
+    }
 }
 
 impl Saver for Worker {
@@ -593,6 +600,37 @@ fn auto_saved_repos(root: &Path) -> Vec<(String, purlis_core::repos::Repo)> {
         .collect()
 }
 
+/// How long a quit gives every plane's saving, together, to stop (#2002): longer than the
+/// session host takes to stop a save in the middle (`crate::hostsaving::STOP_WITHIN`).
+pub const QUIT_STOPS_WITHIN: Duration = Duration::from_secs(3);
+
+/// Stops every one of `savers` at once, by `deadline`, and calls `end_the_host` when any did
+/// not say it had stopped by then (#2002): the session host saving a project is not answering,
+/// and is ended before the save at quit, which would otherwise run beside its save.
+pub fn stop_every_saver_by(
+    savers: Vec<Box<dyn Saver>>,
+    deadline: Instant,
+    end_the_host: &dyn Fn(),
+) {
+    let stopped = std::thread::scope(|scope| {
+        let stopping: Vec<_> = savers
+            .into_iter()
+            .map(|saver| scope.spawn(move || saver.stop_by(deadline)))
+            .collect();
+        // Every one joined, each in its own time: none waits on another.
+        stopping
+            .into_iter()
+            .map(|stopping| stopping.join().unwrap_or(false))
+            .collect::<Vec<bool>>()
+            .into_iter()
+            .all(|stopped| stopped)
+    });
+    if !stopped {
+        tracing::warn!("purlis: the session host did not stop saving in time, so it is ended");
+        end_the_host();
+    }
+}
+
 /// The window came back into focus: fetch the plane's target branch, unless it was fetched a
 /// moment ago. Answers at once; what the fetch finds reaches the window as a plane change.
 #[tauri::command]
@@ -687,10 +725,10 @@ pub(crate) mod running {
     }
 }
 
-#[cfg(test)]
 impl Worker {
-    /// Drop it and wait up to `bound` for its thread to end: whether it did.
-    fn stop_within(mut self, bound: Duration) -> bool {
+    /// Drop it and wait up to `bound` for its thread to end, a save it is in the middle of
+    /// with it, and so the save's claim on the plane: whether it did (#2002).
+    pub fn stop_within(mut self, bound: Duration) -> bool {
         let thread = self.thread.take();
         drop(self);
         let until = Instant::now() + bound;
@@ -1090,6 +1128,68 @@ mod tests {
             &idle,
         );
         assert_eq!(repo_commits(root), 0);
+    }
+
+    /// A saver whose stop is answered at once, or never.
+    struct Stops {
+        answers: bool,
+    }
+
+    impl Saver for Stops {
+        fn poker(&self) -> Sender<Poke> {
+            mpsc::channel().0
+        }
+
+        fn asks_mid_turn_of(&self, _ask: MidTurn) {}
+
+        fn stop_by(self: Box<Self>, deadline: Instant) -> bool {
+            if !self.answers {
+                std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+            }
+            self.answers
+        }
+    }
+
+    #[test]
+    fn a_quit_stops_every_saver_at_once_and_ends_a_host_that_did_not_answer() {
+        let ended = std::sync::atomic::AtomicUsize::new(0);
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(400);
+
+        stop_every_saver_by(
+            vec![
+                Box::new(Stops { answers: false }),
+                Box::new(Stops { answers: true }),
+                Box::new(Stops { answers: false }),
+            ],
+            deadline,
+            &|| {
+                ended.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            },
+        );
+
+        assert_eq!(ended.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            started.elapsed() < Duration::from_millis(750),
+            "the savers were stopped one after another: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_quit_whose_savers_all_stopped_leaves_the_host_alone() {
+        let ended = std::sync::atomic::AtomicBool::new(false);
+
+        stop_every_saver_by(
+            vec![
+                Box::new(Stops { answers: true }),
+                Box::new(Stops { answers: true }),
+            ],
+            Instant::now() + Duration::from_millis(400),
+            &|| ended.store(true, std::sync::atomic::Ordering::SeqCst),
+        );
+
+        assert!(!ended.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[test]

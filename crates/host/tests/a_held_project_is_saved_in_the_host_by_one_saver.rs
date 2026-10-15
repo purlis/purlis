@@ -250,3 +250,103 @@ async fn a_host_its_binary_gave_no_saver_refuses_to_save_with_why() {
         Some(session::NOT_STARTED)
     );
 }
+
+#[tokio::test]
+async fn the_saver_asks_the_window_who_is_mid_turn_and_hears_its_answer() {
+    let host = a_host();
+    let (client, mut events) = a_window(&host).await;
+    client.subscribe(Default::default()).await.unwrap();
+    client.start_saving(PROJECT).await.unwrap();
+    let savers = host.savers.clone();
+    let asking = tokio::task::spawn_blocking(move || savers.asks_the_window("alpha"));
+
+    let told = timeout(PATIENCE, events.recv())
+        .await
+        .expect("the window is asked")
+        .expect("the link is up");
+    let Told::Pushed(Pushed::WhoIsMidTurn {
+        question,
+        project,
+        workspace,
+    }) = told
+    else {
+        panic!("{told:?}");
+    };
+    assert_eq!((project.as_str(), workspace.as_str()), (PROJECT, "alpha"));
+    client
+        .call(session::Command::MidTurn {
+            question,
+            chats: Some(vec!["alpha 1".into()]),
+        })
+        .await
+        .expect("the answer is taken");
+
+    assert_eq!(
+        asking.await.unwrap(),
+        Some(vec!["alpha 1".to_owned()]),
+        "the saver did not hear the window"
+    );
+}
+
+#[tokio::test]
+async fn with_no_window_linked_the_saver_is_told_nobody_can_say_at_once() {
+    let host = a_host();
+    let (client, events) = a_window(&host).await;
+    client.start_saving(PROJECT).await.unwrap();
+    drop((client, events));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let savers = host.savers.clone();
+
+    let started = std::time::Instant::now();
+    let said = tokio::task::spawn_blocking(move || savers.asks_the_window("alpha"))
+        .await
+        .unwrap();
+
+    assert_eq!(said, None);
+    assert!(
+        started.elapsed() < purlis_host::ASK_WITHIN,
+        "it waited for nobody"
+    );
+}
+
+#[tokio::test]
+async fn a_window_that_does_not_answer_leaves_the_saver_told_nobody_can_say_in_time() {
+    let host = a_host();
+    let (client, _events) = a_window(&host).await;
+    client.subscribe(Default::default()).await.unwrap();
+    client.start_saving(PROJECT).await.unwrap();
+    let savers = host.savers.clone();
+
+    let started = std::time::Instant::now();
+    let said = tokio::task::spawn_blocking(move || savers.asks_the_window("alpha"))
+        .await
+        .unwrap();
+
+    assert_eq!(said, None);
+    assert!(started.elapsed() >= purlis_host::ASK_WITHIN);
+    assert!(started.elapsed() < purlis_host::ASK_WITHIN + Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn a_stop_that_arrives_mid_save_is_answered_once_the_save_has_let_go() {
+    let host = a_host();
+    let (client, _events) = a_window(&host).await;
+    client.start_saving(PROJECT).await.unwrap();
+    host.savers.mid_save();
+
+    let mut stopping = Box::pin(client.stop_saving(PROJECT));
+    assert!(
+        timeout(Duration::from_millis(300), &mut stopping)
+            .await
+            .is_err(),
+        "the stop was answered while a save still ran"
+    );
+    assert_eq!(host.savers.running(), 1);
+
+    host.savers.finish_saving();
+    timeout(PATIENCE, stopping)
+        .await
+        .expect("answered once the save let go")
+        .expect("it stops");
+    assert_eq!(host.savers.running(), 0);
+}

@@ -1431,6 +1431,14 @@ impl Held {
             .collect()
     }
 
+    /// The plane's auto-save, taken from it: the quit stops it ([`Planes::let_go_of_all`]).
+    fn take_saver(&self) -> Option<Box<dyn crate::autosave::Saver>> {
+        self.autosave
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
     /// Tell the plane's auto-save worker something, if it has one.
     pub fn poke_autosave(&self, poke: crate::autosave::Poke) {
         if let Some(worker) = self
@@ -1846,6 +1854,8 @@ pub struct Planes {
     changes: crate::planewatch::Changed,
     /// Told when auto-save saved a plane (charter-app#343).
     saves: crate::autosave::Saved,
+    /// Ends the session host, for a quit it did not answer in time (#2002).
+    end_the_host: Arc<dyn Fn() + Send + Sync>,
     /// Told the root of each plane let go of, so the one watch per repo stops listening to its
     /// clones (FD-11).
     released: Released,
@@ -2108,6 +2118,7 @@ impl Planes {
             arrivals: Arc::new(|_| {}),
             changes: Arc::new(|_, _| {}),
             saves: Arc::new(|_, _| {}),
+            end_the_host: Arc::new(|| {}),
             released: Arc::new(|_| {}),
             closed: Arc::new(|_| {}),
             by_hand: Arc::new(|_| {}),
@@ -2230,6 +2241,13 @@ impl Planes {
     /// that hear a plane being saved are told (charter-app#343).
     pub fn telling_saves(mut self, saves: crate::autosave::Saved) -> Self {
         self.saves = saves;
+        self
+    }
+
+    /// Ends the session host with `end`, at a quit whose stop of a project's saving it did not
+    /// answer in time, before the save at quit runs (#2002).
+    pub fn ending_the_host_with(mut self, end: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.end_the_host = end;
         self
     }
 
@@ -3815,6 +3833,14 @@ impl Planes {
         // Every command purlis is running with a vault for a chat ends here, with everything it
         // started that stayed in its process group (#1407).
         purlis_core::secrets::brokered::stop_every_run();
+        // Every plane's saving stops at once, against one short deadline, so a save at quit
+        // never overlaps the session host's; a host that does not answer is ended first
+        // (#2002).
+        crate::autosave::stop_every_saver_by(
+            all.iter().filter_map(|held| held.take_saver()).collect(),
+            std::time::Instant::now() + crate::autosave::QUIT_STOPS_WITHIN,
+            &*self.end_the_host,
+        );
         // Before the chats are ended: a turn this quit cuts off leaves its repo half-written,
         // and that repo is not saved (charter-app#299).
         let roots: Vec<_> = all

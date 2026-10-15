@@ -161,7 +161,13 @@ struct Shared {
     ends: Mutex<HashMap<String, TellEnd>>,
     /// Who is told what each look of a project's auto-save did, by the project's id (#2002).
     savings: Mutex<HashMap<String, crate::autosave::Told>>,
+    /// Who says which chats are mid-turn in a workspace of a project the host saves, by the
+    /// project's id: its plane's board (#2002).
+    turns: Mutex<HashMap<String, Turns>>,
 }
+
+/// Which chats are mid-turn in a workspace, or `None` where the window cannot say.
+type Turns = Arc<dyn Fn(&str) -> Option<Vec<String>> + Send + Sync>;
 
 /// Told once, as a program ends.
 type TellEnd = Box<dyn FnOnce(Exit) + Send>;
@@ -205,12 +211,17 @@ impl HostLink {
 
     /// Send `command` and wait for the host's answer, from any thread.
     fn call(&self, command: Command) -> Result<Answer, String> {
+        self.call_within(command, ANSWER_WITHIN)
+    }
+
+    /// [`Self::call`], waiting at most `within`.
+    fn call_within(&self, command: Command, within: Duration) -> Result<Answer, String> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
             let _ = answered.send(client.call(command).await);
         });
-        match answer.recv_timeout(ANSWER_WITHIN) {
+        match answer.recv_timeout(within) {
             Ok(Ok(answer)) => Ok(answer),
             Ok(Err(why)) => Err(why
                 .refusal()
@@ -373,6 +384,26 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>) {
                     });
                 }
             }
+            Told::Pushed(Pushed::WhoIsMidTurn {
+                question,
+                project,
+                workspace,
+            }) => {
+                let turns = lock(&shared.turns).get(&project).cloned();
+                let client = Arc::clone(&client);
+                tokio::spawn(async move {
+                    // The board is read off the runtime; a project the window does not save
+                    // in the host is one it cannot say anything of.
+                    let chats = match turns {
+                        Some(turns) => tokio::task::spawn_blocking(move || turns(&workspace))
+                            .await
+                            .ok()
+                            .flatten(),
+                        None => None,
+                    };
+                    let _ = client.call(Command::MidTurn { question, chats }).await;
+                });
+            }
             Told::Pushed(Pushed::ViewEnded { view, .. }) => {
                 let drained = lock(&shared.views)
                     .drawing
@@ -529,6 +560,10 @@ fn held_on(
 struct SavedInTheHost {
     asked: Arc<Mutex<Asked>>,
     poke: std::sync::mpsc::Sender<crate::autosave::Poke>,
+    /// Who says which chats are mid-turn: the plane, once it is built.
+    mid_turn: Arc<Mutex<Option<crate::autosave::MidTurn>>>,
+    /// A quit already stopped it, answered or not: its drop asks nothing more of the host.
+    stopped_by_a_quit: bool,
 }
 
 #[derive(Default)]
@@ -549,6 +584,8 @@ impl SavedInTheHost {
         let asked: Arc<Mutex<Asked>> = Arc::default();
         let (poke, poked) = std::sync::mpsc::channel();
         let asking = Arc::clone(&asked);
+        let mid_turn: Arc<Mutex<Option<crate::autosave::MidTurn>>> = Arc::default();
+        let board = Arc::clone(&mid_turn);
         let started = std::thread::Builder::new()
             .name("saved in the session host".into())
             .spawn(move || {
@@ -571,9 +608,17 @@ impl SavedInTheHost {
                         told(looked);
                     })
                 });
+                // And the host asks the window's board who is mid-turn.
+                lock(&link.shared.turns).insert(
+                    project.clone(),
+                    Arc::new(move |workspace: &str| {
+                        let ask = lock(&board).clone();
+                        ask.map(|ask| ask(workspace))
+                    }),
+                );
                 let mut asked = lock(&asking);
                 if asked.stopped {
-                    lock(&link.shared.savings).remove(&project);
+                    forget(&link, &project);
                     return;
                 }
                 match link.call(Command::StartSaving {
@@ -581,7 +626,7 @@ impl SavedInTheHost {
                 }) {
                     Ok(_) => asked.saving = Some((link, project)),
                     Err(why) => {
-                        lock(&link.shared.savings).remove(&project);
+                        forget(&link, &project);
                         tracing::warn!(
                             "purlis: the session host does not save {}: {why}",
                             root.display()
@@ -608,8 +653,59 @@ impl SavedInTheHost {
         if let Err(why) = started {
             tracing::warn!("purlis: the project's saving was not asked of the session host: {why}");
         }
-        SavedInTheHost { asked, poke }
+        SavedInTheHost {
+            asked,
+            poke,
+            mid_turn,
+            stopped_by_a_quit: false,
+        }
     }
+
+    /// Stops the host's saving, waiting at most `within` for its answer: whether it answered.
+    /// Nothing asked of the host, or nothing more to stop, is stopped.
+    fn stop_within(&self, within: Duration) -> bool {
+        let deadline = Instant::now() + within;
+        // A start still being asked holds this until the host answers it: waited for only
+        // until the deadline.
+        let mut asked = loop {
+            match self.asked.try_lock() {
+                Ok(asked) => break asked,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => break poisoned.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    tracing::warn!("purlis: the session host did not answer the project's saving");
+                    return false;
+                }
+            }
+        };
+        asked.stopped = true;
+        let answered = match asked.saving.take() {
+            Some((link, project)) => {
+                forget(&link, &project);
+                let left = deadline.saturating_duration_since(Instant::now());
+                match link.call_within(Command::StopSaving { project }, left) {
+                    Ok(_) => true,
+                    Err(why) => {
+                        tracing::warn!("purlis: the session host did not stop saving: {why}");
+                        false
+                    }
+                }
+            }
+            None => true,
+        };
+        drop(asked);
+        // Wakes the poke thread, which sees it is stopped.
+        let _ = self.poke.send(crate::autosave::Poke::Fetch);
+        answered
+    }
+}
+
+/// Nobody on this window is told of `project`'s saving, or asked of its turns, any more.
+fn forget(link: &HostLink, project: &str) {
+    lock(&link.shared.savings).remove(project);
+    lock(&link.shared.turns).remove(project);
 }
 
 impl crate::autosave::Saver for SavedInTheHost {
@@ -617,25 +713,24 @@ impl crate::autosave::Saver for SavedInTheHost {
         self.poke.clone()
     }
 
-    /// The host asks who works in the project of what it runs, not the window.
-    fn asks_mid_turn_of(&self, _ask: crate::autosave::MidTurn) {}
+    /// What the host asks of this window's board ([`Pushed::WhoIsMidTurn`]).
+    fn asks_mid_turn_of(&self, ask: crate::autosave::MidTurn) {
+        *lock(&self.mid_turn) = Some(ask);
+    }
+
+    fn stop_by(mut self: Box<Self>, deadline: Instant) -> bool {
+        self.stopped_by_a_quit = true;
+        self.stop_within(deadline.saturating_duration_since(Instant::now()))
+    }
 }
 
-/// Stops the host's saving and answers once the host has: a quit's own save comes after, so
-/// the project is never saved by both.
+/// Stops the host's saving and answers once the host has: a close's or a quit's own save comes
+/// after, so the project is never saved by both. A quit stops it sooner ([`Self::stop_within`]).
 impl Drop for SavedInTheHost {
     fn drop(&mut self) {
-        let mut asked = lock(&self.asked);
-        asked.stopped = true;
-        if let Some((link, project)) = asked.saving.take() {
-            lock(&link.shared.savings).remove(&project);
-            if let Err(why) = link.call(Command::StopSaving { project }) {
-                tracing::warn!("purlis: the session host did not stop saving: {why}");
-            }
+        if !self.stopped_by_a_quit {
+            self.stop_within(ANSWER_WITHIN);
         }
-        drop(asked);
-        // Wakes the poke thread, which sees it is stopped.
-        let _ = self.poke.send(crate::autosave::Poke::Fetch);
     }
 }
 

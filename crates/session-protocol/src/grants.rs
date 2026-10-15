@@ -23,7 +23,7 @@
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
 //! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | |
-//! | `start_saving`, `stop_saving`, `fetch_project` (1.3) | yes | | | | | |
+//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.3) | yes | | | | | |
 //! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
@@ -86,7 +86,8 @@ pub enum Power {
     /// The UI RPC: the app's own commands, vault values and settings writes among them.
     UiRpc,
     /// `hold_project` and `let_go_of_project` (1.2): where a project is on the host's machine.
-    /// And `start_saving`, `stop_saving` and `fetch_project` (1.3): whether the host saves it.
+    /// And `start_saving`, `stop_saving`, `fetch_project` and `mid_turn` (1.3): whether and how
+    /// the host saves it.
     Hold,
     /// A start's `launch` (1.2): a program, its words and its environment as the window composed
     /// them.

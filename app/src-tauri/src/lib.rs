@@ -2936,7 +2936,11 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     #[cfg(unix)]
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
-        let connection = app.state::<sessionhost::SessionHost>().connection();
+        let host = app.state::<sessionhost::SessionHost>();
+        let connection = host.connection();
+        // The host saves the projects too (#2002): a quit it does not answer in time ends it
+        // before the save at quit.
+        let planes = planes.ending_the_host_with(host.ender());
         return planes.running_sessions_on(std::sync::Arc::new(
             move |reporting, root: &std::path::Path| {
                 Box::new(hostedsessions::HostedSessions::new(
