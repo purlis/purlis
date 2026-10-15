@@ -1,0 +1,37 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# purlis's runner image (#2043): `purlis serve`, the session host, on a machine with no window.
+# What any runner image has to hold is docs/runner-image.md; this is purlis's own, and
+# `tools/runner-image-contract.mjs` checks it against that contract before it is pushed.
+#
+# Built by `.github/workflows/runner-image.yml`, once per architecture on a runner of that
+# architecture, from a build context holding ONE file: the `purlis` binary that job compiled
+# with the repository's pinned toolchain. Nothing else of the repository is in the context, so
+# nothing else can reach the image.
+#
+# The base is Ubuntu 24.04, the system the binary is compiled on, so its C library is the one
+# the binary was linked against. It is pinned by the digest of its multi-architecture index;
+# Dependabot proposes the next one. The packages are the archive's current ones at build time,
+# so every build of `main` carries the security fixes of that day.
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+
+# git: a chat's clone and branches. ca-certificates: every TLS connection a chat makes.
+# tini: PID 1, which reaps what a chat's programs leave behind when the host is not there to.
+# Ubuntu's own `ubuntu` user (1000) is removed, so the image has one user who is not root.
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends ca-certificates git tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && userdel --remove ubuntu \
+ && groupadd --gid 10001 purlis \
+ && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/purlis --shell /bin/bash purlis \
+ && chmod 0700 /home/purlis
+
+COPY --chmod=0755 purlis /usr/local/bin/purlis
+
+USER 10001:10001
+ENV HOME=/home/purlis
+WORKDIR /home/purlis
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]
+CMD ["serve"]
