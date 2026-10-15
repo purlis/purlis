@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Double-click to edit</title></head>
+<body>
+  <h1>Todos</h1>
+  <ul><li id="item"><label id="label">Buy milk</label></li></ul>
+  <script>
+    const item = document.getElementById('item');
+    const label = document.getElementById('label');
+    label.addEventListener('dblclick', () => {
+      const edit = document.createElement('input');
+      edit.setAttribute('aria-label', 'Edit todo');
+      edit.value = label.textContent;
+      item.replaceChildren(edit);
+      edit.focus();
+      edit.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          label.textContent = edit.value;
+          item.replaceChildren(label);
+        }
+      });
+    });
+  </script>
+</body></html>

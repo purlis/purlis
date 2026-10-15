@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 pub mod fixture;
+pub mod site;
 
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};

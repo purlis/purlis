@@ -942,8 +942,11 @@ fn opening_a_page_takes_a_web_address_and_makes_the_page_current() {
     assert!(answer.page.unwrap().current);
     assert_eq!(
         engine.sent("Target.createTarget")[0].params["url"],
-        "http://fixture.test/long.html"
+        "about:blank"
     );
+    let went = &engine.sent("Page.navigate")[0];
+    assert_eq!(went.params["url"], "http://fixture.test/long.html");
+    assert_eq!(went.session.as_deref(), Some("S-PAGE-2"));
 }
 
 #[test]

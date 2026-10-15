@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Drag by an offset</title>
+<style>
+  #track { position: relative; width: 220px; height: 20px; margin: 40px; background: #ddd; }
+  #handle { position: absolute; left: 0; top: 0; width: 20px; height: 20px; background: #333; touch-action: none; }
+</style></head>
+<body>
+  <div id="track"><div id="handle" role="slider" aria-label="Level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div></div>
+  <script>
+    const handle = document.getElementById('handle');
+    let from = null;
+    handle.addEventListener('pointerdown', (e) => {
+      from = { x: e.clientX, left: handle.offsetLeft };
+      handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!from) return;
+      const left = Math.max(0, Math.min(200, from.left + e.clientX - from.x));
+      handle.style.left = left + 'px';
+      handle.setAttribute('aria-valuenow', String(Math.round(left / 2)));
+    });
+    handle.addEventListener('pointerup', () => { from = null; });
+  </script>
+</body></html>

@@ -20,31 +20,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use common::site::engine_program;
 use common::{HostPart, gone_within};
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::launch::{Launch, ReachProxy};
-use purlis_browser_engine::machine::machine_chrome;
 use purlis_browser_engine::process::{Engine, Keeper};
-
-/// The engine to run, or why these tests do not run here.
-fn engine_program() -> Option<PathBuf> {
-    if let Some(named) = std::env::var_os("PURLIS_TEST_ENGINE") {
-        return Some(PathBuf::from(named));
-    }
-    if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
-        let found = machine_chrome();
-        assert!(
-            found.is_some(),
-            "CI runs these tests against the runner's Chrome, and none was found"
-        );
-        return found;
-    }
-    eprintln!(
-        "not run: no engine here. Set PURLIS_TEST_ENGINE to a Chrome executable to run this \
-         (a sandboxed agent cannot start one; CI runs it against the runner's Chrome)."
-    );
-    None
-}
 
 fn keeper() -> Keeper {
     Keeper::program(env!("CARGO_BIN_EXE_purlis-engine-keeper"))

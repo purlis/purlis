@@ -638,10 +638,14 @@ impl Builder<'_> {
             );
         }
         let end = self.lines.len();
-        // An element with no name whose only content is one text takes it as its name.
+        // An element with no name whose only content is one text takes it as its name, and
+        // its reference is the text's: acting on it acts where its content is shown.
         if name.is_empty() && end == index + 2 && self.lines[index + 1].role == "text" {
             let text = self.lines.remove(index + 1);
             self.lines[index].name = text.name;
+            if text.key.is_some() {
+                self.lines[index].key = text.key;
+            }
         }
         self.lines[index].end = self.lines.len();
     }

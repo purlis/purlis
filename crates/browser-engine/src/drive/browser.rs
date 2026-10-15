@@ -109,7 +109,6 @@ struct Page {
     session: Option<String>,
     url: String,
     title: String,
-    opener: Option<String>,
     settle: Settle,
     frames: HashMap<String, Frame>,
 }
@@ -230,9 +229,6 @@ impl State {
         let owned_elsewhere = self.sessions.iter().any(|(s, kind)| {
             s != session && matches!(kind, Session::Frame { frame, .. } if frame == id)
         });
-        if owned_elsewhere {
-            return;
-        }
         self.generations += 1;
         let generation = self.generations;
         let text = |field: &str| {
@@ -256,10 +252,14 @@ impl State {
             url: String::new(),
             generation,
         });
-        entry.session = session.to_owned();
         if parent.is_some() {
             entry.parent = parent;
         }
+        if owned_elsewhere {
+            // Only where it sits is the parent's to say.
+            return;
+        }
+        entry.session = session.to_owned();
         entry.name = text("name");
         entry.url = text("url");
         if navigated {
@@ -456,19 +456,7 @@ impl Browser {
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;
-                self.acting_on(&target, || {
-                    let went = self.devtools().call(
-                        "Page.navigate",
-                        json!({ "url": address.as_str() }),
-                        Some(&session),
-                    );
-                    let went = went.map_err(refusal)?;
-                    Ok(went
-                        .get("errorText")
-                        .and_then(Value::as_str)
-                        .filter(|e| !e.is_empty())
-                        .map(|e| format!("the page did not load: {e}")))
-                })
+                self.acting_on(&target, || self.navigate(&session, &address))
             }
             Call::Snapshot {
                 page,
@@ -648,14 +636,11 @@ impl Browser {
     }
 
     fn open(&self, address: &WebAddress) -> Result<Answer, Refusal> {
-        let before = self.targets();
+        // The page starts empty and is sent to `address` once it is set up, so every event of
+        // its load is seen.
         let created = self
             .devtools()
-            .call(
-                "Target.createTarget",
-                json!({ "url": address.as_str() }),
-                None,
-            )
+            .call("Target.createTarget", json!({ "url": "about:blank" }), None)
             .map_err(refusal)?;
         let target = created
             .get("targetId")
@@ -674,17 +659,26 @@ impl Browser {
                 .0;
         }
         drop(state);
-        self.page_session(&target)?;
+        let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
-        let dropped = self.devtools().dropped_events();
-        let (settled, opened) = self.settle(
-            &target,
-            &before,
-            self.inner.limits.settle_within,
-            dropped,
-            true,
-        );
-        Ok(self.answer(&target, settled, opened, Content::Nothing, None))
+        self.acting_on(&target, || self.navigate(&session, address))
+    }
+
+    /// Sends the page on `session` to `address`; a load that failed is said in the note.
+    fn navigate(&self, session: &str, address: &WebAddress) -> Result<Option<String>, Refusal> {
+        let went = self
+            .devtools()
+            .call(
+                "Page.navigate",
+                json!({ "url": address.as_str() }),
+                Some(session),
+            )
+            .map_err(refusal)?;
+        Ok(went
+            .get("errorText")
+            .and_then(Value::as_str)
+            .filter(|e| !e.is_empty())
+            .map(|e| format!("the page did not load: {e}")))
     }
 
     fn targets(&self) -> HashSet<String> {
@@ -773,7 +767,7 @@ impl Browser {
                 let opened: Vec<String> = state
                     .pages
                     .iter()
-                    .filter(|p| !before.contains(&p.target) && p.opener.as_deref() == Some(target))
+                    .filter(|p| !before.contains(&p.target))
                     .map(|p| p.target.clone())
                     .collect();
                 if let Some(last) = opened.last() {
@@ -1493,8 +1487,8 @@ impl Inner {
                         if created {
                             state.pages_listed += 1;
                             let opener = text("/targetInfo/openerId");
-                            if let Some(opener) = opener.as_deref()
-                                && let Some(by) = state.page_mut(opener)
+                            if let Some(opener) = opener
+                                && let Some(by) = state.page_mut(&opener)
                             {
                                 by.settle.observe("", Activity::Changed, now);
                             }
@@ -1505,7 +1499,6 @@ impl Inner {
                                 session: None,
                                 url: url.clone(),
                                 title: String::new(),
-                                opener,
                                 settle: Settle::new(now),
                                 frames: HashMap::new(),
                             });
