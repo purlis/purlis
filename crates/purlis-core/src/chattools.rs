@@ -85,16 +85,23 @@ pub const DISPATCH_REPORT: &str = "dispatch_report";
 /// dispatch list` performs, answered by the app as [`DISPATCH`] is.
 pub const DISPATCH_LIST: &str = "dispatch_list";
 
+/// The tool that reads what a task this chat dispatched said last and the commands it ran
+/// (#1981, #2084): the one operation `purlis dispatch read` performs, answered by the app as
+/// [`DISPATCH`] is.
+pub const DISPATCH_READ: &str = "dispatch_read";
+
 /// The tools a Claude Code chat runs without asking (V79, #1050, amending SI-8e in ADR 0064):
 /// the five that only read, [`PERSONA_WHERE`] (V98a, #1450), which reads the app's own
 /// record and answers names and states a chat is told at its start anyway, and
 /// [`DISPATCH_LIST`] (#1463), which lists the tasks the asking chat dispatched itself, or the
 /// person started from its tab, and no other chat's: the same answer `purlis dispatch list`
-/// gives, whose command line is already allowed ([`crate::harness::claude::DISPATCH_TASK_ALLOW`]).
+/// gives, whose command line is already allowed ([`crate::harness::claude::DISPATCH_TASK_ALLOW`]);
+/// and [`DISPATCH_READ`] (#2084), which reads one of those tasks alone, the same answer
+/// `purlis dispatch read` gives, also allowed by its command line.
 /// Named one by one, never derived from [`Tool::read_only`]: `ask_operator` is marked
 /// read-only too and still asks, and a tool added later is asked about until someone rules it
 /// in here. Writes are never in this list.
-pub const PRE_ALLOWED: [&str; 7] = [
+pub const PRE_ALLOWED: [&str; 8] = [
     "todo_list",
     "memory_search",
     "session_record_list",
@@ -102,6 +109,7 @@ pub const PRE_ALLOWED: [&str; 7] = [
     "change_status",
     PERSONA_WHERE,
     DISPATCH_LIST,
+    DISPATCH_READ,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -261,7 +269,7 @@ fn one_string(key: &str, description: &str) -> Value {
 pub const DISPATCH_TOOLS: [&str; 2] = [DISPATCH, DISPATCH_REPORT];
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 17] = [
+pub static TOOLS: [Tool; 18] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -518,11 +526,34 @@ pub static TOOLS: [Tool; 17] = [
         read_only: true,
     },
     Tool {
+        name: DISPATCH_READ,
+        description: "Read what a task this chat dispatched said last and the commands it ran, \
+                      with their exit codes, as its harness handed them to purlis: quoted as \
+                      data, credential shapes masked. Only a task this chat dispatched can be \
+                      read; the whole conversation is the person's, in the task's tab.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": {
+                        "type": "integer",
+                        "description": "The task's chat, by its number in dispatch_list.",
+                    },
+                },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: true,
+    },
+    Tool {
         name: DISPATCH_REPORT,
         description: "Send this task's one report back to the chat that dispatched it: how it \
                       ended, what you did and found, and what changed. Write your session \
                       record first; purlis adds its path. Only a chat a dispatch started has \
-                      a report to send.",
+                      a report to send. A turn that ends without one is asked for it once; if \
+                      the next turn ends without one too, purlis sends your last message in \
+                      its place, marked as a report purlis made from its last message.",
         schema: || {
             json!({
                 "type": "object",
@@ -585,6 +616,7 @@ pub fn call(
         WORKSPACE_SECTION,
         DISPATCH,
         DISPATCH_LIST,
+        DISPATCH_READ,
         DISPATCH_REPORT,
     ]
     .contains(&tool)
@@ -881,6 +913,16 @@ pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, Strin
         Some(Value::String(_)) => Ok(None),
         Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
     }
+}
+
+/// The `dispatch_read` tool's argument (#2084): the task's chat, by its number.
+pub fn dispatch_read_args(args: &Map<String, Value>) -> Result<u32, String> {
+    args.get("chat")
+        .and_then(Value::as_u64)
+        .and_then(|chat| u32::try_from(chat).ok())
+        .ok_or_else(|| {
+            "dispatch_read needs `chat`: the task's chat, by its number in dispatch_list".to_owned()
+        })
 }
 
 /// The `dispatch_report` tool's arguments: the outcome, the text, and what changed.

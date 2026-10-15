@@ -133,9 +133,10 @@ pub fn refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, String)> 
 }
 
 /// purlis's chat tools that dispatch, by the names [`crate::chattools`] gives them.
-const OUR_TOOLS: [&str; 3] = [
+const OUR_TOOLS: [&str; 4] = [
     crate::chattools::DISPATCH,
     crate::chattools::DISPATCH_LIST,
+    crate::chattools::DISPATCH_READ,
     crate::chattools::DISPATCH_REPORT,
 ];
 
@@ -842,10 +843,15 @@ mod tests {
         // does. The pre-allow is the harness's prompt and no more: a helper's call is still
         // refused in front of it, and the tools that start a chat or send a report are not
         // among the reads.
-        let list = format!("mcp__purlis__{}", crate::chattools::DISPATCH_LIST);
-        assert!(crate::chattools::PRE_ALLOWED.contains(&crate::chattools::DISPATCH_LIST));
-        assert!(tool_refusal(&list, a_sub_agent()).is_some());
-        assert_eq!(tool_refusal(&list, the_chat()), None);
+        for read in [
+            crate::chattools::DISPATCH_LIST,
+            crate::chattools::DISPATCH_READ,
+        ] {
+            let tool = format!("mcp__purlis__{read}");
+            assert!(crate::chattools::PRE_ALLOWED.contains(&read), "{read}");
+            assert!(tool_refusal(&tool, a_sub_agent()).is_some(), "{read}");
+            assert_eq!(tool_refusal(&tool, the_chat()), None, "{read}");
+        }
         for writes in [
             crate::chattools::DISPATCH,
             crate::chattools::DISPATCH_REPORT,
@@ -951,6 +957,7 @@ mod tests {
             "purlis dispatch --wait --name x <<'B'\nlook\nB",
             "purlis dispatch wait 12",
             "purlis dispatch list",
+            "purlis dispatch read 12",
             "purlis dispatch cancel 12",
             "purlis dispatch tell 12 \"and the logs too\"",
             "purlis dispatch note \"half way\"",
@@ -1317,6 +1324,7 @@ mod tests {
         // A subcommand, or a help ask, reads no brief.
         for cmd in [
             "purlis dispatch list",
+            "purlis dispatch read 12",
             "purlis dispatch wait 12",
             "purlis dispatch --help",
             "purlis dispatch -h",
