@@ -1731,3 +1731,32 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   program, what it answered, and how to fix it. One that does not answer in time is asked once
   more, with twice the wait, before it is refused. Only a system or backend where the floor
   cannot be applied at all starts a chat without it.
+
+## Amended (2026-10-14, the operator's rulings on spec #2008, #2011; extends section 3): a browser's reach is a lane of its chat's
+
+Under the rulings of 2026-10-14 (one grant system, browser reach a lane of the sandbox's egress
+grants, one Granted list), each browser has a **reach proxy** of its own
+(`purlis_core::sandbox::browser_reach`), built from the chat's proxy (`sandbox::egress`): its
+strict reading of a request's head, its tunnel and plain request, its limits.
+
+1. **A lane, not a second list.** The browser's lane is its chat's reach, read again by the
+   browser's rules: a host the chat's reach lists is carried at the layer that lists it, and
+   nothing is listed for the browser alone. A grant is made and removed as the chat's are, and
+   shows in the one Granted list.
+2. **By host and port, without opening TLS**, as the chat's proxy decides: a `CONNECT` by its
+   target, a plain request by its absolute target and its one `Host`. One HTTP port, no SOCKS.
+3. **Public addresses only.** Never this machine, a private range, the carriers' shared space,
+   a link-local or cloud metadata address, an IPv6 unique local address, multicast, broadcast,
+   or a reserved, documentation or benchmarking range; an IPv6 form that carries an IPv4
+   address is judged as that address. This holds whatever the chat's reach lists.
+4. **A named local port by its literal address alone**: `127.0.0.1:N` or `[::1]:N`, where the
+   chat's reach lists exactly that address and port. A name of this machine (`localhost`, a
+   name under it, a name of this Mac) is refused, and so is a name that ends in a number, an
+   address written another way.
+5. **The proxy resolves names itself, once**, and connects only at the public addresses that
+   lookup answered.
+6. **A site new to the project** (public, and listed by nothing) on HTTPS's port by a tunnel or
+   HTTP's by a plain request is told to one seam, which refuses it until the browser's Ask
+   answers there (spec #2008). Any other port is refused.
+7. **Fails closed.** The engine resolves no name and sends every request to its reach proxy;
+   when the proxy is gone, every load fails.

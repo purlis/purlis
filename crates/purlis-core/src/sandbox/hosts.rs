@@ -307,7 +307,7 @@ fn this_machine(name: &str) -> String {
 }
 
 /// Whether `name`'s last part is a number: all digits, or `0x` and hex digits.
-fn ends_in_a_number(name: &str) -> bool {
+pub(super) fn ends_in_a_number(name: &str) -> bool {
     let last = name.rsplit('.').next().unwrap_or(name);
     if !last.is_empty() && last.bytes().all(|b| b.is_ascii_digit()) {
         return true;
@@ -418,7 +418,7 @@ fn v4(ip: Ipv4Addr) -> Result<Ipv4Addr, String> {
 /// The IPv4 address an IPv6 address carries, in each form Claude Code's sandbox runtime
 /// decodes (2.1.291): IPv4-mapped `::ffff:0:0/96`, SIIT `::ffff:0:0:0/96`, NAT64
 /// `64:ff9b::/96`, IPv4-compatible `::/96` (not `::` or `::1`), and 6to4 `2002::/16`.
-fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+pub(super) fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     let s = ip.segments();
     let of = |hi: u16, lo: u16| {
         let ([a, b], [c, d]) = (hi.to_be_bytes(), lo.to_be_bytes());

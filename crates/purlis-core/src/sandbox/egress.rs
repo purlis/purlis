@@ -101,7 +101,7 @@ pub const MORE_COUNTED_AT_MOST: usize = 1024;
 const HEAD_MAX: usize = 16 * 1024;
 
 /// How long a client has to send its request, and a host to answer the connection.
-const PATIENCE: Duration = Duration::from_secs(30);
+pub(super) const PATIENCE: Duration = Duration::from_secs(30);
 
 /// How long a failing accept waits before it tries again.
 const BACKOFF: Duration = Duration::from_millis(100);
@@ -1322,7 +1322,7 @@ fn read_into(client: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Optio
 }
 
 /// Whether a `Host` header's `named` is `host` on `port`.
-fn same_host(named: &str, host: &str, port: u16) -> bool {
+pub(super) fn same_host(named: &str, host: &str, port: u16) -> bool {
     let (name, named_port) = match named.rsplit_once(':') {
         Some((name, port)) if !name.ends_with(']') || name.starts_with('[') => {
             (name, port.parse().ok())
@@ -1339,7 +1339,7 @@ fn same_host(named: &str, host: &str, port: u16) -> bool {
 }
 
 /// The request's head, as text, and whatever the client sent after it.
-fn read_head(client: &mut TcpStream, within: Duration) -> Option<(String, Vec<u8>)> {
+pub(super) fn read_head(client: &mut TcpStream, within: Duration) -> Option<(String, Vec<u8>)> {
     let deadline = Instant::now() + within;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
@@ -1365,21 +1365,21 @@ fn read_head(client: &mut TcpStream, within: Duration) -> Option<(String, Vec<u8
 }
 
 /// A request the proxy can carry.
-struct Request {
-    host: String,
-    port: u16,
+pub(super) struct Request {
+    pub(super) host: String,
+    pub(super) port: u16,
     /// For a plain request, the head sent on in its place; none for a tunnel.
-    forward: Option<String>,
+    pub(super) forward: Option<String>,
     /// For a plain request, its `Host` header, where it has one.
-    host_header: Option<String>,
+    pub(super) host_header: Option<String>,
     /// For a plain request, its body's length; none for a tunnel.
-    body: Option<u64>,
+    pub(super) body: Option<u64>,
 }
 
 impl Request {
     /// The request in `head`, which ends in its blank line, read strictly (see the module's
     /// docs): `None` for anything two parsers could read two ways.
-    fn parse(head: &str) -> Option<Self> {
+    pub(super) fn parse(head: &str) -> Option<Self> {
         let lines: Vec<&str> = head.strip_suffix("\r\n\r\n")?.split("\r\n").collect();
         if lines.iter().any(|line| line.contains(['\r', '\n'])) {
             return None;
@@ -1585,7 +1585,7 @@ fn reachable_from(
         .collect()
 }
 
-fn answer(client: &mut TcpStream, status: &str, why: &str) {
+pub(super) fn answer(client: &mut TcpStream, status: &str, why: &str) {
     let _ = write!(
         client,
         "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\

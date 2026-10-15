@@ -1,0 +1,435 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! A browser's reach, decided without a socket: which addresses are public, what a lane carries
+//! by host and port, and where a carried connection is made.
+
+use std::cell::Cell;
+use std::net::{IpAddr, SocketAddr};
+
+use super::{Lane, NewSite, NewSites, Refusal, Route, Verdict, public_address, route};
+use crate::sandbox::reach::{By, Decision, Reach};
+
+mod sockets;
+
+fn ip(text: &str) -> IpAddr {
+    text.parse()
+        .unwrap_or_else(|_| panic!("{text} is an address"))
+}
+
+#[test]
+fn only_a_public_unicast_address_is_public() {
+    for (address, public) in [
+        // Public sites, IPv4 and IPv6.
+        ("93.184.215.14", true),
+        ("1.1.1.1", true),
+        ("8.8.8.8", true),
+        ("2606:4700:4700::1111", true),
+        ("2a00:1450:4001:82a::200e", true),
+        // A public address carried inside IPv6 forms is judged as itself.
+        ("::ffff:93.184.215.14", true),
+        ("64:ff9b::5db8:d70e", true),
+        // This machine.
+        ("127.0.0.1", false),
+        ("127.0.0.2", false),
+        ("127.255.255.254", false),
+        ("::1", false),
+        ("0.0.0.0", false),
+        ("0.1.2.3", false),
+        ("::", false),
+        // Private ranges.
+        ("10.0.0.5", false),
+        ("10.255.255.255", false),
+        ("172.16.0.1", false),
+        ("172.31.255.254", false),
+        ("192.168.1.1", false),
+        // The shared address space carriers put behind NAT (CGNAT).
+        ("100.64.0.1", false),
+        ("100.127.255.254", false),
+        // Link-local, and the cloud metadata services.
+        ("169.254.0.1", false),
+        ("169.254.169.254", false),
+        ("100.100.100.200", false),
+        ("168.63.129.16", false),
+        ("192.0.0.192", false),
+        ("fe80::1", false),
+        ("fd00:ec2::254", false),
+        // IPv6 unique local and the old site-local.
+        ("fc00::1", false),
+        ("fd12:3456:789a::1", false),
+        ("fec0::1", false),
+        // Multicast and broadcast.
+        ("224.0.0.1", false),
+        ("239.255.255.250", false),
+        ("255.255.255.255", false),
+        ("ff02::1", false),
+        // Reserved, documentation and benchmarking ranges: nobody's site.
+        ("240.0.0.1", false),
+        ("192.0.0.8", false),
+        ("192.0.2.1", false),
+        ("198.18.0.1", false),
+        ("198.51.100.1", false),
+        ("203.0.113.1", false),
+        ("2001:db8::1", false),
+        ("100::1", false),
+        // Teredo hides the address it reaches, and NAT64's local-use prefix is a local network.
+        ("2001::1", false),
+        ("64:ff9b:1::a00:5", false),
+        // A local address carried inside an IPv6 form is judged as the local one.
+        ("::ffff:127.0.0.1", false),
+        ("::ffff:7f00:1", false),
+        ("::ffff:10.0.0.5", false),
+        ("::ffff:169.254.169.254", false),
+        ("::ffff:192.168.1.1", false),
+        ("::ffff:0:a9fe:a9fe", false),
+        ("::127.0.0.1", false),
+        ("64:ff9b::a9fe:a9fe", false),
+        ("64:ff9b::a00:5", false),
+        ("2002:a00:5::1", false),
+        ("2002:7f00:1::1", false),
+    ] {
+        assert_eq!(public_address(ip(address), &[]), public, "{address}");
+    }
+}
+
+#[test]
+fn an_address_of_this_machine_is_never_public() {
+    let own = [ip("93.184.215.14"), ip("2606:4700:4700::1111")];
+    assert!(!public_address(own[0], &own));
+    assert!(!public_address(own[1], &own));
+    assert!(public_address(ip("1.1.1.1"), &own));
+}
+
+fn at(text: &str) -> SocketAddr {
+    text.parse()
+        .unwrap_or_else(|_| panic!("{text} is an address and port"))
+}
+
+/// A chat's reach as its sandbox lists it: an open host, a host allowed for this project, a
+/// service on this Mac at port 5173 allowed for the chat (by each name its proxy carries it by),
+/// a private cluster and a public address held to one port.
+fn chats_reach() -> Reach {
+    Reach::of(
+        [
+            ("example.com", By::Open),
+            ("api.example.org", By::You),
+            ("127.0.0.1:5173", By::Chat),
+            ("[::1]:5173", By::Chat),
+            ("localhost:5173", By::Chat),
+            ("this-mac.internal:5173", By::Chat),
+            ("10.0.0.5:6443", By::You),
+            ("93.184.215.14:8443", By::You),
+        ]
+        .into_iter()
+        .map(|(host, by)| (host.to_owned(), by))
+        .collect(),
+    )
+}
+
+fn decide(host: &str, port: u16, tunnel: bool) -> Verdict {
+    Lane::of(chats_reach()).decide(host, port, tunnel, &[])
+}
+
+fn carried(by: Decision, at_: Option<&str>) -> Verdict {
+    Verdict::Carry {
+        by,
+        at: at_.map(at),
+    }
+}
+
+#[test]
+fn a_host_the_chat_lists_is_carried_on_https_and_http_ports() {
+    for (host, port, tunnel, verdict) in [
+        ("example.com", 443, true, carried(Decision::Open, None)),
+        ("EXAMPLE.com.", 443, true, carried(Decision::Open, None)),
+        ("example.com", 80, false, carried(Decision::Open, None)),
+        (
+            "api.example.org",
+            443,
+            true,
+            carried(Decision::Allowed(By::You), None),
+        ),
+        (
+            "93.184.215.14",
+            8443,
+            true,
+            carried(Decision::Allowed(By::You), Some("93.184.215.14:8443")),
+        ),
+    ] {
+        assert_eq!(decide(host, port, tunnel), verdict, "{host}:{port}");
+    }
+}
+
+#[test]
+fn a_site_nothing_lists_is_a_new_site_on_https_and_http_ports_only() {
+    assert_eq!(
+        decide("new.example.net", 443, true),
+        Verdict::NewSite { at: None }
+    );
+    assert_eq!(
+        decide("new.example.net", 80, false),
+        Verdict::NewSite { at: None }
+    );
+    assert_eq!(
+        decide("93.184.215.14", 443, true),
+        Verdict::NewSite {
+            at: Some(at("93.184.215.14:443"))
+        }
+    );
+    for (host, port, tunnel) in [
+        ("new.example.net", 22, true),
+        ("new.example.net", 443, false),
+        ("new.example.net", 80, true),
+        ("example.com", 8443, true),
+        ("93.184.215.14", 25, true),
+    ] {
+        assert_eq!(
+            decide(host, port, tunnel),
+            Verdict::Refused(Refusal::Port),
+            "{host}:{port}"
+        );
+    }
+}
+
+#[test]
+fn a_named_local_port_is_carried_by_its_literal_address_alone() {
+    for (host, tunnel, to) in [
+        ("127.0.0.1", true, "127.0.0.1:5173"),
+        ("127.0.0.1", false, "127.0.0.1:5173"),
+        ("::1", true, "[::1]:5173"),
+        ("::1", false, "[::1]:5173"),
+    ] {
+        assert_eq!(
+            decide(host, 5173, tunnel),
+            carried(Decision::Allowed(By::Chat), Some(to)),
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn a_name_for_a_named_local_port_is_refused() {
+    for host in [
+        "localhost",
+        "LOCALHOST",
+        "localhost.",
+        "app.localhost",
+        "this-mac.internal",
+        "host.docker.internal",
+        "kubernetes.docker.internal",
+    ] {
+        for tunnel in [true, false] {
+            assert_eq!(
+                decide(host, 5173, tunnel),
+                Verdict::Refused(Refusal::ThisMachineByName),
+                "{host}"
+            );
+        }
+    }
+}
+
+#[test]
+fn this_machine_on_a_port_nobody_named_is_refused() {
+    for (host, port) in [
+        ("127.0.0.1", 5174),
+        ("127.0.0.1", 443),
+        ("::1", 22),
+        ("127.0.0.2", 5173),
+        ("0.0.0.0", 5173),
+        ("::", 5173),
+        ("::ffff:127.0.0.1", 5173),
+        ("::127.0.0.1", 5173),
+    ] {
+        assert_eq!(
+            decide(host, port, true),
+            Verdict::Refused(Refusal::ThisMachine),
+            "{host}:{port}"
+        );
+    }
+}
+
+#[test]
+fn a_withdrawn_local_port_is_refused() {
+    let reach = chats_reach();
+    let lane = Lane::of(reach.clone());
+    reach.withdraw(5173);
+    assert_eq!(
+        lane.decide("127.0.0.1", 5173, true, &[]),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+}
+
+#[test]
+fn a_private_link_local_or_metadata_address_is_refused_even_when_the_chat_lists_it() {
+    for (host, port) in [
+        ("10.0.0.5", 6443),
+        ("10.0.0.5", 443),
+        ("172.16.0.1", 443),
+        ("192.168.1.1", 80),
+        ("100.64.0.1", 443),
+        ("169.254.169.254", 80),
+        ("fd00:ec2::254", 80),
+        ("fe80::1", 443),
+        ("fd12:3456:789a::1", 443),
+        ("::ffff:10.0.0.5", 6443),
+        ("::ffff:169.254.169.254", 80),
+        ("224.0.0.1", 443),
+    ] {
+        assert_eq!(
+            decide(host, port, port != 80),
+            Verdict::Refused(Refusal::NotPublic),
+            "{host}:{port}"
+        );
+    }
+}
+
+#[test]
+fn an_address_spelled_another_way_is_refused() {
+    for host in [
+        "2130706433",
+        "0x7f000001",
+        "0x7f.1",
+        "0177.0.0.1",
+        "127.1",
+        "127.0.1",
+        "017700000001",
+        "127.0.0.01",
+        "0x7F.0.0.1",
+        "3627733262",
+        "a.b.0x10",
+        "example.123",
+    ] {
+        assert_eq!(
+            decide(host, 5173, true),
+            Verdict::Refused(Refusal::SpelledAnotherWay),
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn what_is_no_host_is_refused() {
+    for host in [
+        "fe80::1%en0",
+        "intranet",
+        "*.example.com",
+        "exa mple.com",
+        "",
+    ] {
+        assert!(
+            matches!(
+                decide(host, 443, true),
+                Verdict::Refused(Refusal::NeverAHost(_))
+            ),
+            "{host}: {:?}",
+            decide(host, 443, true)
+        );
+    }
+}
+
+/// A resolver that answers `answer` for every name, counting how often it is asked.
+fn resolving(answer: &[&str], asked: &Cell<usize>) -> impl Fn(&str, u16) -> Vec<SocketAddr> {
+    let answer: Vec<SocketAddr> = answer.iter().map(|it| at(it)).collect();
+    move |_: &str, _: u16| {
+        asked.set(asked.get() + 1);
+        answer.clone()
+    }
+}
+
+#[test]
+fn a_name_is_connected_to_only_at_the_public_addresses_it_resolved_to_once() {
+    let asked = Cell::new(0);
+    let resolve = resolving(
+        &[
+            "10.0.0.5:443",
+            "93.184.215.14:443",
+            "127.0.0.1:443",
+            "[2606:4700:4700::1111]:443",
+            "[fd00:ec2::254]:443",
+        ],
+        &asked,
+    );
+    assert_eq!(
+        route("example.com", 443, None, &[], &resolve),
+        Route::To(vec![
+            at("93.184.215.14:443"),
+            at("[2606:4700:4700::1111]:443")
+        ])
+    );
+    assert_eq!(
+        asked.get(),
+        1,
+        "looked up once, and connected where it was checked"
+    );
+}
+
+#[test]
+fn a_name_that_resolves_only_to_this_machine_or_a_private_network_is_refused() {
+    for answer in [
+        &["127.0.0.1:5173"][..],
+        &["[::1]:5173"],
+        &["10.0.0.5:5173", "192.168.1.1:5173"],
+        &["169.254.169.254:5173"],
+        &["[::ffff:127.0.0.1]:5173"],
+    ] {
+        let asked = Cell::new(0);
+        assert_eq!(
+            route(
+                "rebound.example.com",
+                5173,
+                None,
+                &[],
+                &resolving(answer, &asked)
+            ),
+            Route::NotPublic,
+            "{answer:?}"
+        );
+    }
+}
+
+#[test]
+fn a_name_that_resolves_to_nothing_is_not_found() {
+    let asked = Cell::new(0);
+    assert_eq!(
+        route(
+            "nowhere.example.com",
+            443,
+            None,
+            &[],
+            &resolving(&[], &asked)
+        ),
+        Route::NotFound
+    );
+}
+
+#[test]
+fn an_address_is_connected_to_as_itself_and_never_looked_up() {
+    let asked = Cell::new(0);
+    let resolve = resolving(&["93.184.215.14:443"], &asked);
+    assert_eq!(
+        route("127.0.0.1", 5173, Some(at("127.0.0.1:5173")), &[], &resolve),
+        Route::To(vec![at("127.0.0.1:5173")])
+    );
+    assert_eq!(asked.get(), 0);
+}
+
+#[test]
+fn a_new_site_is_told_to_whoever_hears_new_sites_and_refused_by_default() {
+    let site = NewSite {
+        host: "new.example.net".to_owned(),
+        port: 443,
+    };
+    assert!(!NewSites::refusing().carries(&site));
+    let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hearing = std::sync::Arc::clone(&heard);
+    let sites = NewSites::new(move |site: &NewSite| {
+        hearing.lock().unwrap().push(site.clone());
+        site.host == "new.example.net"
+    });
+    assert!(sites.carries(&site));
+    assert!(!sites.carries(&NewSite {
+        host: "other.example.net".to_owned(),
+        port: 443
+    }));
+    assert_eq!(heard.lock().unwrap().len(), 2);
+}
