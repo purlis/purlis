@@ -82,6 +82,14 @@ fn a_project_that_has_not_turned_the_sandbox_on_starts_its_chats_at_the_floor() 
     );
     // Its web tools are its own: not denied.
     assert!(!settings.deny.iter().any(|rule| rule == "WebFetch"));
+    // Its own browser tools are, at the floor too (#2013): purlis's browser is the one the
+    // person watches.
+    assert!(
+        settings
+            .deny
+            .iter()
+            .any(|rule| rule == "mcp__claude-in-chrome")
+    );
 }
 
 #[test]

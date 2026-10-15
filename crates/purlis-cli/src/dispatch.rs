@@ -409,6 +409,7 @@ pub fn send(
             | Answer::Opened { .. }
             | Answer::Reported { .. }
             | Answer::Finished { .. }
+            | Answer::Browsed { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
@@ -634,7 +635,8 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
             | Answer::WaitingOnMemory { .. }
-            | Answer::Task(_),
+            | Answer::Task(_)
+            | Answer::Browsed { .. },
         )
         | Err(_) => Err(format!(
             "{REPORT_SAYS} the purlis app did not answer, so nothing was sent."

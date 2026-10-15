@@ -1533,6 +1533,19 @@ fn a_claude_code_chat_reaches_only_the_presets_hosts_and_is_never_asked_to_widen
 }
 
 #[test]
+fn a_sandboxed_claude_code_chat_offers_no_browser_tools_of_its_own() {
+    let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
+    assert!(
+        settings
+            .deny
+            .iter()
+            .any(|rule| rule == "mcp__claude-in-chrome"),
+        "{:?}",
+        settings.deny
+    );
+}
+
+#[test]
 fn claude_codes_web_tools_are_denied_because_the_allowed_hosts_do_not_hold_them() {
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
     assert_eq!(settings.deny[..2], ["WebFetch", "WebSearch"]);

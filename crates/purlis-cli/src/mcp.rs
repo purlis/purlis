@@ -72,7 +72,8 @@ impl ServerHandler for Server {
             ))
             .with_instructions(
                 "purlis's tools for this chat: the todos, memory, session records and changes \
-                 of the workspace it works in, and a question for the operator.",
+                 of the workspace it works in, a question for the operator, and a real browser \
+                 the person watches (the browser_ tools).",
             )
     }
 
@@ -82,7 +83,11 @@ impl ServerHandler for Server {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult::with_all_items(
-            chattools::TOOLS.iter().map(tool).collect(),
+            chattools::TOOLS
+                .iter()
+                .chain(purlis_core::browsertools::TOOLS.iter())
+                .map(tool)
+                .collect(),
         ))
     }
 
@@ -95,6 +100,22 @@ impl ServerHandler for Server {
         // showing it: the retry that carries the answer, or a turn that went on without one.
         self.waiting.heard_again();
         let name = request.name.as_ref();
+        // A browser tool (#2013): handed to the app, which decides and answers it, a
+        // screenshot attached as an image.
+        if purlis_core::browsertools::is_one(name) {
+            let name = name.to_owned();
+            let args = request.arguments.clone().unwrap_or_default();
+            let (said, attached) =
+                tokio::task::spawn_blocking(move || crate::browsing::tool(&name, &args))
+                    .await
+                    .unwrap_or_else(|e| {
+                        (
+                            Err(format!("the tool failed inside purlis: {e}")),
+                            Vec::new(),
+                        )
+                    });
+            return Ok(done_with(said, attached));
+        }
         if !chattools::TOOLS.iter().any(|t| t.name == name) {
             return Err(ErrorData::invalid_params(
                 format!("purlis has no tool {name:?}"),

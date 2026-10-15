@@ -47,6 +47,9 @@ glob = "0.3"
 # `engine`), and the fork lock every program is started under (`forklock`): a crate of their
 # own, which a session host links without the rest of this one (#1995).
 purlis-terminal.workspace = true
+# What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
+# from the tool server through the window to the session host. A crate of this workspace.
+purlis-session-protocol.workspace = true
 # ⌘P's fuzzy file names (FM-7, #1110): helix's matcher, the fzf algorithm with a bonus for
 # path boundaries, and no allocation per match. MPL-2.0, on deny.toml's allow-list as a
 # file-level copyleft used unmodified; its dependencies, memchr and unicode-segmentation, are

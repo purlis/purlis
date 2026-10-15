@@ -640,6 +640,7 @@ fn in_the_app(
             Answer::Ticket { .. }
             | Answer::Reported { .. }
             | Answer::Finished { .. }
+            | Answer::Browsed { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
@@ -684,6 +685,7 @@ pub(crate) fn ticketed() -> Ticketed {
             Answer::Opened { .. }
             | Answer::Reported { .. }
             | Answer::Finished { .. }
+            | Answer::Browsed { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }

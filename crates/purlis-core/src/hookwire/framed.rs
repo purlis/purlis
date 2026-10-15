@@ -232,12 +232,20 @@ pub struct Reply {
     pub attached: Vec<Attached>,
 }
 
+/// An answer as it goes back framed: what it carries as bytes (a browser's screenshot, #2013)
+/// taken out of it and attached after it, so the model is handed an image.
 impl From<Answer> for Reply {
-    fn from(answer: Answer) -> Self {
-        Self {
-            answer,
-            attached: Vec::new(),
+    fn from(mut answer: Answer) -> Self {
+        let mut attached = Vec::new();
+        if let Answer::Browsed { browsed, .. } = &mut answer
+            && let Some(png) = browsed.png.take()
+        {
+            attached.push(Attached {
+                media_type: "image/png".to_owned(),
+                bytes: png,
+            });
         }
+        Self { answer, attached }
     }
 }
 
