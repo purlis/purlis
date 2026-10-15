@@ -31,6 +31,13 @@
 //! one start let through while stopped is a shell the window opens: looking at what the agents
 //! did is the operator's act (ADR 0071, ruled 3), and the window, which alone may re-arm, says
 //! which shell is the operator's.
+//!
+//! **A held project is saved here when the window asks** (#2002): the host runs the binary's
+//! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
+//! is composed, and tells every subscriber what each look did. One saver per project, however
+//! often it is asked. A link that ends without a word leaves it saving, so the project is saved
+//! while the window is gone for a moment; the window's own stop, or every window letting go of
+//! the project, ends it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -108,6 +115,79 @@ pub struct ComposesNothing;
 impl Compose for ComposesNothing {
     fn compose(&self, _starting: &ToCompose<'_>) -> Result<Spec, String> {
         Err("this session host was given no way to compose a start".into())
+    }
+}
+
+/// What one look of a project's auto-save did, as its saver tells it (#2002).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Looked {
+    /// It saved the project.
+    pub saved: bool,
+    /// What it did moved files in the tree: a fast-forward, a save's rebase.
+    pub moved_tree: bool,
+}
+
+/// What a project's saver is told between its looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Poke {
+    /// A program in the project ended: its work is most likely done.
+    ProgramEnded,
+    /// The window came back into focus: fetch, unless it fetched a moment ago.
+    Fetch,
+}
+
+/// A program running in a project, as its saver asks who could be writing it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Working {
+    /// Its number in its project.
+    pub number: u32,
+    /// Where it started, where the start said.
+    pub cwd: Option<PathBuf>,
+}
+
+/// A project to save, as the host hands it to its [`Save`].
+pub struct ToSave {
+    /// The project's stable id.
+    pub project: String,
+    /// Where the project is on this machine.
+    pub project_path: PathBuf,
+    /// Told what each look that did something did.
+    pub told: Box<dyn Fn(Looked) + Send + Sync>,
+    /// The programs running in the project now.
+    pub working: Box<dyn Fn() -> Vec<Working> + Send + Sync>,
+    /// The chats mid-turn in a workspace of the project, as the window's board says, by the
+    /// names the window shows; `None` when no window is linked, or it did not answer within
+    /// [`ASK_WITHIN`], or it cannot tell. Asked from the saver's own thread: it waits.
+    pub ask_the_window: Box<AskTheWindow>,
+}
+
+/// Asks the window which chats are mid-turn in a workspace ([`ToSave::ask_the_window`]).
+pub type AskTheWindow = dyn Fn(&str) -> Option<Vec<String>> + Send + Sync;
+
+/// How long the host waits for the window to say who is mid-turn, before the saver takes every
+/// chat it runs there as mid-turn.
+pub const ASK_WITHIN: Duration = Duration::from_secs(2);
+
+/// Saves a held project: its watcher and its auto-save, the binary's, built on the core, so
+/// this crate links none of it (#2002).
+pub trait Save: Send + Sync + 'static {
+    /// Start saving `saving`'s project, or say why it cannot be saved, in a sentence. Dropping
+    /// what it answers stops it.
+    fn save(&self, saving: ToSave) -> Result<Box<dyn Saving>, String>;
+}
+
+/// A project being saved. Dropping it stops the saving.
+pub trait Saving: Send + 'static {
+    /// Something to act on at its next look.
+    fn poke(&self, poke: Poke);
+}
+
+/// A host whose binary saves nothing: every `start_saving` is refused with a sentence.
+pub struct SavesNothing;
+
+impl Save for SavesNothing {
+    fn save(&self, _saving: ToSave) -> Result<Box<dyn Saving>, String> {
+        Err("this session host was given no way to save a project".into())
     }
 }
 
@@ -231,10 +311,13 @@ struct Inner {
     compose: Box<dyn Compose>,
     confine: Box<dyn Confine>,
     run: Box<dyn Run>,
+    save: std::sync::OnceLock<Box<dyn Save>>,
     hear: Box<dyn Hear>,
     /// What starts a browser (#2012).
     browsers: Box<dyn Browsers>,
     state: Mutex<State>,
+    /// Held while a saver is started, so two windows asking at once start one.
+    starting_a_saver: Mutex<()>,
     switch: Switch,
 }
 
@@ -253,8 +336,14 @@ struct State {
     subscribers: Vec<Subscriber>,
     /// The chats' confinements (#1999), by the id the window gave each.
     confinements: HashMap<String, Confinement>,
+    /// Each question to the window waiting for its answer, by its number.
+    questions: HashMap<u64, std::sync::mpsc::Sender<Option<Vec<String>>>>,
+    /// The last question's number.
+    asked: u64,
     /// The window that started this host, if one did.
     window: Option<Window>,
+    /// Each project being saved, by its id: one saver each (#2002).
+    saving: HashMap<String, Box<dyn Saving>>,
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
@@ -303,6 +392,8 @@ struct Hosted {
     size: Size,
     /// Its process as it started, kept for the admission check after it ends.
     process: Option<u32>,
+    /// Where it started, where its start said: what its project's saver asks.
+    cwd: Option<PathBuf>,
     ended: bool,
 }
 
@@ -384,12 +475,21 @@ impl Hosting {
                 compose: Box::new(compose),
                 confine: Box::new(confine),
                 run: Box::new(run),
+                save: std::sync::OnceLock::new(),
                 hear: Box::new(hear),
                 browsers: Box::new(NoBrowsers),
                 state: Mutex::default(),
+                starting_a_saver: Mutex::new(()),
                 switch,
             }),
         }
+    }
+
+    /// A host that saves the projects it is asked to with `save` (#2002). Said once, before the
+    /// host serves; a host given none refuses to save.
+    pub fn saving_with(self, save: impl Save) -> Hosting {
+        let _ = self.inner.save.set(Box::new(save));
+        self
     }
 
     /// A host whose browsers `browsers` starts, each with a data folder of its own in the
@@ -424,6 +524,50 @@ impl Hosting {
             }
             subscriber.told.try_send(pushed.clone()).is_ok()
         });
+    }
+
+    /// Asks the window which chats are mid-turn in `workspace` of `project`, and waits for its
+    /// answer, at most `within`: `None` with no window holding the project linked, or none that
+    /// answered (#2002). Asked of the links that hold the project, as its hook lines are.
+    fn ask_the_window(
+        &self,
+        project: &str,
+        workspace: &str,
+        within: Duration,
+    ) -> Option<Vec<String>> {
+        let (answered, answer) = std::sync::mpsc::channel();
+        let question = {
+            let mut state = self.state();
+            let holders: Vec<u64> = state
+                .projects
+                .get(project)
+                .map(|held| held.links.keys().copied().collect())
+                .unwrap_or_default();
+            state.asked += 1;
+            let question = state.asked;
+            let pushed = Pushed::WhoIsMidTurn {
+                question,
+                project: project.to_owned(),
+                workspace: workspace.to_owned(),
+            };
+            let mut asked = false;
+            state.subscribers.retain(|subscriber| {
+                if !holders.contains(&subscriber.link) {
+                    return true;
+                }
+                let sent = subscriber.told.try_send(pushed.clone()).is_ok();
+                asked |= sent;
+                sent
+            });
+            if !asked {
+                return None;
+            }
+            state.questions.insert(question, answered);
+            question
+        };
+        let said = answer.recv_timeout(within).ok().flatten();
+        self.state().questions.remove(&question);
+        said
     }
 
     /// Push line `id` that `project`'s hooks wrote to every subscriber whose link holds the
@@ -583,9 +727,18 @@ impl Hosting {
             .links
             .is_empty()
             .then(|| state.projects.remove(project));
+        // Nobody holds it now: it is saved no more. A link that ended is not a let go
+        // ([`Self::let_go_of_the_links`]), so a crashed window's project goes on saving.
+        let saving = gone
+            .is_some()
+            .then(|| state.saving.remove(project))
+            .flatten();
         // Its hook channel stops outside the hold: a line it is handing on waits for the hold.
         drop(state);
         drop(gone);
+        if let Some(saving) = saving {
+            tokio::task::spawn_blocking(move || drop(saving));
+        }
         Ok(Answer::Done)
     }
 
@@ -767,6 +920,11 @@ impl Hosting {
                 running: Arc::clone(&running),
                 size,
                 process,
+                cwd: start
+                    .launch
+                    .as_ref()
+                    .and_then(|launch| launch.cwd.as_ref())
+                    .map(PathBuf::from),
                 ended: false,
             },
         );
@@ -779,9 +937,17 @@ impl Hosting {
         let hosting = self.clone();
         let ended = program.clone();
         let run = start.run.clone();
+        let project = start.project.clone();
         running.when_it_ends(Box::new(move |exit| {
-            if let Some(hosted) = hosting.state().programs.get_mut(&ended) {
-                hosted.ended = true;
+            {
+                let mut state = hosting.state();
+                if let Some(hosted) = state.programs.get_mut(&ended) {
+                    hosted.ended = true;
+                }
+                // A program's end is the moment its work is done: its project's saver hears it.
+                if let Some(saving) = state.saving.get(&project) {
+                    saving.poke(Poke::ProgramEnded);
+                }
             }
             if let (Some(channel), Some(pid)) = (&channel, process) {
                 channel.ended(number, pid);
@@ -856,6 +1022,8 @@ impl Hosting {
                 running: Arc::clone(&running),
                 size: Size { columns, rows },
                 process,
+                // A browser writes no project's files: its project's saver does not wait for it.
+                cwd: None,
                 ended: false,
             },
         );
@@ -1176,6 +1344,119 @@ fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
     }
 }
 
+impl Hosting {
+    /// Save `project`, which a link holds, unless it is saved already: one saver per project.
+    async fn start_saving(&self, project: String) -> Result<Answer, Refusal> {
+        let path = self
+            .state()
+            .projects
+            .get(&project)
+            .map(|held| held.path.clone())
+            .ok_or_else(|| no_such_project(&project))?;
+        // A saver's start reads the project and starts threads: off the runtime.
+        let hosting = self.clone();
+        tokio::task::spawn_blocking(move || hosting.saver_for(project, path))
+            .await
+            .map_err(|why| not_started(why.to_string()))?
+    }
+
+    fn saver_for(&self, project: String, path: PathBuf) -> Result<Answer, Refusal> {
+        let _one_at_a_time = self
+            .inner
+            .starting_a_saver
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if self.state().saving.contains_key(&project) {
+            return Ok(Answer::Done);
+        }
+        let Some(save) = self.inner.save.get() else {
+            return Err(not_started(
+                "this session host was given no way to save a project".into(),
+            ));
+        };
+        // Each weakly: the saver is the host's, and must not keep it.
+        let told = {
+            let host = Arc::downgrade(&self.inner);
+            let project = project.clone();
+            Box::new(move |looked: Looked| {
+                if let Some(inner) = host.upgrade() {
+                    Hosting { inner }.tell(&Pushed::Saving {
+                        project: project.clone(),
+                        saved: looked.saved,
+                        moved_tree: looked.moved_tree,
+                    });
+                }
+            })
+        };
+        let working = {
+            let host = Arc::downgrade(&self.inner);
+            let project = project.clone();
+            Box::new(move || {
+                host.upgrade()
+                    .map(|inner| Hosting { inner }.working_in(&project))
+                    .unwrap_or_default()
+            })
+        };
+        let ask_the_window = {
+            let host = Arc::downgrade(&self.inner);
+            let project = project.clone();
+            Box::new(move |workspace: &str| {
+                host.upgrade().and_then(|inner| {
+                    Hosting { inner }.ask_the_window(&project, workspace, ASK_WITHIN)
+                })
+            })
+        };
+        let saving = save
+            .save(ToSave {
+                project: project.clone(),
+                project_path: path,
+                told,
+                working,
+                ask_the_window,
+            })
+            .map_err(not_started)?;
+        self.state().saving.insert(project, saving);
+        Ok(Answer::Done)
+    }
+
+    /// The programs running in `project` now, by number.
+    fn working_in(&self, project: &str) -> Vec<Working> {
+        let mut working: Vec<Working> = self
+            .state()
+            .programs
+            .values()
+            .filter(|hosted| {
+                hosted.project == project && !hosted.ended && hosted.kind != ProgramKind::Browser
+            })
+            .map(|hosted| Working {
+                number: hosted.number,
+                cwd: hosted.cwd.clone(),
+            })
+            .collect();
+        working.sort_by_key(|one| one.number);
+        working
+    }
+
+    /// Stop saving `project`, answered once its saver has been let go of. Nothing saved is done.
+    async fn stop_saving(&self, project: &str) -> Result<Answer, Refusal> {
+        let saving = self.state().saving.remove(project);
+        if let Some(saving) = saving {
+            let _ = tokio::task::spawn_blocking(move || drop(saving)).await;
+        }
+        Ok(Answer::Done)
+    }
+
+    fn fetch(&self, project: &str) -> Result<Answer, Refusal> {
+        let state = self.state();
+        let saving = state.saving.get(project).ok_or_else(|| Refusal {
+            code: session::NO_SUCH_PROJECT.into(),
+            why: format!("this session host does not save project {project}"),
+        })?;
+        saving.poke(Poke::Fetch);
+        Ok(Answer::Done)
+    }
+}
+
 impl session::Host for Hosting {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         match command {
@@ -1223,6 +1504,16 @@ impl session::Host for Hosting {
                 heard,
                 reply,
             } => self.reply_heard(&project, heard, reply, peer),
+            Command::StartSaving { project } => self.start_saving(project).await,
+            Command::StopSaving { project } => self.stop_saving(&project).await,
+            Command::FetchProject { project } => self.fetch(&project),
+            Command::MidTurn { question, chats } => {
+                // An answer nobody waits for any more (it came late) is done all the same.
+                if let Some(waiting) = self.state().questions.remove(&question) {
+                    let _ = waiting.send(chats);
+                }
+                Ok(Answer::Done)
+            }
             Command::Confine(confine) => self.confine(*confine, peer).await,
             Command::LetGoOfConfinement { confinement } => {
                 Ok(self.let_go_of_confinement(&confinement).await)
@@ -1374,6 +1665,14 @@ impl Hosting {
     /// Ends every program, all at once, and returns once they are gone or [`ENDS_WITHIN`] has
     /// passed: what the host does as it stops, so a quit still ends every chat.
     pub fn end_all(&self) {
+        // Saving first: nothing starts a save of a project whose chats are being ended.
+        let saving: Vec<Box<dyn Saving>> = self
+            .state()
+            .saving
+            .drain()
+            .map(|(_, saving)| saving)
+            .collect();
+        drop(saving);
         let (hosted, confinements) = {
             let mut state = self.state();
             let hosted: Vec<Hosted> = state.programs.drain().map(|(_, hosted)| hosted).collect();

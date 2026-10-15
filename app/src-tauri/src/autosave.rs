@@ -25,6 +25,11 @@
 //! Saving at quit is not the worker's: the app is exiting, so [`at_quit`] runs it bounded,
 //! for every held plane at once.
 //!
+//! **Where the worker runs is where the project's chats run** ([`Saver`]): in the window's own
+//! process, or, behind the start-time switch, in the session host (`crate::hostsaving`, #2002),
+//! which runs this same worker and tells the window what each look did. Exactly one runs for a
+//! project at any time: the window starts none of its own while its chats run in the host.
+//!
 //! **Workspace repos too, but only those that ask** (charter-app#299): a repo whose
 //! `[repos.<name>] autosave` is on is saved the same three ways, after its own quiet period,
 //! when a chat ends and at quit. Its save waits while any chat in its workspace is mid-turn
@@ -41,8 +46,6 @@ use purlis_core::autosave::{self, Decision, Quiet};
 use purlis_core::planegit::{self, Stage, Trigger};
 use purlis_core::planesave;
 use purlis_core::reposave;
-
-use crate::planes::PlaneId;
 
 /// How often the worker looks at its plane: one `git status`.
 const LOOK_EVERY: Duration = Duration::from_secs(2);
@@ -80,9 +83,8 @@ pub struct Worker {
     poke: Sender<Poke>,
     stop: Arc<AtomicBool>,
     mid_turn: MidTurnSlot,
-    /// Never joined: a worker mid-save is left to finish rather than holding a plane's close
-    /// open. Kept so a test can see the loop end.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read only by the stop test"))]
+    /// Never joined by a drop: a worker mid-save is left to finish rather than holding a
+    /// plane's close open. [`Worker::stop_within`] waits for it, bounded.
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -96,17 +98,56 @@ impl Drop for Worker {
 
 /// Told when auto-save saved the plane at a root, so the extensions that hear a plane being
 /// saved are told as they are after the Save button (charter-app#343).
-pub type Saved = Arc<dyn Fn(PlaneId, PathBuf) + Send + Sync + 'static>;
+pub type Saved = Arc<dyn Fn(crate::planes::PlaneId, PathBuf) + Send + Sync + 'static>;
+
+/// What one look that did something did: the window reads the git standing again, or
+/// everything when the tree moved ([`what_it_did`]), and hears that the plane was saved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Looked {
+    /// It saved the plane.
+    pub saved: bool,
+    /// What it did moved files in the tree: a fast-forward, a save's rebase.
+    pub moved_tree: bool,
+}
+
+/// Told what each look that did something did.
+pub type Told = Arc<dyn Fn(Looked) + Send + Sync + 'static>;
+
+/// A project's auto-save, wherever it runs ([`Worker`] in this process, or the session host's).
+/// Dropping it stops it.
+pub trait Saver: Send + Sync {
+    /// Something for it to act on at its next look.
+    fn poker(&self) -> Sender<Poke>;
+
+    /// Who it asks which chats are mid-turn in a workspace, where it asks the window.
+    fn asks_mid_turn_of(&self, ask: MidTurn);
+
+    /// Stops it as the app quits, by `deadline`: whether whoever saves the project said it had
+    /// stopped by then (#2002). The window's own worker is dropped, as it always was: the save
+    /// at quit waits on its claim.
+    fn stop_by(self: Box<Self>, deadline: Instant) -> bool {
+        let _ = deadline;
+        true
+    }
+}
+
+impl Saver for Worker {
+    fn poker(&self) -> Sender<Poke> {
+        self.poke.clone()
+    }
+
+    fn asks_mid_turn_of(&self, ask: MidTurn) {
+        *self
+            .mid_turn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ask);
+    }
+}
 
 impl Worker {
-    /// Start looking at the plane at `root`. `changed` tells the window it moved, and `saved`
-    /// that it saved it.
-    pub fn start(
-        plane: PlaneId,
-        root: PathBuf,
-        changed: crate::planewatch::Changed,
-        saved: Saved,
-    ) -> Self {
+    /// Start looking at the plane at `root`. `told` hears what each look that did something
+    /// did.
+    pub fn start(root: PathBuf, told: Told) -> Self {
         let (poke, poked) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
@@ -115,7 +156,8 @@ impl Worker {
         let spawned = std::thread::Builder::new()
             .name("charter-autosave".into())
             .spawn(move || {
-                let told = || saved(plane.clone(), root.clone());
+                #[cfg(test)]
+                let _counted = running::Counted::on(&root);
                 let mid_turn = |workspace: &str| {
                     let asked = asking
                         .lock()
@@ -125,14 +167,7 @@ impl Worker {
                 };
                 // Every save and fetch here is the window's own git (#752).
                 crate::forgeaccounts::window_git(|| {
-                    run(
-                        &root,
-                        &poked,
-                        &stopping,
-                        &mid_turn,
-                        &|moved| changed(plane.clone(), what_it_did(moved)),
-                        &told,
-                    );
+                    run(&root, &poked, &stopping, &mid_turn, &*told);
                 });
             });
         let thread = spawned
@@ -145,20 +180,14 @@ impl Worker {
             thread,
         }
     }
+}
 
-    /// Who the worker asks which chats are mid-turn. Until this is said, it says none are —
-    /// which is true: no chat of the plane has started before the plane is built.
-    pub fn asks_mid_turn_of(&self, ask: MidTurn) {
-        *self
-            .mid_turn
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ask);
-    }
-
-    /// Something for the worker to act on at its next look.
-    pub fn poker(&self) -> Sender<Poke> {
-        self.poke.clone()
-    }
+/// The worker for the plane at `root`, in this process: [`crate::host::SessionHost`]'s own,
+/// where the window runs its chats. Until [`Saver::asks_mid_turn_of`] is said, it takes no
+/// chat to be mid-turn, which is true: no chat of the plane has started before the plane is
+/// built.
+pub fn here(root: PathBuf, told: Told) -> Box<dyn Saver> {
+    Box::new(Worker::start(root, told))
 }
 
 /// What a look that did something tells the window moved (#933).
@@ -170,7 +199,7 @@ impl Worker {
 /// **Everything, when it moved the tree** (`moved`): a fetch that fast-forwarded, a save that
 /// rebased onto the remote. The watch would tell the files it moved only where it watches —
 /// it is not recursive, and a project it could not watch has none — so not knowing is said.
-fn what_it_did(moved: bool) -> crate::planewatch::What {
+pub(crate) fn what_it_did(moved: bool) -> crate::planewatch::What {
     (!moved).then(|| vec![purlis_core::planechange::saved()])
 }
 
@@ -212,8 +241,7 @@ fn run(
     poked: &Receiver<Poke>,
     stop: &AtomicBool,
     mid_turn: &dyn Fn(&str) -> Vec<String>,
-    tell: &dyn Fn(bool),
-    saved: &dyn Fn(),
+    told: &dyn Fn(Looked),
 ) {
     let mut state = State::default();
     let mut poke = None;
@@ -226,10 +254,10 @@ fn run(
         let repos = state.look_at_repos(root, now, poke, mid_turn);
         let repos = state.look_at_repo_requests(root, now, poke) || repos;
         if plane || repos {
-            tell(std::mem::take(&mut state.moved_tree));
-        }
-        if std::mem::take(&mut state.saved) {
-            saved();
+            told(Looked {
+                saved: std::mem::take(&mut state.saved),
+                moved_tree: std::mem::take(&mut state.moved_tree),
+            });
         }
         poke = match poked.recv_timeout(LOOK_EVERY) {
             Ok(poke) => Some(poke),
@@ -572,13 +600,44 @@ fn auto_saved_repos(root: &Path) -> Vec<(String, purlis_core::repos::Repo)> {
         .collect()
 }
 
+/// How long a quit gives every plane's saving, together, to stop (#2002): longer than the
+/// session host takes to stop a save in the middle (`crate::hostsaving::STOP_WITHIN`).
+pub const QUIT_STOPS_WITHIN: Duration = Duration::from_secs(3);
+
+/// Stops every one of `savers` at once, by `deadline`, and calls `end_the_host` when any did
+/// not say it had stopped by then (#2002): the session host saving a project is not answering,
+/// and is ended before the save at quit, which would otherwise run beside its save.
+pub fn stop_every_saver_by(
+    savers: Vec<Box<dyn Saver>>,
+    deadline: Instant,
+    end_the_host: &dyn Fn(),
+) {
+    let stopped = std::thread::scope(|scope| {
+        let stopping: Vec<_> = savers
+            .into_iter()
+            .map(|saver| scope.spawn(move || saver.stop_by(deadline)))
+            .collect();
+        // Every one joined, each in its own time: none waits on another.
+        stopping
+            .into_iter()
+            .map(|stopping| stopping.join().unwrap_or(false))
+            .collect::<Vec<bool>>()
+            .into_iter()
+            .all(|stopped| stopped)
+    });
+    if !stopped {
+        tracing::warn!("purlis: the session host did not stop saving in time, so it is ended");
+        end_the_host();
+    }
+}
+
 /// The window came back into focus: fetch the plane's target branch, unless it was fetched a
 /// moment ago. Answers at once; what the fetch finds reaches the window as a plane change.
 #[tauri::command]
 #[specta::specta]
 pub fn plane_fetch(
     planes: tauri::State<'_, crate::planes::Planes>,
-    plane: PlaneId,
+    plane: crate::planes::PlaneId,
 ) -> Result<(), String> {
     planes.held(&plane)?.poke_autosave(Poke::Fetch);
     Ok(())
@@ -624,10 +683,52 @@ pub fn at_quit(roots: Vec<(PathBuf, HashMap<String, Vec<String>>)>) {
     }
 }
 
+/// How many workers look at each plane in this process, for the tests that prove exactly one
+/// saves a project.
 #[cfg(test)]
+pub(crate) mod running {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{LazyLock, Mutex, PoisonError};
+
+    static ON: LazyLock<Mutex<HashMap<PathBuf, usize>>> = LazyLock::new(Mutex::default);
+
+    /// How many workers look at the plane at `root` now.
+    pub(crate) fn on(root: &Path) -> usize {
+        ON.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(root)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// One worker's loop, counted while it runs.
+    pub(super) struct Counted(PathBuf);
+
+    impl Counted {
+        pub(super) fn on(root: &Path) -> Counted {
+            *ON.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(root.to_path_buf())
+                .or_default() += 1;
+            Counted(root.to_path_buf())
+        }
+    }
+
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            let mut on = ON.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(count) = on.get_mut(&self.0) {
+                *count = count.saturating_sub(1);
+            }
+        }
+    }
+}
+
 impl Worker {
-    /// Drop it and wait up to `bound` for its thread to end: whether it did.
-    fn stop_within(mut self, bound: Duration) -> bool {
+    /// Drop it and wait up to `bound` for its thread to end, a save it is in the middle of
+    /// with it, and so the save's claim on the plane: whether it did (#2002).
+    pub fn stop_within(mut self, bound: Duration) -> bool {
         let thread = self.thread.take();
         drop(self);
         let until = Instant::now() + bound;
@@ -1029,15 +1130,72 @@ mod tests {
         assert_eq!(repo_commits(root), 0);
     }
 
+    /// A saver whose stop is answered at once, or never.
+    struct Stops {
+        answers: bool,
+    }
+
+    impl Saver for Stops {
+        fn poker(&self) -> Sender<Poke> {
+            mpsc::channel().0
+        }
+
+        fn asks_mid_turn_of(&self, _ask: MidTurn) {}
+
+        fn stop_by(self: Box<Self>, deadline: Instant) -> bool {
+            if !self.answers {
+                std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+            }
+            self.answers
+        }
+    }
+
+    #[test]
+    fn a_quit_stops_every_saver_at_once_and_ends_a_host_that_did_not_answer() {
+        let ended = std::sync::atomic::AtomicUsize::new(0);
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(400);
+
+        stop_every_saver_by(
+            vec![
+                Box::new(Stops { answers: false }),
+                Box::new(Stops { answers: true }),
+                Box::new(Stops { answers: false }),
+            ],
+            deadline,
+            &|| {
+                ended.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            },
+        );
+
+        assert_eq!(ended.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            started.elapsed() < Duration::from_millis(750),
+            "the savers were stopped one after another: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_quit_whose_savers_all_stopped_leaves_the_host_alone() {
+        let ended = std::sync::atomic::AtomicBool::new(false);
+
+        stop_every_saver_by(
+            vec![
+                Box::new(Stops { answers: true }),
+                Box::new(Stops { answers: true }),
+            ],
+            Instant::now() + Duration::from_millis(400),
+            &|| ended.store(true, std::sync::atomic::Ordering::SeqCst),
+        );
+
+        assert!(!ended.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
     #[test]
     fn a_worker_let_go_of_stops_even_while_a_chats_end_still_holds_its_sender() {
         let dir = plane("[plane]\nmode = \"commit\"\n");
-        let worker = Worker::start(
-            PlaneId::for_tests(dir.path()),
-            dir.path().to_path_buf(),
-            Arc::new(|_, _| {}),
-            Arc::new(|_, _| {}),
-        );
+        let worker = Worker::start(dir.path().to_path_buf(), Arc::new(|_| {}));
         let held_by_a_chat = worker.poker();
 
         assert!(
