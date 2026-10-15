@@ -385,7 +385,6 @@ fn charter_app() -> PathBuf {
         .clone()
 }
 
-
 /// The `purlis` binary, whose `purlis hook` a chat's harness runs, built once beside this
 /// test's binary when it is not there yet.
 fn purlis() -> String {
