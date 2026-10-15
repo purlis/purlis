@@ -5,25 +5,30 @@
 //!
 //! **A profile here belongs to this machine and is available in every project on it**, where a
 //! profile in a clone's `charter.local.toml` belongs to that clone ([`crate::profiles`]). This
-//! module is the one place the file is read and written; the profiles the window makes (#2034)
-//! are records in it too.
+//! module is the one place the file is read and written, under one lock: every change is an
+//! [`update`] of the whole [`Store`]. The profiles the window makes (#2034) are records in it
+//! too. A kind of record is a field of [`MachineProfile`] (`adopted` is the first); a field a
+//! build does not know is kept in [`MachineProfile::rest`] and written back as it was, and a
+//! record a build cannot read at all is kept as written.
 //!
 //! **The first records are adopted, never made** (ADR 0095 §2). On upgrade, each harness folder
 //! this machine already uses becomes a profile in place: the same folder, so the same sign-in,
 //! the same settings and the same conversations. Nothing is copied, moved or written in the
-//! harness's folder, and no file in it is read: whether the folder is there is all adoption
-//! asks of it. The folder is the one a chat started on the harness's built-in profile reaches:
-//! the one the harness's own folder variable names (`[folders]` of its declaration, ADR 0073),
-//! where the environment sets it, and otherwise the harness's own default.
+//! harness's folder, and no file in it is read: whether the folder is there, and whose it is, is
+//! all adoption asks of it. The folder is the one a chat started on the harness's built-in
+//! profile reaches: the one the harness's own folder variable names (`[folders]` of its
+//! declaration, ADR 0073), where the environment sets it, and otherwise the harness's own
+//! default. A folder is adopted only where it is the person's own: named by an absolute path,
+//! owned by this user, and outside every project and git work tree.
 //!
 //! **An adopted profile keeps its built-in's name** (`claude`, `codex`, `opencode`), which is
 //! what every chat record, persona and dispatch list already names, and is shown by its title,
 //! *Claude Code (this Mac)*. So a chat's next run is on the adopted profile with nothing
 //! rewritten, and it resumes its own conversation from the folder it was always in.
 //!
-//! **Adoption is idempotent.** A folder a record already points at, or a harness whose
-//! built-in name a record already has, is left alone, and a run that adopts nothing writes
-//! nothing.
+//! **Adoption is idempotent.** A folder a record already points at, a harness whose built-in
+//! name a record already has, and a folder the person removed as a profile ([`Store::forget`])
+//! are left alone, and a run that adopts nothing writes nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -33,10 +38,10 @@ use serde_json::{Map, Value};
 /// The file, in purlis's directory of the config home.
 pub const FILE: &str = "profiles.json";
 
-/// The lock a read-modify-write of [`FILE`] holds, beside it.
+/// The lock every [`update`] of [`FILE`] holds, beside it.
 const LOCK: &str = "profiles.json.lock";
 
-/// The version [`FILE`] is written at.
+/// The version [`FILE`] is written at. A store written at a newer one is never written over.
 const VERSION: u64 = 1;
 
 /// The most [`FILE`] may be. A machine has a handful of profiles.
@@ -48,7 +53,7 @@ pub fn path(config_root: &Path) -> PathBuf {
 }
 
 /// One profile of this machine's.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineProfile {
     /// The name chats, personas and dispatch lists use. An adopted profile keeps its
     /// built-in's (`claude`).
@@ -60,7 +65,11 @@ pub struct MachineProfile {
     /// The folders its harness's folder variables reach.
     pub folders: Folders,
     /// When and how it was adopted, for a profile that was; `None` for one purlis made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adopted: Option<Adopted>,
+    /// Every field of the record this build does not know, written back as it was read.
+    #[serde(flatten)]
+    pub rest: Map<String, Value>,
 }
 
 /// The folders a profile's harness keeps its files in: what its declaration's `config_env` and
@@ -86,61 +95,61 @@ pub struct Adopted {
     pub variables: Vec<String>,
 }
 
-/// A record as its JSON object has it.
-#[derive(Serialize, Deserialize)]
-struct Written {
-    name: String,
-    harness: String,
-    title: String,
-    folders: Folders,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    adopted: Option<Adopted>,
-    #[serde(flatten)]
+/// The whole store, as one [`update`] changes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Store {
+    /// The profiles this build can read, in the order they were added.
+    pub profiles: Vec<MachineProfile>,
+    /// The folders the person removed as profiles, resolved: never adopted again.
+    pub forgotten: Vec<PathBuf>,
+    /// The records this build cannot read, kept as written.
+    unread: Vec<Value>,
+    /// Every top-level field this build does not know.
     rest: Map<String, Value>,
 }
 
-/// The file as read: every record as it was written, so a field a later purlis adds, and a
-/// record this one cannot read, survive a write by this one.
+impl Store {
+    /// Whether a profile of `harness` already points at `folder`, however either is spelled.
+    pub fn points_at(&self, harness: &str, folder: &Path) -> bool {
+        self.profiles
+            .iter()
+            .any(|p| p.harness == harness && same_folder(&p.folders.config, folder))
+    }
+
+    /// Never adopt `folder` again: what removing an adopted profile records (#2034).
+    pub fn forget(&mut self, folder: &Path) {
+        if !self.is_forgotten(folder) {
+            self.forgotten.push(resolved(folder));
+        }
+    }
+
+    /// Whether `folder` was removed as a profile.
+    pub fn is_forgotten(&self, folder: &Path) -> bool {
+        self.forgotten.iter().any(|gone| same_folder(gone, folder))
+    }
+}
+
+/// The file as written.
 #[derive(Default, Serialize, Deserialize)]
 struct OnDisk {
     #[serde(default)]
     version: u64,
     #[serde(default)]
     profiles: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    forgotten: Vec<PathBuf>,
     #[serde(flatten)]
     rest: Map<String, Value>,
 }
 
-fn profile_of(value: &Value) -> Option<MachineProfile> {
-    let written: Written = serde_json::from_value(value.clone()).ok()?;
-    Some(MachineProfile {
-        name: written.name,
-        harness: written.harness,
-        title: written.title,
-        folders: written.folders,
-        adopted: written.adopted,
-    })
-}
-
-fn written(profile: &MachineProfile) -> Value {
-    serde_json::to_value(Written {
-        name: profile.name.clone(),
-        harness: profile.harness.clone(),
-        title: profile.title.clone(),
-        folders: profile.folders.clone(),
-        adopted: profile.adopted.clone(),
-        rest: Map::new(),
-    })
-    .unwrap_or(Value::Null)
-}
-
-/// The file, or an empty one when there is none yet. One that cannot be read is an error, never
-/// an empty list: writing over it would lose every profile in it.
-fn read(config_root: &Path) -> Result<OnDisk, String> {
+/// The file, or an empty one when there is none yet, with the version it was written at. One
+/// that cannot be read is an error, never an empty list: writing over it would lose every
+/// profile in it.
+fn read(config_root: &Path) -> Result<(u64, Store), String> {
     let at = path(config_root);
     let file = match std::fs::File::open(&at) {
         Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(OnDisk::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((0, Store::default())),
         Err(e) => return Err(format!("purlis cannot read {}: {e}", at.display())),
     };
     let mut text = String::new();
@@ -152,16 +161,43 @@ fn read(config_root: &Path) -> Result<OnDisk, String> {
             at.display()
         ));
     }
-    serde_json::from_str(&text)
-        .map_err(|e| format!("{} is not a list of profiles: {e}", at.display()))
+    let on_disk: OnDisk = serde_json::from_str(&text)
+        .map_err(|e| format!("{} is not a list of profiles: {e}", at.display()))?;
+    let mut store = Store {
+        forgotten: on_disk.forgotten,
+        rest: on_disk.rest,
+        ..Store::default()
+    };
+    for value in on_disk.profiles {
+        match serde_json::from_value::<MachineProfile>(value.clone()) {
+            Ok(profile) => store.profiles.push(profile),
+            Err(_) => store.unread.push(value),
+        }
+    }
+    Ok((on_disk.version, store))
 }
 
-fn write(config_root: &Path, mut file: OnDisk) -> Result<(), String> {
-    file.version = VERSION;
+fn write(config_root: &Path, store: &Store) -> Result<(), String> {
     let at = path(config_root);
+    let mut profiles = Vec::with_capacity(store.profiles.len() + store.unread.len());
+    for profile in &store.profiles {
+        profiles.push(
+            serde_json::to_value(profile)
+                .map_err(|e| format!("purlis cannot write {}: {e}", at.display()))?,
+        );
+    }
+    profiles.extend(store.unread.iter().cloned());
+    let file = OnDisk {
+        version: VERSION,
+        profiles,
+        forgotten: store.forgotten.clone(),
+        rest: store.rest.clone(),
+    };
+    let text = serde_json::to_string_pretty(&file)
+        .map_err(|e| format!("purlis cannot write {}: {e}", at.display()))?
+        + "\n";
     let dir = crate::machine::private_dir(config_root)
         .map_err(|e| format!("purlis cannot write {}: {e}", at.display()))?;
-    let text = serde_json::to_string_pretty(&file).unwrap_or_default() + "\n";
     crate::machine::write_beside(config_root, &dir.join(FILE), text.as_bytes())
         .map_err(|e| format!("purlis cannot write {}: {e}", at.display()))
 }
@@ -169,11 +205,28 @@ fn write(config_root: &Path, mut file: OnDisk) -> Result<(), String> {
 /// This machine's profiles, in the order they were added. A record this purlis cannot read is
 /// left out, and kept in the file.
 pub fn list(config_root: &Path) -> Result<Vec<MachineProfile>, String> {
-    Ok(read(config_root)?
-        .profiles
-        .iter()
-        .filter_map(profile_of)
-        .collect())
+    Ok(read(config_root)?.1.profiles)
+}
+
+/// **The one way the store changes**: under its lock, the store as read is handed to `change`,
+/// and written back only when `change` changed it. A store that cannot be read, or that a newer
+/// purlis wrote, is refused and never written over.
+pub fn update<T>(config_root: &Path, change: impl FnOnce(&mut Store) -> T) -> Result<T, String> {
+    let _held = crate::machine::Lock::named(config_root, LOCK);
+    let (version, mut store) = read(config_root)?;
+    if version > VERSION {
+        return Err(format!(
+            "{} was written by a newer purlis (version {version}; this one writes version \
+             {VERSION}), so this one leaves it as it is",
+            path(config_root).display()
+        ));
+    }
+    let before = store.clone();
+    let answer = change(&mut store);
+    if store != before {
+        write(config_root, &store)?;
+    }
+    Ok(answer)
 }
 
 /// [`list`] of this machine's own config home, for a reader that only shows what is there: empty
@@ -223,29 +276,52 @@ pub fn this_device() -> &'static str {
     }
 }
 
-/// The folder a profile's harness keeps its own files in, as a chat on the harness's built-in
-/// profile reaches it in the environment `env`, and the variables that were set to reach it.
-/// `None` when the harness has no folder there, or declares no folder variable.
+/// What adoption found: the profiles it adopted, and each folder it passed over and why.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Adoption {
+    pub adopted: Vec<MachineProfile>,
+    /// One sentence per folder that was there and was not adopted.
+    pub passed_over: Vec<String>,
+}
+
+/// The folders a profile's harness keeps its own files in, as a chat on the harness's built-in
+/// profile reaches them in the environment `env`, and the variables that were set to reach them.
+/// `Ok(None)` when the harness has no folder there, or declares no folder variable; `Err` with
+/// the reason when the folder is there and is not the person's own to adopt.
 fn machine_folders(
     declaration: &crate::harness_declaration::Declaration,
     home: &Path,
     env: &dyn Fn(&str) -> Option<String>,
-) -> Option<(Folders, Vec<String>)> {
-    let config_env = declaration.folders.config_env.as_deref()?;
-    let (config_default, data_default, own) = defaults(&declaration.name, home)?;
-    let mut variables = Vec::new();
-    let mut reached = |name: Option<&str>, default: PathBuf| match name
-        .and_then(|name| Some((name, env(name).filter(|v| !v.is_empty())?)))
-    {
-        Some((name, value)) => {
-            variables.push(name.to_owned());
-            PathBuf::from(value)
-        }
-        None => default,
+) -> Result<Option<(Folders, Vec<String>)>, String> {
+    let Some(config_env) = declaration.folders.config_env.as_deref() else {
+        return Ok(None);
     };
-    let config = reached(Some(config_env), config_default);
-    let data =
-        data_default.map(|default| reached(declaration.folders.data_env.as_deref(), default));
+    let Some((config_default, data_default, own)) = defaults(&declaration.name, home) else {
+        return Ok(None);
+    };
+    let mut variables = Vec::new();
+    let mut reached = |name: Option<&str>, default: PathBuf| -> Result<PathBuf, String> {
+        match name.and_then(|name| Some((name, env(name).filter(|v| !v.is_empty())?))) {
+            Some((name, value)) => {
+                let value = PathBuf::from(value);
+                if !value.is_absolute() {
+                    return Err(format!(
+                        "{} was not adopted: `{name}` names {}, which is not an absolute path",
+                        declaration.title,
+                        value.display()
+                    ));
+                }
+                variables.push(name.to_owned());
+                Ok(value)
+            }
+            None => Ok(default),
+        }
+    };
+    let config = reached(Some(config_env), config_default)?;
+    let data = match data_default {
+        Some(default) => Some(reached(declaration.folders.data_env.as_deref(), default)?),
+        None => None,
+    };
     let own_folder = |folder: &Path| {
         if own.is_empty() {
             folder.to_path_buf()
@@ -253,14 +329,62 @@ fn machine_folders(
             folder.join(own)
         }
     };
-    let there =
-        own_folder(&config).is_dir() || data.as_deref().is_some_and(|d| own_folder(d).is_dir());
-    there.then_some((Folders { config, data }, variables))
+    let found: Vec<PathBuf> = std::iter::once(&config)
+        .chain(data.as_ref())
+        .map(|folder| own_folder(folder))
+        .filter(|folder| folder.is_dir())
+        .collect();
+    if found.is_empty() {
+        return Ok(None);
+    }
+    for folder in &found {
+        if let Some(why) = not_the_persons_own(folder) {
+            return Err(format!("{} was not adopted: {why}", declaration.title));
+        }
+    }
+    Ok(Some((Folders { config, data }, variables)))
+}
+
+/// Why `folder` is not the person's own harness folder, or `None` when it is: it is not this
+/// user's, or it is inside a project or a git work tree, where what is in it is not only theirs.
+fn not_the_persons_own(folder: &Path) -> Option<String> {
+    let real = resolved(folder);
+    for above in real.ancestors() {
+        if above.join(".git").exists() {
+            return Some(format!(
+                "{} is inside the git work tree at {}",
+                folder.display(),
+                above.display()
+            ));
+        }
+        if crate::names::has_manifest(above) {
+            return Some(format!(
+                "{} is inside the project at {}",
+                folder.display(),
+                above.display()
+            ));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let me = rustix::process::getuid().as_raw();
+        match std::fs::metadata(&real) {
+            Ok(meta) if meta.uid() == me => {}
+            Ok(_) => return Some(format!("{} belongs to another user", folder.display())),
+            Err(e) => return Some(format!("{} could not be read: {e}", folder.display())),
+        }
+    }
+    None
+}
+
+/// `folder` as the operating system reaches it.
+fn resolved(folder: &Path) -> PathBuf {
+    crate::datahome::resolved(folder)
 }
 
 /// Whether `a` and `b` are one folder, however each is spelled.
 fn same_folder(a: &Path, b: &Path) -> bool {
-    let resolved = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
     resolved(a) == resolved(b)
 }
 
@@ -271,59 +395,59 @@ fn now() -> u64 {
 }
 
 /// **Adopts each harness folder this machine uses** as a profile, in the store under
-/// `config_root`, and answers what it adopted: the upgrade of ADR 0095 §2. `home` is the
-/// person's home and `env` the environment chats are started from, which is where a harness's
-/// folder variable is read. Runs no program, reads no file in a harness's folder, and writes
-/// nothing there; writes the store only when it adopts something.
+/// `config_root`, and answers what it adopted and what it passed over: the upgrade of ADR 0095
+/// §2. `home` is the person's home and `env` the environment chats are started from, which is
+/// where a harness's folder variable is read. Runs no program, reads no file in a harness's
+/// folder, and writes nothing there; writes the store only when it adopts something.
 pub fn adopt(
     config_root: &Path,
     home: &Path,
     env: &dyn Fn(&str) -> Option<String>,
-) -> Result<Vec<MachineProfile>, String> {
-    let _held = crate::machine::Lock::named(config_root, LOCK);
-    let mut file = read(config_root)?;
-    let mut known: Vec<MachineProfile> = file.profiles.iter().filter_map(profile_of).collect();
-    let mut adopted = Vec::new();
-    for kind in crate::profiles::KINDS {
-        let Some(declaration) = crate::harness_declaration::builtin(kind.word) else {
-            continue;
-        };
-        let Some((folders, variables)) = machine_folders(declaration, home, env) else {
-            continue;
-        };
-        let taken = known.iter().any(|p| {
-            p.name == kind.word
-                || (p.harness == kind.word && same_folder(&p.folders.config, &folders.config))
-        });
-        if taken {
-            continue;
+) -> Result<Adoption, String> {
+    update(config_root, |store| {
+        let mut adoption = Adoption::default();
+        for kind in crate::profiles::KINDS {
+            let Some(declaration) = crate::harness_declaration::builtin(kind.word) else {
+                continue;
+            };
+            let (folders, variables) = match machine_folders(declaration, home, env) {
+                Ok(Some(found)) => found,
+                Ok(None) => continue,
+                Err(why) => {
+                    adoption.passed_over.push(why);
+                    continue;
+                }
+            };
+            let taken = store.profiles.iter().any(|p| p.name == kind.word)
+                || store.points_at(kind.word, &folders.config)
+                || store.is_forgotten(&folders.config);
+            if taken {
+                continue;
+            }
+            let profile = MachineProfile {
+                name: kind.word.to_owned(),
+                harness: kind.word.to_owned(),
+                title: format!("{} ({})", declaration.title, this_device()),
+                folders,
+                adopted: Some(Adopted {
+                    at: now(),
+                    variables,
+                }),
+                rest: Map::new(),
+            };
+            store.profiles.push(profile.clone());
+            adoption.adopted.push(profile);
         }
-        let profile = MachineProfile {
-            name: kind.word.to_owned(),
-            harness: kind.word.to_owned(),
-            title: format!("{} ({})", declaration.title, this_device()),
-            folders,
-            adopted: Some(Adopted {
-                at: now(),
-                variables,
-            }),
-        };
-        file.profiles.push(written(&profile));
-        known.push(profile.clone());
-        adopted.push(profile);
-    }
-    if !adopted.is_empty() {
-        write(config_root, file)?;
-    }
-    Ok(adopted)
+        adoption
+    })
 }
 
 /// [`adopt`] on this machine, as the app runs it at launch: its config home, the person's home
 /// and the app's own environment, which is the one its chats are started from
 /// ([`crate::chatenv`]). Nothing where there is no home.
-pub fn adopt_at_launch() -> Result<Vec<MachineProfile>, String> {
+pub fn adopt_at_launch() -> Result<Adoption, String> {
     let (Some(config), Some(home)) = (crate::machine::config_root(), dirs::home_dir()) else {
-        return Ok(Vec::new());
+        return Ok(Adoption::default());
     };
     adopt(&config, &home, &crate::envvar::var)
 }

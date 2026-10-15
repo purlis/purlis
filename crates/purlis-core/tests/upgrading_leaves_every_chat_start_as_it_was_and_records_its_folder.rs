@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The upgrade that adopts this machine's harness folders as profiles loses nothing (ADR 0095
-//! §2, #2033): every chat comes back on its own profile and its own conversation, nothing is
-//! signed in again, and the profiles a clone's local file declares are as they were.
+//! §2, #2033). What this proves: every chat's record and the profiles a chat starts from are as
+//! they were, so each chat's next run starts exactly as it did, on the same sign-in; the record
+//! adoption writes names the folder that holds each chat's conversation; nothing in a harness's
+//! folder changes; and the profiles a clone's local file declares are not adopted.
 //!
 //! A machine of fixtures: a home with Claude Code's, Codex's and opencode's folders, each
 //! holding a chat's conversation, and a project whose record holds those chats and one on a
@@ -55,7 +57,9 @@ impl Machine {
     }
 
     fn upgrade(&self) -> Vec<profilestore::MachineProfile> {
-        profilestore::adopt(&self.config, &self.home, &|_: &str| None).expect("it adopts")
+        profilestore::adopt(&self.config, &self.home, &|_: &str| None)
+            .expect("it adopts")
+            .adopted
     }
 }
 
@@ -89,7 +93,8 @@ fn tree(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 #[test]
-fn after_the_upgrade_every_chat_resumes_its_own_conversation_on_its_own_profile() {
+fn after_the_upgrade_each_chat_starts_from_the_same_profile_and_the_record_names_the_folder_of_its_conversation()
+ {
     purlis_core::unsteered!();
     let machine = Machine::new();
     let cwd_key = purlis_core::harness_declaration::cwd_key(&machine.project);

@@ -2989,13 +2989,16 @@ pub fn run() {
             // started from. Off in the scenario build, whose home is the person's.
             #[cfg(not(feature = "e2e"))]
             match purlis_core::profilestore::adopt_at_launch() {
-                Ok(adopted) => {
-                    for profile in adopted {
+                Ok(adoption) => {
+                    for profile in adoption.adopted {
                         tracing::info!(
                             "purlis: adopted {} as the profile `{}`",
                             profile.folders.config.display(),
                             profile.name
                         );
+                    }
+                    for why in adoption.passed_over {
+                        tracing::warn!("purlis: {why}");
                     }
                 }
                 Err(why) => tracing::warn!("purlis: no harness folder was adopted: {why}"),

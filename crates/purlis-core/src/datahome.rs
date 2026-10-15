@@ -71,7 +71,7 @@ pub fn root_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
 }
 
 /// `dir` as the operating system would reach it.
-fn resolved(dir: &Path) -> PathBuf {
+pub(crate) fn resolved(dir: &Path) -> PathBuf {
     let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
     let mut existing = dir.as_path();
     let mut rest = Vec::new();
