@@ -346,6 +346,29 @@ pub(crate) fn announce(
     )));
 }
 
+/// **Points the selection at `fallback` after workspace `removed` was removed** (#2103):
+/// `force`, since the lock named the workspace that went. Answers the exit code: 0 where a
+/// pointer landed or there was none to write, 1 where one could not be written, which is said
+/// as that and never as a reset.
+pub fn reset_after_removal(root: &Path, removed: &str, fallback: &str, ids: &Ids, say: Sink) -> u8 {
+    match set_active(root, fallback, ids, true) {
+        Scope::Unwritten => {
+            say(Say::Fail(unwritten_msg(fallback)));
+            say(Say::Info(format!(
+                "Workspace '{removed}' was removed; the selection still names it until one is \
+                 written."
+            )));
+            1
+        }
+        _ => {
+            say(Say::Info(format!(
+                "Active workspace reset to '{fallback}'."
+            )));
+            0
+        }
+    }
+}
+
 /// What a selection whose pointer could not be written says.
 pub fn unwritten_msg(name: &str) -> String {
     format!(
@@ -618,6 +641,49 @@ mod tests {
             .permissions()
             .mode()
             & 0o777
+    }
+
+    #[test]
+    fn a_reset_after_a_removal_that_could_not_be_written_says_so_and_fails() {
+        // #2103: the removal stands; the selection did not move, and is not said to have.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("charter.toml"), "").unwrap();
+        let state = state_dir(dir.path());
+        std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+        std::fs::write(&state, "not a folder\n").unwrap();
+        let ids = Ids {
+            session: Some("s1".to_owned()),
+            terminal: Some("t1".to_owned()),
+        };
+        let mut said = Vec::new();
+        let code = reset_after_removal(dir.path(), "beta", "default", &ids, &mut |line| {
+            said.push(line.to_string());
+        });
+        assert_eq!(code, 1);
+        assert!(said[0].contains("nothing was selected"), "{said:?}");
+        assert!(
+            said.iter().all(|line| !line.contains("reset to")),
+            "{said:?}"
+        );
+        assert!(
+            said.iter()
+                .any(|line| line.contains("Workspace 'beta' was removed")),
+            "{said:?}"
+        );
+
+        // Where it lands, it says so and succeeds.
+        let dir = plane();
+        workspace(dir.path(), "default");
+        let mut said = Vec::new();
+        let code = reset_after_removal(dir.path(), "beta", "default", &ids, &mut |line| {
+            said.push(line.to_string())
+        });
+        assert_eq!(code, 0);
+        assert!(
+            said.iter()
+                .any(|line| line.contains("Active workspace reset to 'default'.")),
+            "{said:?}"
+        );
     }
 
     #[test]
