@@ -17,6 +17,10 @@ use std::path::{Path, PathBuf};
 /// The variable that moves `<data>`.
 pub const HOME_VAR: &str = "PURLIS_DATA_HOME";
 
+/// The folder under `<data>` each running browser's data folder is made in (#2012): its
+/// engine's profile, which no chat reads or writes (`sandbox`).
+pub const BROWSERS: &str = "browsers";
+
 /// `<data>`, from this process's environment.
 ///
 /// A fenced build is held here (charter-app#129): a test run that pins no data home of its own

@@ -41,6 +41,8 @@ purlis-host.workspace = true
 purlis-session-protocol = { path = "../../crates/session-protocol" }
 # A file tab's image preview crosses to the window as base64 (FM-2).
 base64 = "0.23"
+# A browser view's frames, whole, handed to its canvas (#2012). The version the session protocol uses.
+bytes = "1"
 # About Charter: the running version's section of the repository's CHANGELOG.md.
 changelog.workspace = true
 # `wscmd::create` is handed the moment the workspace was made, because `charter workspace

@@ -788,10 +788,12 @@ fn serve() -> ExitCode {
         purlis_core::machine::charterd(&config),
     );
     ExitCode::from(
-        u8::try_from(purlis_host::serve_alone(
-            &place,
-            purlis_host::FromTheWindow(launched),
-        ))
+        u8::try_from(purlis_host::serve_alone(&place, |place| {
+            purlis_core::browsers::given_to(purlis_host::Hosting::keeping_its_switch_in(
+                &place.credentials,
+                purlis_host::FromTheWindow(launched),
+            ))
+        }))
         .unwrap_or(1),
     )
 }
@@ -3846,6 +3848,10 @@ fn main() -> ExitCode {
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {
         guard::refuse_on_a_crash(tell_the_host_about_a_crash);
     }
+    // Started again by the session host as a browser engine's keeper (#2012): keep its process
+    // group and never return, before anything else of the command runs.
+    #[cfg(unix)]
+    purlis_core::browsers::keep_if_asked();
     // Before any git is run: whoever started this command ends it by its process group (a
     // terminal's Ctrl-C, a harness ending a hook, the app ending a chat), so the gits it runs
     // stay in that group, where the same stop reaches them.

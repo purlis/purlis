@@ -522,6 +522,9 @@ export const commands = {
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	openBrowser: __WINDOW_ONLY_RESULT,
+	unwatchBrowser: __WINDOW_ONLY_RESULT,
+	closeBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
 	/**
@@ -2426,6 +2429,19 @@ export type BriefOf =
 ({ chat: number }) & { dispatch?: never } | 
 /**  A dispatch by its record's id: what a finished task's row is named by. */
 ({ dispatch: string }) & { chat?: never };
+
+/**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
+export type BrowserViewRole = "focused" | "thumbnail";
+
+/**
+ *  A browser view the window has open: its number, and the size of the page its frames are
+ *  painted at, in CSS pixels.
+ */
+export type BrowserWatching = {
+	view: number,
+	width: number,
+	height: number,
+};
 
 /**  What kind of build this is, which decides which section is shown. */
 export type Build = 
