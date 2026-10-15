@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792080214282,
+  "lastUpdate": 1792081403545,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12642,6 +12642,48 @@ window.BENCHMARK_DATA = {
             "value": 101.63900050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.803, 101.617, 101.639, 101.649, 101.843 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "59186b0e6ce4dc37462db5124e68d840a266f5fa",
+          "message": "Printed text that quotes a refusal never raises a Block (#1972) (#2199)\n\n* Printed text that quotes a refusal never raises a Block (#1972)\n\nA result with no failure beside it is read by its line: a line whose every\nprogram only reads or prints (cat, sed -n, grep, git show) raises no refusal\nof the network from what it handed back, on either stream or as one string,\nand a background command's output read back raises none. A failed command's\nown error, the sandbox's own report and purlis's proxy are read as before,\nfor Claude Code, Codex and opencode alike, in the one reader all three use.\n\nADR 0093 gains a dated amendment; changelog fragment added.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A line not read whole, or a reader that can start a program, still raises its Block (#1972)\n\nThe reading that decides whether a result with no failure beside it is a\nBlock at all errs toward a program: a line too big for the guards, one that\ndoes not tokenize, a shell string nested past what is read, find with -exec\nor -ok, awk, and sed with any script but lines to print. A background\ncommand polled with BashOutput that ended failed is read as a failed\ncommand. Tests on Claude Code's, Codex's and opencode's shapes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T20:21:07+04:00",
+          "tree_id": "b9f2da36a09f233effefa0bf7d51f1563b3ebda8",
+          "url": "https://github.com/purlis/purlis/commit/59186b0e6ce4dc37462db5124e68d840a266f5fa"
+        },
+        "date": 1792081402397,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.26708950000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.257, 0.260, 0.267, 0.267, 0.281 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.414667,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.381, 16.386, 16.415, 16.450, 16.464 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.23380900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.667, 101.198, 101.234, 101.574, 102.019 ms"
           }
         ]
       }
