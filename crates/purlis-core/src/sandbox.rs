@@ -5164,7 +5164,12 @@ pub fn your_level(
     made: &Made,
 ) -> Option<personal::Choice> {
     let in_force = personal::in_force(root);
-    let own = bounded(in_force.for_persona(persona), locks);
+    // What the team's policy and this machine's let a person choose here, and the level of a
+    // chat whose person chose none: the floor, or no sandbox once they accepted the team's off
+    // (#2071 PR C). Every level below is read through it, the chain's included.
+    let bound = team::allowed_levels_under(root, locks);
+    let held = |level| bounded(level, &bound);
+    let own = held(in_force.for_persona(persona));
     let not_off = |level: Option<personal::Choice>| level.filter(|l| *l != personal::Choice::Off);
     // Not set reads as the floor, which is what a chat with no level starts at.
     let floor = personal::Choice::Floor;
@@ -5179,12 +5184,11 @@ pub fn your_level(
             // A chat on no persona is kept in the chain under the default persona's name, so
             // an entry naming it is held to the project's level too.
             let default = crate::start::persona_for_a_new_chat(root);
-            let project = bounded(in_force.for_persona(None), locks).unwrap_or(floor);
+            let project = held(in_force.for_persona(None)).unwrap_or(floor);
             let theirs = above
                 .iter()
                 .map(|one| {
-                    let level =
-                        bounded(in_force.for_persona(one.as_deref()), locks).unwrap_or(floor);
+                    let level = held(in_force.for_persona(one.as_deref())).unwrap_or(floor);
                     if one.is_some() && *one == default {
                         level.min(project)
                     } else {
@@ -5199,15 +5203,12 @@ pub fn your_level(
     }
 }
 
-/// `level`, within what policy lets a person choose: an administrator's policy that forbids
-/// the opt-out forbids `off` too, and the chat starts as it would with no level of theirs.
-/// **The seam for the team's policy** (#2071, PR C): what it bounds, it bounds here, the one
-/// place a start reads a person's level through.
-pub fn bounded(level: Option<personal::Choice>, locks: &policy::Locks) -> Option<personal::Choice> {
-    match level {
-        Some(personal::Choice::Off) if locks.opt_out_refused().is_some() => None,
-        level => level,
-    }
+/// **`level`, within `bound`**, the one place a start reads a person's level through (#2071,
+/// PR C): their level, or the team's default where they chose none, never below what the
+/// team's policy and this machine's let a person choose ([`team::allowed_levels`]): under
+/// `policy = "never"`, or an administrator's policy that forbids the opt-out, the full sandbox.
+pub fn bounded(level: Option<personal::Choice>, bound: &team::Bound) -> Option<personal::Choice> {
+    Some(bound.clamp(level))
 }
 
 /// What `person`'s own level lifts at this start: every class where it is `off`

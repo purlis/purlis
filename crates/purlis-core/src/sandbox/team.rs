@@ -281,7 +281,12 @@ impl Bound {
 /// `never` or an administrator's policy requires it, else every level, by default the floor, or
 /// no sandbox once the person accepted the team's off.
 pub fn allowed_levels(root: &Path) -> Bound {
-    if let Some(why) = policy::Locks::of(root).opt_out_refused() {
+    allowed_levels_under(root, &policy::Locks::of(root))
+}
+
+/// [`allowed_levels`] under `locks`, the locks a start already read.
+pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
+    if let Some(why) = locks.opt_out_refused() {
         return Bound::full(why);
     }
     Bound::local(matches!(team_off(root), TeamOff::Accepted(_)))

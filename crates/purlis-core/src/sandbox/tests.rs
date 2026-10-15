@@ -5861,10 +5861,17 @@ fn a_policy_that_forbids_the_opt_out_bounds_your_level_too() {
         std::path::Path::new("policy.json"),
     );
     let off = Some(personal::Choice::Off);
-    assert_eq!(bounded(off, &required), None);
-    assert_eq!(bounded(off, &policy::Locks::none()), off);
+    let plane = plane_saying(ON);
+    let held = team::allowed_levels_under(plane.path(), &required);
+    let free = team::allowed_levels_under(plane.path(), &policy::Locks::none());
+    // Held to the full sandbox (#2071 PR C), the default included.
+    assert_eq!(bounded(off, &held), Some(personal::Choice::On));
+    assert_eq!(bounded(None, &held), Some(personal::Choice::On));
+    assert_eq!(bounded(off, &free), off);
+    // Nothing chosen and no team off accepted: the floor.
+    assert_eq!(bounded(None, &free), Some(personal::Choice::Floor));
     assert_eq!(
-        bounded(Some(personal::Choice::On), &required),
+        bounded(Some(personal::Choice::On), &held),
         Some(personal::Choice::On)
     );
 }
@@ -6096,4 +6103,91 @@ fn in_a_project_at_the_floor_your_confirmed_off_starts_the_chat_without_it_and_n
         &asked(Asking::Dispatch, Some("steward")),
     );
     assert!(at_floor(&asked), "{asked:?}");
+}
+
+// ---- #2071 PR C: the team's off, through the one seam a start reads a level by ---------------
+
+/// A project whose committed `charter.toml` turns the sandbox off, the person having accepted
+/// that commit. Uses git: first run on CI.
+fn team_off_accepted(local: &str) -> tempfile::TempDir {
+    let plane = plane_saying("[sandbox]\nmode = \"off\"\n");
+    std::fs::write(plane.path().join(crate::profiles::LOCAL_FILE), local).expect("local");
+    let made = crate::testgit::run(plane.path(), &["init", "-q"]);
+    assert!(made.ok(), "{made:?}");
+    crate::testgit::run(plane.path(), &["add", "charter.toml"]);
+    let ran = crate::testgit::run(
+        plane.path(),
+        &[
+            "-c",
+            "user.name=Ada",
+            "-c",
+            "user.email=ada@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "off",
+        ],
+    );
+    assert!(ran.ok(), "{ran:?}");
+    let commit = match team::team_off(plane.path()) {
+        team::TeamOff::Asks(arrived) => arrived.commit,
+        other => panic!("{other:?}"),
+    };
+    team::answer(plane.path(), &commit, true).expect("accepted");
+    plane
+}
+
+#[test]
+fn an_accepted_team_off_starts_a_chat_with_no_level_of_yours_without_the_sandbox() {
+    let plane = team_off_accepted("");
+    let decided = decided_made(plane.path(), None, &Made::Window);
+    assert!(
+        matches!(decided, Ok(Some(Decided::Unsandboxed(_)))),
+        "{decided:?}"
+    );
+    // A level you chose still stands.
+    let plane = team_off_accepted("[sandbox]\nlevel = \"on\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::On)).unwrap();
+    assert!(sandboxed(&decided_made(plane.path(), None, &Made::Window)));
+}
+
+#[test]
+fn a_chat_an_on_asker_dispatched_stays_sandboxed_under_an_accepted_team_off() {
+    // #2122's strictest-across-the-chain rule: the team's off never lets a chat-requested
+    // start reach past the chat that asked.
+    let plane = team_off_accepted("[sandbox.personas]\nqa = \"on\"\n");
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::On)).unwrap();
+    let decided = decided_made(
+        plane.path(),
+        None,
+        &asked_by(Asking::Dispatch, &[Some("qa")]),
+    );
+    assert!(sandboxed(&decided), "{decided:?}");
+    // A start that cannot say who asked never takes the team's off either.
+    let unnamed = decided_made(plane.path(), None, &Made::Unnamed);
+    assert!(
+        !matches!(unnamed, Ok(Some(Decided::Unsandboxed(_)))),
+        "{unnamed:?}"
+    );
+}
+
+#[test]
+fn under_a_never_policy_a_confirmed_off_starts_the_chat_in_the_full_sandbox() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"off\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\npolicy = \"never\"\n",
+    )
+    .unwrap();
+    assert!(sandboxed(&decided_made(plane.path(), None, &Made::Window)));
+    assert_eq!(
+        super::your_level(
+            plane.path(),
+            None,
+            &policy::Locks::of(plane.path()),
+            &Made::Window
+        ),
+        Some(personal::Choice::On)
+    );
 }
