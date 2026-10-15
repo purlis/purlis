@@ -253,8 +253,10 @@ fn in_a_host_process_at(home: &Path) -> Target {
         purlis_core::hostsocket::socket_for(Some(run.as_os_str())),
         purlis_core::machine::charterd(&config),
     );
-    let host = crate::sessionhost::SessionHost::default();
-    host.start_at(place, {
+    // Held to be ended from here on, so a host that never says it is ready is ended too when
+    // the wait below fails the test.
+    let host = Ends(crate::sessionhost::SessionHost::default());
+    host.0.start_at(place, {
         let inherited = inherited.clone();
         move || {
             let mut command = crate::sessionhost::command(&charter_app());
@@ -262,13 +264,13 @@ fn in_a_host_process_at(home: &Path) -> Target {
             Ok(command)
         }
     });
-    let connection = host.connection();
+    let connection = host.0.connection();
     connection
         .wait(PATIENCE)
         .expect("the window connects to its host");
     let mut target = a_window_on(connection, inherited);
     // Ended before the folders it serves from go.
-    target._keeps.insert(0, Box::new(Ends(host)));
+    target._keeps.insert(0, Box::new(host));
     target
 }
 

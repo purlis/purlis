@@ -5,7 +5,7 @@ speaks the session protocol to a real host process over its real socket, with th
 harness as the chat's program, and that every test ends the host it started. Item 9 of the
 amendment for #1998 recorded that the suite's host target was the host's code over an in-memory
 link until this target existed. This note replaces that departure; the rest of item 9 stands.
-Both items are **decided in implementation, to be confirmed** (D-2170-1 and D-2170-2).
+All three items are **decided in implementation, to be confirmed** (D-2170-1 to D-2170-3).
 
 1. **The host target is a process: the window's own binary, started as the window starts it.**
    The window's own start of its host (`SessionHost`) starts it, reads its ready line and
@@ -23,4 +23,4 @@ Both items are **decided in implementation, to be confirmed** (D-2170-1 and D-21
 3. **Where it runs.** On Linux, in the existing Rust test job, which already builds the
    window's binary. On macOS the host's socket is in the user's own temporary directory, which
    a test cannot move, so there the host's code over an in-memory link remains the host
-   target.
+   target. *D-2170-3, to be confirmed.*
