@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792095905406,
+  "lastUpdate": 1792097366025,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13020,6 +13020,48 @@ window.BENCHMARK_DATA = {
             "value": 102.51705000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.950, 101.952, 102.517, 102.863, 103.157 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "02ce5aed5acbf7acb872d27ae9d9b55082de6bad",
+          "message": "Runners: the runner image (#2192)\n\n* Runners: the runner image, built, checked, signed and kept private (#2043)\n\nCI builds purlis's runner image (`purlis serve`) for linux/amd64 and linux/arm64 on every green\n`ci` of main, each on a runner of its own architecture, pushes it untagged by digest to the\norganisation's private GitHub Container Registry package, runs the contract on the exact bytes\npushed, then indexes, tags (`main`, `sha-<commit>`), signs keyless with cosign through GitHub\nOIDC, verifies and records the digest. A pull request touching the image builds and checks it\nand pushes nothing.\n\ndocs/runner-image.md is the contract a team's own image keeps; tools/runner-image-contract.mjs\nchecks an image against it, and CI checks purlis's image and an example team image with it.\n\nCloses #2043\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runner image: say which commit the compile checks out, and in which cache scope (#2043)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runner image: private before every push, main only forward, checks fail closed (#2043)\n\n- `tools/runner-image-registry.mjs`: the package's visibility from the packages API\n  (`private` or `absent`, anything else refused), an anonymous-pull check that needs a real\n  anonymous token and a refusal to pass, and the order rule for the `main` tag (forward\n  only, as the dev channel's). Every question fails closed.\n- `image` shows the package private before it pushes; on the first run a placeholder makes\n  the package, which is shown private before any of purlis goes in.\n- `index` checks again (packages API and anonymous pull) before tagging and signing, tags\n  `sha-<commit>` always and `main` only when it moves forward.\n- docs/runner-image.md: the rows the check reads apart from those the team keeps,\n  `/bin/sh` listed, the Linux sandbox's needs as a future requirement, and the keyless\n  signature's public log entry as ruled 2026-10-15.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T00:48:14+04:00",
+          "tree_id": "dedda2fd644ac5a952850cd5f689e6f36d89b00d",
+          "url": "https://github.com/purlis/purlis/commit/02ce5aed5acbf7acb872d27ae9d9b55082de6bad"
+        },
+        "date": 1792097363594,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27994949999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.273, 0.277, 0.280, 0.286, 0.289 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.461092999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.397, 16.450, 16.461, 16.525, 16.654 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.914379,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.648, 100.914, 100.914, 101.022, 101.155 ms"
           }
         ]
       }
