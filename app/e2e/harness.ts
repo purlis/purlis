@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import process from "node:process";
 import { LOGS } from "./processes.js";
 
@@ -550,6 +550,13 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
   mkdirSync(dirname(wrapper), { recursive: true });
   writeFileSync(wrapper, theProfilesProgram(program));
   chmodSync(wrapper, 0o755);
+  // On macOS a Codex chat runs at the floor, so only on a sandbox-only profile (#2037): the
+  // state run's machine store has one, `scenario` (`declareTheStateRunsProfile`), and a
+  // project of a state spec's own makes it its default rather than declaring a Codex of its own.
+  if (kind === "codex" && process.platform === "darwin") {
+    writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
+    return;
+  }
   writeFileSync(
     join(plane, "charter.local.toml"),
     [
@@ -566,6 +573,30 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
       "",
     ].join("\n"),
   );
+}
+
+/**
+ * **The state run's profile** for `plane`, running `program` as Codex: on macOS, where Codex
+ * runs at the floor, a sandbox-only profile in the run's machine store, whose folder of programs
+ * is put first on `environment`'s `PATH` (#2037); elsewhere, where no floor wraps Codex, the
+ * project's own declared profile, as before.
+ */
+export function declareTheStateRunsProfile(
+  plane: string,
+  program: string,
+  environment: Record<string, string>,
+): void {
+  if (process.platform !== "darwin") {
+    declareAProfile(plane, program, "codex");
+    return;
+  }
+  const programs = declareASandboxOnlyCodexProfile(
+    plane,
+    program,
+    environment.CHARTER_CONFIG_HOME,
+    environment.CHARTER_DATA_HOME,
+  );
+  environment.PATH = [programs, process.env.PATH ?? ""].join(delimiter);
 }
 
 /**

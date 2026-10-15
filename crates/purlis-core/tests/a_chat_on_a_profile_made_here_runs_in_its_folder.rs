@@ -213,9 +213,9 @@ fn a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_it
 
 #[test]
 fn a_chat_on_a_sandbox_only_profile_never_starts_without_the_sandbox() {
-    // #2037, ruled 2026-10-15: a profile for sandboxed chats only runs no chat outside it,
-    // whether the person opts this chat out or the project runs it at the floor.
     purlis_core::unsteered!();
+    // #2037, ruled 2026-10-15: a profile for sandboxed chats only runs no chat outside it,
+    // whether the project runs it at the floor or the full sandbox, when the person opts out.
     let Some(_data) = in_a_data_home_of_its_own(
         "a_chat_on_a_sandbox_only_profile_never_starts_without_the_sandbox",
     ) else {
