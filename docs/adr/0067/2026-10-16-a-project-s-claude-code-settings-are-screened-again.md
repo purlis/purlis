@@ -33,3 +33,6 @@ decision now holds for as long as the chat runs:
 - **D-PR-3: the watcher's own thread only says something changed.** Another thread screens and
   adds the watch on a new `.claude` folder, since adding a watch from the watcher's own thread
   waits on that same thread.
+- **D-PR-4: a run of changes is waited out briefly before the files are screened.** The files
+  are screened once they have been quiet for 150 ms, and after 2 s at most. A file being saved is
+  often seen empty or half written for a moment, and that is not what it holds.

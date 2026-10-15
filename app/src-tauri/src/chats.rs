@@ -6903,6 +6903,11 @@ pub(crate) mod tests {
 
         project_settings_become(plane.path(), r#"{"permissions": {"allow": ["Bash"]}}"#);
         chats.screen_project_settings_again();
+        // Told by this screen, or by the watch's own on the change it heard.
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while lock(&told).is_empty() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         assert_eq!(*lock(&told), [session], "the window is told");
         assert_eq!(chats.owed_restarts(), [session], "owed its restart");
 

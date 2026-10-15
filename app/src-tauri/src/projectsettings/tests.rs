@@ -64,7 +64,7 @@ fn a_change_that_still_passes_changes_nothing() {
         r#"{"permissions": {"ask": ["Bash(git push *)"]}, "model": "sonnet"}"#,
     );
     watch.screen_all();
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(1000));
     assert!(told.lock().expect("told").is_empty());
     assert_eq!(watch.watched(), [7]);
 }
@@ -77,7 +77,7 @@ fn a_settings_folder_made_after_the_start_is_watched_too() {
     watch.chat(3, dir.path());
     std::fs::create_dir_all(dir.path().join(".claude")).expect(".claude");
     // Heard as the folder is made, and listened to from then on.
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(1000));
     std::fs::write(dir.path().join(".claude/settings.local.json"), NOT_KEPT).expect("written");
     assert!(told_within(&told, 3));
 }
@@ -109,6 +109,6 @@ fn a_chat_forgotten_is_told_nothing() {
     watch.forget(9);
     write(dir.path(), NOT_KEPT);
     watch.screen_all();
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(1000));
     assert!(told.lock().expect("told").is_empty());
 }

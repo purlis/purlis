@@ -27,6 +27,12 @@ use purlis_core::harness::claude::project;
 
 use crate::planes::PlaneId;
 
+/// How long the files are left quiet before they are screened again after a change.
+const SETTLING: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// The longest a run of changes is waited out before the files are screened anyway.
+const SETTLED_AT_MOST: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// The event the window hears a chat's project settings changed on.
 pub const EVENT: &str = "chat-project-settings-changed";
 
@@ -114,7 +120,19 @@ impl Watch {
                 .name("purlis-project-settings".into())
                 .spawn(move || {
                     while heard.recv().is_ok() {
-                        while heard.try_recv().is_ok() {}
+                        // Settled first: a file being saved is often seen empty or half
+                        // written for a moment, which is not what it holds.
+                        let until = std::time::Instant::now() + SETTLED_AT_MOST;
+                        loop {
+                            std::thread::sleep(SETTLING);
+                            let mut more = false;
+                            while heard.try_recv().is_ok() {
+                                more = true;
+                            }
+                            if !more || std::time::Instant::now() >= until {
+                                break;
+                            }
+                        }
                         let Some(inner) = inner_of.upgrade() else {
                             return;
                         };
