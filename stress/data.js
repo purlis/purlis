@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792036185841,
+  "lastUpdate": 1792040667080,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2442,6 +2442,42 @@ window.BENCHMARK_DATA = {
             "value": 220.7,
             "unit": "MB",
             "extra": "median of 6 samples: 262.4, 258.8, 244.5, 196.2, 196.9, 169.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99247378ab95150861a4e8966b8e7cf9c89aac56",
+          "message": "A folder or socket grant restarts the chat at its next pause, saying what will end (#2079)\n\n* A restart owed for a grant waits for the chat's next pause, and an ended chat restarts for nothing\n\nThe window's restart driver decides through one pure scheduler (restartAtPause.ts):\na chat between turns restarts, one mid-turn waits, one whose harness says nothing of\nits turns waits for the person, and one whose program ended is owed nothing. Restart\nnow restarts at once unless the program has ended. Two grants owe one restart.\n\nRefs #1986\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A folder's or a socket's Allow says first what the restart will end\n\nThe Ask that restarts the chat says it does so at its next pause between turns, and\nwhat will stop: each program below the chat listening on a TCP port, by name and port,\nand how many others its commands started, read from ps and lsof by the core\n(purlis_core::restartends, what_a_restart_ends). Where purlis cannot read either it\nsays it cannot tell. A chat whose program ended is owed no restart in the core either.\nADR 0067 amended for ruling Q63; changelog fragment added.\n\nCloses #1986\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(1986): the Inbox and a tasks' question say what a restart ends, and only an exit drops it\n\n- The Inbox's folder or service row says the restart's sentence, naming the chat; a\n  folder's question for several tasks says it for each task listed.\n- A chat between turns as the Ask is drawn is said to restart now.\n- The window drops an owed restart for a chat reading ended only once the core, which\n  hears the program exit, owes it nothing: a SessionEnd hook alone drops nothing.\n- ps and lsof (-b -w) run within a two-second deadline, their output read while they\n  run; on timeout the Ask says purlis cannot tell. What lsof printed is read even when\n  it exits 1.\n- quiet() is no_env().\n\nCloses #2086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T08:32:14+04:00",
+          "tree_id": "cf7dd6ba17b2154c6ab3c48298a4b2231d560051",
+          "url": "https://github.com/purlis/purlis/commit/99247378ab95150861a4e8966b8e7cf9c89aac56"
+        },
+        "date": 1792040665971,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 824,
+            "unit": "MB",
+            "extra": "median of 3 samples: 669, 824, 953 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 200.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 274.7, 262.7, 201.6, 198.9, 199.7, 159.1 MB"
           }
         ]
       }
