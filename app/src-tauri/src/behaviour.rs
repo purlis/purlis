@@ -77,6 +77,10 @@ pub(crate) struct Target {
     pub switch: Arc<KillSwitch>,
     /// The environment of the process that starts the target's chats, as it was started.
     pub inherited: Vec<(OsString, OsString)>,
+    /// How many savers of its project run in the test's own process while it is saved: one
+    /// where the window, or the host's code, runs in it; none where the host is a process of
+    /// its own, whose saver the window sees only by what it is told and what is committed.
+    pub savers_here: usize,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
@@ -123,6 +127,7 @@ pub(crate) fn in_the_window() -> Target {
         root,
         switch,
         inherited: std::env::vars_os().collect(),
+        savers_here: 1,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -206,6 +211,7 @@ fn a_window_on(connection: Arc<Connection>, inherited: Vec<(OsString, OsString)>
         root,
         switch,
         inherited,
+        savers_here: 1,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -269,6 +275,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
         .wait(PATIENCE)
         .expect("the window connects to its host");
     let mut target = a_window_on(connection, inherited);
+    target.savers_here = 0;
     // Ended before the folders it serves from go.
     target._keeps.insert(0, Box::new(host));
     target
@@ -742,17 +749,26 @@ fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told
 
 fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &Target) {
     a_plane_saved_after_a_second(&target.root);
-    let (told, _looks) = told_of_looks();
+    let (told, looks) = told_of_looks();
     let saving = target.sessions.keep_saving(&target.root, told);
+    std::fs::write(target.root.join("first.md"), "saved\n").expect("written");
 
-    until("a saver runs", || {
-        crate::autosave::running::on(&target.root) == 1
-    });
-    // Whatever was to start has had the time to.
+    let deadline = Instant::now() + A_SAVE_WITHIN;
+    while !looks
+        .lock()
+        .expect("the looks")
+        .iter()
+        .any(|looked| looked.saved)
+    {
+        assert!(Instant::now() < deadline, "no saver ever saved");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // Whatever was to start has had the time to. The window's own process runs a saver only
+    // where the target's saver is in it: never one beside the host's.
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(
         crate::autosave::running::on(&target.root),
-        1,
+        target.savers_here,
         "the window and the host both save the project"
     );
 
@@ -761,6 +777,27 @@ fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &T
     until("the saver stops", || {
         crate::autosave::running::on(&target.root) == 0
     });
+    let told_before = looks.lock().expect("the looks").len();
+    std::fs::write(target.root.join("second.md"), "not saved\n").expect("written");
+    // Its quiet period and two of its looks, two seconds apart, go by with nothing saved.
+    std::thread::sleep(Duration::from_secs(5));
+    assert_eq!(
+        looks.lock().expect("the looks").len(),
+        told_before,
+        "the window was told of a look after its saving stopped"
+    );
+    let tracked = purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&target.root)
+            .args(["ls-files", "second.md"]),
+    )
+    .expect("git runs");
+    assert_eq!(
+        String::from_utf8_lossy(&tracked.stdout).trim(),
+        "",
+        "a write after the saving stopped was saved"
+    );
 }
 
 /// A harness whose hooks report and ask through `purlis hook`: the word a chat's environment
