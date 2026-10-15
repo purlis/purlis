@@ -347,6 +347,7 @@ import {
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
+import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -7710,6 +7711,9 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
       />
+      {/* **The project turned the sandbox off** (#2071, SO-8): reaches each person only on
+          their one Accept. */}
+      <TeamSandboxOffNotice plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
       <PersonaHostsNotice plane={plane} />
       {/* **A teammate's dispatch grant arrived** (#1506): said here, at the window's level,

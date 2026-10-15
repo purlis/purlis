@@ -51,8 +51,12 @@ makes the floor every chat's default where a project has not turned the full san
    against a chat at `off`, which is what `off` means.
 8. **What a start does with it** (2026-10-15, the first wiring, with the floor of #2081). A
    start reads the level only through `sandbox::your_level`: `personal::in_force`, then
-   `sandbox::bounded`, the one place a policy bounds it. An administrator's policy that forbids
-   the opt-out forbids `off` too; the team's policy (#2071, PR C) bounds it there as well.
+   `sandbox::bounded`, the one place a policy bounds it, through `team::allowed_levels` (#2071,
+   PR C). An administrator's policy that forbids the opt-out, or the project's
+   `[sandbox] policy = "never"`, holds every level at the full sandbox: it lifts `floor` to the
+   full sandbox as well as `off`, the level of a chat whose person chose none included. An
+   accepted team off (`mode = "off"`) makes no sandbox the level of a chat whose person chose
+   none.
    - A confirmed `off`, for the project or the chat's persona, starts the chat as "Start
      without the sandbox" does: every class lifted, audited as the person's
      (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its tab says

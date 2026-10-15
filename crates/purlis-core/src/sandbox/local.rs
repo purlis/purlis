@@ -297,6 +297,11 @@ struct OnDisk {
     /// ([`super::personal::in_force`]). A chat can write that file; it cannot write this one.
     #[serde(default, skip_serializing_if = "super::personal::Personal::is_empty")]
     levels_mine: super::personal::Personal,
+    /// Your answer to the project's sandbox off (#2071, SO-8): what `[sandbox] mode = "off"`
+    /// in the committed file does on this machine, for the commit it arrived in. Kept here,
+    /// where no chat writes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    team_off: Option<TeamOffAnswer>,
 }
 
 /// One dispatch grant that holds in one workspace only (#1505), as this file keeps it.
@@ -942,6 +947,25 @@ pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize
 
 /// Your own levels for the project at `root` that you set or confirmed in Settings on this
 /// machine.
+/// **Your answer to the project's sandbox off** (#2071, SO-8): the commit it arrived in, and
+/// whether you accepted it or kept the sandbox on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TeamOffAnswer {
+    pub commit: String,
+    pub accepted: bool,
+}
+
+/// Your answer to the project's sandbox off at `root`, where you gave one.
+pub fn team_off_answer(root: &Path) -> Option<TeamOffAnswer> {
+    read(root).team_off
+}
+
+/// Keeps your answer to the project's sandbox off: the window's Accept, Keep it on for me, or a
+/// change of mind in Settings, never a chat (a sandboxed chat cannot write this file).
+pub fn answer_team_off(root: &Path, answer: TeamOffAnswer) -> io::Result<()> {
+    change(root, |held| held.team_off = Some(answer))
+}
+
 pub fn confirmed_levels(root: &Path) -> super::personal::Personal {
     read(root).levels_mine
 }

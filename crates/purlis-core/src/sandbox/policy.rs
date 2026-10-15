@@ -192,6 +192,10 @@ pub struct Locks {
     no_dispatch: bool,
     /// The pairs no chat may dispatch across: asking persona, target persona.
     dispatch_locked: Vec<(String, String)>,
+    /// The project's own `[sandbox] policy = "never"` (#2071 PR C): nobody runs below the full
+    /// sandbox there, as where this machine's policy forbids the opt-out, and said as the
+    /// project's.
+    team_never: bool,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -220,14 +224,17 @@ impl Locks {
     /// file's ([`MACHINE_FILE`]). No project setting moves where it is read from, and nothing
     /// in the environment does either: one a chat could set would be one a chat could point at
     /// a file of its own.
-    pub fn of(_root: &Path) -> Self {
+    ///
+    /// With the project's own `[sandbox] policy = "never"` beside them (#2071 PR C), which
+    /// requires the full sandbox as [`Self::forbids_opt_out`] does, said as the project's.
+    pub fn of(root: &Path) -> Self {
         #[cfg(any(test, feature = "test-support"))]
-        {
-            TEST_LOCKS.with(|locks| locks.borrow().clone())
-        }
+        let locks = TEST_LOCKS.with(|locks| locks.borrow().clone());
         #[cfg(not(any(test, feature = "test-support")))]
-        {
-            Self::read(Path::new(MACHINE_FILE))
+        let locks = Self::read(Path::new(MACHINE_FILE));
+        Self {
+            team_never: super::team::Team::of(root).policy == super::team::Policy::Never,
+            ..locks
         }
     }
 
@@ -273,6 +280,7 @@ impl Locks {
             dispatch: crate::dispatchlimits::ceiling_when_refused(),
             no_dispatch: true,
             dispatch_locked: Vec::new(),
+            team_never: false,
         }
     }
 
@@ -325,8 +333,17 @@ impl Locks {
     /// **"On, required by policy", and who set it**: what Settings says of the mode where
     /// policy requires the sandbox ([`Self::forbids_opt_out`]); none where it does not.
     pub fn required_by(&self) -> Option<String> {
-        self.forbids_opt_out()
-            .then(|| self.led_by("On, required by policy"))
+        if self.no_opt_out {
+            return Some(self.led_by("On, required by policy"));
+        }
+        self.team_never.then(|| {
+            format!(
+                "On, required by the project's policy ({}.{} = \"never\" in {}).",
+                super::TABLE,
+                super::team::KEY,
+                super::FILE
+            )
+        })
     }
 
     /// The presets of `asked` the policy lets a project turn on, in `asked`'s order.
@@ -385,7 +402,7 @@ impl Locks {
     /// sandbox** (D-1423-1): in every project on this machine, whatever the project's own file
     /// says ([`super::Plane::in_force`]).
     pub fn forbids_opt_out(&self) -> bool {
-        self.no_opt_out
+        self.no_opt_out || self.team_never
     }
 
     /// **The most each dispatch limit may be** (#1440): a ceiling over the project's, a
@@ -656,12 +673,13 @@ impl Locks {
 
     /// Why no chat may start without the sandbox, where policy forbids it.
     pub fn opt_out_refused(&self) -> Option<String> {
-        self.no_opt_out.then(|| {
-            format!(
+        if self.no_opt_out {
+            return Some(format!(
                 "Policy forbids starting a chat without the sandbox. {}",
                 self.locked_by()
-            )
-        })
+            ));
+        }
+        self.team_never.then(super::team::never_said)
     }
 }
 
@@ -820,6 +838,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         dispatch,
         no_dispatch,
         dispatch_locked,
+        team_never: false,
     })
 }
 

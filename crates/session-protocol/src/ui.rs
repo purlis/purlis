@@ -358,6 +358,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answers the question before it is asked.
     "allow_project_expects",
     "decline_project_expects",
+    // The person's answer to the project's sandbox off (#2071, SO-8): theirs alone, so no chat
+    // turns its own sandbox off through a link.
+    "answer_team_sandbox_off",
     // Remove on the Allowed list (#1927): the person's standing answers are taken back in
     // their own window.
     "revoke_sandbox_grant",

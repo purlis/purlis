@@ -303,6 +303,7 @@ export const commands = {
 	allowPersonaHosts: __WINDOW_ONLY_RESULT,
 	allowProjectExpects: __WINDOW_ONLY_RESULT,
 	declineProjectExpects: __WINDOW_ONLY_RESULT,
+	answerTeamSandboxOff: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -7218,6 +7219,18 @@ export type SandboxState = {
 	 *  allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
 	 */
 	expects?: ProjectExpects | null,
+	/**
+	 *  **The project's sandbox off** (#2071 PR C): its committed `[sandbox] mode = "off"`, the
+	 *  commit it arrived in, and how the person on this machine answered it. `null` where the
+	 *  project does not turn the sandbox off in a commit.
+	 */
+	team_off?: TeamOffState | null,
+	/**
+	 *  Why nobody here runs below the full sandbox (#2071 PR C): the project's
+	 *  `policy = "never"`, or an administrator's policy, in one sentence. Settings shows it in
+	 *  place of the level switch. `null` where each person chooses.
+	 */
+	level_held?: string | null,
 };
 
 /**  One save attempt, as the journal holds it. */
@@ -8102,6 +8115,22 @@ export type TasksUsed = {
 	finished: FinishedUsed[],
 	/**  `null` for a hover's ask, and where the ask named no task. */
 	total: UsedTotal | null,
+};
+
+/**
+ *  **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8): once,
+ *  "Your project turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on
+ *  for me; Settings offers the other answer after.
+ */
+export type TeamOffState = {
+	/**  The commit that turned it off, whole: what an answer is sent back with. */
+	commit: string,
+	/**  Who made that commit, as git names them. Written by a repository: drawn inertly. */
+	author: string,
+	/**  The ask's sentence, in purlis's words. */
+	said: string,
+	/**  `null` until answered; `true` accepted (no sandbox by default), `false` kept on. */
+	answer: boolean | null,
 };
 
 /**
