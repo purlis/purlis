@@ -37,6 +37,7 @@ function row(name: string, more: Partial<MachineProfileRow> = {}): MachineProfil
     pinned: "2.1.300",
     installed: "2.1.300",
     offered: null,
+    commands_can_read_sign_in: null,
     ...more,
   };
 }
@@ -162,6 +163,19 @@ describe("Settings › You › Profiles", () => {
     expect(screen.getByText("Claude Code, the harness's own folder")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import the settings of work again" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Import the settings of mine again" })).toBeNull();
+  });
+
+  it("warns plainly on a profile whose sign-in the commands its chats run can read (#2037)", async () => {
+    const warning =
+      "The commands this profile's chats run can read its sign-in: Codex and the commands it runs are wrapped in one sandbox.";
+    profiles = [
+      row("codex-work", { kind: "codex", harness: "Codex", commands_can_read_sign_in: warning }),
+      row("work"),
+    ];
+    render(<Row at={0} />);
+    expect(await screen.findByText(warning)).toBeTruthy();
+    // Said once, on the one profile it is true of.
+    expect(screen.getAllByText(/can read its sign-in/)).toHaveLength(1);
   });
 
   it("adds a profile of the harness picked, under the name typed", async () => {

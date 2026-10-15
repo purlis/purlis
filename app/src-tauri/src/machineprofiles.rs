@@ -55,6 +55,9 @@ pub struct MachineProfileRow {
     /// would not start on it (another major, or an older one). Null where its chats run on the
     /// version installed, or follow it.
     pub offered: Option<String>,
+    /// Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
+    /// page's warning, in the core's words; null where its harness keeps the sign-in from them.
+    pub commands_can_read_sign_in: Option<String>,
 }
 
 /// A plan a profile is signed in to, by the provider id its harness takes.
@@ -98,6 +101,9 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
             pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             installed: None,
             offered: None,
+            commands_can_read_sign_in: purlis_core::sandbox::signin::commands_can_read(
+                &record.harness,
+            ),
         }
     }
 }

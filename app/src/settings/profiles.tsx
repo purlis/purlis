@@ -17,7 +17,8 @@ import { askProfileSignIn } from "./links";
  * is pinned to (#2038), and a profile whose next chat would not start on the version installed
  * (another major) offers **Update the pin**. **Remove…** asks first,
  * naming the conversations that go, and an adopted harness folder is never deleted: purlis only
- * forgets the profile, and the question says so.
+ * forgets the profile, and the question says so. A profile whose sign-in the commands its chats
+ * run can read says so plainly in its row, in the core's words (#2037, ADR 0095 §5).
  *
  * A profile is the person's, for the whole machine, so it is under You, beside This machine and
  * Accounts. The list and every act are the core's (`machine_profiles`, `machine_profile_*`), the
@@ -298,6 +299,9 @@ const listed = (plane: string | undefined): LiveSetting => ({
                           );
                         }}
                       />
+                    )}
+                    {profile.commands_can_read_sign_in !== null && (
+                      <span className="ui-setting-help">{profile.commands_can_read_sign_in}</span>
                     )}
                     {profile.origin === "made" && (
                       <EntryButton

@@ -3149,6 +3149,33 @@ impl Applied {
         }
     }
 
+    /// **This sandbox for a chat on the profile whose folders are `folders`** (#2037, ADR 0095
+    /// §5): the profile's sign-in files ([`signin::credential_files`]) denied to the agent's
+    /// commands, reading and writing, with the human-powers class, where the harness runs its
+    /// commands apart from itself. Claude Code does: its sandbox holds the commands its Bash tool
+    /// runs, and a deny rule its Read and Edit tools, while its own process reads its sign-in.
+    /// Codex and opencode run whole inside purlis's wrap with their commands, so what the harness
+    /// reads its commands can read too, and the form is left as it is; their declarations say so
+    /// (`[sign_in] kept_from_commands`).
+    pub fn on_profile(&mut self, folders: &signin::ProfileFolders) {
+        let Form::ClaudeCode(settings) = &mut *self.form else {
+            return;
+        };
+        let more: Vec<Denial> = signin::credential_files(self.harness, folders)
+            .into_iter()
+            .map(|path| Denial {
+                class: Class::HumanPowers,
+                path,
+                access: Access::ReadWrite,
+                named: None,
+            })
+            .filter(|denial| !self.denied.contains(denial))
+            .collect();
+        *settings = settings.denying(&more);
+        self.confines.denied.extend(more.iter().cloned());
+        self.denied.extend(more);
+    }
+
     /// The plane it was compiled for.
     pub fn root(&self) -> &Path {
         &self.root
@@ -5707,6 +5734,7 @@ pub mod program;
 pub mod reach;
 pub mod seatbelt;
 pub mod services;
+pub mod signin;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
@@ -5733,6 +5761,8 @@ mod persona_tests;
 mod plan_tests;
 #[cfg(test)]
 mod reach_tests;
+#[cfg(test)]
+mod signin_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

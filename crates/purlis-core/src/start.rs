@@ -521,6 +521,12 @@ fn ready_given(
     // sandboxed chat could have changed. Resolved once, here: the real file it names is what the
     // check asks and what the chat then runs.
     if let (Some(harness), Some(applied)) = (harness, &mut sandbox) {
+        // The profile's sign-in, kept from the agent's commands where the harness runs them
+        // apart from itself (#2037, ADR 0095 §5): in the folders the chat's own environment
+        // points its harness at.
+        applied.on_profile(&crate::sandbox::signin::ProfileFolders::of(
+            harness, &env, machine,
+        ));
         let words: Vec<String> = std::iter::once(program.clone())
             .chain(argv.iter().cloned())
             .collect();

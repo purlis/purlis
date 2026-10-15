@@ -165,6 +165,51 @@ fn an_opencode_chat_on_a_profile_made_here_has_both_its_folders_at_the_profiles(
 }
 
 #[test]
+fn a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_its_commands() {
+    purlis_core::unsteered!();
+    let Some(_data) = in_a_data_home_of_its_own(
+        "a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_its_commands",
+    ) else {
+        return;
+    };
+    let machine = tempfile::tempdir().unwrap();
+    let settings = machine.path().join("claude-settings");
+    fs::create_dir_all(&settings).unwrap();
+    let record = made("work", "claude", "CLAUDE_CONFIG_DIR", &settings);
+    let plane = project();
+    fs::write(
+        plane.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+
+    let ready = start::ready(&start_on("work", plane.path()), plane.path()).expect("it starts");
+
+    let file = record.folders.config.join(".credentials.json");
+    let applied = ready.sandbox.as_ref().expect("sandboxed");
+    assert!(
+        applied
+            .confines()
+            .denied
+            .iter()
+            .any(|denial| denial.path == file
+                && denial.access == purlis_core::sandbox::Access::ReadWrite),
+        "{:?}",
+        applied.confines().denied
+    );
+    let purlis_core::sandbox::Form::ClaudeCode(settings) = applied.form() else {
+        panic!("Claude Code's settings");
+    };
+    assert!(
+        settings
+            .deny
+            .contains(&format!("Read(/{})", file.display())),
+        "{:?}",
+        settings.deny
+    );
+}
+
+#[test]
 fn a_profile_the_project_declares_under_the_same_name_is_the_one_its_chats_run() {
     purlis_core::unsteered!();
     let Some(_data) = in_a_data_home_of_its_own(
