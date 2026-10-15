@@ -19,6 +19,7 @@ use common::HELD;
 
 const CHAT: &str = "01J9ZQ3V7K8M2N4P6R8T0V2X4Z";
 const ASK: &str = "ask-1";
+const CONFINEMENT: &str = "01J9CNFNMNT0000000000000000";
 
 /// A host that answers every command, keeps each it was sent, and says whether an ask elicits a
 /// secret as it is told.
@@ -176,6 +177,7 @@ fn every_command() -> Vec<Command> {
                 harness: None,
                 git_hooks: None,
                 reporting: None,
+                confinement: None,
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),
@@ -190,6 +192,36 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
             heard: 12,
             reply: serde_json::json!("taken"),
+        },
+        // A chat's confinement and its sandbox's answers: the window's alone (1.4).
+        Command::Confine(Box::new(session::Confine {
+            confinement: CONFINEMENT.into(),
+            project: "01J9PRJCT00000000000000000".into(),
+            plan: session::ConfinePlan {
+                listed: Vec::new(),
+                never: Vec::new(),
+                withdrawn: Vec::new(),
+                anything: false,
+                tunnel_ports: vec![443],
+                plain_ports: vec![80],
+                any_port: false,
+                beside: session::Beside::Wrapped,
+                given: Vec::new(),
+            },
+            asks: true,
+        })),
+        Command::ChangeReach {
+            confinement: CONFINEMENT.into(),
+            change: session::ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: session::Layer::Chat,
+            },
+        },
+        Command::ReachOf {
+            confinement: CONFINEMENT.into(),
+        },
+        Command::LetGoOfConfinement {
+            confinement: CONFINEMENT.into(),
         },
     ]
 }
@@ -220,6 +252,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "deal",
             "dealt_already",
             "reply_heard",
+            "confine",
+            "change_reach",
+            "reach_of",
+            "let_go_of_confinement",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",

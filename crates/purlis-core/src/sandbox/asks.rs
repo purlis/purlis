@@ -167,10 +167,13 @@ impl Asks {
     /// Whether the person is being asked about `host`: a connection to it is held, or gave up
     /// and its ask is still unanswered.
     pub fn asks_about(&self, host: &Host) -> bool {
-        self.state()
-            .asked
-            .iter()
-            .any(|target| Host::parse(target).is_ok_and(|one| host.covers(&one)))
+        asks_about_among(&self.state().asked, host)
+    }
+
+    /// The hosts and ports the person is being asked about now, each whole, in the order they
+    /// came: what the session host tells the window of a board it holds (#1999).
+    pub fn asked(&self) -> Vec<String> {
+        self.state().asked.clone()
     }
 
     /// The scope a host allowed live lets `host` on `port` through at, where a host listed
@@ -335,6 +338,14 @@ impl Asks {
             .live
             .retain(|(one, kept)| *one != entry || *kept != by);
     }
+}
+
+/// Whether `host` covers one of `asked`, each a host and port a board asks about
+/// ([`Asks::asked`]): [`Asks::asks_about`], of a board read elsewhere (#1999).
+pub fn asks_about_among(asked: &[String], host: &Host) -> bool {
+    asked
+        .iter()
+        .any(|target| Host::parse(target).is_ok_and(|one| host.covers(&one)))
 }
 
 /// The scope a live Allow in `state` carries `host` on `port` at.

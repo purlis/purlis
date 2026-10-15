@@ -545,6 +545,7 @@ mod tests {
             operator_shell: false,
             git_hooks: None,
             handed: Default::default(),
+            confinement: None,
         }
     }
 

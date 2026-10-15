@@ -96,6 +96,7 @@ fn a_shell(script: &str) -> Opening {
         operator_shell: false,
         git_hooks: None,
         handed: Default::default(),
+        confinement: None,
     }
 }
 

@@ -195,6 +195,19 @@ pub fn bind_loopback() -> std::io::Result<TcpListener> {
     ))
 }
 
+/// **`held` are ports a listener of purlis's in another process holds** (#1999): the session
+/// host's proxy for a chat. Marked purlis's own here too, so no chat here is allowed one,
+/// unless a chat here was given one, which is refused: judged and marked in one hold of the
+/// lock. [`release`] each when it is let go of.
+pub fn hold_elsewhere(held: &[u16]) -> bool {
+    let mut ports = ports();
+    if held.iter().any(|port| ports.given.contains(port)) {
+        return false;
+    }
+    ports.own.extend(held.iter().copied());
+    true
+}
+
 /// `port` is no longer purlis's own: its listener closed.
 pub fn release(port: u16) {
     ports().own.remove(&port);
