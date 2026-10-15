@@ -291,8 +291,20 @@ impl purlis_host::Hear for HookChannels {
             }),
             Keeping {
                 record: {
-                    let kept = kept.clone();
-                    Box::new(move |entry| kept.write(entry))
+                    let (kept, root) = (kept.clone(), path.to_path_buf());
+                    // A line of this project's is recorded under this project.
+                    Box::new(move |entry| match &entry {
+                        purlis_core::eventlog::Entry::Report { plane, .. }
+                        | purlis_core::eventlog::Entry::Tool { plane, .. }
+                        | purlis_core::eventlog::Entry::Refused { plane, .. }
+                            if *plane == root =>
+                        {
+                            kept.write(entry)
+                        }
+                        _ => Err(std::io::Error::other(
+                            "what the window sent back to record is not of this project's line",
+                        )),
+                    })
                 },
                 heard_from: Box::new(move |chat| spooled.heard_from(chat)),
             },

@@ -38,8 +38,8 @@
 //! app with facts from its own record of the chats: no line on the hook channel names a
 //! record, an asker, an outcome or a cost. While chats run in the session host, the host (the
 //! app's own binary) ends one whose chat's program ended with no window there
-//! ([`ended_unwatched`], #2003), from the program's end it saw itself. Three things in a record are still a chat's. The
-//! brief, the report's text and each message the two chats sent each other ([`Said`], #1495)
+//! ([`ended_unwatched`], #2003), from the program's end it saw itself. Three things in a record
+//! are still a chat's. The brief, the report's text and each message the two chats sent each other ([`Said`], #1495)
 //! are its words, stored as written and held to a cap ([`cut`]). And what its
 //! harness reported of tokens and cost ([`crate::usage::spent`]) is relayed by the chat's
 //! status line, which its harness runs outside the sandbox, into a file of the app's folder
@@ -2318,5 +2318,4 @@ fn change(root: &Path, id: &str, edit: impl FnOnce(&mut Record) -> bool) -> io::
 }
 
 #[cfg(test)]
-#[path = "dispatchrecord_tests.rs"]
 mod tests;

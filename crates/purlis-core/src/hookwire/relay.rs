@@ -252,7 +252,10 @@ impl Relaying {
         self.done(id);
         match reply {
             Ok(Replied::Taken) => Ok(()),
-            Ok(Replied::Record(entry)) => self.record(entry),
+            Ok(Replied::Record(entry)) if of_the_line(&entry, heard) => self.record(entry),
+            Ok(Replied::Record(_)) => Err(io::Error::other(
+                "what the window sent back to record is not of this line, so it was not recorded",
+            )),
             Ok(Replied::NotTaken { why }) => Err(io::Error::other(why)),
             Ok(other) => Err(io::Error::other(format!(
                 "the window replied {other:?} to a line it was to take"
@@ -686,6 +689,18 @@ impl Write for Frames {
 impl Drop for Frames {
     fn drop(&mut self) {
         let _ = self.flush();
+    }
+}
+
+/// Whether `entry`, sent back with the reply to `heard`, is the record of that line: the same
+/// kind of line, saying what it said, of the same chat. Nothing else is written through a
+/// line's reply.
+fn of_the_line(entry: &Entry, heard: &Heard) -> bool {
+    match (entry, heard) {
+        (Entry::Report { report, .. }, Heard::Report(line)) => report == line,
+        (Entry::Tool { call, .. }, Heard::Tool(line)) => call == line,
+        (Entry::Refused { chat, .. }, Heard::Refused(line)) => *chat == line.chat,
+        _ => false,
     }
 }
 

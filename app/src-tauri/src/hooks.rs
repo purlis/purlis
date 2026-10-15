@@ -1910,10 +1910,14 @@ impl Hooks {
                             begun: begun.clone(),
                         },
                     );
-                    // Before the window is told, so the record already names the conversation
-                    // by the time anything the move prompts could ask for it. Whether or not a
-                    // reader sees a difference: after `/clear` the chat may be in the state it
-                    // was in, under a conversation it was not.
+                    // The chats' record (`following`) is told before the window is, so it
+                    // already names the conversation by the time anything the move prompts
+                    // could ask for it. Whether or not a reader sees a difference: after
+                    // `/clear` the chat may be in the state it was in, under a conversation it
+                    // was not. Where the session host writes the event log (#2003), the event
+                    // above is written there once this hearing returns, after the window is
+                    // told and before the hook is told its line is taken: nothing the window
+                    // is told reads the event log.
                     if let Some(id) = applied.followed {
                         let listener = following
                             .lock()
@@ -2142,6 +2146,38 @@ impl Hooks {
         *self.events.lock().unwrap_or_else(PoisonError::into_inner) = Some(events);
     }
 
+    /// One audited act (`kind` with `body`) in the event log, under chat `number` where it came
+    /// from one, made durable before it answers. Refused where this machine has no event log
+    /// open, saying that nothing was `done` and that every `what` is recorded.
+    fn audit(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        kind: &str,
+        body: serde_json::Value,
+        (done, what): (&str, &str),
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| {
+                format!(
+                    "purlis's event log is not open on this machine, so nothing was {done}: \
+                     every {what} is recorded"
+                )
+            })?;
+        events
+            .record(Entry::Audited {
+                plane: root.to_path_buf(),
+                number,
+                kind: kind.to_owned(),
+                body,
+            })
+            .map_err(|why| format!("the event log refused it ({why}), so nothing was {done}"))
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.
@@ -2151,26 +2187,13 @@ impl Hooks {
         number: Option<u32>,
         audited: &purlis_core::sandbox::grant::Audited<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was changed: every \
-                 sandbox grant is recorded"
-                    .to_owned(),
-            );
-        };
-        events
-            .record(Entry::Audited {
-                plane: root.to_path_buf(),
-                number,
-                kind: audited.kind().to_owned(),
-                body: audited.body(),
-            })
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+        self.audit(
+            root,
+            number,
+            audited.kind(),
+            audited.body(),
+            ("changed", "sandbox grant"),
+        )
     }
 
     /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
@@ -2181,26 +2204,13 @@ impl Hooks {
         number: u32,
         applied: &purlis_core::proposed::Applied<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was written: every \
-                 applied change is recorded"
-                    .to_owned(),
-            );
-        };
-        events
-            .record(Entry::Audited {
-                plane: root.to_path_buf(),
-                number: Some(number),
-                kind: purlis_core::proposed::APPLIED_KIND.to_owned(),
-                body: applied.body(),
-            })
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was written"))
+        self.audit(
+            root,
+            Some(number),
+            purlis_core::proposed::APPLIED_KIND,
+            applied.body(),
+            ("written", "applied change"),
+        )
     }
 
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
@@ -2210,29 +2220,16 @@ impl Hooks {
         root: &Path,
         audited: &purlis_core::dispatchgrant::Audited<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was changed: every \
-                 dispatch grant is recorded"
-                    .to_owned(),
-            );
-        };
-        events
-            .record(Entry::Audited {
-                plane: root.to_path_buf(),
-                number: None,
-                kind: audited.kind().to_owned(),
-                body: purlis_core::eventlog::dispatch_grant_body(
-                    audited,
-                    Some(purlis_core::dispatchaway::AUDITED_FROM),
-                ),
-            })
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+        self.audit(
+            root,
+            None,
+            audited.kind(),
+            purlis_core::eventlog::dispatch_grant_body(
+                audited,
+                Some(purlis_core::dispatchaway::AUDITED_FROM),
+            ),
+            ("changed", "dispatch grant"),
+        )
     }
 
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
@@ -2244,26 +2241,13 @@ impl Hooks {
         number: Option<u32>,
         audited: &purlis_core::dispatchgrant::Audited<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was changed: every \
-                 dispatch grant is recorded"
-                    .to_owned(),
-            );
-        };
-        events
-            .record(Entry::Audited {
-                plane: root.to_path_buf(),
-                number,
-                kind: audited.kind().to_owned(),
-                body: purlis_core::eventlog::dispatch_grant_body(audited, None),
-            })
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+        self.audit(
+            root,
+            number,
+            audited.kind(),
+            purlis_core::eventlog::dispatch_grant_body(audited, None),
+            ("changed", "dispatch grant"),
+        )
     }
 
     /// Drains this project's hook spool into the event log (FD-30, ADR 0068 §6): the lines its

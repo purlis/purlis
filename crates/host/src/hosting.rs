@@ -829,7 +829,7 @@ impl Hosting {
         let hosting = self.clone();
         let ended = program.clone();
         let run = start.run.clone();
-        let (project, kind) = (start.project.clone(), start.kind);
+        let project = start.project.clone();
         running.when_it_ends(Box::new(move |exit| {
             if let Some(hosted) = hosting.state().programs.get_mut(&ended) {
                 hosted.ended = true;
@@ -843,10 +843,8 @@ impl Hosting {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             hosting.record().ended(&Ended {
-                project: &project,
                 project_path: &path,
                 number,
-                kind,
                 exit: exit.clone(),
                 stopped,
                 watched: hosting.watched(&project),

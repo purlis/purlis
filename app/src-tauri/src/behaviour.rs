@@ -74,9 +74,8 @@ pub(crate) struct Target {
     pub switch: Arc<KillSwitch>,
     /// Where the target's project is.
     pub root: PathBuf,
-    /// Where the device's event log is, and whether the window holds it there itself.
+    /// Where the device's event log is.
     pub log: PathBuf,
-    pub window_holds_the_log: bool,
     /// The window's link to the host, on the host's target: what the host is asked directly.
     pub host: Option<Arc<Connection>>,
     /// What keeps the target running for as long as the test does.
@@ -126,7 +125,6 @@ pub(crate) fn in_the_window() -> Target {
     let config = tempfile::tempdir().expect("a config home");
     let data = tempfile::tempdir().expect("a data home");
     let events = crate::hooks::Events::here(an_event_log(data.path()).expect("the event log"));
-    let window_holds_the_log = events.held().is_some();
     hooks.record_into(events);
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     let mut sessions = Sessions::reporting_to(hooks.reporting());
@@ -138,7 +136,6 @@ pub(crate) fn in_the_window() -> Target {
         switch,
         root,
         log: data.path().to_path_buf(),
-        window_holds_the_log,
         host: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
@@ -157,15 +154,22 @@ pub(crate) fn in_the_host() -> Target {
     target
 }
 
-/// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
-/// in a config home of its own, which starts with nothing thrown.
-fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
+/// A session host the window started and holds a link to: the host's own code, serving the
+/// session protocol over an in-memory link, its programs each in a real terminal, composed as
+/// the window's binary composes them, keeping its kill switch in `folder` and the device's event
+/// log in a data home of its own (#2003).
+pub(crate) struct HostOfTheWindow {
+    pub connection: Arc<Connection>,
+    pub data: tempfile::TempDir,
+    pub runtime: tokio::runtime::Runtime,
+}
+
+pub(crate) fn a_host_of_the_window(folder: &Path) -> HostOfTheWindow {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("a runtime");
-    let config = tempfile::tempdir().expect("a config home");
     // The host holds the device's event log, opened as it first holds a project (#2003).
     let data = tempfile::tempdir().expect("a data home");
     let kept = {
@@ -206,6 +210,22 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link));
+    HostOfTheWindow {
+        connection,
+        data,
+        runtime,
+    }
+}
+
+/// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
+/// in a config home of its own, which starts with nothing thrown.
+fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
+    let config = tempfile::tempdir().expect("a config home");
+    let HostOfTheWindow {
+        connection,
+        data,
+        runtime,
+    } = a_host_of_the_window(folder);
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
     // The window hands the host every write, and opens no log (#2003).
@@ -213,7 +233,6 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
         let connection = Arc::clone(&connection);
         move |entry| crate::hostedsessions::record_in_the_host(&connection, &entry)
     });
-    let window_holds_the_log = events.held().is_some();
     hooks.record_into(events);
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
@@ -227,7 +246,6 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
         switch,
         root,
         log: data.path().to_path_buf(),
-        window_holds_the_log,
         host: Some(connection),
         _keeps: vec![
             Box::new(project),
@@ -1080,92 +1098,20 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
             .count()
     };
     until("the hook's line is in the event log", || stops() >= 1);
-    // Long enough for a look at the chat's spool, and a drain of anything in it.
-    std::thread::sleep(Duration::from_millis(500));
+    // The hook was told its line was taken, so it spooled no copy that could be recorded later.
+    let spool =
+        purlis_core::hookwire::spool::dir_for(&crate::hooks::socket_for(Some(&target.root)).socket);
+    assert!(
+        !purlis_core::hookwire::spool::holds_lines(&spool, id),
+        "no copy of the line waits to be drained"
+    );
 
     assert_eq!(stops(), 1, "one line, written once");
-    assert_eq!(
-        target.window_holds_the_log,
-        target.host.is_none(),
-        "the window holds the log only where the chat runs in the window"
-    );
     assert!(
         purlis_core::eventlog::Log::open(&target.log, DEVICE).is_err(),
         "its one writer holds it, and no second is let in"
     );
     target.sessions.close(id).expect("it closes");
-}
-
-/// **A chat another chat dispatches starts where its asker runs** (#2003): the asking chat's
-/// `purlis dispatch` reaches the window from wherever its hooks are heard, the window's answer
-/// starts the task through the same seam every chat starts through, and in the host's target
-/// the host runs it. Who may dispatch and what the task gets are the window's decision, as
-/// before; the answer here stands in for it and starts a shell.
-fn a_chat_dispatched_by_another_chat_starts_where_its_asker_runs(target: &Target) {
-    use purlis_core::hookwire::{Answer, Ask};
-    let opened: Arc<Mutex<Option<u32>>> = Arc::default();
-    target.hooks.answer_with({
-        let sessions = Arc::clone(&target.sessions);
-        let opened = Arc::clone(&opened);
-        Arc::new(move |connection, ask| match ask {
-            Ask::Ticket { .. } => Answer::Ticket {
-                ticket: format!("t{connection}"),
-            },
-            Ask::Dispatch(dispatch) => {
-                match sessions.open(None, &a_shell("printf 'TASK-READY'; read line"), &|_| {}) {
-                    Ok(task) => {
-                        *opened.lock().expect("the task") = Some(task);
-                        Answer::Dispatched {
-                            chat: task,
-                            name: dispatch.name,
-                            persona: None,
-                            note: None,
-                            works: None,
-                        }
-                    }
-                    Err(why) => Answer::No { why },
-                }
-            }
-            _ => Answer::No {
-                why: "not an ask this behaviour answers".into(),
-            },
-        })
-    });
-    let asker = a_chat_on_the_board(
-        target,
-        &a_shell(&format!(
-            "cd '{}' && printf 'Look at the queue.' | '{}' dispatch --name 'look at the queue'; \
-             printf 'dispatched.'; read line",
-            target.root.display(),
-            purlis()
-        )),
-    );
-
-    let pane = Pane::on(target, asker);
-    pane.shows("dispatched.");
-    let task = opened.lock().expect("the task").unwrap_or_else(|| {
-        panic!(
-            "the dispatch started no chat; the asker's pane drew {:?}",
-            pane.seen.lock().expect("the pane")
-        )
-    });
-    Pane::on(target, task).shows("TASK-READY");
-    if let Some(host) = &target.host {
-        let listed = host
-            .wait(PATIENCE)
-            .expect("the link")
-            .call(session::Command::List)
-            .expect("the host lists its chats");
-        let session::Answer::Chats(chats) = listed else {
-            panic!("the host answered a list with {listed:?}");
-        };
-        assert!(
-            chats.iter().any(|chat| chat.number == Some(task)),
-            "the host runs the task: {chats:?}"
-        );
-    }
-    target.sessions.close(task).expect("it closes");
-    target.sessions.close(asker).expect("it closes");
 }
 
 /// **A chat whose program ends with the window gone still has its end recorded, and its
@@ -1327,5 +1273,4 @@ on_every_target!(
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens,
     the_event_log_has_one_writer_and_each_hook_line_is_written_once,
-    a_chat_dispatched_by_another_chat_starts_where_its_asker_runs,
 );

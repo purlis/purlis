@@ -19,7 +19,7 @@
 
 use std::path::Path;
 
-use purlis_session_protocol::session::{Exit, ProgramKind};
+use purlis_session_protocol::session::Exit;
 
 /// The host's own act that ended a program, where one did: the highest of them where several
 /// did, in this order (ADR 0076 §2, D-1084-1).
@@ -37,14 +37,10 @@ pub enum Stopped {
 
 /// A program the host ran has ended.
 pub struct Ended<'a> {
-    /// The project it ran in, by its stable id.
-    pub project: &'a str,
-    /// Where that project is on this machine.
+    /// Where the project it ran in is on this machine.
     pub project_path: &'a Path,
     /// Its number in the project.
     pub number: u32,
-    /// What kind of program it was.
-    pub kind: ProgramKind,
     /// How it ended.
     pub exit: Exit,
     /// The host's own act that ended it, or `None` for a program that ended by itself.

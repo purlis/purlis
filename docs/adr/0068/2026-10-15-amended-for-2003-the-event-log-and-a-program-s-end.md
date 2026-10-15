@@ -31,7 +31,12 @@ the window opens the log and writes it, as before.
 4. **A hook line is recorded on the thread that heard it.** The window still decides what a
    line moves (D-2000-1); what its hearing would have written of a line the host handed on goes
    back with the line's reply (`relay::carry`, `Replied::Record`), and the host writes it before
-   the hook is told the line is taken. The host drains each chat's spool, as the project is
+   the hook is told the line is taken. It is written once the window's hearing returns, so after
+   the board and the window have moved: nothing the window is told reads the event log, and the
+   hook's promise (a line is taken only once it is kept, FD-30) holds. The host writes only an
+   entry that is the record of the line it came back with: that line's kind, saying what it
+   said, of its chat and its project; and the log writes a trust or audited entry only under a
+   `trust.` kind. The host drains each chat's spool, as the project is
    held, soon after the chat is heard from, as it is closed and as its program ends. So a line
    and its spooled copy are told apart in one process, and a line its hook spooled after the
    host took it late is recorded once (#952). *Rejected:* the window sending a hook line's write

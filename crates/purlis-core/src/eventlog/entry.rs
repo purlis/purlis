@@ -127,20 +127,22 @@ impl Recorder {
                 run,
                 kind,
                 body,
-            } => one(self.trust_said(
-                RunOf {
-                    chat: &chat,
-                    run: &run,
-                },
-                &kind,
-                body,
-            )),
+            } => one(trust_kind(&kind).and_then(|()| {
+                self.trust_said(
+                    RunOf {
+                        chat: &chat,
+                        run: &run,
+                    },
+                    &kind,
+                    body,
+                )
+            })),
             Entry::Audited {
                 plane,
                 number,
                 kind,
                 body,
-            } => one(self.audited(&plane, number, &kind, body)),
+            } => one(trust_kind(&kind).and_then(|()| self.audited(&plane, number, &kind, body))),
             Entry::KillSwitchWrote { line } => {
                 let config = self.config()?;
                 self.kill_switch_wrote(line, &config)
@@ -164,6 +166,28 @@ impl Recorder {
         })
     }
 }
+
+/// What a trust or audited entry may be written as: one of the log's `trust.` kinds (a sandbox
+/// decision, a person's grant or revoke, an applied change), never any other.
+fn trust_kind(kind: &str) -> io::Result<()> {
+    let trust = kind.strip_prefix(TRUST).is_some_and(|rest| {
+        !rest.is_empty()
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'_')
+    });
+    if trust {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{kind:?} is not a kind of trust event, so nothing was written"),
+        ))
+    }
+}
+
+/// Where every trust event's kind begins (ADR 0075's registry).
+const TRUST: &str = "trust.";
 
 #[cfg(test)]
 mod tests;

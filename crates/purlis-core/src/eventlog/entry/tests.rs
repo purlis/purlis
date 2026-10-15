@@ -250,3 +250,40 @@ fn only_a_hook_line_names_the_chat_whose_spool_is_looked_at_next() {
         "a person's act is no hook line"
     );
 }
+
+#[test]
+fn a_trust_or_audited_entry_of_a_kind_that_is_no_trust_event_is_refused_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    for kind in [
+        "run.started",
+        "killswitch.stop",
+        "trust.",
+        "trust.Sandbox",
+        "hook.stop",
+    ] {
+        let audited = host.apply(Entry::Audited {
+            plane: plane.into(),
+            number: None,
+            kind: kind.into(),
+            body: serde_json::json!({}),
+        });
+        let trust = host.apply(Entry::Trust {
+            chat: CHAT.into(),
+            run: RUN.into(),
+            kind: kind.into(),
+            body: serde_json::json!({}),
+        });
+        assert!(audited.is_err() && trust.is_err(), "{kind}");
+    }
+    assert!(read(dir.path()).unwrap().is_empty(), "nothing is written");
+    host.apply(Entry::Audited {
+        plane: plane.into(),
+        number: None,
+        kind: "trust.dispatch.give_back".into(),
+        body: serde_json::json!({}),
+    })
+    .expect("a trust kind is written");
+}

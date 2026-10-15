@@ -40,7 +40,6 @@ impl Compose for Echo {
 /// One program's end, as the binary was told it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Told {
-    project: String,
     project_path: PathBuf,
     number: u32,
     exit: Exit,
@@ -63,7 +62,6 @@ impl Record for Kept {
 
     fn ended(&self, ended: &Ended<'_>) {
         self.ended.lock().unwrap().push(Told {
-            project: ended.project.to_owned(),
             project_path: ended.project_path.to_owned(),
             number: ended.number,
             exit: ended.exit.clone(),
@@ -204,7 +202,6 @@ async fn a_program_that_ends_by_itself_with_the_window_gone_is_kept_as_unwatched
     assert_eq!(
         ended,
         [Told {
-            project: PROJECT.into(),
             project_path: project.path().to_owned(),
             number: 1,
             exit: Exit::Code(1),

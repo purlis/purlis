@@ -438,8 +438,7 @@ fn what_the_windows_hearing_would_record_is_recorded_in_the_host_and_its_hook_to
 }
 
 #[test]
-fn a_line_whose_spooled_copy_the_hosts_drain_recorded_first_moves_the_window_and_is_not_recorded_again()
- {
+fn a_line_the_hosts_drain_recorded_first_moves_the_window_and_is_not_recorded_again() {
     let window = Arc::new(Window::default());
     let kept = Arc::new(Kept::default());
     let host = relayed_keeping(the_windows_carrying(&window), &kept);
@@ -489,4 +488,59 @@ fn an_entry_carried_with_no_line_being_heard_is_handed_back_to_be_written_as_any
     });
     assert_eq!(carried, Some(entry.clone()));
     assert_eq!(carry(entry.clone()), Some(entry), "not past the line");
+}
+
+/// The window's hearing, sending back `entry` whatever line it heard.
+fn the_windows_sending_back(window: &Arc<Window>, entry: Entry) -> Hearing {
+    let (_, holding) = a_window();
+    let mut hearing = the_windows(window, &holding);
+    hearing.each = {
+        let window = Arc::clone(window);
+        Box::new(move |report| {
+            window.said(format!("report {}", report.chat));
+            let _ = carry(entry.clone());
+            Ok(())
+        })
+    };
+    hearing
+}
+
+#[test]
+fn the_host_records_only_an_entry_that_is_the_record_of_the_line_it_was_sent_back_with() {
+    let not_this_line = [
+        a_report_entry(4),
+        Entry::Report {
+            plane: "/planes/one".into(),
+            report: Report {
+                event: Event::SessionStart,
+                ..report(3)
+            },
+            followed: crate::eventlog::Followed::No,
+            begun: None,
+        },
+        Entry::Refused {
+            plane: "/planes/one".into(),
+            chat: 3,
+        },
+        Entry::Audited {
+            plane: "/planes/one".into(),
+            number: Some(3),
+            kind: "trust.dispatch.grant".into(),
+            body: serde_json::json!({}),
+        },
+        Entry::KillSwitchRead,
+    ];
+    for entry in not_this_line {
+        let window = Arc::new(Window::default());
+        let kept = Arc::new(Kept::default());
+        let host = relayed_keeping(the_windows_sending_back(&window, entry.clone()), &kept);
+
+        let taken = (host.each)(report(3));
+
+        assert!(taken.is_err(), "{entry:?}: its hook spools the line");
+        assert!(
+            kept.recorded.lock().unwrap().is_empty(),
+            "{entry:?} is not written"
+        );
+    }
 }

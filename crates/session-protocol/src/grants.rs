@@ -203,6 +203,13 @@ mod tests {
     }
 
     #[test]
+    fn only_the_window_writes_in_the_event_log_the_host_holds() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Record), scope == Scope::LocalUi, "{scope}");
+        }
+    }
+
+    #[test]
     fn only_a_human_scope_answers() {
         let answer: Vec<Scope> = Scope::ALL
             .into_iter()
