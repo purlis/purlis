@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792098549247,
+  "lastUpdate": 1792099766139,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13104,6 +13104,48 @@ window.BENCHMARK_DATA = {
             "value": 101.00662600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.166, 100.279, 101.007, 101.666, 102.545 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "115591301a994e3e0bc78862098738498caee07d",
+          "message": "fix: letting go of a confinement answers once its proxy has ended (#2222)\n\nlet_go_of_confinement answered `done` as soon as the confinement left the\nhost's state, and dropped it later on a blocking thread, so a window could\nbe told before the chat's proxy had stopped. It now waits for the drop, off\nthe runtime, before it answers. The stand-in confinement can take time to\nend, so the host's and the window's tests of it fail without this every\ntime, not only on a busy runner.\n\nRefs #1999\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T01:21:55+04:00",
+          "tree_id": "b5841d7976eafa2fd8dec7989f8ccdbd1b155497",
+          "url": "https://github.com/purlis/purlis/commit/115591301a994e3e0bc78862098738498caee07d"
+        },
+        "date": 1792099764378,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5898005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.577, 0.582, 0.590, 0.594, 0.596 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.070224,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.848, 15.854, 16.070, 16.387, 16.431 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.22185350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.462, 101.130, 101.222, 101.594, 102.636 ms"
           }
         ]
       }
