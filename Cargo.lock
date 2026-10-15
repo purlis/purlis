@@ -5337,13 +5337,17 @@ name = "purlis-host"
 version = "0.4.2"
 dependencies = [
  "bytes",
+ "futures",
  "nix 0.31.3",
+ "purlis-host",
  "purlis-same-user",
  "purlis-session-protocol",
+ "purlis-terminal",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "ulid",
 ]
 
 [[package]]

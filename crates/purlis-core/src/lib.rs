@@ -18,6 +18,7 @@ pub mod browser;
 pub mod change;
 pub mod chatenv;
 pub mod chatpiece;
+pub mod chatspec;
 pub mod chattools;
 pub mod cistate;
 pub mod cliname;

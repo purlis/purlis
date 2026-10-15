@@ -14,7 +14,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use purlis_host::{HostError, Place, Window, serve};
+use purlis_host::{ComposesNothing, HostError, Hosting, Place, Window, serve};
 use purlis_session_protocol::auth::{Credential, Scope};
 use purlis_session_protocol::link::{self, Link};
 use purlis_session_protocol::session;
@@ -45,6 +45,7 @@ async fn hosting(
         serve(
             &place,
             window,
+            Hosting::new(ComposesNothing),
             move || {
                 let _ = ready.send(());
             },
@@ -164,6 +165,7 @@ async fn a_second_host_leaves_the_one_serving_alone() {
     let second = serve(
         &place,
         None,
+        Hosting::new(ComposesNothing),
         || panic!("a second host became ready"),
         async {},
     )
@@ -207,7 +209,14 @@ async fn a_socket_folder_that_is_a_link_is_refused() {
     std::fs::create_dir(&elsewhere).unwrap();
     std::os::unix::fs::symlink(&elsewhere, place.socket.parent().unwrap()).unwrap();
 
-    let refused = serve(&place, None, || panic!("it became ready"), async {}).await;
+    let refused = serve(
+        &place,
+        None,
+        Hosting::new(ComposesNothing),
+        || panic!("it became ready"),
+        async {},
+    )
+    .await;
     assert!(
         matches!(refused, Err(HostError::Unsafe { .. })),
         "{refused:?}"

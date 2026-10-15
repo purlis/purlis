@@ -6,9 +6,11 @@
 //! program and its Keychain identity are the window's and nothing prompts (ADR 0068 §1, amended
 //! 2026-10-14); on a runner it is `purlis serve`. Both run [`serve`].
 //!
-//! **What it does now** (#1997): it listens on its socket, admits the scopes whose credentials
-//! it minted, refuses everyone else, and serves the session protocol. It runs no program yet,
-//! so it lists none, and every command about one is refused as about a program it does not hold.
+//! **What it does** (#1997, #1998): it listens on its socket, admits the scopes whose
+//! credentials it minted, refuses everyone else, and serves the session protocol: it holds
+//! projects, and starts, views, drives, stops and closes the programs a client starts in them
+//! ([`Hosting`]). How a start is composed is the binary's ([`Compose`]), built on the core, so
+//! this crate links none of it.
 //!
 //! **How it starts, in order, each step failing closed:**
 //!
@@ -36,8 +38,20 @@
 //! socket.
 
 #[cfg(unix)]
+mod hosting;
+#[cfg(unix)]
 mod serving;
+#[cfg(all(unix, any(test, feature = "test-support")))]
+pub mod standin;
 
+#[cfg(unix)]
+pub use hosting::{
+    Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting, Run, Running, Starting,
+    Terminals,
+};
+/// The session protocol this host speaks, for a binary's [`Compose`].
+#[cfg(unix)]
+pub use purlis_session_protocol as protocol;
 #[cfg(unix)]
 pub use serving::{HostError, LOCK, Place, Window, serve};
 
@@ -49,20 +63,29 @@ pub const SERVE_FOR_THE_WINDOW: &str = "purlis-serve-for-the-window";
 pub const READY: &str = "ready";
 
 /// When the window's binary was started as its session host ([`SERVE_FOR_THE_WINDOW`]), serve
-/// at the place `place` names until the window closes this process's standard input, and give
-/// the code to exit with; otherwise `None`, before anything is read or opened.
+/// at the place `place` names until the window closes this process's standard input, composing
+/// each start with what `compose` gives, and give the code to exit with; otherwise `None`,
+/// before anything is read or opened.
 ///
 /// The window is this process's parent, and every chat it runs is below it, so a peer below it
 /// is inside a chat ([`Window`]). The ready line goes to standard output and what the host has
 /// to say to standard error, which the window keeps in its log.
 #[cfg(unix)]
-pub fn serve_for_the_window_if_asked(place: impl FnOnce() -> Option<Place>) -> Option<i32> {
+pub fn serve_for_the_window_if_asked<C: Compose>(
+    place: impl FnOnce() -> Option<Place>,
+    compose: impl FnOnce() -> C,
+) -> Option<i32> {
     if std::env::args_os().nth(1)? != SERVE_FOR_THE_WINDOW {
         return None;
     }
     let window = Window(std::os::unix::process::parent_id());
     Some(match place() {
-        Some(place) => run(&place, Some(window), until_the_window_closes_its_end()),
+        Some(place) => run(
+            &place,
+            Some(window),
+            Hosting::new(compose()),
+            until_the_window_closes_its_end(),
+        ),
         None => {
             say("there is no home folder to keep the session host's credentials in");
             1
@@ -70,15 +93,21 @@ pub fn serve_for_the_window_if_asked(place: impl FnOnce() -> Option<Place>) -> O
     })
 }
 
-/// Serve at `place` until this process is ended, as `purlis serve` does: no window holds chats
-/// beside it, so none is below one. The exit code is what a failure to start gives.
+/// Serve at `place` until this process is ended, as `purlis serve` does, composing each start
+/// with `compose`: no window started it, so its programs run below the host alone. The exit code
+/// is what a failure to start gives.
 #[cfg(unix)]
-pub fn serve_alone(place: &Place) -> i32 {
-    run(place, None, std::future::pending())
+pub fn serve_alone(place: &Place, compose: impl Compose) -> i32 {
+    run(place, None, Hosting::new(compose), std::future::pending())
 }
 
 #[cfg(unix)]
-fn run(place: &Place, window: Option<Window>, until: impl Future<Output = ()>) -> i32 {
+fn run(
+    place: &Place,
+    window: Option<Window>,
+    hosting: Hosting,
+    until: impl Future<Output = ()>,
+) -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -96,7 +125,7 @@ fn run(place: &Place, window: Option<Window>, until: impl Future<Output = ()>) -
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{READY}").and_then(|()| out.flush());
     };
-    match runtime.block_on(serve(place, window, ready, until)) {
+    match runtime.block_on(serve(place, window, hosting, ready, until)) {
         Ok(()) => 0,
         Err(why) => {
             say(&why.to_string());
