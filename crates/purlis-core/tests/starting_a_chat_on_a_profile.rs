@@ -1085,7 +1085,7 @@ fn a_chat_on_a_profile_in_a_project_whose_manifest_has_gone_is_not_started() {
 /// The plane's own stand-in harness, in a folder no chat may write. A sandboxed start refuses a
 /// program anywhere a chat can write, the system temp folders included (ruling V87g).
 fn harness_outside(plane: &Plane, outside: &stand_in::NoChatWrites, program: &str) -> PathBuf {
-    stand_in::claude_code(
+    stand_in::program(
         outside.path(),
         program,
         &format!(
@@ -1286,10 +1286,19 @@ fn a_claude_code_profile_whose_program_is_not_claude_code_is_not_started_sandbox
 
     let refused = start::ready(&plane.start("work"), plane.root()).expect_err("not started");
 
+    // It names the program, says what it answered, and how to fix it (#2071).
+    assert!(
+        refused.contains(&format!(
+            "this profile's program {} does not answer as Claude Code, whose sandbox it was \
+             given",
+            bin.canonicalize().expect("real").display()
+        )),
+        "{refused}"
+    );
     assert!(
         refused.ends_with(
-            "this profile's program does not answer as Claude Code, whose sandbox it was \
-             given, so it was not started sandboxed."
+            "so it was not started sandboxed. Point the profile at Claude Code itself, or at a \
+             wrapper that hands `--version` on to it."
         ),
         "{refused}"
     );

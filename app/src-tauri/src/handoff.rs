@@ -4764,6 +4764,17 @@ mod tests {
         Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
     }
 
+    /// [`planes`], keeping an event log at `at`: a chat a person starts without the sandbox is
+    /// started only once its opt-out is recorded (ADR 0067 §7).
+    fn planes_recording_events(at: &Path) -> Planes {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        let events = Arc::new(std::sync::Mutex::new(Recorder::new(
+            Log::open(at, "DEVICE").expect("a log"),
+            ArgsKey::open(at).expect("a key"),
+        )));
+        planes().recording_events(Some(events))
+    }
+
     /// A chat on the `work` profile, started the way the picker starts one.
     fn a_chat_on_work(held: &Held, root: &Path) -> u32 {
         let ready = purlis_core::start::ready(
@@ -5099,7 +5110,7 @@ mod tests {
     #[test]
     fn a_handoff_from_a_chat_nobody_is_at_is_refused_plainly_and_nothing_is_held() {
         let plane = a_plane_with_personas();
-        let planes = planes();
+        let planes = planes_recording_events(&plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
         let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
@@ -9425,7 +9436,7 @@ mod tests {
         // another only with a grant that already stands for the pair.
         let plane = a_plane_with_personas();
         std::fs::create_dir_all(plane.root.join("workspaces/beta")).expect("beta");
-        let planes = planes();
+        let planes = planes_recording_events(&plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
         let alpha = held.root().join("workspaces").join("alpha");
@@ -9515,7 +9526,7 @@ mod tests {
             "[persona]\ndefault = \"steward\"\n[dispatch]\ndepth = 0\n",
         )
         .expect("the manifest");
-        let planes = planes();
+        let planes = planes_recording_events(&plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
         let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
@@ -10190,7 +10201,7 @@ mod tests {
     #[test]
     fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_held() {
         let plane = a_plane_with_personas();
-        let planes = planes();
+        let planes = planes_recording_events(&plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
         let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
