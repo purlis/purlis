@@ -337,8 +337,12 @@ impl Locks {
             return Some(self.led_by("On, required by policy"));
         }
         self.team_never.then(|| {
-            "On, required by the project's policy (sandbox.policy = \"never\" in charter.toml)."
-                .to_owned()
+            format!(
+                "On, required by the project's policy ({}.{} = \"never\" in {}).",
+                super::TABLE,
+                super::team::KEY,
+                super::FILE
+            )
         })
     }
 
@@ -675,7 +679,7 @@ impl Locks {
                 self.locked_by()
             ));
         }
-        self.team_never.then(|| super::team::NEVER_SAID.to_owned())
+        self.team_never.then(super::team::never_said)
     }
 }
 

@@ -15,7 +15,7 @@
 //!   ([`super::personal::in_force`]) holds, the floor where they chose none.
 //! - **`policy = "never"`**: nobody runs below the full sandbox. "Start without the sandbox" is
 //!   refused, and a person's own lower level is clamped to the full sandbox, each with a
-//!   sentence naming the policy ([`policy::Locks::opt_out_refused`]). `mode = "off"` beside it
+//!   sentence naming the policy ([`policy::Locks::opt_out_refused`], [`never_said`]). `mode = "off"` beside it
 //!   is refused ([`super::Refusal::ModeOff`]).
 //! - **`mode = "off"`** under `local` is **the team's off**: the default becomes no sandbox,
 //!   and it reaches each person only on their one Accept ([`team_off`], [`answer`]): "Your
@@ -98,9 +98,14 @@ impl Team {
 
 /// **The sentence a `never` policy is refused with**, wherever it refuses: Start without the
 /// sandbox, a person's own lower level, Settings.
-pub const NEVER_SAID: &str = "This project's policy requires the full sandbox (sandbox.policy = \
-                              \"never\" in charter.toml): no chat starts without it, and nobody \
-                              turns it down on their machine.";
+pub fn never_said() -> String {
+    format!(
+        "This project's policy requires the full sandbox ({}.{KEY} = \"never\" in {}): no chat \
+         starts without it, and nobody turns it down on their machine.",
+        super::TABLE,
+        super::FILE
+    )
+}
 
 /// The commit a team's off arrived in, and who made it.
 #[derive(Debug, Clone, PartialEq, Eq)]
