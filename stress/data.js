@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792040680200,
+  "lastUpdate": 1792043120261,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2478,6 +2478,42 @@ window.BENCHMARK_DATA = {
             "value": 200.7,
             "unit": "MB",
             "extra": "median of 6 samples: 274.7, 262.7, 201.6, 198.9, 199.7, 159.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b7a2f169fb4734620feb840983ed3a6126695c62",
+          "message": "feat(proposed): a long proposed change opens in its own tab (#1975, part C) (#2116)\n\nPC-7: a change too long for a row offers Open, which opens a view tab with\nthe whole change in the comparison view and Apply there.\n\n- proposed_change (window-only) reads a proposal whole for its tab: the\n  file before and after and the hunk, or why it is not shown.\n- Apply says where it was pressed (row or tab) and is judged again by that\n  place's rules: a row applies only what it shows whole; the tab also one\n  too long for a row; a credential-shaped or otherwise unshowable change is\n  applied from nowhere.\n- The asks registry offers Open beside such a change; the window opens the\n  tab on it, and Apply there counts only once the change is drawn.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T09:00:56+04:00",
+          "tree_id": "98009ea7b40689c60a39c4a7b296f767fdfcdb99",
+          "url": "https://github.com/purlis/purlis/commit/b7a2f169fb4734620feb840983ed3a6126695c62"
+        },
+        "date": 1792043118622,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 876,
+            "unit": "MB",
+            "extra": "median of 3 samples: 785, 876, 940 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 227.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 215.4, 233.9, 235.8, 228, 226.2, 132.9 MB"
           }
         ]
       }
