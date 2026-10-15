@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792070407708,
+  "lastUpdate": 1792071891988,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12390,6 +12390,48 @@ window.BENCHMARK_DATA = {
             "value": 104.003556,
             "unit": "ms",
             "extra": "median of 5 runs: 101.659, 102.386, 104.004, 104.250, 105.144 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bc79e7834c987bdcc7a40780698a439a8a53baae",
+          "message": "fix(chats): the fifty-sessions scenario waits per session with a ceiling per open; the older-sandbox check compiles once per kind of start (#2157) (#2162)\n\n* fix(chats): opening a chat stays quick with many open; the fifty-sessions scenario waits per session (#2157)\n\nCause: since the floor became the default (#2081, #2122), every chat in a\nproject that has not turned the sandbox on runs sandboxed, so every open\nchat is counted by `chats_on_older_sandbox`. The window asks that whenever a\nchat opens or closes, and the core compiled each open chat's sandbox again\non every ask: opening the n-th chat cost n compiles, and fifty chats over a\nthousand, each running beside the next start. The panes scenario's\nfifty-sessions test went from about 85 s to 170-180 s on the macOS runner\nacross those two merges, against its fixed 180 s budget. The \"no program\ncalled claude\" line in the failing run's log is from an earlier spec's\nreopen, a minute and a half before panes.e2e.ts began.\n\nFix: one ask compiles each distinct start once (harness, persona, level,\nhow it was made, its grants) and compares every chat started alike with\nthat one result. The test opens each tab and waits for that tab's own\nsession to come up, with a time per session rather than one fixed total.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* debug(#2157): temporary timings of a chat's start, to be reverted\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* fix(#2157): drop the start timings; the cause, as measured on the macOS runner\n\nMeasured on the macOS scenario runner (the timings this reverts): since\nthe floor became the default (#2081, #2122) every chat start compiles a\nsandbox, about 200 ms a compile there (about 17 ms on a developer's Mac).\nEach \"New tab\" compiles six times: the picker's options compile once per\nprofile it lists (five) and the start once, and asks the program its\nversion. One open went from about 1.6 s to about 3.4 s, so the fifty\nsessions test went from about 85 s to 170 s against its fixed 180 s\nbudget, and crossed it on a slow run. The chats never failed to start: the\n\"no program called claude\" log line came from an earlier spec's reopen.\n\nBesides that, every open and close asked whether any chat ran on an\nolder sandbox, and that compiled every open chat: up to ten seconds of\ncompiles per open at fifty chats, beside the next start. It now compiles\neach distinct start once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* fix(e2e): the fifty-sessions allowance goes on the describe, where WebdriverIO reads it (#2157)\n\nA this.timeout() inside a test body arrives after WebdriverIO has read the\nrunnable's timeout, so the test kept running under the 180 s it outgrew.\nbudget.test.ts now also holds the fifty-sessions allowance above 180 s.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(#2157): a ceiling on each open, a cap on tabs, and chats started apart compiled apart\n\n- The fifty-sessions test stops opening past FIFTY + 10 tabs and says so, and\n  fails an open that takes over 8 s from press to its own session, by its\n  number. Each open's time goes to logs/fifty-opens.jsonl.\n- A chat whose grants differ is compiled under its own, and only the chat\n  whose sandbox fell behind is listed.\n- StartKey and CompiledNow name what one ask compiles once per start.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T17:35:36+04:00",
+          "tree_id": "720f83842686aa5697757acd9cea830e9e0922a0",
+          "url": "https://github.com/purlis/purlis/commit/bc79e7834c987bdcc7a40780698a439a8a53baae"
+        },
+        "date": 1792071890546,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5298285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.514, 0.520, 0.530, 0.535, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.958354,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.405, 16.435, 16.958, 17.004, 17.199 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.9912105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.235, 103.661, 103.991, 105.141, 105.219 ms"
           }
         ]
       }
