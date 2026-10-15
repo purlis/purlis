@@ -468,7 +468,8 @@ has it; nothing reads the key after that.
   (#1989): **`quiet`**, with **`on`**, `true` while quiet hours are kept, and **`from`** and
   **`to`**, the times they start and end, `HH:MM` on a 24-hour clock and this machine's own
   time. A `to` before the `from` runs across midnight; the same time for both is no quiet hours.
-  In them no notification is shown; an ask waits in the Inbox, and is not shown when they end.
+  In them no notification is shown and an ask waits in the Inbox; when they end, one
+  notification names the chats still waiting on you.
   Leave any out for its default, `false`, `22:00` and `07:00`; purlis leaves the whole of
   `notifications` out while all are the defaults. A value that is not one is the default, and
   the Inbox says so. Settings writes it (`app/src/notificationPrefs.ts`), and the app reads it

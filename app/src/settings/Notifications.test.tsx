@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -12,22 +12,12 @@ import { notificationsGroup } from "./notifications";
 
 /**
  * **Settings › You › Notifications** (#1989): the quiet hours, off until turned on, each time
- * chosen while they are on; and the system's permission, asked for only on the person's Allow.
+ * chosen while they are on.
  */
-
-let sent: string[] = [];
-let permission = "granted";
 
 beforeEach(() => {
   forgetThisLaunch();
-  sent = [];
-  permission = "granted";
-  mockIPC((cmd) => {
-    sent.push(cmd);
-    if (cmd === "notification_permission") return permission;
-    if (cmd === "ask_notification_permission") return "granted";
-    return null;
-  });
+  mockIPC(() => null);
 });
 afterEach(() => {
   cleanup();
@@ -56,32 +46,5 @@ describe("quiet hours", () => {
 
     expect(notificationPrefs().quiet.on).toBe(true);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Quiet from" })).toBeEnabled());
-  });
-});
-
-describe("the system's permission", () => {
-  it("is never asked for by drawing the row", async () => {
-    render(<Row id="you.notifications.permission" />);
-    expect(await screen.findByText(/^Allowed\./)).toBeInTheDocument();
-    expect(sent).not.toContain("ask_notification_permission");
-  });
-
-  it("is asked for when the person presses Allow, and says what the system answered", async () => {
-    permission = "prompt";
-    render(<Row id="you.notifications.permission" />);
-    const allow = await screen.findByRole("button", { name: "Allow" });
-    expect(sent).not.toContain("ask_notification_permission");
-
-    await userEvent.click(allow);
-
-    await vi.waitFor(() => expect(sent).toContain("ask_notification_permission"));
-    expect(await screen.findByText(/^Allowed\./)).toBeInTheDocument();
-  });
-
-  it("says where to turn it on once the system said no", async () => {
-    permission = "denied";
-    render(<Row id="you.notifications.permission" />);
-    expect(await screen.findByText(/system's notification settings/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
   });
 });

@@ -24,13 +24,19 @@
 //!
 //! **A project's asks a few seconds apart share one notification** ([`TOGETHER`]): the first
 //! is sent at once, and each that follows within the window of the one before rides it,
-//! whichever chat asks. A new ask past the window sends one that counts every chat still
+//! whichever chat asks. Grouping is per project, because a click brings forward the one window
+//! holding it. A new ask past the window sends one that counts every chat still
 //! waiting that the person is not looking at, the longest waiting first.
 //!
+//! **A chat that rides another's notification is not hidden by it**: when the window closes
+//! with other chats on it, one notification more names every chat still waiting unseen
+//! ([`Rules::next_due`]), so a trickle of asks names each of them.
+//!
 //! **Nothing is sent in the person's quiet hours** ([`QuietHours`], Settings › You ›
-//! Notifications, kept in the layout file): an ask asked in them waits in the Inbox, and is not
-//! sent when they end. Nor when the system has not given purlis its permission: purlis never
-//! asks for it at launch, only when the person presses Allow in Settings.
+//! Notifications, kept in the layout file): an ask asked in them waits in the Inbox, and when
+//! they end one notification names what still waits unseen, as the system's own focus modes
+//! sum up what they held. Whether purlis may show notifications at all is the system's own
+//! notification settings' to say.
 //!
 //! **Nothing is sent while the person is looking** ([`Looking`]): the window holding the
 //! ask's project is on screen, focused and has that project in front, and it shows either the
@@ -117,17 +123,37 @@ pub struct Rules {
     /// The asks of each project read last, by key, with the chat that asks and whether the
     /// ask is the chat's own wait ([`own_wait`]): an ask in here was already considered.
     known: HashMap<PlaneId, HashMap<String, (u32, bool)>>,
-    /// When each project last had an ask that a notification covered.
-    covered: HashMap<PlaneId, Instant>,
+    /// Each project's notification still riding ([`TOGETHER`]).
+    covered: HashMap<PlaneId, Covered>,
+    /// The projects with asks that came in quiet hours: when they end, one notification names
+    /// what still waits.
+    held: HashSet<PlaneId>,
+}
+
+/// **A notification sent, and what has ridden it since.**
+struct Covered {
+    /// When an ask last rode it, or it was sent.
+    at: Instant,
+    /// The chats it named.
+    told: Vec<u32>,
+    /// The chats it did not name whose asks rode it: those still waiting are named in one
+    /// notification more when the window closes, so a trickle of asks hides none of them.
+    rode: Vec<u32>,
 }
 
 impl Rules {
-    /// The notification one read of a project's asks sends, if any: one when an ask is new
-    /// since the last read, counting every chat waiting that the person is not looking at,
-    /// unless the project's asks are riding one sent within [`TOGETHER`] or it is quiet hours.
-    /// An ask the person was looking at, or asked in quiet hours, is not sent later either.
+    /// The notification one read of a project's asks sends, if any.
+    ///
+    /// - An ask new since the last read sends one, counting every chat waiting that the person
+    ///   is not looking at, unless the project's asks are riding one sent within
+    ///   [`TOGETHER`]. An ask the person was looking at is not sent later.
+    /// - A window closed with other chats on it ([`Self::next_due`]) sends one more, while any
+    ///   of them still waits unseen.
+    /// - In quiet hours nothing is sent; at the first read after them, one names what still
+    ///   waits unseen ([`Self::held_in_quiet_hours`]).
     pub fn heard(&mut self, heard: &Heard<'_>) -> Vec<Notice> {
-        let known = self.known.entry(heard.plane.clone()).or_default();
+        let plane = heard.plane;
+        let known = self.known.entry(plane.clone()).or_default();
         let fresh: Vec<&Shown> = heard
             .asks
             .iter()
@@ -138,30 +164,90 @@ impl Rules {
             .iter()
             .map(|ask| (ask.ask.clone(), (ask.session, own_wait(ask))))
             .collect();
-        self.covered
-            .retain(|_, at| heard.now.saturating_duration_since(*at) < TOGETHER);
-        if fresh.is_empty() {
-            return Vec::new();
-        }
-        if let Some(at) = self.covered.get_mut(heard.plane) {
-            *at = heard.now;
-            return Vec::new();
-        }
-        let mut chats: Vec<u32> = Vec::new();
-        for ask in heard.asks {
-            if !chats.contains(&ask.session) && !(heard.looking)(ask.session) {
-                chats.push(ask.session);
+        let waiting = || {
+            let mut chats: Vec<u32> = Vec::new();
+            for ask in heard.asks {
+                if !chats.contains(&ask.session) && !(heard.looking)(ask.session) {
+                    chats.push(ask.session);
+                }
             }
+            chats
+        };
+        // Why a notification would be sent now: the chats it is for.
+        let mut owed: Vec<u32> = Vec::new();
+        match self.covered.get_mut(plane) {
+            Some(covered) if heard.now.saturating_duration_since(covered.at) < TOGETHER => {
+                if !fresh.is_empty() {
+                    covered.at = heard.now;
+                    for ask in &fresh {
+                        let chat = ask.session;
+                        if !covered.told.contains(&chat) && !covered.rode.contains(&chat) {
+                            covered.rode.push(chat);
+                        }
+                    }
+                }
+                return Vec::new();
+            }
+            Some(_) => {
+                if let Some(closed) = self.covered.remove(plane) {
+                    owed.extend(closed.rode);
+                }
+            }
+            None => {}
         }
-        let fresh: Vec<&Shown> = fresh
-            .into_iter()
-            .filter(|ask| chats.contains(&ask.session))
-            .collect();
-        if fresh.is_empty() || (heard.quiet)() {
+        owed.extend(fresh.iter().map(|ask| ask.session));
+        if self.held.contains(plane) {
+            if (heard.quiet)() {
+                return Vec::new();
+            }
+            self.held.remove(plane);
+            owed.extend(heard.asks.iter().map(|ask| ask.session));
+        }
+        if owed.is_empty() {
             return Vec::new();
         }
-        self.covered.insert(heard.plane.clone(), heard.now);
-        vec![notice(heard.plane, &chats, heard.asks, &fresh)]
+        let chats = waiting();
+        if !owed.iter().any(|chat| chats.contains(chat)) {
+            return Vec::new();
+        }
+        if (heard.quiet)() {
+            self.held.insert(plane.clone());
+            return Vec::new();
+        }
+        self.covered.insert(
+            plane.clone(),
+            Covered {
+                at: heard.now,
+                told: chats.clone(),
+                rode: Vec::new(),
+            },
+        );
+        vec![notice(plane, &chats, heard.asks, &fresh)]
+    }
+
+    /// **When the notifier should read a project again by itself**: the earliest time a
+    /// riding window closes with other chats on it.
+    pub fn next_due(&self) -> Option<Instant> {
+        self.covered
+            .values()
+            .filter(|covered| !covered.rode.is_empty())
+            .map(|covered| covered.at + TOGETHER)
+            .min()
+    }
+
+    /// The projects due a read by itself now ([`Self::next_due`]).
+    fn due(&self, now: Instant) -> Vec<PlaneId> {
+        self.covered
+            .iter()
+            .filter(|(_, covered)| !covered.rode.is_empty() && covered.at + TOGETHER <= now)
+            .map(|(plane, _)| plane.clone())
+            .collect()
+    }
+
+    /// **The projects with asks held back by quiet hours**, read again by the notifier while
+    /// there are any, so the first read after them sends.
+    pub fn held_in_quiet_hours(&self) -> Vec<PlaneId> {
+        self.held.iter().cloned().collect()
     }
 
     /// **Chat `session` of `plane` waits on the person anew**, as the board's own edge says
@@ -179,6 +265,7 @@ impl Rules {
     pub fn forget(&mut self, plane: &PlaneId) {
         self.known.remove(plane);
         self.covered.remove(plane);
+        self.held.remove(plane);
     }
 }
 
@@ -206,12 +293,22 @@ fn own_wait(ask: &Shown) -> bool {
 }
 
 /// The notification for `chats` waiting, the first first, of a project whose list is `asks`
-/// and whose new asks are `fresh`. One chat: who asks and what kind of ask, as before
+/// and whose new asks are `fresh`. One chat: who asks and what kind of ask, its new asks first
 /// (#1694). Several: how many, and their names.
 fn notice(plane: &PlaneId, chats: &[u32], asks: &[Shown], fresh: &[&Shown]) -> Notice {
     let session = chats[0];
     let (title, body) = if let [only] = chats {
-        let first = fresh[0];
+        let new: Vec<&Shown> = fresh
+            .iter()
+            .copied()
+            .filter(|ask| ask.session == *only)
+            .collect();
+        let mine: Vec<&Shown> = if new.is_empty() {
+            asks.iter().filter(|ask| ask.session == *only).collect()
+        } else {
+            new
+        };
+        let first = mine[0];
         let title = if first.chain.is_empty() {
             format!("chat {only}")
         } else {
@@ -225,7 +322,7 @@ fn notice(plane: &PlaneId, chats: &[u32], asks: &[Shown], fresh: &[&Shown]) -> N
             )
         };
         let kind = kind_said(first);
-        let body = match fresh.len() {
+        let body = match mine.len() {
             1 => kind.to_owned(),
             many => format!("{kind}, and {} more", many - 1),
         };
@@ -545,51 +642,37 @@ pub fn inbox_shown(
     notifier.inbox.shown(window.label(), &plane, open);
 }
 
-/// **Whether the system lets purlis show notifications**: `granted`, `denied`, or `prompt`
-/// where it has not been asked yet (Settings › You › Notifications).
-#[tauri::command]
-#[specta::specta]
-pub async fn notification_permission(app: tauri::AppHandle) -> String {
-    use tauri_plugin_notification::NotificationExt;
-    permission_said(app.notification().permission_state())
-}
-
-/// **Asks the system to let purlis show notifications**, as the person pressed Allow: never at
-/// launch, and never from anything but that press. Answers what the system said.
-#[tauri::command]
-#[specta::specta]
-pub async fn ask_notification_permission(app: tauri::AppHandle) -> String {
-    use tauri_plugin_notification::NotificationExt;
-    permission_said(app.notification().request_permission())
-}
-
-fn permission_said(
-    state: tauri_plugin_notification::Result<tauri_plugin_notification::PermissionState>,
-) -> String {
-    use tauri_plugin_notification::PermissionState;
-    match state {
-        Ok(PermissionState::Granted) => "granted",
-        Ok(PermissionState::Denied) => "denied",
-        _ => "prompt",
-    }
-    .to_owned()
-}
-
 /// The notifier's thread: each poke, then whatever follows it while it settles, read once.
 fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
     let mut rules = Rules::default();
-    while let Ok(first) = heard.recv() {
-        let mut pokes = vec![first];
-        let until = Instant::now() + SETTLE;
-        loop {
-            let left = until.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                break;
-            }
-            match heard.recv_timeout(left) {
-                Ok(poke) => pokes.push(poke),
-                Err(RecvTimeoutError::Timeout) => break,
+    loop {
+        // Woken by a poke, or by itself: when a riding window closes with other chats on it,
+        // and every so often while quiet hours hold asks back.
+        let wake = woken_at(&rules, Instant::now());
+        let first = match wake {
+            None => match heard.recv() {
+                Ok(poke) => Some(poke),
+                Err(_) => return,
+            },
+            Some(at) => match heard.recv_timeout(at.saturating_duration_since(Instant::now())) {
+                Ok(poke) => Some(poke),
+                Err(RecvTimeoutError::Timeout) => None,
                 Err(RecvTimeoutError::Disconnected) => return,
+            },
+        };
+        let mut pokes: Vec<Poke> = first.into_iter().collect();
+        if !pokes.is_empty() {
+            let until = Instant::now() + SETTLE;
+            loop {
+                let left = until.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                match heard.recv_timeout(left) {
+                    Ok(poke) => pokes.push(poke),
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => return,
+                }
             }
         }
         let mut planes: Vec<PlaneId> = Vec::new();
@@ -601,10 +684,37 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
                 planes.push(plane);
             }
         }
+        let now = Instant::now();
+        let quiet_held = woken_for_quiet(&rules);
+        for plane in rules.due(now).into_iter().chain(quiet_held) {
+            if !planes.contains(&plane) {
+                planes.push(plane);
+            }
+        }
         for plane in planes {
             read(app, &mut rules, &plane);
         }
     }
+}
+
+/// How often the notifier looks whether quiet hours have ended, while they hold asks back.
+const QUIET_LOOK: Duration = Duration::from_secs(60);
+
+/// When the notifier wakes by itself next, if it does.
+fn woken_at(rules: &Rules, now: Instant) -> Option<Instant> {
+    let quiet = (!rules.held.is_empty()).then(|| now + QUIET_LOOK);
+    match (rules.next_due(), quiet) {
+        (Some(one), Some(other)) => Some(one.min(other)),
+        (one, other) => one.or(other),
+    }
+}
+
+/// The projects quiet hours held asks back in, once they are over.
+fn woken_for_quiet(rules: &Rules) -> Vec<PlaneId> {
+    if rules.held.is_empty() || quiet_now() {
+        return Vec::new();
+    }
+    rules.held_in_quiet_hours()
 }
 
 /// Reads `plane`'s asks and sends what [`Rules`] says to.
@@ -671,16 +781,7 @@ fn looking(
 
 /// Sends one notification, and tells the window holding its project where a click lands.
 fn send(app: &tauri::AppHandle, notice: Notice) {
-    use tauri_plugin_notification::{NotificationExt, PermissionState};
-    // The system's permission, never asked for here: only the person's Allow asks
-    // ([`ask_notification_permission`]).
-    if app
-        .notification()
-        .permission_state()
-        .is_ok_and(|state| state != PermissionState::Granted)
-    {
-        return;
-    }
+    use tauri_plugin_notification::NotificationExt;
     // Best effort, always. A desktop that refuses notifications, or a person who turned them
     // off, is not a reason for anything else here to stop working.
     let _ = app

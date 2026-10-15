@@ -5,8 +5,9 @@ import { layoutPref } from "./layoutPref";
 
 /**
  * **When the asks' system notifications keep quiet** (#1989, Q66): quiet hours, from a time of
- * day until another, on this machine's clock. In them no notification is shown; an ask still
- * waits in the Inbox, and is not sent when they end. Off until the person turns them on.
+ * day until another, on this machine's clock. In them no notification is shown and an ask
+ * waits in the Inbox; when they end, one notification names the chats still waiting. Off
+ * until the person turns them on.
  *
  * **Kept in the layout file, beside the text sizes and your editor** (`layout.json`,
  * `regions.ts`), under `notifications`: how one person likes to be interrupted, on this

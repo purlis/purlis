@@ -194,26 +194,99 @@ fn a_chat_the_person_is_looking_at_is_not_counted() {
     assert_eq!(sent[0].title, "devops 4");
 }
 
+/// What `rules` sends for `asks` of `plane` at `now`, nobody looking, in quiet hours or not.
+fn heard_quiet(
+    rules: &mut Rules,
+    plane: &PlaneId,
+    asks: &[Shown],
+    now: Instant,
+    quiet: bool,
+) -> Vec<Notice> {
+    rules.heard(&Heard {
+        plane,
+        asks,
+        looking: NOBODY_LOOKS,
+        quiet: &move || quiet,
+        now,
+    })
+}
+
 #[test]
-fn nothing_is_sent_in_quiet_hours_and_what_was_asked_then_waits_in_the_inbox_unsent() {
+fn nothing_is_sent_in_quiet_hours_and_one_names_what_still_waits_when_they_end() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let two = [named(3, "p1", "steward 3"), named(4, "p2", "devops 4")];
+    assert!(heard_quiet(&mut rules, &a, &two[..1], start, true).is_empty());
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 2, true).is_empty());
+    assert_eq!(rules.held_in_quiet_hours(), vec![a.clone()]);
+    // Still quiet, nothing new: still nothing.
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 3, true).is_empty());
+    // Quiet hours over: one notification for what still waits, and only one.
+    let sent = heard_quiet(&mut rules, &a, &two, start + TOGETHER * 4, false);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].title, "2 chats need you");
+    assert_eq!(sent[0].body, "steward 3 and devops 4");
+    assert!(rules.held_in_quiet_hours().is_empty());
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 6, false).is_empty());
+}
+
+#[test]
+fn what_was_answered_in_quiet_hours_is_not_sent_when_they_end() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
     let asks = [named(3, "p1", "steward 3")];
-    let sent = rules.heard(&Heard {
-        plane: &a,
-        asks: &asks,
-        looking: NOBODY_LOOKS,
-        quiet: &|| true,
-        now: start,
-    });
-    assert!(sent.is_empty());
-    // Quiet hours over: the ask that came in them is not sent, a new one is.
-    assert!(heard(&mut rules, &a, &asks, start + TOGETHER * 2).is_empty());
-    let more = [asks[0].clone(), named(4, "p2", "devops 4")];
-    let sent = heard(&mut rules, &a, &more, start + TOGETHER * 3);
+    assert!(heard_quiet(&mut rules, &a, &asks, start, true).is_empty());
+    assert!(heard_quiet(&mut rules, &a, &[], start + TOGETHER * 2, false).is_empty());
+    assert!(rules.held_in_quiet_hours().is_empty());
+}
+
+#[test]
+fn a_chat_that_rode_a_notification_and_still_waits_is_named_when_the_window_closes() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let first = [named(3, "p1", "steward 3")];
+    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
+    let both = [first[0].clone(), named(4, "p2", "devops 4")];
+    let soon = start + Duration::from_secs(2);
+    assert!(heard(&mut rules, &a, &both, soon).is_empty());
+    // The notifier comes back when the window closes.
+    assert_eq!(rules.next_due(), Some(soon + TOGETHER));
+    let sent = heard(&mut rules, &a, &both, soon + TOGETHER);
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].title, "2 chats need you");
+    assert_eq!(sent[0].body, "steward 3 and devops 4");
+    assert_eq!(sent[0].sessions, vec![3, 4]);
+}
+
+#[test]
+fn a_window_closing_with_no_other_chat_on_it_sends_nothing() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let two = [
+        permission(3, "p1", "Run ls"),
+        permission(3, "p2", "Run pwd"),
+    ];
+    assert_eq!(heard(&mut rules, &a, &two[..1], start).len(), 1);
+    // The same chat asking again rides, and is no reason to come back.
+    assert!(heard(&mut rules, &a, &two, start + Duration::from_secs(1)).is_empty());
+    assert_eq!(rules.next_due(), None);
+    assert!(heard(&mut rules, &a, &two, start + TOGETHER * 2).is_empty());
+}
+
+#[test]
+fn a_chat_that_rode_and_was_answered_before_the_window_closed_is_not_sent() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let first = [named(3, "p1", "steward 3")];
+    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
+    let both = [first[0].clone(), named(4, "p2", "devops 4")];
+    assert!(heard(&mut rules, &a, &both, start + Duration::from_secs(1)).is_empty());
+    assert!(heard(&mut rules, &a, &first, start + TOGETHER * 2).is_empty());
 }
 
 #[test]

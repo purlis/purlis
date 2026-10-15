@@ -1,32 +1,30 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
-import { commands } from "../bindings";
 import { setQuietHours, useNotificationPrefs } from "../notificationPrefs";
-import { Choice, SettingActions } from "./components";
+import { Choice } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
  * **You › Notifications** (#1989, Q66): the system notifications an ask raises. Only an ask
  * raises one, several chats waiting together are one, and a click opens the Inbox at the
- * first (`asknotify.rs`). Here: the quiet hours, kept in the layout file
- * (`notificationPrefs.ts`), and the system's permission, asked for only when the person
- * presses Allow here, never at launch.
+ * first still waiting (`asknotify.rs`). Here: the quiet hours, kept in the layout file
+ * (`notificationPrefs.ts`). Whether purlis may show notifications at all is the system's own
+ * notification settings' to say.
  */
 export function notificationsGroup(): SettingsGroup {
   return {
     id: "you.notifications",
     label: "Notifications",
-    help: "The system notifications purlis shows when a chat asks you something, on this machine. Several chats asking together are one notification, and clicking it opens the Inbox at the first.",
-    settings: [quiet, time("from"), time("to"), permission],
+    help: "The system notifications purlis shows when a chat asks you something, on this machine. Several chats asking together are one notification, and clicking it opens the Inbox at the first still waiting. Your system's own notification settings decide whether purlis may show them at all.",
+    settings: [quiet, time("from"), time("to")],
   };
 }
 
 const quiet: LiveSetting = {
   id: "you.notifications.quiet",
   label: "Quiet hours",
-  help: "Between the two times below, no notification is shown. Asks still wait in the Inbox, and are not shown when quiet hours end.",
+  help: "Between the two times below, no notification is shown, and asks wait in the Inbox. When quiet hours end, one notification names the chats still waiting on you.",
   writes: "this machine",
   useControl: function useQuiet() {
     const { on } = useNotificationPrefs().quiet;
@@ -78,57 +76,3 @@ function time(which: "from" | "to"): LiveSetting {
     },
   };
 }
-
-/** What the system says of purlis's notifications (`notification_permission`). */
-type Permission = "granted" | "denied" | "prompt";
-
-const asPermission = (said: string): Permission =>
-  said === "granted" || said === "denied" ? said : "prompt";
-
-const permission: LiveSetting = {
-  id: "you.notifications.permission",
-  label: "System permission",
-  help: "Whether your system lets purlis show notifications. purlis asks only when you press Allow.",
-  writes: "nothing",
-  useControl: function usePermission() {
-    const [state, setState] = useState<Permission | undefined>(undefined);
-    useEffect(() => {
-      let gone = false;
-      void commands
-        .notificationPermission()
-        .then((said) => {
-          if (!gone) setState(asPermission(said));
-        })
-        .catch(() => undefined);
-      return () => {
-        gone = true;
-      };
-    }, []);
-    return {
-      control: (ids) => (
-        <span id={ids.id} aria-describedby={ids.describedBy}>
-          {state === "granted" && "Allowed. Your system's notification settings can turn them off."}
-          {state === "denied" &&
-            "Not allowed. Allow purlis in your system's notification settings to see them."}
-          {state === "prompt" && (
-            <SettingActions>
-              <button
-                type="button"
-                tabIndex={0}
-                className="ui-button"
-                onClick={() => {
-                  void commands
-                    .askNotificationPermission()
-                    .then((said) => setState(asPermission(said)))
-                    .catch(() => undefined);
-                }}
-              >
-                Allow
-              </button>
-            </SettingActions>
-          )}
-        </span>
-      ),
-    };
-  },
-};
