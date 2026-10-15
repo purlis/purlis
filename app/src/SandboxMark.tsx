@@ -29,10 +29,17 @@ function isLevel(word: string): word is SandboxLevel {
 export function SandboxMark({ level }: { level?: string | null }) {
   if (level == null || !isLevel(level)) return null;
   const Icon = ICONS[level];
+  // Named by `aria-label`, not by words in the tab: the tab's text stays the chat's name, which
+  // is what the window and its close button call the chat.
   return (
-    <span className="tab-sandbox" data-sandbox={level} title={SANDBOX_SAID[level]}>
+    <span
+      className="tab-sandbox"
+      data-sandbox={level}
+      role="img"
+      aria-label={SANDBOX_SAID[level]}
+      title={SANDBOX_SAID[level]}
+    >
       <Icon className="tab-mark" aria-hidden="true" />
-      <span className="hidden-words">, {SANDBOX_SAID[level]}</span>
     </span>
   );
 }

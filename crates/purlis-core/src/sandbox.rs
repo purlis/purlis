@@ -2266,35 +2266,97 @@ pub fn floor_held(root: &Path, machine: &Machine, granted: &[PathBuf]) -> Vec<Pa
     if !FLOOR_HOLDS_PATH {
         return Vec::new();
     }
-    let path = machine.env.get("PATH").map(std::ffi::OsString::from);
+    let root = real(root);
+    let home = machine.home.as_deref().map(real);
+    machine_held(machine)
+        .iter()
+        .filter(|dir| {
+            let around_root = root.starts_with(dir) || dir.starts_with(&root);
+            let above_home = home.as_deref().is_some_and(|home| home.starts_with(dir));
+            let granted_here = granted.iter().any(|folder| dir.starts_with(folder));
+            !(around_root || above_home || granted_here)
+        })
+        .cloned()
+        .collect()
+}
+
+/// How long [`machine_held`] keeps what it found: a burst of compiles (every open chat's, as the
+/// window asks whether any runs on an older sandbox) reads the `PATH` folders once, and a
+/// package installed since is held from the next start a few seconds on.
+const MACHINE_HELD_KEPT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What [`floor_held`] holds on `machine` before a project or a grant is asked about: the package
+/// prefixes, the person's Python site folders, the `PATH` folders and where their links lead.
+/// Reading them follows a few thousand links, so it is kept for [`MACHINE_HELD_KEPT`] per `PATH`
+/// and home folder.
+fn machine_held(machine: &Machine) -> std::sync::Arc<Vec<PathBuf>> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    type Kept = (
+        Option<String>,
+        Option<PathBuf>,
+        std::time::Instant,
+        Arc<Vec<PathBuf>>,
+    );
+    static KEPT: OnceLock<Mutex<Option<Kept>>> = OnceLock::new();
+    let path = machine.env.get("PATH");
+    // This crate's own tests change a `PATH` folder between two reads of it.
+    if cfg!(test) {
+        return Arc::new(machine_held_now(path.as_deref(), machine.home.as_deref()));
+    }
+    let kept = KEPT.get_or_init(|| Mutex::new(None));
+    let fresh = |(was_path, was_home, at, _): &Kept| {
+        *was_path == path && *was_home == machine.home && at.elapsed() < MACHINE_HELD_KEPT
+    };
+    if let Some(found) = kept.lock().ok().and_then(|kept| {
+        kept.as_ref()
+            .filter(|one| fresh(one))
+            .map(|one| Arc::clone(&one.3))
+    }) {
+        return found;
+    }
+    let found = Arc::new(machine_held_now(path.as_deref(), machine.home.as_deref()));
+    if let Ok(mut kept) = kept.lock() {
+        *kept = Some((
+            path,
+            machine.home.clone(),
+            std::time::Instant::now(),
+            Arc::clone(&found),
+        ));
+    }
+    found
+}
+
+/// [`machine_held`], read now.
+fn machine_held_now(path: Option<&str>, home: Option<&Path>) -> Vec<PathBuf> {
     let mut held: Vec<PathBuf> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut hold = |dir: PathBuf| {
+        if dir.parent().is_some() && seen.insert(dir.clone()) {
+            held.push(dir);
+        }
+    };
     // A package manager's whole prefix, where it is there: what its programs load at every start
     // (a keg's libraries, `opt` links, Python's `site-packages`) as well as the programs.
     for prefix in PREFIXES_HELD {
         let prefix = Path::new(prefix);
         if prefix.is_dir() {
-            hold_where(&mut held, real(prefix), root, machine, granted);
+            hold(real(prefix));
         }
     }
     // The person's own Python site folders, whose `.pth` files run at every interpreter start.
-    if let Some(home) = &machine.home {
-        hold_where(
-            &mut held,
-            real(&home.join("Library/Python")),
-            root,
-            machine,
-            granted,
-        );
+    if let Some(home) = home {
+        hold(real(&home.join("Library/Python")));
         if let Ok(entries) = std::fs::read_dir(home.join(".local/lib")) {
             for entry in entries.flatten() {
                 if entry.file_name().to_string_lossy().starts_with("python") {
-                    hold_where(&mut held, real(&entry.path()), root, machine, granted);
+                    hold(real(&entry.path()));
                 }
             }
         }
     }
-    for dir in crate::programs::search_dirs_from(path.as_deref(), machine.home.as_deref()) {
-        hold_where(&mut held, real(&dir), root, machine, granted);
+    let path = path.map(std::ffi::OsString::from);
+    for dir in crate::programs::search_dirs_from(path.as_deref(), home) {
+        hold(real(&dir));
         // What each link in it leads to, a few thousand at most: a `PATH` folder is mostly
         // links into the packages its manager installed.
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -2305,10 +2367,10 @@ pub fn floor_held(root: &Path, machine: &Machine, granted: &[PathBuf]) -> Vec<Pa
             if is_link {
                 let target = real(&entry.path());
                 if target != entry.path() {
-                    hold_where(&mut held, package_root(&target), root, machine, granted);
+                    hold(package_root(&target));
                     // npm's global packages, all of them: what one loads, another can be.
                     if let Some(global) = node_modules_of(&target) {
-                        hold_where(&mut held, global, root, machine, granted);
+                        hold(global);
                     }
                 }
             }
@@ -2329,25 +2391,6 @@ const PREFIXES_HELD: [&str; 5] = [
 
 /// The most entries of one `PATH` folder [`floor_held`] follows.
 const LINKS_LOOKED_AT_MOST: usize = 4096;
-
-/// `dir` held at the floor, where it may be ([`floor_held`]'s exceptions).
-fn hold_where(
-    held: &mut Vec<PathBuf>,
-    dir: PathBuf,
-    root: &Path,
-    machine: &Machine,
-    granted: &[PathBuf],
-) {
-    let root = real(root);
-    let home = machine.home.as_deref().map(real);
-    let around_root = root.starts_with(&dir) || dir.starts_with(&root);
-    let above_home = home.as_deref().is_some_and(|home| home.starts_with(&dir));
-    let granted_here = granted.iter().any(|folder| dir.starts_with(folder));
-    if dir.parent().is_none() || around_root || above_home || granted_here || held.contains(&dir) {
-        return;
-    }
-    held.push(dir);
-}
 
 /// The `node_modules` folder `file` is in, where it is in one: npm's global packages for a
 /// program a `PATH` link leads to.

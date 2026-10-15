@@ -18,7 +18,9 @@ describe("the sandbox mark", () => {
     const mark = container.querySelector(`[data-sandbox="${level}"]`);
     expect(mark).not.toBeNull();
     expect(mark).toHaveAttribute("title", said);
-    expect(mark).toHaveTextContent(said);
+    expect(mark).toHaveAccessibleName(said);
+    // The tab's text stays the chat's name alone.
+    expect(mark).toHaveTextContent("");
   });
 
   it("draws nothing for a shell or a chat still to start, nor for a word it does not know", () => {
