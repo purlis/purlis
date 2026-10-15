@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792097366025,
+  "lastUpdate": 1792098549247,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13062,6 +13062,48 @@ window.BENCHMARK_DATA = {
             "value": 100.914379,
             "unit": "ms",
             "extra": "median of 5 runs: 100.648, 100.914, 100.914, 101.022, 101.155 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7f2c76247d2ed87b0000775bf4463389fee63aaf",
+          "message": "Browsers: a browser is a hosted program with a view tab (#2175)\n\n* Browsers: a browser is a hosted program with a view tab\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers are session protocol 1.6, and the host's kill switch refuses a browser's start\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T00:54:19+04:00",
+          "tree_id": "9790df009e03eaa25064bf48e26f5f5806868e02",
+          "url": "https://github.com/purlis/purlis/commit/7f2c76247d2ed87b0000775bf4463389fee63aaf"
+        },
+        "date": 1792098548024,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3221365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.300, 0.315, 0.322, 0.331, 0.350 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.32611,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.164, 16.198, 16.326, 16.782, 16.862 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.00662600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.166, 100.279, 101.007, 101.666, 102.545 ms"
           }
         ]
       }
