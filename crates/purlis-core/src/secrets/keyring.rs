@@ -719,7 +719,7 @@ pub fn load_index(ctx: &Ctx, vault: &Vault) -> Result<Index, VaultError> {
     })
 }
 
-fn save_index(ctx: &Ctx, vault: &Vault, index: &Index) -> Result<(), VaultError> {
+pub(super) fn save_index(ctx: &Ctx, vault: &Vault, index: &Index) -> Result<(), VaultError> {
     let mut keys = Map::new();
     for (k, e) in &index.keys {
         let mut entry = Map::new();
@@ -810,7 +810,7 @@ fn key_ok(key: &str) -> bool {
     !key.is_empty() && !key.chars().any(char::is_control)
 }
 
-fn check_key(key: &str) -> Result<(), VaultError> {
+pub(super) fn check_key(key: &str) -> Result<(), VaultError> {
     if key_ok(key) {
         Ok(())
     } else {
@@ -821,7 +821,7 @@ fn check_key(key: &str) -> Result<(), VaultError> {
 }
 
 /// A new service for `vault`: `purlis/<vault>/<8 hex>`.
-fn new_service(vault: &Vault) -> Result<String, VaultError> {
+pub(super) fn new_service(vault: &Vault) -> Result<String, VaultError> {
     let mut bytes = [0u8; 4];
     getrandom::fill(&mut bytes)
         .map_err(|e| VaultError::new(format!("purlis could not make a random name: {e}")))?;
@@ -1207,7 +1207,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
 }
 
 /// Now, as the index writes it.
-fn now() -> String {
+pub(super) fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 

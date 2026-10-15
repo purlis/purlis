@@ -10,6 +10,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type {
+  LevelWaiting,
   PlainFileVault,
   SettingsEdit,
   SettingsField,
@@ -49,7 +50,11 @@ function applied(was: SettingsFile, edits: readonly SettingsEdit[]): SettingsFil
   return { ...was, fields, text: `${was.text}# written\n` };
 }
 
-function core({ vaults = [] as PlainFileVault[], move = (name: string) => `Moved ${name}.` } = {}) {
+function core({
+  vaults = [] as PlainFileVault[],
+  move = (name: string) => `Moved ${name}.`,
+  waiting = [] as LevelWaiting[],
+} = {}) {
   const files: Record<SettingsWhich, SettingsFile> = {
     shared: file("shared"),
     local: file("local"),
@@ -57,6 +62,8 @@ function core({ vaults = [] as PlainFileVault[], move = (name: string) => `Moved
   const sent: { which: SettingsWhich; edits: SettingsEdit[] }[] = [];
   const moved: string[] = [];
   let held = [...vaults];
+  let waits = [...waiting];
+  const confirmed: (string | null)[] = [];
   mockIPC(
     (cmd, args) => {
       const given = (args ?? {}) as Record<string, unknown>;
@@ -92,6 +99,14 @@ function core({ vaults = [] as PlainFileVault[], move = (name: string) => `Moved
           };
         case "plain_file_vaults":
           return held;
+        case "sandbox_levels_waiting":
+          return waits;
+        case "confirm_sandbox_level": {
+          const persona = (given.persona ?? null) as string | null;
+          confirmed.push(persona);
+          waits = waits.filter((one) => one.persona !== persona);
+          return `Confirmed for ${persona ?? "this project"}.`;
+        }
         case "move_vault_to_keychain": {
           const name = given.name as string;
           moved.push(name);
@@ -110,7 +125,7 @@ function core({ vaults = [] as PlainFileVault[], move = (name: string) => `Moved
     },
     { shouldMockEvents: true },
   );
-  return { sent, moved };
+  return { sent, moved, confirmed };
 }
 
 beforeEach(() => {
@@ -216,5 +231,20 @@ describe("Settings › Sandbox › Your level", () => {
     core();
     await atYourLevel();
     expect(await screen.findByText("This project has no plain-file vault.")).toBeInTheDocument();
+  });
+  it("shows a lower level the file alone says, with Confirm, and confirms it", async () => {
+    const { confirmed } = core({ waiting: [{ persona: "qa", level: "off" }] });
+    await atYourLevel();
+
+    expect(
+      await screen.findByText(/As qa, the file says no sandbox, which you did not set here/),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm no sandbox as qa" }));
+
+    expect(await screen.findByText("Confirmed for qa.")).toBeInTheDocument();
+    expect(confirmed).toEqual(["qa"]);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /^Confirm/ })).not.toBeInTheDocument(),
+    );
   });
 });

@@ -491,6 +491,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The plain-file vaults offered to move into the keychain before a person turns their
     // sandbox down (#2071): read in their window alone.
     "plain_file_vaults",
+    // Your levels waiting for Confirm, and the Confirm that makes one count at a start
+    // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
+    "sandbox_levels_waiting",
+    "confirm_sandbox_level",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

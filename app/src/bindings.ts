@@ -645,6 +645,10 @@ export const commands = {
 	plainFileVaults: (plane: PlaneId) => typedError<PlainFileVault[], string>(__TAURI_INVOKE("plain_file_vaults", { plane })),
 	/**  Moves plain-file vault `name` into the system keychain, or says why it was not moved. */
 	moveVaultToKeychain: (plane: PlaneId, name: string) => typedError<string, string>(__TAURI_INVOKE("move_vault_to_keychain", { plane, name })),
+	/**  The levels of the project that wait for your Confirm. */
+	sandboxLevelsWaiting: (plane: PlaneId) => typedError<LevelWaiting[], string>(__TAURI_INVOKE("sandbox_levels_waiting", { plane })),
+	/**  Confirms the level the file now says for `persona` (the project's for `None`), as yours. */
+	confirmSandboxLevel: (plane: PlaneId, persona: string | null) => typedError<string, string>(__TAURI_INVOKE("confirm_sandbox_level", { plane, persona })),
 	/**
 	 *  The dispatches of chat `session` waiting on the person, for the Notice on its tab.
 	 * 
@@ -6045,6 +6049,14 @@ export type LeftOut = {
 	what: string,
 	/**  The core's whole sentence. */
 	why: string,
+};
+
+/**  A level the file says that waits for your Confirm. */
+export type LevelWaiting = {
+	/**  The persona's level, or the project's for `None`. */
+	persona: string | null,
+	/**  What the file says: `on`, `floor` or `off`. */
+	level: string,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */

@@ -28,10 +28,28 @@ makes the floor every chat's default where a project has not turned the full san
    and read back before the registration changes and the file goes, and a move that stops takes
    back what it wrote. A vault the team's file registers is the team's to move, and is refused
    with a sentence. Both commands are the window's alone; the move is a credential command.
-7. **A chat's start reads it once the floor lands.** This record's first change saves and shows
-   the level; wiring it into a chat's start, and the level mark in the title bar, follow PR A.
-   That wiring reads a level only as the person set it in Settings on this machine, as Your
-   hosts are confirmed (`app/sandbox.json`), never a value something else wrote into the file.
+7. **A level counts as far as you confirmed it.** A chat can write `purlis.local.toml`: it sits
+   in the project, where a sandboxed chat writes. So the file's word alone never turns a
+   sandbox down. purlis keeps a record of the levels you set or confirmed in Settings,
+   `levels_mine` in this machine's file for the clone, in the person's config home
+   (`sandbox-grants/<clone key>.json`, beside Your hosts' confirmations), which no sandboxed
+   chat writes. The rule, slot by slot (the project's level, and each persona's):
+   - a level the file says that is the one you confirmed, **or stricter**, is honoured;
+   - with nothing confirmed, the floor stands for what you confirmed, so `on` and `floor`
+     are honoured and `off` is not;
+   - a **lower** level the file alone says is shown on the page with **Confirm**, and until
+     you confirm it a chat starts at what you confirmed, or the floor;
+   - a level the file no longer says is taken off the record whenever Settings reads the
+     file, so one taken out by hand and written back later waits for Confirm again.
+
+   Picking a level in Settings confirms it as picked. A save under Edit as TOML confirms
+   nothing, since its text may hold a level something else wrote. Both the Confirm and the
+   list of waiting levels are the window's alone. A chat that is already unsandboxed runs as
+   the person and can write the record too, for this project or another: nothing here holds
+   against a chat at `off`, which is what `off` means.
+8. **A chat's start reads it once the floor lands.** This record's first change saves, shows
+   and confirms the level; a chat's start reads it through `personal::in_force` once PR A
+   (#2081) merges, and the level mark in the title bar comes with that wiring.
 
 ## Consequences
 

@@ -398,6 +398,8 @@ export const commands = {
 	dispatchLimits: (plane: PlaneId) => typedError<DispatchLimits, string>(__TAURI_INVOKE("dispatch_limits", { plane })),
 	plainFileVaults: __WINDOW_ONLY_RESULT,
 	moveVaultToKeychain: __WINDOW_ONLY_RESULT,
+	sandboxLevelsWaiting: __WINDOW_ONLY_RESULT,
+	confirmSandboxLevel: __WINDOW_ONLY_RESULT,
 	dispatchGrantsNeeded: __WINDOW_ONLY_RESULT,
 	allowDispatch: __WINDOW_ONLY_RESULT,
 	keepDispatchBlocked: __WINDOW_ONLY_RESULT,
@@ -4769,6 +4771,14 @@ export type LeftOut = {
 	what: string,
 	/**  The core's whole sentence. */
 	why: string,
+};
+
+/**  A level the file says that waits for your Confirm. */
+export type LevelWaiting = {
+	/**  The persona's level, or the project's for `None`. */
+	persona: string | null,
+	/**  What the file says: `on`, `floor` or `off`. */
+	level: string,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */

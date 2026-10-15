@@ -105,6 +105,8 @@ macro_rules! app_commands {
                 dispatchlimits::dispatch_limits,
                 yoursandbox::plain_file_vaults,
                 yoursandbox::move_vault_to_keychain,
+                yoursandbox::sandbox_levels_waiting,
+                yoursandbox::confirm_sandbox_level,
                 dispatchgrants::dispatch_grants_needed,
                 dispatchgrants::allow_dispatch,
                 dispatchgrants::keep_dispatch_blocked,

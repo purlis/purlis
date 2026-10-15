@@ -57,7 +57,13 @@ import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { dispatchGroup } from "./dispatch";
-import { plainFilesRow, YOUR_LEVEL, yourLevelControls, yourLevelHelp } from "./yourLevel";
+import {
+  levelsWaitingRow,
+  plainFilesRow,
+  YOUR_LEVEL,
+  yourLevelControls,
+  yourLevelHelp,
+} from "./yourLevel";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import {
   PERSONA_HOSTS_COLLECTION,
@@ -638,7 +644,10 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
             label: "Your level",
             help: yourLevelHelp(read.local.file),
             settings: fromLocal(YOUR_LEVEL, yourLevelControls(read.entries.persona ?? [])),
-            after: read.plane !== undefined ? plainFilesRow(read.plane) : [],
+            after:
+              read.plane !== undefined
+                ? [...levelsWaitingRow(read.plane, read.local.text), ...plainFilesRow(read.plane)]
+                : [],
             sub: true,
           },
         ]

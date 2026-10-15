@@ -207,6 +207,12 @@ pub(crate) fn save(
     base: Option<&str>,
     change: SettingsChange,
 ) -> Result<SettingsSaved, String> {
+    // Your own levels this window's edits set (#2071): confirmed as set once the file is
+    // written. A raw save confirms none: its text may hold a level something else wrote.
+    let levels = match (&which, &change) {
+        (SettingsWhich::Local, SettingsChange::Edits { edits }) => levels_set(edits),
+        _ => Vec::new(),
+    };
     let text = match change {
         SettingsChange::Raw { text } => text,
         SettingsChange::Edits { edits } => {
@@ -240,11 +246,53 @@ pub(crate) fn save(
                 file: file_of(root, which)?,
             })
         }
-        Ok(()) => Ok(SettingsSaved::Saved {
-            file: file_of(root, which)?,
-        }),
+        Ok(()) => {
+            for (persona, level) in &levels {
+                purlis_core::sandbox::personal::set_by_you(root, persona.as_deref(), *level)?;
+            }
+            Ok(SettingsSaved::Saved {
+                file: file_of(root, which)?,
+            })
+        }
         Err(reasons) => Ok(SettingsSaved::Refused { reasons }),
     }
+}
+
+/// Each level slot `edits` set or took out: `[sandbox] level` (`None`, the project's) and
+/// `[sandbox.personas] <persona>`. A value that is not a level is left for the save to refuse.
+fn levels_set(
+    edits: &[SettingsEdit],
+) -> Vec<(
+    Option<String>,
+    Option<purlis_core::sandbox::personal::Choice>,
+)> {
+    use purlis_core::sandbox::personal::{self, Choice};
+    edits
+        .iter()
+        .filter_map(|edit| {
+            let keys: Vec<&str> = edit
+                .path
+                .iter()
+                .map(|step| match step {
+                    SettingsStep::Key(key) => Some(key.as_str()),
+                    SettingsStep::Index(_) => None,
+                })
+                .collect::<Option<_>>()?;
+            let slot = match keys.as_slice() {
+                [table, personal::LEVEL] if *table == purlis_core::sandbox::TABLE => None,
+                [table, personal::PERSONAS, name] if *table == purlis_core::sandbox::TABLE => {
+                    Some((*name).to_owned())
+                }
+                _ => return None,
+            };
+            let level = match &edit.value {
+                None => None,
+                Some(SettingsValue::Text(word)) => Some(Choice::of_word(word)?),
+                Some(_) => return None,
+            };
+            Some((slot, level))
+        })
+        .collect()
 }
 
 /// Whether a change to the project's presets, and to its hosts, was waiting to be told before
@@ -826,6 +874,11 @@ pub(crate) fn file_of(
             root,
             read.exists.then_some(read.text.as_str()),
         );
+        // Your levels too (#2071): one taken out by hand is not confirmed when written back.
+        purlis_core::sandbox::personal::forget_not_in(
+            root,
+            read.exists.then_some(read.text.as_str()),
+        );
     }
     let fields = settings::fields(&read.text);
     Ok(SettingsFile {
@@ -1218,6 +1271,48 @@ mod tests {
         assert!(you["target"].is_null());
         let here = one(None);
         assert!(here["level"].is_null() && here["target"].is_null());
+    }
+
+    /// #2071: a level the window's own edit sets is confirmed as set; one a raw save, or
+    /// anything else, writes into the file waits for Confirm.
+    #[test]
+    fn a_level_you_pick_is_confirmed_and_one_written_as_toml_is_not() {
+        use purlis_core::sandbox::personal::{self, Choice};
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let text = |word: &str| Some(SettingsValue::Text(word.to_owned()));
+        let key = |k: &str| SettingsStep::Key(k.to_owned());
+        let saved = save(
+            root,
+            SettingsWhich::Local,
+            None,
+            SettingsChange::Edits {
+                edits: vec![SettingsEdit {
+                    path: vec![key("sandbox"), key("level")],
+                    value: text("off"),
+                }],
+            },
+        )
+        .unwrap();
+        assert!(matches!(saved, SettingsSaved::Saved { .. }), "{saved:?}");
+        assert_eq!(personal::in_force(root).level, Some(Choice::Off));
+
+        let now = std::fs::read_to_string(root.join(purlis_core::profiles::LOCAL_FILE)).unwrap();
+        let raw = format!("{now}\n[sandbox.personas]\nqa = \"off\"\n");
+        let saved = save(
+            root,
+            SettingsWhich::Local,
+            Some(&now),
+            SettingsChange::Raw { text: raw },
+        )
+        .unwrap();
+        assert!(matches!(saved, SettingsSaved::Saved { .. }), "{saved:?}");
+        assert_eq!(
+            personal::of(root).for_persona(Some("qa")),
+            Some(Choice::Off)
+        );
+        assert_eq!(personal::in_force(root).personas.get("qa"), None);
+        assert_eq!(personal::waiting(root).len(), 1);
     }
 
     /// #1405: the field's check is the core's parser, word for word.

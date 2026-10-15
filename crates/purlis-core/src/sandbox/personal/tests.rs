@@ -66,24 +66,105 @@ fn a_value_that_is_not_a_level_or_a_name_that_cannot_be_a_persona_is_refused_and
     );
 }
 
+fn levels(level: Option<Choice>, personas: &[(&str, Choice)]) -> Personal {
+    Personal {
+        level,
+        personas: personas
+            .iter()
+            .map(|(name, choice)| ((*name).to_owned(), *choice))
+            .collect(),
+    }
+}
+
 #[test]
-fn a_level_is_written_and_taken_out_with_every_other_line_kept() {
-    let before = "# mine\n[sandbox]\nhosts = [\"example.com\"]\n";
-    let set = with(before, None, Some(Choice::Off)).unwrap();
-    assert!(set.contains("# mine"), "{set}");
-    assert!(set.contains("hosts = [\"example.com\"]"), "{set}");
-    assert_eq!(of_text(&set).level, Some(Choice::Off));
-    let persona = with(&set, Some("devops"), Some(Choice::On)).unwrap();
+fn a_level_the_file_alone_says_is_honoured_only_down_to_what_you_confirmed_or_the_floor() {
+    use Choice::{Floor, Off, On};
+    let nothing = Personal::default();
+    // Nothing confirmed: a stricter level, or the floor, is honoured; `off` is not.
+    assert_eq!(honoured(&levels(Some(On), &[]), &nothing).level, Some(On));
     assert_eq!(
-        of_text(&persona).for_persona(Some("devops")),
-        Some(Choice::On)
+        honoured(&levels(Some(Floor), &[]), &nothing).level,
+        Some(Floor)
     );
-    let back = with(&persona, Some("devops"), None).unwrap();
-    assert!(!back.contains("personas"), "{back}");
-    let back = with(&back, None, None).unwrap();
-    assert_eq!(of_text(&back), Personal::default());
-    assert!(back.contains("hosts = [\"example.com\"]"), "{back}");
-    assert!(with(before, Some("../x"), Some(Choice::Off)).is_err());
+    assert_eq!(honoured(&levels(Some(Off), &[]), &nothing).level, None);
+    // Confirmed `off`: honoured, and anything stricter too.
+    assert_eq!(
+        honoured(&levels(Some(Off), &[]), &levels(Some(Off), &[])).level,
+        Some(Off)
+    );
+    assert_eq!(
+        honoured(&levels(Some(Floor), &[]), &levels(Some(Off), &[])).level,
+        Some(Floor)
+    );
+    // Confirmed `on`, the file says lower: what you confirmed.
+    assert_eq!(
+        honoured(&levels(Some(Off), &[]), &levels(Some(On), &[])).level,
+        Some(On)
+    );
+    // Taken out of the file: not set, whatever the record says.
+    assert_eq!(honoured(&nothing, &levels(Some(Off), &[])).level, None);
+    // A persona's, the same way.
+    let file = levels(None, &[("devops", Off), ("qa", On)]);
+    let judged = honoured(&file, &nothing);
+    assert_eq!(judged.for_persona(Some("devops")), None);
+    assert_eq!(judged.for_persona(Some("qa")), Some(On));
+    assert_eq!(
+        awaiting(&file, &nothing),
+        [Awaiting {
+            persona: Some("devops".to_owned()),
+            level: Off
+        }]
+    );
+    assert!(awaiting(&file, &levels(None, &[("devops", Off)])).is_empty());
+}
+
+#[test]
+fn an_off_written_into_the_file_is_not_confirmed_until_you_confirm_it() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join(crate::profiles::LOCAL_FILE);
+    std::fs::write(
+        &file,
+        "[sandbox]\nlevel = \"off\"\n[sandbox.personas]\nqa = \"off\"\n",
+    )
+    .unwrap();
+
+    assert_eq!(of(root.path()).level, Some(Choice::Off));
+    let now = in_force(root.path());
+    assert_eq!(
+        now.for_persona(None),
+        None,
+        "a level the file alone says turned the sandbox off"
+    );
+    assert_eq!(now.for_persona(Some("qa")), None);
+    assert_eq!(waiting(root.path()).len(), 2);
+
+    // Confirm, in Settings: the project's, then the persona's.
+    assert_eq!(confirm(root.path(), None).unwrap(), Some(Choice::Off));
+    assert_eq!(in_force(root.path()).for_persona(None), Some(Choice::Off));
+    assert_eq!(
+        in_force(root.path()).for_persona(Some("qa")),
+        Some(Choice::Off)
+    );
+    confirm(root.path(), Some("qa")).unwrap();
+    assert!(waiting(root.path()).is_empty());
+
+    // Taken out of the file by hand and written back later: not confirmed again.
+    std::fs::write(&file, "").unwrap();
+    forget_not_in(root.path(), Some(""));
+    std::fs::write(&file, "[sandbox]\nlevel = \"off\"\n").unwrap();
+    assert_eq!(in_force(root.path()).for_persona(None), None);
+}
+
+#[test]
+fn a_level_you_set_in_settings_is_confirmed_as_you_set_it() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join(crate::profiles::LOCAL_FILE);
+    std::fs::write(&file, "[sandbox]\nlevel = \"off\"\n").unwrap();
+    set_by_you(root.path(), None, Some(Choice::Off)).unwrap();
+    assert_eq!(in_force(root.path()).for_persona(None), Some(Choice::Off));
+    set_by_you(root.path(), None, None).unwrap();
+    assert_eq!(in_force(root.path()).for_persona(None), None);
+    assert!(set_by_you(root.path(), Some("../x"), Some(Choice::Off)).is_err());
 }
 
 #[test]

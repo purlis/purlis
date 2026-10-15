@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type PlainFileVault, type PlaneId, type SettingsStep } from "../bindings";
+import {
+  commands,
+  type LevelWaiting,
+  type PlainFileVault,
+  type PlaneId,
+  type SettingsStep,
+} from "../bindings";
 import { inTheWindow } from "../personaHostsAllow";
 import type { RowIds } from "./components";
 import { key, textAt, type Control } from "./fileControls";
@@ -26,7 +32,7 @@ export const LEVEL_SAID: Readonly<Record<(typeof LEVELS)[number], string>> = {
 
 /** What the group says above its rows. */
 export function yourLevelHelp(file: string): string {
-  return `How much the sandbox holds for your chats in this project, on this machine only. Kept in ${file}, never in a committed file. A chat takes it at its next start; a chat already running keeps the level it started with. Full sandbox is the project's hosts, folders and Allow asks. Floor reaches every host and folder, but never a vault's files or a file a program runs later. No sandbox holds nothing: a chat can read any file on disk, a plain-file vault's included.`;
+  return `How much the sandbox holds for your chats in this project, on this machine only. Kept in ${file}, never in a committed file. A chat takes it at its next start; a chat already running keeps the level it started with. A level set here counts as yours; a lower one written into the file any other way waits for your Confirm below, and a chat starts at what you confirmed, or the floor, until then. Full sandbox is the project's hosts, folders and Allow asks. Floor reaches every host and folder, but never a vault's files or a file a program runs later. No sandbox holds nothing: a chat can read any file on disk, a plain-file vault's included.`;
 }
 
 /**
@@ -149,6 +155,97 @@ export function plainFilesRow(plane: PlaneId): LiveSetting[] {
       useControl: () => ({
         grouped: true,
         control: (ids) => <PlainFiles plane={plane} ids={ids} />,
+      }),
+    },
+  ];
+}
+
+/** What a waiting level says. */
+function waitingSaid(one: LevelWaiting): string {
+  const level = LEVEL_SAID[one.level as (typeof LEVELS)[number]].toLowerCase();
+  const whose = one.persona === null ? "For this project" : `As ${one.persona}`;
+  return `${whose}, the file says ${level}, which you did not set here. A chat starts at what you confirmed, or the floor, until you confirm it.`;
+}
+
+/** The levels the file says lower than you set or confirmed, each with Confirm. */
+function Waiting({ plane, ids, text }: { plane: PlaneId; ids: RowIds; text: string }) {
+  const [waiting, setWaiting] = useState<readonly LevelWaiting[]>();
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const read = () =>
+    void commands
+      .sandboxLevelsWaiting(plane)
+      // A core that answers nothing lists nothing.
+      .then((answer) =>
+        setWaiting(answer.status === "ok" ? ((answer.data as LevelWaiting[] | null) ?? []) : []),
+      )
+      .catch(() => setWaiting([]));
+  // Read again whenever the file's text changes: a save, or an edit by hand Settings read.
+  useEffect(read, [plane, text]);
+  const confirm = (persona: string | null) => {
+    setBusy(true);
+    setSaid(undefined);
+    void commands
+      .confirmSandboxLevel(plane, persona)
+      .then((answer) => setSaid(answer.status === "ok" ? answer.data : answer.error))
+      .catch((err: unknown) => setSaid(`purlis could not confirm it: ${String(err)}`))
+      .finally(() => {
+        setBusy(false);
+        read();
+      });
+  };
+  return (
+    <div
+      id={ids.id}
+      role="group"
+      className="ui-setting-status"
+      aria-labelledby={ids.labelledBy}
+      aria-describedby={ids.describedBy}
+    >
+      {waiting === undefined ? (
+        <p>Reading your levels…</p>
+      ) : waiting.length === 0 ? (
+        <p>Every level here is one you set or confirmed.</p>
+      ) : (
+        <ul>
+          {waiting.map((one) => {
+            const level = LEVEL_SAID[one.level as (typeof LEVELS)[number]].toLowerCase();
+            const whose = one.persona === null ? "for this project" : `as ${one.persona}`;
+            return (
+              <li key={one.persona ?? ""}>
+                <span>{waitingSaid(one)}</span>{" "}
+                <button
+                  type="button"
+                  className="ui-button"
+                  disabled={busy}
+                  onClick={() => confirm(one.persona)}
+                >
+                  {`Confirm ${level} ${whose}`}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {said !== undefined && <p>{said}</p>}
+    </div>
+  );
+}
+
+/** The row of the levels waiting for Confirm, under Your level. None where this page cannot
+ *  confirm: the record it writes is the window's alone. */
+export function levelsWaitingRow(plane: PlaneId, text: string): LiveSetting[] {
+  if (!inTheWindow(commands, "confirmSandboxLevel")) return [];
+  return [
+    {
+      id: `${YOUR_LEVEL}.waiting`,
+      label: "Waiting for your Confirm",
+      // The record of what you confirmed is this machine's, outside the project.
+      writes: "this machine",
+      help: "A chat can write the settings file, so a lower level it holds counts only once you confirm it here.",
+      useControl: () => ({
+        grouped: true,
+        control: (ids) => <Waiting plane={plane} ids={ids} text={text} />,
       }),
     },
   ];
