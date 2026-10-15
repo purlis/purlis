@@ -582,6 +582,10 @@ struct OpenChat {
     /// with no sandbox; `null` for a shell, or a chat still to start. Its tab draws it.
     #[specta(optional)]
     sandbox: Option<String>,
+    /// Why it runs with no sandbox where the floor could not be applied here (#2071, Q2): what
+    /// its tab's sandbox mark says beside `none`. `null` for any other chat.
+    #[specta(optional)]
+    sandbox_why: Option<String>,
     /// Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
     /// window keys what it keeps of a chat beyond this launch by, such as the Chats list's
     /// folds (#1687). `null` for a chat that has no id yet.
@@ -2405,6 +2409,7 @@ impl From<chats::Open> for OpenChat {
                 }
                 .to_owned()
             }),
+            sandbox_why: open.floorless,
             // The store's record of it, which `drawn_of` reads: not part of what opened.
             id: None,
             name: open.name,

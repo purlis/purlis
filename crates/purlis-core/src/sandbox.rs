@@ -3159,10 +3159,16 @@ impl Applied {
         // opt-out, none names it, and each ends with the policy and who set it.
         let locks = policy::Locks::of(&self.root);
         let locked = locks.opt_out_refused();
-        let Some(cwd) = at.cwd else {
-            return Err(FolderRefusal::Missing.said(&locks));
+        // The floor confines a chat to no folder (#2071): a chat with none of its own is read
+        // at the project's root, and one outside the project or reached through a link is not
+        // refused for it. What a folder's denials hold, below, holds at every level.
+        let floor = self.level() == Level::Floor;
+        let cwd = match at.cwd {
+            Some(cwd) => cwd,
+            None if floor => self.root.as_path(),
+            None => return Err(FolderRefusal::Missing.said(&locks)),
         };
-        if let Some(why) = folder_refusal(&self.root, cwd) {
+        if !floor && let Some(why) = folder_refusal(&self.root, cwd) {
             return Err(why.said(&locks));
         }
         // #1327: never a chat whose own folder, or one above it, it may not write — by what
@@ -3178,6 +3184,7 @@ impl Applied {
         let under = |why: String| under_policy(&locks, why);
         let at = &At {
             no_opt_out: locked.is_some(),
+            cwd: Some(cwd),
             ..*at
         };
         // A chat whose network goes through purlis's proxy is never started without it (#1665):

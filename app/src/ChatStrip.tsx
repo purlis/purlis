@@ -43,6 +43,7 @@ import type { StateClock } from "./stateClock";
 import type { UsedReader } from "./tasksUsed";
 import type { RefObject } from "react";
 import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
+import type { SandboxSaid } from "./SandboxMark";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
 export const NO_ROWS: readonly ChatRow[] = [];
@@ -556,7 +557,7 @@ type ChatStripProps = {
   shells: ReadonlySet<number>;
   personaOf: (session: number | undefined) => string | null;
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it. */
-  sandboxOf?: (session: number | undefined) => string | null;
+  sandboxOf?: (session: number | undefined) => SandboxSaid | null;
   taskNameOf: (id: number) => string | undefined;
   taskTabOf: (id: number) => { asker: string | undefined } | undefined;
   tabHasTasks: (id: number) => boolean;

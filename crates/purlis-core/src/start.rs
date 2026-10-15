@@ -174,6 +174,9 @@ pub struct Ready {
     /// `trust.sandbox.off` event records. `None` for a sandboxed chat, and for every chat in a
     /// project that has not turned the sandbox on.
     pub unsandboxed: Option<crate::sandbox::Lifted>,
+    /// Why it starts with no sandbox in a project that has not turned it on, where the floor
+    /// cannot be applied here (#2071, Q2): what its tab's sandbox mark says. `None` otherwise.
+    pub floorless: Option<String>,
     /// What the window says on this chat's tab as it starts, one line each, non-modal: why its
     /// `AGENTS.md` was not written, and every `AGENTS.md` that charter's exclude line hides
     /// and charter did not write (V35, ADR 0085). Empty for nearly every start.
@@ -350,6 +353,7 @@ fn ready_given(
     // gate below exists for: this writes charter's own documents into a tree charter owns,
     // and it is idempotent, so doing it for a start that is then refused costs nothing.
     let mut notices = layered_or_refusal(&here, root, persona.as_deref())?;
+    let mut floorless = None;
     let hidden = hidden_agents_md_in(&here);
     notices.extend(hidden.said(|p| p.display().to_string()));
     let agents_md = hidden
@@ -405,9 +409,9 @@ fn ready_given(
                 (None, Some(lifted))
             }
             // The floor could not be applied here (#2071): the chat starts as before, and its
-            // tab says why.
+            // tab's sandbox mark says why.
             Some(crate::sandbox::Decided::Floorless(why)) => {
-                notices.push(why);
+                floorless = Some(why);
                 (None, None)
             }
             None => (None, None),
@@ -548,6 +552,7 @@ fn ready_given(
         plugins,
         sandbox,
         unsandboxed,
+        floorless,
         notices,
         agents_md,
     })

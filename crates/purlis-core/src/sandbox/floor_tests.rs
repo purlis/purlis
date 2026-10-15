@@ -589,3 +589,44 @@ fn wrapped_floor_of(harness: Harness, compiled: &Compiled, ports: &[u16]) -> Str
     }
     .expect("a profile")
 }
+
+#[test]
+fn the_floor_confines_a_chat_to_no_folder_so_one_with_none_of_its_own_still_starts() {
+    let (_dir, root) = project();
+    let applied = floor_of(decided(
+        Harness::Codex,
+        &root,
+        &machine_with(Path::new("/opt/none")),
+    ));
+    let words = || Words {
+        program: "codex".to_owned(),
+        command: Vec::new(),
+        armed: Vec::new(),
+        charters: Vec::new(),
+    };
+    // Past the folder checks, a line asks for the chat's proxy, which no test starts: that is
+    // the refusal a chat that passed them meets here.
+    let past_its_folder = |line: Result<Line, String>| {
+        line.expect_err("no proxy here")
+            .contains("egress proxy was not started")
+    };
+    // No folder of its own: read at the project's root, not refused for it.
+    assert!(past_its_folder(applied.line(words(), &At::default())));
+    // Nor one outside the project: the floor holds what it holds wherever the chat stands.
+    let outside = tempfile::tempdir().expect("a folder outside");
+    let outside = outside.path().canonicalize().expect("a real folder");
+    let at = At {
+        cwd: Some(&outside),
+        ..At::default()
+    };
+    assert!(past_its_folder(applied.line(words(), &at)));
+    // The full sandbox still refuses a chat with no folder of its own.
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
+    let full = floor_of(decided(
+        Harness::Codex,
+        &root,
+        &machine_with(Path::new("/opt/none")),
+    ));
+    let refused = full.line(words(), &At::default()).expect_err("refused");
+    assert!(refused.contains("no folder of its own"), "{refused}");
+}

@@ -23,6 +23,14 @@ describe("the sandbox mark", () => {
     expect(mark).toHaveTextContent("");
   });
 
+  it("says why a chat runs with no sandbox where the floor could not be applied (Q2)", () => {
+    const why = "purlis runs Codex inside a sandbox of its own, which it can apply on macOS only";
+    const { container } = render(<SandboxMark level="none" why={why} />);
+    const mark = container.querySelector('[data-sandbox="none"]');
+    expect(mark).toHaveAttribute("title", `no sandbox: ${why}`);
+    expect(mark).toHaveAccessibleName(`no sandbox: ${why}`);
+  });
+
   it("draws nothing for a shell or a chat still to start, nor for a word it does not know", () => {
     for (const level of [null, undefined, "partial"]) {
       const { container } = render(<SandboxMark level={level} />);

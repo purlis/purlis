@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { SandboxMark } from "./SandboxMark";
+import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, type ReactNode } from "react";
 import { Hand, ListTodo, SquareTerminal } from "lucide-react";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
@@ -157,7 +157,7 @@ export function TabMarks({
   /** The persona the tab's chat runs as, when it runs as one: its mark is the tab's. */
   persona?: string | null;
   /** How much the tab's chat's sandbox holds (#2071): its mark is drawn after the name. */
-  sandbox?: string | null;
+  sandbox?: SandboxSaid | null;
   /** The chats wrapping up — being smart-closed (ADR 0064). */
   wrapping: ReadonlySet<number>;
   /** The chats being stopped (#1459): a tab that shows one says so, as its row does. */
@@ -199,7 +199,7 @@ export function TabMarks({
         persona != null && <PersonaMark persona={persona} className="tab-mark" />
       )}
       <span className="tab-name">{tabs.byId[id].name}</span>
-      <SandboxMark level={sandbox} />
+      <SandboxMark level={sandbox?.level} why={sandbox?.why} />
       {pin}
       <PlaneUpdatedMark files={chat === undefined ? undefined : updates?.[chat]} />
       {/* The first pane's session is the tab's own chat. Its own element, so what a tab IS

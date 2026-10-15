@@ -7,6 +7,9 @@ import { ShieldCheck, ShieldHalf, ShieldOff } from "lucide-react";
 export type SandboxLevel = "full" | "floor" | "none";
 
 /** What each level is called, on its tab and to a screen reader. */
+/** A chat's level as the plane's chats say it, and why where it runs with no sandbox. */
+export type SandboxSaid = { level: string; why?: string | null };
+
 export const SANDBOX_SAID: Readonly<Record<SandboxLevel, string>> = {
   full: "full sandbox",
   floor: "floor",
@@ -26,19 +29,16 @@ function isLevel(word: string): word is SandboxLevel {
  * no sandbox. Always drawn for a chat, so its level is never out of sight; nothing for a shell
  * or a chat still to start.
  */
-export function SandboxMark({ level }: { level?: string | null }) {
+export function SandboxMark({ level, why }: { level?: string | null; why?: string | null }) {
   if (level == null || !isLevel(level)) return null;
   const Icon = ICONS[level];
+  // Where the floor could not be applied here, the mark says why (#2071, Q2), on its title and
+  // to a screen reader: not as a Notice on the pane, which every such chat would carry.
+  const said = why ? `${SANDBOX_SAID[level]}: ${why}` : SANDBOX_SAID[level];
   // Named by `aria-label`, not by words in the tab: the tab's text stays the chat's name, which
   // is what the window and its close button call the chat.
   return (
-    <span
-      className="tab-sandbox"
-      data-sandbox={level}
-      role="img"
-      aria-label={SANDBOX_SAID[level]}
-      title={SANDBOX_SAID[level]}
-    >
+    <span className="tab-sandbox" data-sandbox={level} role="img" aria-label={said} title={said}>
       <Icon className="tab-mark" aria-hidden="true" />
     </span>
   );

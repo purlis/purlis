@@ -156,6 +156,9 @@ pub struct Open {
     /// How much its sandbox holds as it started (#2071): the full sandbox or the floor, and
     /// `None` for a chat that runs with no sandbox.
     pub sandbox: Option<purlis_core::sandbox::Level>,
+    /// Why it runs with no sandbox where the floor could not be applied here (#2071, Q2): what
+    /// its tab's sandbox mark says. `None` for any other chat.
+    pub floorless: Option<String>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -420,6 +423,9 @@ pub struct Chats {
     /// What a start found to say on a chat's tab after the core's start had spoken: that its
     /// trust event could not be written. Taken by the window's start ([`Self::start_notes`]).
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// Why each chat that runs with no sandbox where the floor could not be applied does
+    /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
+    floorless: Mutex<HashMap<u32, String>>,
     /// The older Claude Code a chat's late notes say it is on (#1699): marked said once the
     /// window takes them ([`Self::start_notes`]), not before.
     older_in_notes: Mutex<HashMap<u32, purlis_core::sandbox::ClaudeCodeVersion>>,
@@ -846,6 +852,7 @@ impl Chats {
             beginning: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            floorless: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             let_go: Mutex::new(HashMap::new()),
@@ -1264,7 +1271,7 @@ impl Chats {
         size: Size,
         why: Why,
     ) -> Result<u32, String> {
-        self.open_it(
+        let session = self.open_it(
             chat,
             ready.program.clone(),
             ready.command.clone(),
@@ -1281,7 +1288,19 @@ impl Chats {
             // A chat on a profile is an agent, never the operator's shell.
             false,
             why,
-        )
+        )?;
+        self.floorless_at(session, ready.floorless.clone());
+        Ok(session)
+    }
+
+    /// Says why chat `session` runs with no sandbox where the floor could not be applied
+    /// (#2071, Q2), or that it does not: each start of a session says it again.
+    fn floorless_at(&self, session: u32, why: Option<String>) {
+        let mut floorless = lock(&self.floorless);
+        match why {
+            Some(why) => floorless.insert(session, why),
+            None => floorless.remove(&session),
+        };
     }
 
     /// [`Self::put_back`], kept by the name the tests know it by.
@@ -2096,16 +2115,8 @@ impl Chats {
             operator_shell,
             why,
         )
-        // Where the floor could not be applied, its tab says why (#2071, Q2), with what else
-        // its start found to say.
-        .inspect(|session| {
-            if let Some(why) = floorless {
-                lock(&self.late_notes)
-                    .entry(*session)
-                    .or_default()
-                    .push(why);
-            }
-        })
+        // Where the floor could not be applied, its tab's sandbox mark says why (#2071, Q2).
+        .inspect(|session| self.floorless_at(*session, floorless))
     }
 
     /// What a shell tab's shell is started with beyond `args`, the chat's own words: charter's
@@ -3437,6 +3448,8 @@ impl Chats {
         // In the strip's order (`in_order`), so the window comes back with its tabs the way
         // they were left. Asked before `open` is held: it takes `order` itself.
         let ordered = self.in_order();
+        // Read out before `open` is held, as `order` is: no lock here is taken under another.
+        let floorless = lock(&self.floorless).clone();
         let open = lock(&self.open);
         let front = *lock(&self.front);
         ordered
@@ -3466,6 +3479,7 @@ impl Chats {
                     shows: chat.shows,
                     beside: chat.beside,
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
+                    floorless: floorless.get(&session).cloned(),
                 })
             })
             .collect()
@@ -3919,6 +3933,7 @@ impl Chats {
                 beside: one.chat.beside,
                 // How it is sandboxed is its start's to say.
                 sandbox: None,
+                floorless: None,
             })
             .collect()
     }
@@ -7043,6 +7058,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: Some(sandbox),
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         }
@@ -9416,6 +9432,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: None,
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         }
@@ -10243,6 +10260,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: None,
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         };
@@ -10319,6 +10337,7 @@ pub(crate) mod tests {
             plugins: std::collections::BTreeMap::new(),
             sandbox: None,
             unsandboxed: None,
+            floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
         };

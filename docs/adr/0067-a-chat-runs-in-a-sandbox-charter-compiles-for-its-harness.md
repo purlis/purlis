@@ -1660,8 +1660,12 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   brokered `secret exec` for a floor chat runs under the floor's profile, through the proxy.
 - **Where it cannot be applied** (ruling Q2): a harness purlis cannot wrap on this system, no
   backend, or a vault registry purlis cannot read. The chat starts as it did before the floor,
-  and its tab says why. A person may still start a chat without the floor, audited as the
-  opt-out is.
+  and its tab's sandbox mark says why. A person may still start a chat without the floor,
+  audited as the opt-out is.
+- **No folder to confine to.** The floor confines a chat to no folder, so a chat with no folder
+  of its own, one outside the project, or one reached through a link is not refused for it; the
+  denials of the folder it stands in hold as at every level. The full sandbox still refuses all
+  three.
 - **A program that does not answer as its harness is refused, not started without the floor.**
   The floor asks a Claude Code profile's program `--version` as the full sandbox does (V87g).
   One that answers as something else, or not at all, is refused with a sentence that names the
