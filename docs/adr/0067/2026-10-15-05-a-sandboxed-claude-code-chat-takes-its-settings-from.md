@@ -12,8 +12,10 @@ Section 2's Claude Code row is made precise. The rule:
   folder's `.claude/settings.json` and `.claude/settings.local.json`, and the local file at the
   top of its repository and of the main checkout of a linked worktree. They are loaded as they
   are while every key in them is one of: `permissions.deny`, `permissions.ask`,
-  `enabledPlugins`, `model`, `outputStyle`, `theme` and `$schema`. The list is small on purpose.
-  A key Claude Code adds later is not loaded until it is ruled in.
+  `enabledPlugins`, `model`, `outputStyle`, `theme` and `$schema`, and purlis's own entries
+  exactly as `init` writes them: the harness variable alone in `env`, and the guard hook alone
+  in `hooks`. The list is small on purpose. A key Claude Code adds later is not loaded until it
+  is ruled in.
 - **Anything else fails closed.** Any other key, a kept key of the wrong shape, a file that is
   there and cannot be read as settings, or a chat whose folder is not known: the chat starts
   with `--setting-sources user`. purlis carries the project's deny and ask rules on its own
@@ -45,3 +47,7 @@ Section 2's Claude Code row is made precise. The rule:
   were not loaded.
 - **D-PS-4: the note and the arguments are decided apart.** Both read the same files at the
   same start. The arguments decide what the chat runs on. The note only says so.
+- **D-PS-5: purlis's own `init` entries are kept, by their exact shape.** `init` writes the
+  harness variable and the guard hook into every plane's `.claude/settings.json`. Without this,
+  every chat at a plane's root would start without the plane's instructions. Any other value
+  under those keys is not kept.

@@ -165,3 +165,40 @@ fn a_name_from_the_project_is_shown_printable_and_short() {
     assert!(!note.contains('\n') && !note.contains('\u{1b}'), "{note}");
     assert!(!note.contains(&long), "{note}");
 }
+
+#[test]
+fn what_purlis_s_own_init_writes_is_kept() {
+    // The harness variable and the guard hook, as `init` writes them into a plane's file.
+    let dir = tempfile::tempdir().expect("a folder");
+    let file = serde_json::json!({
+        "env": {"CHARTER_HARNESS": "claude-code"},
+        "permissions": {"ask": ["Bash(charter report *--yes*)"]},
+        "hooks": {"PreToolUse": [crate::scaffold::settings::guard_hook()]},
+    });
+    write(dir.path(), ".claude/settings.json", &file.to_string());
+    let screened = screen(Some(dir.path()));
+    assert!(screened.loads_the_project(), "{screened:?}");
+    for spelling in ["PURLIS_HARNESS", "CHARTER_HARNESS"] {
+        let file = serde_json::json!({"env": {spelling: "claude-code"}});
+        write(dir.path(), ".claude/settings.json", &file.to_string());
+        assert!(screen(Some(dir.path())).loads_the_project(), "{spelling}");
+    }
+}
+
+#[test]
+fn anything_else_under_purlis_s_own_keys_is_not_kept() {
+    let mut other_hook = crate::scaffold::settings::guard_hook();
+    other_hook["hooks"][0]["command"] = serde_json::json!("true");
+    for file in [
+        serde_json::json!({"env": {"CHARTER_HARNESS": "claude-code", "OTHER": "1"}}),
+        serde_json::json!({"env": {"CHARTER_HARNESS": 1}}),
+        serde_json::json!({"hooks": {"PreToolUse": [other_hook]}}),
+        serde_json::json!({"hooks": {"Stop": [crate::scaffold::settings::guard_hook()]}}),
+        serde_json::json!({"hooks": {"PreToolUse": [crate::scaffold::settings::guard_hook(), {}]}}),
+    ] {
+        let dir = tempfile::tempdir().expect("a folder");
+        write(dir.path(), ".claude/settings.json", &file.to_string());
+        let screened = screen(Some(dir.path()));
+        assert!(!screened.loads_the_project(), "{file}");
+    }
+}

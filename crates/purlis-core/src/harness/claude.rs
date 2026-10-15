@@ -998,6 +998,8 @@ mod tests {
     fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json::Value) {
         let dir = tempfile::tempdir().expect("a project");
         let root = dir.path().canonicalize().expect("a real folder");
+        let off = manifest == OFF;
+        let manifest = if off { FLOOR } else { manifest };
         std::fs::write(root.join("charter.toml"), manifest).expect("charter.toml");
         if let Some(project) = project {
             std::fs::create_dir_all(root.join(".claude")).expect(".claude");
@@ -1016,7 +1018,7 @@ mod tests {
             None,
             None,
         ) {
-            Ok(Some(crate::sandbox::Decided::Sandboxed(applied))) => Some(applied),
+            Ok(Some(crate::sandbox::Decided::Sandboxed(applied))) if !off => Some(applied),
             _ => None,
         };
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
@@ -1041,7 +1043,8 @@ mod tests {
 
     const ON: &str = "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n";
     const FLOOR: &str = "schema = 1\n";
-    const OFF: &str = "[sandbox]\nmode = \"off\"\n";
+    /// A chat started with no sandbox, as an `off` starts it: armed with none.
+    const OFF: &str = "off";
 
     /// A project file holding keys beyond what a sandboxed chat keeps, beside rules it does.
     const BEYOND: &str = r#"{

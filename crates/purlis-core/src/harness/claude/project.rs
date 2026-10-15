@@ -17,6 +17,11 @@
 //! ([`Screened::note`]), and that the project's instructions, skills, agents and commands are
 //! not loaded either, since Claude Code loads those with the project's settings.
 //!
+//! **purlis's own entries are kept too**, exactly as `init` writes them
+//! ([`crate::scaffold::settings`]): the harness variable in `env`, and the guard hook. A file
+//! holding them and nothing else beyond [`KEPT`] is loaded as it is. Anything else under `env`
+//! or `hooks`, or the same entries spelt another way, is not.
+//!
 //! A chat that is not sandboxed is not read here and loads what it always did.
 
 use std::path::{Path, PathBuf};
@@ -243,6 +248,11 @@ fn read(path: &Path) -> Read {
 /// Sorts what `settings` holds into `out`: each key kept or dropped, and its deny and ask rules.
 fn take(settings: &serde_json::Map<String, serde_json::Value>, out: &mut Screened) {
     for (key, value) in settings {
+        if (key == "env" && purlis_s_own_env(value))
+            || (key == "hooks" && purlis_s_own_hooks(value))
+        {
+            continue;
+        }
         if !KEPT.contains(&key.as_str()) {
             out.dropped.push(key.clone());
             continue;
@@ -290,6 +300,43 @@ fn take(settings: &serde_json::Map<String, serde_json::Value>, out: &mut Screene
             _ => out.dropped.push(key.clone()),
         }
     }
+}
+
+/// Whether `env` holds the harness variable `init` writes, under any of its spellings, and
+/// nothing else ([`crate::scaffold::settings::ensure_harness_env`]).
+fn purlis_s_own_env(env: &serde_json::Value) -> bool {
+    env.as_object().is_some_and(|env| {
+        env.iter().all(|(name, value)| {
+            value.is_string()
+                && crate::names::ENV_PREFIX
+                    .spellings()
+                    .any(|prefix| *name == format!("{prefix}HARNESS"))
+        })
+    })
+}
+
+/// Whether `hooks` holds the guard hook `init` writes and nothing else
+/// ([`crate::scaffold::settings::guard_hook`]), under either name of purlis's command.
+fn purlis_s_own_hooks(hooks: &serde_json::Value) -> bool {
+    let guard = |name: &str| {
+        serde_json::json!({
+            "matcher": "Bash",
+            "hooks": [{"type": "command", "command": format!("{name} hook pretooluse"), "timeout": 10}],
+        })
+    };
+    let mut own: Vec<serde_json::Value> = crate::cliname::INSTALLED
+        .iter()
+        .map(|name| guard(name))
+        .collect();
+    own.push(crate::scaffold::settings::guard_hook());
+    hooks.as_object().is_some_and(|hooks| {
+        hooks.iter().all(|(event, entries)| {
+            event == "PreToolUse"
+                && entries
+                    .as_array()
+                    .is_some_and(|entries| entries.iter().all(|entry| own.contains(entry)))
+        })
+    })
 }
 
 /// Every item of `value`, where it is a list of strings.
