@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792025851143,
+  "lastUpdate": 1792026865453,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11550,6 +11550,48 @@ window.BENCHMARK_DATA = {
             "value": 101.421685,
             "unit": "ms",
             "extra": "median of 5 runs: 100.439, 100.746, 101.422, 101.777, 101.852 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6232deedaee8d83e76357dc93bb20b943c62895f",
+          "message": "A proposed change, part A: core and CLI (#1975) (#2102)\n\n* feat(sandbox): a proposed change, core and CLI (#1975, part A)\n\nA chat's edit of purlis's own configuration becomes a proposal the person\napplies, per the operator's rulings PC-1..PC-14.\n\n- proposed: which files may be proposed (the manifest at the root and in\n  each workspace, a persona's mcp.json and persona.md, .claude/skills files;\n  plane only, no link on the way), the change worked out exactly as the\n  edit tool would make it, and the base it was worked out against.\n- hookwire: Ask::Propose carries the file, the base and the whole content.\n- pretooluse-edit: in a sandboxed Claude Code chat, a proposable edit is\n  handed to the app and the tool refused with fixed words; where the app\n  does not take it, the edit is refused as before.\n- purlis propose <file> --from <draft>: the same, for other harnesses; the\n  draft must be in the chat's own folder.\n- policy: sandbox.proposed-changes = \"off\" turns it off (PC-14).\n- The app answers a proposal as not held yet, so nothing changes until\n  part B shows it to the person.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(sandbox): a proposed change reads only the file its name says (#1975, part A review)\n\n- The file is read only as one regular file with one name, each folder and\n  the file opened without following a link and without waiting on it.\n- An edit that cannot be made a proposal is said in fixed words.\n- Below .claude/skills, no dot-part, package manifest or hooks folder.\n- The size cap is what one line of the hook channel carries whole; a\n  longer proposal is not made, never cut.\n- What Claude Code would refuse is refused: an edit that changes nothing,\n  no edits, a MultiEdit one of whose edits fails.\n- changes/ fragment for sandbox.proposed-changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T04:56:32+04:00",
+          "tree_id": "4403dc7f68d997b9632de255166e24098ce7aa46",
+          "url": "https://github.com/purlis/purlis/commit/6232deedaee8d83e76357dc93bb20b943c62895f"
+        },
+        "date": 1792026863917,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.296716,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.295, 0.295, 0.297, 0.302, 0.311 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5783445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.523, 16.560, 16.578, 16.682, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.442834,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.473, 100.795, 101.443, 101.732, 102.085 ms"
           }
         ]
       }
