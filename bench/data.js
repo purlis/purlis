@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792048225687,
+  "lastUpdate": 1792049321966,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12054,6 +12054,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7433465,
             "unit": "ms",
             "extra": "median of 5 runs: 100.581, 100.728, 101.743, 102.876, 103.545 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba10b852611f6a9d3e4dd30e203ae9da8f327edb",
+          "message": "Profiles: create, import and remove profiles (#2096)\n\n* Profiles: create, import and remove profiles (#2034)\n\nA profile of this machine's is made in Settings > You > Profiles or with\npurlis profile create, kept in purlis's data home and available in every\nproject. Its folder is 0700, its settings are imported from the machine's\nharness settings by a list of settings files per harness and never a\nsign-in, and it records when and offers Import again (purlis profile\nimport). A chat on it runs its harness with the declared config_env and\ndata_env set to its folder. Remove names the conversations that go and\nasks first (--yes on the command line); it deletes only a folder directly\nunder the store, and an adopted harness folder is only forgotten.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Profiles: the window's commands typed, the group in the catalogue\n\nThe generated bindings and UI RPC client carry the five machine_profile\ncommands; You > Profiles is in the Settings catalogue, the palette and\nthe guards' lists, its row buttons wear ui-button, and its Remove\nquestion has a way in for the dialog guard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2034): a stand-in harness on the start test's PATH, no old file name in the window\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2034): the records are #2033's file and shape\n\nThis machine's profiles are now recorded in <config>/profiles.json, the\nfile #2033's adoption writes: version 1, and each record its name,\nharness, title and folders, with adopted for a folder adopted in place\nand imported for one purlis made. A record or key this purlis cannot\nread is kept as written. A made profile's folder stays under\n<data>/profiles/<name>/, and an adopted record starts as its built-in\ndid.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2096): an import copies no link and no file with another name; chats are denied the profiles\n\n- An import never follows a link inside the settings folder, and never\n  copies a file that has another name on the disk; a file is opened\n  without following a link and judged by what was opened.\n- A chat's sandbox denies <data>/profiles/, reading and writing, with the\n  person's other powers; the records are in the config home it may not\n  write. plane-format.md says so for both.\n- control-plane.md: Profiles of this machine is a section of its own.\n- The import's words say the settings files are copied as they are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2096): made profiles are records of #2033's store\n\nThe profiles purlis makes are now MachineProfile records with an\nimported field, changed through profilestore::update under its one\nlock; the duplicate store, its reader and its lock are gone. Making,\nimporting and removing live in profilestore::made, which reads where a\nharness keeps its settings from the store's table of default folders.\nRemoving an adopted profile forgets its folder, so the next launch does\nnot adopt it again. plane-format.md has one row for the store.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2096): the git hooks test asks that no denied read covers the hooks, and the merged tab test is formatted\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2096): an import reads the settings folder by descriptor; one data-home ladder\n\n- The import opens the settings folder once and each name in it, and in\n  each listed folder, relative to the descriptor of the folder it was\n  listed in, with O_NOFOLLOW and O_NONBLOCK, judged by fstat. A test\n  swaps a listed folder for a link while imports run.\n- A chat's sandbox finds the data home by the store's own ladder, so a\n  relative $PURLIS_DATA_HOME names one folder for both.\n- The profiles deny test covers opencode's wrap too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* review(2096): the start test's stand-in harnesses answer their version, as a sandboxed start asks\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T11:27:07+04:00",
+          "tree_id": "f32f03dcbb8614018183b66a569f21493cfdc595",
+          "url": "https://github.com/purlis/purlis/commit/ba10b852611f6a9d3e4dd30e203ae9da8f327edb"
+        },
+        "date": 1792049320829,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.49959600000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.492, 0.493, 0.500, 0.512, 0.525 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.779762499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.583, 16.751, 16.780, 16.892, 17.037 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.16676000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.373, 103.412, 104.167, 105.405, 105.510 ms"
           }
         ]
       }
