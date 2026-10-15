@@ -151,12 +151,12 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                     format!("/**/{}/**", either_case(&name)),
                 ),
             ] {
-                for rule in [&plain, &cased] {
+                for rule in [plain, cased] {
                     read_rules.push(format!("Read(/{rule})"));
                     edit_rules.push(format!("Edit(/{rule})"));
+                    deny_read.push(rule.clone());
+                    deny_write.push(rule);
                 }
-                deny_read.push(cased.clone());
-                deny_write.push(cased);
             }
         }
     }
@@ -169,7 +169,7 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         .filter(|planted| planted.reach == super::Reach::AndBelow)
     {
         let glob = format!("**/{}", planted.path);
-        deny_write.push(format!("**/{}", either_case(planted.path)));
+        deny_write.extend(plain_and_cased("**/", planted.path));
         edit_rules.push(format!("Edit({glob})"));
         edit_rules.push(format!("Edit({glob}/**)"));
     }
@@ -184,10 +184,9 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             let glob = format!("{}/**/{}", folder.display(), planted.path);
             edit_rules.push(format!("Edit(/{glob})"));
             edit_rules.push(format!("Edit(/{glob}/**)"));
-            deny_write.push(format!(
-                "{}/**/{}",
-                folder.display(),
-                either_case(planted.path)
+            deny_write.extend(plain_and_cased(
+                &format!("{}/**/", folder.display()),
+                planted.path,
             ));
         }
         // And every project manifest under it (D-T55-4): #1336 holds them by path only in the
@@ -195,7 +194,7 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         for name in super::MANIFESTS {
             let glob = format!("{}/**/{name}", folder.display());
             edit_rules.push(format!("Edit(/{glob})"));
-            deny_write.push(format!("{}/**/{}", folder.display(), either_case(name)));
+            deny_write.extend(plain_and_cased(&format!("{}/**/", folder.display()), name));
         }
     }
     // The project's package caches (D-1337-6), each path as written and as the kernel names it.
@@ -276,11 +275,11 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 }
             }
             for (plain, cased) in globs {
-                for rule in [&plain, &cased] {
+                for rule in [plain, cased] {
                     edit_rules.push(format!("Edit(/{rule})"));
                     edit_rules.push(format!("Edit(/{rule}/**)"));
+                    deny_write.push(rule);
                 }
-                deny_write.push(cased);
             }
         }
         // Every project's state folder and manifests, wherever they are (#2071): the full sandbox
@@ -308,10 +307,10 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             )
             .collect();
         for (plain, cased) in every {
-            for rule in [&plain, &cased] {
+            for rule in [plain, cased] {
                 edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
             }
-            deny_write.push(cased);
         }
         for path in &compiled.held {
             for name in names_for(path) {
@@ -520,12 +519,12 @@ fn names_of(denied: &[super::Denial]) -> Vec<(&super::Denial, std::path::PathBuf
         .collect()
 }
 
-/// The names [`names_of`] writes a rule on `path` under.
-/// `name`, a glob's tail, with each ASCII letter as a class of both its cases (`a` as `[aA]`):
-/// a disk that compares names case-folded opens the same file under any spelling, and Claude
-/// Code's sandbox matches a glob as written. Claude Code 2.1.300 keeps a `[...]` class when it
-/// turns a glob into its profile's regex (it escapes `.^$+{}()|\` and no bracket), and reads a
-/// path holding one as a glob.
+/// **`name`, a glob's tail, with each ASCII letter as a class of both its cases** (`a` as
+/// `[aA]`, the letter as written first). A disk that compares names case-folded opens the same
+/// file under any spelling, so a held name is written for every spelling of it. Each glob is
+/// held as written too ([`plain_and_cased`]), so a rule never rests on the class alone. Claude
+/// Code 2.1.300 keeps a `[...]` class when it turns a glob into its profile's regex (it escapes
+/// `.^$+{}()|\` and no bracket), and reads a path holding one as a glob.
 pub fn either_case(name: &str) -> String {
     let mut out = String::with_capacity(name.len() * 4);
     for c in name.chars() {
@@ -545,6 +544,15 @@ pub fn either_case(name: &str) -> String {
         }
     }
     out
+}
+
+/// `prefix` and the glob tail `name` as two globs: as written, and in either case
+/// ([`either_case`]).
+fn plain_and_cased(prefix: &str, name: &str) -> [String; 2] {
+    [
+        format!("{prefix}{name}"),
+        format!("{prefix}{}", either_case(name)),
+    ]
 }
 
 /// `glob` with each class [`either_case`] made written back as the letter it was made from:
@@ -572,6 +580,7 @@ pub(crate) fn uncased(glob: &str) -> String {
     out
 }
 
+/// The names [`names_of`] writes a rule on `path` under.
 fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
     let mut names = vec![path.to_path_buf()];
     for name in super::seatbelt::held_names(path) {

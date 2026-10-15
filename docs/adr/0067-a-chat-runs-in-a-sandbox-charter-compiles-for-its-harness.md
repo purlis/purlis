@@ -1668,13 +1668,16 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   and its tab's sandbox mark says why. A person may still start a chat without the floor,
   audited as the opt-out is.
 - **A name in another case.** Measured on the macOS runner (`tools/seatbelt-case.sh`, a step
-  of the macOS scenario job, run on every pull request): macOS's sandbox matches a path as it is
-  on disk, not as typed. A read through `.PURLIS/VAULTS` and a write through
+  of the macOS scenario job, run on every pull request), with a control that runs each
+  operation under no rule at all: for a name **already on disk**, macOS's sandbox matches the
+  path as it is on disk, not as typed. A read through `.PURLIS/VAULTS` and a write through
   `library/launchagents` are refused by a rule that spells them `.purlis/vaults` and
-  `Library/LaunchAgents`, with controls that tell the rule's refusal from any other. So a
-  case-sensitive rule holds every spelling on macOS. Claude Code's held names, and the floor's
-  Seatbelt regexes, are written with a class of both cases for every letter all the same: the
-  answer is the runner's macOS, and the classes cost nothing. Linux compares names as written.
+  `Library/LaunchAgents`. A held name **not yet on disk** (a new `.ZSHRC`, `LAUNCHAGENTS` or
+  `PURLIS.TOML`) is held by the case classes: every held name is written as typed and with a
+  class of both cases for each letter, in Claude Code's rules and in the floor's Seatbelt
+  regexes, and the step asserts that the classed rules refuse every one of these spellings.
+  Whether Claude Code's Linux sandbox honours a bracket class is not measured on Linux; Linux
+  compares names as written.
 - **No folder to confine to.** The floor confines a chat to no folder, so a chat with no folder
   of its own, one outside the project, or one reached through a link is not refused for it; the
   denials of the folder it stands in hold as at every level. The full sandbox still refuses all

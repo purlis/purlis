@@ -218,3 +218,31 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_wrapped_chat_s_to_
         );
     }
 }
+
+/// `tools/seatbelt-case.sh` measures the rules purlis writes (#2071): each `cased_` rule in it is
+/// one the core generates, word for word, so the measurement is of the rules that ship.
+#[test]
+fn the_case_measurement_applies_the_rules_purlis_writes() {
+    let script = include_str!("../../../../tools/seatbelt-case.sh");
+    let generated: Vec<String> = crate::sandbox::seatbelt::vaults_everywhere_rules()
+        .expect("rules")
+        .into_iter()
+        .chain(crate::sandbox::seatbelt::floor_planted_rules().expect("rules"))
+        .chain(crate::sandbox::seatbelt::every_project_rules().expect("rules"))
+        .collect();
+    let mut checked = 0;
+    for line in script.lines() {
+        let Some(rest) = line.strip_prefix("cased_") else {
+            continue;
+        };
+        let (name, value) = rest.split_once("='").expect("a quoted value");
+        let value = value.strip_suffix('\'').expect("one quoted value");
+        let regex = format!("(regex \"{value}\")");
+        assert!(
+            generated.iter().any(|rule| rule.contains(&regex)),
+            "cased_{name} is not a rule the core writes: {regex}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 5, "every cased rule of the script is checked");
+}
