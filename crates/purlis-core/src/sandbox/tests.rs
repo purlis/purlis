@@ -5881,8 +5881,17 @@ fn a_policy_that_forbids_the_opt_out_bounds_your_level_too() {
     assert_eq!(bounded(off, &held), Some(personal::Choice::On));
     assert_eq!(bounded(None, &held), Some(personal::Choice::On));
     assert_eq!(bounded(off, &free), off);
-    // Nothing chosen and no team off accepted: the floor.
-    assert_eq!(bounded(None, &free), Some(personal::Choice::Floor));
+    // Nothing chosen, in a project at the full sandbox: the project's own (#2071), and the floor
+    // in one that has not turned it on.
+    assert_eq!(bounded(None, &free), Some(personal::Choice::On));
+    let unset = plane_saying("schema = 1\n");
+    assert_eq!(
+        bounded(
+            None,
+            &team::allowed_levels_under(unset.path(), &policy::Locks::none())
+        ),
+        Some(personal::Choice::Floor)
+    );
     assert_eq!(
         bounded(Some(personal::Choice::On), &held),
         Some(personal::Choice::On)
@@ -6318,4 +6327,31 @@ fn at_the_floor_a_persona_s_tools_are_the_ones_the_project_declares_in_either_ki
         tools(&format!("[sandbox]\nmode = \"on\"\n{personas}")),
         Some(1)
     );
+}
+
+#[test]
+fn in_a_project_at_the_full_sandbox_a_person_with_no_level_starts_it_and_never_at_the_floor() {
+    let plane = plane_saying(ON);
+    assert_eq!(level_of(&decided_as(plane.path(), None)), Some(Level::Full));
+    assert_eq!(
+        level_of(&decided_made(
+            plane.path(),
+            Some("qa"),
+            &asked(Asking::Dispatch, Some("steward"))
+        )),
+        Some(Level::Full)
+    );
+}
+
+#[test]
+fn under_the_project_s_never_your_floor_starts_the_full_sandbox() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"floor\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Floor)).unwrap();
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        format!("{ON}policy = \"never\"\n"),
+    )
+    .unwrap();
+    assert_eq!(level_of(&decided_as(plane.path(), None)), Some(Level::Full));
+    assert_eq!(personal::base(plane.path()), personal::Choice::On);
 }

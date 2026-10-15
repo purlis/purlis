@@ -230,13 +230,13 @@ pub struct YourLevel {
 /// [`YourLevel`] for the project at `root`: read through the one seam a start reads it through
 /// (`sandbox::your_level`), for a chat you start in the window on no persona.
 fn yours_of(root: &std::path::Path, locks: &sandbox::policy::Locks) -> Option<YourLevel> {
+    // Only a level of yours: where you chose none, the project's own is said, or the team's.
+    sandbox::personal::in_force(root).level?;
+    // As a start takes it, within the team's bound: a floor the project's `never` or a policy
+    // keeps at the full sandbox is said as the full sandbox, which a full project says itself.
     let level = sandbox::your_level(root, None, locks, &sandbox::Made::Window)?;
-    // As a start takes it: a floor policy keeps at the full sandbox is not yours to say.
-    let full = sandbox::Plane::read(root).in_force(locks).is_some();
-    if level == sandbox::personal::Choice::Floor
-        && full
-        && !sandbox::floor_below_full_allowed(locks)
-    {
+    // The project's own level is the project's to say, however you came to it.
+    if level == sandbox::personal::base(root) {
         return None;
     }
     let confirmed = sandbox::local::confirmed_levels(root).level == Some(level);

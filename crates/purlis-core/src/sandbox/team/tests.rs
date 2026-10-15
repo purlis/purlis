@@ -306,3 +306,19 @@ fn a_mode_changed_in_another_table_names_the_commit_the_off_arrived_in() {
     assert_eq!(arrived.commit, first);
     assert_eq!(arrived.author, "Ada");
 }
+
+/// #2071: in a project that turned the full sandbox on, a person who chose nothing runs at it,
+/// so their level, not the bound's default, is what may take a chat below it.
+#[test]
+fn in_a_project_at_the_full_sandbox_a_person_who_chose_nothing_runs_at_it() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    let bound = allowed_levels(root.path());
+    assert_eq!(bound.clamp(None), On);
+    assert_eq!(bound.clamp(Some(Floor)), Floor);
+    assert_eq!(bound.lowest, Off);
+}

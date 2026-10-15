@@ -319,15 +319,19 @@ pub fn waiting(root: &Path) -> Vec<Awaiting> {
     awaiting_over(&of(root), &super::local::confirmed_levels(root), base(root))
 }
 
-/// **The level the project at `root` starts its chats at** without a level of yours: the full
-/// sandbox where it turned it on, or a policy requires it, and the floor otherwise (#2081). A
-/// manifest that has gone or cannot be read may say `[sandbox]`, so it counts as the full one.
+/// **The level the project at `root` starts its chats at** without a level of yours, as the
+/// team's bound says it ([`super::team::allowed_levels`]): the full sandbox where it turned it
+/// on, or its `policy = "never"` or a policy requires it, no sandbox where you accepted its off,
+/// and the floor otherwise. A manifest that has gone or cannot be read may say `[sandbox]`, so
+/// it counts as the full one.
 pub fn base(root: &Path) -> Choice {
     let plane = super::Plane::read(root);
-    let on = plane.unreadable()
-        || plane.missing()
-        || plane.in_force(&super::policy::Locks::of(root)).is_some();
-    if on { Choice::On } else { Choice::Floor }
+    if plane.unreadable() || plane.missing() {
+        return Choice::On;
+    }
+    // The team's bound, which holds the project's `policy = "never"` and an administrator's
+    // policy as the full sandbox, and is the full one where the project turned it on.
+    super::team::allowed_levels(root).clamp(None)
 }
 
 /// Settings' Confirm of `shown`, the level the row showed for the slot: recorded as yours only

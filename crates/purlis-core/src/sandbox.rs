@@ -4574,10 +4574,11 @@ pub fn for_start_granted(
 }
 
 /// Whether a person's own `floor` starts the floor in a project at the full sandbox: not where
-/// a policy forbids them a looser sandbox than the project's ([`policy::Locks::opt_out_refused`]).
+/// the project's `policy = "never"` or an administrator's policy forbids them a looser sandbox
+/// than the project's, as the team's bound says ([`team::allowed_levels_under`]).
 /// What a start does, and what Settings says of their level, both ask this.
-pub fn floor_below_full_allowed(locks: &policy::Locks) -> bool {
-    locks.opt_out_refused().is_none()
+pub fn floor_below_full_allowed(root: &Path, locks: &policy::Locks) -> bool {
+    team::allowed_levels_under(root, locks).allows(personal::Choice::Floor)
 }
 
 /// [`for_start_granted`] at `at`, a level a person's own setting chose ([`decide_granted`]),
@@ -4606,7 +4607,7 @@ fn for_start_at(
     // floor (#2071). A person's level moves it either way (#2071, ADR 0096 §8).
     let locks = policy::Locks::of(root);
     let policy = match (plane.in_force(&locks), at) {
-        (Some(_), Some(Level::Floor)) if floor_below_full_allowed(&locks) => None,
+        (Some(_), Some(Level::Floor)) if floor_below_full_allowed(root, &locks) => None,
         (Some(policy), _) => Some(policy),
         (None, Some(Level::Full)) => Some(plane.said().unset.unwrap_or_else(Policy::defaults)),
         (None, _) => None,

@@ -151,8 +151,9 @@ function capitalised(said: string): string {
 
 /**
  * **The mode as a status line** (#1340): a project's sandbox is on for everyone or not set, and
- * the only way to run one chat without it is that chat's own tab (ADR 0067 §7). Turn the sandbox
- * on writes `mode = "on"`; nothing here takes it back off, and it has no Undo (D-SE17g).
+ * the line says the level your chats start at (#2071). Turn the sandbox
+ * on writes `mode = "on"`, which has no Undo (D-SE17g); a person turns it down for their own
+ * chats with their level (Change your level, ADR 0096), and a team with a commit of its own.
  */
 function modeStatus(sandbox: SandboxState | undefined, yourLevel?: () => void): Control {
   // A project whose manifest is gone or unreadable refuses every chat (#1411, D-1410e): that is
@@ -173,7 +174,7 @@ function modeStatus(sandbox: SandboxState | undefined, yourLevel?: () => void): 
     kind: "status",
     hint:
       required === null
-        ? "Settings can turn it on, never off."
+        ? "Settings turns it on for everyone here. Your own level turns it down for your chats alone."
         : "Policy on this machine turns it on for every project.",
     // Any `mode` reads as on: one that is not "on" is refused and read as on (ADR 0067).
     status: (value) => {

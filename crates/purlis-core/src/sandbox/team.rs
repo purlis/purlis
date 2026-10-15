@@ -360,8 +360,9 @@ impl Bound {
 }
 
 /// **The bound for the project at `root` on this machine**: the full sandbox where the team's
-/// `never` or an administrator's policy requires it, else every level, by default the floor, or
-/// no sandbox once the person accepted the team's off.
+/// `never` or an administrator's policy requires it, else every level, by default the full
+/// sandbox where the project turned it on, the floor where it has not, or no sandbox once the
+/// person accepted the team's off.
 pub fn allowed_levels(root: &Path) -> Bound {
     allowed_levels_under(root, &policy::Locks::of(root))
 }
@@ -371,7 +372,13 @@ pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
     if let Some(why) = locks.opt_out_refused() {
         return Bound::full(why);
     }
-    Bound::local(matches!(team_off(root), TeamOff::Accepted(_)))
+    let mut bound = Bound::local(matches!(team_off(root), TeamOff::Accepted(_)));
+    // A project that turned the full sandbox on starts at it a chat whose person chose no level
+    // (#2071): only a level of theirs takes one lower, as far as it is allowed.
+    if super::Plane::read(root).in_force(locks).is_some() {
+        bound.default = Choice::On;
+    }
+    bound
 }
 
 /// **The level a chat started as `persona` (or none) runs at** in the project at `root`: the
