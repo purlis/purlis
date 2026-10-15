@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792033457787,
+  "lastUpdate": 1792036173140,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2406,6 +2406,42 @@ window.BENCHMARK_DATA = {
             "value": 210.2,
             "unit": "MB",
             "extra": "median of 6 samples: 217.6, 214.6, 214.6, 204.9, 205.8, 119.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ecd685fab1508c2f200d9c06e059f969fc1536e",
+          "message": "A proposed change, part B: the person applies it in the window (#1975) (#2106)\n\n* feat(sandbox): a proposed change, core and CLI (#1975, part A)\n\nA chat's edit of purlis's own configuration becomes a proposal the person\napplies, per the operator's rulings PC-1..PC-14.\n\n- proposed: which files may be proposed (the manifest at the root and in\n  each workspace, a persona's mcp.json and persona.md, .claude/skills files;\n  plane only, no link on the way), the change worked out exactly as the\n  edit tool would make it, and the base it was worked out against.\n- hookwire: Ask::Propose carries the file, the base and the whole content.\n- pretooluse-edit: in a sandboxed Claude Code chat, a proposable edit is\n  handed to the app and the tool refused with fixed words; where the app\n  does not take it, the edit is refused as before.\n- purlis propose <file> --from <draft>: the same, for other harnesses; the\n  draft must be in the chat's own folder.\n- policy: sandbox.proposed-changes = \"off\" turns it off (PC-14).\n- The app answers a proposal as not held yet, so nothing changes until\n  part B shows it to the person.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(sandbox): a proposed change reads only the file its name says (#1975, part A review)\n\n- The file is read only as one regular file with one name, each folder and\n  the file opened without following a link and without waiting on it.\n- An edit that cannot be made a proposal is said in fixed words.\n- Below .claude/skills, no dot-part, package manifest or hooks folder.\n- The size cap is what one line of the hook channel carries whole; a\n  longer proposal is not made, never cut.\n- What Claude Code would refuse is refused: an edit that changes nothing,\n  no edits, a MultiEdit one of whose edits fails.\n- changes/ fragment for sandbox.proposed-changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(proposed): the person applies a chat's proposed change in the window (#1975, part B)\n\nA proposal carries the change, not the file: an edit's own replacements,\nor a whole new content, with the hash of the file as it was read. The app\nreads the file itself (one regular file, one name, no link on the way),\nmakes the change, shows it, and on Apply writes exactly that as the\nperson, only while the file is still what it was, audited first\n(trust.proposed.apply).\n\n- proposals (app): one a file a chat, both chats' held, applying one makes\n  the others stale; stale offers Dismiss alone; a chat's proposals end\n  with it; the chat hears applied, dismissed or stale on its next turn.\n- asks registry: a proposed-change source with the change shown whole,\n  Apply only beside a change shown whole and still applying, and Dismiss;\n  a pane Notice on the chat's tab; Apply is in the sandbox lane.\n- Window-only commands: apply_proposed_change, dismiss_proposed_change.\n- Docs: CONTEXT term, ADR 0067 section citing PC-1..PC-14, the event\n  kind, a changes/ fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(proposed): the Notice's hunks as the bindings name them\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(proposed): Dismiss is answered off the window's thread\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(proposed): Apply judges again, records its outcome and holds the project's lock (#1975, part B review)\n\n- Apply makes the change again and writes only what the row's own rules\n  show whole; any other is refused, whatever asked.\n- The audit is an intent before the write and the outcome after it:\n  applied, stale, or failed with why.\n- One lock per project from the read of the file to its rename: of two\n  Applies against the file as it was, the second is stale.\n- The new file beside the one written has a name drawn at random, made\n  new and never followed; one left behind never blocks.\n- A proposal makes no folder but a skill's: no new persona or workspace\n  (decision, to be confirmed in ADR 0067).\n- The Inbox's wait for the change holds Apply as it holds an edit's\n  Allow (tested).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(proposed): the no-new-persona sentence names no command\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T07:11:02+04:00",
+          "tree_id": "87d834c2151161850cf99069d458e71e4cc3dd5b",
+          "url": "https://github.com/purlis/purlis/commit/2ecd685fab1508c2f200d9c06e059f969fc1536e"
+        },
+        "date": 1792036172310,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 769,
+            "unit": "MB",
+            "extra": "median of 3 samples: 626, 769, 899 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 220.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 262.4, 258.8, 244.5, 196.2, 196.9, 169.9 MB"
           }
         ]
       }
