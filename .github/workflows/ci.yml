@@ -734,9 +734,12 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: false
+      # Not under `no-orphans.sh`: on a macOS runner the system starts processes of the job's
+      # user while the tests run (Spotlight's workers, cache extensions), which it would count.
+      # The tests check what they started themselves: every process of each engine is gone.
       - name: The engine's tests, the runner's Chrome
         if: steps.scope.outputs.run == 'true'
-        run: tools/no-orphans.sh --reap -- cargo test --locked -p purlis-browser-engine -- --test-threads=2
+        run: cargo test --locked -p purlis-browser-engine -- --test-threads=2
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build
