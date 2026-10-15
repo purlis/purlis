@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792078748158,
+  "lastUpdate": 1792080214282,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12600,6 +12600,48 @@ window.BENCHMARK_DATA = {
             "value": 104.0244195,
             "unit": "ms",
             "extra": "median of 5 runs: 103.647, 103.743, 104.024, 105.299, 105.506 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eb006d399af44281678af6c10cc58827fc86c73c",
+          "message": "mcp: each dispatch tool's doc comment sits on its own function (#2084) (#2200)\n\nThe dispatch_report comment sat above dispatch_read, so rustdoc gave\ndispatch_read both. Each now documents its own function.\n\nRefs #2084\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T19:42:52+04:00",
+          "tree_id": "5e0fae36f7fa62ff0f6fcb7b1488783ae1b2a040",
+          "url": "https://github.com/purlis/purlis/commit/eb006d399af44281678af6c10cc58827fc86c73c"
+        },
+        "date": 1792080212512,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2779695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.268, 0.276, 0.278, 0.278, 0.283 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5359525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.396, 16.457, 16.536, 16.546, 16.594 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.63900050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.803, 101.617, 101.639, 101.649, 101.843 ms"
           }
         ]
       }
