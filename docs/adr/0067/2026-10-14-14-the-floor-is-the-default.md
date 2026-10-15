@@ -55,6 +55,10 @@ them with no sandbox; `mode = "on"` keeps the full sandbox, unchanged and fail-c
   `PURLIS.TOML`) is held by the case classes: every held name is written as typed and with a
   class of both cases for each letter, in Claude Code's rules and in the floor's Seatbelt
   regexes, and the step asserts that the classed rules refuse every one of these spellings.
+  The same step applies whole the profiles Codex and opencode chats start under, at the full
+  sandbox and at the floor, built by the core as a start builds them (#2128): in each, a read
+  of the vault and a write of a held folder through another case, a new held leaf in another
+  case and a write of the manifest are refused, and a file nothing holds is written and read.
   Whether Claude Code's Linux sandbox honours a bracket class is not measured on Linux; Linux
   compares names as written.
 - **No folder to confine to.** The floor confines a chat to no folder, so a chat with no folder

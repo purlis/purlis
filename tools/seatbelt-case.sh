@@ -20,7 +20,17 @@
 # Controls: with no rule at all, each operation goes through (so a refusal is not an absent file
 # on a disk that compares names as written); with each rule, what it does not hold goes through
 # and the held name as written is refused.
+#
+# **The profiles purlis emits** (#2128). Given a folder, the profiles a wrapped chat (Codex,
+# opencode) starts under, at the full sandbox and at the floor, are applied whole: built by the
+# core as a start builds them and written there by
+# `crates/purlis-core/tests/the_profiles_a_wrapped_chat_starts_under_are_written_out.rs`, with
+# the sample project each was built for. Asserted: in each, a held name in another case is
+# refused, and what nothing holds goes through. So a change in how a profile is assembled, a
+# rule's order or a later allow, is applied where it ships.
 set -eu
+
+emitted=${1-}
 
 if [ "$(uname)" != Darwin ]; then
   echo "macOS only"
@@ -131,5 +141,43 @@ for kind in plain cased; do
     expect "$new_manifest" no "cased: a new manifest in another case"
   fi
 done
+
+# The profiles purlis emits, each applied whole, against the same operations.
+if [ -n "$emitted" ]; then
+  # yes or no: whether `script` succeeds under the profile in the file `sb`.
+  under() {
+    if sandbox-exec -f "$1" /bin/sh -c "$2" >/dev/null 2>&1; then
+      echo yes
+    else
+      echo no
+    fi
+  }
+  applied=0
+  for level in on floor; do
+    p="$emitted/$level/project"
+    for harness in codex opencode; do
+      sb="$emitted/$harness-$level.sb"
+      what="$harness at $level"
+      if [ ! -f "$sb" ]; then
+        echo "::error::seatbelt-case: $what: no profile at $sb"
+        failed=1
+        continue
+      fi
+      # Controls: what nothing holds is written and read, and a name beside a held one written.
+      expect "$(under "$sb" "echo y >> '$p/notes.json' && head -c 1 '$p/notes.json'")" yes "$what: a file nothing holds is written and read"
+      expect "$(under "$sb" "touch '$p/Library/LaunchAgentz/x.plist'")" yes "$what: a name beside a held one is written"
+      # What the profile holds.
+      expect "$(under "$sb" "head -c 1 '$p/.purlis/vaults/ops.json'")" no "$what: the vault as written is read"
+      expect "$(under "$sb" "$(op_read_vault "$p")")" no "$what: a read of the vault through another case"
+      expect "$(under "$sb" "$(op_write_agents "$p")")" no "$what: a write through another case"
+      expect "$(under "$sb" "$(op_new_zshrc "$p")")" no "$what: a new held leaf in another case"
+      expect "$(under "$sb" "echo y >> '$p/purlis.toml'")" no "$what: the manifest is written"
+      # Whatever got through is taken away, so the next profile is tried on the same project.
+      rm -f "$p/library/launchagents/y.plist" "$p/.ZSHRC"
+      applied=$((applied + 1))
+    done
+  done
+  expect "$applied" 4 "each emitted profile applied"
+fi
 
 exit "$failed"
