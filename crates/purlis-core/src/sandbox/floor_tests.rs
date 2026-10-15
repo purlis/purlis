@@ -814,3 +814,45 @@ fn no_projects_vault_is_read_at_the_full_sandbox_either() {
         );
     }
 }
+
+#[test]
+fn the_persons_own_claude_code_settings_are_never_written_at_either_level() {
+    // ADR 0067 as amended 2026-10-15: a sandboxed chat runs on the person's own Claude Code
+    // settings and purlis's, so neither its commands nor its Edit tool write the person's.
+    for manifest in [
+        "schema = 1\n",
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n",
+    ] {
+        let (_dir, root) = project();
+        std::fs::write(root.join("charter.toml"), manifest).expect("charter.toml");
+        let applied = floor_of(decided(
+            Harness::ClaudeCode,
+            &root,
+            &machine_with(Path::new("/opt/none")),
+        ));
+        let level = applied.level();
+        let settings = settings_of(&applied);
+        let filesystem = &settings.sandbox["filesystem"];
+        let allow_write = strings(&filesystem["allowWrite"]);
+        let deny_write = strings(&filesystem["denyWrite"]);
+        for file in ["settings.json", "settings.local.json"] {
+            let path = format!("/home/op/.claude/{file}");
+            // Its commands: not writable, by name or because nothing grants the home.
+            let named = deny_write.contains(&path);
+            let granted = allow_write
+                .iter()
+                .any(|allowed| allowed == "/" || path.starts_with(&format!("{allowed}/")));
+            assert!(
+                named || !granted,
+                "{level:?}: {path} is written: {filesystem}"
+            );
+            // Its Edit tool: refused by name.
+            let rule = format!("Edit(/{path})");
+            assert!(
+                settings.deny.contains(&rule),
+                "{level:?}: no {rule} in {:?}",
+                settings.deny
+            );
+        }
+    }
+}
