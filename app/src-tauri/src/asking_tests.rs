@@ -103,6 +103,8 @@ struct World {
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
+    /// The chats whose first browser call asks what their browser may reach (#2013).
+    browsers: Vec<crate::chatbrowsers::Waits>,
 }
 
 impl World {
@@ -123,6 +125,7 @@ impl World {
             since: Vec::new(),
             sign_ins: Vec::new(),
             sandbox_only: None,
+            browsers: Vec::new(),
         }
     }
 
@@ -150,6 +153,7 @@ impl World {
             sign_ins: self.sign_ins.clone(),
             sandbox_only: self.sandbox_only.clone(),
             proposals: Vec::new(),
+            browsers: self.browsers.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -1123,4 +1127,42 @@ fn a_sandboxed_codex_chat_without_a_sandbox_only_profile_is_one_ask_that_makes_o
             .any(|one| one.session == 3 && one.chain == ["steward 3"]),
         "the chats keep their own chains"
     );
+}
+
+#[test]
+fn a_chats_first_browser_call_is_one_ask_of_what_its_browser_may_reach() {
+    // #2013: the first browser in a chat raises one Ask that sets its posture.
+    let mut world = World::new();
+    world.queue = vec![8];
+    world.names = vec![(8, "steward 8")];
+    world.browsers = vec![crate::chatbrowsers::Waits {
+        session: 8,
+        since: 40,
+    }];
+    world.since = vec![("browser:8", 40)];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.len(),
+        1,
+        "its wait is that Ask, and no question beside it"
+    );
+    let ask = &asks[0];
+    assert_eq!(ask.source, AskSource::Browser);
+    assert_eq!(ask.answer, AnswerPath::Browser);
+    assert_eq!(ask.chain, ["steward 8"]);
+    assert_eq!(ids(ask), ["project", "open-web", "keep"]);
+    assert_eq!(
+        ask.options
+            .iter()
+            .map(|one| (one.label.as_str(), one.allows))
+            .collect::<Vec<_>>(),
+        [
+            ("This project's sites", true),
+            ("Also the open web", true),
+            ("Keep off", false),
+        ]
+    );
+    assert_eq!(ask.since, Some(40));
 }

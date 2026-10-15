@@ -301,17 +301,35 @@ impl HostLink {
 
     /// [`Self::call`], waiting at most `within`.
     fn call_within(&self, command: Command, within: Duration) -> Result<Answer, String> {
+        self.call_refused_within(command, within)
+            .map_err(|refused| refused.why)
+    }
+
+    /// [`Self::call_within`], refused with the host's code where it gave one: what a browser's
+    /// act, which may wait on its page, is asked with (#2013).
+    pub(crate) fn call_refused_within(
+        &self,
+        command: Command,
+        within: Duration,
+    ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
             let _ = answered.send(client.call(command).await);
         });
+        let unanswered = |why: String| purlis_session_protocol::session::Refusal {
+            code: String::new(),
+            why,
+        };
         match answer.recv_timeout(within) {
             Ok(Ok(answer)) => Ok(answer),
             Ok(Err(why)) => Err(why
                 .refusal()
-                .map_or_else(|| why.to_string(), |refusal| refusal.why.clone())),
-            Err(_) => Err("the session host did not answer in time".into()),
+                .cloned()
+                .unwrap_or_else(|| unanswered(why.to_string()))),
+            Err(_) => Err(unanswered(
+                "the session host did not answer in time".to_owned(),
+            )),
         }
     }
 

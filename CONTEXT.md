@@ -607,6 +607,13 @@ or a chat tab's thumbnail. Its snapshot is the latest frame. The same on this de
 runner.
 _Avoid_: screen share, preview (that is a tab's), remote desktop, video
 
+**Browser tools**:
+The typed tools a chat's agent drives its browsers with, the same on every harness: a
+**snapshot**, actions on its **references**, and a screenshot. None runs script. A chat's first
+one asks the person what its browser may reach: this project's sites and its dev servers, also
+the open web, or off.
+_Avoid_: browser automation, Playwright, DevTools (that is the **engine**'s)
+
 **Browser login**:
 A persona's declared tool that signs a browser in from a vault: purlis drives the browser to the
 declared address, fills and submits. The value reaches the browser and never the chat.

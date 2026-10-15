@@ -6135,7 +6135,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   - **An app from before the stream** answers the hello as a line of a kind it does not know (the
     `no` sentence an unknown line gets, or the connection closed unanswered), and the client asks
     again in lines on a new connection.
-  - Used by the `persona_where` chat tool. **It is never stored**, as no line is.
+  - Used by the `persona_where` chat tool, and by a chat's browser tools (#2013): each is one
+    `browse` ask, `{"browse": {"chat": <n>, "browser": "<b1, or absent for the one used last>",
+    "call_id": "<the act's own id>", "asked": {"act": <an act, as the session protocol's
+    `browse` carries one>} | "new" | "close"}}`, answered `{"browsed": {"browser": "<b1>",
+    "browsed": <the browser's answer>}}` or a `no`; a screenshot travels as one `image/png`
+    attachment, never inside the answer. **It is never stored**, as no line is.
 - **Connections:** served from a bounded pool (#991): at most 32 at once from one process (by
   the pid the socket reports; processes it cannot name share one count) and 128 from all
   processes together. A connection past either is answered at once with one `no` line saying

@@ -33,6 +33,7 @@ mod branchwatch;
 mod brokered;
 mod browsers;
 mod changes;
+mod chatbrowsers;
 mod chats;
 mod clipath;
 mod createproject;
@@ -2953,6 +2954,14 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
 /// switch (`hostedsessions`, #1998). With the switch on and no host of the window's own, its
 /// chats are refused with the reason, never run in the window instead (ADR 0068, Ruled 3).
 fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
+    // The chats' browsers run in the window's session host, wherever its chats run (#2013).
+    #[cfg(unix)]
+    let planes = match app.try_state::<std::sync::Arc<browsers::WindowBrowsers>>() {
+        Some(browsers) => planes.driving_browsers_with(
+            std::sync::Arc::clone(&*browsers) as std::sync::Arc<dyn chatbrowsers::Driver>
+        ),
+        None => planes,
+    };
     #[cfg(unix)]
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");

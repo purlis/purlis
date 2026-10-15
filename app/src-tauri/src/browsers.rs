@@ -50,8 +50,9 @@ mod hosted {
     use std::sync::{Arc, Mutex, PoisonError};
     use std::time::Duration;
 
+    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
     use purlis_session_protocol::session::{
-        Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
+        self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
 
     use super::{BrowserViewRole, BrowserWatching};
@@ -59,6 +60,47 @@ mod hosted {
 
     /// How long a browser command waits for the window's link to its host.
     const LINK_WITHIN: Duration = Duration::from_secs(30);
+
+    /// How long a chat's act waits for its browser (#2013): a wait for text of a minute, and
+    /// the page settling after it.
+    const AN_ACT_TAKES_AT_MOST: Duration = Duration::from_secs(85);
+
+    /// A chat's browsers run here (#2013): the window's session host.
+    impl crate::chatbrowsers::Driver for WindowBrowsers {
+        fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, String> {
+            self.open_reaching(root, Some(reach))
+        }
+
+        fn act(
+            &self,
+            program: &str,
+            call_id: &str,
+            act: Act,
+        ) -> Result<Browsed, crate::chatbrowsers::Refused> {
+            use crate::chatbrowsers::Refused;
+            let link = self.link().map_err(Refused::Said)?;
+            let command = Command::Browse {
+                program: program.to_owned(),
+                call_id: call_id.to_owned(),
+                act,
+            };
+            match link.call_refused_within(command, AN_ACT_TAKES_AT_MOST) {
+                Ok(Answer::Browsed(browsed)) => Ok(*browsed),
+                Ok(other) => Err(Refused::Said(format!(
+                    "the session host answered a browser's act with {other:?}"
+                ))),
+                Err(refusal) if refusal.code == session::NO_SUCH_CHAT => Err(Refused::Gone),
+                Err(refusal) if refusal.why == purlis_core::browsers::ENDED => Err(Refused::Gone),
+                Err(refusal) => Err(Refused::Said(refusal.why)),
+            }
+        }
+
+        fn close(&self, program: &str) {
+            if let Err(why) = WindowBrowsers::close(self, program) {
+                tracing::warn!("purlis: a chat's browser was not ended: {why}");
+            }
+        }
+    }
 
     /// The window's browsers, in its session host: the link they go over, and each project the
     /// window has held on it for them, by its root, with the browsers it started there.
@@ -112,11 +154,21 @@ mod hosted {
 
         /// Starts a browser in the project at `root`, and answers its id.
         pub(crate) fn open(&self, root: &Path) -> Result<String, String> {
+            self.open_reaching(root, None)
+        }
+
+        /// Starts a browser in the project at `root` reaching `reach` (#2013), or with none,
+        /// nothing listed and every site new to the project refused; answers its id.
+        pub(crate) fn open_reaching(
+            &self,
+            root: &Path,
+            reach: Option<BrowserReach>,
+        ) -> Result<String, String> {
             let (link, project) = self.held(root)?;
-            match link.call(Command::StartProgram(Box::new(StartProgram::of(
-                project,
-                ProgramKind::Browser,
-            ))))? {
+            match link.call(Command::StartProgram(Box::new(StartProgram {
+                reach,
+                ..StartProgram::of(project, ProgramKind::Browser)
+            })))? {
                 Answer::ProgramStarted { program, .. } => {
                     if let Some(held) = self.projects().get_mut(root) {
                         held.browsers.push(program.clone());

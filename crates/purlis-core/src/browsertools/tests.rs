@@ -4,7 +4,7 @@
 use purlis_session_protocol::browsing::{Act, Browsed, DragTo, PageSaid, Typed};
 use serde_json::{Map, Value, json};
 
-use super::{Asked, TOOLS, asked, said};
+use super::{Asked, TOOLS, asked, browser_reach, said};
 use crate::hookwire::Browsing;
 
 fn args(value: Value) -> Map<String, Value> {
@@ -199,4 +199,33 @@ fn an_answer_is_said_as_lines_the_model_reads_page_first() {
          \n\
          - heading \"Docs\" [e1]"
     );
+}
+
+#[test]
+fn a_browser_is_given_what_its_chat_lists_at_each_layer_and_never_its_floor() {
+    use crate::sandbox::reach::{By, Reach};
+    use purlis_session_protocol::session::{Layer, Listed};
+
+    let chat = Reach::anything().and([
+        ("docs.example.com".to_owned(), By::Open),
+        ("127.0.0.1:5173".to_owned(), By::You),
+    ]);
+
+    let given = browser_reach(&chat, true);
+
+    assert_eq!(
+        given.listed,
+        [
+            Listed {
+                host: "docs.example.com".into(),
+                layer: Layer::Open,
+            },
+            Listed {
+                host: "127.0.0.1:5173".into(),
+                layer: Layer::You,
+            },
+        ]
+    );
+    assert!(given.open_web);
+    // A browser's reach has no floor to carry: what it is given is what is listed.
 }

@@ -387,6 +387,8 @@ export const commands = {
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	allowChatBrowser: __WINDOW_ONLY_RESULT,
+	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
@@ -2015,6 +2017,11 @@ export type AnswerPath =
  *  `dismiss_sandbox_only`.
  */
 { via: "sandbox-only" } | 
+/**
+ *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
+ *  Keep off, with the person's reason (#2013).
+ */
+{ via: "browser" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2137,7 +2144,9 @@ export type AskSource =
  *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
  *  making one and running Codex's own sign-in in it.
  */
-"sandbox-only";
+"sandbox-only" | 
+/**  A chat's first browser call, asking what its browser may reach (#2013). */
+"browser";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

@@ -185,3 +185,11 @@ fn a_browser_reaches_what_its_chat_lists_and_a_new_site_only_on_the_open_web() {
     assert!(reach.hosts().is_empty(), "none given, nothing listed");
     assert!(!new_sites.carries(&NewSite::of("news.example.org", 443)));
 }
+
+#[test]
+fn an_act_on_an_ended_browser_is_refused_in_the_words_the_window_reads_as_gone() {
+    assert_eq!(
+        purlis_browser_engine::drive::Refusal::Ended.to_string(),
+        super::ENDED
+    );
+}

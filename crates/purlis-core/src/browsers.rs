@@ -36,11 +36,11 @@ use purlis_browser_engine::install::{
 use purlis_browser_engine::launch::{self, Launch, PAGE_SIZE};
 use purlis_browser_engine::process::{Engine, Keeper};
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
-use purlis_host::protocol::session::{Exit, Layer};
+use purlis_host::protocol::session::Exit;
 use purlis_host::{Browsers, FrameSink, Screen};
 
 use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
-use crate::sandbox::reach::{By, Reach, Written};
+use crate::sandbox::reach::{Reach, Written};
 
 /// The argument that starts this binary as an engine's keeper.
 pub const KEEPER: &str = "purlis-engine-keeper";
@@ -155,6 +155,10 @@ impl Browsers for EngineBrowsers {
 /// well inside one control frame of the session protocol
 /// (`purlis_host::protocol::link::MOST_CONTROL_FRAME_BYTES`), so a larger one is halved to fit
 /// (`drive::fit`).
+/// What an act on a browser that has ended is refused with: the driver's own words, which the
+/// window reads as the browser being gone (#2013).
+pub const ENDED: &str = "the browser has ended: open a new one";
+
 pub const MOST_SCREENSHOT_BYTES: usize = 600 * 1024;
 
 /// **What a browser reaches** (#2013): the hosts `reach` lists, each at its layer, and the hosts
@@ -169,7 +173,12 @@ pub fn reach_of(reach: Option<&BrowserReach>) -> Result<(Reach, NewSites), Strin
         listed: reach
             .listed
             .iter()
-            .map(|listed| (listed.host.clone(), by_of(listed.layer)))
+            .map(|listed| {
+                (
+                    listed.host.clone(),
+                    crate::browsertools::by_of(listed.layer),
+                )
+            })
             .collect(),
         never: reach.never.clone(),
         withdrawn: Vec::new(),
@@ -183,45 +192,6 @@ pub fn reach_of(reach: Option<&BrowserReach>) -> Result<(Reach, NewSites), Strin
         NewSites::refusing()
     };
     Ok((read, new_sites))
-}
-
-/// `reach`'s listing as a browser's start carries it, with the open web or not (#2013): the
-/// window's side of [`reach_of`]. The floor is never carried: a browser reaches only what is
-/// listed (D-2011-10).
-pub fn browser_reach(reach: &Reach, open_web: bool) -> BrowserReach {
-    let written = reach.listed_only().written();
-    BrowserReach {
-        listed: written
-            .listed
-            .into_iter()
-            .map(|(host, by)| purlis_host::protocol::session::Listed {
-                host,
-                layer: layer_of(by),
-            })
-            .collect(),
-        never: written.never,
-        open_web,
-    }
-}
-
-fn by_of(layer: Layer) -> By {
-    match layer {
-        Layer::Open => By::Open,
-        Layer::Persona => By::Persona,
-        Layer::You => By::You,
-        Layer::Chat => By::Chat,
-        Layer::Project => By::Project,
-    }
-}
-
-fn layer_of(by: By) -> Layer {
-    match by {
-        By::Open => Layer::Open,
-        By::Persona => Layer::Persona,
-        By::You => Layer::You,
-        By::Chat => Layer::Chat,
-        By::Project => Layer::Project,
-    }
 }
 
 /// **A chat's act as the driver's own call** (#2013), or why it is refused before the driver
@@ -440,7 +410,7 @@ impl Screen for EngineScreen {
         let call = call_of(act)?;
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
-        let browser = self.with(|browser| Arc::clone(browser));
+        let browser = self.with(Arc::clone);
         browser
             .map_or(Err(drive::Refusal::Ended), |browser| {
                 browser.call(&id, call)

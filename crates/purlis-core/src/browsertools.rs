@@ -21,8 +21,12 @@
 pub use purlis_session_protocol::browsing::{Act, Browsed, DragTo, PageSaid, Typed};
 use serde_json::{Map, Value, json};
 
+use purlis_session_protocol::browsing::BrowserReach;
+use purlis_session_protocol::session::Layer;
+
 use crate::chattools::Tool;
 use crate::hookwire::Browsing;
+use crate::sandbox::reach::{By, Reach};
 
 /// The prefix every browser tool's name starts with.
 pub const PREFIX: &str = "browser_";
@@ -223,6 +227,47 @@ pub fn said(browser: &str, browsed: &Browsed) -> String {
         out.push_str(text);
     }
     out
+}
+
+/// `reach`'s listing as a browser's start carries it, with the open web or not (#2013): the
+/// window's side of `crate::browsers::reach_of`. The floor is never carried: a browser reaches only what is
+/// listed (D-2011-10).
+pub fn browser_reach(reach: &Reach, open_web: bool) -> BrowserReach {
+    let written = reach.listed_only().written();
+    BrowserReach {
+        listed: written
+            .listed
+            .into_iter()
+            .map(|(host, by)| purlis_session_protocol::session::Listed {
+                host,
+                layer: layer_of(by),
+            })
+            .collect(),
+        never: written.never,
+        open_web,
+    }
+}
+
+/// A layer the session protocol names, as the core names it.
+pub fn by_of(layer: Layer) -> By {
+    match layer {
+        Layer::Open => By::Open,
+        Layer::Persona => By::Persona,
+        Layer::You => By::You,
+        Layer::Chat => By::Chat,
+        Layer::Project => By::Project,
+    }
+}
+
+/// A layer as the session protocol names it.
+pub fn layer_of(by: By) -> Layer {
+    match by {
+        By::Open => Layer::Open,
+        By::Persona => Layer::Persona,
+        By::You => Layer::You,
+        By::Chat => Layer::Chat,
+        By::Project => Layer::Project,
+    }
 }
 
 fn page_line(page: &PageSaid) -> String {

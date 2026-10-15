@@ -291,6 +291,9 @@ pub fn answer(
         // An ask after a task this chat dispatched (#1441): no ticket, for the record's reason,
         // and whose task it names is the app's record of that chat.
         Ask::Task(asked) => crate::dispatched::answer(held, &asked, connection),
+        // A browser tool's call (#2013): no ticket, for the record's reason. The line names a
+        // browser of the chat whose token it carries, looked up among that chat's alone.
+        Ask::Browse(browse) => crate::chatbrowsers::answered(held, &browse),
     }
 }
 
@@ -7117,6 +7120,7 @@ mod tests {
                 Ask::Removal(_) => 11,
                 Ask::Keys { .. } => 12,
                 Ask::Propose(_) => 13,
+                Ask::Browse(_) => 14,
             }
         }
         let asks = vec![
@@ -7185,10 +7189,18 @@ mod tests {
                     content: "[plane]\n".to_owned(),
                 },
             })),
+            Ask::Browse(Box::new(purlis_core::hookwire::BrowseAsk {
+                chat,
+                browser: None,
+                call_id: "c-1".to_owned(),
+                asked: purlis_core::hookwire::Browsing::Act(
+                    purlis_session_protocol::browsing::Act::Pages,
+                ),
+            })),
         ];
         let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
         kinds.dedup();
-        assert_eq!(kinds, (0..=13).collect::<Vec<_>>(), "one of every kind");
+        assert_eq!(kinds, (0..=14).collect::<Vec<_>>(), "one of every kind");
         asks
     }
 

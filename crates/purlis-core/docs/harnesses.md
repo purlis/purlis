@@ -269,6 +269,11 @@ and none takes a workspace, a project or a path:
 | `change_status` | The workspace's cross-repo changes, from their records; the forge is not asked |
 | `dispatch`, `dispatch_list`, `dispatch_read`, `dispatch_report` | A task for a persona, which purlis starts as a chat of its own under this one (waiting for its report when asked to), the list of the tasks this chat dispatched, what one of them said last and the commands it ran, and the one report a task's chat sends back; purlis decides and starts the chat, and the tool never does |
 | `ask_operator` | A question put to you through the harness's own prompt; the model never answers it |
+| `browser_open`, `browser_navigate`, `browser_snapshot`, `browser_find`, `browser_click`, `browser_double_click`, `browser_hover`, `browser_type`, `browser_press`, `browser_select`, `browser_drag`, `browser_scroll`, `browser_back`, `browser_wait_for_text`, `browser_pages`, `browser_switch_page`, `browser_screenshot`, `browser_new`, `browser_close` | A real browser the session host runs for the chat (#2013): a snapshot of a page with a reference for each element, actions on those references, and a screenshot, which comes back as an image. No tool runs script. The chat's first browser tool asks you what its browser may reach (this project's sites and its dev servers, also the open web, or Keep off), and nothing opens until you answer; purlis decides and starts the browser, and the tool never does |
+
+A chat purlis sandboxes is not offered its harness's own browser tools: a Claude Code chat's
+`--settings` deny its Chrome integration (`mcp__claude-in-chrome`), at either level. Codex and
+opencode offer none of their own.
 
 The server runs where each harness runs its MCP servers, which for Claude Code and Codex is
 outside the sandbox its commands run in, so what it may do is the tool set above and nothing

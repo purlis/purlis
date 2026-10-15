@@ -102,6 +102,8 @@ macro_rules! app_commands {
                 vaultroute::keep_vault_blocked,
                 vaultroute::put_away_refused_vault,
                 removalasks::keep_asked_workspace,
+                chatbrowsers::allow_chat_browser,
+                chatbrowsers::keep_chat_browser_off,
                 proposals::apply_proposed_change,
                 proposals::proposed_change,
                 proposals::dismiss_proposed_change,
