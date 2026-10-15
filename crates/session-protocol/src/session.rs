@@ -105,7 +105,14 @@ use crate::view::{Limits, Views};
 /// `fetch_project`, the window's alone, and the pushed notice `saving`, what one look of the
 /// project's auto-save did; and the host's question to the window of who is mid-turn in a
 /// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
-pub const VERSION: Version = Version { major: 1, minor: 7 };
+///
+/// 1.10 added the board kept in the host (#2194): `board_moved` tells the host each move the
+/// window made on a held project's board, and `board`, answered `board`, reads the board the
+/// host keeps, whole. 1.8 and 1.9 are held for changes not yet merged.
+pub const VERSION: Version = Version {
+    major: 1,
+    minor: 10,
+};
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -271,6 +278,16 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         chats: Option<Vec<String>>,
     },
+    /// A move the window made of chat `chat` on a held project's board, for the board the host
+    /// keeps to make too, in the order the window made them (1.10): `moved` is the move as the
+    /// board says it. Answered once made.
+    BoardMoved {
+        project: String,
+        chat: u32,
+        moved: serde_json::Value,
+    },
+    /// The board the host keeps for a held project, whole (1.10): answered [`Answer::Board`].
+    Board { project: String },
     /// Start a chat's confinement, its proxy and what runs beside it, from the window's plan
     /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
     /// Boxed: a plan lists every host a chat reaches.
@@ -643,6 +660,9 @@ pub enum Answer {
     Readiness(Readiness),
     /// The number dealt: [`Command::Deal`] (1.3).
     Dealt { number: u32 },
+    /// The board the host keeps for a held project, as the board says it: [`Command::Board`]
+    /// (1.10).
+    Board(serde_json::Value),
     /// Where the confinement it started is: [`Command::Confine`] (1.4).
     Confined(Confined),
     /// The hosts held connections gave up on before an Allow, which the chat is told to retry:
@@ -852,6 +872,8 @@ wire_words!(Command {
     Deal => "deal",
     DealtAlready => "dealt_already",
     ReplyHeard => "reply_heard",
+    BoardMoved => "board_moved",
+    Board => "board",
     Confine => "confine",
     LetGoOfConfinement => "let_go_of_confinement",
     ChangeReach => "change_reach",
@@ -891,6 +913,7 @@ impl Command {
             | Command::FetchProject { .. }
             | Command::MidTurn { .. } => Power::Save,
             Command::ReplyHeard { .. } => Power::Heard,
+            Command::BoardMoved { .. } | Command::Board { .. } => Power::Board,
             Command::Confine(_)
             | Command::LetGoOfConfinement { .. }
             | Command::ChangeReach { .. }
@@ -907,6 +930,7 @@ wire_words!(Answer {
     ProgramStarted => "program_started",
     Readiness => "readiness",
     Dealt => "dealt",
+    Board => "board",
     Confined => "confined",
     ReachChanged => "reach_changed",
     Reach => "reach",
@@ -1307,6 +1331,8 @@ enum Lane {
     /// The commands about one project's saving (1.7): a stop is never overtaken by the start
     /// before it.
     Saving(String),
+    /// The moves and reads of one held project's board, by the project (1.10).
+    Board(String),
 }
 
 impl Lane {
@@ -1346,6 +1372,11 @@ impl Lane {
             Command::StartSaving { project }
             | Command::StopSaving { project }
             | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
+            // A board's moves are made in the order the window made them, and a read of it
+            // follows every move sent before it.
+            Command::BoardMoved { project, .. } | Command::Board { project } => {
+                Some(Lane::Board(project.clone()))
+            }
         }
     }
 }

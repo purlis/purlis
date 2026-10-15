@@ -262,6 +262,15 @@ fn every_command() -> Vec<Command> {
             role: Some(session::ViewRole::Focused),
             rate: None,
         },
+        // A held project's board, read and moved: the window's alone (1.10).
+        Command::BoardMoved {
+            project: "01J9PRJCT00000000000000000".into(),
+            chat: 7,
+            moved: serde_json::json!({"move": "ignored"}),
+        },
+        Command::Board {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
     ]
 }
 
@@ -304,6 +313,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "rearm",
             "start_program",
             "attach_view",
+            "board_moved",
+            "board",
         ],
         Scope::Terminal => &[
             "list",
