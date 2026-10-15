@@ -81,3 +81,55 @@ fn each_profile_shows_the_sign_in_purlis_can_see() {
          \x20 llamas       llamas    local    llamas                            harnesses\n"
     );
 }
+
+/// `purlis profile list` on a machine whose home and config home are `machine`'s own.
+fn purlis_on(root: &Path, machine: &Path) -> String {
+    let out = support::purlis()
+        .args(["profile", "list"])
+        .current_dir(root)
+        .env("CHARTER_ROOT", root)
+        .env("HOME", machine.join("home"))
+        .env("PURLIS_CONFIG_HOME", machine.join("config"))
+        .env_remove("CHARTER_CONFIG_HOME")
+        .output()
+        .expect("the binary runs");
+    assert!(out.status.success(), "{out:?}");
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn a_harness_folder_this_machine_adopted_is_listed_by_its_title_and_folder() {
+    let dir = plane("");
+    let machine = tempfile::tempdir().unwrap();
+    let home = machine.path().join("home");
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    purlis_core::profilestore::adopt(&machine.path().join("config"), &home, &|_: &str| None)
+        .unwrap();
+
+    let listed = purlis_on(dir.path(), machine.path());
+
+    let here = purlis_core::profilestore::this_device();
+    assert!(
+        listed.contains("built-in\n")
+            && listed.contains(&format!(
+                "claude    claude    unknown  claude    Claude Code ({here}) at ~/.claude\n"
+            )),
+        "{listed}"
+    );
+}
+
+#[test]
+fn listing_the_profiles_adopts_nothing() {
+    // The app adopts, from the environment its chats start in; a terminal's may differ.
+    let dir = plane("");
+    let machine = tempfile::tempdir().unwrap();
+    fs::create_dir_all(machine.path().join("home/.claude")).unwrap();
+
+    let listed = purlis_on(dir.path(), machine.path());
+
+    assert!(listed.contains("claude    built-in\n"), "{listed}");
+    assert!(
+        !purlis_core::profilestore::path(&machine.path().join("config")).exists(),
+        "a listing writes no store"
+    );
+}

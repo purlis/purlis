@@ -3047,6 +3047,25 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
+            // Each harness folder this machine uses becomes a profile in place, before any chat
+            // starts (ADR 0095 §2, #2033): from the app's own environment, which its chats are
+            // started from. Off in the scenario build, whose home is the person's.
+            #[cfg(not(feature = "e2e"))]
+            match purlis_core::profilestore::adopt_at_launch() {
+                Ok(adoption) => {
+                    for profile in adoption.adopted {
+                        tracing::info!(
+                            "purlis: adopted {} as the profile `{}`",
+                            profile.folders.config.display(),
+                            profile.name
+                        );
+                    }
+                    for why in adoption.passed_over {
+                        tracing::warn!("purlis: {why}");
+                    }
+                }
+                Err(why) => tracing::warn!("purlis: no harness folder was adopted: {why}"),
+            }
             // From here on this app holds the config home: no rename-local of a later launch,
             // or of a terminal, moves it while the app runs.
             let mut holds_the_config_home = false;
