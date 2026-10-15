@@ -432,6 +432,24 @@ in force that the plane does not declare.
 `.worktrees` linked elsewhere makes `reinit` report the piece `blocked`, and
 `workspace remove` takes nothing out of it.
 
+### A repo left on a chat's branch, or on a moved remote
+
+A workspace's repo itself (`workspaces/<ws>/<repo>`, not a branch folder) is **stale** when it
+is on a branch purlis cut for a chat or a task (a base recorded under it, or a piece the piece
+log names) and not on the remote's default branch (`origin/HEAD`), or when the forge answered a
+fetch purlis ran from `origin` (`purlis sync`, `purlis worktree update` and the fetch before a
+cut) with a redirect to another repository on the same host. The project's Inbox shows one
+Notice per stale repo, read from git with no fetch:
+
+- **Switch to `<default>`** switches the repo back only when its tree holds no change, no
+  operation is stopped in it, and every commit of the branch is on another branch or on the
+  remote. The branch is kept. Otherwise the Notice says what blocks it and nothing moves.
+- **Use the new address** sets `origin` to the address the forge named (an HTTPS address with
+  no user, on the same host). A record of the old address as the remote the window's saves push
+  to follows it to the new one.
+
+Both are the window's alone: no chat and no link presses them.
+
 ## Structure versioning, and `reinit`
 
 A workspace's layout carries a version stamp. When purlis learns to create something new

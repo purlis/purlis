@@ -244,3 +244,45 @@ fn a_press_records_only_the_remote_the_window_showed() {
         Ok(WIDGET)
     );
 }
+
+/// #1985: the remote a repo's saves push to follows the repo to where the forge said it moved,
+/// and a move records nothing that was not recorded.
+#[test]
+fn a_record_of_the_old_address_follows_the_repo_to_its_new_one_and_no_other_is_made() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    record(home.path(), clone.path(), WIDGET.to_string()).unwrap();
+    let key = |at: &Path| crate::sandbox::local::clone_key(at);
+    let now = "github.example.com/purlis/widget";
+
+    moved(
+        &HostScope::for_a_test(),
+        home.path(),
+        clone.path(),
+        WIDGET,
+        now,
+    );
+    moved(
+        &HostScope::for_a_test(),
+        home.path(),
+        elsewhere.path(),
+        WIDGET,
+        now,
+    );
+    // A record of another address is left as it is.
+    moved(
+        &HostScope::for_a_test(),
+        home.path(),
+        clone.path(),
+        WIDGET,
+        "github.example.com/x/y",
+    );
+
+    let recorded = super::super::read_push_remotes(home.path());
+    assert_eq!(
+        recorded.get(&key(clone.path())).map(String::as_str),
+        Some(now)
+    );
+    assert_eq!(recorded.get(&key(elsewhere.path())), None);
+}

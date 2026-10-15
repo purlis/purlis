@@ -170,6 +170,10 @@ pub fn fetch_remote(
     )
     .map_err(|e| e.to_string())?;
     if fetched.ok() {
+        // The forge's word that the repository moved, kept for the window's Notice (#1985).
+        if remote == "origin" {
+            crate::staleclone::heard(clone, &fetched.err);
+        }
         Ok(())
     } else {
         Err(format!(
@@ -185,6 +189,16 @@ fn is_ssh(url: &str) -> bool {
         return true;
     }
     !url.contains("://") && !forge::host_of(url).is_empty()
+}
+
+/// Whether a plain `git fetch` on `branch` fetches from `origin`: the branch names no remote of
+/// its own, or names `origin`.
+fn fetches_from_origin(d: &Path, branch: &str) -> bool {
+    let key = format!("branch.{branch}.remote");
+    match git::run(d, &["config", "--get", &key], git::READ) {
+        Ok(run) if run.ok() => run.line().trim() == "origin",
+        _ => true,
+    }
 }
 
 fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
@@ -263,11 +277,19 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
         helper.as_deref(),
         &["fetch", "--prune", "--no-recurse-submodules"],
     );
-    if !fetched.is_ok_and(|r| r.ok()) {
-        say(Say::Fail(format!(
-            "{label}: fetch failed (access or network) — skipping."
-        )));
-        return;
+    let fetched = match fetched {
+        Ok(run) if run.ok() => run,
+        _ => {
+            say(Say::Fail(format!(
+                "{label}: fetch failed (access or network) — skipping."
+            )));
+            return;
+        }
+    };
+    // The forge's word that the repository moved, kept for the window's Notice (#1985): only
+    // for a fetch from `origin`, which is the remote a branch with no other names.
+    if fetches_from_origin(d, &branch) {
+        crate::staleclone::heard(d, &fetched.err);
     }
     let upstream = format!("origin/{branch}");
     // Untimed: a merge checks out a tree, and a killed one leaves it half-written.

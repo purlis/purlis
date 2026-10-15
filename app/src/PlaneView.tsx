@@ -199,6 +199,7 @@ import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
+import { StaleCloneNotices } from "./StaleCloneNotices";
 import { usePin } from "./Updates";
 import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
@@ -7702,6 +7703,14 @@ export const PlaneView = memo(function PlaneView({
       {/* The doctor's findings that stand as Notices, each with its fix (#1250). */}
       <DoctorNotices
         doctor={doctor}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+      />
+      {/* **A workspace's repo left on a chat's branch, or on a moved remote** (#1985): one
+          Notice per repo, with the Fix that loses no work. */}
+      <StaleCloneNotices
+        plane={plane}
         dismissed={dismissed}
         dismiss={dismiss}
         settle={settleNotices}

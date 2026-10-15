@@ -911,6 +911,14 @@ export const commands = {
 	confirmRemote: __WINDOW_ONLY_RESULT,
 	keepRecordedRemote: __WINDOW_ONLY_RESULT,
 	/**
+	 *  Every stale repo of the project's workspaces, workspace by workspace.
+	 * 
+	 *  On a blocking thread: it asks git a few questions per repo, and runs nothing that reaches a
+	 *  network.
+	 */
+	staleClones: (plane: PlaneId) => typedError<StaleClone[], string>(__TAURI_INVOKE("stale_clones", { plane })),
+	fixStaleClone: __WINDOW_ONLY_RESULT,
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -7721,6 +7729,30 @@ export type SmartClosing = {
 	 *  plane's records.
 	 */
 	record: SavedRecord | null,
+};
+
+export type StaleBranch = {
+	branch: string,
+	default: string,
+};
+
+/**  One stale repo, as the Inbox draws it. */
+export type StaleClone = {
+	workspace: string,
+	repo: string,
+	/**  On a branch purlis cut for a chat or a task: that branch, and the remote's default. */
+	branch: StaleBranch | null,
+	/**  On a remote the forge said moved: where it is now, and where it went. */
+	remote: StaleRemote | null,
+};
+
+/**  Which way out the person pressed. */
+export type StaleFix = "branch" | "remote";
+
+/**  Both as `<host>/<owner>/<repo>`: a recorded address can carry a user, which is never drawn. */
+export type StaleRemote = {
+	origin: string,
+	now: string,
 };
 
 /**  Everything the picker draws, read from the plane when it is opened. */

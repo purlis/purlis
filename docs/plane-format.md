@@ -4585,6 +4585,14 @@ winning while it exists (`charter/harness/claude_code.py:221`).
 - Idempotent: a key is rewritten only when its **last** value differs; an insteadOf form is
   added only when absent (`charter/gitpolicy.py:186`-`196`). An unrecognised forge ⇒ nothing
   applied (`charter/gitpolicy.py:180`).
+- **`remote.origin.purlisMovedTo`** (purlis only, #1985): where the forge said a workspace's
+  repo now lives. Written when a fetch purlis runs from `origin` (`purlis sync`, `purlis
+  worktree update`, the fetch before a cut) worked and git's own
+  `warning: redirecting to <url>` names an HTTPS address with no user on `origin`'s host and
+  another repository there; unset when a later such fetch is not redirected, and by the window's
+  Fix, which sets `origin` to that address (`git remote set-url`). While it differs from
+  `origin`, the project's Inbox shows the repo's stale-repo Notice. Rebuildable: the next fetch
+  says it again. (`crates/purlis-core/src/staleclone.rs`)
 - **Read, never written:** `core.worktree` out of `<git dir>/config`, parsed by purlis's
   own mini-parser with a 262144-byte cap (`charter/gitconfig.py:71`, `:153`,
   `charter/gitconfig.py:61`); relative values resolve against the **git directory**
