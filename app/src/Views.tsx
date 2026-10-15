@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
+import { PersonaProfileMissing } from "./PersonaProfileMissing";
 import { EmptyState } from "./EmptyState";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
@@ -1018,6 +1019,16 @@ function Answer({
               }
         }
       />
+      {from === null && id === "persona" && (
+        /* A profile its definition names that this machine does not have: offered to be made
+           here, by Add profile's own command (#2039). */
+        <PersonaProfileMissing
+          plane={plane}
+          persona={key}
+          changed={changed}
+          onMade={() => setRound((n) => n + 1)}
+        />
+      )}
       {from === null && id === "persona" && (
         /* This persona's own dispatch limits (#1440): kept in the project's file, never its
            own, and edited here as on Settings › Project › Dispatch. */

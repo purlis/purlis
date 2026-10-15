@@ -250,3 +250,24 @@ The implementer decided it on 2026-10-15, to be confirmed by the operator:
   folder is signed in by the person's own sign-in and never asked again, a built-in or a clone's
   profile runs as it always did, a profile handed a key or a cloud switch is not asked, and a
   harness that cannot say, or does not answer in time, never stops a chat that might work.
+
+How a teammate is offered the profile a persona names (§1, #2039) was not ruled beyond §1 above.
+The implementer decided it on 2026-10-15, to be confirmed by the operator:
+
+- **It is an offer on the persona's tab, not an Ask.** Opening a persona is no wait: nothing is
+  held until the person answers, and a chat handed to the persona meanwhile starts on the asking
+  chat's profile and says so (D-1445-8). So the tab of a persona whose `profile:` names a profile
+  this project does not offer on this machine carries a Notice, *Create profile <name>…*, and
+  nothing is raised in the Inbox. A `model:` line names a model, and is never offered.
+- **Nothing is made until the person presses Create.** The offer opens a form with the name fixed
+  to the one the definition names and the harness to pick, and Create runs the command
+  Settings › You › Profiles' Add profile runs, so the profile is made, imported and kept exactly
+  as one made there. Signing it in is its own Ask (#2035), raised by the first chat on it.
+- **The rules that stay hold for it as for any profile**: the project's dispatch list for the
+  persona, the approval of a profile a clone's own local file declares under that name (which
+  takes the place of the machine's), and the refusal of a command that switches the harness's
+  permission prompts off. A profile made here runs its harness's own program with its folder
+  variables set, so it carries no command to approve and no flag.
+- **X12's acknowledgement** (§6) is #2168's, with its store as `docs/plane-format.md` records it
+  and keyed as ADR 0087 keys it; a profile made here with a subscription is one of the logins it
+  asks about.
