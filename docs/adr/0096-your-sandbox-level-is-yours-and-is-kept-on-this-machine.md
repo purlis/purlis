@@ -66,17 +66,23 @@ makes the floor every chat's default where a project has not turned the full san
      asked, from the asking chat up to the one the person started, at its first start and
      every later one, so no chat reaches past its own level by asking for another, however
      many hops away. A start that does not say how it was made, or whose chain the record
-     cannot name whole, never takes `off`.
+     cannot name whole, never takes `off`. The levels are read at each start, not when the
+     chat that asks was started, so a later change in Settings reaches the chats that running
+     chats ask for from then on. The chain is the one the new chat's record keeps, at its
+     first start as at every later one.
    - The audit names how the start was made (`made`: local-ui, resume, relaunch, dispatch or
      handoff) and its actor: the person for their own start in the window, purlis for a
      relaunch, a chat for one a chat asked for.
    - A chat that names no persona takes the project's level, never the default persona's.
    - A project that has not turned the full sandbox on starts its chats at the floor (#2081),
      and a confirmed `off` lifts that too, through the same seam.
-   - In a project that has turned the full sandbox on, `on` starts it, as before, and so does
-     `floor` until the next change starts the floor there; the Settings page says so. In one
-     that has not, `on` starts the floor until that change too.
-   - The title-bar level mark comes with the floor's level plumbing.
+   - **Every level starts as chosen** (the second wiring): `on` the full sandbox, `floor` the
+     floor, in either kind of project. In one that has not turned the full sandbox on, `on`
+     starts the sandbox its file would have, with the defaults. In one that has, `floor` starts
+     the floor, unless a policy forbids the opt-out, which keeps the full sandbox.
+   - An unconfirmed level is measured from the project's own: in a project at the full
+     sandbox, a `floor` the file alone says waits for Confirm as `off` does.
+   - The title bar shows the level of the chat in front, as its tab does.
 
 ## Consequences
 

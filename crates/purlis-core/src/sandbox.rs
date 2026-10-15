@@ -4570,6 +4570,23 @@ pub fn for_start_granted(
     persona: Option<&str>,
     chat: &grant::Grants,
 ) -> Result<Option<Applied>, NotStarted> {
+    for_start_at(harness, root, machine, has, persona, chat, None)
+}
+
+/// [`for_start_granted`] at `at`, a level a person's own setting chose ([`decide_granted`]),
+/// or `None` for the project's own: **the full sandbox** where the project turned it on, or with
+/// the defaults its file says where it has not; **the floor** where the project has not turned
+/// it on, or where it has and the person chose the floor and no policy forbids them a looser
+/// sandbox than the project's ([`policy::Locks::opt_out_refused`]).
+fn for_start_at(
+    harness: Harness,
+    root: &Path,
+    machine: &Machine,
+    has: &dyn Fn(&str) -> bool,
+    persona: Option<&str>,
+    chat: &grant::Grants,
+    at: Option<Level>,
+) -> Result<Option<Applied>, NotStarted> {
     // One spelling of the plane for every harness: the kernel's.
     let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let root = real_root.as_path();
@@ -4579,8 +4596,15 @@ pub fn for_start_granted(
         return Err(NotStarted::PlaneUnreadable);
     }
     // The project's own, or the one an administrator's policy requires (D-1423-1); else the
-    // floor (#2071).
-    let Some(policy) = plane.in_force(&policy::Locks::of(root)) else {
+    // floor (#2071). A person's level moves it either way (#2071, ADR 0096 §8).
+    let locks = policy::Locks::of(root);
+    let policy = match (plane.in_force(&locks), at) {
+        (Some(_), Some(Level::Floor)) if locks.opt_out_refused().is_none() => None,
+        (Some(policy), _) => Some(policy),
+        (None, Some(Level::Full)) => Some(plane.said().unset.unwrap_or_else(Policy::defaults)),
+        (None, _) => None,
+    };
+    let Some(policy) = policy else {
         return floor_for_start(harness, root, &plane, machine, has, persona, chat).map(Some);
     };
     let Some(compile) = compiler(harness) else {
@@ -5260,7 +5284,15 @@ pub fn decide_granted(
             )));
         }
         return Ok(Some(
-            match for_start_granted(harness, root, machine, has, persona, chat) {
+            match for_start_at(
+                harness,
+                root,
+                machine,
+                has,
+                persona,
+                chat,
+                yours_at(root, person, &locks),
+            ) {
                 Ok(Some(applied)) => Decided::Sandboxed(applied),
                 // The floor is always compiled where no policy is in force, so this is not met;
                 // said all the same rather than started with nothing said.
@@ -5282,8 +5314,8 @@ pub fn decide_granted(
             reason: opt_out.kept_reason(),
         })));
     }
-    // Your own level (#2071): a confirmed `off` starts the chat as the opt-out does. `on` and
-    // `floor` start it as below, the full sandbox, until a later change applies `floor` here.
+    // Your own level (#2071): a confirmed `off` starts the chat as the opt-out does; `on` and
+    // `floor` start it at that level below ([`yours_at`]).
     if let Some(lifted) = yours_lifted(root, person, &locks) {
         return Ok(Some(Decided::Unsandboxed(lifted)));
     }
@@ -5301,8 +5333,21 @@ pub fn decide_granted(
     if plane.missing() {
         return Err(NotStarted::PlaneMissing);
     }
-    for_start_granted(harness, root, machine, has, persona, chat)
+    let at = yours_at(root, person, &locks);
+    for_start_at(harness, root, machine, has, persona, chat, at)
         .map(|applied| applied.map(Decided::Sandboxed))
+}
+
+/// The level `person`'s own setting starts the chat at, where it chose one: `on` the full
+/// sandbox, `floor` the floor ([`your_level`]); `off` is [`yours_lifted`]'s.
+fn yours_at(root: &Path, person: &Person<'_>, locks: &policy::Locks) -> Option<Level> {
+    // A start that does not say how it was made takes the project's own level.
+    person.made.via()?;
+    match your_level(root, person.level_as, locks, person.made)? {
+        personal::Choice::On => Some(Level::Full),
+        personal::Choice::Floor => Some(Level::Floor),
+        personal::Choice::Off => None,
+    }
 }
 
 /// What the new-chat picker says about the sandbox for a chat of one harness, before anything

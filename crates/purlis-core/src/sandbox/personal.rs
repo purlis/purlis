@@ -240,12 +240,13 @@ pub fn of_text(text: &str) -> Personal {
 }
 
 /// The level one slot is honoured at: the file's (`file`) where it is what you confirmed
-/// (`confirmed`) or stricter, the floor standing for what you confirmed where you confirmed
-/// nothing; else what you confirmed, or not set (the floor). A slot the file does not set is not set, whatever the record says.
-fn judged(file: Option<Choice>, confirmed: Option<Choice>) -> Option<Choice> {
+/// (`confirmed`) or stricter, `base` (the level the project starts its chats at) standing for
+/// what you confirmed where you confirmed nothing; else what you confirmed, or not set. A slot
+/// the file does not set is not set, whatever the record says.
+fn judged(file: Option<Choice>, confirmed: Option<Choice>, base: Choice) -> Option<Choice> {
     let file = file?;
     // `Choice` is ordered strictest first.
-    if file <= confirmed.unwrap_or(Choice::Floor) {
+    if file <= confirmed.unwrap_or(base) {
         Some(file)
     } else {
         confirmed
@@ -254,13 +255,20 @@ fn judged(file: Option<Choice>, confirmed: Option<Choice>) -> Option<Choice> {
 
 /// What `file`, the levels the local file says, is honoured as, given `confirmed`, the record
 /// of what you set or confirmed in Settings on this machine ([`judged`], slot by slot).
+/// Measured from the floor, a project's default where it has not turned the full sandbox on.
 pub fn honoured(file: &Personal, confirmed: &Personal) -> Personal {
+    honoured_over(file, confirmed, Choice::Floor)
+}
+
+/// [`honoured`], measured from `base`, the level the project starts its chats at: in a project
+/// at the full sandbox the floor is lower, and waits for your Confirm as `off` does.
+pub fn honoured_over(file: &Personal, confirmed: &Personal, base: Choice) -> Personal {
     let mut out = Personal {
-        level: judged(file.level, confirmed.level),
+        level: judged(file.level, confirmed.level, base),
         personas: BTreeMap::new(),
     };
     for (name, choice) in &file.personas {
-        if let Some(level) = judged(Some(*choice), confirmed.personas.get(name).copied()) {
+        if let Some(level) = judged(Some(*choice), confirmed.personas.get(name).copied(), base) {
             out.personas.insert(name.clone(), level);
         }
     }
@@ -278,6 +286,11 @@ pub struct Awaiting {
 
 /// Every slot of `file` that [`honoured`] does not take as the file says it.
 pub fn awaiting(file: &Personal, confirmed: &Personal) -> Vec<Awaiting> {
+    awaiting_over(file, confirmed, Choice::Floor)
+}
+
+/// [`awaiting`], measured from `base` ([`honoured_over`]).
+pub fn awaiting_over(file: &Personal, confirmed: &Personal, base: Choice) -> Vec<Awaiting> {
     let slots = std::iter::once((None, file.level)).chain(
         file.personas
             .iter()
@@ -286,7 +299,7 @@ pub fn awaiting(file: &Personal, confirmed: &Personal) -> Vec<Awaiting> {
     slots
         .filter_map(|(persona, level)| {
             let level = level?;
-            (judged(Some(level), confirmed.at(persona)) != Some(level)).then(|| Awaiting {
+            (judged(Some(level), confirmed.at(persona), base) != Some(level)).then(|| Awaiting {
                 persona: persona.map(str::to_owned),
                 level,
             })
@@ -295,14 +308,26 @@ pub fn awaiting(file: &Personal, confirmed: &Personal) -> Vec<Awaiting> {
 }
 
 /// **What a chat's start honours** for the project at `root`: this machine's file as
-/// [`honoured`] judges it against what you confirmed.
+/// [`honoured_over`] judges it against what you confirmed, from the level the project starts
+/// its chats at ([`base`]).
 pub fn in_force(root: &Path) -> Personal {
-    honoured(&of(root), &super::local::confirmed_levels(root))
+    honoured_over(&of(root), &super::local::confirmed_levels(root), base(root))
 }
 
 /// The levels of the project at `root` that wait for your Confirm.
 pub fn waiting(root: &Path) -> Vec<Awaiting> {
-    awaiting(&of(root), &super::local::confirmed_levels(root))
+    awaiting_over(&of(root), &super::local::confirmed_levels(root), base(root))
+}
+
+/// **The level the project at `root` starts its chats at** without a level of yours: the full
+/// sandbox where it turned it on, or a policy requires it, and the floor otherwise (#2081). A
+/// manifest that has gone or cannot be read may say `[sandbox]`, so it counts as the full one.
+pub fn base(root: &Path) -> Choice {
+    let plane = super::Plane::read(root);
+    let on = plane.unreadable()
+        || plane.missing()
+        || plane.in_force(&super::policy::Locks::of(root)).is_some();
+    if on { Choice::On } else { Choice::Floor }
 }
 
 /// Settings' Confirm of `shown`, the level the row showed for the slot: recorded as yours only

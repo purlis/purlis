@@ -5841,17 +5841,30 @@ fn a_persona_s_confirmed_off_starts_its_chats_alone_without_the_sandbox() {
 }
 
 #[test]
-fn on_and_floor_start_the_full_sandbox_until_the_floor_lands() {
-    for word in ["on", "floor"] {
+fn in_a_project_at_the_full_sandbox_on_starts_it_and_floor_starts_the_floor() {
+    for (word, at) in [("on", Level::Full), ("floor", Level::Floor)] {
         let plane = plane_with_local(&format!("[sandbox]\nlevel = \"{word}\"\n"));
         let level = personal::Choice::of_word(word);
         personal::set_by_you(plane.path(), None, level).unwrap();
-        let decided = decided_as(plane.path(), None);
-        assert!(
-            matches!(decided, Ok(Some(Decided::Sandboxed(_)))),
-            "{word}: {decided:?}"
+        assert_eq!(
+            level_of(&decided_as(plane.path(), None)),
+            Some(at),
+            "{word}"
         );
     }
+}
+
+#[test]
+fn a_policy_that_forbids_the_opt_out_keeps_your_floor_at_the_full_sandbox() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"floor\"\n");
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Floor)).unwrap();
+    policy::set_for_this_test(policy::Locks::parse(
+        r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#,
+        std::path::Path::new("policy.json"),
+    ));
+    let decided = decided_as(plane.path(), None);
+    policy::set_for_this_test(policy::Locks::none());
+    assert_eq!(level_of(&decided), Some(Level::Full), "{decided:?}");
 }
 
 #[test]
@@ -6195,5 +6208,60 @@ fn under_a_never_policy_a_confirmed_off_starts_the_chat_in_the_full_sandbox() {
             &Made::Window
         ),
         Some(personal::Choice::On)
+    );
+}
+
+fn level_of(decided: &Result<Option<Decided>, NotStarted>) -> Option<Level> {
+    match decided {
+        Ok(Some(Decided::Sandboxed(applied))) => Some(applied.level()),
+        _ => None,
+    }
+}
+
+#[test]
+fn your_confirmed_floor_starts_the_floor_in_a_project_at_the_full_sandbox() {
+    let plane = plane_with_local("[sandbox]\nlevel = \"floor\"\n");
+    // Written into the file alone: the project's full sandbox.
+    assert_eq!(level_of(&decided_as(plane.path(), None)), Some(Level::Full));
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Floor)).unwrap();
+    assert_eq!(
+        level_of(&decided_as(plane.path(), None)),
+        Some(Level::Floor)
+    );
+}
+
+#[test]
+fn your_confirmed_on_starts_the_full_sandbox_in_a_project_at_the_floor() {
+    let plane = plane_saying("schema = 1\n");
+    std::fs::write(
+        plane.path().join(crate::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"on\"\n",
+    )
+    .unwrap();
+    // Stricter than the floor, so it counts unconfirmed.
+    assert_eq!(level_of(&decided_as(plane.path(), None)), Some(Level::Full));
+    std::fs::write(plane.path().join(crate::profiles::LOCAL_FILE), "").unwrap();
+    assert_eq!(
+        level_of(&decided_as(plane.path(), None)),
+        Some(Level::Floor)
+    );
+}
+
+#[test]
+fn a_chat_asked_for_by_one_at_the_full_sandbox_does_not_start_at_the_floor() {
+    let plane = plane_with_local("[sandbox.personas]\nqa = \"floor\"\nsteward = \"on\"\n");
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::Floor)).unwrap();
+    personal::set_by_you(plane.path(), Some("steward"), Some(personal::Choice::On)).unwrap();
+    assert_eq!(
+        level_of(&decided_made(plane.path(), Some("qa"), &Made::Window)),
+        Some(Level::Floor)
+    );
+    assert_eq!(
+        level_of(&decided_made(
+            plane.path(),
+            Some("qa"),
+            &asked(Asking::Dispatch, Some("steward"))
+        )),
+        Some(Level::Full)
     );
 }

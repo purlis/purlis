@@ -111,6 +111,24 @@ describe("the bar itself", () => {
   });
 });
 
+/** #2071: the level of the chat in front, on the bar, as its tab says it. */
+describe("the level of the chat in front", () => {
+  it("is shown by name, with why where the chat runs with no sandbox", () => {
+    render(<TitleBar sandbox={{ level: "floor" }} />);
+    expect(screen.getByRole("img", { name: "The chat in front: floor" })).toBeInTheDocument();
+    cleanup();
+    render(<TitleBar sandbox={{ level: "none", why: "your setting" }} />);
+    expect(
+      screen.getByRole("img", { name: "The chat in front: no sandbox: your setting" }),
+    ).toBeInTheDocument();
+  });
+
+  it("is nothing where no chat is in front", () => {
+    render(<TitleBar sandbox={null} />);
+    expect(screen.queryByRole("img", { name: /The chat in front/ })).toBeNull();
+  });
+});
+
 describe("About Charter", () => {
   const ABOUT: About = {
     version: "0.1.0",

@@ -222,3 +222,42 @@ fn a_confirm_takes_the_level_it_showed_and_refuses_one_the_file_changed_since() 
         Personal::default()
     );
 }
+
+#[test]
+fn in_a_project_at_the_full_sandbox_a_floor_the_file_alone_says_waits_for_confirm() {
+    use Choice::{Floor, Off, On};
+    let nothing = Personal::default();
+    // Measured from the full sandbox, the project's own: the floor is lower.
+    assert_eq!(
+        honoured_over(&levels(Some(Floor), &[]), &nothing, On).level,
+        None
+    );
+    assert_eq!(
+        honoured_over(&levels(Some(On), &[]), &nothing, On).level,
+        Some(On)
+    );
+    assert_eq!(
+        honoured_over(&levels(Some(Floor), &[]), &levels(Some(Floor), &[]), On).level,
+        Some(Floor)
+    );
+    assert_eq!(
+        honoured_over(&levels(Some(Floor), &[]), &levels(Some(Off), &[]), On).level,
+        Some(Floor)
+    );
+    // Through the files: a project that turned the full sandbox on.
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join(crate::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"floor\"\n",
+    )
+    .unwrap();
+    assert_eq!(in_force(root.path()).level, None);
+    assert_eq!(waiting(root.path()).len(), 1);
+    set_by_you(root.path(), None, Some(Floor)).unwrap();
+    assert_eq!(in_force(root.path()).level, Some(Floor));
+}
