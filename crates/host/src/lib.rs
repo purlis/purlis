@@ -52,6 +52,8 @@ mod killswitch;
 #[cfg(unix)]
 mod recording;
 #[cfg(unix)]
+mod relay;
+#[cfg(unix)]
 mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
@@ -74,6 +76,8 @@ pub use killswitch::KILL_SWITCH;
 pub use purlis_session_protocol as protocol;
 #[cfg(unix)]
 pub use recording::{Ended, Record, RecordsNothing, Stopped};
+#[cfg(unix)]
+pub use relay::{Dial, Relay};
 #[cfg(unix)]
 pub use serving::{HostError, LOCK, Place, Window, serve};
 

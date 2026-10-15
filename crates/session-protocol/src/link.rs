@@ -295,15 +295,22 @@ pub async fn serve_any<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     within_the_handshake(serve_unbounded(io, speaks, held, None)).await
 }
 
-/// A peer device a link's Noise `XX` handshake proved against the keys pinned at pairing (ADR
-/// 0078 §3): what admits a link as [`Scope::RemoteLink`], since no credential file does.
+/// A peer device a link's handshake proved against the keys pinned at pairing (ADR 0078 §3):
+/// what admits a link as [`Scope::RemoteLink`], since no credential file does.
 ///
-/// **Nothing in a build of the host makes one yet.** RR-13 builds that handshake, and its
-/// result is the only thing that should. Until then `remote-link` is admitted nowhere: it fails
-/// closed. The crate's own tests stand in for the handshake with `ProvenDevice::stand_in`,
-/// which exists only with the `any-stream` feature.
+/// **Only the link between hosts makes one** ([`crate::hostlink::answer`]), once the other
+/// host's link key, proved by the Noise `XX` handshake, is among this host's peers. The crate's
+/// own tests also stand in for it with
+/// `ProvenDevice::stand_in`, which exists only with the `any-stream` feature.
 #[derive(Debug)]
 pub struct ProvenDevice(());
+
+impl ProvenDevice {
+    /// A device [`crate::hostlink`] proved: the only maker in a build of the host.
+    pub(crate) fn proven() -> ProvenDevice {
+        ProvenDevice(())
+    }
+}
 
 #[cfg(feature = "any-stream")]
 impl ProvenDevice {
@@ -334,6 +341,16 @@ pub async fn serve_as_a_device<S: AsyncRead + AsyncWrite + Unpin + Send + 'stati
 /// proved.
 #[cfg(feature = "any-stream")]
 pub async fn connect_as_a_device<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
+    io: S,
+    speaks: Speaks,
+) -> Result<Link, LinkError> {
+    connect_proven(io, speaks).await
+}
+
+/// The dialing host's end of [`serve_as_a_device`], on a stream whose other end the link
+/// between hosts proved to be the host pinned at pairing ([`crate::hostlink::connect`]):
+/// negotiate and open the control lane, with no credential.
+pub(crate) async fn connect_proven<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     io: S,
     speaks: Speaks,
 ) -> Result<Link, LinkError> {

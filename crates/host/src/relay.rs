@@ -1,0 +1,224 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! A host that relays to another host (ADR 0078 §4: *"The window reaches a runner through its
+//! own `local-ui` connection to its own host, which relays"*, #2042).
+//!
+//! **Every client link gets a link of its own to the other host**, dialed with the client's
+//! first command and ended with the client's link. Each command is sent on as it came, and
+//! answered with the other host's answer, or its refusal, word for word. Each view's stream the
+//! other host opens is joined to a stream on the client's link, byte for byte both ways
+//! (header, snapshot, live bytes one way, acknowledgements the other), so the client draws and
+//! acknowledges it as one the host opened itself. What the other host pushes reaches the
+//! client once it subscribes.
+//!
+//! **What only the window may send, the relay sends on for the window alone** (ruled
+//! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
+//! `launch`, and the window's reply to a line a chat's hooks wrote cross only for a `local-ui`
+//! client, whatever else this host's grants let a client send. This is the one place that rule
+//! is enforced: the other host cannot tell a relayed command from one its peer composed, and
+//! trusts its peer, this host, as it trusts the window. A start marked as opting out of the
+//! sandbox is refused by the other host from any scope but its own window's, so one sent on is
+//! refused there. Everything else the other host decides: it serves its link
+//! as the scope that link was admitted as, `remote-link` for the link between hosts, and its
+//! own check of that scope's grants (FD-27) refuses what the scope may not send, before its
+//! host hears of it; the client is told that refusal.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use futures::future::BoxFuture;
+use purlis_session_protocol::auth::Scope;
+use purlis_session_protocol::grants::Power;
+use purlis_session_protocol::link::{Acceptor, Link, Opener};
+use purlis_session_protocol::session::{
+    self, Answer, Client, Command, Events, Peer, Pushed, Refusal, Since, Told,
+};
+use tokio::sync::{OnceCell, mpsc};
+use tokio::task::AbortHandle;
+
+/// How a relay reaches the other host: a new link to it, or why there is none.
+pub type Dial = Arc<dyn Fn() -> BoxFuture<'static, Result<Link, String>> + Send + Sync>;
+
+/// The most pushed events the relay holds for a client that has not read them.
+const MOST_PUSHED_QUEUED: usize = 1024;
+
+/// Each client link's link to the other host, once dialed, by the client link's number.
+type Links = Arc<Mutex<HashMap<u64, Arc<OnceCell<Arc<Relayed>>>>>>;
+
+/// Relays every client link's commands to the other host that `dial` reaches. A clone is the
+/// same relay.
+#[derive(Clone)]
+pub struct Relay {
+    dial: Dial,
+    links: Links,
+}
+
+/// One client link's link to the other host.
+struct Relayed {
+    client: Client,
+    /// Where what the other host pushes goes: the client's subscription, while it has one.
+    subscriber: Arc<Mutex<Option<mpsc::Sender<Pushed>>>>,
+    tasks: Vec<AbortHandle>,
+}
+
+impl Drop for Relayed {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+impl Relay {
+    pub fn new(dial: Dial) -> Relay {
+        Relay {
+            dial,
+            links: Arc::default(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<OnceCell<Arc<Relayed>>>>> {
+        self.links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The link to the other host for `peer`'s link, dialed with its first command. A link that
+    /// has ended gets none: a call it sent that is carried out after its end dials nothing, and
+    /// leaves nothing behind.
+    async fn relayed(&self, peer: &Peer) -> Result<Arc<Relayed>, Refusal> {
+        let ended = || Refusal {
+            code: session::NOT_STARTED.into(),
+            why: "the link this was sent on has ended".into(),
+        };
+        if peer.has_ended() {
+            return Err(ended());
+        }
+        let cell = Arc::clone(self.lock().entry(peer.link()).or_default());
+        let relayed = cell
+            .get_or_try_init(|| async {
+                let link = (self.dial)().await.map_err(|why| Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why: format!("the host this one relays to could not be reached: {why}"),
+                })?;
+                Ok(Arc::new(relay(link, peer.opener().clone())))
+            })
+            .await
+            .cloned()?;
+        // The link ended while this one dialed: what it made goes with it.
+        if peer.has_ended() {
+            self.lock().remove(&peer.link());
+            return Err(ended());
+        }
+        Ok(relayed)
+    }
+}
+
+fn relay(link: Link, to_the_client: Opener) -> Relayed {
+    let (client, views, events) = Client::new(link);
+    let subscriber: Arc<Mutex<Option<mpsc::Sender<Pushed>>>> = Arc::default();
+    let joining = tokio::spawn(join_views(views, to_the_client)).abort_handle();
+    let pushing = tokio::spawn(push_on(events, Arc::clone(&subscriber))).abort_handle();
+    Relayed {
+        client,
+        subscriber,
+        tasks: vec![joining, pushing],
+    }
+}
+
+/// Joins each view's stream the other host opens to a new stream on the client's link.
+async fn join_views(mut views: Acceptor, to_the_client: Opener) {
+    while let Ok(mut from_the_other_host) = views.accept().await {
+        let to_the_client = to_the_client.clone();
+        tokio::spawn(async move {
+            if let Ok(mut to_the_client) = to_the_client.open().await {
+                let _ = tokio::io::copy_bidirectional(&mut from_the_other_host, &mut to_the_client)
+                    .await;
+            }
+        });
+    }
+}
+
+/// Hands what the other host pushes to the client's subscription, while it has one.
+async fn push_on(mut events: Events, subscriber: Arc<Mutex<Option<mpsc::Sender<Pushed>>>>) {
+    while let Some(told) = events.recv().await {
+        let Told::Pushed(pushed) = told else {
+            // The relay fell behind the other host: the client's own cursor is what it
+            // subscribes again from, and a reader that fell behind is told so by its own link.
+            continue;
+        };
+        let target = subscriber
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some(target) = target
+            && target.send(pushed).await.is_err()
+        {
+            *subscriber
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        }
+    }
+}
+
+/// Whether `command` is one only the window sends: what the relay sends on for a `local-ui`
+/// client alone.
+fn the_windows_alone(command: &Command) -> bool {
+    match command {
+        Command::StartProgram(start) => start.launch.is_some() || start.without_sandbox,
+        command => matches!(command.power(), Power::Hold | Power::Heard | Power::Save),
+    }
+}
+
+fn refused(why: &session::CallError) -> Refusal {
+    why.refusal().cloned().unwrap_or_else(|| Refusal {
+        code: session::NOT_STARTED.into(),
+        why: format!("the host this one relays to did not answer: {why}"),
+    })
+}
+
+impl session::Host for Relay {
+    async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
+        if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "`{}` is relayed to another host for purlis's window only, and this link is \
+                     `{}`",
+                    command.word(),
+                    peer.scope()
+                ),
+            });
+        }
+        let relayed = self.relayed(peer).await?;
+        relayed
+            .client
+            .call(command)
+            .await
+            .map_err(|why| refused(&why))
+    }
+
+    async fn link_ended(&self, peer: &Peer) {
+        self.lock().remove(&peer.link());
+    }
+
+    async fn subscribe(
+        &self,
+        since: Since,
+        peer: &Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
+        let relayed = self.relayed(peer).await?;
+        let (told, pushed) = mpsc::channel(MOST_PUSHED_QUEUED);
+        *relayed
+            .subscriber
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(told);
+        relayed
+            .client
+            .subscribe(since)
+            .await
+            .map_err(|why| refused(&why))?;
+        Ok(pushed)
+    }
+}

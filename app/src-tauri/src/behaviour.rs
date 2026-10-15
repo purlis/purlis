@@ -8,8 +8,10 @@
 //! **The targets are the two ways the start-time switch runs a chat** (`crate::hostedsessions`):
 //! in the window's own process ([`crate::sessions::Sessions`]), and in a session host the window
 //! speaks the session protocol to ([`crate::hostedsessions::HostedSessions`], here over an
-//! in-memory link to the host's own code, with real terminals). Each behaviour speaks only what
-//! the window speaks to either, [`SessionHost`], and checks only what the window can observe:
+//! in-memory link to the host's own code, with real terminals); **and a third, through a link**:
+//! the window's host relaying to another host over the link between hosts
+//! ([`through_a_link`], #2042). Each behaviour speaks only what the window speaks to any of
+//! them, [`SessionHost`], and checks only what the window can observe:
 //! what its pane draws, what it is told, what ends. When the in-app path is deleted (#2005), its
 //! target goes with it, and the host's stays; Docker and a cluster join as targets of their own
 //! (spec #2041).
@@ -65,7 +67,7 @@ const PATIENCE: Duration = Duration::from_secs(20);
 
 /// One place a chat runs, as the window reaches it.
 pub(crate) struct Target {
-    pub sessions: Arc<dyn SessionHost>,
+    pub sessions: Box<dyn SessionHost>,
     /// The project its chats run in, and that it saves.
     pub root: PathBuf,
     /// The window's own hooks for the target's project: its board and its asks.
@@ -74,9 +76,9 @@ pub(crate) struct Target {
     pub moved: Arc<Mutex<Vec<Moved>>>,
     /// The kill switch, as the title bar throws and re-arms it.
     pub switch: Arc<KillSwitch>,
-    /// Where the device's event log is.
+    /// Where the device's event log is: the window's, or that of the host its chats run in.
     pub log: PathBuf,
-    /// The window's link to the host, on the host's target: what the host is asked directly.
+    /// The window's link to the host, on a host's target: what the host is asked directly.
     pub host: Option<Arc<Connection>>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
@@ -124,13 +126,14 @@ pub(crate) fn in_the_window() -> Target {
     let (hooks, moved) = hooks_of(&root, false);
     let config = tempfile::tempdir().expect("a config home");
     let data = tempfile::tempdir().expect("a data home");
-    let events = crate::hooks::Events::here(an_event_log(data.path()).expect("the event log"));
-    hooks.record_into(events);
+    hooks.record_into(crate::hooks::Events::here(
+        an_event_log(data.path()).expect("the event log"),
+    ));
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     let mut sessions = Sessions::reporting_to(hooks.reporting());
     sessions.stopped_by(Arc::clone(&switch));
     Target {
-        sessions: Arc::new(sessions),
+        sessions: Box::new(sessions),
         hooks,
         moved,
         root,
@@ -154,29 +157,49 @@ pub(crate) fn in_the_host() -> Target {
     target
 }
 
-/// A session host the window started and holds a link to: the host's own code, serving the
-/// session protocol over an in-memory link, its programs each in a real terminal, composed as
-/// the window's binary composes them, keeping its kill switch in `folder` and the device's event
-/// log in a data home of its own (#2003).
-pub(crate) struct HostOfTheWindow {
-    pub connection: Arc<Connection>,
-    pub data: tempfile::TempDir,
-    pub runtime: tokio::runtime::Runtime,
+/// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
+/// in a config home of its own, which starts with nothing thrown.
+fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
+    let folder = folder.to_path_buf();
+    let data = tempfile::tempdir().expect("a data home");
+    let log = data.path().to_path_buf();
+    let mut target = a_window_on(log.clone(), move || a_host(&folder, &log));
+    target._keeps.push(Box::new(data));
+    target
 }
 
-pub(crate) fn a_host_of_the_window(folder: &Path) -> HostOfTheWindow {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("a runtime");
-    // The host holds the device's event log, opened as it first holds a project (#2003).
-    let data = tempfile::tempdir().expect("a data home");
+/// A chat on another session host, reached through this machine's (#2042): the window speaks to
+/// host A, which relays to host B over the link between hosts, as the desktop's host reaches a
+/// runner's (ADR 0078 §4). Host B is the host's own code with real terminals, composed as the
+/// window's binary composes them; both hosts are on this machine, linked in memory over the
+/// encrypted link, each end's link key pinned by the other. Host B takes the window's start
+/// and its replies because host A relays them from the window's own link (ruled 2026-10-15).
+pub(crate) fn through_a_link() -> Target {
+    let folder = tempfile::tempdir().expect("host B's folder");
+    // Host B runs the chats, so it writes their event log.
+    let data = tempfile::tempdir().expect("host B's data home");
+    let host_b = a_host(folder.path(), data.path());
+    let mut target = a_window_on(data.path().to_path_buf(), move || {
+        purlis_host::Relay::new(Arc::new(move || {
+            let host_b = host_b.clone();
+            Box::pin(async move { Ok(linked_to(host_b).await) })
+        }))
+    });
+    target._keeps.push(Box::new(folder));
+    target._keeps.push(Box::new(data));
+    target
+}
+
+/// A session host as the window's binary composes it, keeping its kill switch in `folder`: its
+/// starts composed from the window's launch, each in a real terminal, its chats' hooks heard on
+/// their project's channel, each confined here, and the device's event log kept in `data`,
+/// opened as it first holds a project (#2003).
+fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
     let kept = {
-        let data = data.path().to_path_buf();
+        let data = data.to_path_buf();
         crate::sessionhost::Kept::opening(move || an_event_log(&data))
     };
-    let hosting = purlis_host::Hosting::kept(
+    purlis_host::Hosting::kept(
         folder,
         purlis_host::FromTheWindow(crate::sessionhost::launched),
         purlis_host::Terminals,
@@ -184,7 +207,63 @@ pub(crate) fn a_host_of_the_window(folder: &Path) -> HostOfTheWindow {
         crate::hostedconfinement::ConfinesHere,
     )
     .recording_with(kept)
-    .saving_with(crate::hostsaving::InTheHost);
+    .saving_with(crate::hostsaving::InTheHost)
+}
+
+/// A link from host A to `host_b`, over the link between hosts on an in-memory stream.
+async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
+    use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
+    let identity = |device: &str| Identity {
+        device: device.to_owned(),
+        key: LinkKey::generate().expect("a link key"),
+    };
+    let pinned = |identity: &Identity| Pinned {
+        device: identity.device.clone(),
+        key: identity.key.public(),
+    };
+    let (a, b) = (
+        identity("01JA0DESKT0P00000000000000"),
+        identity("01JB0RUNNER0000000000000000"),
+    );
+    let (desktop, b_pinned) = (pinned(&a), pinned(&b));
+    let (a_end, b_end) = tokio::io::duplex(1 << 20);
+    tokio::spawn(async move {
+        let answered = hostlink::answer(
+            b_end,
+            Handshake::THIS_BUILD,
+            &b,
+            &desktop,
+            Liveness::default(),
+        )
+        .await
+        .expect("host B admits host A");
+        session::serve(answered.link, host_b, None).await
+    });
+    hostlink::connect(
+        a_end,
+        Handshake::THIS_BUILD,
+        &a,
+        &b_pinned,
+        Liveness::default(),
+    )
+    .await
+    .expect("host A links to host B")
+}
+
+/// The window, speaking the session protocol over an in-memory `local-ui` link to the host
+/// `host` makes, on a runtime of the target's own, its own kill switch in a config home of its
+/// own. The window opens no event log, and hands the host every write (#2003); the host keeps
+/// it in `log`.
+fn a_window_on<H: session::Host>(
+    log: PathBuf,
+    host: impl FnOnce() -> H + Send + 'static,
+) -> Target {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let config = tempfile::tempdir().expect("a config home");
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
         let (client, served) = tokio::join!(
@@ -198,7 +277,7 @@ pub(crate) fn a_host_of_the_window(folder: &Path) -> HostOfTheWindow {
         );
         tokio::spawn(session::serve(
             served.expect("the host admits the window"),
-            hosting,
+            host(),
             None,
         ));
         HostLink::over(
@@ -211,49 +290,26 @@ pub(crate) fn a_host_of_the_window(folder: &Path) -> HostOfTheWindow {
     });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link));
-    HostOfTheWindow {
-        connection,
-        data,
-        runtime,
-    }
-}
-
-/// [`in_the_host`], the host keeping its kill switch in `folder`, and the window's own switch
-/// in a config home of its own, which starts with nothing thrown.
-fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
-    let config = tempfile::tempdir().expect("a config home");
-    let HostOfTheWindow {
-        connection,
-        data,
-        runtime,
-    } = a_host_of_the_window(folder);
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
-    // The window hands the host every write, and opens no log (#2003).
-    let events = crate::hooks::Events::in_the_host({
+    hooks.record_into(crate::hooks::Events::in_the_host({
         let connection = Arc::clone(&connection);
         move |entry| crate::hostedsessions::record_in_the_host(&connection, &entry)
-    });
-    hooks.record_into(events);
+    }));
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
     let mut sessions = HostedSessions::new(Arc::clone(&connection), &root);
     sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
     sessions.stopped_by(Arc::clone(&switch));
     Target {
-        sessions: Arc::new(sessions),
+        sessions: Box::new(sessions),
         hooks,
         moved,
         root,
         switch,
-        log: data.path().to_path_buf(),
+        log,
         host: Some(connection),
-        _keeps: vec![
-            Box::new(project),
-            Box::new(config),
-            Box::new(data),
-            Box::new(runtime),
-        ],
+        _keeps: vec![Box::new(project), Box::new(config), Box::new(runtime)],
     }
 }
 
@@ -1345,9 +1401,14 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
     assert!(ended.undelivered.is_some(), "owed to the chat that asked");
 }
 
-/// Each behaviour, as a test of its own on every target.
+/// Each behaviour, as a test of its own on every target. Each group after `not yet through a
+/// link` runs on the window's and the host's targets, and through a link waits for what its
+/// reason names (#2042).
 macro_rules! on_every_target {
-    ($($behaviour:ident),* $(,)?) => {
+    (
+        $($behaviour:ident),* $(,)?;
+        $(not yet through a link ($why:literal): $($waiting:ident),+ $(,)?;)*
+    ) => {
         $(
             mod $behaviour {
                 #[test]
@@ -1359,8 +1420,32 @@ macro_rules! on_every_target {
                 fn in_the_host() {
                     super::$behaviour(&super::in_the_host());
                 }
+
+                #[test]
+                fn through_a_link() {
+                    super::$behaviour(&super::through_a_link());
+                }
             }
         )*
+        $($(
+            mod $waiting {
+                #[test]
+                fn in_the_window() {
+                    super::$waiting(&super::in_the_window());
+                }
+
+                #[test]
+                fn in_the_host() {
+                    super::$waiting(&super::in_the_host());
+                }
+
+                #[test]
+                #[ignore = $why]
+                fn through_a_link() {
+                    super::$waiting(&super::through_a_link());
+                }
+            }
+        )+)*
     };
 }
 
@@ -1377,12 +1462,15 @@ on_every_target!(
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
+    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
+    not yet through a link ("a sandboxed chat starts on a runner through the link in #2217"):
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
-    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
+    not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
-    while_stopped_the_operators_shell_opens,
-    the_event_log_has_one_writer_and_each_hook_line_is_written_once,
+    while_stopped_the_operators_shell_opens;
+    not yet through a link ("saving a project on a runner comes with code over the link in #2046"):
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
-    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped,
+    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
 );

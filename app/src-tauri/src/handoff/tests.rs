@@ -11141,11 +11141,11 @@ fn a_dispatched_task_starts_where_its_asking_chat_runs_in_the_window() {
 #[cfg(unix)]
 #[test]
 fn a_dispatched_task_starts_where_its_asking_chat_runs_in_the_host() {
-    let folder = tempfile::tempdir().expect("the host's folder");
-    let host = crate::behaviour::a_host_of_the_window(folder.path());
+    let target = crate::behaviour::in_the_host();
+    let connection = Arc::clone(target.host.as_ref().expect("the host's target"));
     let planes = planes()
         .running_sessions_on(Arc::new({
-            let connection = Arc::clone(&host.connection);
+            let connection = Arc::clone(&connection);
             move |_, root: &Path| {
                 Box::new(crate::hostedsessions::HostedSessions::new(
                     Arc::clone(&connection),
@@ -11154,5 +11154,5 @@ fn a_dispatched_task_starts_where_its_asking_chat_runs_in_the_host() {
             }
         }))
         .hearing_hooks_through_the_host();
-    a_dispatched_task_starts_where_its_asking_chat_runs(planes, Some(&host.connection));
+    a_dispatched_task_starts_where_its_asking_chat_runs(planes, Some(&connection));
 }
