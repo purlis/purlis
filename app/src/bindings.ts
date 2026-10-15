@@ -8615,6 +8615,11 @@ export type SandboxState = {
 	 *  place of the level switch. `null` where each person chooses.
 	 */
 	level_held?: string | null,
+	/**
+	 *  **Your own level here** (#2071, ADR 0096), as it starts a chat you start in this
+	 *  project: `null` where you set none that counts, which leaves the project's own.
+	 */
+	yours?: YourLevel | null,
 };
 
 /**  One save attempt, as the journal holds it. */
@@ -10169,6 +10174,17 @@ export type YourEditor =
 "idea" | 
 /**  `$VISUAL`, else `$EDITOR`, from charter's own environment, with `+line`. */
 "variable";
+
+/**  Your own level for a project, as it starts a chat you start there (#2071). */
+export type YourLevel = {
+	/**  `on`, `floor` or `off`. */
+	level: string,
+	/**
+	 *  Whether it is the level you set or confirmed in Settings on this machine, rather than one
+	 *  the file says that counts unconfirmed because it is stricter.
+	 */
+	confirmed: boolean,
+};
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

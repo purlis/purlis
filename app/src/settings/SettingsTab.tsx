@@ -1109,7 +1109,7 @@ function Status({
   writing: boolean;
   onWrite: (to: string) => void;
 }) {
-  const { turnOn } = setting;
+  const { turnOn, goTo } = setting;
   return (
     <div
       id={ids.id}
@@ -1128,6 +1128,11 @@ function Status({
           onClick={() => onWrite(turnOn.value)}
         >
           {turnOn.label}
+        </button>
+      )}
+      {goTo !== undefined && (
+        <button type="button" className="ui-button" tabIndex={0} onClick={goTo.onPress}>
+          {goTo.label}
         </button>
       )}
     </div>

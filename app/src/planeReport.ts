@@ -7,6 +7,7 @@ import { type Place } from "./pieceViews";
 import { type Asking } from "./NeedsYou";
 import { type QuietChat } from "./chatState";
 import { type Ending } from "./QuitWarning";
+import { type SandboxSaid } from "./SandboxMark";
 
 /**
  * **What a project and the window tell each other** (#1035, split out of `PlaneView.tsx`): what
@@ -62,6 +63,9 @@ export type PlaneReport = {
   /** That workspace's colour, a palette name or `#rrggbb`, or `null`: what the window's accent
    *  and focus ring are tinted with while it is in front (charter-app#281). */
   colour?: string | null;
+  /** How much the sandbox of the chat in front holds (#2071), as its tab says it: what the
+   *  title bar shows while this project is in front. `null` where no chat is in front. */
+  sandbox?: SandboxSaid | null;
   /** Where this project's unsaved work sits (charter-app#302), once read. */
   saving?: PlaneSaving;
   /** Why this purlis opens it read-only, or undefined (#826): the title bar's save is off with

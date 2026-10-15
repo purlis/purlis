@@ -286,6 +286,13 @@ fn made_of(chat: &Chat, why: Why) -> purlis_core::sandbox::Made {
     }
 }
 
+/// **Whose level a start of `chat` reads** (#2071): its own persona for a chat on a profile,
+/// and the project's (`None`) for one on no profile, which adopts no persona. The one answer
+/// its start and the check of a running chat against its next start both take.
+fn level_as_of(chat: &Chat) -> Option<&str> {
+    chat.profile.as_ref().and(chat.persona.as_deref())
+}
+
 /// The most chats that were closed this launch whose ids are remembered, for
 /// [`Chats::start_ready_instead_of`]. That asks about a chat the window closed a moment ago.
 const LET_GO_HELD: usize = 256;
@@ -1174,7 +1181,7 @@ impl Chats {
             // A chat on no profile has no persona: its level is the project's.
             &purlis_core::sandbox::Person {
                 opt_out,
-                level_as: None,
+                level_as: level_as_of(chat),
                 made,
             },
             grants,
@@ -2049,7 +2056,9 @@ impl Chats {
             let key = StartKey {
                 harness,
                 persona,
-                level_as: chat.persona.clone(),
+                // As its own start reads it: its persona on a profile, and none (the
+                // project's) on no profile, as `sandbox_off_profile` passes.
+                level_as: level_as_of(&chat).map(str::to_owned),
                 // What the chat's next start would be made as.
                 made: made_of(&chat, Why::Relaunch),
                 grants: with.grants.clone(),

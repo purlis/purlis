@@ -617,6 +617,7 @@ export function fileSetting(
     options: control.options,
     status: control.status,
     turnOn: control.turnOn,
+    ...(control.goTo === undefined ? {} : { goTo: control.goTo }),
     read: control.read,
     edits: control.edits,
     names: control.names,
