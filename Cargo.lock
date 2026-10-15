@@ -5383,6 +5383,9 @@ name = "purlis-terminal"
 version = "0.4.2"
 dependencies = [
  "alacritty_terminal",
+ "futures",
+ "futures-channel",
+ "futures-core",
  "libc",
  "memchr",
  "portable-pty",
