@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792017050691,
+  "lastUpdate": 1792023861396,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11424,6 +11424,48 @@ window.BENCHMARK_DATA = {
             "value": 104.8536355,
             "unit": "ms",
             "extra": "median of 5 runs: 103.022, 104.603, 104.854, 105.707, 106.483 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c6f53a5c8bb0284765365655c5e3f646fb5ce147",
+          "message": "state: a second prompt within one wait stamps the chat (#2100)\n\nWhere a chat already waits on a prompt and an ask changes the prompt or\nwho asked, the board counts it a move a reader sees, so the window takes\nit for a wait of its own: a line put away for the first prompt shows for\nthe second.\n\nCloses #2098\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T04:23:09+04:00",
+          "tree_id": "7da4214010390a37410789d43c74f4a2ebfadf3d",
+          "url": "https://github.com/purlis/purlis/commit/c6f53a5c8bb0284765365655c5e3f646fb5ce147"
+        },
+        "date": 1792023860282,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.51444,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.508, 0.514, 0.553, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.926733999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.778, 16.875, 16.927, 16.985, 17.275 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.474705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.190, 104.149, 105.475, 105.721, 105.931 ms"
           }
         ]
       }
