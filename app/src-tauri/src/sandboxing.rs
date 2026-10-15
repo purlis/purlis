@@ -159,9 +159,9 @@ pub struct SandboxState {
     /// allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
     #[specta(optional)]
     pub expects: Option<ProjectExpects>,
-    /// **The project's sandbox off** (#2071 PR C): its committed `[sandbox] mode = "off"`, the
-    /// commit it arrived in, and how the person on this machine answered it. `null` where the
-    /// project does not turn the sandbox off in a commit.
+    /// **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
+    /// "off"`, where it came from as far as purlis verified it, and how the person on this
+    /// machine answered it. `null` where the project does not turn the sandbox off in a commit.
     #[specta(optional)]
     pub team_off: Option<TeamOffState>,
     /// Why nobody here runs below the full sandbox (#2071 PR C): the project's
@@ -171,15 +171,18 @@ pub struct SandboxState {
     pub level_held: Option<String>,
 }
 
-/// **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8): once,
-/// "Your project turned the sandbox off (commit <sha> by <author>)", with Accept and Keep it on
-/// for me; Settings offers the other answer after.
+/// **The project's sandbox off, as this machine's person is asked it** (#2071, SO-8; #2156):
+/// once, with Accept and Keep it on for me; Settings offers the other answer after. It names
+/// the commit and its author only where purlis verified them on the upstream it fetched, and
+/// otherwise says the off is local.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct TeamOffState {
-    /// The commit that turned it off, whole: what an answer is sent back with.
-    pub commit: String,
-    /// Who made that commit, as git names them. Written by a repository: drawn inertly.
-    pub author: String,
+    /// The commit that turned it off, whole, where purlis verified it on the upstream it
+    /// fetched; `null` where the off is local.
+    pub commit: Option<String>,
+    /// Who made that commit, as git names them, where verified as `commit` is. Written by a
+    /// repository: drawn inertly.
+    pub author: Option<String>,
     /// The ask's sentence, in purlis's words.
     pub said: String,
     /// `null` until answered; `true` accepted (no sandbox by default), `false` kept on.
@@ -189,17 +192,22 @@ pub struct TeamOffState {
 impl TeamOffState {
     /// The window's form of `team_off`, where there is an off to answer.
     pub fn of(team_off: sandbox::team::TeamOff) -> Option<Self> {
-        use sandbox::team::TeamOff;
-        let (arrived, answer) = match team_off {
-            TeamOff::Asks(arrived) => (arrived, None),
-            TeamOff::Accepted(arrived) => (arrived, Some(true)),
-            TeamOff::KeptOn(arrived) => (arrived, Some(false)),
+        use sandbox::team::{Arrival, TeamOff};
+        let (arrival, answer) = match team_off {
+            TeamOff::Asks(arrival) => (arrival, None),
+            TeamOff::Accepted(arrival) => (arrival, Some(true)),
+            TeamOff::KeptOn(arrival) => (arrival, Some(false)),
             TeamOff::No | TeamOff::NotCommitted => return None,
         };
+        let said = arrival.said();
+        let (commit, author) = match arrival {
+            Arrival::Upstream(arrived) => (Some(arrived.commit), Some(arrived.author)),
+            Arrival::Local => (None, None),
+        };
         Some(Self {
-            said: arrived.said(),
-            commit: arrived.commit,
-            author: arrived.author,
+            commit,
+            author,
+            said,
             answer,
         })
     }
@@ -589,21 +597,20 @@ pub(crate) const READING_SANDBOX: &str = "reading the project's sandbox";
 /// work, off the window's thread.
 const ANSWERING_SANDBOX: &str = "keeping your answer about the project's sandbox";
 
-/// **The person's answer to the project's sandbox off** (#2071, SO-8): Accept (`accept`) or
-/// Keep it on for me, for `commit`, the one the ask showed; refused where the off stands at
-/// another commit now. Kept in this machine's config home, where no chat writes; it takes
-/// effect at each chat's next start. The window's alone.
+/// **The person's answer to the project's sandbox off** (#2071, SO-8; #2156): Accept
+/// (`accept`) or Keep it on for me, for the off as it stands; refused where no committed off
+/// stands. Kept in this machine's config home, where no chat writes, until purlis sees the off
+/// leave; it takes effect at each chat's next start. The window's alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn answer_team_sandbox_off(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-    commit: String,
     accept: bool,
 ) -> Result<SandboxState, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window(ANSWERING_SANDBOX, move || {
-        let answer = sandbox::team::answering(&root, &commit, accept)?;
+        let answer = sandbox::team::answering(&root, accept)?;
         sandbox::local::answer_team_off(&root, answer)
             .map_err(|why| format!("purlis could not keep your answer on this machine: {why}"))?;
         Ok(state_of(&root))

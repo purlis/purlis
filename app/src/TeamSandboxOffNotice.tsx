@@ -19,10 +19,12 @@ export const TEAM_OFF_MEANS =
 
 /**
  * **The project's sandbox off reaches each person by one ask** (#2071, the operator's ruling
- * SO-8): a committed `[sandbox] mode = "off"` turns nobody's sandbox off by itself. The window
- * asks once, naming the commit that turned it off and its author: **Accept**, or **Keep it on
- * for me** (`answer_team_sandbox_off`, the window's alone). The answer is kept on this machine
- * for that commit, where no chat writes; an off committed again later asks again.
+ * SO-8; #2156): a committed `[sandbox] mode = "off"` turns nobody's sandbox off by itself. The
+ * window asks once, in purlis's words (`said`): the commit that turned it off and its author
+ * where purlis verified them on the upstream it fetched, or that the off is local. **Accept**,
+ * or **Keep it on for me** (`answer_team_sandbox_off`, the window's alone). The answer is kept
+ * on this machine, where no chat writes, until purlis sees the off leave; an off that comes
+ * back asks again.
  */
 export function TeamSandboxOffNotice({
   plane,
@@ -61,7 +63,7 @@ export function TeamSandboxOffNotice({
     setBusy(true);
     setSaid(undefined);
     void commands
-      .answerTeamSandboxOff(plane, off.commit, accept)
+      .answerTeamSandboxOff(plane, accept)
       .then((done) => {
         if (done.status !== "ok") {
           setSaid(done.error);
@@ -86,7 +88,7 @@ export function TeamSandboxOffNotice({
     return hidden ? null : (
       <Notice
         cause="sandbox-team-off"
-        label="Your project turned the sandbox off"
+        label="The project's sandbox off"
         onDismiss={() => setHidden(true)}
       >
         {body}
@@ -95,7 +97,7 @@ export function TeamSandboxOffNotice({
   return (
     <Notice
       cause="sandbox-team-off"
-      label="Your project turned the sandbox off"
+      label="The project's sandbox off"
       fixes={[
         { label: "Accept", onPress: () => answer(true), busy },
         { label: "Keep it on for me", onPress: () => answer(false), busy },

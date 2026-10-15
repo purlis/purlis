@@ -2822,6 +2822,34 @@ fn commits_on_the_remote_are_counted_as_incoming_and_a_clean_tree_is_fast_forwar
 }
 
 #[test]
+fn a_fetch_keeps_the_upstream_commit_the_remote_named_where_no_chat_writes() {
+    // #2156: what the team's off is checked against is the remote's answer to purlis's own
+    // fetch, kept in this machine's config home, never a ref in the clone.
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    let theirs = ask(&bare, &["rev-parse", "refs/heads/main"])
+        .trim()
+        .to_owned();
+
+    fetch(&fixture.root, false).expect("fetched");
+    assert_eq!(
+        crate::sandbox::local::fetched_upstream(&fixture.root).as_deref(),
+        Some(theirs.as_str())
+    );
+
+    // A remote-tracking ref moved in the clone is not what was fetched.
+    let mine = ask(&fixture.root, &["rev-parse", "HEAD"]).trim().to_owned();
+    run(
+        &fixture.root,
+        &["update-ref", "refs/remotes/origin/main", &mine],
+    );
+    assert_eq!(
+        crate::sandbox::local::fetched_upstream(&fixture.root).as_deref(),
+        Some(theirs.as_str())
+    );
+}
+
+#[test]
 fn a_tree_with_work_in_it_is_told_what_is_incoming_and_never_moved() {
     let fixture = Fixture::plane();
     fixture.with_a_remote_that_moved();

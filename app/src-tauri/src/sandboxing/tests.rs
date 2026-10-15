@@ -1956,32 +1956,39 @@ fn a_port_on_this_mac_is_one_port_for_this_chat_or_this_project_here() {
     assert!(!chats.holds_for(3, &sandbox::grant::What::Port(50795)));
 }
 
-/// #2071 PR C: the team's off as the window asks it, and the policy that holds a person's level.
+/// #2071 PR C, #2156: the team's off as the window asks it, naming a commit and an author only
+/// where purlis verified them on the upstream it fetched.
 #[test]
 fn the_team_s_off_is_asked_with_its_commit_and_author_and_answered_once() {
-    use purlis_core::sandbox::team::{Arrived, TeamOff};
+    use purlis_core::sandbox::team::{Arrival, Arrived, TeamOff};
     let arrived = Arrived {
         commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
         author: "Ada Lovelace".to_owned(),
     };
-    let asks = TeamOffState::of(TeamOff::Asks(arrived.clone())).expect("asked");
-    assert_eq!(asks.commit, arrived.commit);
-    assert_eq!(asks.author, "Ada Lovelace");
+    let upstream = Arrival::Upstream(arrived.clone());
+    let asks = TeamOffState::of(TeamOff::Asks(upstream.clone())).expect("asked");
+    assert_eq!(asks.commit.as_deref(), Some(arrived.commit.as_str()));
+    assert_eq!(asks.author.as_deref(), Some("Ada Lovelace"));
     assert_eq!(asks.answer, None);
     assert_eq!(
         asks.said,
         "Your project turned the sandbox off (commit 0123456 by Ada Lovelace)."
     );
     assert_eq!(
-        TeamOffState::of(TeamOff::Accepted(arrived.clone())).map(|one| one.answer),
+        TeamOffState::of(TeamOff::Accepted(upstream.clone())).map(|one| one.answer),
         Some(Some(true))
     );
     assert_eq!(
-        TeamOffState::of(TeamOff::KeptOn(arrived)).map(|one| one.answer),
+        TeamOffState::of(TeamOff::KeptOn(upstream)).map(|one| one.answer),
         Some(Some(false))
     );
     assert_eq!(TeamOffState::of(TeamOff::No), None);
     assert_eq!(TeamOffState::of(TeamOff::NotCommitted), None);
+
+    // Not verified on the upstream: local, with no commit and no author.
+    let local = TeamOffState::of(TeamOff::Asks(Arrival::Local)).expect("asked");
+    assert_eq!((local.commit, local.author), (None, None));
+    assert!(local.said.contains("local"), "{}", local.said);
 }
 
 #[test]
