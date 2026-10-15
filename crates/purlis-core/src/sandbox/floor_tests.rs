@@ -92,7 +92,10 @@ fn the_floor_still_denies_the_vaults_and_what_a_later_program_runs() {
     let applied = floor_of(decided(Harness::ClaudeCode, &root, &machine));
     let settings = settings_of(&applied);
     let deny_read = strings(&settings.sandbox["filesystem"]["denyRead"]);
-    let deny_write = strings(&settings.sandbox["filesystem"]["denyWrite"]);
+    let deny_write: Vec<String> = strings(&settings.sandbox["filesystem"]["denyWrite"])
+        .iter()
+        .map(|it| claude::uncased(it))
+        .collect();
     // The same classes the full sandbox denies, path for path.
     let full = Denied::of(&root, &machine);
     for denial in full.paths.iter().filter(|d| d.access == Access::ReadWrite) {
@@ -753,8 +756,10 @@ fn every_projects_purlis_files_are_held_by_name_and_no_projects_vault_is_read() 
     // project's vaults read, by its commands and by its own tools.
     let settings = settings_of(&floor_of(decided(Harness::ClaudeCode, &root, &machine)));
     let fs = &settings.sandbox["filesystem"];
-    let deny_write = strings(&fs["denyWrite"]);
-    let deny_read = strings(&fs["denyRead"]);
+    let uncased =
+        |list: Vec<String>| -> Vec<String> { list.iter().map(|it| claude::uncased(it)).collect() };
+    let deny_write = uncased(strings(&fs["denyWrite"]));
+    let deny_read = uncased(strings(&fs["denyRead"]));
     for state in crate::names::STATE_DIR.spellings() {
         assert!(deny_write.contains(&format!("/**/{state}/**")), "{state}");
         assert!(
@@ -798,7 +803,10 @@ fn no_projects_vault_is_read_at_the_full_sandbox_either() {
         Some(Decided::Sandboxed(applied)) => settings_of(&applied),
         other => panic!("not sandboxed: {other:?}"),
     };
-    let deny_read = strings(&claude.sandbox["filesystem"]["denyRead"]);
+    let deny_read: Vec<String> = strings(&claude.sandbox["filesystem"]["denyRead"])
+        .iter()
+        .map(|it| claude::uncased(it))
+        .collect();
     for state in crate::names::STATE_DIR.spellings() {
         assert!(
             deny_read.contains(&format!("/**/{state}/vaults/**")),

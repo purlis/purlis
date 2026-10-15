@@ -143,12 +143,20 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     // folder, anywhere. The chat's own project's are denied by path above.
     for state in crate::names::STATE_DIR.spellings() {
         for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
-            let glob = format!("/**/{state}/{kept}");
-            for glob in [glob.clone(), format!("{glob}/**")] {
-                read_rules.push(format!("Read(/{glob})"));
-                edit_rules.push(format!("Edit(/{glob})"));
-                deny_read.push(glob.clone());
-                deny_write.push(glob);
+            let name = format!("{state}/{kept}");
+            for (plain, cased) in [
+                (format!("/**/{name}"), format!("/**/{}", either_case(&name))),
+                (
+                    format!("/**/{name}/**"),
+                    format!("/**/{}/**", either_case(&name)),
+                ),
+            ] {
+                for rule in [&plain, &cased] {
+                    read_rules.push(format!("Read(/{rule})"));
+                    edit_rules.push(format!("Edit(/{rule})"));
+                }
+                deny_read.push(cased.clone());
+                deny_write.push(cased);
             }
         }
     }
@@ -161,7 +169,7 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         .filter(|planted| planted.reach == super::Reach::AndBelow)
     {
         let glob = format!("**/{}", planted.path);
-        deny_write.push(glob.clone());
+        deny_write.push(format!("**/{}", either_case(planted.path)));
         edit_rules.push(format!("Edit({glob})"));
         edit_rules.push(format!("Edit({glob}/**)"));
     }
@@ -176,14 +184,18 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             let glob = format!("{}/**/{}", folder.display(), planted.path);
             edit_rules.push(format!("Edit(/{glob})"));
             edit_rules.push(format!("Edit(/{glob}/**)"));
-            deny_write.push(glob);
+            deny_write.push(format!(
+                "{}/**/{}",
+                folder.display(),
+                either_case(planted.path)
+            ));
         }
         // And every project manifest under it (D-T55-4): #1336 holds them by path only in the
         // chat's own folders, which a granted folder is not.
         for name in super::MANIFESTS {
             let glob = format!("{}/**/{name}", folder.display());
             edit_rules.push(format!("Edit(/{glob})"));
-            deny_write.push(glob);
+            deny_write.push(format!("{}/**/{}", folder.display(), either_case(name)));
         }
     }
     // The project's package caches (D-1337-6), each path as written and as the kernel names it.
@@ -248,32 +260,58 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             .iter()
             .filter(|planted| planted.reach == super::Reach::AndBelow)
         {
-            let mut globs = vec![format!("/**/{}", planted.path)];
+            let mut globs = vec![(
+                format!("/**/{}", planted.path),
+                format!("/**/{}", either_case(planted.path)),
+            )];
             if let Some(home) = &compiled.homes.home
                 && !planted.path.contains("**")
             {
-                for name in names_for(&home.join(planted.path)) {
-                    globs.push(name.display().to_string());
+                for name in names_for(home) {
+                    let name = name.display();
+                    globs.push((
+                        format!("{name}/{}", planted.path),
+                        format!("{name}/{}", either_case(planted.path)),
+                    ));
                 }
             }
-            for glob in globs {
-                edit_rules.push(format!("Edit(/{glob})"));
-                edit_rules.push(format!("Edit(/{glob}/**)"));
-                deny_write.push(glob);
+            for (plain, cased) in globs {
+                for rule in [&plain, &cased] {
+                    edit_rules.push(format!("Edit(/{rule})"));
+                    edit_rules.push(format!("Edit(/{rule}/**)"));
+                }
+                deny_write.push(cased);
             }
         }
         // Every project's state folder and manifests, wherever they are (#2071): the full sandbox
         // writes no project but the chat's own, and none of these in it. Claude Code's
         // `denyWrite` cannot be lifted inside, so its own project's nested manifests are held
         // too (D-391-8).
-        let every: Vec<String> = crate::names::STATE_DIR
+        let every: Vec<(String, String)> = crate::names::STATE_DIR
             .spellings()
-            .flat_map(|state| [format!("/**/{state}"), format!("/**/{state}/**")])
-            .chain(super::MANIFESTS.iter().map(|name| format!("/**/{name}")))
+            .flat_map(|state| {
+                [
+                    (
+                        format!("/**/{state}"),
+                        format!("/**/{}", either_case(state)),
+                    ),
+                    (
+                        format!("/**/{state}/**"),
+                        format!("/**/{}/**", either_case(state)),
+                    ),
+                ]
+            })
+            .chain(
+                super::MANIFESTS
+                    .iter()
+                    .map(|name| (format!("/**/{name}"), format!("/**/{}", either_case(name)))),
+            )
             .collect();
-        for glob in every {
-            edit_rules.push(format!("Edit(/{glob})"));
-            deny_write.push(glob);
+        for (plain, cased) in every {
+            for rule in [&plain, &cased] {
+                edit_rules.push(format!("Edit(/{rule})"));
+            }
+            deny_write.push(cased);
         }
         for path in &compiled.held {
             for name in names_for(path) {
@@ -483,6 +521,57 @@ fn names_of(denied: &[super::Denial]) -> Vec<(&super::Denial, std::path::PathBuf
 }
 
 /// The names [`names_of`] writes a rule on `path` under.
+/// `name`, a glob's tail, with each ASCII letter as a class of both its cases (`a` as `[aA]`):
+/// a disk that compares names case-folded opens the same file under any spelling, and Claude
+/// Code's sandbox matches a glob as written. Claude Code 2.1.300 keeps a `[...]` class when it
+/// turns a glob into its profile's regex (it escapes `.^$+{}()|\` and no bracket), and reads a
+/// path holding one as a glob.
+pub fn either_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() * 4);
+    for c in name.chars() {
+        if c.is_ascii_alphabetic() {
+            // The letter as written first, so the glob still reads as the name.
+            let other = if c.is_ascii_lowercase() {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            };
+            out.push('[');
+            out.push(c);
+            out.push(other);
+            out.push(']');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// `glob` with each class [`either_case`] made written back as the letter it was made from:
+/// what a test compares a held name with.
+#[cfg(test)]
+pub(crate) fn uncased(glob: &str) -> String {
+    let chars: Vec<char> = glob.chars().collect();
+    let mut out = String::with_capacity(glob.len());
+    let mut at = 0;
+    while at < chars.len() {
+        if chars[at] == '['
+            && at + 3 < chars.len()
+            && chars[at + 3] == ']'
+            && chars[at + 1].is_ascii_alphabetic()
+            && chars[at + 1] != chars[at + 2]
+            && chars[at + 2].eq_ignore_ascii_case(&chars[at + 1])
+        {
+            out.push(chars[at + 1]);
+            at += 4;
+        } else {
+            out.push(chars[at]);
+            at += 1;
+        }
+    }
+    out
+}
+
 fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
     let mut names = vec![path.to_path_buf()];
     for name in super::seatbelt::held_names(path) {
