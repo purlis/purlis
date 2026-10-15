@@ -1816,6 +1816,48 @@ mod pr_saves {
     }
 
     #[test]
+    fn a_save_branch_tip_this_clone_pushed_before_its_history_was_rewritten_is_pushed_over() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        // The plane's history was rewritten after its last push — same trees, new dates, so
+        // every commit has a new sha — and the note of that push is gone. The remote's tip is
+        // no longer in HEAD's history, but every commit on it is one HEAD has under another
+        // sha, so nothing of anybody's is lost (2026-10-13).
+        let plane = plane("rewritten.test", "pr");
+        plane.opened("one.md", 12);
+        let before = plane.remote(SAVE);
+        git(
+            &plane.root,
+            &[
+                "commit",
+                "-q",
+                "--amend",
+                "--no-edit",
+                "--date=2001-02-03T04:05:06Z",
+            ],
+        );
+        assert_ne!(
+            plane.head(),
+            before,
+            "the rewrite gave the commit a new sha"
+        );
+        std::fs::remove_file(purlis_core::plane::state_dir(&plane.root).join("save-branch.json"))
+            .unwrap();
+        plane.lookup(Some(12));
+        let updated = plane.updated(12, &["one.md", "two.md"]);
+
+        let (code, said) = plane.save("two.md", "two.md");
+
+        assert_eq!(code, 0, "{said}");
+        assert!(!said.contains("did not push there"), "{said}");
+        assert!(was_asked(&updated), "{said}");
+        assert_eq!(plane.remote(SAVE), plane.head(), "{said}");
+        assert_eq!(plane.standing().stage, Stage::PrOpen, "{said}");
+    }
+
+    #[test]
     fn a_request_carrying_more_saves_than_it_lists_says_how_many_earlier_ones_it_left_out() {
         purlis_core::unsteered!();
         if !in_child() {
