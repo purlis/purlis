@@ -1017,7 +1017,6 @@ pub fn list() -> Result<String, String> {
     }
 }
 
-/// `purlis dispatch read <chat>`: what task `of` said last and the commands it ran (#1981).
 /// `purlis dispatch close <chat>`: closes finished task `of` (#1981 D-4).
 pub fn close(of: u32) -> Result<String, String> {
     match asked(What::Close { of }, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
@@ -1029,6 +1028,7 @@ pub fn close(of: u32) -> Result<String, String> {
     }
 }
 
+/// `purlis dispatch read <chat>`: what task `of` said last and the commands it ran (#1981).
 pub fn read(of: u32) -> Result<String, String> {
     match asked(What::Output { of }, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
         Answered::Output {

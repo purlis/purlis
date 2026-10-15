@@ -865,7 +865,7 @@ impl Held {
     /// word that the person stopped a task of its), and it and every chat above it are looked
     /// at as chats that may have nothing left to wait on (`crate::dispatched::settle`, #1491).
     /// The close itself looked already, under its lock, where nothing could be typed.
-    fn told_of_a_close(&self, above: Option<u32>) {
+    pub(crate) fn told_of_a_close(&self, above: Option<u32>) {
         if let Some(above) = above
             && !self.chats.ending()
         {

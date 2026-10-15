@@ -1613,67 +1613,97 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
     }
 }
 
-/// **`purlis dispatch read <chat>`** (#1981): what task `of` said last and the commands it ran,
-/// for the chat that dispatched it and no other. The app's record of that chat decides whose
-/// task it is ([`owned`]), and a task that has closed is read from the app's memory of it,
-/// keyed by the chat that asked: every other chat is refused in the one sentence a wait is.
 /// **`purlis dispatch close <chat>`** (#1981 D-4, ruled 2026-10-15): closes a finished task
 /// the asking chat dispatched itself, and no other chat's. #1485 stands: a task's program ends
-/// at its report, and what stays is its finished row, a readable record with Reopen. Close
-/// takes that row away. A task kept open after its report (it came out blocked, or purlis
-/// made its report from its last message) has its program ended first, by the chat's own
-/// close, as a reported task's always is.
+/// at its report, and what stays is its finished row, a readable record with Reopen and Clear.
+/// Close takes that row away. A task kept open after its report (it came out blocked, or
+/// purlis made its report from its last message) has its program ended first, by the chat's
+/// own close, as a reported task's always is.
 ///
 /// **Refused where the task is not finished, or not the asking chat's to end**: one still owing
-/// its report (cancel asks it for one), one mid-turn, one the person is stopping, and one the
-/// person typed in, which is theirs to close from its tab.
+/// its report (cancel asks it for one), one in a turn or showing a prompt, one the person is
+/// stopping, one the person typed in or is looking at, and one with a task of its own still at
+/// work: the holds the #1485 end keeps ([`is_held_back`]).
+///
+/// **Under the lock a report is taken under**, as a cancel is: every refusal is read again
+/// under it, and the chat is closed in the same hold, so a report, a stop and this close land
+/// in one order.
 fn close(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
-    match owned(held, asker, of) {
-        Ok((from, name)) => {
-            let name = purlis_core::personas::one_line(&name);
-            if from.report == Owed::Due {
-                return Err(format!(
-                    "'{name}' (chat {of}) has not reported yet, so it is not finished. `purlis \
-                     dispatch cancel {of}` asks it for its report; close it once it has."
-                ));
+    let (name, above) = {
+        let deciding = held.chats().deciding();
+        let (from, name) = match owned(held, asker, of) {
+            Ok(owned) => owned,
+            Err(why) => {
+                let Some(name) = held
+                    .tasks()
+                    .ledger()
+                    .gone(asker, of)
+                    .map(|gone| gone.name.clone())
+                else {
+                    return Err(why);
+                };
+                drop(deciding);
+                clear_row(held, asker, of);
+                return Ok(task(Answered::Closed {
+                    of,
+                    name: purlis_core::personas::one_line(&name),
+                }));
             }
-            if held.stopping().is_stopping(of) {
-                return Err(format!(
-                    "'{name}' (chat {of}) is being stopped by the person, and its stop ends it."
-                ));
-            }
-            if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
-                return Err(format!(
-                    "the person has typed in '{name}' (chat {of}), so it is theirs to close, \
-                     from its tab."
-                ));
-            }
-            let seen = seen(held, of);
-            if seen.running || seen.prompt_showing() {
-                return Err(format!(
-                    "'{name}' (chat {of}) is in a turn now; close it once that turn ends."
-                ));
-            }
-            end_it(held, of);
-            clear_row(held, asker, of);
-            Ok(task(Answered::Closed { of, name }))
+        };
+        let name = purlis_core::personas::one_line(&name);
+        close_refused(held, of, &from, &name)?;
+        if let Err(why) = held.close_chat_held(of, &deciding) {
+            tracing::warn!(
+                "purlis: task chat {of}, closed by its asking chat, did not end cleanly ({why})"
+            );
         }
-        Err(why) => {
-            let Some(name) = held
-                .tasks()
-                .ledger()
-                .gone(asker, of)
-                .map(|gone| gone.name.clone())
-            else {
-                return Err(why);
-            };
-            clear_row(held, asker, of);
-            Ok(task(Answered::Closed {
-                of,
-                name: purlis_core::personas::one_line(&name),
-            }))
-        }
+        (name, from.chat)
+    };
+    held.stops_carry_on();
+    held.told_of_a_close(Some(above));
+    held.tell_stop(of, crate::stopping::StopPhase::Stopped);
+    clear_row(held, asker, of);
+    Ok(task(Answered::Closed { of, name }))
+}
+
+/// Why open task `of`, called `name`, with record `from`, is not one its asking chat may close
+/// now (#1981 D-4), or nothing. Asked under the lock a report is taken under.
+fn close_refused(held: &Held, of: u32, from: &HandedFrom, name: &str) -> Result<(), String> {
+    if from.report == Owed::Due {
+        return Err(format!(
+            "'{name}' (chat {of}) has not reported yet, so it is not finished. `purlis \
+             dispatch cancel {of}` asks it for its report; close it once it has."
+        ));
     }
+    if held.stopping().is_stopping(of) {
+        return Err(format!(
+            "'{name}' (chat {of}) is being stopped by the person, and its stop ends it."
+        ));
+    }
+    if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
+        return Err(format!(
+            "the person has typed in '{name}' (chat {of}), so it is theirs to close, from its \
+             tab."
+        ));
+    }
+    if held.chats().looks_at(of) {
+        return Err(format!(
+            "the person is looking at '{name}' (chat {of}); close it once they have moved on."
+        ));
+    }
+    if !crate::handoff::running_below(held, of).is_empty() {
+        return Err(format!(
+            "a task '{name}' (chat {of}) dispatched is still at work; close it once that one \
+             has reported."
+        ));
+    }
+    let seen = seen(held, of);
+    if seen.running || seen.prompt_showing() {
+        return Err(format!(
+            "'{name}' (chat {of}) is in a turn now; close it once that turn ends."
+        ));
+    }
+    Ok(())
 }
 
 /// Clears task `of`'s finished row under the chat `asker`, where it has one.
@@ -1688,6 +1718,10 @@ fn clear_row(held: &Held, asker: u32, of: u32) {
     }
 }
 
+/// **`purlis dispatch read <chat>`** (#1981): what task `of` said last and the commands it ran,
+/// for the chat that dispatched it and no other. The app's record of that chat decides whose
+/// task it is ([`owned`]), and a task that has closed is read from the app's memory of it,
+/// keyed by the chat that asked: every other chat is refused in the one sentence a wait is.
 fn output(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
     let name = match owned(held, asker, of) {
         Ok((_, name)) => name,

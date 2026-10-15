@@ -1231,7 +1231,7 @@ task never started, and the person relayed by hand.
 
 Ruled by the operator, 2026-10-15: **#1485 stands**. A task's program ends at its report, and
 what stays is its finished row under the chat that asked: a readable record of its report,
-with **Reopen** to continue its conversation as an ordinary chat, and its Clear to put the row
+with **Reopen** to continue its conversation as an ordinary chat, and **Clear** to put the row
 away. Nothing else closes by itself.
 
 - **`purlis dispatch close <chat>`** closes a finished task the asking chat dispatched itself,
@@ -1239,5 +1239,8 @@ away. Nothing else closes by itself.
   its report (it came out blocked, or purlis made its report from its last message) has its
   program ended first, by the chat's own close. Its report stays on its dispatch record.
 - **It is refused** for a task that has not reported (a cancel asks it for its report), one in
-  a turn, one the person is stopping, and one the person typed in, which is theirs to close
-  from its tab. Claude Code asks the person before it runs: it ends a chat, and is no read.
+  a turn or showing a prompt, one the person is stopping, one the person typed in, which is
+  theirs to close from its tab, and the two the #1485 end holds back: one the person is
+  looking at, and one with a task of its own still at work. Each is read again under the lock
+  a report is taken under, and the chat is closed in that same hold. Claude Code asks the
+  person before it runs: it ends a chat, and is no read.
