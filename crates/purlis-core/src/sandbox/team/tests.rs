@@ -469,3 +469,58 @@ fn a_grafts_file_calls_the_off_local() {
     let off = team_off(root.path());
     assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
 }
+
+/// A project whose upstream's last commit, by Bob, changed the manifest without turning the
+/// sandbox off, and a local commit on top that did: the root, the upstream's commit and the
+/// local one.
+fn an_off_on_top_of_the_upstream() -> (tempfile::TempDir, String, String) {
+    let root = project("[sandbox]\nmode = \"on\"\n", "Ada");
+    commit(root.path(), "[sandbox]\nmode = \"on\"\n# reviewed\n", "Bob");
+    let upstream_head = head(root.path());
+    fetched(root.path(), &upstream_head);
+    commit(root.path(), OFF, "Eve");
+    let local = head(root.path());
+    assert!(matches!(
+        team_off(root.path()),
+        TeamOff::Asks(Arrival::Local)
+    ));
+    (root, upstream_head, local)
+}
+
+/// The id `spec` names, as `rev-parse` reads it.
+fn id_of(root: &Path, spec: &str) -> String {
+    let read = crate::testgit::run(root, &["rev-parse", spec]);
+    assert!(read.ok(), "{read:?}");
+    read.out.trim().to_owned()
+}
+
+#[test]
+fn a_substituted_tree_of_an_upstream_commit_never_names_it_as_the_off_s() {
+    let (root, upstream_head, local) = an_off_on_top_of_the_upstream();
+    // The upstream commit's tree, in the clone's store, now holds the local commit's manifest.
+    let tree = id_of(root.path(), &format!("{upstream_head}^{{tree}}"));
+    let bytes = std::fs::read(loose(
+        root.path(),
+        &id_of(root.path(), &format!("{local}^{{tree}}")),
+    ))
+    .unwrap();
+    substitute(root.path(), &tree, &bytes);
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+    assert!(!Arrival::Local.said().contains("Bob"));
+}
+
+#[test]
+fn a_substituted_manifest_of_an_upstream_commit_never_names_it_as_the_off_s() {
+    let (root, upstream_head, local) = an_off_on_top_of_the_upstream();
+    // The upstream commit's manifest, in the clone's store, now reads as the local one's.
+    let manifest = id_of(root.path(), &format!("{upstream_head}:charter.toml"));
+    let bytes = std::fs::read(loose(
+        root.path(),
+        &id_of(root.path(), &format!("{local}:charter.toml")),
+    ))
+    .unwrap();
+    substitute(root.path(), &manifest, &bytes);
+    let off = team_off(root.path());
+    assert!(matches!(off, TeamOff::Asks(Arrival::Local)), "{off:?}");
+}
