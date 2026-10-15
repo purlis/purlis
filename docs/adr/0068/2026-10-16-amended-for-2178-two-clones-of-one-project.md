@@ -4,8 +4,8 @@ With chats running in the session host (spec #1974, ruled 2026-10-14), one windo
 clones of the same project, the same `[project] id` at two folders, and start chats in each. A
 project is still named on the wire by its stable id alone, and a path is never a key (the
 amendment by FD-26, item 5). §1, §4, §5 and the amendments before this one are left as accepted,
-and this note adds to them. Both items are **decided in implementation, to be confirmed**
-(D-2178-1 and D-2178-2). No session protocol word, key or version changes.
+and this note adds to them. The items are **decided in implementation, to be confirmed**
+(D-2178-1, D-2178-2 and D-2178-5). No session protocol word, key or version changes.
 
 1. **The host holds a project at a place, and a link holds each project at one place.** What
    the host holds is a project's id at a folder on its machine. A link holds a project at one
@@ -21,3 +21,9 @@ and this note adds to them. Both items are **decided in implementation, to be co
 2. **Numbers are dealt per place.** Each clone keeps its own chats' record and per-chat files,
    so a number names a chat of that clone, as it does when chats run in the window's own
    process. *D-2178-2, to be confirmed.*
+3. **A project is saved per place** (#2002's saver). `start_saving`, `stop_saving` and
+   `fetch_project` mean the place their link holds the project at, so each clone has a saver of
+   its own; a project nobody holds any more is stopped or fetched at the one place it is still
+   saved. What each look did (`saving`), like a hook line and the question of who is mid-turn,
+   is pushed only to the links that hold the project at that place. *D-2178-5, to be
+   confirmed.*
