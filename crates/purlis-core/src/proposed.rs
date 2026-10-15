@@ -129,8 +129,8 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
 }
 
 /// What a proposal to a file in a persona or a workspace that is not there is refused with.
-pub const NO_NEW_FOLDER: &str = "a proposed change does not make a new persona or workspace: make \
-     it with purlis first (a new persona or a new workspace), then propose the change.";
+pub const NO_NEW_FOLDER: &str = "a proposed change does not make a new persona or workspace: the \
+     person makes that in the window first, then the change can be proposed.";
 
 /// Whether the folder at `index` of `parts` is a `.claude/skills` folder or below one: the one
 /// place a proposal makes a folder (a new skill's, and the skills folder itself).
