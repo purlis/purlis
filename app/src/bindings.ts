@@ -7392,6 +7392,12 @@ export type PlainFileVault = {
 	movable: boolean,
 };
 
+/**  A plan a profile is signed in to, by the provider id its harness takes. */
+export type PlanRow = {
+	id: string,
+	title: string,
+};
+
 /**  One open project's alerts. */
 export type PlaneAlerts = {
 	plane: PlaneId,
@@ -7499,12 +7505,6 @@ export type PlaneContribution = {
 	 *  where the persona ships one. The persona tool gate smooths only what is approved here.
 	 */
 	grants: ([string, string])[],
-};
-
-/**  A plan a profile is signed in to, by the provider id its harness takes. */
-export type PlanRow = {
-	id: string,
-	title: string,
 };
 
 /**
