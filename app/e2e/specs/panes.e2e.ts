@@ -107,7 +107,12 @@ async function tabsOpen(): Promise<number> {
   return counted;
 }
 
-describe("the window", () => {
+describe("the window", function () {
+  // **The fifty-sessions test's time is an allowance for each session it opens** (#2157), never
+  // one fixed total that a slower runner, or a slower start, crosses with nothing wrong. On the
+  // describe, where WebdriverIO reads it (`budget.test.ts`); every other test here bounds each
+  // of its own waits.
+  this.timeout(FIFTY * EACH_SESSION_MS);
   // The fifty chats below are ended again through the window, each by its number: one app
   // process serves the whole run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
   let wereOpen: Running = {};
@@ -158,12 +163,9 @@ describe("the window", () => {
     await until(pane, "you said: from the first pane");
   });
 
-  it("keeps fifty sessions running at once, and stays usable", async function () {
+  it("keeps fifty sessions running at once, and stays usable", async () => {
     // **Each session is waited for on its own** (#2157): every tab opened must bring its own
     // harness up within `EACH_SESSION_MS`, and a start that does not says which one it was.
-    // The whole test's time is that allowance for each session it can open, never one fixed
-    // total that a slower runner, or a slower start, crosses with nothing wrong.
-    this.timeout(FIFTY * EACH_SESSION_MS);
     while (harnessesRunning() < FIFTY) {
       const before = harnessesRunning();
       await pressAndStart("New tab");
