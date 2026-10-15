@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792089876136,
+  "lastUpdate": 1792091418510,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12894,6 +12894,48 @@ window.BENCHMARK_DATA = {
             "value": 104.15448849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.479, 103.834, 104.154, 104.207, 106.906 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65b54a4cb1cc69b3f8ff3a46108c83316f453e9a",
+          "message": "The kill switch's authority lives in the session host (#2184)\n\n* The session host holds the kill switch: stop_all, rearm, its state\n\nSession protocol 1.3 adds the kill switch held by the host (ADR 0071):\n`stop_all` (every scope that may stop), `rearm` (the window's alone, any\nother scope refused in words saying where a re-arm is made) and\n`kill_switch`, each answered with the switch's state, and the `stopped`\nrefusal of a start while every agent is stopped. Each frame is recorded\nin the protocol's fixture.\n\nThe host keeps the switch in its own folder, `0600`, read back only as a\nprivate file of this user's, so a host started again while stopped\nstarts nothing until the window re-arms; a state it cannot read holds\nevery agent stopped and says why. stop_all ends every program it runs\nand keeps each listed; a shell the window opens is let through, as\nADR 0071 rules for the operator's shell.\n\nRefs #2001\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The window's kill switch is the session host's client\n\nWhile chats run in the session host, every stop the window throws or\nhears (the title bar's, and `purlis stop --all` once the watch hears\nit) reaches the host as `stop_all`; a re-arm is the host's first and the\nfiles' after, so one the host did not take leaves every agent stopped;\nand once the link is up, the app and its host are brought into line,\ntowards stopped. The window asks the host for a shell only for the\noperator's shell or the person's own login shell.\n\nThe behaviour suite gains stop-all and the operator's shell while\nstopped, on both targets; the command line has no spelling of a\nre-arm. ADR 0068 and ADR 0071 are amended, and the host's kept switch\nis a store with its tier.\n\nRefs #2001\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Kill switch review: a stop owed to the host is sent again; the host's restart in the suite\n\nA re-arm the files did not take stops the host again; when the host does\nnot take that stop, it is logged, said in the error, and sent again at\nthe window's next look and the next time it agrees with its host. A stop\nthe host holds but could not keep is said in the host's own words and\nnot sent again. The host's kill switch is a constructor argument\n(`Hosting::keeping_its_switch_in`). The behaviour suite gains a\nhost-only case: the host refuses a start from a window that never heard\nof the stop, across its own restart, until the window re-arms. ADR 0071's\namendment marks its decided items; both amendments name #2190.\n\nRefs #2001\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T23:09:07+04:00",
+          "tree_id": "93f32f4aa429d39128c5a575e369dd601452059a",
+          "url": "https://github.com/purlis/purlis/commit/65b54a4cb1cc69b3f8ff3a46108c83316f453e9a"
+        },
+        "date": 1792091416915,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27998999999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.269, 0.279, 0.280, 0.288, 0.290 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.491811499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.444, 16.450, 16.492, 16.533, 16.536 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.72340700000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.988, 101.487, 101.723, 101.887, 102.570 ms"
           }
         ]
       }
