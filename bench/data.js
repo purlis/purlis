@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792091418510,
+  "lastUpdate": 1792092602315,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12936,6 +12936,48 @@ window.BENCHMARK_DATA = {
             "value": 101.72340700000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.988, 101.487, 101.723, 101.887, 102.570 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "38c4861376e8e43c27745cccdbe0b8ff3b0c47a4",
+          "message": "A git reader whose repository's config names a program counts as running one (#2212) (#2213)\n\n* A git reader whose repository's config names a program counts as running one (#2212)\n\nA line whose only programs read or print raises nothing from what it handed\nback (#1972). A git reader now still counts as running a program when its\nrepository's own config names one it runs: an fsmonitor hook, an external\ndiff, a diff driver's command or textconv, a filter, a signature program, a\npost-index-change hook, or a promisor remote. The repository is found from\nthe folder the command ran in, moved by each cd on the line and by git -C;\nits config files and their includes are read, bounded, only for a line that\nruns a git reader (sandboxblock::drivers). ADR 0093 amendment says what is\nread.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* What a git reader's repository config cannot be read counts as a program (#2212)\n\nReview of #2213: a config or include that is there but cannot be read, is\nnot a regular file or is past the bound, an include past git's depth (now\ngit's own 10), a `.git` file that names no folder or a walk that stops on an\nerror (gitconfig::discover; git_dir_at answers as before), and a reading\npast its budget of 32 files each count as naming a program. A relative\ncore.hooksPath is read against the work tree's top. cd and pushd are read\npast their options, and the line is read for a program only where the\nresult's answer is not already decided.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T23:18:49+04:00",
+          "tree_id": "a8f5996cc383e5be28dda7d1072a3243b7231d54",
+          "url": "https://github.com/purlis/purlis/commit/38c4861376e8e43c27745cccdbe0b8ff3b0c47a4"
+        },
+        "date": 1792092601056,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.282568,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.270, 0.275, 0.283, 0.284, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6450015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.549, 16.621, 16.645, 16.683, 16.715 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.63124450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.217, 101.317, 101.631, 101.961, 102.069 ms"
           }
         ]
       }
