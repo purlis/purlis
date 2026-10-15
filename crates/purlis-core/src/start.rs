@@ -391,9 +391,9 @@ fn ready_given(
     // in with a key, a cloud or a local model is not the harness's own sign-in, and is not
     // asked (#2036).
     // The refusal leaves one wait for the project and profile, the Ask the window shows.
-    let signs_in_otherwise = sign_in.as_ref().is_some_and(|s| {
-        s.kind != crate::harness_declaration::SignInKind::Subscription
-    });
+    let signs_in_otherwise = sign_in
+        .as_ref()
+        .is_some_and(|s| s.kind != crate::harness_declaration::SignInKind::Subscription);
     if !signs_in_otherwise
         && let Some(why) = crate::profilestore::sign_in::refusal(
             profile,

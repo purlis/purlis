@@ -79,6 +79,7 @@ fn made(kind: &str) -> MachineProfile {
         },
         adopted: None,
         imported: None,
+        sign_in: None,
         rest: Default::default(),
     }
 }
