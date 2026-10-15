@@ -94,7 +94,8 @@ pub async fn serve(
         Credentials::mint_into(&place.credentials)
             .map_err(unsafe_at("mint its credentials", &place.credentials))?,
     );
-    let hosting = hosting.started_by(window);
+    // The kill switch, as this host's last one left it, before anyone is served (ADR 0071).
+    let hosting = hosting.kept_in(&place.credentials).started_by(window);
     ready();
 
     let served = accept(&listener, &credentials, &hosting, until).await;

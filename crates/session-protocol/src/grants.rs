@@ -23,6 +23,9 @@
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
 //! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | |
+//! | `stop_all` (1.5) | yes | yes | yes | yes | | yes |
+//! | `kill_switch`, the switch's state (1.5) | yes | yes | yes | yes | | yes |
+//! | `rearm` (1.5) | yes | | | | | |
 //! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | |
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | |
@@ -56,7 +59,11 @@
 //!   ([`crate::session::Host::elicits_a_secret`]), and a host that does not say is taken to
 //!   hold one, so `approval` is refused rather than let through.
 //! - **A stop needs no human** (ADR 0078 §4, ADR 0071): it only removes power. Every scope may
-//!   send one but `editor`, which can make no agent act or stop (ADR 0081).
+//!   send one but `editor`, which can make no agent act or stop (ADR 0081). `stop_all`, the
+//!   kill switch, is a stop like any other, and its state a read like `list`.
+//! - **Only the window re-arms** (ADR 0071, 1.5). Any agent can run a command, so a re-arm any
+//!   other scope could send would put a person's power in every agent's hands. A `rearm` from
+//!   another scope is refused in words saying where a re-arm is made.
 //! - **`fleet-mcp` lists, watches events and stops.** Its clients are outside agents (HP-20),
 //!   and an agent never holds a human power (V16): it does not type into, start, resize, view
 //!   or answer a chat. A view of a terminal is left out until HP-20 asks for it.
@@ -105,6 +112,8 @@ pub enum Power {
     /// A chat's confinement (1.4): `confine`, `let_go_of_confinement`, `change_reach` and
     /// `reach_of`, and hearing the pushed `sandbox`.
     Confine,
+    /// `rearm` (1.5): lets programs start again after the kill switch.
+    Rearm,
 }
 
 impl Scope {
@@ -144,6 +153,7 @@ mod tests {
     #[test]
     fn only_the_window_hands_the_host_a_composed_launch_or_holds_a_project() {
         for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Rearm), scope == Scope::LocalUi, "{scope}");
             assert_eq!(scope.may(Power::Launch), scope == Scope::LocalUi, "{scope}");
             assert_eq!(scope.may(Power::Hold), scope == Scope::LocalUi, "{scope}");
         }

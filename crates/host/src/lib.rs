@@ -45,6 +45,8 @@ mod hearing;
 #[cfg(unix)]
 mod hosting;
 #[cfg(unix)]
+mod killswitch;
+#[cfg(unix)]
 mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
@@ -58,6 +60,8 @@ pub use hosting::{
     Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting, Run, Running, Terminals,
     ToCompose,
 };
+#[cfg(unix)]
+pub use killswitch::KILL_SWITCH;
 /// The session protocol this host speaks, for a binary's [`Compose`].
 #[cfg(unix)]
 pub use purlis_session_protocol as protocol;

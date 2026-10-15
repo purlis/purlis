@@ -24,6 +24,13 @@
 //! program, and everything it starts, is below both from its first instruction, so a peer among
 //! them is refused every person's scope (ADR 0068 §5, FD-27's item 2). Each program's pid is
 //! listed too, so one that left the host's tree and kept its session is refused as well.
+//!
+//! **The kill switch is the host's** (#2001, ADR 0071): `stop_all` ends every program it runs
+//! and starts none until the window re-arms, and the stop is kept in the host's own folder
+//! ([`crate::killswitch`]), so a host started again while stopped starts nothing either. The
+//! one start let through while stopped is a shell the window opens: looking at what the agents
+//! did is the operator's act (ADR 0071, ruled 3), and the window, which alone may re-arm, says
+//! which shell is the operator's.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -33,6 +40,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::grants::Power;
+use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
     self, Answer, Attached, Chat, Command, Exit, Launch, Peer, ProgramKind, Pushed, Readiness,
@@ -45,6 +53,7 @@ use tokio::sync::mpsc;
 
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
+use crate::killswitch::Switch;
 use crate::serving::Window;
 
 /// A start, as the host hands it to its [`Compose`]: the project it is in, the number the chat
@@ -206,6 +215,7 @@ struct Inner {
     run: Box<dyn Run>,
     hear: Box<dyn Hear>,
     state: Mutex<State>,
+    switch: Switch,
 }
 
 #[derive(Default)]
@@ -314,6 +324,22 @@ impl Hosting {
                 run: Box::new(run),
                 hear: Box::new(hear),
                 state: Mutex::default(),
+                switch: Switch::in_memory(),
+            }),
+        }
+    }
+
+    /// This host with its kill switch kept in `folder`, its own, and read from there now: a
+    /// host started again while stopped starts nothing until the window re-arms. Called before
+    /// the host serves anyone.
+    pub fn kept_in(self, folder: &Path) -> Hosting {
+        let inner = Arc::try_unwrap(self.inner).unwrap_or_else(|_| {
+            unreachable!("the switch is read before the host is shared with any link")
+        });
+        Hosting {
+            inner: Arc::new(Inner {
+                switch: Switch::kept_in(folder),
+                ..inner
             }),
         }
     }
@@ -521,7 +547,37 @@ impl Hosting {
         drop(gone);
     }
 
+    /// Whether `start`, from `peer`, is let through the kill switch: nothing is while it is
+    /// thrown, but a shell the window opens.
+    fn let_through(&self, start: &StartProgram, peer: &Peer) -> Result<(), Refusal> {
+        let the_operators_shell =
+            start.kind == ProgramKind::Shell && peer.scope() == Scope::LocalUi;
+        if self.inner.switch.is_stopped() && !the_operators_shell {
+            return Err(Refusal {
+                code: session::STOPPED.into(),
+                why: self.inner.switch.refusal(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Throws the kill switch: kept first, so nothing starts from here on, then every program
+    /// the host runs is ended, all at once. Each stays, with its last screen, until closed.
+    async fn stop_all(&self) -> Answer {
+        let switch = self.inner.switch.stop();
+        let programs: Vec<Arc<dyn Running>> = self
+            .state()
+            .programs
+            .values()
+            .filter(|hosted| !hosted.ended)
+            .map(|hosted| Arc::clone(&hosted.running))
+            .collect();
+        let _ = tokio::task::spawn_blocking(move || stop_together(programs)).await;
+        Answer::KillSwitch(switch)
+    }
+
     async fn start(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
+        self.let_through(&start, peer)?;
         let size = Size {
             columns: start.cols.unwrap_or(80),
             rows: start.rows.unwrap_or(24),
@@ -651,6 +707,12 @@ impl Hosting {
                 ended: false,
             },
         );
+        // A stop thrown while this one was being started: it is listed by now, so either the
+        // stop's sweep reached it or this check sees the switch thrown.
+        if self.let_through(&start, peer).is_err() {
+            let stopping = Arc::clone(&running);
+            let _ = tokio::task::spawn_blocking(move || stopping.stop()).await;
+        }
         let hosting = self.clone();
         let ended = program.clone();
         let run = start.run.clone();
@@ -1008,6 +1070,18 @@ impl session::Host for Hosting {
             Command::ReachOf { confinement } => {
                 Ok(Answer::Reach(self.confinement(&confinement)?.now()))
             }
+            Command::StopAll => Ok(self.stop_all().await),
+            // Only the window's link reaches this: the grants refuse every other.
+            Command::Rearm => self
+                .inner
+                .switch
+                .rearm()
+                .map(Answer::KillSwitch)
+                .map_err(|why| Refusal {
+                    code: session::STOPPED.into(),
+                    why,
+                }),
+            Command::KillSwitch => Ok(Answer::KillSwitch(self.inner.switch.state())),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -1133,20 +1207,26 @@ impl Hosting {
                 .collect();
             (hosted, confinements)
         };
-        let ending: Vec<_> = hosted
-            .into_iter()
-            .filter_map(|hosted| {
-                std::thread::Builder::new()
-                    .name("purlisd-ending".into())
-                    .spawn(move || hosted.running.stop())
-                    .ok()
-            })
-            .collect();
-        let deadline = std::time::Instant::now() + ENDS_WITHIN;
-        for thread in ending {
-            while !thread.is_finished() && std::time::Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(10));
-            }
+        stop_together(hosted.into_iter().map(|hosted| hosted.running).collect());
+    }
+}
+
+/// Stops every one of `programs` at once, and returns once they are gone or [`ENDS_WITHIN`]
+/// has passed.
+fn stop_together(programs: Vec<Arc<dyn Running>>) {
+    let ending: Vec<_> = programs
+        .into_iter()
+        .filter_map(|running| {
+            std::thread::Builder::new()
+                .name("purlisd-ending".into())
+                .spawn(move || running.stop())
+                .ok()
+        })
+        .collect();
+    let deadline = std::time::Instant::now() + ENDS_WITHIN;
+    for thread in ending {
+        while !thread.is_finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
         }
         // Each chat's proxy ends with the programs: no chat reaches anything once the host has.
         drop(confinements);
