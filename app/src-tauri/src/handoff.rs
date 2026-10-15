@@ -2900,7 +2900,7 @@ fn dispatch_noting(
                     } else {
                         purlis_core::sandbox::Asking::Dispatch
                     },
-                    asker: Some(asking.persona.clone()),
+                    above: dispatchdecision::chain_asking(&asking),
                 },
                 ..start
             };

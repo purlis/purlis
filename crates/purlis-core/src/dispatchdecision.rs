@@ -1008,14 +1008,73 @@ pub fn start_for(
         // asking chat's (#2071). A handoff's start says so where it is built.
         made: crate::sandbox::Made::Asked {
             how: crate::sandbox::Asking::Dispatch,
-            asker: Some(asking.persona.clone()),
+            above: chain_asking(asking),
         },
+    }
+}
+
+/// **The chats that ask for a new one, nearest first** (#2071): `asking` itself, by its own
+/// persona (`None` for one on none), then the chats above it as its record keeps them, the
+/// chat the person started last. What the person's level for the new chat is held to
+/// ([`crate::sandbox::your_level`]). `None` where the record cannot say whole: a chat another
+/// chat asked for whose record keeps no chain.
+pub fn chain_asking(asking: &crate::reopen::Chat) -> Option<Vec<Option<String>>> {
+    let own = asking.persona.clone();
+    match asking.from.as_ref().filter(|from| !from.by_person) {
+        // The person's own chat, or one they asked for from a tab: the chain starts here.
+        None => Some(vec![own]),
+        Some(from) => {
+            let above = from.above.as_ref()?;
+            Some(std::iter::once(own).chain(above.iter().cloned()).collect())
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #2071: the chain a new chat's level is held to is the asking chat, then the chats above
+    /// it as its record keeps them; none where that record cannot say.
+    #[test]
+    fn the_chain_asking_is_the_asking_chat_then_its_record_s_chain() {
+        use crate::reopen::{Chat, HandedFrom, Mode as Moved, Owed};
+        let from = |above: Option<Vec<Option<String>>>, by_person| HandedFrom {
+            id: None,
+            chat: 1,
+            name: "steward 1".to_owned(),
+            workspace: crate::active::Place::Workspace("alpha".to_owned()),
+            report: Owed::Due,
+            mode: Moved::Task,
+            depth: 1,
+            root: None,
+            above,
+            by_person,
+        };
+        let qa = |from| Chat {
+            persona: Some("qa".to_owned()),
+            from,
+            ..Chat::default()
+        };
+        assert_eq!(chain_asking(&qa(None)), Some(vec![Some("qa".to_owned())]));
+        assert_eq!(
+            chain_asking(&qa(Some(from(
+                Some(vec![None, Some("steward".to_owned())]),
+                false
+            )))),
+            Some(vec![
+                Some("qa".to_owned()),
+                None,
+                Some("steward".to_owned())
+            ])
+        );
+        assert_eq!(chain_asking(&qa(Some(from(None, false)))), None);
+        // Asked for by the person from a tab: the chain starts at it.
+        assert_eq!(
+            chain_asking(&qa(Some(from(None, true)))),
+            Some(vec![Some("qa".to_owned())])
+        );
+    }
 
     // ----- step 8: memory (#1467) -----------------------------------------------------------
 
@@ -2846,7 +2905,7 @@ mod tests {
                 // Asked for by the asking chat, named by its own persona (#2071).
                 made: crate::sandbox::Made::Asked {
                     how: crate::sandbox::Asking::Dispatch,
-                    asker: Some(asking.persona.clone()),
+                    above: Some(vec![asking.persona.clone()]),
                 },
             }
         );

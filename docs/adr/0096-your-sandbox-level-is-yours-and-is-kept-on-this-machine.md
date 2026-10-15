@@ -58,9 +58,11 @@ makes the floor every chat's default where a project has not turned the full san
      (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its tab says
      *no sandbox — your setting*, and the folder check an opt-out skips is skipped.
    - **A start another chat asks for** (a dispatch, under a grant or not, or a handoff) runs
-     at the stricter of the asking chat's level and the target's, at its first start and every
-     later one, so no chat reaches past its own level by asking for another. A start that does
-     not say how it was made, or whose asker the record cannot name, never takes `off`.
+     at the stricter of its own level and the strictest level across the chain of chats that
+     asked, from the asking chat up to the one the person started, at its first start and
+     every later one, so no chat reaches past its own level by asking for another, however
+     many hops away. A start that does not say how it was made, or whose chain the record
+     cannot name whole, never takes `off`.
    - The audit names how the start was made (`made`: local-ui, resume, relaunch, dispatch or
      handoff) and its actor: the person for their own start in the window, purlis for a
      relaunch, a chat for one a chat asked for.

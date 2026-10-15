@@ -5675,9 +5675,14 @@ fn decided_made(
 }
 
 fn asked(how: Asking, asker: Option<&str>) -> Made {
+    asked_by(how, &[asker])
+}
+
+/// Asked for through the chain `above`, nearest first, the chat the person started last.
+fn asked_by(how: Asking, above: &[Option<&str>]) -> Made {
     Made::Asked {
         how,
-        asker: Some(asker.map(str::to_owned)),
+        above: Some(above.iter().map(|one| one.map(str::to_owned)).collect()),
     }
 }
 
@@ -5813,9 +5818,13 @@ fn a_start_that_does_not_say_how_it_was_made_or_who_asked_never_turns_the_sandbo
     personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
     let unknown = Made::Asked {
         how: Asking::Handoff,
-        asker: None,
+        above: None,
     };
-    for made in [Made::Unnamed, unknown] {
+    let empty = Made::Asked {
+        how: Asking::Dispatch,
+        above: Some(Vec::new()),
+    };
+    for made in [Made::Unnamed, unknown, empty] {
         let decided = decided_made(plane.path(), None, &made);
         assert!(sandboxed(&decided), "{made:?}: {decided:?}");
     }
@@ -5876,6 +5885,92 @@ fn a_chat_that_names_no_persona_takes_the_project_s_level_not_the_default_person
         },
         Some("steward"),
         &grant::Grants::default(),
+    );
+    assert!(sandboxed(&decided), "{decided:?}");
+}
+
+#[test]
+fn a_chat_reaches_no_further_than_the_strictest_chat_above_it_however_many_hops() {
+    // The person's chat runs at `on`; it asks for a chat as qa, whose `off` they confirmed, and
+    // that chat asks for one as ops, `off` too.
+    let plane = plane_with_local(
+        "[sandbox]\nlevel = \"off\"\n[sandbox.personas]\nsteward = \"on\"\nqa = \"off\"\nops = \"off\"\n",
+    );
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    for (name, level) in [
+        ("steward", personal::Choice::On),
+        ("qa", personal::Choice::Off),
+        ("ops", personal::Choice::Off),
+    ] {
+        personal::set_by_you(plane.path(), Some(name), Some(level)).unwrap();
+    }
+    for how in [Asking::Dispatch, Asking::Handoff] {
+        let qa = decided_made(plane.path(), Some("qa"), &asked_by(how, &[Some("steward")]));
+        assert!(sandboxed(&qa), "{how:?}: {qa:?}");
+        // The second hop: qa's chat asks for ops, and for a chat on no persona.
+        for target in [Some("ops"), None] {
+            let second = decided_made(
+                plane.path(),
+                target,
+                &asked_by(how, &[Some("qa"), Some("steward")]),
+            );
+            assert!(sandboxed(&second), "{how:?} {target:?}: {second:?}");
+        }
+    }
+}
+
+#[test]
+fn a_chain_of_chats_all_at_off_starts_without_the_sandbox_and_is_audited_as_a_chat_s() {
+    let plane = plane_with_local(
+        "[sandbox]\nlevel = \"off\"\n[sandbox.personas]\nqa = \"off\"\nops = \"off\"\n",
+    );
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::Off)).unwrap();
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::Off)).unwrap();
+    personal::set_by_you(plane.path(), Some("ops"), Some(personal::Choice::Off)).unwrap();
+    let decided = decided_made(
+        plane.path(),
+        Some("ops"),
+        &asked_by(Asking::Handoff, &[Some("qa"), None, Some("qa")]),
+    );
+    assert_eq!(
+        decided,
+        Ok(Some(Decided::Unsandboxed(Lifted {
+            by: By::YourLevel(Via::Handoff),
+            reason: None,
+        })))
+    );
+    let body = Change::Off(Lifted {
+        by: By::YourLevel(Via::Handoff),
+        reason: None,
+    })
+    .body(Some(Harness::ClaudeCode), Some("ops"));
+    assert_eq!(body["actor_kind"], "agent", "{body}");
+}
+
+#[test]
+fn a_chain_entry_naming_the_default_persona_is_held_to_the_project_s_level_too() {
+    // A chat on no persona is kept in the chain under the default persona's name.
+    let plane = plane_with_local(
+        "[sandbox]\nlevel = \"on\"\n[sandbox.personas]\nsteward = \"off\"\nqa = \"off\"\n",
+    );
+    std::fs::create_dir_all(plane.path().join("personas/steward")).unwrap();
+    std::fs::write(
+        plane.path().join("personas/steward/persona.md"),
+        "# steward\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        format!("{ON}\n[persona]\ndefault = \"steward\"\n"),
+    )
+    .unwrap();
+    personal::set_by_you(plane.path(), None, Some(personal::Choice::On)).unwrap();
+    personal::set_by_you(plane.path(), Some("steward"), Some(personal::Choice::Off)).unwrap();
+    personal::set_by_you(plane.path(), Some("qa"), Some(personal::Choice::Off)).unwrap();
+    let decided = decided_made(
+        plane.path(),
+        Some("qa"),
+        &asked_by(Asking::Dispatch, &[Some("steward")]),
     );
     assert!(sandboxed(&decided), "{decided:?}");
 }

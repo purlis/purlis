@@ -274,8 +274,9 @@ fn made_of(chat: &Chat, why: Why) -> purlis_core::sandbox::Made {
                 purlis_core::reopen::Mode::Handoff => Asking::Handoff,
                 purlis_core::reopen::Mode::Task => Asking::Dispatch,
             },
-            // The asking chat's persona, nearest first; a record that cannot say names none.
-            asker: from.above.as_ref().and_then(|above| above.first().cloned()),
+            // The whole chain above it, nearest first, as the record keeps it; a record that
+            // cannot say keeps none.
+            above: from.above.clone(),
         };
     }
     match why {
@@ -5620,7 +5621,7 @@ pub(crate) mod tests {
             ),
             Made::Asked {
                 how: Asking::Dispatch,
-                asker: Some(Some("steward".to_owned())),
+                above: Some(vec![Some("steward".to_owned())]),
             }
         );
         assert_eq!(
@@ -5630,7 +5631,7 @@ pub(crate) mod tests {
             ),
             Made::Asked {
                 how: Asking::Handoff,
-                asker: Some(Some("steward".to_owned())),
+                above: Some(vec![Some("steward".to_owned())]),
             }
         );
         // A record that cannot say who asked names nobody.
@@ -5638,7 +5639,7 @@ pub(crate) mod tests {
             made_of(&chat(Some(from(Moved::Task, None, false))), Why::New),
             Made::Asked {
                 how: Asking::Dispatch,
-                asker: None,
+                above: None,
             }
         );
         // Asked for by the person from a tab, or no other chat at all: the person's.

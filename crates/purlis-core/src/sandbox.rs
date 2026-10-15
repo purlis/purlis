@@ -5033,9 +5033,11 @@ pub enum Made {
     /// Another chat asked for it.
     Asked {
         how: Asking,
-        /// The asking chat's persona (`Some(None)`: it had none), from the app's record; `None`
-        /// where the record cannot say, and then a person's `off` is not honoured.
-        asker: Option<Option<String>>,
+        /// **The chats above it, nearest first**, the chat the person started last: each one's
+        /// persona, `None` for one on none (the project's level), from the app's record and
+        /// never from a request. `None`, or an empty chain, where the record cannot say, and
+        /// then a person's `off` is not honoured.
+        above: Option<Vec<Option<String>>>,
     },
 }
 
@@ -5112,10 +5114,10 @@ pub struct Person<'a> {
 /// **The level a person's own setting starts a chat at** (#2071, ADR 0096): their level for
 /// the project at `root`, or for `persona`, as they set or confirmed it on this machine
 /// ([`personal::in_force`], never the file's word alone), within what policy lets a person
-/// choose ([`bounded`]), and for a start another chat asked for, **the stricter of that and the
-/// asking chat's own** — so no chat reaches past its own level by asking for another. A start
-/// that does not say how it was made, or a chat whose asker the record cannot name, never
-/// takes `off`.
+/// choose ([`bounded`]), and for a start another chat asked for, **the strictest level across
+/// the chain of chats that asked** — the level each of them runs at — so no chat reaches past
+/// its own by asking for another, however many hops away. A start that does not say how it was
+/// made, or whose chain the record cannot name whole, never takes `off`.
 pub fn your_level(
     root: &Path,
     persona: Option<&str>,
@@ -5125,15 +5127,34 @@ pub fn your_level(
     let in_force = personal::in_force(root);
     let own = bounded(in_force.for_persona(persona), locks);
     let not_off = |level: Option<personal::Choice>| level.filter(|l| *l != personal::Choice::Off);
+    // Not set reads as the floor, which is what a chat with no level starts at.
+    let floor = personal::Choice::Floor;
     match made {
-        Made::Unnamed | Made::Asked { asker: None, .. } => not_off(own),
+        Made::Unnamed | Made::Asked { above: None, .. } => not_off(own),
         Made::Asked {
-            asker: Some(asker), ..
+            above: Some(above), ..
+        } if above.is_empty() => not_off(own),
+        Made::Asked {
+            above: Some(above), ..
         } => {
-            let theirs = bounded(in_force.for_persona(asker.as_deref()), locks);
-            // Not set reads as the floor, which is what a chat with no level starts at.
-            let floor = personal::Choice::Floor;
-            Some(own.unwrap_or(floor).min(theirs.unwrap_or(floor)))
+            // A chat on no persona is kept in the chain under the default persona's name, so
+            // an entry naming it is held to the project's level too.
+            let default = crate::start::persona_for_a_new_chat(root);
+            let project = bounded(in_force.for_persona(None), locks).unwrap_or(floor);
+            let theirs = above
+                .iter()
+                .map(|one| {
+                    let level =
+                        bounded(in_force.for_persona(one.as_deref()), locks).unwrap_or(floor);
+                    if one.is_some() && *one == default {
+                        level.min(project)
+                    } else {
+                        level
+                    }
+                })
+                .min()
+                .unwrap_or(personal::Choice::On);
+            Some(own.unwrap_or(floor).min(theirs))
         }
         Made::Window | Made::Resume | Made::Relaunch => own,
     }
