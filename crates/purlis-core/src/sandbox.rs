@@ -898,7 +898,7 @@ pub fn chat_is_sandboxed_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
 /// The harness [`crate::hookwire::HARNESS_ENV`] names: the profile's registry name
 /// (`claude-code`, `codex`, `opencode`; [`crate::profiles::KINDS`]), which is what a chat's start
 /// puts there, and not the kind word a profile is written with.
-fn harness_of_registry(registry: &str) -> Option<Harness> {
+pub fn harness_of_registry(registry: &str) -> Option<Harness> {
     crate::profiles::KINDS
         .iter()
         .find(|kind| kind.registry == registry)
@@ -2084,6 +2084,7 @@ pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
                 .into_iter()
                 .filter_map(service),
         )
+        .chain(local::granted_ports(root).into_iter().map(What::Port))
         .map(|what| (what, Level::You));
     let everywhere = local::sockets_everywhere()
         .into_iter()
@@ -2234,6 +2235,10 @@ pub struct Widened {
     /// The system services a person let this chat look up by name besides the certificate
     /// check, which is [`Self::trust`] and never a grant (D-sock-1, R1).
     pub services: Vec<String>,
+    /// The services on this Mac a person let this chat connect to, each by its one loopback
+    /// port (qw384): its own grants and yours on this machine, never purlis's own
+    /// ([`localport::still_ports`]).
+    pub ports: Vec<u16>,
 }
 
 impl Widened {
@@ -2252,7 +2257,23 @@ impl Widened {
             trust: policy.certificate_checks,
             sockets: Vec::new(),
             services: Vec::new(),
+            ports: Vec::new(),
         }
+    }
+
+    /// These widenings with the services on this Mac at `ports` besides (qw384): none where
+    /// `locks` forbid them, and never a port purlis itself listens on.
+    #[must_use]
+    pub fn and_ports(mut self, ports: &[u16], locks: &policy::Locks) -> Self {
+        if locks.port_grants_refused().is_some() {
+            return self;
+        }
+        for port in localport::still_ports(ports) {
+            if !self.ports.contains(&port) {
+                self.ports.push(port);
+            }
+        }
+        self
     }
 
     /// These widenings with `sockets` and `services` granted besides (D-sock-1): each judged
@@ -2492,13 +2513,45 @@ impl Compiled {
         let (kept_sockets, kept_services) = kept_in_scope(root, &locks);
         sockets.extend(kept_sockets);
         named.extend(kept_services);
-        Self {
-            widened: Widened::of(policy, machine, root, &denied).and_granted(
+        // Services on this Mac (qw384): this chat's, then yours for this project on this
+        // machine, at the scopes policy leaves open.
+        let mut ports: Vec<(u16, reach::By)> = chat
+            .ports
+            .iter()
+            .filter(|port| in_scope(grant::What::Port(**port)))
+            .map(|port| (*port, reach::By::Chat))
+            .collect();
+        if locks.keeps_scope(grant::Level::You) {
+            ports.extend(
+                local::granted_ports(root)
+                    .into_iter()
+                    .map(|port| (port, reach::By::You)),
+            );
+        }
+        let widened = Widened::of(policy, machine, root, &denied)
+            .and_granted(
                 &sockets,
                 &named,
                 &services::SocketGround::of(root, machine, &chat.writes),
                 &locks,
-            ),
+            )
+            .and_ports(
+                &ports.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
+                &locks,
+            );
+        // The chat's proxy carries a client that does use it to exactly those ports of this
+        // machine, at the layer that granted each.
+        for (port, by) in &ports {
+            if widened.ports.contains(port) {
+                layered.extend(
+                    localport::reach_entries(*port)
+                        .into_iter()
+                        .map(|entry| (entry, *by)),
+                );
+            }
+        }
+        Self {
+            widened,
             denied,
             hosts: reached,
             reach: reach::Reach::of(layered).never(locks.never_hosts().to_vec()),
@@ -2976,6 +3029,9 @@ pub struct Confinement {
     /// The folder a Claude Code chat's route was written in, where no chat writes
     /// ([`Self::proxy_only_routed`]): removed as this ends.
     routed: Option<tempfile::TempDir>,
+    /// A folder of the chat's own made for what it keeps ([`Self::keep_own`]) where it has
+    /// neither of the two above: removed as this ends.
+    kept: Option<tempfile::TempDir>,
 }
 
 impl Confinement {
@@ -3008,6 +3064,7 @@ impl Confinement {
             asks,
             ssh,
             routed: None,
+            kept: None,
         })
     }
 
@@ -3022,6 +3079,7 @@ impl Confinement {
             asks,
             ssh: None,
             routed: None,
+            kept: None,
         })
     }
 
@@ -3074,6 +3132,47 @@ impl Confinement {
     /// The chat's own temp directory, which a proxy-only one has none of.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(tempfile::TempDir::path)
+    }
+
+    /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
+    /// for as long as it runs: its temp directory, or else the folder its ssh route was
+    /// written in, where no chat writes, or else a folder made for it. Readable by its owner
+    /// alone. Where the file is.
+    pub fn keep_own(&mut self, name: &str, text: &str) -> std::io::Result<PathBuf> {
+        let dir = match (&self.tmp, &self.routed, &self.kept) {
+            (Some(own), _, _) | (None, Some(own), _) | (None, None, Some(own)) => {
+                own.path().to_path_buf()
+            }
+            (None, None, None) => {
+                let made = tempfile::Builder::new().prefix("purlis-chat-").tempdir()?;
+                let path = made.path().to_path_buf();
+                self.kept = Some(made);
+                path
+            }
+        };
+        let path = dir.join(name);
+        // Made new each time, never through whatever stands at the path: a file kept before is
+        // taken away first (a link itself, never what it points at), and the open neither
+        // follows a link nor takes a file that is there already (#2097 review).
+        match std::fs::remove_file(&path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err),
+            _ => {}
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        std::io::Write::write_all(&mut options.open(&path)?, text.as_bytes())?;
+        Ok(path)
+    }
+
+    /// **`port` of this machine is carried by its proxy no longer** (qw384b): its grant was
+    /// removed while the chat runs.
+    pub fn withdraw_port(&self, port: u16) {
+        self.proxy.withdraw_port(port);
     }
 }
 
@@ -3935,18 +4034,25 @@ fn local_refusals(text: &str) -> Vec<crate::settings::Refusal> {
     };
     let mut out: Vec<Keyed> = table
         .keys()
-        .filter(|key| *key != hosts::KEY)
+        .filter(|key| ![hosts::KEY, personal::LEVEL, personal::PERSONAS].contains(&key.as_str()))
         .map(|key| {
             Keyed::at(
                 format!(
                     "{TABLE}.{key} in {local} is not read — this machine's [{TABLE}] holds \
-                     hosts, and only hosts. Whether chats run sandboxed, and the presets, are \
-                     the project's, in {FILE}."
+                     hosts and your own level ({}, {}), and nothing else. The project's mode \
+                     and presets are the project's, in {FILE}.",
+                    personal::LEVEL,
+                    personal::PERSONAS
                 ),
                 &[TABLE, key.as_str()],
             )
         })
         .collect();
+    // Your own level for this project (#2071): a value that is not one is refused.
+    out.extend(personal::read(table, local).1.into_iter().map(|refused| {
+        let key: Vec<&str> = refused.key.iter().map(String::as_str).collect();
+        Keyed::at(refused.why, &key)
+    }));
     match hosts::read(table.get(hosts::KEY)) {
         Ok(hosts::Listed { refused, .. }) => {
             out.extend(refused.into_iter().map(|(written, why)| {
@@ -4534,9 +4640,12 @@ pub mod egress;
 pub mod grant;
 pub mod held;
 pub mod hosts;
+pub mod kubeconfig;
 pub mod local;
+pub mod localport;
 pub mod opencode;
 pub mod persona;
+pub mod personal;
 pub mod planted;
 pub mod policy;
 pub mod program;

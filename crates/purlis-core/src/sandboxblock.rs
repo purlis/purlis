@@ -226,6 +226,9 @@ pub enum Kind {
     Host,
     /// A local socket.
     LocalSocket,
+    /// A service on this Mac: whatever listens on one port of the loopback interface, which a
+    /// program reached directly rather than through the sandbox's proxy (qw384).
+    LocalService,
     /// The system's certificate check, which Go's TLS asks a system service for.
     CertificateCheck,
     /// Another system service.
@@ -234,7 +237,7 @@ pub enum Kind {
 
 impl Kind {
     /// Every kind, in the order they are listed.
-    pub const ALL: [Kind; 14] = [
+    pub const ALL: [Kind; 15] = [
         Self::ProjectFiles,
         Self::ProjectState,
         Self::ProtectedFile,
@@ -247,6 +250,7 @@ impl Kind {
         Self::System,
         Self::Host,
         Self::LocalSocket,
+        Self::LocalService,
         Self::CertificateCheck,
         Self::SystemService,
     ];
@@ -266,6 +270,7 @@ impl Kind {
             Self::System => "system",
             Self::Host => "host",
             Self::LocalSocket => "local-socket",
+            Self::LocalService => "local-service",
             Self::CertificateCheck => "certificate-check",
             Self::SystemService => "system-service",
         }
@@ -304,6 +309,7 @@ impl Kind {
             Self::System => "a system folder",
             Self::Host => "an internet host this project does not allow",
             Self::LocalSocket => "a local socket",
+            Self::LocalService => "a service on this Mac",
             Self::CertificateCheck => "the system's certificate check",
             Self::SystemService => "a system service",
         }
@@ -518,7 +524,10 @@ pub fn detect_with_targets(
                         let kept = target.is_some()
                             && (own.contains(&(block, target.clone()))
                                 || (names_a_lookup(&block)
-                                    && block.kind != Kind::CertificateCheck));
+                                    && !matches!(
+                                        block.kind,
+                                        Kind::CertificateCheck | Kind::LocalService
+                                    )));
                         (block, if kept { target } else { None })
                     }));
                 } else {
@@ -530,7 +539,10 @@ pub fn detect_with_targets(
                     found.extend(on_stderr(stderr, place).into_iter().map(|(block, target)| {
                         let kept = !matches!(
                             block.kind,
-                            Kind::LocalSocket | Kind::CertificateCheck | Kind::SystemService
+                            Kind::LocalSocket
+                                | Kind::LocalService
+                                | Kind::CertificateCheck
+                                | Kind::SystemService
                         ) || own.contains(&(block, target.clone()))
                             || (client && block.kind == Kind::LocalSocket);
                         (block, if kept { target } else { None })
@@ -592,7 +604,9 @@ impl Said {
     fn names(self, kind: Kind) -> bool {
         match kind {
             Kind::LocalSocket => self != Self::Printed,
-            Kind::CertificateCheck => self == Self::Failed,
+            // A port only from the failed program's own error (qw384): a container client's
+            // words name a socket, never a port.
+            Kind::LocalService | Kind::CertificateCheck => self == Self::Failed,
             _ => true,
         }
     }
@@ -856,6 +870,15 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
             let path = named.strip_prefix("unix://").unwrap_or(named);
             path.starts_with('/').then(|| path.to_owned())
         }
+        // A service on this Mac by its one port (qw384), from a loopback address with its port
+        // or the port alone, judged as a grant judges one.
+        (Operation::Connect, Kind::LocalService) => {
+            let port = crate::sandbox::localport::loopback_port(named)
+                .map_or_else(|| named.to_owned(), |port| port.to_string());
+            crate::sandbox::localport::port(&port)
+                .ok()
+                .map(|port| port.to_string())
+        }
         // The certificate check is one service, whatever the line said of it.
         (Operation::Lookup, Kind::CertificateCheck) => {
             Some(crate::sandbox::services::TRUSTD.to_owned())
@@ -961,6 +984,7 @@ fn names_a_lookup(block: &Block) -> bool {
         (block.operation, block.kind),
         (Operation::Lookup, Kind::Host)
             | (Operation::Connect, Kind::LocalSocket)
+            | (Operation::Connect, Kind::LocalService)
             | (Operation::Lookup, Kind::CertificateCheck)
     )
 }
@@ -1303,6 +1327,15 @@ fn network_refusal_on(line: &str, docker_words: bool) -> Option<(Operation, Kind
     {
         return Some((Operation::Lookup, Kind::Host, looked_up(line)));
     }
+    // A service on this Mac (qw384): Go's or Node's connect to a loopback port refused by the
+    // sandbox (`EPERM`). A port only, never a host: allowing a host reaches nothing here.
+    if let Some(port) = crate::sandbox::localport::refused_in(line) {
+        return Some((
+            Operation::Connect,
+            Kind::LocalService,
+            Some(port.to_string()),
+        ));
+    }
     // A local socket: Go's dial refused by the sandbox (`EPERM`), on any platform; or Docker's
     // client in its own words where the sandbox says them (#1637). A socket's own file mode
     // (`EACCES`, "connect: permission denied") is never the sandbox's.
@@ -1393,6 +1426,14 @@ fn ends_as_a_refusal(line: &str) -> bool {
     if ENDINGS.iter().any(|ending| lower.ends_with(ending)) {
         return true;
     }
+    // Node's refused connect ends with its own local address: `connect EPERM 127.0.0.1:5432 -
+    // Local (0.0.0.0:0)` (qw384).
+    if lower.contains("connect eperm ")
+        && lower.ends_with(')')
+        && crate::sandbox::localport::refused_in(line).is_some()
+    {
+        return true;
+    }
     let host_last = ["could not resolve host: ", "getaddrinfo enotfound "]
         .iter()
         .any(|marker| {
@@ -1434,6 +1475,56 @@ pub fn the_hooks_own(
         .into_iter()
         .filter(|(block, _)| (block.operation, block.kind) != (Operation::Connect, Kind::Host))
         .collect()
+}
+
+/// **`payload` as a chat of `harness` reports a command** (qw384): a harness purlis wraps
+/// (Codex, opencode) runs in purlis's own sandbox, which appends no violation report, so a
+/// `<sandbox_violations>` block in its result is one the command printed. It is read there as
+/// any other printed text, never as the sandbox's own report. Any other harness's payload is
+/// as it came.
+pub fn as_its_harness_reports(
+    payload: &serde_json::Value,
+    harness: Option<&str>,
+) -> serde_json::Value {
+    const OPEN: &str = "<sandbox_violations>";
+    if !the_proxy_tells_hosts(harness) {
+        return payload.clone();
+    }
+    fn unreport(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) if text.contains(OPEN) => {
+                *text = text.replace(OPEN, "<sandbox_violations printed>");
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(unreport),
+            serde_json::Value::Object(fields) => fields.values_mut().for_each(unreport),
+            _ => {}
+        }
+    }
+    let mut out = payload.clone();
+    for field in ["tool_response", "error"] {
+        if let Some(value) = out.get_mut(field) {
+            unreport(value);
+        }
+    }
+    out
+}
+
+/// **The port a command's own printed words name** for a refused service on this Mac (qw384):
+/// Go's or Node's refusal of a loopback port, anywhere in what the command handed back. Never a
+/// target: the Notice pre-fills its port field with it, says it came from the command's output
+/// for the person to check, and a grant judges it again.
+pub fn printed_port(payload: &serde_json::Value) -> Option<u16> {
+    let response = &payload["tool_response"];
+    [
+        response.as_str(),
+        response["stderr"].as_str(),
+        response["stdout"].as_str(),
+        payload["error"].as_str(),
+    ]
+    .into_iter()
+    .flatten()
+    .flat_map(str::lines)
+    .find_map(crate::sandbox::localport::refused_in)
 }
 
 /// The kind of `path`, read against `place` and never kept.

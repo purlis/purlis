@@ -32,7 +32,11 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
   const offer = block.offer;
   if (
     block.ours ||
-    (offer !== "host" && offer !== "write" && offer !== "socket" && offer !== "service")
+    (offer !== "host" &&
+      offer !== "write" &&
+      offer !== "socket" &&
+      offer !== "service" &&
+      offer !== "port")
   )
     return [];
   const local = offer === "socket" || offer === "service";
@@ -40,10 +44,13 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
   const levels: readonly GrantLevel[] =
     offer === "host"
       ? ["you", "chat", "project"]
-      : local
-        ? // The registry's order (`asking::sandbox_local`): the narrowest, then every project.
-          ["once", "machine", "chat", "you"]
-        : ["chat", "you"];
+      : offer === "port"
+        ? // The registry's order (`asking::sandbox_port`).
+          ["chat", "you"]
+        : local
+          ? // The registry's order (`asking::sandbox_local`): the narrowest, then every project.
+            ["once", "machine", "chat", "you"]
+          : ["chat", "you"];
   return [
     {
       session: block.session,
@@ -52,11 +59,20 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
       says:
         offer === "host"
           ? `The sandbox refused ${inertly(target)}`
-          : local
-            ? `The sandbox refused the ${offer === "socket" ? "local socket" : "system service"} ${inertly(target)}. ${block.route ?? ""}`
-            : `The sandbox refused a write in ${inertly(target)}`,
+          : offer === "port"
+            ? target === ""
+              ? "The sandbox refused a service on this Mac at a port it did not name"
+              : `The sandbox refused the service on this Mac at port ${target}. ${block.route ?? ""}`
+            : local
+              ? `The sandbox refused the ${offer === "socket" ? "local socket" : "system service"} ${inertly(target)}. ${block.route ?? ""}`
+              : `The sandbox refused a write in ${inertly(target)}`,
       options: [...allowing(ALLOW_SAID.sandbox, levels), KEEP],
-      source: offer === "host" ? "sandbox-host" : local ? "sandbox-local" : "sandbox-write",
+      source:
+        offer === "host"
+          ? "sandbox-host"
+          : local || offer === "port"
+            ? "sandbox-local"
+            : "sandbox-write",
       chain,
       answer:
         block.target === null

@@ -244,6 +244,83 @@ pub fn not_its_persona(named: &str, own: Option<&str>) -> String {
     )
 }
 
+/// How long a proposed change waits for the app to take it: inside the edit hook's own budget.
+const A_PROPOSAL_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(4);
+
+/// **Whether the app took a proposed change** (#1975): it answers [`Answer::Said`] when it holds
+/// it for the person. Anything else (no chat, no connection, an app older than the ask, one that
+/// refused it) is not taken, and the chat is refused its edit as before.
+pub fn proposal_taken(ask: Ask) -> bool {
+    matches!(
+        asked(|_| ask, A_PROPOSAL_TAKES_AT_MOST),
+        Ok(Ok(Answer::Said { code: 0, .. }))
+    )
+}
+
+/// **`purlis propose <file> --from <draft>`** (#1975, PC-2): in a chat the app started, hand the
+/// app `draft`, a file in the chat's own folder, as the whole new content of `file`, one of
+/// purlis's own configuration files in the project at `root`, for the person to apply in the
+/// window. Nothing is written here. What the app says is printed; where nothing took it, why.
+pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
+    use purlis_core::proposed;
+    let not_a_chat = || {
+        "purlis propose is for a chat the app started: there is nobody here to show the change \
+         to. Edit the file yourself."
+            .to_owned()
+    };
+    let chat_dir = purlis_core::envvar::var(purlis_core::sandboxblock::CHAT_DIR_ENV)
+        .filter(|dir| Path::new(dir).is_absolute())
+        .ok_or_else(not_a_chat)?;
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Err(why);
+    }
+    let here = std::env::current_dir().map_err(|e| e.to_string())?;
+    let rel = proposed::proposable(root, &here.join(file))?;
+    // The draft is the chat's own: in its folder, by the path the kernel names it by.
+    let real =
+        |path: &Path| std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()));
+    let draft = real(&here.join(draft))?;
+    if !draft.starts_with(real(Path::new(&chat_dir))?) {
+        return Err(format!(
+            "the draft {} is not in this chat's own folder: write it there, then propose it",
+            draft.display()
+        ));
+    }
+    let content = std::fs::read(&draft).map_err(|e| format!("{}: {e}", draft.display()))?;
+    if content.len() > proposed::MOST_BYTES {
+        return Err(format!(
+            "the draft is longer than the {} bytes a proposed change may be",
+            proposed::MOST_BYTES
+        ));
+    }
+    let content = String::from_utf8(content)
+        .map_err(|_| "the draft is not text purlis can show".to_owned())?;
+    let proposal = proposed::read_and_apply(root, &rel, proposed::Change::Whole { content })?;
+    let answered = asked(
+        |chat| {
+            Ask::Propose(Box::new(hookwire::ProposeAsk {
+                chat,
+                path: proposal.path.display().to_string(),
+                base: proposal.base,
+                change: proposal.change,
+            }))
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            Ok(code)
+        }
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err("the app answered something purlis did not ask for".to_owned()),
+        Ok(Err(e)) => Err(format!("the app did not answer: {e}")),
+        Err(_) => Err(not_a_chat()),
+    }
+}
+
 /// The sentence a sandboxed chat is refused with when a command would change a workspace other
 /// than its own, or every workspace (#1408): nothing is changed, and `instead`, the way round,
 /// is named.

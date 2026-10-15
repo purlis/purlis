@@ -1153,6 +1153,8 @@ pub enum GrantWhat {
     Socket,
     /// A system service to look up by name (D-sock-1): this machine's alone.
     Service,
+    /// A service on this Mac, by its one loopback port (qw384): this machine's alone.
+    Port,
 }
 
 impl GrantWhat {
@@ -1164,6 +1166,7 @@ impl GrantWhat {
             Self::PersonaHosts => sandbox::local::PERSONA_HOSTS,
             Self::Socket => "socket",
             Self::Service => "service",
+            Self::Port => "port",
         }
     }
 
@@ -1175,6 +1178,7 @@ impl GrantWhat {
             Self::PersonaHosts,
             Self::Socket,
             Self::Service,
+            Self::Port,
         ]
         .into_iter()
         .find(|what| what.word() == word)
@@ -1298,6 +1302,15 @@ pub(crate) fn judged(
                 .to_owned(),
         );
     }
+    // A service on this Mac (qw384): for this chat, or for every chat of this project on this
+    // machine. A port is this machine's, never the project's, and lasts past one run.
+    if what == GrantWhat::Port && !matches!(level, Level::Chat | Level::You) {
+        return refused(
+            "purlis allows a service on this Mac for this chat, or for every chat of this \
+             project on this machine."
+                .to_owned(),
+        );
+    }
     if level == Level::Once && matches!(what, GrantWhat::Host | GrantWhat::Write) {
         return refused(
             "purlis allows a host or a folder for this chat, or for longer, not once.".to_owned(),
@@ -1351,6 +1364,9 @@ pub(crate) fn judged(
                 );
             }
             What::Service(name)
+        }
+        GrantWhat::Port => {
+            What::Port(sandbox::localport::port(target).map_err(|why| why.to_string())?)
         }
     };
     // Policy (#1343): the strictest wins, for a host at the level it would be kept at, and for
@@ -1524,6 +1540,7 @@ pub(crate) fn kept_for(
         (What::Service(service), Level::Machine, _) => {
             sandbox::local::services_everywhere().contains(service)
         }
+        (What::Port(port), Level::You, _) => sandbox::local::granted_ports(root).contains(port),
         _ => false,
     };
     if !already {
@@ -1538,6 +1555,13 @@ pub(crate) fn kept_for(
         )?;
     }
     let told = grant::told(what, level);
+    // A Claude Code chat reaches a service on this Mac by name alone (qw384b): told which.
+    let told = match (what, session.and_then(|session| chats.harness(session))) {
+        (What::Port(port), Some(purlis_core::harness::Harness::ClaudeCode)) => {
+            format!("{told} {}", sandbox::localport::reached_by_name(*port))
+        }
+        _ => told,
+    };
     match (what, level, session) {
         (_, Level::Once, Some(session)) => chats.hold_grant_once(session, what.clone(), at)?,
         (_, Level::Chat, Some(session)) => chats.hold_grant(session, what.clone(), at)?,
@@ -1560,6 +1584,10 @@ pub(crate) fn kept_for(
             sandbox::local::grant_service(root, service)
                 .map_err(|why| format!("purlis could not keep {service}: {why}"))?;
         }
+        (What::Port(port), _, _) => {
+            sandbox::local::grant_port(root, *port)
+                .map_err(|why| format!("purlis could not keep port {port}: {why}"))?;
+        }
         (What::Host(host), Level::You | Level::Project, _) => {
             if !already {
                 purlis_core::settings::hosts::grant(root, hosts_file(level), host)?;
@@ -1578,7 +1606,9 @@ pub(crate) fn kept_for(
         told_to_retry: retry,
     } = match what {
         What::Host(host) => chats.allow_live(session, host, level),
-        What::Write(_) | What::Socket(_) | What::Service(_) => crate::chats::Live::default(),
+        What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
+            crate::chats::Live::default()
+        }
     };
     if let Some(session) = session
         && !live.contains(&session)
@@ -1903,6 +1933,12 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         let at = when(GrantWhat::Service, &service, Level::You);
         out.push(row(GrantWhat::Service, service, Level::You, at));
     }
+    // The services on this Mac you let every chat here connect to (qw384).
+    for port in sandbox::local::granted_ports(root) {
+        let target = port.to_string();
+        let at = when(GrantWhat::Port, &target, Level::You);
+        out.push(row(GrantWhat::Port, target, Level::You, at));
+    }
     let locks = sandbox::policy::Locks::of(root);
     if let Some(policy) = sandbox::Plane::read(root).in_force(&locks) {
         let hosts: Vec<String> = policy.hosts.iter().map(ToString::to_string).collect();
@@ -2012,6 +2048,11 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
             GrantWhat::Service => {
                 locks.holds_kept(&sandbox::grant::What::Service(one.target.clone()), level)
             }
+            GrantWhat::Port => one
+                .target
+                .parse()
+                .ok()
+                .and_then(|port| locks.holds_kept(&sandbox::grant::What::Port(port), level)),
         };
     }
     // What the project declares it expects is said beside its grant (D-sock-4), never a grant.
@@ -2066,6 +2107,7 @@ fn revoke(
         GrantWhat::Write => What::Write(std::path::PathBuf::from(target)),
         GrantWhat::Socket => What::Socket(std::path::PathBuf::from(target)),
         GrantWhat::Service => What::Service(target.to_owned()),
+        GrantWhat::Port => What::Port(target.parse().map_err(|_| gone())?),
     };
     let there = match (&grant, level, chat) {
         (_, Level::Once | Level::Chat, Some(chat)) => chats.holds(chat, &grant),
@@ -2088,6 +2130,7 @@ fn revoke(
         (What::Service(service), Level::Machine, _) => {
             sandbox::local::services_everywhere().contains(service)
         }
+        (What::Port(port), Level::You, _) => sandbox::local::granted_ports(root).contains(port),
         _ => false,
     };
     if !there {
@@ -2107,6 +2150,13 @@ fn revoke(
             chats.revoke(chat, &grant);
             if let What::Host(host) = &grant {
                 chats.forget_live(Some(chat), host, level);
+            }
+            // Carried by its proxy no longer (qw384b), unless this machine's file still holds
+            // it for every chat of the project.
+            if let What::Port(port) = &grant
+                && !sandbox::local::granted_ports(root).contains(port)
+            {
+                chats.withdraw_port(Some(chat), *port);
             }
         }
         (What::Host(host), None) => {
@@ -2136,6 +2186,13 @@ fn revoke(
         (What::Service(service), None) => {
             sandbox::local::revoke_service(root, service)
                 .map_err(|why| format!("purlis could not remove {service}: {why}"))?;
+        }
+        (What::Port(port), None) => {
+            sandbox::local::revoke_port(root, *port)
+                .map_err(|why| format!("purlis could not remove port {port}: {why}"))?;
+            // Carried by no open chat's proxy any more but one that holds it for itself
+            // (qw384b).
+            chats.withdraw_port(None, *port);
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {

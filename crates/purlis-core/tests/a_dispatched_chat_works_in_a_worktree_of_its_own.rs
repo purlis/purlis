@@ -1392,3 +1392,30 @@ fn a_merged_folder_holding_its_own_git_state_is_kept_by_the_tidy() {
         Tidied::Removed
     );
 }
+
+#[test]
+fn a_task_cut_from_a_chat_s_branch_that_writes_a_later_code_file_is_refused_naming_it() {
+    purlis_core::unsteered!();
+    // qw387: the asking chat's branch is one a chat can move; a commit on it carrying an
+    // editor's tasks file the clone does not have is not checked out for the task.
+    let f = support::plane_with_clone("api");
+    let asker = cut(&f, "the asker's own");
+    std::fs::create_dir_all(asker.path.join(".vscode")).unwrap();
+    std::fs::write(asker.path.join(".vscode/tasks.json"), "{}\n").unwrap();
+    support::git(&asker.path, &["add", ".vscode/tasks.json"]);
+    support::git(&asker.path, &["commit", "-q", "-m", "tasks"]);
+
+    let refused = dispatchplace::cut(
+        &f.plane,
+        &asked_from(&f, &asker.path),
+        "follow up",
+        &dispatchrecord::mint(),
+        &Isolated::default(),
+    );
+
+    let Err(dispatchplace::Refused::Cut(why)) = refused else {
+        panic!("the task was cut: {refused:?}");
+    };
+    assert!(why.contains(".vscode/tasks.json"), "{why}");
+    assert!(why.contains("nothing was cut"), "{why}");
+}

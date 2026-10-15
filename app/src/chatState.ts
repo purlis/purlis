@@ -242,8 +242,9 @@ export function needSays(need: Need): string {
 
 /**
  * **What a needs-you item says of a task that came to nothing** (#1491, V100-15): which task,
- * and why in a few words. `how` is the core's own word, one of three: it reported failed or
- * blocked, its program ended owing its report, or it did not start.
+ * and why in a few words. `how` is the core's own word, one of four: it reported failed or
+ * blocked, its program ended owing its report, it did not start, or its turns ended without a
+ * report and purlis sent its last message as one (#1981).
  */
 export function taskFailedSaid({
   task,
@@ -257,6 +258,8 @@ export function taskFailedSaid({
   switch (how) {
     case "unreported":
       return `${task} ended without a report`;
+    case "last_message":
+      return `${task} ended its turns without a report: purlis sent its last message as one`;
     case "did_not_start":
       return why === "" ? `${task} did not start` : `${task} did not start: ${why}`;
     case "failed":

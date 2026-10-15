@@ -115,7 +115,7 @@ pub fn cut(plane: &Path, ws: &str, repo: &str, naming: &Naming) -> Result<Cut, R
     let lock = clone_lock(plane, ws, repo);
     let _one_at_a_time = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let mut label = match naming {
-        Naming::Exactly(piece) => return cut_as(plane, ws, repo, piece, None),
+        Naming::Exactly(piece) => return cut_as(plane, ws, repo, piece, None, None),
         Naming::After(label) => label.as_deref().and_then(name::slug),
     };
     let mut last = None;
@@ -133,7 +133,7 @@ pub fn cut(plane: &Path, ws: &str, repo: &str, naming: &Naming) -> Result<Cut, R
             worktree::path_for(plane, ws, repo, &piece).map(|path| path.symlink_metadata().is_ok());
         let tried = match taken {
             Ok(true) => continue,
-            Ok(false) => cut_as(plane, ws, repo, &piece, None),
+            Ok(false) => cut_as(plane, ws, repo, &piece, None, None),
             Err(refusal) => Err(refusal),
         };
         match tried {
@@ -165,7 +165,22 @@ pub fn cut_from(
 ) -> Result<Cut, Refusal> {
     let lock = clone_lock(plane, ws, repo);
     let _one_at_a_time = lock.lock().unwrap_or_else(PoisonError::into_inner);
-    cut_as(plane, ws, repo, piece, from)
+    cut_as(plane, ws, repo, piece, from, None)
+}
+
+/// [`cut_from`], with `vet` asked about the start before git cuts (qw387): a task's worktree
+/// cut on a chat's behalf is judged as that chat's own checkout of it would be.
+pub fn cut_vetted(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    from: Option<&worktree::Start>,
+    vet: worktree::Vet<'_>,
+) -> Result<Cut, Refusal> {
+    let lock = clone_lock(plane, ws, repo);
+    let _one_at_a_time = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    cut_as(plane, ws, repo, piece, from, Some(vet))
 }
 
 fn cut_as(
@@ -174,8 +189,9 @@ fn cut_as(
     repo: &str,
     piece: &str,
     from: Option<&worktree::Start>,
+    vet: Option<worktree::Vet<'_>>,
 ) -> Result<Cut, Refusal> {
-    match worktree::add_from(plane, ws, repo, piece, None, from) {
+    match worktree::add_vetted(plane, ws, repo, piece, None, from, vet) {
         Ok(added) => Ok(Cut {
             workspace: ws.to_string(),
             repo: repo.to_string(),

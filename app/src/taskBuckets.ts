@@ -62,6 +62,7 @@ export function taskBucketOf(kind: ShownKind | undefined): TaskBucket {
       return "working";
     case "failed":
     case "unreported":
+    case "last-message":
       return "failed";
     // An open task that reported done or was cancelled is a row that will fold. One the
     // person ended, either way, is not the task failing: its row says which and never folds,
@@ -88,6 +89,7 @@ const CAME_TO_NOTHING: ReadonlySet<string> = new Set([
   "blocked",
   "unreported",
   "did_not_start",
+  "last_message",
 ]);
 
 /** Which count a finished task is in, by how the core says it ended. **Not by whether it

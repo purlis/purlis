@@ -8,7 +8,9 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -461,6 +463,23 @@ export function theRunsStandIns(): string {
 }
 
 /**
+ * Gives every `<name>.fixture` under `dir` its real name (#2089). A fixture whose name a
+ * sandboxed chat may never write (`.claude/settings.json`, `opencode.json`) is tracked under a
+ * neutral one, so no checkout of the repository has to write it.
+ */
+export function fixtureNames(dir: string): void {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    let name = entry.name;
+    if (name.endsWith(".fixture") && name.length > ".fixture".length) {
+      const real = name.slice(0, -".fixture".length);
+      renameSync(join(dir, name), join(dir, real));
+      name = real;
+    }
+    if (entry.isDirectory()) fixtureNames(join(dir, name));
+  }
+}
+
+/**
  * A writable copy of a fixture plane for the app to be started in.
  *
  * The fixtures are committed and the app writes to a plane, so a scenario test never runs
@@ -475,6 +494,7 @@ export function copyFixturePlane(name = "daily"): string {
   const to = mkdtempSync(join(THE_RUNS_TREE, `plane-${name}-`));
   const root = join(to, name);
   cpSync(from, root, { recursive: true });
+  fixtureNames(root);
   // Directories the fixture cannot carry, because git will not track an empty one. The
   // generator records them beside the plane; restoring them matters because "no todos/" and
   // "an empty todos/" are different starting states.

@@ -157,29 +157,20 @@ fn a_persona_chat_is_told_which_of_its_persona_s_servers_it_was_not_started_with
 }
 
 #[test]
-fn a_chat_is_told_when_generated_persona_sub_agents_are_still_in_the_project() {
-    // #1451, F8: until the fix is run the harness still lists each generated file as an agent
-    // type. One line at the start saves a refused call per chat.
+fn a_chat_is_not_told_of_generated_persona_sub_agents_left_in_the_project() {
+    // #1990 (Q67): removing them is the person's chore, not news for the agent. The window
+    // stands it as one Notice with a Fix; no chat's briefing carries it.
     let (_d, root) = plane();
-    let before = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({})).join("\n");
-    assert!(!before.contains("sub-agent file"), "{before}");
     std::fs::create_dir_all(root.join(".claude/agents")).unwrap();
     std::fs::write(
         root.join(".claude/agents/ops.md"),
         crate::personaverbs::tests_plane::generated_agent("ops"),
     )
     .unwrap();
-    let after = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({})).join("\n");
-    assert!(
-        after.contains(
-            "⬡ This project still holds 1 sub-agent file(s) purlis generated for a persona \
-             (`ops`). Your harness may offer each as an agent type, and a call to one is \
-             refused: a persona runs as its own chat. Give a persona work with `purlis \
-             dispatch --to <persona>`. The operator removes the files with `purlis doctor \
-             --fix persona-agents`."
-        ),
-        "{after}"
-    );
+    assert_eq!(crate::personaverbs::retired::generated(&root).len(), 1);
+    let told = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({})).join("\n");
+    assert!(!told.contains("sub-agent file"), "{told}");
+    assert!(!told.contains("persona-agents"), "{told}");
 }
 
 #[test]

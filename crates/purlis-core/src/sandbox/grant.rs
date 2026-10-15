@@ -29,6 +29,9 @@
 //!   denial: every compiler writes its denials after its grants, and Claude Code's later-code
 //!   names are denied again under each granted folder by absolute path.
 //!
+//! - **A service on this Mac** ([`What::Port`], [`super::localport`]): one loopback port, never
+//!   a range, every port or one of purlis's own; this chat's or this project's on this machine.
+//!
 //! **No read is granted.** A chat's sandbox denies reads only for the classes above, so a read
 //! block is always one of those and is answered with the brokered route.
 //!
@@ -66,6 +69,9 @@ pub enum What {
     /// Look up a system service by its name: macOS's `mach-lookup`
     /// ([`super::services::service`]).
     Service(String),
+    /// Connect to a service on this Mac: whatever listens on this one port of the loopback
+    /// interface ([`super::localport::port`], qw384).
+    Port(u16),
 }
 
 impl What {
@@ -76,6 +82,7 @@ impl What {
             Self::Write(_) => "write",
             Self::Socket(_) => "socket",
             Self::Service(_) => "service",
+            Self::Port(_) => "port",
         }
     }
 
@@ -85,6 +92,7 @@ impl What {
             Self::Host(host) => host.to_string(),
             Self::Write(path) | Self::Socket(path) => path.display().to_string(),
             Self::Service(name) => name.clone(),
+            Self::Port(port) => port.to_string(),
         }
     }
 
@@ -110,6 +118,7 @@ impl fmt::Display for What {
             Self::Write(path) => write!(f, "writing {} and everything in it", path.display()),
             Self::Socket(path) => write!(f, "connecting to the local socket {}", path.display()),
             Self::Service(name) => write!(f, "reaching the system service {name}"),
+            Self::Port(port) => write!(f, "connecting to the service on this Mac at port {port}"),
         }
     }
 }
@@ -237,6 +246,8 @@ pub struct Grants {
     pub sockets: Vec<PathBuf>,
     /// System services, by name (D-sock-1).
     pub services: Vec<String>,
+    /// Services on this Mac, each by its one port (qw384).
+    pub ports: Vec<u16>,
     /// Which of them were allowed for the chat's next run alone ([`Level::Once`], D-sock-3):
     /// a scope of its own, so a start can judge each against the scopes policy leaves open.
     pub once: Vec<What>,
@@ -249,6 +260,7 @@ impl Grants {
             && self.writes.is_empty()
             && self.sockets.is_empty()
             && self.services.is_empty()
+            && self.ports.is_empty()
     }
 
     /// `what` added, once.
@@ -260,7 +272,9 @@ impl Grants {
             What::Service(name) if !self.services.contains(name) => {
                 self.services.push(name.clone());
             }
-            What::Host(_) | What::Write(_) | What::Socket(_) | What::Service(_) => {}
+            What::Port(port) if !self.ports.contains(port) => self.ports.push(*port),
+            What::Host(_) | What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
+            }
         }
     }
 
@@ -791,6 +805,10 @@ pub fn told(what: &What, level: Level) -> String {
             quoted(path.display().to_string())
         ),
         What::Service(name) => format!("reaching the system service {}", quoted(name.clone())),
+        What::Port(port) => format!(
+            "connecting to the service on this Mac at port {}",
+            quoted(port.to_string())
+        ),
     };
     let whom = match level {
         Level::Once => "once, for this run of this chat",

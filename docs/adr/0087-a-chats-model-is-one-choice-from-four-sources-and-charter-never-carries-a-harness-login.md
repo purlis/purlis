@@ -1,5 +1,11 @@
 # A chat's model is one choice from four sources, and purlis never carries a harness login
 
+**Amended by [ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md) (2026-10-14):** §5's promise that purlis never reads, copies, stores or
+relays a harness credential is replaced: every sign-in purlis uses belongs to a profile, a
+subscription is signed in through the harness's own flow per device and never held by purlis,
+and keys and cloud credentials are vault values sent to owned devices. X12's acknowledgement
+stays. What follows is the record as it was decided.
+
 **Accepted 2026-10-01** by the operator (ruling V36), with dispatcher decisions D-0087a/b,
 drafted for program-map ticket MS-1 (#700). It follows these of the operator's rulings:
 
@@ -210,7 +216,9 @@ With none of them set, the chat uses `login` with the harness's default model, a
 
 ### 5. What purlis never does with a login
 
-**Settled by V9:** purlis never reads, copies, stores or relays a harness credential.
+**Settled by V9:** purlis never reads, copies, stores or relays a harness credential. *(Replaced by
+[ADR 0095](0095-every-sign-in-purlis-uses-belongs-to-a-profile-and-a-subscription-is-signed-in-by-its-harness-on-each-device.md): every sign-in purlis uses belongs to a profile, and a subscription is signed in
+through the harness's own flow per device and never held by purlis.)*
 
 - **A `login` chat starts with no routing variables.** The adapter removes `ANTHROPIC_BASE_URL`,
   `ANTHROPIC_AUTH_TOKEN`, `OPENAI_BASE_URL` and their like for that harness, whatever the

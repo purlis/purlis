@@ -219,6 +219,11 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
             string(service)?
         ));
     }
+    // Each service on this Mac a person allowed this chat (qw384): connect to that one loopback
+    // port, which a Go client reaches directly, never through the proxy.
+    for port in &widened.ports {
+        own.after.push(super::localport::seatbelt_rule(*port));
+    }
     Ok(())
 }
 

@@ -173,6 +173,9 @@ pub enum HowFailed {
     Unreported,
     /// It was asked for and never started.
     DidNotStart,
+    /// Its turns ended without a report, and purlis sent its last message in its place
+    /// (#1981).
+    LastMessage,
 }
 
 impl From<purlis_core::state::FailedTask> for Need {
@@ -186,6 +189,7 @@ impl From<purlis_core::state::FailedTask> for Need {
                 How::Failed => HowFailed::Failed,
                 How::Unreported => HowFailed::Unreported,
                 How::DidNotStart => HowFailed::DidNotStart,
+                How::LastMessage => HowFailed::LastMessage,
             },
             why: failed.why,
         }
@@ -308,6 +312,12 @@ pub struct Hooks {
     /// after the fact, for `answering`'s reason: confining it needs the chat's folder.
     /// **Never recorded**: nothing here writes it, and the event log is not told (D-86a).
     touching: Arc<Mutex<Option<Touches>>>,
+    /// Told what a chat's turn put out (#1981), once the board has judged the line its own
+    /// run's: a slot filled after the fact, as `touching` is. **In memory only.**
+    output: Arc<Mutex<Option<Outputs>>>,
+    /// Told what a chat's own tool hook says it is doing (#1981), once the board has judged the
+    /// line its own run's. **In memory only.**
+    doing_heard: Arc<Mutex<Option<Doings>>>,
     /// What each working chat is doing, for the one line under its name (#1493). **In memory
     /// only**, as a touched path is: nothing here writes it, and the event log is not told.
     doings: Arc<crate::doing::Doings>,
@@ -463,6 +473,12 @@ pub struct ChatBlocked {
     /// (`take_up_sandbox_block`). None for a block of a command the chat ran.
     #[specta(optional)]
     pub quiet: Option<String>,
+    /// **A port the command's own output names**, for a service on this Mac whose refusal named
+    /// none ([`BlockOffer::Port`] with no [`Self::target`], qw384): the Notice pre-fills its
+    /// port field with it and says it came from the command's output, for the person to check.
+    /// Judged as a port is before it is sent here, and again before anything is allowed.
+    #[specta(optional)]
+    pub suggested: Option<String>,
 }
 
 /// What a quiet line says of where its block came from ([`ChatBlocked::quiet`]).
@@ -582,18 +598,30 @@ pub fn blocked_holding(plane: &PlaneId, heard: &HeardBlock, has_check: bool) -> 
         .harness
         .as_deref()
         .and_then(purlis_core::harness::Harness::of_kind);
+    let told = blocked_on(
+        plane,
+        blocked.chat,
+        &blocked.sandbox_blocked,
+        harness,
+        blocked.target.as_deref(),
+        has_check,
+    );
     ChatBlocked {
         vault: heard.vault.as_deref().map(vault_said),
         quiet: blocked.read_back.then(|| READ_BACK_SAID.to_owned()),
-        ..blocked_on(
-            plane,
-            blocked.chat,
-            &blocked.sandbox_blocked,
-            harness,
-            blocked.target.as_deref(),
-            has_check,
-        )
+        suggested: suggested_port(&told, blocked.suggested.as_deref()),
+        ..told
     }
+}
+
+/// The port `suggested` by a command's output, for a Notice that asks the person to type one
+/// ([`ChatBlocked::suggested`], qw384): none for any other Notice, and none that is no port a
+/// grant could name.
+fn suggested_port(told: &ChatBlocked, suggested: Option<&str>) -> Option<String> {
+    (told.offer == BlockOffer::Port && told.target.is_none())
+        .then(|| purlis_core::sandbox::localport::port(suggested?).ok())
+        .flatten()
+        .map(|port| port.to_string())
 }
 
 /// [`blocked_holding`] for a chat that started without the certificate check.
@@ -652,6 +680,7 @@ pub(crate) fn blocked_on(
         harness: harness.map(|harness| harness.name().to_owned()),
         said: block.said(),
         vault: None,
+        suggested: None,
     }
 }
 
@@ -701,6 +730,14 @@ fn allowed_already(
                 grant::What::Socket(target.into()),
                 local::granted_sockets(root).iter().any(|one| one == target),
                 local::sockets_everywhere().iter().any(|one| one == target),
+            )?
+        }
+        BlockOffer::Port => {
+            let port: u16 = target?.parse().ok()?;
+            in_force(
+                grant::What::Port(port),
+                local::granted_ports(root).contains(&port),
+                false,
             )?
         }
         BlockOffer::Service => {
@@ -760,7 +797,7 @@ fn scopes_ruled_out(
         BlockOffer::Socket | BlockOffer::Service => {
             &[Level::Once, Level::Machine, Level::Chat, Level::You]
         }
-        BlockOffer::Write => &[Level::Chat, Level::You],
+        BlockOffer::Write | BlockOffer::Port => &[Level::Chat, Level::You],
         _ => return None,
     };
     locks.scopes_removed(offered)
@@ -779,6 +816,10 @@ pub enum BlockOffer {
     /// Allow a system service by name (D-sock-1): [`ChatBlocked::route`] says what allowing it
     /// means.
     Service,
+    /// Allow a service on this Mac by its one port (qw384): [`ChatBlocked::route`] says what
+    /// allowing it means. [`ChatBlocked::target`] is null where the refusal named no port, which
+    /// the person types.
+    Port,
     /// Never granted, and there is a way that works: [`ChatBlocked::route`] says it.
     Brokered,
     /// Not something purlis grants a chat (off the allowlist, a socket it cannot name): the person may
@@ -884,6 +925,34 @@ fn held(
                 refused.is_none()
             })
             .collect();
+            match (levels.is_empty(), why) {
+                (true, Some(why)) => instead(target, why),
+                _ => (offer, target, route, levels),
+            }
+        }
+        // A service on this Mac (qw384): for this chat, or for every chat of this project on
+        // this machine, each a policy leaves open; never once, never the project's.
+        BlockOffer::Port => {
+            let named = target
+                .as_deref()
+                .and_then(|port| port.parse::<u16>().ok())
+                .map(What::Port);
+            let mut why = locks.port_grants_refused();
+            let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
+                .into_iter()
+                .filter(|level| {
+                    let refused = match named.as_ref() {
+                        Some(what) => locks.refuses_grant(what, (*level).into()),
+                        None => locks
+                            .port_grants_refused()
+                            .or_else(|| locks.scope_removed((*level).into())),
+                    };
+                    if refused.is_some() && why.is_none() {
+                        why = refused.clone();
+                    }
+                    refused.is_none()
+                })
+                .collect();
             match (levels.is_empty(), why) {
                 (true, Some(why)) => instead(target, why),
                 _ => (offer, target, route, levels),
@@ -1041,6 +1110,34 @@ fn offered_to(
                 }
             }
         }
+        // A service on this Mac (qw384): Allow, naming its port where the refusal named one, or
+        // the port the person types; never purlis's own.
+        (Operation::Connect, Kind::LocalService) => {
+            let said = format!("Allowing it {}.", purlis_core::sandbox::localport::RISK);
+            match target.map(purlis_core::sandbox::localport::port) {
+                None => (BlockOffer::Port, None, Some(said)),
+                Some(Ok(port)) => (BlockOffer::Port, Some(port.to_string()), Some(said)),
+                // A port you allowed that purlis took for a chat of its own while your service
+                // was down: said as such, not as a port that is purlis's by nature.
+                Some(Err(grant::Refused::Never(_)))
+                    if target
+                        .and_then(|port| port.trim().parse::<u16>().ok())
+                        .is_some_and(|port| {
+                            purlis_core::sandbox::local::granted_ports(root).contains(&port)
+                        }) =>
+                {
+                    (
+                        BlockOffer::Brokered,
+                        None,
+                        Some(purlis_core::sandbox::localport::TAKEN_SAID.to_owned()),
+                    )
+                }
+                Some(Err(grant::Refused::Never(why))) => (BlockOffer::Brokered, None, Some(why)),
+                Some(Err(grant::Refused::Outside(why) | grant::Refused::Not(why))) => {
+                    (BlockOffer::Port, None, Some(why))
+                }
+            }
+        }
         (_, Kind::ProjectState) => brokered(Class::Integrity),
         (_, Kind::ProtectedFile) => brokered(Class::LaterCode),
         (Operation::Read, _) => brokered(Class::Vaults),
@@ -1187,8 +1284,27 @@ fn for_its_harness(
         );
         return (offer, target, why);
     }
+    // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
+    // carried the port by name through purlis's proxy, and the Notice says how it is reached.
+    if offer == BlockOffer::Port && claude {
+        let said = match route {
+            Some(route) => format!("{route} {CLAUDE_CODE_PORT_SAID}"),
+            None => CLAUDE_CODE_PORT_SAID.to_owned(),
+        };
+        return (offer, target, Some(said));
+    }
     (offer, target, route)
 }
+
+/// How a Claude Code chat reaches a service on this Mac it is allowed (qw384b): its sandbox lets
+/// a command reach this machine's loopback on every port or on none but its proxy's, never one
+/// alone, and its commands send no address of this machine to a proxy. A name they do send, so
+/// the chat's proxy carries the port by name ([`purlis_core::sandbox::localport::THIS_MAC`]).
+pub const CLAUDE_CODE_PORT_SAID: &str = "In a Claude Code chat a command reaches it through this \
+     chat's proxy, by the name this-mac.internal and that port, never by 127.0.0.1 or localhost: \
+     curl https://this-mac.internal:<port>, or kubectl once Point kubectl at it gives this chat \
+     its own copy of a context on this Mac. A program that uses no proxy, such as psql or \
+     redis-cli, cannot reach it.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).
@@ -1198,6 +1314,14 @@ fn without_the_sandbox(why: &str) -> (BlockOffer, Option<String>, Option<String>
 
 /// What is told each path a chat's file tool touched, unconfined.
 pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + 'static>;
+
+/// What hears what a chat's own tool hook says it is doing (#1981): the project's own handler,
+/// which measures a task's quiet stretch from it ([`Hooks::when_doing`]).
+pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'static>;
+
+/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
+/// for a task alone ([`Hooks::when_output`]).
+pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
 
 /// The event the window is sent when a chat's file tool touches a file (FM-6).
 pub const TOUCHING: &str = "chat-touching";
@@ -1377,6 +1501,8 @@ impl Hooks {
             asks_told: Arc::new(Mutex::new(None)),
             doings,
             touching: Arc::new(Mutex::new(None)),
+            output: Arc::new(Mutex::new(None)),
+            doing_heard: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
             throttle: Arc::default(),
@@ -1410,6 +1536,8 @@ impl Hooks {
         let asks = Arc::new(HookAsks::new(Arc::new(Asks::new())));
         let asks_told: crate::asking::Telling = Arc::new(Mutex::new(None));
         let touching: Arc<Mutex<Option<Touches>>> = Arc::new(Mutex::new(None));
+        let output: Arc<Mutex<Option<Outputs>>> = Arc::new(Mutex::new(None));
+        let doing_heard: Arc<Mutex<Option<Doings>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
@@ -1477,7 +1605,20 @@ impl Hooks {
                 let board = Arc::clone(&board);
                 let moved = Arc::clone(&moved);
                 let plane = plane.clone();
+                let doing_heard = Arc::clone(&doing_heard);
                 Box::new(move |said| {
+                    // Activity of the chat's own run, for a task's quiet stretch (#1981).
+                    if said.agent.is_none()
+                        && held_board(&board).spoken_by(said.chat, &said.speaker)
+                    {
+                        let listener = doing_heard
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .clone();
+                        if let Some(listener) = listener {
+                            listener(said.chat, said.doing.clone());
+                        }
+                    }
                     let agent = said.agent.as_deref();
                     if let Some(what) = got_past_its_prompt(
                         &board,
@@ -1493,6 +1634,24 @@ impl Hooks {
                     }
                     if agent.is_none() {
                         doings.heard(&board, said.chat, said.doing);
+                    }
+                })
+            },
+            // What a chat's turn ended saying (#1981): handed on only where it is the run the
+            // chat adopted, and never recorded. Taken out of the lock before it runs.
+            output: {
+                let output = Arc::clone(&output);
+                let board = Arc::clone(&board);
+                Box::new(move |said| {
+                    if !held_board(&board).spoken_by(said.chat, &said.speaker) {
+                        return;
+                    }
+                    let listener = output
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .clone();
+                    if let Some(listener) = listener {
+                        listener(said);
                     }
                 })
             },
@@ -1701,6 +1860,8 @@ impl Hooks {
             asks,
             asks_told,
             touching,
+            output,
+            doing_heard,
             doings,
             blocked,
             repeated,
@@ -1768,6 +1929,32 @@ impl Hooks {
         log.sandbox_grant(root, number, audited)
             .map(|_| ())
             .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+    }
+
+    /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
+    /// before the file is written, so nothing is applied unrecorded.
+    pub fn record_proposed(
+        &self,
+        root: &Path,
+        number: u32,
+        applied: &purlis_core::proposed::Applied<'_>,
+    ) -> Result<(), String> {
+        let Some(events) = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+        else {
+            return Err(
+                "purlis's event log is not open on this machine, so nothing was written: every \
+                 applied change is recorded"
+                    .to_owned(),
+            );
+        };
+        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
+        log.proposed_applied(root, number, applied)
+            .map(|_| ())
+            .map_err(|why| format!("the event log refused it ({why}), so nothing was written"))
     }
 
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
@@ -1994,6 +2181,21 @@ impl Hooks {
     /// it: the plane confines it to the chat's folder before the window hears of it.
     pub fn when_touching(&self, touches: Touches) {
         *self.touching.lock().unwrap_or_else(PoisonError::into_inner) = Some(touches);
+    }
+
+    /// Who is told what a chat's own tool hook says it is doing (#1981), once the board has
+    /// judged the line its own run's.
+    pub fn when_doing(&self, doings: Doings) {
+        *self
+            .doing_heard
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(doings);
+    }
+
+    /// Who is told what a chat's turn put out (#1981), once the board has judged the line its
+    /// own run's.
+    pub fn when_output(&self, outputs: Outputs) {
+        *self.output.lock().unwrap_or_else(PoisonError::into_inner) = Some(outputs);
     }
 
     /// What this project's working chats are doing (#1493).

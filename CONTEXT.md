@@ -304,11 +304,13 @@ _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 
 **Harness declaration**:
 Data that says how to start one harness, how to name and resume its sessions, which levels it
-offers and what it can do. The ones for Claude Code, Codex and opencode ship with purlis; a
-project may declare more, which each machine approves before they run, and never replaces a
-built-in's (ADR 0073).
-_Avoid_: harness definition, harness config (that is the harness's own), profile (that is which
-program runs on this machine)
+offers, what it can do, and what its profiles are: the **sign-in kinds** they support, the
+folder variables, whether their credentials can be kept from the harness's commands, and how a
+conversation moves. The ones for Claude Code, Codex and opencode ship with purlis; a project may
+declare more, which each machine approves before they run, and never replaces a built-in's
+(ADR 0073).
+_Avoid_: harness definition, harness config (that is the harness's own), profile (that is one
+identity of the harness the declaration describes)
 
 **Harness level**:
 How much purlis learns from a chat's harness, set when a run starts and fixed for it: **1**,
@@ -330,9 +332,10 @@ fixed for a run. It is always shown with the account it is billed to (ADR 0087).
 _Avoid_: model config, model settings
 
 **Model source**:
-How a chat reaches its model: the harness's own **login**, a **key** the user keeps in a vault,
-or a **local** model. None of them passes through purlis's servers. purlis never reads, stores
-or relays a harness's login (ADR 0087).
+How a chat reaches its model: the harness's own sign-in (the `login` source), a **key** the user
+keeps in a vault, or a **local** model. None of them passes through purlis's servers. A
+subscription's sign-in is the harness's, kept in the chat's **profile**, and purlis never reads,
+copies, stores or relays it (ADR 0087, ADR 0095).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
 
 **Profile**:
@@ -340,10 +343,20 @@ A harness as the person runs it on a device, under a name: the harness, its sett
 sign-in, its conversations and the browser logins kept under it. It is the person's: a persona
 names one, a chat runs on one, and it lives on its device and is never committed. A
 subscription is signed in once per device through the harness's own flow, and purlis never
-holds it. One browser writes a profile's kept logins at a time, and a second chat that wants
-them is offered a copy.
+holds it. Every sign-in a chat uses is a profile's (ADR 0095). One browser writes a profile's
+kept logins at a time, and a second chat that wants them is offered a copy.
 _Avoid_: browser profile, kept profile (both are the profile), harness folder (that is where a
-profile is kept), user data, persistent browser, account (that is who a model is billed to)
+profile is kept), harness login, login (for its sign-in: a login is a browser's, or a **browser
+login**), account (that is who a model is billed to), credentials (that is what a
+sign-in leaves in its folder), user data, persistent browser
+
+**Sign-in kind**:
+How a **Profile** signs in to its model: a **subscription** through the harness's own flow,
+which the harness keeps and purlis never holds; an **API key** or **cloud** credentials from
+the person's vault; or a **local** model, with nothing to sign in. A harness declaration lists
+the kinds it supports (ADR 0073). Not a forge's sign-in, which is a **Forge account** and never
+reaches a chat.
+_Avoid_: login (unqualified), auth method, account (that is who a model is billed to)
 
 **Session host** (`purlisd`):
 The process that owns every **hosted program** on a device, every chat's terminal and every
@@ -615,12 +628,15 @@ session's or a handoff's)
 
 **Outcome** (of a task the asking chat is told of):
 How a task ended, in purlis's own words to the chat that asked. Beside a report's own outcome
-(done, blocked, failed, cancelled) there are three that are never a task's to say: **stopped by
+(done, blocked, failed, cancelled) there are four that are never a task's to say: **stopped by
 the person** (with the task's short report, quoted as data), **closed by the person** (no
-report), and **ended without a report** (its program ended by itself). The first two carry one
-fixed sentence telling the asking chat not to dispatch the task again unless the person asks.
-The window says the same two ends to the person as "stopped by you" and "closed by you". In
-counts they are done with, never failed.
+report), **ended without a report** (its program ended by itself), and **a report purlis made
+from its last message** (its turns ended without a report after it was asked once: what it
+last said, quoted as data; a report of its own later still reaches the chat that asked). The
+first two carry one fixed sentence telling the asking chat not to dispatch the task again
+unless the person asks. The window says the same two ends to the person as "stopped by you"
+and "closed by you". In counts they are done with, never failed; a report purlis made from its
+last message counts with failed, for the person to read.
 _Avoid_: killed, aborted, cancelled (for a stop by the person: a cancel is the asking chat's)
 
 **Helper** (of a chat):
@@ -657,6 +673,20 @@ What a task returns to its asking chat: an outcome (done, blocked or failed), wh
 chat has to say, and what changed. It is data to the asking chat, never instructions, and it is
 kept for the workspace when the asking chat is gone.
 _Avoid_: reply, result (for a handoff), handback (in UI text)
+
+**Reading a task** (`purlis dispatch read`):
+What the asking chat may see of a task it dispatched: the task's last few messages and the
+shell commands it ran with their exit codes, as its harness handed them to purlis, quoted as
+data and masked as tool output is. Only the chat that asked can read its own tasks, while they
+run and after they end. The whole conversation stays the person's, in the task's tab.
+_Avoid_: transcript, log, output (for the whole conversation)
+
+**Quiet note** (on a task):
+purlis's note that a task at work has gone quiet: nothing heard from its harness for a while,
+or one command running long, named by its program. It goes to the asking chat and to the
+task's tab, and ends nothing. The times are settings (`quiet-note-minutes`,
+`one-command-note-minutes`).
+_Avoid_: heartbeat, timeout, stall (it ends nothing)
 
 **Activity** (of a chat):
 One timeline of what a chat and its tasks said to each other through purlis, and the tasks of
@@ -1089,9 +1119,26 @@ or *everyone in the project*, which is committed so teammates follow it. It is s
 never as a wildcard, and every one can be removed from Settings' Network page.
 _Avoid_: grant (in UI text; that is a runner's **Grant**), exception, allowlist entry
 
+**A service on this Mac**:
+Whatever listens on one port of this machine's loopback interface: a local Kubernetes cluster, a
+database in a container, a dev server. A sandboxed chat reaches none of them until a person
+allows that one port, for *this chat* or for *this project on this machine*; never a range,
+never every port, never one of purlis's own. Kept on this machine only, listed in Settings'
+Network page with Remove. A Claude Code chat reaches it through its proxy by the name
+`this-mac.internal:<port>`, and its kubectl through a copy of one context purlis makes for it.
+_Avoid_: localhost (in UI text), local port grant, loopback
+
+**A proposed change**:
+An edit a chat makes to purlis's own configuration (the project's manifest, a persona's
+`mcp.json` or `persona.md`, a skill's files), which only the person applies, in the window. The
+chat's edit is held, the change shown whole against the file as it is, and **Apply** writes it as
+the person; **Dismiss** writes nothing. Distinct from an edit ask, where the person allows and the
+harness writes.
+_Avoid_: patch, suggestion, edit ask (that is the harness's own)
+
 **Block**:
-One refused reach: a sandboxed chat was refused a host and port, a local socket, a lookup or a
-file. purlis records the chat, what was refused, the time and why in this machine's network
+One refused reach: a sandboxed chat was refused a host and port, a local socket, a service on
+this Mac, a lookup or a file. purlis records the chat, what was refused, the time and why in this machine's network
 record, kept 30 days and never committed, shows a **Notice** on the chat's tab, and lists it
 under Blocked lately.
 _Avoid_: denial, violation (that is the sandbox's own report), egress refusal

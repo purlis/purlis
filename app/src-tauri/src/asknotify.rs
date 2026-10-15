@@ -168,6 +168,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::SandboxWrite => "Asks to write in a folder",
         AskSource::SandboxLocal => "Asks to reach a service on this machine",
         AskSource::WorkspaceRemoval => "Asks you to remove a workspace",
+        AskSource::ProposedChange => "Proposes a change for you to apply",
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
     }
