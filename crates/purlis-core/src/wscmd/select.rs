@@ -346,7 +346,6 @@ pub(crate) fn announce(
     )));
 }
 
-/// What a selection whose pointer could not be written says.
 /// **Points the selection at `fallback` after workspace `removed` was removed** (#2103):
 /// `force`, since the lock named the workspace that went. Answers the exit code: 0 where a
 /// pointer landed or there was none to write, 1 where one could not be written, which is said
@@ -370,6 +369,7 @@ pub fn reset_after_removal(root: &Path, removed: &str, fallback: &str, ids: &Ids
     }
 }
 
+/// What a selection whose pointer could not be written says.
 pub fn unwritten_msg(name: &str) -> String {
     format!(
         "purlis could not write where '{name}' is selected (the plane's state folder refused \
