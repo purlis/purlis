@@ -182,11 +182,11 @@ function Waiting({ plane, ids, text }: { plane: PlaneId; ids: RowIds; text: stri
       .catch(() => setWaiting([]));
   // Read again whenever the file's text changes: a save, or an edit by hand Settings read.
   useEffect(read, [plane, text]);
-  const confirm = (persona: string | null) => {
+  const confirm = (persona: string | null, level: string) => {
     setBusy(true);
     setSaid(undefined);
     void commands
-      .confirmSandboxLevel(plane, persona)
+      .confirmSandboxLevel(plane, persona, level)
       .then((answer) => setSaid(answer.status === "ok" ? answer.data : answer.error))
       .catch((err: unknown) => setSaid(`purlis could not confirm it: ${String(err)}`))
       .finally(() => {
@@ -218,7 +218,7 @@ function Waiting({ plane, ids, text }: { plane: PlaneId; ids: RowIds; text: stri
                   type="button"
                   className="ui-button"
                   disabled={busy}
-                  onClick={() => confirm(one.persona)}
+                  onClick={() => confirm(one.persona, one.level)}
                 >
                   {`Confirm ${level} ${whose}`}
                 </button>

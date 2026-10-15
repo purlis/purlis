@@ -119,17 +119,21 @@ pub async fn sandbox_levels_waiting(
         .map_err(|err| format!("reading your levels did not finish: {err}"))
 }
 
-/// Confirms the level the file now says for `persona` (the project's for `None`), as yours.
+/// Confirms `level`, the level the row showed for `persona` (the project's for `None`), as
+/// yours: refused where the file no longer says it.
 #[tauri::command]
 #[specta::specta]
 pub async fn confirm_sandbox_level(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     persona: Option<String>,
+    level: String,
 ) -> Result<String, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
+    let shown = personal::Choice::of_word(&level)
+        .ok_or_else(|| format!("'{}' is not a level", level.escape_debug()))?;
     tauri::async_runtime::spawn_blocking(move || {
-        let level = personal::confirm(&root, persona.as_deref())?;
+        let level = personal::confirm(&root, persona.as_deref(), shown)?;
         Ok(confirmed_said(persona.as_deref(), level))
     })
     .await
@@ -137,15 +141,12 @@ pub async fn confirm_sandbox_level(
 }
 
 /// What a Confirm says.
-fn confirmed_said(persona: Option<&str>, level: Option<personal::Choice>) -> String {
-    let whose = persona.map_or_else(|| "this project".to_owned(), str::to_owned);
-    match level {
-        Some(level) => format!(
-            "Confirmed: {} for {whose}, from each chat's next start.",
-            level.said()
-        ),
-        None => format!("{whose} has no level of yours to confirm."),
-    }
+fn confirmed_said(persona: Option<&str>, level: personal::Choice) -> String {
+    let whose = persona.unwrap_or("this project");
+    format!(
+        "Confirmed: {} for {whose}, from each chat's next start.",
+        level.said()
+    )
 }
 
 #[cfg(test)]
@@ -155,10 +156,10 @@ mod tests {
     #[test]
     fn a_confirm_says_which_level_for_whom() {
         assert_eq!(
-            confirmed_said(Some("qa"), Some(personal::Choice::Off)),
+            confirmed_said(Some("qa"), personal::Choice::Off),
             "Confirmed: no sandbox for qa, from each chat's next start."
         );
-        assert!(confirmed_said(None, None).starts_with("this project has no level"));
+        assert!(confirmed_said(None, personal::Choice::On).contains("for this project"));
         assert_eq!(
             waiting_of(vec![personal::Awaiting {
                 persona: None,

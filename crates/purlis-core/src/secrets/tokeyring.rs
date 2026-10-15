@@ -76,6 +76,9 @@ pub fn move_to_keyring_with(
     ctx: &Ctx,
     name: &str,
 ) -> Result<Moved, VaultError> {
+    // Every check below is made under the lock, so no writer changes what it judged before
+    // the move is made.
+    let _keys = keyring::lock_keys_named(ctx, name, keyring::A_WRITE_WAITS)?;
     let shared = registry::load_shared(ctx)?;
     let local = registry::load_local(ctx)?;
     if registry::scope_in(&shared, &local, name) != "local" {
@@ -84,7 +87,6 @@ pub fn move_to_keyring_with(
              would change it on every machine. Nothing was moved"
         )));
     }
-    let _keys = keyring::lock_keys_named(ctx, name, keyring::A_WRITE_WAITS)?;
     let plain = registry::vault(ctx, name)?;
     if plain.provider != PLAIN_FILE {
         return Err(VaultError::new(format!(
@@ -195,6 +197,15 @@ fn write_all(
     *service = Some(made.clone());
     let at = keyring::now();
     for (key, value) in secrets {
+        // Listed before it is written: a move that dies after the write leaves the item named
+        // in the index, never one in the keychain that nothing finds again.
+        let entry = |kept: bool| keyring::Entry {
+            size: super::fingerprint::size_band(value),
+            updated: at.clone(),
+            held: kept,
+        };
+        index.keys.insert(key.clone(), entry(false));
+        keyring::save_index(ctx, held, &index)?;
         written.push(key.clone());
         let kept = store.set(&made, key, value)?;
         let back = store.get(&made, key)?.map(keyring::Secret::into_inner);
@@ -203,16 +214,12 @@ fn write_all(
                 "the keychain gave back something else for '{key}'"
             )));
         }
-        index.keys.insert(
-            key.clone(),
-            keyring::Entry {
-                size: super::fingerprint::size_band(value),
-                updated: at.clone(),
-                held: kept == keyring::Held::ToTheApp,
-            },
-        );
+        if kept == keyring::Held::ToTheApp {
+            index.keys.insert(key.clone(), entry(true));
+            keyring::save_index(ctx, held, &index)?;
+        }
     }
-    keyring::save_index(ctx, held, &index)
+    Ok(())
 }
 
 /// A move that stopped, undone as far as it can be, and said as it stands: the items written

@@ -63,7 +63,7 @@ function core({
   const moved: string[] = [];
   let held = [...vaults];
   let waits = [...waiting];
-  const confirmed: (string | null)[] = [];
+  const confirmed: string[] = [];
   mockIPC(
     (cmd, args) => {
       const given = (args ?? {}) as Record<string, unknown>;
@@ -103,7 +103,7 @@ function core({
           return waits;
         case "confirm_sandbox_level": {
           const persona = (given.persona ?? null) as string | null;
-          confirmed.push(persona);
+          confirmed.push(`${persona ?? "project"}:${given.level as string}`);
           waits = waits.filter((one) => one.persona !== persona);
           return `Confirmed for ${persona ?? "this project"}.`;
         }
@@ -242,7 +242,8 @@ describe("Settings › Sandbox › Your level", () => {
     await userEvent.click(screen.getByRole("button", { name: "Confirm no sandbox as qa" }));
 
     expect(await screen.findByText("Confirmed for qa.")).toBeInTheDocument();
-    expect(confirmed).toEqual(["qa"]);
+    // The level the row showed goes with the Confirm, so a file changed since is refused.
+    expect(confirmed).toEqual(["qa:off"]);
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /^Confirm/ })).not.toBeInTheDocument(),
     );

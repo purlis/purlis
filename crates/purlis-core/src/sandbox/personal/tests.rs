@@ -139,13 +139,16 @@ fn an_off_written_into_the_file_is_not_confirmed_until_you_confirm_it() {
     assert_eq!(waiting(root.path()).len(), 2);
 
     // Confirm, in Settings: the project's, then the persona's.
-    assert_eq!(confirm(root.path(), None).unwrap(), Some(Choice::Off));
+    assert_eq!(
+        confirm(root.path(), None, Choice::Off).unwrap(),
+        Choice::Off
+    );
     assert_eq!(in_force(root.path()).for_persona(None), Some(Choice::Off));
     assert_eq!(
         in_force(root.path()).for_persona(Some("qa")),
         Some(Choice::Off)
     );
-    confirm(root.path(), Some("qa")).unwrap();
+    confirm(root.path(), Some("qa"), Choice::Off).unwrap();
     assert!(waiting(root.path()).is_empty());
 
     // Taken out of the file by hand and written back later: not confirmed again.
@@ -198,5 +201,24 @@ fn the_settings_save_takes_your_level_and_refuses_one_that_is_not() {
     assert!(
         refused.iter().any(|why| why.contains("sandbox.mode")),
         "{refused:?}"
+    );
+}
+
+#[test]
+fn a_confirm_takes_the_level_it_showed_and_refuses_one_the_file_changed_since() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join(crate::profiles::LOCAL_FILE);
+    std::fs::write(&file, "[sandbox]\nlevel = \"floor\"\n").unwrap();
+    // Shown `floor`, then the file swapped to `off` before the click.
+    std::fs::write(&file, "[sandbox]\nlevel = \"off\"\n").unwrap();
+    let refused = confirm(root.path(), None, Choice::Floor).unwrap_err();
+    assert!(refused.contains("no sandbox"), "{refused}");
+    assert_eq!(in_force(root.path()).for_persona(None), None);
+    // Taken out of the file since: nothing to confirm.
+    std::fs::write(&file, "").unwrap();
+    assert!(confirm(root.path(), None, Choice::Off).is_err());
+    assert_eq!(
+        super::super::local::confirmed_levels(root.path()),
+        Personal::default()
     );
 }

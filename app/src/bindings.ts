@@ -647,8 +647,11 @@ export const commands = {
 	moveVaultToKeychain: (plane: PlaneId, name: string) => typedError<string, string>(__TAURI_INVOKE("move_vault_to_keychain", { plane, name })),
 	/**  The levels of the project that wait for your Confirm. */
 	sandboxLevelsWaiting: (plane: PlaneId) => typedError<LevelWaiting[], string>(__TAURI_INVOKE("sandbox_levels_waiting", { plane })),
-	/**  Confirms the level the file now says for `persona` (the project's for `None`), as yours. */
-	confirmSandboxLevel: (plane: PlaneId, persona: string | null) => typedError<string, string>(__TAURI_INVOKE("confirm_sandbox_level", { plane, persona })),
+	/**
+	 *  Confirms `level`, the level the row showed for `persona` (the project's for `None`), as
+	 *  yours: refused where the file no longer says it.
+	 */
+	confirmSandboxLevel: (plane: PlaneId, persona: string | null, level: string) => typedError<string, string>(__TAURI_INVOKE("confirm_sandbox_level", { plane, persona, level })),
 	/**
 	 *  The dispatches of chat `session` waiting on the person, for the Notice on its tab.
 	 * 

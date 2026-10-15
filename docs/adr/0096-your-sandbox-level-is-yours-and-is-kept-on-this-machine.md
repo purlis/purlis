@@ -43,7 +43,9 @@ makes the floor every chat's default where a project has not turned the full san
      file, so one taken out by hand and written back later waits for Confirm again.
 
    Picking a level in Settings confirms it as picked. A save under Edit as TOML confirms
-   nothing, since its text may hold a level something else wrote. Both the Confirm and the
+   nothing, since its text may hold a level something else wrote. A Confirm carries the level
+   its row showed and is refused where the file says another one by then, so nothing written
+   between the showing and the click is confirmed in its place. Both the Confirm and the
    list of waiting levels are the window's alone. A chat that is already unsandboxed runs as
    the person and can write the record too, for this project or another: nothing here holds
    against a chat at `off`, which is what `off` means.

@@ -305,12 +305,26 @@ pub fn waiting(root: &Path) -> Vec<Awaiting> {
     awaiting(&of(root), &super::local::confirmed_levels(root))
 }
 
-/// Settings' Confirm: the level the file now says for the slot recorded as yours (or the slot
-/// taken off the record, where the file says none). Answers the level confirmed.
-pub fn confirm(root: &Path, persona: Option<&str>) -> Result<Option<Choice>, String> {
-    let level = of(root).at(persona);
-    set_by_you(root, persona, level)?;
-    Ok(level)
+/// Settings' Confirm of `shown`, the level the row showed for the slot: recorded as yours only
+/// while the file still says it, so nothing written between the showing and the click is
+/// confirmed in its place. Answers the level confirmed.
+pub fn confirm(root: &Path, persona: Option<&str>, shown: Choice) -> Result<Choice, String> {
+    match of(root).at(persona) {
+        Some(now) if now == shown => {
+            set_by_you(root, persona, Some(now))?;
+            Ok(now)
+        }
+        Some(now) => Err(format!(
+            "the file now says {} here, not the {} you were shown. Nothing was confirmed: \
+             look at it again",
+            now.said(),
+            shown.said()
+        )),
+        None => Err(format!(
+            "the file no longer sets a level here, so there is no {} to confirm",
+            shown.said()
+        )),
+    }
 }
 
 /// Records `choice` for the slot as yours: Settings' save of a level, and its Confirm, never a

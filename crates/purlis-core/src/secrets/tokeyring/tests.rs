@@ -21,6 +21,9 @@ struct Faulty {
     misread: Option<&'static str>,
     /// Every delete fails.
     fail_delete: bool,
+    /// The keys index's text when each item was written.
+    index: Option<PathBuf>,
+    indexes: Mutex<Vec<String>>,
     /// The registry's text when each item was written.
     seen: Mutex<Vec<String>>,
 }
@@ -33,6 +36,8 @@ impl Faulty {
             fail_set: None,
             misread: None,
             fail_delete: false,
+            index: None,
+            indexes: Mutex::new(Vec::new()),
             seen: Mutex::new(Vec::new()),
         }
     }
@@ -50,6 +55,12 @@ impl Store for Faulty {
             .lock()
             .unwrap()
             .push(std::fs::read_to_string(&self.registry).unwrap_or_default());
+        if let Some(index) = &self.index {
+            self.indexes
+                .lock()
+                .unwrap()
+                .push(std::fs::read_to_string(index).unwrap_or_default());
+        }
         if self.fail_set == Some(account) {
             return Err(VaultError::new("the store refused the write"));
         }
@@ -281,4 +292,32 @@ fn only_a_plain_file_vault_this_machine_registers_is_moved() {
         refused.message
     );
     assert!(file.exists());
+}
+
+#[test]
+fn the_index_lists_each_item_before_it_is_written() {
+    // So a move that dies mid-way leaves every item it wrote listed in the index, never one in
+    // the keychain that nothing names.
+    let plane = Plane::new(&[]);
+    two_secrets(&plane);
+    let ops = registry::vault(&plane.ctx, "ops").unwrap();
+    let store = Faulty {
+        index: Some(keyring::index_path(&plane.ctx, &ops)),
+        ..Faulty::over(&plane)
+    };
+
+    move_to_keyring_with(&store, &plane.ctx, "ops").unwrap();
+
+    let indexes = store.indexes.lock().unwrap();
+    assert_eq!(indexes.len(), 2);
+    assert!(
+        indexes[0].contains("\"a\""),
+        "'a' was written before it was listed: {}",
+        indexes[0]
+    );
+    assert!(
+        indexes[1].contains("\"b\""),
+        "'b' was written before it was listed: {}",
+        indexes[1]
+    );
 }
