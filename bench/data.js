@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792053276642,
+  "lastUpdate": 1792055741714,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -12138,6 +12138,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4222715,
             "unit": "ms",
             "extra": "median of 5 runs: 100.802, 101.018, 101.422, 101.755, 101.773 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "321c8e388d1cbebecc98678dc5043abb0d5e3936",
+          "message": "purlis serve runs, started by the app (#2085)\n\n* Move the local socket check's tests into their own file\n\nA move alone, before the module changes for #1997: no test's name or body changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A peer below the window that holds the chats is inside a chat\n\nWhile chats run in the window's process, the session host's check that no person's scope is\nadmitted from inside a chat takes the window as one more chat's program, for every peer but\nthe window itself: purlis_same_user::inside_a_chat's one check, with every doubt a refusal.\n\nRefs #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The session host listens on its socket and admits only its scopes\n\npurlis-host serves the session protocol on one socket per user per device: the folder under the\nruntime directory made this user's alone, an exclusive lock beside the socket so a second host\nleaves the first serving, the socket made 0600, a fresh credential for every scope, and the\nprotocol crate's checks on every connection. It runs no program yet. `purlis serve` runs it on a\nmachine with no window. The core names where the socket is, and a chat's sandbox denies that\nfolder as it denies the credentials'.\n\nRefs #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The window starts its session host as its first client\n\nThe app starts its own binary again as the session host, so the program and its Keychain\nidentity are the window's and nothing prompts (ADR 0068 §1, as amended 2026-10-14). It starts\noff the first paint, holds the host's standard input so the host ends with the window however\nit goes, connects as local-ui once the host is ready, and closes the host's input at a quit.\nWhile chats run in the window, the host takes every process below the window as inside a chat.\n\nADR 0068 is amended for #1997; plane-format names the socket and its tier.\n\nCloses #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* No extension may take `serve` as its id\n\n`purlis serve` is a core command now, so the core's list of words an extension may not take\nnames it.\n\nRefs #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The session host's socket is named by the user, not by an inherited variable\n\nOne function names the socket's place for the window, `purlis serve` and a chat's sandbox: on\nmacOS the user's own temporary directory as the system names it, never $TMPDIR; on Linux\n$XDG_RUNTIME_DIR only when it is absolute, this user's and closed to others; else\n/tmp/purlis-<uid>. The window makes the folder before any chat starts, so every sandbox denies\na folder that is there, and still starts the host off the first paint. `run` keeps the mobile\nentry point attribute. ADR 0068's amendment marks its decided items to be confirmed, and the\nwindow connecting only to its own host as interim until reattach (#646).\n\nRefs #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The core's words count `serve` beside main's newest\n\nRefs #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* purlis serve's test keeps its inherited temporary directory inside the fence\n\nThe test build is fenced to the temporary directory, so the hostile `$TMPDIR` it hands\n`purlis serve` is the test's own folder; the socket still goes to the runtime directory, and\nnothing else is made beside it. A host that does not say it is ready is reported with what it\nsaid.\n\nRefs #1997\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T13:09:32+04:00",
+          "tree_id": "ae6d09dab0c4ae1ad11faffebb1b4cd209b3ab43",
+          "url": "https://github.com/purlis/purlis/commit/321c8e388d1cbebecc98678dc5043abb0d5e3936"
+        },
+        "date": 1792055740093,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5459825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.543, 0.546, 0.548, 0.570 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5054935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.343, 16.441, 16.505, 16.793, 17.039 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.6682955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.122, 103.690, 104.668, 104.956, 105.924 ms"
           }
         ]
       }
