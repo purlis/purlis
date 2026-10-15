@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792043135578,
+  "lastUpdate": 1792045558185,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2514,6 +2514,42 @@ window.BENCHMARK_DATA = {
             "value": 227.1,
             "unit": "MB",
             "extra": "median of 6 samples: 215.4, 233.9, 235.8, 228, 226.2, 132.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5c6100b2aeb3936cb5eb6f4eb70c7c6ab2fb30e0",
+          "message": "A stale workspace repo is a Notice with a one-click Fix (#1985, part 3) (#2095)\n\n* A stale workspace repo is a Notice with a one-click Fix (#1985, part 3)\n\nA workspace's repo left on a branch purlis cut for a chat or a task, not\non its default branch, or on a remote the forge said moved, is one Notice\nin the Inbox. Its Fix switches the repo back only when nothing would be\nlost (clean tree, every commit kept elsewhere, no chat mid-turn in it), or\npoints origin at the forge's new address; otherwise it says what blocks\nit and does nothing. purlis's own fetches from origin keep the forge's\nredirect for it.\n\nRefs #1985\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Stale repo review round: any other branch, the shown address, mid-turn (#1985)\n\n- Any branch of the repo itself other than its default counts; the\n  Notice says \"is on x, not main\" with what it means now.\n- The remote fix sets only the address the Notice shows, rebuilt from\n  checked parts on origin's own host and port.\n- The branch fix waits for a chat in the repo that is running, asking,\n  stopped on a prompt or not yet heard from.\n- A dismissal is keyed by the repo and each finding.\n- What could not be read is said, not dropped.\n\nRefs #1985\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T09:19:03+04:00",
+          "tree_id": "b4fa927af6baf00bc2e18eec4767c138111abe8a",
+          "url": "https://github.com/purlis/purlis/commit/5c6100b2aeb3936cb5eb6f4eb70c7c6ab2fb30e0"
+        },
+        "date": 1792045557418,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 828,
+            "unit": "MB",
+            "extra": "median of 3 samples: 726, 828, 909 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 201,
+            "unit": "MB",
+            "extra": "median of 6 samples: 274.8, 206.7, 205.8, 195.6, 196.2, 169.9 MB"
           }
         ]
       }
