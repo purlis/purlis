@@ -548,6 +548,8 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
       if (cmd === "running_sessions") return [];
       if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
       if (cmd === "extensions_on") return [];
+      // A Settings tab opened here reads no workspace's settings: refused, as a core can.
+      if (cmd === "workspace_settings") throw new Error("not read in this test");
       return null;
     });
     return {

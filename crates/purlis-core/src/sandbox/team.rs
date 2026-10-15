@@ -374,8 +374,10 @@ pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
     }
     let mut bound = Bound::local(matches!(team_off(root), TeamOff::Accepted(_)));
     // A project that turned the full sandbox on starts at it a chat whose person chose no level
-    // (#2071): only a level of theirs takes one lower, as far as it is allowed.
-    if super::Plane::read(root).in_force(locks).is_some() {
+    // (#2071): only a level of theirs takes one lower, as far as it is allowed. Not one whose
+    // `mode = "off"` is the team's off, whose default is the floor until the person accepts it.
+    let plane = super::Plane::read(root);
+    if plane.in_force(locks).is_some() && !plane.team().off {
         bound.default = Choice::On;
     }
     bound
