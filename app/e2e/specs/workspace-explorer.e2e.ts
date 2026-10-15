@@ -1786,7 +1786,18 @@ async function startARawPromptChat(plane: string): Promise<void> {
           .map((el) => (el as HTMLElement).innerText)
           .join(" | "),
       );
-      throw new Error(`${String(err)}; panes: ${(await paneRows()).join("|")}; said: ${said}`);
+      // What the window holds, so a red run says where the chat went: its frames, the tab in
+      // front, and the core's own view of the chat.
+      const frames = await browser.execute(() => ({
+        frames: document.querySelectorAll(".pane-frame").length,
+        terminals: document.querySelectorAll(".pane-frame .xterm").length,
+        front: document.querySelector('[data-strip="Tabs"] [aria-selected="true"]')?.textContent,
+      }));
+      const chats = JSON.stringify(await rawPromptChats(plane));
+      throw new Error(
+        `${String(err)}; panes: ${(await paneRows()).join("|")}; window: ${JSON.stringify(frames)}; ` +
+          `chats: ${chats}; said: ${said}`,
+      );
     });
 }
 

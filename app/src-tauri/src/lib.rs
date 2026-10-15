@@ -235,7 +235,8 @@ pub(crate) struct Shipped {
     pub git_hooks: Option<purlis_core::githooks::GitHooks>,
 }
 
-/// **In the tests, a build that ships its binary**: a stand-in `purlis` that does nothing.
+/// **In the tests, a build that ships its binary and plugin**: a stand-in `purlis` that does
+/// nothing, and an empty plugin folder.
 ///
 /// A Claude Code chat starts sandboxed in every project, at the floor where the project has not
 /// turned the full sandbox on (#2071), and a sandboxed chat is refused where the app cannot arm
@@ -245,16 +246,18 @@ pub(crate) struct Shipped {
 #[cfg(test)]
 impl Default for Shipped {
     fn default() -> Self {
-        static BINARY: std::sync::OnceLock<(tempfile::TempDir, PathBuf)> =
+        static SHIPPED: std::sync::OnceLock<(tempfile::TempDir, PathBuf, PathBuf)> =
             std::sync::OnceLock::new();
-        let (_, binary) = BINARY.get_or_init(|| {
+        let (_, binary, plugin) = SHIPPED.get_or_init(|| {
             let dir = tempfile::tempdir().expect("a folder for the stand-in binary");
             let binary = stand_in::program(dir.path(), "purlis", "#!/bin/sh\nexit 0\n");
-            (dir, binary)
+            let plugin = dir.path().join("plugin");
+            std::fs::create_dir_all(&plugin).expect("a folder for the stand-in plugin");
+            (dir, binary, plugin)
         });
         Self {
             binary: Some(binary.clone()),
-            plugin: None,
+            plugin: Some(plugin.clone()),
             shims: None,
             git_hooks: None,
         }
