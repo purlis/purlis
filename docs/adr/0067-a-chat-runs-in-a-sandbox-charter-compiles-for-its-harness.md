@@ -1742,7 +1742,12 @@ strict reading of a request's head, its tunnel and plain request, its limits.
 1. **A lane, not a second list** (ruled 2026-10-14). The browser's lane is its chat's reach,
    read again by the browser's rules: a host the chat's reach lists is carried at the layer that
    lists it, and nothing is listed for the browser alone. A grant is made and removed as the
-   chat's are, and shows in the one Granted list.
+   chat's are, and shows in the one Granted list. *The lane never takes the floor's reach of a
+   chat without the sandbox: a browser reaches the same whatever its chat's sandbox, so a public
+   site nothing lists is a new site (item 6) and a private address is carried only where it is
+   listed exactly (item 3). Decided in implementation by the dispatcher from the 2026-10-14
+   ruling that a chat without the sandbox gets browsers like a sandboxed one, 2026-10-15, to be
+   confirmed.*
 2. **By host and port, without opening TLS** (ruled 2026-10-14), as the chat's proxy decides: a
    `CONNECT` by its target, a plain request by its absolute target and its one `Host`. *One HTTP
    port, no SOCKS: decided in implementation, 2026-10-15, to be confirmed.*
@@ -1760,9 +1765,10 @@ strict reading of a request's head, its tunnel and plain request, its limits.
    (`localhost`, a name under it, a name of this Mac) is refused. *A name that ends in a number,
    an address written another way, is refused outright: decided in implementation, 2026-10-15,
    to be confirmed.*
-5. **The proxy resolves names itself, once and within a limit**, and connects only at the
-   public addresses that lookup answered. Where this machine's own addresses cannot be read, it
-   carries nothing.
+5. **The proxy resolves names itself, once**, and connects only at the public addresses that
+   lookup answered. *A lookup is given up after 10 seconds, and where this machine's own
+   addresses cannot be read the proxy carries nothing: decided in implementation, 2026-10-15, to
+   be confirmed.*
 6. **Public sites are readable; a site new to the project asks** (ruled 2026-10-14). As the
    glossary's **Reach** says, a site new to the project that the agent itself writes an address
    for asks once, and so does a form it posts there (#2018); a link the page offered does not.

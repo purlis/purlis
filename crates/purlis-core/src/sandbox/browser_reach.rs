@@ -94,9 +94,14 @@ pub enum Refusal {
 }
 
 impl Lane {
-    /// The browser's lane of `reach`, its chat's.
+    /// The browser's lane of `reach`, its chat's: what it lists, never the floor's reach of a
+    /// chat without the sandbox ([`Reach::anything`]), so a browser reaches the same whatever its
+    /// chat's sandbox: a public site nothing lists is a new site, and a private address is
+    /// carried only where it is listed exactly.
     pub fn of(reach: Reach) -> Self {
-        Self { reach }
+        Self {
+            reach: reach.listed_only(),
+        }
     }
 
     /// [`Self::decide`], with `own` as it was read: refused outright where this machine's
@@ -179,11 +184,12 @@ impl Lane {
             ip == IpAddr::V4(Ipv4Addr::LOCALHOST) || ip == IpAddr::V6(Ipv6Addr::LOCALHOST);
         let named_private = private_address(ip, own);
         if named_loopback || named_private {
-            // Carried where the chat's reach lists exactly that address and port, at the layer
-            // that lists it, and (for a local port) while it is not withdrawn: decided with no
-            // default port, so only an entry held to this port can match.
+            // Carried only where the chat's reach lists exactly that address and port
+            // ([`Reach::lists_exactly`]), at the layer that lists it, and (for a local port)
+            // while it is not withdrawn: decided with no default port, so only an entry held to
+            // this port can match.
             let by = self.reach.decide(&ip.to_string(), port, &[], own);
-            if by.carries() {
+            if self.reach.lists_exactly(ip, port) && by.carries() {
                 return Some(Verdict::Carry {
                     by,
                     at: Some(SocketAddr::new(ip, port)),
@@ -304,8 +310,22 @@ pub fn lookup_within<F>(within: Duration, resolve: F) -> Option<Vec<SocketAddr>>
 where
     F: FnOnce() -> Vec<SocketAddr> + Send + 'static,
 {
-    if LOOKUPS.fetch_add(1, Ordering::SeqCst) >= LOOKUPS_AT_ONCE {
-        LOOKUPS.fetch_sub(1, Ordering::SeqCst);
+    lookup_bounded(&LOOKUPS, LOOKUPS_AT_ONCE, within, resolve)
+}
+
+/// [`lookup_within`], counting the lookups running in `running` and refusing one past
+/// `at_once` at once.
+pub fn lookup_bounded<F>(
+    running: &'static AtomicUsize,
+    at_once: usize,
+    within: Duration,
+    resolve: F,
+) -> Option<Vec<SocketAddr>>
+where
+    F: FnOnce() -> Vec<SocketAddr> + Send + 'static,
+{
+    if running.fetch_add(1, Ordering::SeqCst) >= at_once {
+        running.fetch_sub(1, Ordering::SeqCst);
         return None;
     }
     let (send, answered) = std::sync::mpsc::sync_channel(1);
@@ -313,11 +333,11 @@ where
         .name("purlis-reach-lookup".into())
         .spawn(move || {
             let found = resolve();
-            LOOKUPS.fetch_sub(1, Ordering::SeqCst);
+            running.fetch_sub(1, Ordering::SeqCst);
             let _ = send.send(found);
         });
     if spawned.is_err() {
-        LOOKUPS.fetch_sub(1, Ordering::SeqCst);
+        running.fetch_sub(1, Ordering::SeqCst);
         return None;
     }
     answered.recv_timeout(within).ok()

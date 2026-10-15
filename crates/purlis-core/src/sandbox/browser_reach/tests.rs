@@ -10,7 +10,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use super::{
-    Lane, NewSite, NewSites, Refusal, Route, Verdict, lookup_within, public_address, route,
+    Lane, NewSite, NewSites, Refusal, Route, Verdict, lookup_bounded, lookup_within,
+    public_address, route,
 };
 use crate::sandbox::reach::{By, Decision, Reach};
 
@@ -591,5 +592,106 @@ fn a_new_site_is_named_as_one_spelling() {
             host: "new.example.net".to_owned(),
             port: 443
         }
+    );
+}
+
+#[test]
+fn a_browser_never_takes_the_floors_reach_of_a_chat_without_the_sandbox() {
+    let lane = Lane::of(Reach::anything());
+    for (host, port) in [
+        ("10.0.0.5", 6443),
+        ("10.0.0.5", 22),
+        ("192.168.1.1", 80),
+        ("100.64.0.7", 22),
+        ("100.100.1.2", 443),
+        ("fd12:3456:789a::1", 8443),
+    ] {
+        assert_eq!(
+            lane.decide(host, port, port != 80, &[]),
+            Verdict::Refused(Refusal::NotPublic),
+            "{host}:{port}"
+        );
+    }
+    assert_eq!(
+        lane.decide("127.0.0.1", 5173, true, &[]),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+    for (host, port, tunnel) in [("new.example.net", 443, true), ("example.com", 80, false)] {
+        assert_eq!(
+            lane.decide(host, port, tunnel, &[]),
+            Verdict::NewSite { at: None },
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn a_browser_of_a_chat_without_the_sandbox_takes_only_what_the_person_allowed() {
+    let lane = Lane::of(
+        Reach::anything().and(
+            [
+                ("10.0.0.5:6443", By::You),
+                ("127.0.0.1:5173", By::Chat),
+                ("example.com", By::Open),
+            ]
+            .into_iter()
+            .map(|(host, by)| (host.to_owned(), by)),
+        ),
+    );
+    assert_eq!(
+        lane.decide("10.0.0.5", 6443, true, &[]),
+        carried(Decision::Allowed(By::You), Some("10.0.0.5:6443"))
+    );
+    assert_eq!(
+        lane.decide("127.0.0.1", 5173, true, &[]),
+        carried(Decision::Allowed(By::Chat), Some("127.0.0.1:5173"))
+    );
+    assert_eq!(
+        lane.decide("example.com", 443, true, &[]),
+        carried(Decision::Open, None)
+    );
+    for (host, port) in [("10.0.0.5", 22), ("10.0.0.6", 6443), ("192.168.1.1", 80)] {
+        assert_eq!(
+            lane.decide(host, port, port != 80, &[]),
+            Verdict::Refused(Refusal::NotPublic),
+            "{host}:{port}"
+        );
+    }
+    assert_eq!(
+        lane.decide("new.example.net", 443, true, &[]),
+        Verdict::NewSite { at: None }
+    );
+}
+
+#[test]
+fn a_lookup_past_the_number_running_at_once_is_refused_at_once() {
+    static RUNNING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let release = std::sync::Arc::new(std::sync::Barrier::new(3));
+    for _ in 0..2 {
+        let waiting = std::sync::Arc::clone(&release);
+        let held = lookup_bounded(&RUNNING, 2, Duration::from_millis(10), move || {
+            waiting.wait();
+            Vec::new()
+        });
+        assert_eq!(held, None, "given up on, still running");
+    }
+    let started = Instant::now();
+    assert_eq!(
+        lookup_bounded(&RUNNING, 2, Duration::from_secs(5), || vec![at(
+            "93.184.215.14:443"
+        )]),
+        None
+    );
+    assert!(started.elapsed() < Duration::from_secs(1));
+    release.wait();
+    let until = Instant::now() + Duration::from_secs(5);
+    while RUNNING.load(std::sync::atomic::Ordering::SeqCst) > 0 && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        lookup_bounded(&RUNNING, 2, Duration::from_secs(5), || vec![at(
+            "93.184.215.14:443"
+        )]),
+        Some(vec![at("93.184.215.14:443")])
     );
 }
