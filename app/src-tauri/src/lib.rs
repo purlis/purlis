@@ -24,6 +24,7 @@ mod activity;
 mod alerts;
 mod asking;
 mod asknotify;
+mod askoutcome;
 mod askwrites;
 mod atlimit;
 mod autosave;
@@ -70,6 +71,7 @@ mod machineprofiles;
 mod instance;
 mod ipc;
 mod killswitch;
+mod kubectl;
 mod lifecycle;
 mod live;
 mod mcpfailed;
@@ -90,6 +92,7 @@ mod planes;
 mod planewatch;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod proposals;
 mod readonly;
 mod rebrief;
 mod references;
@@ -105,6 +108,7 @@ mod saving;
 mod searchfiles;
 mod sessions;
 mod settings;
+mod silence;
 mod slowstart;
 mod smartclose;
 mod stopping;
@@ -127,6 +131,7 @@ mod windows;
 mod worklinks;
 mod workspaces;
 mod worktrees;
+mod yoursandbox;
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -1880,6 +1885,68 @@ fn ask_chat_restart(
     planes.held(&plane)?.chats().ask_restart(session)
 }
 
+/// **What restarting chat `session` would end now** (#1986, ruling Q63), for the Ask that
+/// restarts it to say beforehand: each program its commands started that listens on a TCP port,
+/// and how many others they started are running ([`purlis_core::restartends`]). `None` where
+/// purlis cannot tell: the chat runs no program here, or the process table or its listening
+/// sockets could not be read. Read from the operating system, never from what the chat printed.
+///
+/// Off the window's thread: it runs `ps` and `lsof`.
+#[tauri::command]
+#[specta::specta]
+async fn what_a_restart_ends(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<Option<RestartEnds>, String> {
+    let held = planes.held(&plane)?;
+    off_the_window(READING_WHAT_A_RESTART_ENDS, move || {
+        Ok(held
+            .chats()
+            .sessions()
+            .process_id(session)
+            .and_then(purlis_core::restartends::of)
+            .map(RestartEnds::from))
+    })
+    .await
+}
+
+/// What [`what_a_restart_ends`] is doing, where it did not finish.
+const READING_WHAT_A_RESTART_ENDS: &str = "reading what a restart of the chat would end";
+
+/// [`purlis_core::restartends::Ends`], as the window reads it.
+#[derive(serde::Serialize, specta::Type)]
+struct RestartEnds {
+    /// Each program below the chat listening on a TCP port, by port.
+    listening: Vec<ListeningProgram>,
+    /// How many other programs its commands started are running.
+    others: u32,
+}
+
+/// One program listening on one port.
+#[derive(serde::Serialize, specta::Type)]
+struct ListeningProgram {
+    /// Its program's name, without its folder.
+    program: String,
+    port: u16,
+}
+
+impl From<purlis_core::restartends::Ends> for RestartEnds {
+    fn from(ends: purlis_core::restartends::Ends) -> Self {
+        Self {
+            listening: ends
+                .listening
+                .into_iter()
+                .map(|one| ListeningProgram {
+                    program: one.program,
+                    port: one.port,
+                })
+                .collect(),
+            others: ends.others,
+        }
+    }
+}
+
 /// What a restart answered (#1342, #1428): the chat in its new run with what its start found
 /// to say, or, while it waits on a permission prompt, why it is not restarted yet.
 #[derive(serde::Serialize, specta::Type)]
@@ -2981,6 +3048,25 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
+            // Each harness folder this machine uses becomes a profile in place, before any chat
+            // starts (ADR 0095 §2, #2033): from the app's own environment, which its chats are
+            // started from. Off in the scenario build, whose home is the person's.
+            #[cfg(not(feature = "e2e"))]
+            match purlis_core::profilestore::adopt_at_launch() {
+                Ok(adoption) => {
+                    for profile in adoption.adopted {
+                        tracing::info!(
+                            "purlis: adopted {} as the profile `{}`",
+                            profile.folders.config.display(),
+                            profile.name
+                        );
+                    }
+                    for why in adoption.passed_over {
+                        tracing::warn!("purlis: {why}");
+                    }
+                }
+                Err(why) => tracing::warn!("purlis: no harness folder was adopted: {why}"),
+            }
             // From here on this app holds the config home: no rename-local of a later launch,
             // or of a terminal, moves it while the app runs.
             let mut holds_the_config_home = false;
@@ -3386,6 +3472,18 @@ pub fn run() {
                 // Each line of a dispatch as the app records it: an open Activity tab adds
                 // it without reading the records again (#1495). To the window holding the
                 // project only: a line carries what a chat said.
+                // A task gone quiet, on its tab (#1981).
+                .telling_task_quiet({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: silence::TaskQuiet| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            silence::EVENT,
+                            &told,
+                        );
+                    })
+                })
                 .telling_activity({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |heard: activity::ActivityHeard| {

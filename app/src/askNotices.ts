@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The window's half of the asks' system notifications** (#1694, spec #1688, I-7).
+ * **The window's half of the asks' system notifications** (#1694, spec #1688, I-7; #1989).
  *
  * The core decides what is sent (`asknotify.rs`): only an ask raises a notification, never an
  * update; one chat's asks a few seconds apart share one; and nothing is sent while the person
@@ -12,7 +12,7 @@
  * - **whether a project's Inbox is open** ({@link useInboxOpenTold}), which the core reads with
  *   whether that window is focused and has the project in front;
  * - **what a click on a notification lands on** ({@link useNotificationLanding}): the Inbox, at
- *   the group of the chat it was about.
+ *   the group of the first chat it counted that still waits ({@link landsOn}).
  *
  * **A click is read as the window coming to the front.** On the desktop the system brings the
  * app forward when its notification is clicked, and tells it nothing more, so the window holds
@@ -27,14 +27,26 @@ import { listen } from "./here";
 /** The event the core sends the window holding a project when it notified about a chat's asks. */
 export const ASKS_NOTIFIED = "asks-notified";
 
-/** Where a notification lands: a project's Inbox, at one chat's group. */
-export type Landing = { plane: string; session: number };
+/** Where a notification lands: a project's Inbox, at the group of `session`, the first chat
+ *  it counted, or of the first of `sessions` (every chat it counted, in order) still waiting. */
+export type Landing = { plane: string; session: number; sessions?: number[] };
 
-const isLanding = (said: unknown): said is Landing =>
-  typeof said === "object" &&
-  said !== null &&
-  typeof (said as Landing).plane === "string" &&
-  Number.isInteger((said as Landing).session);
+const isLanding = (said: unknown): said is Landing => {
+  if (typeof said !== "object" || said === null) return false;
+  const { plane, session, sessions } = said as Record<string, unknown>;
+  return (
+    typeof plane === "string" &&
+    Number.isInteger(session) &&
+    (sessions === undefined ||
+      (Array.isArray(sessions) && sessions.every((one) => Number.isInteger(one))))
+  );
+};
+
+/** **The chat a landing opens the Inbox at**: the first it counted that still `waits`, since
+ *  one may have been answered elsewhere meanwhile; none when none does. */
+export function landsOn(to: Landing, waits: (session: number) => boolean): number | undefined {
+  return (to.sessions ?? [to.session]).find(waits);
+}
 
 /**
  * Tells the core whether `plane`'s Inbox is open in this window, each time that changes, and

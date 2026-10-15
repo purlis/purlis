@@ -427,6 +427,67 @@ describe("a host block past the hosts the chat's proxy names", () => {
   });
 });
 
+describe("Keep blocked on a block that is not a host (#1987)", () => {
+  const FOLDER: ChatBlocked = {
+    ...UNNAMED,
+    operation: "write",
+    kind: "home",
+    said: "a write to a folder outside the project",
+    offer: "write",
+    target: "/Users/dev/.cache/cargo",
+    levels: ["chat", "you"],
+  };
+
+  function keeping(answer: unknown) {
+    const asked: { cmd: string; args: unknown }[] = [];
+    const onDismiss = vi.fn();
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "keep_sandbox_block" && answer instanceof Error) throw answer.message;
+      return null;
+    });
+    render(
+      <SandboxBlockNotice
+        block={FOLDER}
+        asks={askOfBlock(FOLDER)}
+        more={0}
+        onDismiss={onDismiss}
+        onAllowed={vi.fn()}
+        onRestarted={vi.fn()}
+      />,
+    );
+    return { asked, onDismiss };
+  }
+
+  it("is kept by the core, which tells the chat, and the Notice goes", async () => {
+    const { asked, onDismiss } = keeping(null);
+    await userEvent.click(screen.getByRole("button", { name: /^Keep blocked/ }));
+    await waitFor(() => expect(onDismiss).toHaveBeenCalled());
+    expect(asked.filter((one) => one.cmd === "keep_sandbox_block").map((one) => one.args)).toEqual([
+      {
+        plane: PLANE,
+        session: 4,
+        shown: {
+          operation: "write",
+          kind: "home",
+          what: "write",
+          target: "/Users/dev/.cache/cargo",
+        },
+        reason: null,
+      },
+    ]);
+  });
+
+  it("says why and stays where the core could not keep it", async () => {
+    const { onDismiss } = keeping(new Error("purlis could not read this project."));
+    await userEvent.click(screen.getByRole("button", { name: /^Keep blocked/ }));
+    await waitFor(() =>
+      expect(screen.getByText(/purlis could not read this project\./)).toBeInTheDocument(),
+    );
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+});
+
 describe("a service on this Mac's Notice (qw384)", () => {
   const CLUSTER: ChatBlocked = {
     ...UNNAMED,
@@ -478,6 +539,93 @@ describe("a service on this Mac's Notice (qw384)", () => {
     );
   });
 
+  describe("in a Claude Code chat (qw384b)", () => {
+    const CLAUDE: ChatBlocked = {
+      ...CLUSTER,
+      harness: "claude",
+      route: `${CLUSTER.route} In a Claude Code chat a command reaches it through this chat's proxy, by the name this-mac.internal and that port.`,
+    };
+    const CONTEXTS = [
+      { name: "kind-kind", server: "https://127.0.0.1:50795", port: 50795, refused: null },
+      {
+        name: "prod",
+        server: "https://api.prod.example.com",
+        port: null,
+        refused: "https://api.prod.example.com is not a cluster on this Mac.",
+      },
+    ];
+
+    function drawnClaude(block: ChatBlocked = CLAUDE) {
+      const asked: { cmd: string; args: unknown }[] = [];
+      mockIPC((cmd, args) => {
+        asked.push({ cmd, args });
+        if (cmd === "allow_sandbox_block")
+          return { said: "Allowed only for this chat.", live: false };
+        if (cmd === "kube_contexts") return CONTEXTS;
+        if (cmd === "point_kubectl")
+          return "kubectl in this chat now uses its own copy of kind-kind.";
+        return null;
+      });
+      const onAllowed = vi.fn();
+      render(
+        <SandboxBlockNotice
+          block={block}
+          asks={askOfBlock(block)}
+          more={0}
+          onDismiss={vi.fn()}
+          onAllowed={onAllowed}
+          onRestarted={vi.fn()}
+        />,
+      );
+      return {
+        onAllowed,
+        sent: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
+      };
+    }
+
+    it("offers the same Allow, saying the name its proxy carries the port by", async () => {
+      const { sent } = drawnClaude();
+      expect(screen.getByText(/this-mac\.internal/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /without the sandbox/ })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+      await waitFor(() => expect(sent("allow_sandbox_block")).toHaveLength(1));
+    });
+
+    it("once allowed, points the chat's kubectl at a context on this Mac on the person's press", async () => {
+      const { sent, onAllowed } = drawnClaude();
+      // Nothing is read before the person asks.
+      expect(screen.queryByRole("button", { name: "Point kubectl at it…" })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Point kubectl at it…" }));
+      expect(sent("kube_contexts")).toHaveLength(1);
+      expect(sent("point_kubectl")).toEqual([]);
+      // Before any press, it says the chat gets that context's credentials, which it can read.
+      expect(
+        screen.getByText(
+          /gets its own copy of the context you choose, its credentials included: this chat can read them/,
+        ),
+      ).toBeTruthy();
+      // A context elsewhere is listed with why, and never pressable.
+      expect(screen.getByText(/api\.prod\.example\.com is not a cluster on this Mac/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /prod/ })).toBeNull();
+      onAllowed.mockClear();
+      await userEvent.click(screen.getByRole("button", { name: "Use kind-kind" }));
+      await waitFor(() =>
+        expect(sent("point_kubectl")).toEqual([{ plane: PLANE, session: 4, context: "kind-kind" }]),
+      );
+      expect(await screen.findByText(/now uses its own copy of kind-kind/)).toBeTruthy();
+      // The chat restarts to take it, as after an Allow.
+      expect(onAllowed).toHaveBeenCalledTimes(1);
+    });
+
+    it("never offers it in a chat of purlis's own wrap, which reaches the port as itself", async () => {
+      drawnClaude({ ...CLAUDE, harness: "codex" });
+      await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+      await screen.findByText(/Allowed only for this chat/);
+      expect(screen.queryByRole("button", { name: "Point kubectl at it…" })).toBeNull();
+    });
+  });
+
   it("asks for the port in a form row where the refusal named none", async () => {
     const { sent } = drawn({ ...CLUSTER, target: null });
     const box = screen.getByRole("textbox", { name: "Port to allow" });
@@ -495,5 +643,72 @@ describe("a service on this Mac's Notice (qw384)", () => {
         },
       ]),
     );
+  });
+});
+
+describe("an Allow that restarts the chat says beforehand what will end (#1986)", () => {
+  const FOLDER: ChatBlocked = {
+    ...UNNAMED,
+    operation: "write",
+    kind: "outside",
+    said: "a write outside the chat's folders",
+    offer: "write",
+    target: "/Users/op/work/notes",
+    levels: ["chat", "you"],
+  };
+
+  function drawnReading(block: ChatBlocked, ends: unknown) {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "what_a_restart_ends") return ends;
+      return null;
+    });
+    render(
+      <SandboxBlockNotice
+        block={block}
+        asks={askOfBlock(block)}
+        more={0}
+        onDismiss={vi.fn()}
+        onAllowed={vi.fn()}
+        onRestarted={vi.fn()}
+      />,
+    );
+    return asked;
+  }
+
+  it("names the dev server a folder's Allow will stop, at the chat's next pause", async () => {
+    drawnReading(FOLDER, { listening: [{ program: "node", port: 5173 }], others: 0 });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/at its next pause between turns; its/, { exact: false }),
+      ).toHaveTextContent("its node on port 5173 will stop."),
+    );
+    expect(screen.getByRole("button", { name: /^Allow/ })).toBeTruthy();
+  });
+
+  it("says plainly when purlis cannot tell what a socket's Allow will end", async () => {
+    drawnReading(
+      {
+        ...FOLDER,
+        kind: "local-socket",
+        said: "a connection to a local socket",
+        offer: "socket",
+        target: "/Users/op/.docker/run/docker.sock",
+        levels: ["once", "chat", "you"],
+      },
+      null,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/purlis cannot tell what it has running/)).toBeTruthy(),
+    );
+  });
+
+  it("asks nothing about a host, which the chat may take without restarting", () => {
+    const asked = drawnReading({ ...UNNAMED, target: "api.example.com" }, null);
+    expect(asked).not.toContain("what_a_restart_ends");
+    expect(screen.queryByText(/next pause between turns/)).toBeNull();
   });
 });

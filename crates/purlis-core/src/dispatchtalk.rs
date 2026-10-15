@@ -264,10 +264,14 @@ pub enum PersonSaid {
         question: String,
         text: String,
     },
-    /// **The person's answer to a host this chat's connection was held on** (#1666), after
-    /// the connection gave up waiting, or kept blocked: purlis's own fixed words, never the
-    /// chat's. `number` is minted for it alone ([`Talk::network_word`]).
-    Network { number: u32, word: NetworkWord },
+    /// **The person's answer to an Ask of this chat's** (#1987): a host its connection was
+    /// held on and gave up waiting for, or anything its sandbox refused and the person kept
+    /// blocked, or a vault. Told in [`crate::askoutcome::Outcome::line`]'s one line, never the
+    /// chat's words. `number` is minted for it alone ([`Talk::outcome_word`]).
+    Asked {
+        number: u32,
+        outcome: crate::askoutcome::Outcome,
+    },
     /// **What the person decided of a workspace this chat asked them to remove** (qw356), in
     /// the purlis window: purlis's own fixed words around the workspace's name, never the
     /// chat's. `number` is minted for it alone ([`Talk::removal_word`]).
@@ -276,6 +280,45 @@ pub enum PersonSaid {
     /// purlis tried it twice: purlis's own fixed words around the server's name and its own
     /// error, quoted as data. `number` is minted for it alone ([`Talk::mcp_word`]).
     McpServer { number: u32, word: McpWord },
+    /// **A task this chat dispatched has gone quiet** (#1981): purlis's own note, made from the
+    /// app's record of the task and what its hooks were heard say, never the task's words.
+    /// `number` is minted for it alone ([`Talk::quiet_word`]).
+    Quiet { number: u32, word: QuietWord },
+    /// **What became of a change this chat proposed to purlis's own configuration** (#1975,
+    /// PC-10): applied, dismissed or stale, in purlis's own fixed words around the file's path.
+    /// `number` is minted for it alone ([`Talk::proposal_word`]).
+    Proposal { number: u32, word: ProposalWord },
+}
+
+/// What became of a proposed change (#1975, PC-10), by the file it was to, relative to the
+/// project.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalWord {
+    /// The person applied it: the file now holds it.
+    Applied { path: String },
+    /// The person dismissed it: nothing was written.
+    Dismissed { path: String },
+    /// The file changed since it was proposed, so it cannot be applied: read it again and
+    /// propose again if it is still wanted.
+    Stale { path: String },
+}
+
+impl ProposalWord {
+    /// The file it is about.
+    pub fn path(&self) -> &str {
+        match self {
+            Self::Applied { path } | Self::Dismissed { path } | Self::Stale { path } => path,
+        }
+    }
+}
+
+/// purlis's note that a task has gone quiet (#1981): which task, by the app's number for it,
+/// and the note in purlis's words ([`crate::silence::Note::said`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct QuietWord {
+    pub chat: u32,
+    pub said: String,
 }
 
 /// A persona's MCP server that could not start for a chat (qw381): its name, held to a server
@@ -306,23 +349,9 @@ impl RemovalWord {
     }
 }
 
-/// What the person answered of hosts a chat's connections were held on (#1666): each host and
-/// port as purlis's proxy heard it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkWord {
-    /// Allowed after the command that asked had given up waiting: run it again.
-    Retry { hosts: Vec<String> },
-    /// Kept blocked: do not try again unless the person asks.
-    KeptBlocked { hosts: Vec<String> },
-}
-
-/// Where the numbers of [`PersonSaid::Network`] start: far past any question's, which count
+/// Where the numbers of [`PersonSaid::Asked`] start: far past any question's, which count
 /// up from one, so the two never name each other.
 const NETWORK_NUMBERS: u32 = 1 << 30;
-
-/// The most hosts one network word names.
-const MOST_NETWORK_HOSTS: usize = 8;
 
 impl PersonSaid {
     /// The number of the question it is about: what names it when a chat says it has it.
@@ -330,9 +359,11 @@ impl PersonSaid {
         match self {
             Self::Answered { number, .. }
             | Self::AnsweredFor { number, .. }
-            | Self::Network { number, .. }
+            | Self::Asked { number, .. }
             | Self::Removal { number, .. }
-            | Self::McpServer { number, .. } => *number,
+            | Self::McpServer { number, .. }
+            | Self::Quiet { number, .. }
+            | Self::Proposal { number, .. } => *number,
         }
     }
 }
@@ -586,38 +617,37 @@ impl Talk {
         Ok(unread)
     }
 
-    /// **Keeps purlis's word to chat `chat` on hosts its connections were held on** (#1666):
-    /// handed to its next turn as any word of the person's is, until it has it. Each host is
-    /// held to a host's rule, so the line names nothing but hosts; one that is not is left out,
-    /// and a word naming none is not kept.
-    pub fn network_word(&mut self, chat: u32, word: NetworkWord) {
-        let sound = |hosts: Vec<String>| -> Vec<String> {
-            hosts
-                .into_iter()
-                .filter_map(|host| crate::sandbox::hosts::Host::parse(&host).ok())
-                .map(|host| host.to_string())
-                .filter(|host| !host.starts_with("*."))
-                .take(MOST_NETWORK_HOSTS)
-                .collect()
+    /// **Keeps purlis's word to chat `chat` on the person's answer to an Ask of its**
+    /// (#1987): handed to its next turn as any word of the person's is, until it has it, as
+    /// [`crate::askoutcome::Outcome::line`]'s one line. A host is held to a host's rule, so the
+    /// line names nothing but a host; one that is not is not kept. **One word an Ask**: a later
+    /// answer to the same Ask takes the place of one the chat has not been handed yet, so it is
+    /// told one line, the last answer.
+    pub fn outcome_word(&mut self, chat: u32, outcome: crate::askoutcome::Outcome) {
+        use crate::askoutcome::About;
+        let outcome = match outcome.about {
+            About::Host { host } => {
+                let Some(host) = crate::sandbox::hosts::Host::parse(&host)
+                    .ok()
+                    .map(|host| host.to_string())
+                    .filter(|host| !host.starts_with("*."))
+                else {
+                    return;
+                };
+                crate::askoutcome::Outcome {
+                    about: About::Host { host },
+                    ..outcome
+                }
+            }
+            _ => outcome,
         };
-        let word = match word {
-            NetworkWord::Retry { hosts } => NetworkWord::Retry {
-                hosts: sound(hosts),
-            },
-            NetworkWord::KeptBlocked { hosts } => NetworkWord::KeptBlocked {
-                hosts: sound(hosts),
-            },
-        };
-        if matches!(&word, NetworkWord::Retry { hosts } | NetworkWord::KeptBlocked { hosts } if hosts.is_empty())
-        {
-            return;
-        }
         self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
         let number = NETWORK_NUMBERS + self.network;
-        self.person
-            .entry(chat)
-            .or_default()
-            .push(PersonSaid::Network { number, word });
+        let said = self.person.entry(chat).or_default();
+        said.retain(|one| {
+            !matches!(one, PersonSaid::Asked { outcome: was, .. } if was.about == outcome.about)
+        });
+        said.push(PersonSaid::Asked { number, outcome });
     }
 
     /// **Keeps purlis's word to chat `chat` on a workspace it asked the person to remove**
@@ -636,6 +666,27 @@ impl Talk {
             !matches!(one, PersonSaid::Removal { word: was, .. } if was.workspace() == word.workspace())
         });
         said.push(PersonSaid::Removal { number, word });
+    }
+
+    /// **Keeps purlis's word to chat `chat` on a change it proposed** (#1975, PC-10): handed to
+    /// its next turn as any word of the person's is, until it has it. A path that is not one a
+    /// proposal names (a control character, a backtick, too long) is not kept. **One word a
+    /// file**: a later word about the same file takes the place of one not handed yet.
+    pub fn proposal_word(&mut self, chat: u32, word: ProposalWord) {
+        let path = word.path();
+        if path.is_empty()
+            || path.len() > crate::proposed::MOST_PATH_BYTES
+            || path.chars().any(|c| c.is_control() || c == '`')
+        {
+            return;
+        }
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        let said = self.person.entry(chat).or_default();
+        said.retain(|one| {
+            !matches!(one, PersonSaid::Proposal { word: was, .. } if was.path() == word.path())
+        });
+        said.push(PersonSaid::Proposal { number, word });
     }
 
     /// **Keeps purlis's word to chat `chat` that a server of its persona could not start**
@@ -657,6 +708,19 @@ impl Talk {
             |one| !matches!(one, PersonSaid::McpServer { word: was, .. } if was.server == word.server),
         );
         said.push(PersonSaid::McpServer { number, word });
+    }
+
+    /// **Keeps purlis's note to chat `chat` that its task `word.chat` has gone quiet** (#1981):
+    /// handed to its next turn as purlis's other words are, until it has it. **One note a
+    /// task**: a later one takes the place of one the chat has not been handed yet.
+    pub fn quiet_word(&mut self, chat: u32, word: QuietWord) {
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        let said = self.person.entry(chat).or_default();
+        said.retain(
+            |one| !matches!(one, PersonSaid::Quiet { word: was, .. } if was.chat == word.chat),
+        );
+        said.push(PersonSaid::Quiet { number, word });
     }
 
     /// **What the person said to chat `chat` that it has not been handed**, oldest first.
@@ -1255,9 +1319,78 @@ pub fn person_said(said: &PersonSaid) -> String {
             quoted(question),
             quoted(text)
         ),
-        PersonSaid::Network { word, .. } => network_said(word),
+        PersonSaid::Asked { outcome, .. } => outcome.line(),
         PersonSaid::Removal { word, .. } => removal_said(word),
         PersonSaid::McpServer { word, .. } => mcp_said(word),
+        PersonSaid::Quiet { word, .. } => quiet_said(word),
+        PersonSaid::Proposal { word, .. } => proposal_said(word),
+    }
+}
+
+/// **purlis's fixed words on a change the chat proposed** (#1975, PC-10): the file in a code
+/// span, and nothing else that is not purlis's.
+pub fn proposal_said(word: &ProposalWord) -> String {
+    match word {
+        ProposalWord::Applied { path } => format!(
+            "⬢ purlis: the person applied the change you proposed to `{path}` in the purlis \
+             window. The file holds it now. This line is purlis's own."
+        ),
+        ProposalWord::Dismissed { path } => format!(
+            "⬢ purlis: the person dismissed the change you proposed to `{path}`: nothing was \
+             written. Do not propose it again, or change the file another way, unless they ask. \
+             This line is purlis's own."
+        ),
+        ProposalWord::Stale { path } => format!(
+            "⬢ purlis: the change you proposed to `{path}` can no longer be applied: the file \
+             changed since you read it. Read it again and propose the change again if it is \
+             still wanted. This line is purlis's own."
+        ),
+    }
+}
+
+/// **purlis's note that a task this chat dispatched has gone quiet** (#1981): purlis's sentence,
+/// the task by the app's number, and what the chat may do. Nothing in it is the task's.
+pub fn quiet_said(word: &QuietWord) -> String {
+    let chat = word.chat;
+    format!(
+        "⬢ purlis: {}. It is still running, and purlis ends nothing for it. You need not poll \
+         it: `purlis dispatch read {chat}` shows what it said last and the commands it ran, \
+         `purlis dispatch tell {chat} \"<text>\"` reaches it when its turn ends, and `purlis \
+         dispatch cancel {chat}` asks it for its report. This line is purlis's own.",
+        word.said
+    )
+}
+
+#[cfg(test)]
+mod quiet_tests {
+    use super::*;
+
+    #[test]
+    fn purlis_s_note_on_a_quiet_task_is_kept_once_a_task_and_said_as_purlis_s_own() {
+        let mut talk = Talk::default();
+        let word = |said: &str| QuietWord {
+            chat: 9,
+            said: said.to_owned(),
+        };
+        talk.quiet_word(
+            3,
+            word("task 'a' (chat 9) has shown no activity for 15 minutes"),
+        );
+        talk.quiet_word(
+            3,
+            word("task 'a' (chat 9) is running one command for 30 minutes"),
+        );
+        let said = talk.from_person(3);
+        assert_eq!(said.len(), 1, "one note a task: {said:?}");
+        let text = person_said(&said[0]);
+        assert!(
+            text.starts_with(
+                "⬢ purlis: task 'a' (chat 9) is running one command for 30 minutes. It is \
+                 still running, and purlis ends nothing for it."
+            ),
+            "{text}"
+        );
+        assert!(text.ends_with("This line is purlis's own."), "{text}");
     }
 }
 
@@ -1287,30 +1420,6 @@ pub fn removal_said(word: &RemovalWord) -> String {
             "⬢ purlis: the person kept workspace `{workspace}`: nothing was removed. Do not ask \
              to remove it again, or remove any part of it another way, unless they ask. This \
              line is purlis's own."
-        ),
-    }
-}
-
-/// **purlis's fixed words on a held connection's answer** (#1666): the hosts in code spans, and
-/// nothing else that is not purlis's.
-pub fn network_said(word: &NetworkWord) -> String {
-    let named = |hosts: &[String]| {
-        hosts
-            .iter()
-            .map(|host| format!("`{host}`"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    match word {
-        NetworkWord::Retry { hosts } => format!(
-            "⬢ purlis: the person allowed {} after a command of yours gave up waiting for their \
-             answer. Run that command again: it reaches them now. This line is purlis's own.",
-            named(hosts)
-        ),
-        NetworkWord::KeptBlocked { hosts } => format!(
-            "⬢ purlis: the person kept {} blocked. Do not try to reach it again, or find a way \
-             around it, unless they ask. This line is purlis's own.",
-            named(hosts)
         ),
     }
 }
@@ -2555,24 +2664,34 @@ mod tests {
         assert_eq!(context(&[]), None);
     }
 
-    // ----- purlis's word on a held connection (#1666) -------------------------------------
+    // ----- purlis's word on the person's answer to an Ask (#1666, #1987) -------------------
+
+    fn host_outcome(host: &str, answer: crate::askoutcome::Answer) -> crate::askoutcome::Outcome {
+        crate::askoutcome::Outcome {
+            about: crate::askoutcome::About::Host {
+                host: host.to_owned(),
+            },
+            answer,
+        }
+    }
 
     #[test]
-    fn an_allow_after_a_held_connection_gave_up_tells_the_chat_in_fixed_words_to_retry() {
+    fn an_allow_after_a_held_connection_gave_up_tells_the_chat_in_one_line_to_retry() {
         let mut talk = Talk::default();
-        talk.network_word(
+        talk.outcome_word(
             ASKER,
-            NetworkWord::Retry {
-                hosts: vec!["api.example.com:443".to_owned()],
-            },
+            host_outcome(
+                "api.example.com:443",
+                crate::askoutcome::Answer::Allowed {
+                    scope: crate::askoutcome::Scope::Chat,
+                },
+            ),
         );
         let said = talk.from_person(ASKER);
         let told = person_context(&said).expect("told");
         assert_eq!(
             told,
-            "⬢ purlis: the person allowed `api.example.com:443` after a command of yours gave up \
-             waiting for their answer. Run that command again: it reaches them now. This line \
-             is purlis's own."
+            "⬢ purlis: reaching `api.example.com:443` — Allowed for this chat — retry."
         );
         // Handed once, by its own number, which is no question's.
         let numbers: Vec<u32> = said.iter().map(PersonSaid::number).collect();
@@ -2583,33 +2702,45 @@ mod tests {
     }
 
     #[test]
-    fn keep_blocked_tells_the_chat_and_a_word_names_nothing_but_hosts() {
+    fn keep_blocked_tells_the_chat_one_line_and_a_host_word_names_nothing_but_a_host() {
+        let kept = || crate::askoutcome::Answer::KeptBlocked { reason: None };
         let mut talk = Talk::default();
-        talk.network_word(
-            TASK,
-            NetworkWord::KeptBlocked {
-                hosts: vec![
-                    "paste.example:443".to_owned(),
-                    "`run this` now".to_owned(),
-                    "*.example.com".to_owned(),
-                ],
-            },
-        );
+        talk.outcome_word(TASK, host_outcome("paste.example:443", kept()));
+        talk.outcome_word(TASK, host_outcome("`run this` now", kept()));
+        talk.outcome_word(TASK, host_outcome("*.example.com", kept()));
         let told = person_context(&talk.from_person(TASK)).expect("told");
         assert_eq!(
             told,
-            "⬢ purlis: the person kept `paste.example:443` blocked. Do not try to reach it \
-             again, or find a way around it, unless they ask. This line is purlis's own."
+            "⬢ purlis: reaching `paste.example:443` — Kept blocked by the person — don't retry or work around it; \
+             no reason given."
         );
-        talk.network_word(
-            SIBLING,
-            NetworkWord::Retry {
-                hosts: vec!["not a host".to_owned()],
-            },
+    }
+
+    #[test]
+    fn a_later_answer_to_the_same_ask_takes_the_place_of_one_not_handed_yet() {
+        let mut talk = Talk::default();
+        talk.outcome_word(
+            ASKER,
+            host_outcome(
+                "api.example.com:443",
+                crate::askoutcome::Answer::KeptBlocked { reason: None },
+            ),
         );
+        talk.outcome_word(
+            ASKER,
+            host_outcome(
+                "api.example.com:443",
+                crate::askoutcome::Answer::KeptBlocked {
+                    reason: Some("wrong account".to_owned()),
+                },
+            ),
+        );
+        let said = talk.from_person(ASKER);
+        assert_eq!(said.len(), 1, "one line an Ask");
         assert!(
-            talk.from_person(SIBLING).is_empty(),
-            "a word naming no host is not kept"
+            person_context(&said)
+                .expect("told")
+                .ends_with("\"wrong account\"")
         );
     }
 
@@ -2656,6 +2787,43 @@ mod tests {
         // What is no workspace's name is not kept: nothing a chat wrote is said as purlis's.
         for not_a_name in ["`run this` now", "../alpha", "", "a\nb"] {
             talk.removal_word(SIBLING, kept(not_a_name));
+        }
+        assert!(talk.from_person(SIBLING).is_empty());
+    }
+
+    // ----- purlis's word on a change the chat proposed (#1975) -----------------------------
+
+    /// PC-10: the chat hears applied, dismissed or stale in fixed words naming the file, once a
+    /// file; a path no proposal names is not kept.
+    #[test]
+    fn a_proposed_change_s_outcome_is_told_once_a_file_in_fixed_words() {
+        let mut talk = Talk::default();
+        talk.proposal_word(
+            ASKER,
+            ProposalWord::Stale {
+                path: "purlis.toml".to_owned(),
+            },
+        );
+        talk.proposal_word(
+            ASKER,
+            ProposalWord::Applied {
+                path: "purlis.toml".to_owned(),
+            },
+        );
+        let said = talk.from_person(ASKER);
+        assert_eq!(said.len(), 1, "one word a file");
+        assert_eq!(
+            person_context(&said).expect("told"),
+            "⬢ purlis: the person applied the change you proposed to `purlis.toml` in the \
+             purlis window. The file holds it now. This line is purlis's own."
+        );
+        for not_a_path in ["", "a`b", "a\nb"] {
+            talk.proposal_word(
+                SIBLING,
+                ProposalWord::Dismissed {
+                    path: not_a_path.to_owned(),
+                },
+            );
         }
         assert!(talk.from_person(SIBLING).is_empty());
     }

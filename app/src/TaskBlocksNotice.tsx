@@ -5,6 +5,7 @@ import { useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { sandboxCommandReturned } from "./sandboxAsked";
+import { RestartEndsLine } from "./RestartEnds";
 import { asksOf, inertly } from "./sandboxBlocks";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
 
@@ -148,7 +149,7 @@ export function TaskBlocksNotice({
     setBusy(true);
     setSaid(undefined);
     void commands
-      .keepSandboxBlockForTasks(plane, group.session, seenOf(members))
+      .keepSandboxBlockForTasks(plane, group.session, seenOf(members), null)
       .then((done) => {
         if (done.status === "error") setSaid(done.error);
         else onKeepBlocked(members.filter((one) => done.data.includes(one.session)));
@@ -193,6 +194,16 @@ export function TaskBlocksNotice({
           <li key={one.session}>{one.whose}</li>
         ))}
       </ul>
+      {/* A folder reaches each task only by its restart (#1986): what that ends, each said. */}
+      {group.offer === "write" && (
+        <ul aria-label="What restarting each task ends">
+          {group.members.map((one) => (
+            <li key={one.session}>
+              <RestartEndsLine plane={plane} session={one.session} chat={one.whose} />
+            </li>
+          ))}
+        </ul>
+      )}
       {alwaysOpen && (
         <div className="block-allow-actions ui-button-row">
           {others.map((level) => (

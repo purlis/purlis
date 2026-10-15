@@ -101,6 +101,13 @@ pub fn create(request: &Request, say: Sink) -> u8 {
     if request.use_it {
         let before = wscmd::select::is_locked(request.root, request.ids);
         match wscmd::select::set_active(request.root, name, request.ids, request.force) {
+            wscmd::select::Scope::Unwritten => {
+                say(Say::Fail(wscmd::select::unwritten_msg(name)));
+                say(Say::Info(format!(
+                    "Workspace '{name}' was created; it is not selected."
+                )));
+                return 1;
+            }
             wscmd::select::Scope::Locked => {
                 let held = before.unwrap_or_else(|| "?".to_string());
                 say(Say::Fail(wscmd::select::locked_msg(name, &held)));

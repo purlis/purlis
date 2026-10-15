@@ -166,12 +166,17 @@ describe("the window's lanes", () => {
   it("send a Keep blocked at once, whatever the sandbox's lane is waiting on: it types into the chat", () => {
     const core = aCoreAnsweringWhenTold();
     void commands.sandboxState("/k");
-    void commands.keepSandboxBlock("/k", 1, {
-      operation: "network-outbound",
-      kind: "host",
-      what: "host",
-      target: "example.com",
-    });
+    void commands.keepSandboxBlock(
+      "/k",
+      1,
+      {
+        operation: "network-outbound",
+        kind: "host",
+        what: "host",
+        target: "example.com",
+      },
+      null,
+    );
     expect(core.sent).toEqual(["sandbox_state", "keep_sandbox_block"]);
   });
 

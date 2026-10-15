@@ -135,7 +135,8 @@ fn tree(root: &Path) -> BTreeMap<PathBuf, Node> {
     while let Some(dir) = todo.pop() {
         for entry in std::fs::read_dir(&dir).unwrap() {
             let path = entry.unwrap().path();
-            let rel = path.strip_prefix(root).unwrap().to_path_buf();
+            // A fixture is tracked under a neutral name (#2089): read as the test sees it.
+            let rel = purlis_core::testfixture::real_path(path.strip_prefix(root).unwrap());
             let meta = std::fs::symlink_metadata(&path).unwrap();
             if meta.file_type().is_symlink() {
                 out.insert(rel, Node::Link(std::fs::read_link(&path).unwrap()));

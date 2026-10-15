@@ -606,6 +606,8 @@ pub enum Landed {
     PersonAnsweredFor(u32),
     /// This task's turn ended without its report (#1981): it is asked for it, once.
     ReportOwed,
+    /// purlis's note that this task, which the chat dispatched, has gone quiet (#1981).
+    Quiet(u32),
 }
 
 /// What the app does as a task's turn ends while it still owes its report (#1981,
@@ -1003,6 +1005,10 @@ pub fn nudge(landed: &[Landed]) -> String {
         Landed::PersonAnsweredFor(chat) => Some(*chat),
         _ => None,
     });
+    let quiet = chats(|one| match one {
+        Landed::Quiet(chat) => Some(*chat),
+        _ => None,
+    });
     // A task asked for its report (#1981): said after anything attached, in a sentence of its
     // own, since nothing is attached for it.
     let report_owed = landed.contains(&Landed::ReportOwed).then_some(REPORT_OWED);
@@ -1058,17 +1064,37 @@ pub fn nudge(landed: &[Landed]) -> String {
             many.join(", ")
         )),
     }
+    match quiet.as_slice() {
+        [] => {}
+        [one] => said.push(format!(
+            "purlis notes that a task this chat dispatched has gone quiet (chat {one})"
+        )),
+        many => said.push(format!(
+            "purlis notes that tasks this chat dispatched have gone quiet (chats {})",
+            many.join(", ")
+        )),
+    }
     let one = reports.len()
         + ended.len()
         + questions.len()
         + from_above
         + usize::from(person_answered)
         + answered_for.len()
+        + quiet.len()
         == 1;
-    let attached = if one {
-        "It is attached to this turn as context, quoted as data."
-    } else {
-        "They are attached to this turn as context, quoted as data."
+    // purlis's own note on a quiet task is purlis's words, and is not said to be quoted.
+    let only_quiet = !quiet.is_empty()
+        && reports.is_empty()
+        && ended.is_empty()
+        && questions.is_empty()
+        && from_above == 0
+        && !person_answered
+        && answered_for.is_empty();
+    let attached = match (one, only_quiet) {
+        (true, true) => "It is attached to this turn as context.",
+        (false, true) => "They are attached to this turn as context.",
+        (true, false) => "It is attached to this turn as context, quoted as data.",
+        (false, false) => "They are attached to this turn as context, quoted as data.",
     };
     // What a turn handed nothing can run instead: only a task's report or question can be
     // asked for again, by the chat that dispatched it.
@@ -1184,6 +1210,7 @@ impl Ledger {
                 | Landed::PersonAnswered
                 | Landed::PersonAnsweredFor(_)
                 | Landed::ReportOwed => true,
+                Landed::Quiet(of) => *of != chat,
             });
         }
         self.gone.retain(|(_, gone)| gone.asker != chat);
@@ -1219,6 +1246,7 @@ impl Ledger {
                     | Landed::Ended(of)
                     | Landed::Question(of)
                     | Landed::PersonAnsweredFor(of)
+                    | Landed::Quiet(of)
                         if *of == old =>
                     {
                         *of = new;
@@ -1618,7 +1646,8 @@ impl Ledger {
                 | Landed::Answer
                 | Landed::PersonAnswered
                 | Landed::PersonAnsweredFor(_)
-                | Landed::ReportOwed => true,
+                | Landed::ReportOwed
+                | Landed::Quiet(_) => true,
             });
         }
         report.into_iter().chain(question).collect()
@@ -2562,6 +2591,23 @@ mod tests {
         assert_eq!(ledger.turn_ended_owing(TASK, false, false), Owing::Nothing);
         // Taken up again and owing once more, it is asked before anything is made.
         assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
+    }
+
+    #[test]
+    fn the_chat_that_asked_is_typed_that_a_task_went_quiet_and_handed_purlis_s_note() {
+        // #1981, D-6: it never polls; purlis says so, once a stretch.
+        assert_eq!(
+            nudge(&[Landed::Quiet(9)]),
+            "purlis: purlis notes that a task this chat dispatched has gone quiet (chat 9). It \
+             is attached to this turn as context."
+        );
+        let mut ledger = Ledger::default();
+        ledger.landed(ASKER, Landed::Quiet(TASK));
+        assert_eq!(ledger.nudge_step(ASKER, WAITING), vec![Landed::Quiet(TASK)]);
+        // A task that closed takes its note with it.
+        ledger.landed(ASKER, Landed::Quiet(TASK));
+        ledger.forget(TASK, Some((ASKER, "check the queue")));
+        assert_eq!(ledger.nudge_step(ASKER, WAITING), Vec::new());
     }
 
     #[test]

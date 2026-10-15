@@ -344,6 +344,7 @@ has it; nothing reads the key after that.
   "text": { "window": 15, "terminal": 14 },
   "editor": "zed",
   "chats": { "grouped": true, "tabbed": true, "away": false },
+  "notifications": { "quiet": { "on": true, "from": "22:00", "to": "07:00" } },
   "explorer": { "closed": ["repos"] },
   "dismissed": { "/home/me/project": ["pin-dormant:ide", "chat-fresh:3"] }
 }
@@ -463,6 +464,16 @@ has it; nothing reads the key after that.
   while all are the defaults. A value that is neither is the default, and the Inbox says so. Settings
   writes it (`app/src/chatsListPrefs.ts`). It is in this file because it is how one person
   likes their window, and a project would carry it to every clone.
+- **`notifications`** is when the asks' system notifications keep quiet, on this machine
+  (#1989): **`quiet`**, with **`on`**, `true` while quiet hours are kept, and **`from`** and
+  **`to`**, the times they start and end, `HH:MM` on a 24-hour clock and this machine's own
+  time. A `to` before the `from` runs across midnight; the same time for both is no quiet hours.
+  In them no notification is shown and an ask waits in the Inbox; when they end, one
+  notification names the chats still waiting on you.
+  Leave any out for its default, `false`, `22:00` and `07:00`; purlis leaves the whole of
+  `notifications` out while all are the defaults. A value that is not one is the default, and
+  the Inbox says so. Settings writes it (`app/src/notificationPrefs.ts`), and the app reads it
+  each time it would show a notification (`app/src-tauri/src/asknotify.rs`).
 - **`explorer`** is Explorer's folded sections, on this machine (#1677): **`closed`** lists
   the sections folded on their headings, out of `repos` (the focused workspace's
   repos and branches) and `files`. Leave it out, as purlis does, while every section is open. A

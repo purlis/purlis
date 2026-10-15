@@ -211,7 +211,7 @@ fn linked(p: &Path) -> VaultError {
     ))
 }
 
-fn meta_path(p: &Path) -> PathBuf {
+pub(super) fn meta_path(p: &Path) -> PathBuf {
     let stem = p
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())

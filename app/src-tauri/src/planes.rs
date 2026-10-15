@@ -252,12 +252,17 @@ pub struct Held {
     changes: crate::planewatch::Changed,
     /// The window, for each line of a dispatch as it is recorded (#1495).
     activity: crate::activity::Teller,
+    /// Told each task's quiet Notice as it comes or goes (#1981).
+    quiet: crate::silence::Teller,
     /// How many brokered writes each chat has made lately (#1333).
     brokered: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
     vault_refusals: crate::vaultroute::Refusals,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
+    /// The changes each chat proposed to purlis's own configuration, until the person answers
+    /// (#1975).
+    proposals: crate::proposals::Proposals,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
     mcp_failures: Arc<crate::mcpfailed::Failures>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
@@ -509,6 +514,12 @@ impl Held {
         &self.removal_asks
     }
 
+    /// The changes each chat proposed to purlis's own configuration, for the person to apply
+    /// (#1975).
+    pub fn proposals(&self) -> &crate::proposals::Proposals {
+        &self.proposals
+    }
+
     /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
     pub fn mcp_failures(&self) -> &crate::mcpfailed::Failures {
         &self.mcp_failures
@@ -569,6 +580,16 @@ impl Held {
         (self.activity)(crate::activity::ActivityHeard {
             plane: self.id.clone(),
             line,
+        });
+    }
+
+    /// Tells the window task `session`'s quiet note (#1981): `said`, or none where it came
+    /// down.
+    pub fn tell_task_quiet(&self, session: u32, said: Option<String>) {
+        (self.quiet)(crate::silence::TaskQuiet {
+            plane: self.id.clone(),
+            session,
+            said,
         });
     }
 
@@ -959,6 +980,7 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
+        self.proposals.forget(session);
         self.mcp_failures.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
@@ -1844,6 +1866,8 @@ pub struct Planes {
     stops: crate::stopping::Teller,
     /// Told each line of a dispatch in any plane as it is recorded (#1495).
     activity: crate::activity::Teller,
+    /// Told each task's quiet Notice as it comes or goes (#1981).
+    quiet: crate::silence::Teller,
     /// Told a plane's permission asks each time they change (HP-6).
     asks: crate::asking::Teller,
     /// The launch's question and its answer — see [`Relaunching`].
@@ -2088,6 +2112,7 @@ impl Planes {
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
+            quiet: Arc::new(|_| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
             hosting: Arc::new(|reporting| Box::new(Sessions::reporting_to(reporting))),
@@ -2300,6 +2325,13 @@ impl Planes {
 
     /// Tells `activity` each line of a dispatch in a plane this registry holds as the app
     /// records it, so an open Activity tab follows the work (#1495).
+    pub fn telling_task_quiet(mut self, quiet: crate::silence::Teller) -> Self {
+        self.quiet = quiet;
+        self
+    }
+
+    /// Tells `activity` each line of a dispatch in a plane this registry holds as the app
+    /// records it (#1495).
     pub fn telling_activity(mut self, activity: crate::activity::Teller) -> Self {
         self.activity = activity;
         self
@@ -2583,6 +2615,16 @@ impl Planes {
                 }
             })
         });
+        // What a chat's own tool hook says it is doing (#1981): activity, which a task's quiet
+        // stretch is measured from. Weak for the handoff's reason.
+        held.hooks.when_doing({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, said| {
+                if let Some(held) = held.upgrade() {
+                    crate::silence::doing(&held, chat, &said);
+                }
+            })
+        });
         held.hooks.when_saved({
             let held = Arc::downgrade(&held);
             Arc::new(move |saved| {
@@ -2732,7 +2774,7 @@ impl Planes {
             let weak = Arc::downgrade(&held);
             Arc::new(move |session, word| {
                 if let Some(strong) = weak.upgrade() {
-                    strong.tasks().ledger().talk.network_word(session, word);
+                    strong.tasks().ledger().talk.outcome_word(session, word);
                 }
             })
         });
@@ -3524,6 +3566,9 @@ impl Planes {
                     // And the record no longer names the ended program's pid (V82, #1018).
                     if let Some(held) = me.get().and_then(std::sync::Weak::upgrade) {
                         held.chats.a_program_ended();
+                        // A restart it was owed waited for a pause that will not come: nothing
+                        // restarts it (#1986).
+                        held.chats.its_program_ended(session);
                         // A command waiting on it is told, and so is whatever waited for it
                         // to move (#1441).
                         crate::dispatched::moved(&held, session);
@@ -3571,9 +3616,11 @@ impl Planes {
             stops: Arc::clone(&self.stops),
             changes: Arc::clone(&self.changes),
             activity: Arc::clone(&self.activity),
+            quiet: Arc::clone(&self.quiet),
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
+            proposals: crate::proposals::Proposals::default(),
             mcp_failures,
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),

@@ -79,7 +79,8 @@ shows who exists.
   work on one. A `tell` to a task at rest starts its turn at once; one mid-turn reads it when
   that turn ends. `purlis dispatch read <chat>` shows what one of your tasks said last and the
   commands it ran, with their exit codes, quoted as data: read it before you ask the person
-  what a task did.
+  what a task did. Do not poll a task: you are told when one has gone quiet, and when it
+  reports or ends.
 
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works:

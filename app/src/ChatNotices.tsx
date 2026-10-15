@@ -15,10 +15,12 @@ import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { McpFailedNotice } from "./McpFailedNotice";
+import { TaskQuietNotice } from "./TaskQuietNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { TasksSharingNotice } from "./TasksSharingNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
+import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
 import { TaskPromptNotice } from "./TaskPromptNotice";
 import { offItsPane, onItsPane } from "./inboxRules";
@@ -365,6 +367,8 @@ export function ChatNotices({
       <DispatchGrantNotice plane={plane} session={session} asks={dispatchDrawn} onWay={onAnswer} />
       {/* A workspace this chat asked the person to remove (qw356): only a press removes it. */}
       <WorkspaceRemovalNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* A change this chat proposed to purlis's own configuration (#1975): only you apply it. */}
+      <ProposedChangeNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}
       <TasksSharingNotice plane={plane} session={session} />
       {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}
@@ -414,6 +418,7 @@ export function ChatNotices({
         onShowInbox={onShowInbox}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
+      <TaskQuietNotice plane={plane} session={session} />
       {off > 0 && onShowInbox !== undefined && (
         <Notice
           cause={`asks-in-inbox:${session}`}

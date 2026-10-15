@@ -7,7 +7,7 @@ import type { Level } from "./groups";
  * **Every Settings group by its address and its label, without building a level** (#1201).
  *
  * A group's id and label live inside its level's builder (`you.tsx`, `project.ts`,
- * `workspace.tsx`, and the pages `dispatch.tsx`, `GrantedList.tsx`, `thisMachine.tsx`, `accounts.tsx` and `profiles.tsx` add),
+ * `workspace.tsx`, and the pages `dispatch.tsx`, `GrantedList.tsx`, `thisMachine.tsx`, `notifications.tsx`, `accounts.tsx` and `profiles.tsx` add),
  * which needs the level's files read before it can say anything. The palette lists one row per
  * group before anything is read, so it reads this list instead. `catalogue.test.ts` reads the
  * builders' sources and fails on a group this list lacks, misnames or keeps after it went.
@@ -26,6 +26,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "you.text", label: "Text" },
     { id: "you.editor", label: "Editor" },
     { id: "you.chats", label: "Chats list" },
+    { id: "you.notifications", label: "Notifications" },
     { id: "you.machine", label: "This machine" },
     { id: "you.accounts", label: "Accounts" },
     { id: "you.profiles", label: "Profiles" },
@@ -36,6 +37,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "project.harness", label: "Harness & profiles" },
     { id: "project.sandbox", label: "Sandbox" },
     { id: "project.sandbox.mine", label: "Your hosts" },
+    { id: "project.sandbox.yours", label: "Your level" },
     { id: "project.sandbox.personas", label: "Persona hosts" },
     { id: "project.sandbox.network", label: "Network" },
     { id: "project.dispatch", label: "Dispatch" },

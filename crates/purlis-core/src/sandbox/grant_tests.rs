@@ -461,20 +461,16 @@ fn a_write_block_proposes_the_folder_it_was_refused_in() {
 fn the_chat_is_told_what_was_allowed_and_to_retry() {
     let told = told(&What::Host(host("api.example.com").unwrap()), Level::Chat);
     // The target in backticks: it is what the block named, inside purlis's own sentence.
-    assert!(
-        told.contains("reaching `api.example.com` for this chat"),
-        "{told}"
+    assert_eq!(
+        told,
+        "⬢ purlis: reaching `api.example.com` — Allowed for this chat — retry."
     );
     let folder = super::told(&What::Write(PathBuf::from("/tmp/a b`c")), Level::You);
-    assert!(
-        folder.contains(
-            "writing `/tmp/a bc` and everything in it for every chat of this project on their \
-             machine"
-        ),
-        "{folder}"
+    assert_eq!(
+        folder,
+        "⬢ purlis: writing in `/tmp/a bc` — Allowed for every chat of this project on this \
+         machine — retry."
     );
-    assert!(told.contains("same conversation"), "{told}");
-    assert!(told.contains("Retry"), "{told}");
     assert_eq!(Level::of_word("you"), Some(Level::You));
     assert_eq!(Level::of_word("everyone"), None);
 }
@@ -791,5 +787,9 @@ fn a_port_grant_is_told_and_audited_by_its_number() {
         what.to_string(),
         "connecting to the service on this Mac at port 50795"
     );
-    assert!(told(&what, Level::Chat).contains("at port `50795` for this chat"));
+    assert_eq!(
+        told(&what, Level::Chat),
+        "⬢ purlis: connecting to the service on this Mac at port `50795` — Allowed for this chat \
+         — retry."
+    );
 }

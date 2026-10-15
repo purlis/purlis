@@ -1,564 +1,356 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
-use std::collections::BTreeMap;
 use std::fs;
+use std::path::{Path, PathBuf};
 
-/// A machine: a home, its harness settings folders named by variables, and a data home.
+use super::*;
+
+/// A machine: a home with the harness folders a test puts in it, and a config home of its own.
 struct Machine {
     _dir: tempfile::TempDir,
     home: PathBuf,
-    env: BTreeMap<String, String>,
-    store: Store,
+    config: PathBuf,
 }
 
 impl Machine {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
+        let config = dir.path().join("config");
         fs::create_dir_all(&home).unwrap();
-        let store = Store::at(&dir.path().join("config-home"), &dir.path().join("data"));
         Self {
-            home,
-            env: BTreeMap::new(),
-            store,
             _dir: dir,
+            home,
+            config,
         }
     }
 
-    /// The folder `variable` names, made.
-    fn names(&mut self, variable: &str, folder: &str) -> PathBuf {
-        let path = self.home.join(folder);
-        fs::create_dir_all(&path).unwrap();
-        self.env
-            .insert(variable.to_owned(), path.display().to_string());
-        path
+    fn folder(&self, relative: &str) -> PathBuf {
+        let at = self.home.join(relative);
+        fs::create_dir_all(&at).unwrap();
+        at
     }
 
-    fn create(&self, name: &str, kind: &str, now: u64) -> Result<Made, String> {
-        let env = |name: &str| self.env.get(name).cloned();
-        create(
-            &self.store,
-            name,
-            kind,
-            &MachineSettings {
-                home: &self.home,
-                env: &env,
-            },
-            now,
-        )
+    fn upgrade(&self, env: &[(&str, &str)]) -> Vec<MachineProfile> {
+        let env: Vec<(String, String)> = env
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        adopt(&self.config, &self.home, &|name: &str| {
+            env.iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, value)| value.clone())
+        })
+        .expect("the store is writable")
+        .adopted
     }
 
-    fn import(&self, name: &str, now: u64) -> Result<Made, String> {
-        let env = |name: &str| self.env.get(name).cloned();
-        import(
-            &self.store,
-            name,
-            &MachineSettings {
-                home: &self.home,
-                env: &env,
-            },
-            now,
-        )
+    fn adoption(&self, env: &[(&str, &str)]) -> Result<Adoption, String> {
+        let env: Vec<(String, String)> = env
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        adopt(&self.config, &self.home, &|name: &str| {
+            env.iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, value)| value.clone())
+        })
+    }
+
+    fn listed(&self) -> Vec<MachineProfile> {
+        list(&self.config).expect("the store reads")
     }
 }
 
-fn write(path: &Path, text: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, text).unwrap();
+fn adopted_names(profiles: &[MachineProfile]) -> Vec<(&str, &str)> {
+    profiles
+        .iter()
+        .map(|p| (p.name.as_str(), p.title.as_str()))
+        .collect()
 }
 
-/// Every file under `dir`, as paths under it.
-fn files(dir: &Path) -> Vec<String> {
-    fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) {
-        for one in fs::read_dir(dir).unwrap().filter_map(Result::ok) {
-            let path = one.path();
-            if path.is_dir() {
-                walk(base, &path, out);
+#[test]
+fn each_harness_folder_on_the_machine_becomes_a_profile_named_after_its_harness() {
+    let machine = Machine::new();
+    let claude = machine.folder(".claude");
+    let codex = machine.folder(".codex");
+    machine.folder(".local/share/opencode");
+
+    let adopted = machine.upgrade(&[]);
+
+    let here = this_device();
+    assert_eq!(
+        adopted_names(&adopted),
+        vec![
+            ("claude", format!("Claude Code ({here})").as_str()),
+            ("opencode", format!("opencode ({here})").as_str()),
+            ("codex", format!("Codex ({here})").as_str()),
+        ]
+    );
+    assert_eq!(adopted[0].folders.config, claude);
+    assert_eq!(adopted[2].folders.config, codex);
+    // opencode's variables name the XDG folders it keeps its own `opencode` folder under.
+    assert_eq!(adopted[1].folders.config, machine.home.join(".config"));
+    assert_eq!(
+        adopted[1].folders.data.as_deref(),
+        Some(machine.home.join(".local/share").as_path())
+    );
+    assert!(
+        adopted
+            .iter()
+            .all(|p| p.adopted.as_ref().is_some_and(|a| a.variables.is_empty())),
+        "a folder found where the harness looks by default is reached with no variable set: \
+         {adopted:?}"
+    );
+    assert_eq!(
+        machine.listed(),
+        adopted,
+        "what was adopted is what the store lists"
+    );
+}
+
+#[test]
+fn the_folder_the_harnesss_own_variable_names_is_the_one_adopted() {
+    let machine = Machine::new();
+    machine.folder(".claude");
+    let work = machine.folder("work/claude");
+
+    let adopted = machine.upgrade(&[("CLAUDE_CONFIG_DIR", work.to_str().unwrap())]);
+
+    assert_eq!(adopted.len(), 1, "{adopted:?}");
+    assert_eq!(adopted[0].folders.config, work);
+    assert_eq!(
+        adopted[0].adopted.as_ref().unwrap().variables,
+        vec!["CLAUDE_CONFIG_DIR".to_owned()],
+        "reached again by setting the variable it was found by"
+    );
+}
+
+#[test]
+fn a_harness_with_no_folder_on_this_machine_gets_no_profile() {
+    let machine = Machine::new();
+    // A variable naming a folder that is not there is not a folder this machine uses.
+    let adopted = machine.upgrade(&[("CODEX_HOME", "/nowhere/codex")]);
+
+    assert_eq!(adopted, Vec::new());
+    assert_eq!(machine.listed(), Vec::new());
+    assert!(
+        !path(&machine.config).exists(),
+        "nothing to adopt writes no store"
+    );
+}
+
+#[test]
+fn a_second_upgrade_adopts_nothing_and_leaves_the_store_as_it_was() {
+    let machine = Machine::new();
+    machine.folder(".claude");
+    machine.folder(".codex");
+    let first = machine.upgrade(&[]);
+    let bytes = fs::read(path(&machine.config)).unwrap();
+
+    let second = machine.upgrade(&[]);
+
+    assert_eq!(second, Vec::new());
+    assert_eq!(fs::read(path(&machine.config)).unwrap(), bytes);
+    assert_eq!(machine.listed(), first);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_a_machine_profile_already_points_at_is_not_adopted_again() {
+    let machine = Machine::new();
+    let claude = machine.folder(".claude");
+    machine.upgrade(&[]);
+
+    // The same folder, spelled through a link: still the one folder.
+    let link = machine.home.join("claude-link");
+    std::os::unix::fs::symlink(&claude, &link).unwrap();
+    let again = machine.upgrade(&[("CLAUDE_CONFIG_DIR", link.to_str().unwrap())]);
+
+    assert_eq!(again, Vec::new());
+    assert_eq!(machine.listed().len(), 1);
+}
+
+#[test]
+fn adoption_writes_nothing_in_the_harnesss_folder() {
+    let machine = Machine::new();
+    let claude = machine.folder(".claude");
+    let transcript = machine.folder(".claude/projects/-p").join("a.jsonl");
+    fs::write(&transcript, "{\"type\":\"user\"}\n").unwrap();
+    let before = tree(&claude);
+
+    machine.upgrade(&[]);
+
+    assert_eq!(tree(&claude), before);
+}
+
+#[test]
+fn a_store_purlis_cannot_read_is_never_written_over() {
+    let machine = Machine::new();
+    machine.folder(".claude");
+    fs::create_dir_all(path(&machine.config).parent().unwrap()).unwrap();
+    fs::write(path(&machine.config), "not json").unwrap();
+
+    let refused = machine.adoption(&[]);
+
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(
+        fs::read_to_string(path(&machine.config)).unwrap(),
+        "not json"
+    );
+}
+
+#[test]
+fn a_record_this_purlis_cannot_read_survives_an_adoption() {
+    let machine = Machine::new();
+    machine.folder(".claude");
+    fs::create_dir_all(path(&machine.config).parent().unwrap()).unwrap();
+    fs::write(
+        path(&machine.config),
+        r#"{"version":1,"profiles":[{"name":"later","shape":"of a later purlis"}]}"#,
+    )
+    .unwrap();
+
+    machine.upgrade(&[]);
+
+    let text = fs::read_to_string(path(&machine.config)).unwrap();
+    assert!(text.contains("of a later purlis"), "{text}");
+    assert_eq!(adopted_names(&machine.listed()).len(), 1);
+}
+
+#[test]
+fn a_store_a_newer_purlis_wrote_is_never_written_over_and_nothing_is_adopted() {
+    let machine = Machine::new();
+    machine.folder(".claude");
+    fs::create_dir_all(path(&machine.config).parent().unwrap()).unwrap();
+    let newer = r#"{"version":2,"profiles":[]}"#;
+    fs::write(path(&machine.config), newer).unwrap();
+
+    let refused = machine.adoption(&[]);
+
+    let why = refused.expect_err("refused");
+    assert!(why.contains("newer purlis"), "{why}");
+    assert_eq!(fs::read_to_string(path(&machine.config)).unwrap(), newer);
+}
+
+#[test]
+fn a_folder_variable_that_is_not_an_absolute_path_adopts_nothing_for_its_harness() {
+    let machine = Machine::new();
+    machine.folder(".claude");
+
+    let adoption = machine
+        .adoption(&[("CLAUDE_CONFIG_DIR", "work/claude")])
+        .unwrap();
+
+    assert_eq!(adoption.adopted, Vec::new());
+    assert_eq!(adoption.passed_over.len(), 1, "{adoption:?}");
+    assert!(
+        adoption.passed_over[0].contains("not an absolute path"),
+        "{adoption:?}"
+    );
+    assert_eq!(machine.listed(), Vec::new());
+}
+
+#[test]
+fn a_folder_inside_a_git_work_tree_or_a_project_is_not_adopted() {
+    let machine = Machine::new();
+    let repo = machine.folder("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    let in_repo = machine.folder("repo/claude");
+    let project = machine.folder("project");
+    fs::write(project.join(crate::plane::MANIFEST), "").unwrap();
+    let in_project = machine.folder("project/claude");
+
+    for folder in [in_repo, in_project] {
+        let adoption = machine
+            .adoption(&[("CLAUDE_CONFIG_DIR", folder.to_str().unwrap())])
+            .unwrap();
+        assert_eq!(adoption.adopted, Vec::new(), "{}", folder.display());
+        assert!(
+            adoption.passed_over[0].contains("is inside the"),
+            "{adoption:?}"
+        );
+    }
+    assert_eq!(machine.listed(), Vec::new());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_belongs_to_another_user_is_not_adopted() {
+    if rustix::process::getuid().is_root() {
+        // Every folder is root's own here, so there is no other user's to name.
+        return;
+    }
+    let machine = Machine::new();
+    // `/usr` is there on every unix this runs on, and it is root's.
+    let adoption = machine.adoption(&[("CODEX_HOME", "/usr")]).unwrap();
+
+    assert_eq!(adoption.adopted, Vec::new());
+    assert!(
+        adoption.passed_over[0].contains("belongs to another user"),
+        "{adoption:?}"
+    );
+}
+
+#[test]
+fn a_folder_removed_as_a_profile_is_never_adopted_again() {
+    let machine = Machine::new();
+    let claude = machine.folder(".claude");
+    machine.upgrade(&[]);
+    update(&machine.config, |store| {
+        store.profiles.retain(|p| p.name != "claude");
+        store.forget(&claude);
+    })
+    .unwrap();
+
+    let again = machine.upgrade(&[]);
+
+    assert_eq!(again, Vec::new());
+    assert_eq!(machine.listed(), Vec::new());
+}
+
+#[test]
+fn a_field_this_purlis_does_not_know_survives_a_change_to_its_record() {
+    let machine = Machine::new();
+    fs::create_dir_all(path(&machine.config).parent().unwrap()).unwrap();
+    fs::write(
+        path(&machine.config),
+        r#"{"version":1,"profiles":[{"name":"work","harness":"claude","title":"Work","folders":{"config":"/w"},"imported":{"at":5}}],"later":true}"#,
+    )
+    .unwrap();
+
+    update(&machine.config, |store| {
+        store.profiles[0].title = "Work (this Mac)".to_owned()
+    })
+    .unwrap();
+
+    let text = fs::read_to_string(path(&machine.config)).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(doc["profiles"][0]["imported"]["at"], 5, "{text}");
+    assert_eq!(doc["profiles"][0]["title"], "Work (this Mac)");
+    assert_eq!(doc["later"], true, "{text}");
+}
+
+/// Every file under `dir` with its bytes and its modification time.
+fn tree(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
+    let mut out = Vec::new();
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(at) = todo.pop() {
+        for entry in fs::read_dir(&at).unwrap() {
+            let entry = entry.unwrap().path();
+            let meta = fs::metadata(&entry).unwrap();
+            if meta.is_dir() {
+                todo.push(entry);
             } else {
-                out.push(path.strip_prefix(base).unwrap().display().to_string());
+                out.push((
+                    entry.clone(),
+                    fs::read(&entry).unwrap(),
+                    meta.modified().unwrap(),
+                ));
             }
         }
     }
-    let mut out = Vec::new();
-    if dir.is_dir() {
-        walk(dir, dir, &mut out);
-    }
     out.sort();
     out
-}
-
-/// A Claude Code settings folder holding settings, and beside them files shaped like a
-/// sign-in, a conversation and a history. Their contents are plain words.
-fn claude_settings(at: &Path) {
-    write(&at.join("settings.json"), "{\"theme\": \"dark\"}\n");
-    write(&at.join("CLAUDE.md"), "Be brief.\n");
-    write(&at.join(".credentials.json"), "not imported\n");
-    write(&at.join(".claude.json"), "not imported\n");
-    write(&at.join("credentials.json"), "not imported\n");
-    write(&at.join("history.jsonl"), "not imported\n");
-    write(&at.join("projects/-work/one.jsonl"), "not imported\n");
-    write(&at.join("agents/reviewer.md"), "Reviews.\n");
-    write(&at.join("agents/.credentials.json"), "not imported\n");
-    write(&at.join("agents/auth.json"), "not imported\n");
-    write(&at.join("agents/api_key.txt"), "not imported\n");
-    write(&at.join("skills/notes/SKILL.md"), "Notes.\n");
-    write(&at.join("skills/notes/.hidden.md"), "not imported\n");
-}
-
-#[test]
-fn an_import_copies_exactly_the_listed_settings_and_no_credential_file() {
-    let mut machine = Machine::new();
-    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
-    claude_settings(&source);
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    assert_eq!(
-        files(&made.record.folders.config),
-        [
-            "CLAUDE.md",
-            "agents/reviewer.md",
-            "settings.json",
-            "skills/notes/SKILL.md",
-        ]
-    );
-    assert_eq!(
-        fs::read_to_string(made.record.folders.config.join("settings.json")).unwrap(),
-        "{\"theme\": \"dark\"}\n"
-    );
-    assert_eq!(
-        made.record.imported,
-        Some(Imported {
-            at: 100,
-            from: source
-        })
-    );
-    assert!(
-        made.copied
-            .skipped
-            .iter()
-            .any(|s| s.starts_with("agents/auth.json")),
-        "{:?}",
-        made.copied.skipped
-    );
-}
-
-#[test]
-fn a_new_profile_is_kept_in_a_private_folder_of_its_own_under_the_store() {
-    let machine = Machine::new();
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    let folder = machine.store.folder_of("work");
-    assert_eq!(made.record.folders.config, folder.join(CONFIG));
-    assert!(!made.record.is_adopted());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        for dir in [
-            machine.store.dir(),
-            folder.as_path(),
-            &made.record.folders.config,
-        ] {
-            let mode = fs::metadata(dir).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o700, "{}", dir.display());
-        }
-    }
-    assert_eq!(machine.store.records().unwrap(), [made.record]);
-}
-
-#[test]
-fn an_imported_file_is_private() {
-    let mut machine = Machine::new();
-    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
-    claude_settings(&source);
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let file = made.record.folders.config.join("settings.json");
-        assert_eq!(
-            fs::metadata(file).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn an_import_follows_no_link_out_of_the_settings_folder() {
-    let mut machine = Machine::new();
-    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
-    let outside = machine.home.join("elsewhere.json");
-    write(&outside, "elsewhere\n");
-    std::os::unix::fs::symlink(&outside, source.join("settings.json")).unwrap();
-    write(&source.join("CLAUDE.md"), "Be brief.\n");
-    std::os::unix::fs::symlink(machine.home.join("."), source.join("commands")).unwrap();
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    assert_eq!(files(&made.record.folders.config), ["CLAUDE.md"]);
-    for name in ["settings.json", "commands"] {
-        assert!(
-            made.copied
-                .skipped
-                .iter()
-                .any(|s| s.starts_with(&format!("{name}: a link"))),
-            "{name}: {:?}",
-            made.copied.skipped
-        );
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn an_import_copies_no_sign_in_through_a_link_inside_the_settings_folder() {
-    let mut machine = Machine::new();
-    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
-    write(&source.join(".credentials.json"), "not imported\n");
-    write(&source.join("auth.json"), "not imported\n");
-    std::os::unix::fs::symlink(".credentials.json", source.join("settings.json")).unwrap();
-    fs::create_dir_all(source.join("skills")).unwrap();
-    std::os::unix::fs::symlink("../auth.json", source.join("skills/notes.md")).unwrap();
-    write(&source.join("CLAUDE.md"), "Be brief.\n");
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    assert_eq!(files(&made.record.folders.config), ["CLAUDE.md"]);
-}
-
-#[cfg(unix)]
-#[test]
-fn an_import_copies_no_file_that_has_another_name_on_the_disk() {
-    let mut machine = Machine::new();
-    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
-    write(&source.join(".credentials.json"), "not imported\n");
-    fs::create_dir_all(source.join("skills")).unwrap();
-    fs::hard_link(
-        source.join(".credentials.json"),
-        source.join("skills/notes.md"),
-    )
-    .unwrap();
-    fs::hard_link(source.join(".credentials.json"), source.join("CLAUDE.md")).unwrap();
-    write(&source.join("settings.json"), "{}\n");
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    assert_eq!(files(&made.record.folders.config), ["settings.json"]);
-    assert!(
-        made.copied
-            .skipped
-            .iter()
-            .any(|s| s.starts_with("CLAUDE.md: a file with another name")),
-        "{:?}",
-        made.copied.skipped
-    );
-}
-
-#[test]
-fn a_codex_import_copies_its_settings_and_never_its_sign_in() {
-    let mut machine = Machine::new();
-    let source = machine.names("CODEX_HOME", "codex-home");
-    write(&source.join("config.toml"), "model = \"o9\"\n");
-    write(&source.join("AGENTS.md"), "Be brief.\n");
-    write(&source.join("prompts/review.md"), "Review.\n");
-    write(&source.join("auth.json"), "not imported\n");
-    write(&source.join("history.jsonl"), "not imported\n");
-    write(
-        &source.join("sessions/2026/10/14/rollout-1-abc.jsonl"),
-        "not imported\n",
-    );
-
-    let made = machine.create("work", "codex", 100).unwrap();
-
-    assert_eq!(
-        files(&made.record.folders.config),
-        ["AGENTS.md", "config.toml", "prompts/review.md"]
-    );
-    assert_eq!(made.record.folders.data, None);
-}
-
-#[test]
-fn an_opencode_profile_has_a_data_folder_and_its_settings_under_its_own_name() {
-    let mut machine = Machine::new();
-    let config = machine.names("XDG_CONFIG_HOME", "xdg-config");
-    let data = machine.names("XDG_DATA_HOME", "xdg-data");
-    write(&config.join("opencode/tui.json"), "{}\n");
-    write(&config.join("opencode/AGENTS.md"), "Be brief.\n");
-    write(&config.join("opencode/agent/plan.md"), "Plans.\n");
-    write(&config.join("opencode/auth.json"), "not imported\n");
-    write(&data.join("opencode/auth.json"), "not imported\n");
-
-    let made = machine.create("work", "opencode", 100).unwrap();
-
-    assert_eq!(
-        files(&made.record.folders.config),
-        [
-            "opencode/AGENTS.md",
-            "opencode/agent/plan.md",
-            "opencode/tui.json"
-        ]
-    );
-    let folder = machine.store.folder_of("work");
-    assert_eq!(made.record.folders.data, Some(folder.join(DATA)));
-    assert_eq!(files(&folder.join(DATA)), Vec::<String>::new());
-}
-
-#[test]
-fn a_machine_with_no_settings_makes_a_profile_with_none() {
-    let machine = Machine::new();
-
-    let made = machine.create("work", "claude", 100).unwrap();
-
-    assert_eq!(files(&made.record.folders.config), Vec::<String>::new());
-    assert_eq!(made.copied, Copied::default());
-}
-
-#[test]
-fn a_re_import_takes_the_machines_settings_again_and_keeps_the_conversations() {
-    let mut machine = Machine::new();
-    let source = machine.names("CLAUDE_CONFIG_DIR", "claude-settings");
-    claude_settings(&source);
-    let made = machine.create("work", "claude", 100).unwrap();
-    let conversation = made.record.folders.config.join("projects/-work/kept.jsonl");
-    write(&conversation, "kept\n");
-    write(&source.join("settings.json"), "{\"theme\": \"light\"}\n");
-    fs::remove_file(source.join("agents/reviewer.md")).unwrap();
-
-    let again = machine.import("work", 200).unwrap();
-
-    assert_eq!(again.record.imported.as_ref().unwrap().at, 200);
-    assert_eq!(
-        fs::read_to_string(made.record.folders.config.join("settings.json")).unwrap(),
-        "{\"theme\": \"light\"}\n"
-    );
-    assert!(
-        !made
-            .record
-            .folders
-            .config
-            .join("agents/reviewer.md")
-            .exists()
-    );
-    assert_eq!(fs::read_to_string(&conversation).unwrap(), "kept\n");
-    assert_eq!(machine.store.record("work").unwrap(), Some(again.record));
-}
-
-#[test]
-fn a_name_purlis_already_gives_or_cannot_hold_makes_no_profile() {
-    let machine = Machine::new();
-
-    for (name, kind) in [
-        ("claude", "claude"),
-        ("a b", "claude"),
-        ("-x", "claude"),
-        ("work", "aider"),
-    ] {
-        assert!(machine.create(name, kind, 1).is_err(), "{name} {kind}");
-    }
-    machine.create("work", "claude", 1).unwrap();
-    let again = machine.create("work", "codex", 2).unwrap_err();
-    assert!(
-        again.contains("already has a profile named 'work'"),
-        "{again}"
-    );
-    assert_eq!(machine.store.records().unwrap().len(), 1);
-}
-
-#[test]
-fn removing_a_profile_names_its_conversations_then_deletes_its_folder() {
-    let machine = Machine::new();
-    let made = machine.create("work", "claude", 100).unwrap();
-    write(
-        &made.record.folders.config.join("projects/-a-b/one.jsonl"),
-        "one\n",
-    );
-    write(
-        &made.record.folders.config.join("projects/-c/two.jsonl"),
-        "two\n",
-    );
-
-    let removal = removal(&machine.store, "work").unwrap();
-
-    assert_eq!(
-        removal.conversations,
-        Some(vec![
-            "config/projects/-a-b/one.jsonl".to_owned(),
-            "config/projects/-c/two.jsonl".to_owned(),
-        ])
-    );
-    assert!(!removal.adopted);
-    assert!(
-        removal.says().contains("its 2 conversations"),
-        "{}",
-        removal.says()
-    );
-    let folder = machine.store.folder_of("work");
-    assert!(folder.is_dir(), "nothing goes before it is confirmed");
-
-    remove(&machine.store, "work", &removal).unwrap();
-
-    assert!(!folder.exists());
-    assert_eq!(machine.store.records().unwrap(), []);
-}
-
-#[test]
-fn a_removal_that_changed_since_it_was_shown_removes_nothing() {
-    let machine = Machine::new();
-    let made = machine.create("work", "claude", 100).unwrap();
-    let shown = removal(&machine.store, "work").unwrap();
-    write(
-        &made.record.folders.config.join("projects/-a/new.jsonl"),
-        "new\n",
-    );
-
-    let refused = remove(&machine.store, "work", &shown).unwrap_err();
-
-    assert!(refused.contains("nothing was"), "{refused}");
-    assert!(machine.store.folder_of("work").is_dir());
-    assert_eq!(machine.store.records().unwrap().len(), 1);
-}
-
-/// Writes the store's records as `json`, for a record purlis would not have made.
-fn records(store: &Store, json: &str) {
-    write(store.records_file(), json);
-}
-
-/// One record as the file holds it: a made one, or one adopted in place as #2033 writes it.
-fn record_json(name: &str, config: &Path, adopted: bool) -> String {
-    let adopted = if adopted {
-        ", \"adopted\": {\"at\": 5, \"variables\": []}"
-    } else {
-        ""
-    };
-    format!(
-        "{{\"name\": {name:?}, \"harness\": \"claude\", \"title\": \"Claude Code (this Mac)\", \
-         \"folders\": {{\"config\": {:?}}}{adopted}}}",
-        config.display().to_string()
-    )
-}
-
-#[test]
-fn removing_never_deletes_a_folder_outside_the_store() {
-    let machine = Machine::new();
-    let outside = machine.home.join("someone-elses");
-    write(&outside.join("config/settings.json"), "{}\n");
-    records(
-        &machine.store,
-        &format!(
-            "{{\"profiles\": [{}]}}",
-            record_json("work", &outside.join("config"), false)
-        ),
-    );
-
-    let refused = removal(&machine.store, "work").unwrap_err();
-
-    assert!(
-        refused.contains("outside purlis's profiles folder"),
-        "{refused}"
-    );
-    let shown = Removal {
-        name: "work".into(),
-        adopted: false,
-        folder: outside.clone(),
-        conversations: Some(Vec::new()),
-    };
-    assert!(remove(&machine.store, "work", &shown).is_err());
-    assert!(outside.join("config/settings.json").is_file());
-}
-
-#[cfg(unix)]
-#[test]
-fn removing_never_deletes_through_a_link_in_the_store() {
-    let machine = Machine::new();
-    let outside = machine.home.join("someone-elses");
-    write(&outside.join("config/settings.json"), "{}\n");
-    fs::create_dir_all(machine.store.dir()).unwrap();
-    std::os::unix::fs::symlink(&outside, machine.store.folder_of("work")).unwrap();
-    records(
-        &machine.store,
-        &format!(
-            "{{\"profiles\": [{}]}}",
-            record_json(
-                "work",
-                &machine.store.folder_of("work").join("config"),
-                false
-            )
-        ),
-    );
-
-    assert!(removal(&machine.store, "work").is_err());
-    assert!(outside.join("config/settings.json").is_file());
-}
-
-#[test]
-fn removing_an_adopted_profile_forgets_it_and_keeps_its_folder() {
-    let machine = Machine::new();
-    let own = machine.home.join(".claude");
-    write(&own.join("projects/-a/one.jsonl"), "one\n");
-    records(
-        &machine.store,
-        &format!("{{\"profiles\": [{}]}}", record_json("claude", &own, true)),
-    );
-
-    let shown = removal(&machine.store, "claude").unwrap();
-
-    assert!(shown.adopted);
-    assert!(shown.says().contains("stays"), "{}", shown.says());
-    remove(&machine.store, "claude", &shown).unwrap();
-    assert!(own.join("projects/-a/one.jsonl").is_file());
-    assert_eq!(machine.store.records().unwrap(), []);
-}
-
-#[test]
-fn an_adopted_profile_is_not_imported_into() {
-    let machine = Machine::new();
-    let own = machine.home.join(".claude");
-    records(
-        &machine.store,
-        &format!("{{\"profiles\": [{}]}}", record_json("claude", &own, true)),
-    );
-
-    assert!(machine.import("claude", 2).is_err());
-}
-
-#[test]
-fn an_adopted_record_a_record_this_purlis_cannot_read_and_a_later_key_are_kept() {
-    let machine = Machine::new();
-    records(
-        &machine.store,
-        &format!(
-            "{{\"version\": 1, \"profiles\": [{}, {{\"name\": \"odd\", \"shape\": 3}}], \
-             \"later\": true}}",
-            record_json("claude", Path::new("/x"), true)
-        ),
-    );
-
-    machine.create("work", "claude", 1).unwrap();
-
-    let text = fs::read_to_string(machine.store.records_file()).unwrap();
-    assert!(text.contains("\"variables\": []"), "{text}");
-    assert!(text.contains("\"shape\": 3"), "{text}");
-    assert!(text.contains("\"later\": true"), "{text}");
-    let names: Vec<String> = machine
-        .store
-        .records()
-        .unwrap()
-        .into_iter()
-        .map(|r| r.name)
-        .collect();
-    assert_eq!(names, ["claude", "work"]);
-}
-
-#[test]
-fn a_wildcard_matches_a_conversations_file_name() {
-    assert!(wildcard("{id}.jsonl", "abc.jsonl"));
-    assert!(wildcard("rollout-*-{id}.jsonl", "rollout-2026-abc.jsonl"));
-    assert!(!wildcard("rollout-*-{id}.jsonl", "history.jsonl"));
-    assert!(wildcard("*", "2026"));
-    assert!(!wildcard("{id}.jsonl", "é"));
 }

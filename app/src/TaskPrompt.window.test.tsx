@@ -557,6 +557,24 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
     await waitFor(() => expect(promptNotice(5)).not.toBeNull());
   });
 
+  it("a second prompt within one wait shows after the first was put away (#2098)", async () => {
+    // Answered in its own pane, it prompts again before any tool came back: the core stamps
+    // the chat for the second prompt, and that is a wait of its own.
+    const { move } = await drawn(withTasks());
+    await move(5, "waiting", 1, [5], { asking: true });
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(promptNotice(5)).toBeNull());
+
+    await move(5, "waiting", 2, [5], { asking: true });
+
+    await waitFor(() => expect(promptNotice(5)).not.toBeNull());
+  });
+
   it("a dismissed permission keeps the stopped line hidden once the hold ends, for that wait", async () => {
     const { said, move } = await drawn(withTasks());
     await waitFor(() => expect(onScreen()).toEqual([1]));

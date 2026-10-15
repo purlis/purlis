@@ -674,6 +674,20 @@ chat has to say, and what changed. It is data to the asking chat, never instruct
 kept for the workspace when the asking chat is gone.
 _Avoid_: reply, result (for a handoff), handback (in UI text)
 
+**Reading a task** (`purlis dispatch read`):
+What the asking chat may see of a task it dispatched: the task's last few messages and the
+shell commands it ran with their exit codes, as its harness handed them to purlis, quoted as
+data and masked as tool output is. Only the chat that asked can read its own tasks, while they
+run and after they end. The whole conversation stays the person's, in the task's tab.
+_Avoid_: transcript, log, output (for the whole conversation)
+
+**Quiet note** (on a task):
+purlis's note that a task at work has gone quiet: nothing heard from its harness for a while,
+or one command running long, named by its program. It goes to the asking chat and to the
+task's tab, and ends nothing. The times are settings (`quiet-note-minutes`,
+`one-command-note-minutes`).
+_Avoid_: heartbeat, timeout, stall (it ends nothing)
+
 **Activity** (of a chat):
 One timeline of what a chat and its tasks said to each other through purlis, and the tasks of
 its tasks: each brief, follow-up, progress note, question, answer and report, oldest first. It
@@ -1110,8 +1124,17 @@ Whatever listens on one port of this machine's loopback interface: a local Kuber
 database in a container, a dev server. A sandboxed chat reaches none of them until a person
 allows that one port, for *this chat* or for *this project on this machine*; never a range,
 never every port, never one of purlis's own. Kept on this machine only, listed in Settings'
-Network page with Remove.
+Network page with Remove. A Claude Code chat reaches it through its proxy by the name
+`this-mac.internal:<port>`, and its kubectl through a copy of one context purlis makes for it.
 _Avoid_: localhost (in UI text), local port grant, loopback
+
+**A proposed change**:
+An edit a chat makes to purlis's own configuration (the project's manifest, a persona's
+`mcp.json` or `persona.md`, a skill's files), which only the person applies, in the window. The
+chat's edit is held, the change shown whole against the file as it is, and **Apply** writes it as
+the person; **Dismiss** writes nothing. Distinct from an edit ask, where the person allows and the
+harness writes.
+_Avoid_: patch, suggestion, edit ask (that is the harness's own)
 
 **Block**:
 One refused reach: a sandboxed chat was refused a host and port, a local socket, a service on

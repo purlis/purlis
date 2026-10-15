@@ -24,6 +24,7 @@ import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
+import { askOpenProposal } from "./proposedChangeOpen";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a chat
@@ -203,6 +204,7 @@ export async function answerTaken(
   plane: string,
   ask: Shown,
   option: string,
+  reason?: string,
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -226,16 +228,27 @@ export async function answerTaken(
         break;
       case "sandbox-block":
         // Keep blocked as the block's Notice keeps it (#1666): for a host, what the chat's
-        // proxy holds on it is refused now and the chat is told, so its command waits no more.
+        // proxy holds on it is refused now, so its command waits no more; and the chat is told
+        // in one line not to retry, with the person's reason if they gave one (#1987).
         if (option === "keep")
-          return path.shown.what === "host"
-            ? commands.keepSandboxBlock(plane, ask.session, path.shown)
-            : commands.forgetSandboxBlock(plane, ask.session, path.shown);
+          return commands.keepSandboxBlock(plane, ask.session, path.shown, reason?.trim() || null);
         if (isLevel(option)) {
           const allowed = await commands.allowSandboxBlock(plane, ask.session, path.shown, option);
           if (allowed.status === "ok") live = allowed.data.live === true;
           return allowed;
         }
+        break;
+      case "proposed-change":
+        // Apply writes the change the window showed, as the person; Dismiss writes nothing
+        // (#1975). Both tell the chat on its next turn.
+        if (option === "apply") return commands.applyProposedChange(plane, path.id, "row");
+        // Too long for a row: its own tab shows it whole, and Apply is pressed there (PC-7).
+        if (option === "open") {
+          askOpenProposal(plane, path.id, path.path);
+          opened = true;
+          return { status: "ok" };
+        }
+        if (option === "dismiss") return commands.dismissProposedChange(plane, path.id);
         break;
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

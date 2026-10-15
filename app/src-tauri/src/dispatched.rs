@@ -137,6 +137,8 @@ pub struct Tasks {
     reopening: Mutex<HashMap<String, Reopening>>,
     /// Why the last Reopen of a finished task did not hold, by its record's id, for its row.
     not_reopened: Mutex<HashMap<String, String>>,
+    /// What is heard of each task, for its quiet notes (#1981).
+    quiet: crate::silence::Quiet,
     /// Whether a reported task's end runs on the clock in a test ([`Tasks::on_the_clock`]).
     #[cfg(test)]
     clocked: std::sync::atomic::AtomicBool,
@@ -170,6 +172,11 @@ impl Tasks {
 
     fn changed(&self) {
         self.moved.notify_all();
+    }
+
+    /// What is heard of each task, for its quiet notes (#1981).
+    pub(crate) fn quiet(&self) -> &crate::silence::Quiet {
+        &self.quiet
     }
 
     fn reopens(&self) -> MutexGuard<'_, HashMap<String, Reopening>> {
@@ -321,6 +328,11 @@ impl Drop for Parked {
 /// that ended, a command that hung up, a project that was let go.
 const A_WAIT_LOOKS_EVERY: Duration = Duration::from_millis(500);
 
+/// Chat `chat` as the app knows it now, for a module beside this one (#1981).
+pub(crate) fn seen_now(held: &Held, chat: u32) -> Seen {
+    seen(held, chat)
+}
+
 /// Chat `chat` as the app knows it now.
 fn seen(held: &Held, chat: u32) -> Seen {
     let open = held
@@ -441,7 +453,11 @@ fn kept(why: std::io::Error) -> String {
 /// **The limits in force between asking chat `asker` and its task `task`** (#1439): the
 /// project's files as they stand now, for the workspace the asking chat works in and the two
 /// personas, under this machine's policy. The one place a message's limit is read.
-fn limits_between(held: &Held, asker: u32, task: u32) -> purlis_core::dispatchlimits::Limits {
+pub(crate) fn limits_between(
+    held: &Held,
+    asker: u32,
+    task: u32,
+) -> purlis_core::dispatchlimits::Limits {
     let open = held.chats().open_now();
     let of = |chat: u32| open.iter().find(|open| open.session == chat);
     purlis_core::dispatchlimits::of(
@@ -1545,6 +1561,13 @@ fn type_line(held: &Held, chat: u32, line: &str) -> Result<(), String> {
 pub fn heard(held: &Held, report: &Report) {
     // A chat a Reopen started was heard from: its harness brought the conversation back.
     reopen_settled(held, report.chat, false);
+    // Activity of its own run's, which a task's quiet stretch is measured from (#1981). A
+    // helper's report is the chat's work too.
+    crate::silence::heard(
+        held,
+        report.chat,
+        report.event == Event::Stop && report.agent.is_none(),
+    );
     match report.event {
         Event::UserPromptSubmit => held.tasks().ledger().turn_began(report.chat),
         Event::Stop => {
@@ -1571,6 +1594,8 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
     if !task {
         return;
     }
+    // What a turn put out is activity (#1981).
+    crate::silence::heard(held, output.chat, false);
     match output.turn_output {
         purlis_core::hookwire::Output::Final { text } => {
             let kept = purlis_core::handback::last_message_summary(Some(&text));
@@ -1682,6 +1707,7 @@ fn reopen_settled(held: &Held, session: u32, ended: bool) {
 /// read before its record went: that much is kept, so a wait on it says how it ended. Whoever
 /// waits on it looks again.
 pub fn closed(held: &Held, chat: u32, task_of: Option<(u32, String)>) {
+    held.tasks().quiet().forget(chat);
     held.tasks().ledger().forget(
         chat,
         task_of

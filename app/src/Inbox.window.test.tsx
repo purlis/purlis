@@ -365,6 +365,44 @@ describe("answering in place", () => {
     );
   });
 
+  it("keeps a refused host blocked with the reason typed beside it, which its chat is told (#1987)", async () => {
+    const calls = core();
+    draw([HOST, permission(3, "a1", ["steward 3"])]);
+    // Only a sandbox ask has the box: a permission's own answers go to its harness.
+    const boxes = screen.getAllByRole("textbox", { name: /Why you keep it blocked/ });
+    expect(boxes).toHaveLength(1);
+    await userEvent.type(boxes[0], "use the internal mirror");
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "keep_sandbox_block",
+        args: {
+          plane: PLANE,
+          session: 5,
+          shown: HOST.answer.via === "sandbox-block" ? HOST.answer.shown : null,
+          reason: "use the internal mirror",
+        },
+      }),
+    );
+  });
+
+  it("keeps a refused host blocked with no reason where none is typed (#1987)", async () => {
+    const calls = core();
+    draw([HOST]);
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "keep_sandbox_block",
+        args: {
+          plane: PLANE,
+          session: 5,
+          shown: HOST.answer.via === "sandbox-block" ? HOST.answer.shown : null,
+          reason: null,
+        },
+      }),
+    );
+  });
+
   it("says the source's own sentence when it refuses, and lists the ask still", async () => {
     core({ answer_ask: new Error("This ask was answered elsewhere.") });
     const { props } = draw([permission(3, "late", ["steward 3"])]);
@@ -1244,5 +1282,43 @@ describe("what the hand's list named, listed in the Inbox (#1695)", () => {
     expect(
       within(screen.getByRole("region", { name: NOTICES })).getByText("hooks are not installed"),
     ).toBeTruthy();
+  });
+});
+
+describe("a folder's ask in the Inbox (#1986)", () => {
+  const FOLDER: Shown = {
+    session: 3,
+    ask: "block:3:write:outside:/work/notes",
+    says: "The sandbox refused a write in /work/notes",
+    options: [
+      { id: "chat", label: "Allow for this chat", allows: true },
+      { id: "keep", label: "Keep blocked", allows: false },
+    ],
+    source: "sandbox-write",
+    chain: ["steward 3"],
+    answer: {
+      via: "sandbox-block",
+      shown: { operation: "write", kind: "outside", what: "write", target: "/work/notes" },
+    },
+  };
+
+  it("says before its Allow which chat restarts and what will stop", async () => {
+    core({ what_a_restart_ends: { listening: [{ program: "node", port: 5173 }], others: 0 } });
+    draw([FOLDER]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/^Allowing restarts steward 3 /, { selector: "p" }),
+      ).toHaveTextContent(
+        "Allowing restarts steward 3 on its conversation at its next pause between turns; its node on port 5173 will stop.",
+      ),
+    );
+  });
+
+  it("says nothing of a restart for a host's ask", () => {
+    const calls = core();
+    draw([HOST]);
+    expect(screen.queryByText(/^Allowing restarts/)).toBeNull();
+    expect(calls.map((one) => one.cmd)).not.toContain("what_a_restart_ends");
   });
 });

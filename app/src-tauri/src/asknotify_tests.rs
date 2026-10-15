@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! When an ask raises a system notification (#1694, I-7): only asks, one per chat for asks a
-//! few seconds apart, none while the person is looking, and what a click lands on.
+//! When an ask raises a system notification (#1694, I-7; #1989): only asks, one for several
+//! chats asking together, none while the person is looking or in their quiet hours, and what a
+//! click lands on.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -34,6 +35,14 @@ fn permission(session: u32, key: &str, says: &str) -> Shown {
 }
 
 const NOBODY_LOOKS: &dyn Fn(u32) -> bool = &|_| false;
+const NOT_QUIET: &dyn Fn() -> bool = &|| false;
+
+/** An ask of chat `session`, whose session is named `name`. */
+fn named(session: u32, key: &str, name: &str) -> Shown {
+    let mut one = permission(session, key, "Run ls");
+    one.chain = vec![name.to_owned()];
+    one
+}
 
 /// What `rules` sends for `asks` of `plane`, heard at `now`, with nobody looking.
 fn heard(rules: &mut Rules, plane: &PlaneId, asks: &[Shown], now: Instant) -> Vec<Notice> {
@@ -41,6 +50,7 @@ fn heard(rules: &mut Rules, plane: &PlaneId, asks: &[Shown], now: Instant) -> Ve
         plane,
         asks,
         looking: NOBODY_LOOKS,
+        quiet: NOT_QUIET,
         now,
     })
 }
@@ -60,6 +70,7 @@ fn a_new_ask_is_one_notification_titled_by_who_asks_and_saying_what_kind() {
         vec![Notice {
             plane: a,
             session: 3,
+            sessions: vec![3],
             title: "steward 12 › chat 3".to_owned(),
             body: "Asks your permission".to_owned(),
         }]
@@ -105,20 +116,273 @@ fn asks_of_one_chat_a_few_seconds_apart_share_one_notification() {
 }
 
 #[test]
-fn asks_of_two_chats_are_two_notifications() {
+fn asks_of_several_chats_together_are_one_notification_naming_them_that_lands_on_the_first() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let sent = heard(
         &mut rules,
         &a,
         &[
-            permission(3, "p1", "Run ls"),
-            permission(4, "p2", "Run pwd"),
+            named(3, "p1", "steward 3"),
+            named(4, "p2", "devops 4"),
+            named(4, "p3", "devops 4"),
+            named(5, "p4", "builder 5"),
         ],
         Instant::now(),
     );
-    let chats: Vec<u32> = sent.iter().map(|notice| notice.session).collect();
-    assert_eq!(chats, vec![3, 4]);
+    assert_eq!(
+        sent,
+        vec![Notice {
+            plane: a,
+            session: 3,
+            sessions: vec![3, 4, 5],
+            title: "3 chats need you".to_owned(),
+            body: "steward 3, devops 4 and builder 5".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn a_notification_names_at_most_three_chats_and_counts_the_rest() {
+    let asks: Vec<Shown> = (1..=5)
+        .map(|n| named(n, &format!("p{n}"), &format!("chat {n}")))
+        .collect();
+    let sent = heard(&mut Rules::default(), &plane("/a"), &asks, Instant::now());
+    assert_eq!(sent[0].title, "5 chats need you");
+    assert_eq!(sent[0].body, "chat 1, chat 2, chat 3 and 2 more");
+}
+
+#[test]
+fn another_chat_asking_a_few_seconds_later_rides_the_notification_sent() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let first = [named(3, "p1", "steward 3")];
+    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
+    let both = [first[0].clone(), named(4, "p2", "devops 4")];
+    assert!(heard(&mut rules, &a, &both, start + Duration::from_secs(2)).is_empty());
+}
+
+#[test]
+fn a_chat_asking_later_while_another_still_waits_counts_both_and_lands_on_the_longest_waiting() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let first = [named(3, "p1", "steward 3")];
+    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
+    let both = [first[0].clone(), named(4, "p2", "devops 4")];
+    let sent = heard(&mut rules, &a, &both, start + TOGETHER * 2);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].title, "2 chats need you");
+    assert_eq!(sent[0].sessions, vec![3, 4]);
+    assert_eq!(sent[0].session, 3);
+}
+
+#[test]
+fn a_chat_the_person_is_looking_at_is_not_counted() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let sent = rules.heard(&Heard {
+        plane: &a,
+        asks: &[named(3, "p1", "steward 3"), named(4, "p2", "devops 4")],
+        looking: &|session| session == 3,
+        quiet: NOT_QUIET,
+        now: Instant::now(),
+    });
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].sessions, vec![4]);
+    assert_eq!(sent[0].title, "devops 4");
+}
+
+/// What `rules` sends for `asks` of `plane` at `now`, nobody looking, in quiet hours or not.
+fn heard_quiet(
+    rules: &mut Rules,
+    plane: &PlaneId,
+    asks: &[Shown],
+    now: Instant,
+    quiet: bool,
+) -> Vec<Notice> {
+    rules.heard(&Heard {
+        plane,
+        asks,
+        looking: NOBODY_LOOKS,
+        quiet: &move || quiet,
+        now,
+    })
+}
+
+#[test]
+fn nothing_is_sent_in_quiet_hours_and_one_names_what_still_waits_when_they_end() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let two = [named(3, "p1", "steward 3"), named(4, "p2", "devops 4")];
+    assert!(heard_quiet(&mut rules, &a, &two[..1], start, true).is_empty());
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 2, true).is_empty());
+    assert_eq!(rules.held_in_quiet_hours(), vec![a.clone()]);
+    // Still quiet, nothing new: still nothing.
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 3, true).is_empty());
+    // Quiet hours over: one notification for what still waits, and only one.
+    let sent = heard_quiet(&mut rules, &a, &two, start + TOGETHER * 4, false);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].title, "2 chats need you");
+    assert_eq!(sent[0].body, "steward 3 and devops 4");
+    assert!(rules.held_in_quiet_hours().is_empty());
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 6, false).is_empty());
+}
+
+#[test]
+fn what_was_answered_in_quiet_hours_is_not_sent_when_they_end() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let asks = [named(3, "p1", "steward 3")];
+    assert!(heard_quiet(&mut rules, &a, &asks, start, true).is_empty());
+    assert!(heard_quiet(&mut rules, &a, &[], start + TOGETHER * 2, false).is_empty());
+    assert!(rules.held_in_quiet_hours().is_empty());
+}
+
+#[test]
+fn a_chat_that_rode_a_notification_and_still_waits_is_named_when_the_window_closes() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let first = [named(3, "p1", "steward 3")];
+    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
+    let both = [first[0].clone(), named(4, "p2", "devops 4")];
+    let soon = start + Duration::from_secs(2);
+    assert!(heard(&mut rules, &a, &both, soon).is_empty());
+    // The notifier comes back when the window closes.
+    assert_eq!(rules.next_due(), Some(soon + TOGETHER));
+    let sent = heard(&mut rules, &a, &both, soon + TOGETHER);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].title, "2 chats need you");
+    assert_eq!(sent[0].body, "steward 3 and devops 4");
+    assert_eq!(sent[0].sessions, vec![3, 4]);
+}
+
+#[test]
+fn a_window_closing_with_no_other_chat_on_it_sends_nothing() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let two = [
+        permission(3, "p1", "Run ls"),
+        permission(3, "p2", "Run pwd"),
+    ];
+    assert_eq!(heard(&mut rules, &a, &two[..1], start).len(), 1);
+    // The same chat asking again rides, and is no reason to come back.
+    assert!(heard(&mut rules, &a, &two, start + Duration::from_secs(1)).is_empty());
+    assert_eq!(rules.next_due(), None);
+    assert!(heard(&mut rules, &a, &two, start + TOGETHER * 2).is_empty());
+}
+
+#[test]
+fn a_chat_that_rode_and_was_answered_before_the_window_closed_is_not_sent() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let first = [named(3, "p1", "steward 3")];
+    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
+    let both = [first[0].clone(), named(4, "p2", "devops 4")];
+    assert!(heard(&mut rules, &a, &both, start + Duration::from_secs(1)).is_empty());
+    assert!(heard(&mut rules, &a, &first, start + TOGETHER * 2).is_empty());
+}
+
+#[test]
+fn a_chat_s_name_is_plain_text_and_capped() {
+    let long = format!("evil\u{202e}name\n{}", "x".repeat(200));
+    let one = named(3, "p1", &long);
+    let sent = heard(
+        &mut Rules::default(),
+        &plane("/a"),
+        std::slice::from_ref(&one),
+        Instant::now(),
+    );
+    let title = &sent[0].title;
+    assert!(title.starts_with("evilname x"), "{title}");
+    assert!(!title.chars().any(char::is_control));
+    assert!(!title.contains('\u{202e}'));
+    assert!(
+        title.chars().count() <= MOST_NAME,
+        "{}",
+        title.chars().count()
+    );
+    assert!(title.ends_with('…'));
+    let two = [one, named(4, "p2", "devops 4")];
+    let sent = heard(&mut Rules::default(), &plane("/a"), &two, Instant::now());
+    assert!(sent[0].body.chars().count() <= MOST_NAME * 3 + 20);
+    assert!(!sent[0].body.contains('\n'));
+}
+
+#[test]
+fn quiet_hours_cover_their_span_and_one_across_midnight() {
+    let at = |text: &str| minute_of(text).unwrap();
+    let night = QuietHours {
+        from: at("22:00"),
+        to: at("07:00"),
+    };
+    let day = QuietHours {
+        from: at("09:00"),
+        to: at("17:30"),
+    };
+    let none = QuietHours {
+        from: at("08:00"),
+        to: at("08:00"),
+    };
+    for (hours, now, quiet) in [
+        (night, "22:00", true),
+        (night, "23:59", true),
+        (night, "00:00", true),
+        (night, "06:59", true),
+        (night, "07:00", false),
+        (night, "12:00", false),
+        (night, "21:59", false),
+        (day, "09:00", true),
+        (day, "17:29", true),
+        (day, "17:30", false),
+        (day, "08:59", false),
+        (day, "23:00", false),
+        (none, "08:00", false),
+        (none, "20:00", false),
+    ] {
+        assert_eq!(hours.covers(at(now)), quiet, "{hours:?} at {now}");
+    }
+}
+
+#[test]
+fn quiet_hours_are_read_from_the_layout_only_when_they_are_on_and_well_formed() {
+    let read = |document: serde_json::Value| QuietHours::of_layout(&document);
+    let quiet =
+        |quiet: serde_json::Value| read(serde_json::json!({"notifications": {"quiet": quiet}}));
+    assert_eq!(read(serde_json::json!({"version": 2, "regions": []})), None);
+    assert_eq!(
+        quiet(serde_json::json!({"on": true, "from": "22:00", "to": "07:00"})),
+        Some(QuietHours {
+            from: 22 * 60,
+            to: 7 * 60
+        })
+    );
+    assert_eq!(
+        quiet(serde_json::json!({"on": false, "from": "22:00", "to": "07:00"})),
+        None
+    );
+    assert_eq!(
+        quiet(serde_json::json!({"on": true, "from": "25:00", "to": "07:00"})),
+        None
+    );
+    assert_eq!(
+        quiet(serde_json::json!({"on": true, "from": "22:00"})),
+        None
+    );
+    assert_eq!(
+        quiet(serde_json::json!({"on": "yes", "from": "22:00", "to": "07:00"})),
+        None
+    );
+    assert_eq!(quiet(serde_json::json!("22-07")), None);
+    for wrong in ["7:00", "07:60", "07:0", " 07:00", "0700", "-1:00"] {
+        assert_eq!(minute_of(wrong), None, "{wrong}");
+    }
 }
 
 #[test]
@@ -157,6 +421,7 @@ fn nothing_is_sent_while_the_person_is_looking_and_looking_away_does_not_hold_th
         plane: &a,
         asks: &first,
         looking: &|_| true,
+        quiet: NOT_QUIET,
         now: start,
     });
     assert!(sent.is_empty());

@@ -192,3 +192,29 @@ confirmed by the operator:
 - **ADR 0087 §5's "the user's own global harness config"** is the adopted profile's own settings
   (§2 above), and a profile purlis made has the settings it imported. Each is the person's choice,
   as §5 says.
+
+How a folder is adopted (§2, #2033) was not ruled beyond the operator's condition that no profile
+or session is lost. The dispatcher decided it on 2026-10-14 in implementation, to be confirmed by
+the operator:
+
+- **An adopted profile keeps its built-in's name** (`claude`, `codex`, `opencode`) and is shown
+  by its title, *Claude Code (this Mac)* (*this computer* off macOS). Every chat record, persona
+  and dispatch list already names the built-in, so each chat's next run is on the adopted profile
+  with nothing rewritten. A profile a clone's local file declares, under that name or another,
+  is not adopted and runs as it is declared.
+- **The folder adopted is the one a chat on the built-in reaches**: the one the harness's folder
+  variable (`[folders]`, ADR 0073) names in the environment the app starts its chats from, and
+  otherwise the harness's default (`~/.claude`, `~/.codex`, opencode's folder under `~/.config`
+  and `~/.local/share`). It is adopted only where it is there and is the person's own: named by
+  an absolute path, owned by this user, and outside every project and git work tree. The app
+  adopts at its launch, before any chat starts; `purlis profile list` only shows what was adopted.
+- **A chat on an adopted profile starts exactly as it did on the built-in**, so it reaches the
+  same folder the same way, and purlis sets no folder variable for it. The record says which
+  folder variables were set when the folder was found, so later profile work (#2034) reaches it
+  by those and no others. A default folder is reached with none set: Claude Code given
+  `CLAUDE_CONFIG_DIR`, even naming its default folder, looks for its sign-in elsewhere.
+- **The record is in this machine's store**, `<config>/profiles.json` (`docs/plane-format.md`),
+  where the profiles the window makes (#2034) are kept too. Never in the harness's folder and
+  never in a committed file. A folder a record already points at, a built-in name a record
+  already has, and a folder the person removed as a profile are not adopted again, so a second
+  upgrade changes nothing.

@@ -331,6 +331,20 @@ enum Command {
         now: Option<String>,
     },
 
+    /// Propose a change to one of purlis's own configuration files, for the person to apply.
+    ///
+    /// In a chat the app started: `file` is the project's manifest, a persona's `mcp.json` or
+    /// `persona.md`, or a `.claude/skills` file; `--from` is the whole new content, written in
+    /// this chat's own folder. The window shows the person the change whole, and only they
+    /// apply it. Nothing is written here (#1975).
+    Propose {
+        /// The configuration file to change.
+        file: std::path::PathBuf,
+        /// The file in this chat's own folder that holds its whole new content.
+        #[arg(long, value_name = "DRAFT")]
+        from: std::path::PathBuf,
+    },
+
     /// Claude Code's footer, from the per-turn JSON on stdin.
     ///
     /// Inside the app it prints an empty line and still records the turn's token usage, which
@@ -2539,12 +2553,14 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             // same reason; the rung it tests for is spelled here as the two pointer rungs,
             // which are `session`/`active-file` in charter's own vocabulary.
             if code == 0 {
-                reset_active_after_removal(&here, name, say);
+                let reset = reset_active_after_removal(&here, name, say);
                 heard.push(ExtensionEvent::WorkspaceRemoved {
                     workspace: name.clone(),
                 });
+                reset
+            } else {
+                code
             }
-            code
         }
         WorkspaceCommand::Rename { old, new } => {
             // The chats the app has open in it, under either name so a rename finished after
@@ -2835,13 +2851,15 @@ fn pinned(now: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {
 /// caller is standing in are the operator's own and are not purlis's to rewrite; a pointer
 /// purlis wrote is, and one naming a directory that no longer exists is how the next write
 /// re-creates the workspace that was just deleted.
+///
+/// Answers the exit code: a pointer that could not be written is said as that, never as a
+/// reset (#2103).
 fn reset_active_after_removal(
     here: &Here,
     removed: &str,
     say: &mut dyn FnMut(purlis_core::repocmd::Say),
-) {
+) -> u8 {
     use purlis_core::active::WorkspaceRung;
-    use purlis_core::repocmd::Say;
 
     let active = purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
     if active.name != removed
@@ -2850,15 +2868,18 @@ fn reset_active_after_removal(
             WorkspaceRung::SessionPointer | WorkspaceRung::TerminalPointer
         )
     {
-        return;
+        return 0;
     }
     let fallback = purlis_core::active::plane_default_workspace(here.plane.root());
     // `force`, because the session is locked to the workspace that just went away and that
     // lock can refuse nothing useful now.
-    purlis_core::wscmd::select::set_active(here.plane.root(), &fallback, &here.ids, true);
-    say(Say::Info(format!(
-        "Active workspace reset to '{fallback}'."
-    )));
+    purlis_core::wscmd::select::reset_after_removal(
+        here.plane.root(),
+        removed,
+        &fallback,
+        &here.ids,
+        say,
+    )
 }
 
 fn run(command: Command) -> Result<u8, String> {
@@ -2916,6 +2937,9 @@ fn run(command: Command) -> Result<u8, String> {
         }
         Command::Root => {
             println!("{}", here.plane.root().display());
+        }
+        Command::Propose { file, from } => {
+            return brokered::propose(here.plane.root(), &file, &from);
         }
         Command::Workspace(WorkspaceCommand::Current) => {
             // The name alone on stdout, for a script; the rung that decided it on stderr, for
@@ -2997,9 +3021,13 @@ fn run(command: Command) -> Result<u8, String> {
             let set = profiles::with_ignore_check(profiles::current(&root), &check);
             let declared = purlis_core::harness_declaration::read(&root);
             let passed = purlis_core::chatenv::read(&root);
+            // This machine's own profiles, read and never written: the app adopts the
+            // machine's harness folders at its launch (#2033), from the environment its chats
+            // start in, which a terminal's may not be.
+            let machine = purlis_core::profilestore::listed_here();
             eprint!(
                 "{}",
-                harness_listing(&set, &check, Some((&declared, &passed)))
+                harness_listing(&set, &check, Some((&declared, &passed, &machine)))
             );
         }
         Command::Harness(HarnessCommand::Show { name }) => {
@@ -4344,7 +4372,8 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 /// The profile listing, as `purlis harness list` prints it on stderr, and with `declared`, as
 /// `purlis profile list` does: a SIGN-IN column, the kind of sign-in purlis can see a profile
 /// has, from its harness's declaration, its `env` and `[chat_env] pass` (`passed`), or
-/// `unknown` where it cannot tell (#2031).
+/// `unknown` where it cannot tell (#2031). A built-in this machine adopted (#2033) is FROM its
+/// title and its folder: `Claude Code (this Mac) at ~/.claude`.
 ///
 /// Built-ins first in registry order — a declared replacement keeps its kind's place — then
 /// declared profiles by name. **Every width is measured from the cells about to be printed**
@@ -4358,7 +4387,11 @@ fn harness_show(root: &std::path::Path, name: &str) -> u8 {
 fn harness_listing(
     set: &ProfileSet,
     check: &profiles::IgnoreCheck,
-    declared: Option<(&purlis_core::harness_declaration::Declarations, &[String])>,
+    declared: Option<(
+        &purlis_core::harness_declaration::Declarations,
+        &[String],
+        &[purlis_core::profilestore::MachineProfile],
+    )>,
 ) -> String {
     let order: Vec<String> = profiles::builtins().into_iter().map(|p| p.name).collect();
     let mut rows: Vec<&purlis_core::profiles::Profile> = set.profiles().iter().collect();
@@ -4387,8 +4420,8 @@ fn harness_listing(
         .iter()
         .map(|p| {
             let mut row = vec![shown::short(&p.name), p.kind.clone()];
-            if let Some(declared) = declared {
-                row.push(sign_in(p, declared));
+            if let Some((declarations, passed, _)) = declared {
+                row.push(sign_in(p, (declarations, passed)));
             }
             row.push(profiles::display(p));
             row
@@ -4431,9 +4464,19 @@ fn harness_listing(
         } else {
             "  "
         };
-        let source = p.source.as_str();
+        let adopted = declared
+            .filter(|_| p.source == profiles::Source::BuiltIn)
+            .and_then(|(_, _, machine)| purlis_core::profilestore::adopted_as(machine, &p.name));
+        let source = match adopted {
+            Some(machine) => format!(
+                "{} at {}",
+                shown::short(&machine.title),
+                shown::short(&home_spelled(&machine.folders.config))
+            ),
+            None => p.source.as_str().to_owned(),
+        };
         let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
-        out.push_str(&line(mark, &cells, source));
+        out.push_str(&line(mark, &cells, &source));
     }
     if !set.refused.is_empty() {
         out.push_str("refused:\n");
@@ -4456,6 +4499,20 @@ fn harness_listing(
         ));
     }
     out
+}
+
+/// `folder` with the person's home written `~`, as a listing shows a path.
+fn home_spelled(folder: &std::path::Path) -> String {
+    match profiles::home().and_then(|home| {
+        folder
+            .strip_prefix(home)
+            .ok()
+            .map(std::path::Path::to_path_buf)
+    }) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => folder.display().to_string(),
+    }
 }
 
 #[cfg(test)]

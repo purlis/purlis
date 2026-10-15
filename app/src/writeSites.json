@@ -204,6 +204,11 @@
       "why": "It writes the window's tabs, which no lane's read draws."
     },
     {
+      "at": "proposals.rs apply_in",
+      "writes": "the project's manifest and its local settings",
+      "by": ["applyProposedChange"]
+    },
+    {
       "at": "sandboxing.rs acknowledge",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["acknowledgeProjectHosts"]

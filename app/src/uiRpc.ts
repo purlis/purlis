@@ -341,6 +341,8 @@ export const commands = {
 	allowSandboxBlockForTasks: __WINDOW_ONLY_RESULT,
 	keepSandboxBlockForTasks: __WINDOW_ONLY_RESULT,
 	keepSandboxBlock: __WINDOW_ONLY_RESULT,
+	kubeContexts: __WINDOW_ONLY_RESULT,
+	pointKubectl: __WINDOW_ONLY_RESULT,
 	sandboxBlockChoices: __WINDOW_ONLY_RESULT,
 	chooseSandboxBlockTarget: __WINDOW_ONLY_RESULT,
 	takeUpSandboxBlock: __WINDOW_ONLY_RESULT,
@@ -382,10 +384,17 @@ export const commands = {
 	chatAttended: (plane: PlaneId, session: number) => typedError<boolean, string>(__TAURI_INVOKE("chat_attended", { plane, session })),
 	allowRefusedVault: __WINDOW_ONLY_RESULT,
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
+	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	applyProposedChange: __WINDOW_ONLY_RESULT,
+	proposedChange: __WINDOW_ONLY_RESULT,
+	dismissProposedChange: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
+	/**  Task `session`'s quiet note for its tab, where it has one. */
+	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
+	putAwayTaskQuiet: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -393,6 +402,10 @@ export const commands = {
 	 *  On a blocking thread: the Local file's check asks git whether it is ignored.
 	 */
 	dispatchLimits: (plane: PlaneId) => typedError<DispatchLimits, string>(__TAURI_INVOKE("dispatch_limits", { plane })),
+	plainFileVaults: __WINDOW_ONLY_RESULT,
+	moveVaultToKeychain: __WINDOW_ONLY_RESULT,
+	sandboxLevelsWaiting: __WINDOW_ONLY_RESULT,
+	confirmSandboxLevel: __WINDOW_ONLY_RESULT,
 	dispatchGrantsNeeded: __WINDOW_ONLY_RESULT,
 	allowDispatch: __WINDOW_ONLY_RESULT,
 	keepDispatchBlocked: __WINDOW_ONLY_RESULT,
@@ -548,6 +561,21 @@ export const commands = {
 	endTaskThatDidNotStart: __WINDOW_ONLY_RESULT,
 	startChatFresh: __WINDOW_ONLY_RESULT,
 	askChatRestart: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What restarting chat `session` would end now** (#1986, ruling Q63), for the Ask that
+	 *  restarts it to say beforehand: each program its commands started that listens on a TCP port,
+	 *  and how many others they started are running ([`purlis_core::restartends`]). `None` where
+	 *  purlis cannot tell: the chat runs no program here, or the process table or its listening
+	 *  sockets could not be read. Read from the operating system, never from what the chat printed.
+	 * 
+	 *  Off the window's thread: it runs `ps` and `lsof`.
+	 */
+	whatARestartEnds: (plane: PlaneId, session: number) => typedError<{
+	/**  Each program below the chat listening on a TCP port, by port. */
+	listening: ListeningProgram[],
+	/**  How many other programs its commands started are running. */
+	others: number,
+} | null, string>(__TAURI_INVOKE("what_a_restart_ends", { plane, session })),
 	restartChat: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The chats this project has open that run under a sandbox other than the one the
@@ -1953,6 +1981,11 @@ export type AnswerPath =
  *  own count.
  */
 { via: "workspace-removal"; workspace: string; memories: number; todos: number } | 
+/**
+ *  `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
+ *  proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
+ */
+{ via: "proposed-change"; id: number; path: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2057,6 +2090,11 @@ export type AskSource =
  *  (qw356).
  */
 "workspace-removal" | 
+/**
+ *  A change a chat proposed to purlis's own configuration, which only the person applies
+ *  (#1975).
+ */
+"proposed-change" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -4208,6 +4246,13 @@ export type FoundFile = {
 	matched: number[],
 };
 
+/**
+ *  **Where Apply was pressed** (PC-7): a row (the Inbox's, a tab's Notice), which shows a change
+ *  whole only up to its length, or the change's own tab, which shows it whole however long.
+ *  What Apply writes is judged again by the rules of where it was shown.
+ */
+export type From = "row" | "tab";
+
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
 
@@ -4670,6 +4715,18 @@ export type KeptBlocked = {
 	at: number,
 };
 
+/**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
+export type KubeContext = {
+	/**  Its name, as kubectl knows it. */
+	name: string,
+	/**  Its cluster's server, as the kubeconfig names it. */
+	server: string,
+	/**  The port of this Mac it reaches, where purlis can point a chat at it. */
+	port: number | null,
+	/**  Why purlis would not point a chat at it, where it would not: never pressable then. */
+	refused: string | null,
+};
+
 /**
  *  What a Land would do, before it does any of it: the request, the head its checks passed at,
  *  and how it lands. Handed back whole by the yes.
@@ -4771,6 +4828,14 @@ export type LeftOut = {
 	why: string,
 };
 
+/**  A level the file says that waits for your Confirm. */
+export type LevelWaiting = {
+	/**  The persona's level, or the project's for `None`. */
+	persona: string | null,
+	/**  What the file says: `on`, `floor` or `off`. */
+	level: string,
+};
+
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
 export type LineRange = {
 	first: number,
@@ -4793,6 +4858,13 @@ export type ListedRepo = {
 	url: string,
 	/**  Whether it holds a purlis project's manifest. */
 	project: boolean,
+};
+
+/**  One program listening on one port. */
+export type ListeningProgram = {
+	/**  Its program's name, without its folder. */
+	program: string,
+	port: number,
 };
 
 /**  What switching a workspace would do, for the confirmation that asks first. */
@@ -5934,6 +6006,13 @@ export type Pins = {
 	certain: boolean,
 };
 
+/**  A plain-file vault, and whether this machine may move it. */
+export type PlainFileVault = {
+	name: string,
+	/**  `false` for one the team's file registers, which is the team's to move. */
+	movable: boolean,
+};
+
 /**  One open project's alerts. */
 export type PlaneAlerts = {
 	plane: PlaneId,
@@ -6410,6 +6489,28 @@ export type ProjectUpdate = {
 };
 
 /**
+ *  **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
+ *  whether Apply is offered there, or why it is not shown.
+ */
+export type ProposedWhole = {
+	path: string,
+	/**  The chat that proposed it. */
+	session: number,
+	/**
+	 *  The file as the app reads it now, and as the change makes it: drawn whole. Empty where
+	 *  it is not shown ([`Self::why`]).
+	 */
+	before: string,
+	after: string,
+	/**  The one hunk that is the whole of each side, as the merge view takes it. */
+	hunks: GitHunk[],
+	/**  Whether Apply is offered: shown whole, and it still applies. */
+	applies: boolean,
+	/**  Why it is not shown, or not applied, in a sentence. */
+	why: string | null,
+};
+
+/**
  *  What the person asked to publish: #1819's form, less the template and the folder, which the
  *  project already has.
  */
@@ -6817,6 +6918,14 @@ export type RepoStates = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**  [`purlis_core::restartends::Ends`], as the window reads it. */
+export type RestartEnds = {
+	/**  Each program below the chat listening on a TCP port, by port. */
+	listening: ListeningProgram[],
+	/**  How many other programs its commands started are running. */
+	others: number,
 };
 
 /**

@@ -119,9 +119,67 @@ fn shown(change: &Written) -> ChangeShown {
     }
 }
 
+/// What a proposed change says it does (#1975).
+pub const PROPOSES: &str = "The file as it is, and as the change would make it";
+
+/// What follows the reason a proposed change is not shown (#1975, PC-7): no Apply is offered
+/// where it is not shown whole.
+pub const NOT_APPLIED_HERE: &str = "It is not applied from here: dismiss it, or make the change \
+                                    yourself.";
+
+/// What follows the reason a proposed change too long for a row is not shown there (#1975,
+/// PC-7): its own tab shows it whole, and Apply is pressed there.
+pub const OPEN_TO_APPLY: &str = "Open it to see it whole, and apply it there.";
+
+/// **Whether a proposed change is too long for a row and nothing else keeps it from being
+/// shown** (PC-7): its own tab shows it whole. A change not shown for any other reason (a
+/// credential's shape, a character drawn otherwise, bytes) is shown nowhere.
+pub fn proposed_too_long(before: &str, after: &str) -> bool {
+    purlis_core::harness::asked::edit::unshown(&[Written::Replace {
+        before: before.to_owned(),
+        after: after.to_owned(),
+        every: false,
+    }]) == Some(Unshown::TooBig)
+}
+
+/// **A proposed change as its row draws it** (#1975): the file `path` as the app read it,
+/// `before`, and as the change makes it, `after`, shown whole by the same rules an edit ask's
+/// change is ([`purlis_core::harness::asked::edit::unshown`]), or why not.
+pub fn proposed(path: &str, before: &str, after: &str) -> WritesShown {
+    let changes = [Written::Replace {
+        before: before.to_owned(),
+        after: after.to_owned(),
+        every: false,
+    }];
+    if let Some(why) = purlis_core::harness::asked::edit::unshown(&changes) {
+        let then = if why == Unshown::TooBig {
+            OPEN_TO_APPLY
+        } else {
+            NOT_APPLIED_HERE
+        };
+        return WritesShown::NotShown {
+            why: format!("{} {then}", why_said(why)),
+        };
+    }
+    let says = if ends_a_line_in_crlf(before) || ends_a_line_in_crlf(after) {
+        format!("{PROPOSES} ({CRLF_MARKED})")
+    } else {
+        PROPOSES.to_owned()
+    };
+    WritesShown::Whole {
+        path: path.to_owned(),
+        changes: vec![ChangeShown {
+            says,
+            before: drawn(before),
+            after: drawn(after),
+            hunks: vec![whole(before, after)],
+        }],
+    }
+}
+
 /// The one hunk that is the whole of `before` and of `after`, in git's numbers: a side with no
 /// lines names line 0, the top, as the hunk comes after it.
-fn whole(before: &str, after: &str) -> GitHunk {
+pub(crate) fn whole(before: &str, after: &str) -> GitHunk {
     let lines = |text: &str| u32::try_from(text.lines().count()).unwrap_or(u32::MAX);
     let (old_lines, new_lines) = (lines(before), lines(after));
     GitHunk {

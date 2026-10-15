@@ -305,3 +305,18 @@ test("a cover that looks like it holds a secret is said redacted, as the core's 
   assert.ok(text.includes("[redacted: a line that looks like it holds"), text);
   assert.ok(text.includes("open: [role=dialog] Switch project"), text);
 });
+
+test("one log line longer than the room left is cut to it, and the late commands stay whole", () => {
+  const record = {
+    late: [{ command: "chats", ms: 12000 }],
+    coreLog: [`old line\n`, `${"x".repeat(EVIDENCE_CHARS * 2)} newest end`],
+  };
+  const said = evidenceOf(record);
+  assert.ok(said.length <= EVIDENCE_CHARS, `${said.length}`);
+  assert.ok(
+    said.startsWith("the window waited for: chats (answered after 12 s)"),
+    said.slice(0, 80),
+  );
+  assert.ok(said.includes("the core's last log lines:\n"));
+  assert.ok(said.endsWith(" newest end"));
+});

@@ -315,6 +315,9 @@ pub struct Hooks {
     /// Told what a chat's turn put out (#1981), once the board has judged the line its own
     /// run's: a slot filled after the fact, as `touching` is. **In memory only.**
     output: Arc<Mutex<Option<Outputs>>>,
+    /// Told what a chat's own tool hook says it is doing (#1981), once the board has judged the
+    /// line its own run's. **In memory only.**
+    doing_heard: Arc<Mutex<Option<Doings>>>,
     /// What each working chat is doing, for the one line under its name (#1493). **In memory
     /// only**, as a touched path is: nothing here writes it, and the event log is not told.
     doings: Arc<crate::doing::Doings>,
@@ -1281,19 +1284,27 @@ fn for_its_harness(
         );
         return (offer, target, why);
     }
+    // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
+    // carried the port by name through purlis's proxy, and the Notice says how it is reached.
     if offer == BlockOffer::Port && claude {
-        let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_PORT_SAID);
-        return (offer, target, why);
+        let said = match route {
+            Some(route) => format!("{route} {CLAUDE_CODE_PORT_SAID}"),
+            None => CLAUDE_CODE_PORT_SAID.to_owned(),
+        };
+        return (offer, target, Some(said));
     }
     (offer, target, route)
 }
 
-/// Why a service on this Mac is not allowed a Claude Code chat yet (qw384): its sandbox lets a
-/// command reach this machine's loopback on its proxy's two ports, or on every port, and on no
-/// one port alone, so the one port purlis would allow cannot be said to it.
-pub const CLAUDE_CODE_PORT_SAID: &str = "Claude Code's sandbox can let a command reach either \
-     every port on this Mac or none of them, never one alone, so purlis cannot allow this one \
-     port to this chat yet. A Codex or opencode chat can be allowed it.";
+/// How a Claude Code chat reaches a service on this Mac it is allowed (qw384b): its sandbox lets
+/// a command reach this machine's loopback on every port or on none but its proxy's, never one
+/// alone, and its commands send no address of this machine to a proxy. A name they do send, so
+/// the chat's proxy carries the port by name ([`purlis_core::sandbox::localport::THIS_MAC`]).
+pub const CLAUDE_CODE_PORT_SAID: &str = "In a Claude Code chat a command reaches it through this \
+     chat's proxy, by the name this-mac.internal and that port, never by 127.0.0.1 or localhost: \
+     curl https://this-mac.internal:<port>, or kubectl once Point kubectl at it gives this chat \
+     its own copy of a context on this Mac. A program that uses no proxy, such as psql or \
+     redis-cli, cannot reach it.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).
@@ -1303,6 +1314,10 @@ fn without_the_sandbox(why: &str) -> (BlockOffer, Option<String>, Option<String>
 
 /// What is told each path a chat's file tool touched, unconfined.
 pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + 'static>;
+
+/// What hears what a chat's own tool hook says it is doing (#1981): the project's own handler,
+/// which measures a task's quiet stretch from it ([`Hooks::when_doing`]).
+pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'static>;
 
 /// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
 /// for a task alone ([`Hooks::when_output`]).
@@ -1487,6 +1502,7 @@ impl Hooks {
             doings,
             touching: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(None)),
+            doing_heard: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
             throttle: Arc::default(),
@@ -1521,6 +1537,7 @@ impl Hooks {
         let asks_told: crate::asking::Telling = Arc::new(Mutex::new(None));
         let touching: Arc<Mutex<Option<Touches>>> = Arc::new(Mutex::new(None));
         let output: Arc<Mutex<Option<Outputs>>> = Arc::new(Mutex::new(None));
+        let doing_heard: Arc<Mutex<Option<Doings>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
@@ -1588,7 +1605,20 @@ impl Hooks {
                 let board = Arc::clone(&board);
                 let moved = Arc::clone(&moved);
                 let plane = plane.clone();
+                let doing_heard = Arc::clone(&doing_heard);
                 Box::new(move |said| {
+                    // Activity of the chat's own run, for a task's quiet stretch (#1981).
+                    if said.agent.is_none()
+                        && held_board(&board).spoken_by(said.chat, &said.speaker)
+                    {
+                        let listener = doing_heard
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .clone();
+                        if let Some(listener) = listener {
+                            listener(said.chat, said.doing.clone());
+                        }
+                    }
                     let agent = said.agent.as_deref();
                     if let Some(what) = got_past_its_prompt(
                         &board,
@@ -1831,6 +1861,7 @@ impl Hooks {
             asks_told,
             touching,
             output,
+            doing_heard,
             doings,
             blocked,
             repeated,
@@ -1898,6 +1929,32 @@ impl Hooks {
         log.sandbox_grant(root, number, audited)
             .map(|_| ())
             .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+    }
+
+    /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
+    /// before the file is written, so nothing is applied unrecorded.
+    pub fn record_proposed(
+        &self,
+        root: &Path,
+        number: u32,
+        applied: &purlis_core::proposed::Applied<'_>,
+    ) -> Result<(), String> {
+        let Some(events) = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+        else {
+            return Err(
+                "purlis's event log is not open on this machine, so nothing was written: every \
+                 applied change is recorded"
+                    .to_owned(),
+            );
+        };
+        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
+        log.proposed_applied(root, number, applied)
+            .map(|_| ())
+            .map_err(|why| format!("the event log refused it ({why}), so nothing was written"))
     }
 
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
@@ -2124,6 +2181,15 @@ impl Hooks {
     /// it: the plane confines it to the chat's folder before the window hears of it.
     pub fn when_touching(&self, touches: Touches) {
         *self.touching.lock().unwrap_or_else(PoisonError::into_inner) = Some(touches);
+    }
+
+    /// Who is told what a chat's own tool hook says it is doing (#1981), once the board has
+    /// judged the line its own run's.
+    pub fn when_doing(&self, doings: Doings) {
+        *self
+            .doing_heard
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(doings);
     }
 
     /// Who is told what a chat's turn put out (#1981), once the board has judged the line its

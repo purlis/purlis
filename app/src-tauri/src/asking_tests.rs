@@ -142,6 +142,7 @@ impl World {
                 .map(|(_, asker)| *asker)
         };
         derive(&Waiting {
+            proposals: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,

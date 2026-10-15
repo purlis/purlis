@@ -26,7 +26,7 @@ each is wired to.
 | `userpromptsubmit`, in a plane | also adds, as `additionalContext`, the commitment gate: a prompt that asks for work and leaves a real fork open (open-ended wording, a broad scope, something irreversible, a long many-part ask) is told to scout first, then ask the operator at the fork before building. Only on the first prompt of a harness session and on a later prompt that asks for a code change, one that opens with the ask itself ("please", "ok, now" or "can you" before it at most), so never on a short reply, the answer to a question or a design answer such as "agree at all, but …" (#1988). The first prompt is known from the gate's own record of the session, `commit-gate/<sid>`, keyed by the session id every harness that runs the hook hands it; a record the gate cannot write makes the prompt a later one. A chat resumed under the same session id is past its first prompt; one its harness resumes under a new session id has its next prompt read as that session's first. Never on a question, on work with nothing to ask about, or on a slash command; never in an unattended run (`permission_mode: bypassPermissions`); and quiet for the three prompts after it fires. A report a handed-off chat sent back rides the same context, and so does one line when where the chat is working has changed since it was last told |
 | `pretooluse` on `Bash` | the guards below, then the persona tool gate |
 | `pretooluse-read` on `Read`/`Grep` | the vault guard on those tools (*Vault read*, below) |
-| `pretooluse-edit` on `Write`/`Edit`/`MultiEdit` | the state-directory guard (*A hand-written state file*, below) |
+| `pretooluse-edit` on `Write`/`Edit`/`MultiEdit` | the state-directory guard (*A hand-written state file*, below); in a sandboxed Claude Code chat, an edit of purlis's own configuration handed to the app as a proposed change, and the tool refused (#1975, `toolhooks::pretooluse_edit_proposing`) |
 | `pretooluse-dispatch` on `Task`/`Agent` and on purlis's `dispatch` tools | refuses a sub-agent call whose type is a persona, and names the dispatch route (*A sub-agent named for a persona*, below), and refuses purlis's `dispatch` and `dispatch_report` tools to a sub-agent (*A dispatch from a sub-agent*, below) |
 | `posttooluse` on `Write`/`Edit`/`MultiEdit`, in a plane | warns when a memory or ref just written looks like it holds a secret; says what the workspace flow expects on the first edit in a LIVE workspace's clone; and every twelfth change without a memory, reminds the session to record one |
 | `posttooluse-skill`, in a plane | logs which skill the active persona used |
@@ -349,8 +349,8 @@ rule while one who reads a bare refusal files an issue.
   counted, where nothing on the line can change that checkout: the move is the only git that
   writes on its line, every option it takes is on its own subcommand's short list of options
   spelled out whole that change nothing about which paths git writes, no configuration and no
-  editor is set anywhere on the line (`-c`, `--config-env`, `GIT_CONFIG*`, `GIT_EDITOR`,
-  `GIT_SEQUENCE_EDITOR`, `EDITOR`, `VISUAL`, an export of one), and every git on the line is
+  editor is set anywhere on the line (`-c`, `--config-env`, any `GIT_*` variable, `EDITOR`,
+  `VISUAL`, an export of one), and every git on the line is
   read, its alias included, and none is `git sparse-checkout`. Then, where `core.sparseCheckout` is on in the folder, git's own `sparse-checkout
   check-rules` says which paths those are. Otherwise, or where git does not answer, every path
   counts. A word spelled like a redirection but quoted (`'>'`) is an operand: on such a line

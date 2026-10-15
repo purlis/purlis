@@ -19,12 +19,14 @@ import { Choice, Field } from "./components";
 import type { Setting, SettingsGroup } from "./groups";
 import { thisMachineGroup } from "./thisMachine";
 import { accountsGroup } from "./accounts";
+import { notificationsGroup } from "./notifications";
 import { profilesGroup } from "./profiles";
 
 /**
  * **The You level's groups** (V89h): Text and Editor, which were the Preferences tab's
- * (charter-app#283, RC-20), This machine (ST-2), which is the machine store's, and Accounts
- * (#1814), this machine's forge accounts, and Profiles (#2034), this machine's own profiles. Nothing here is a project's: each value is this machine's, kept in
+ * (charter-app#283, RC-20), Notifications (#1989), This machine (ST-2), which is the machine
+ * store's, Accounts (#1814), this machine's forge accounts, and Profiles (#2034), this machine's
+ * own profiles. Nothing here is a project's: each value is this machine's, kept in
  * its layout file (`charter/layout.json`, beside `machine.json`), so it is the same in every
  * project and reaches no clone.
  *
@@ -51,6 +53,7 @@ export function youGroups(): SettingsGroup[] {
       help: "How chats are listed and summed up, on this machine.",
       settings: [chatsGrouped, tasksTabbed, awaySummary],
     },
+    notificationsGroup(),
     thisMachineGroup(),
     accountsGroup(),
     profilesGroup(),

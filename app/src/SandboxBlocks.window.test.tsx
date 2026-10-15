@@ -796,6 +796,7 @@ describe("a new host is asked live (#1666)", () => {
             what: "host",
             target: "api.example.com:443",
           },
+          reason: null,
         },
       ]),
     );
@@ -1048,7 +1049,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
 
     await waitFor(() =>
       expect(asked("keep_sandbox_block")).toEqual([
-        { plane: PLANE, session: 4, shown: ASKED.answer.shown },
+        { plane: PLANE, session: 4, shown: ASKED.answer.shown, reason: null },
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("status", { name: "Sandbox block" })).toBeNull());

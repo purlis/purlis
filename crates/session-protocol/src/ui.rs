@@ -285,9 +285,18 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.
     "keep_asked_workspace",
+    // Apply and Dismiss on a chat's proposed change (#1975): only the person applies a change to
+    // purlis's own configuration, and no chat answers its own proposal (PC-3).
+    "apply_proposed_change",
+    "dismiss_proposed_change",
+    // And the change whole, for its own tab (PC-7): what the configuration file holds is the
+    // person's to read, never a chat's through the UI's link.
+    "proposed_change",
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",
+    // Dismiss on a task's Notice that it has gone quiet (#1981): the person's answer.
+    "put_away_task_quiet",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",
@@ -331,6 +340,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "keep_sandbox_block_for_tasks",
     // Keep blocked on one chat's: refuses what its proxy holds and tells the chat (#1666).
     "keep_sandbox_block",
+    // Point kubectl at it (qw384b): the person's kubeconfig contexts, read for their press,
+    // and the copy of one made for a chat. What it reads is the person's, and what it makes
+    // widens what that chat reaches, so no link lists or makes either.
+    "kube_contexts",
+    "point_kubectl",
     // The person names what a block did not (#1884, ADR 0093): the sockets and services this
     // machine offers to choose from, the choice itself, and taking up a block a chat only read
     // back. The choice is the person's, so no link lists, makes or prompts it.
@@ -359,6 +373,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Grant commands (#1927): a consent given, answered or taken back.
     "allow_refused_vault",
     "keep_vault_blocked",
+    "put_away_refused_vault",
     "allow_persona_grants",
     "confirm_sandbox_host",
     "list_grantable_folder",
@@ -493,6 +508,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // The plain-file vaults offered to move into the keychain before a person turns their
+    // sandbox down (#2071): read in their window alone.
+    "plain_file_vaults",
+    // Your levels waiting for Confirm, and the Confirm that makes one count at a start
+    // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
+    "sandbox_levels_waiting",
+    "confirm_sandbox_level",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -545,6 +567,8 @@ pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
     "vault_identity_put",
     "vault_identity_move",
     "finish_moving_vaults",
+    // A plain-file vault's values moved into the keychain (#2071).
+    "move_vault_to_keychain",
     "vault_setup_accounts",
     "vault_setup_begin",
     "vault_setup_test",
@@ -794,6 +818,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "task_changes",
     "task_failure_seen",
     "task_folder_shared",
+    "task_quiet",
     "tasks_sharing_a_folder",
     "tasks_used",
     "template_that_fits",
@@ -813,6 +838,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "vault_refusals",
     "vaults_to_move",
     "watch_session",
+    "what_a_restart_ends",
     "what_changed",
     "window_focus",
     "window_holds_planes",
