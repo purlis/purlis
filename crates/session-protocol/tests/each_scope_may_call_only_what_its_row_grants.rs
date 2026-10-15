@@ -179,6 +179,18 @@ fn every_command() -> Vec<Command> {
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),
+        Command::Deal {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::DealtAlready {
+            project: "01J9PRJCT00000000000000000".into(),
+            dealt: 6,
+        },
+        Command::ReplyHeard {
+            project: "01J9PRJCT00000000000000000".into(),
+            heard: 12,
+            reply: serde_json::json!("taken"),
+        },
     ]
 }
 
@@ -205,6 +217,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "close",
             "readiness",
             "start_program",
+            "deal",
+            "dealt_already",
+            "reply_heard",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",

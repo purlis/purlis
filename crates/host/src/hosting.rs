@@ -13,6 +13,12 @@
 //! **What runs a composed start is a seam too** ([`Run`]): a terminal ([`Terminals`]), or a
 //! test's stand-in, so what the host does with its programs is tested without a terminal.
 //!
+//! **Each held project's hook channel is the host's** (#2000, [`Hear`]): the host binds the
+//! socket its chats' hooks write to, deals each chat its number and issues it its token, records
+//! its program, and admits every line as the window did; each line it admits is pushed to the
+//! window that holds the project ([`Pushed::Heard`]), whose reply comes back
+//! ([`Command::ReplyHeard`]). The host is each chat's ancestor, so a hook admits it.
+//!
 //! **Every hosted program is inside a chat to the admission check.** The holder the check is
 //! given is the window, when the window started this host, or the host itself: a hosted
 //! program, and everything it starts, is below both from its first instruction, so a peer among
@@ -36,6 +42,7 @@ use purlis_terminal::engine::{AlacrittyEngine, SCROLLBACK, Size};
 use purlis_terminal::session::{Session, Spec};
 use tokio::sync::mpsc;
 
+use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
 use crate::serving::Window;
 
 /// A start, as the host hands it to its [`Compose`]: the project it is in, the number the chat
@@ -194,6 +201,7 @@ pub struct Hosting {
 struct Inner {
     compose: Box<dyn Compose>,
     run: Box<dyn Run>,
+    hear: Box<dyn Hear>,
     state: Mutex<State>,
 }
 
@@ -208,7 +216,8 @@ struct State {
     closed: Vec<u32>,
     /// Each project's highest number dealt: it only rises, so a number names one chat.
     dealt: HashMap<String, u32>,
-    subscribers: Vec<mpsc::Sender<Pushed>>,
+    /// Who is told what the host pushes, each with the link it came on.
+    subscribers: Vec<(usize, mpsc::Sender<Pushed>)>,
     /// The window that started this host, if one did.
     window: Option<Window>,
 }
@@ -217,6 +226,8 @@ struct Held {
     path: PathBuf,
     /// How many holds each link has on it, by the link.
     links: HashMap<usize, usize>,
+    /// Its hook channel, where the host hears hooks and it could be opened.
+    channel: Option<Arc<dyn Channel>>,
 }
 
 /// A link, as the host tells its holds apart: its peer's place in memory, the same for every
@@ -242,12 +253,19 @@ impl Hosting {
         Hosting::running_with(compose, Terminals)
     }
 
-    /// A host whose starts `compose` composes and `run` runs.
+    /// A host whose starts `compose` composes and `run` runs, and which hears no hooks.
     pub fn running_with(compose: impl Compose, run: impl Run) -> Hosting {
+        Hosting::hearing_with(compose, run, HearsNothing)
+    }
+
+    /// A host whose starts `compose` composes and `run` runs, and whose held projects' hooks
+    /// `hear` hears (#2000).
+    pub fn hearing_with(compose: impl Compose, run: impl Run, hear: impl Hear) -> Hosting {
         Hosting {
             inner: Arc::new(Inner {
                 compose: Box::new(compose),
                 run: Box::new(run),
+                hear: Box::new(hear),
                 state: Mutex::default(),
             }),
         }
@@ -270,7 +288,54 @@ impl Hosting {
     fn tell(&self, pushed: &Pushed) {
         self.state()
             .subscribers
-            .retain(|subscriber| subscriber.try_send(pushed.clone()).is_ok());
+            .retain(|(_, subscriber)| subscriber.try_send(pushed.clone()).is_ok());
+    }
+
+    /// Push line `id` that `project`'s hooks wrote to every subscriber whose link holds the
+    /// project, letting go of one that is gone or has stopped reading: whether one was told.
+    fn hand_on(&self, project: &str, id: u64, line: serde_json::Value) -> bool {
+        let mut state = self.state();
+        let Some(holders) = state
+            .projects
+            .get(project)
+            .map(|held| held.links.keys().copied().collect::<Vec<usize>>())
+        else {
+            return false;
+        };
+        let pushed = Pushed::Heard {
+            project: project.to_owned(),
+            heard: id,
+            line,
+        };
+        let mut told = false;
+        state.subscribers.retain(|(link, subscriber)| {
+            if !holders.contains(link) {
+                return true;
+            }
+            let sent = subscriber.try_send(pushed.clone()).is_ok();
+            told |= sent;
+            sent
+        });
+        told
+    }
+
+    /// What hands a line `project`'s hooks wrote on to whoever holds it: nothing, once this
+    /// host has gone.
+    fn handing_on(&self, project: &str) -> HandOn {
+        let host = Arc::downgrade(&self.inner);
+        let project = project.to_owned();
+        Arc::new(move |id, line| {
+            host.upgrade()
+                .is_some_and(|inner| Hosting { inner }.hand_on(&project, id, line))
+        })
+    }
+
+    /// The hook channel of `project`, where it has one.
+    fn channel(&self, project: &str) -> Option<Arc<dyn Channel>> {
+        self.state()
+            .projects
+            .get(project)
+            .and_then(|held| held.channel.clone())
     }
 
     fn running(&self, program: &str) -> Result<Arc<dyn Running>, Refusal> {
@@ -315,10 +380,35 @@ impl Hosting {
             });
         }
         let mut state = self.state();
-        let held = state.projects.entry(project.clone()).or_insert(Held {
-            path: path.clone(),
-            links: HashMap::new(),
-        });
+        if !state.projects.contains_key(&project) {
+            // Opened under the hold, so two holds of a project never open two channels on one
+            // socket. Opening binds a socket: no wait on anything else.
+            let channel = match self
+                .inner
+                .hear
+                .open(&project, &path, self.handing_on(&project))
+            {
+                Ok(channel) => channel,
+                Err(why) => {
+                    crate::say(&format!(
+                        "project {project}'s hooks are not heard, so its chats' states and \
+                         asks will not reach the window: {why}"
+                    ));
+                    None
+                }
+            };
+            state.projects.insert(
+                project.clone(),
+                Held {
+                    path: path.clone(),
+                    links: HashMap::new(),
+                    channel,
+                },
+            );
+        }
+        let Some(held) = state.projects.get_mut(&project) else {
+            return Err(no_such_project(&project));
+        };
         // A project held is where it was first held until every hold is let go of: no client
         // moves another's.
         if held.path != path {
@@ -349,19 +439,34 @@ impl Hosting {
             // A link lets go only of its own holds.
             None => return Err(no_such_project(project)),
         }
-        if held.links.is_empty() {
-            state.projects.remove(project);
-        }
+        let gone = held
+            .links
+            .is_empty()
+            .then(|| state.projects.remove(project));
+        // Its hook channel stops outside the hold: a line it is handing on waits for the hold.
+        drop(state);
+        drop(gone);
         Ok(Answer::Done)
     }
 
     /// A link ended: its holds go with it.
     fn let_go_of_the_links(&self, peer: &Peer) {
         let link = link_of(peer);
-        self.state().projects.retain(|_, held| {
-            held.links.remove(&link);
-            !held.links.is_empty()
-        });
+        let gone: Vec<Held> = {
+            let mut state = self.state();
+            let held = std::mem::take(&mut state.projects);
+            let (kept, gone): (Vec<_>, Vec<_>) = held
+                .into_iter()
+                .map(|(project, mut held)| {
+                    held.links.remove(&link);
+                    (project, held)
+                })
+                .partition(|(_, held)| !held.links.is_empty());
+            state.projects = kept.into_iter().collect();
+            gone.into_iter().map(|(_, held)| held).collect()
+        };
+        // Their hook channels stop outside the hold, as a let go's does.
+        drop(gone);
     }
 
     async fn start(&self, start: StartProgram) -> Result<Answer, Refusal> {
@@ -404,24 +509,53 @@ impl Hosting {
             state.dealt.insert(start.project.clone(), dealt.max(number));
             (program, number, path)
         };
-        let spec = self
-            .inner
-            .compose
-            .compose(&ToCompose {
-                project: &start.project,
-                project_path: &path,
-                number,
-                size,
-                start: &start,
-            })
-            .map_err(not_started)?;
+        // Its token, issued by the project's hook channel and composed into its start: the
+        // window's launch says where it runs, never where it reports (#2000).
+        let channel = self.channel(&start.project);
+        let mut start = start;
+        if let (Some(channel), Some(launch)) = (&channel, start.launch.as_mut()) {
+            launch.reporting = Some(channel.report_to(number).map_err(|why| {
+                not_started(format!(
+                    "chat {number} could not be issued its token: {why}"
+                ))
+            })?);
+        }
+        let forget = |channel: &Option<Arc<dyn Channel>>| {
+            if let Some(channel) = channel {
+                channel.forget(number);
+            }
+        };
+        let spec = match self.inner.compose.compose(&ToCompose {
+            project: &start.project,
+            project_path: &path,
+            number,
+            size,
+            start: &start,
+        }) {
+            Ok(spec) => spec,
+            Err(why) => {
+                forget(&channel);
+                return Err(not_started(why));
+            }
+        };
         // Starting a program opens a terminal and forks: off the runtime.
         let hosting = self.clone();
-        let running = tokio::task::spawn_blocking(move || hosting.inner.run.run(spec))
-            .await
-            .map_err(|why| not_started(why.to_string()))?
-            .map_err(not_started)?;
+        let running = match tokio::task::spawn_blocking(move || hosting.inner.run.run(spec)).await {
+            Ok(Ok(running)) => running,
+            Ok(Err(why)) => {
+                forget(&channel);
+                return Err(not_started(why));
+            }
+            Err(why) => {
+                forget(&channel);
+                return Err(not_started(why.to_string()));
+            }
+        };
         let process = running.process();
+        // Its lines are read from its program, and from what runs inside it.
+        if let (Some(channel), Some(pid)) = (&channel, process) {
+            channel.bind(number, pid);
+        }
         self.state().programs.insert(
             program.clone(),
             Hosted {
@@ -440,6 +574,9 @@ impl Hosting {
         running.when_it_ends(Box::new(move |exit| {
             if let Some(hosted) = hosting.state().programs.get_mut(&ended) {
                 hosted.ended = true;
+            }
+            if let (Some(channel), Some(pid)) = (&channel, process) {
+                channel.ended(number, pid);
             }
             hosting.tell(&Pushed::Ended {
                 program: ended,
@@ -496,6 +633,51 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
+    /// Deals the next number in held `project` (#2000): it only rises, so no chat has had it.
+    fn deal(&self, project: &str) -> Result<Answer, Refusal> {
+        let mut state = self.state();
+        if !state.projects.contains_key(project) {
+            return Err(no_such_project(project));
+        }
+        let dealt = state.dealt.entry(project.to_owned()).or_default();
+        *dealt += 1;
+        Ok(Answer::Dealt { number: *dealt })
+    }
+
+    /// The numbers up to `dealt` went out in held `project` before: none of them is dealt again.
+    fn dealt_already(&self, project: &str, dealt: u32) -> Result<Answer, Refusal> {
+        let mut state = self.state();
+        if !state.projects.contains_key(project) {
+            return Err(no_such_project(project));
+        }
+        let was = state.dealt.entry(project.to_owned()).or_default();
+        *was = (*was).max(dealt);
+        Ok(Answer::Done)
+    }
+
+    /// The window's reply to line `heard` of `project`'s hooks, from a link that holds it.
+    fn reply_heard(
+        &self,
+        project: &str,
+        heard: u64,
+        reply: serde_json::Value,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let channel = {
+            let state = self.state();
+            let held = state
+                .projects
+                .get(project)
+                .filter(|held| held.links.contains_key(&link_of(peer)))
+                .ok_or_else(|| no_such_project(project))?;
+            held.channel.clone()
+        };
+        if let Some(channel) = channel {
+            channel.replied(heard, reply);
+        }
+        Ok(Answer::Done)
+    }
+
     /// Forgets `program` at once, so its number is free when this answers, and ends it off the
     /// runtime; its views end with its output.
     fn close(&self, program: &str) -> Result<Answer, Refusal> {
@@ -508,6 +690,10 @@ impl Hosting {
             state.closed.extend(hosted.process);
             hosted
         };
+        // A line for it is not read from now on.
+        if let Some(channel) = self.channel(&hosted.project) {
+            channel.forget(hosted.number);
+        }
         tokio::task::spawn_blocking(move || {
             hosted.running.stop();
             drop(hosted);
@@ -553,6 +739,13 @@ impl session::Host for Hosting {
             }
             Command::Stop { chat } => self.stop(&chat).await,
             Command::Close { program } => self.close(&program),
+            Command::Deal { project } => self.deal(&project),
+            Command::DealtAlready { project, dealt } => self.dealt_already(&project, dealt),
+            Command::ReplyHeard {
+                project,
+                heard,
+                reply,
+            } => self.reply_heard(&project, heard, reply, peer),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -577,10 +770,10 @@ impl session::Host for Hosting {
     async fn subscribe(
         &self,
         _since: Since,
-        _peer: &Peer,
+        peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
         let (told, notices) = mpsc::channel(MOST_NOTICES_QUEUED);
-        self.state().subscribers.push(told);
+        self.state().subscribers.push((link_of(peer), told));
         Ok(notices)
     }
 }

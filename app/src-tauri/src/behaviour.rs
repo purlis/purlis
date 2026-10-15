@@ -15,8 +15,15 @@
 //! (spec #2041).
 //!
 //! **The chat's program is the repo's fake harness** (`crates/fake-harness`), or a shell where a
-//! behaviour needs the terminal itself (its size, its line discipline). These open terminals,
-//! which a sandboxed agent cannot: they first run on CI.
+//! behaviour needs the terminal itself (its size, its line discipline) or runs `purlis hook` as
+//! a harness's hooks do. These open terminals and sockets, which a sandboxed agent cannot: they
+//! first run on CI.
+//!
+//! **Each target has a project, and the window's own hooks for it** (#2000): the board and the
+//! asks the window draws Needs you and its asks from. In the window's own process the window
+//! binds the project's hook socket and issues each chat its token; in the session host, the
+//! host does both and hands each line it admits on to the window. A behaviour checks only what
+//! the window is told either way.
 //!
 //! **To add a behaviour:** write `fn the_behaviour(target: &Target)`, and name it in the
 //! [`on_every_target!`] list at the bottom.
@@ -30,6 +37,7 @@ use purlis_core::session::Exit;
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::{link, session};
 
+use crate::hooks::{Hooks, Moved};
 use crate::host::{Opening, SessionHost, Sink};
 use crate::hostedsessions::{Connection, HostLink, HostedSessions};
 use crate::sessions::{ENDED, Sessions};
@@ -43,15 +51,50 @@ const PATIENCE: Duration = Duration::from_secs(20);
 /// One place a chat runs, as the window reaches it.
 pub(crate) struct Target {
     pub sessions: Box<dyn SessionHost>,
+    /// The window's own hooks for the target's project: its board and its asks.
+    pub hooks: Hooks,
+    /// Every move of a chat the window was told, in order.
+    pub moved: Arc<Mutex<Vec<Moved>>>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
 
+/// A project, its manifest written, and where it is.
+fn a_project() -> (tempfile::TempDir, PathBuf) {
+    let project = tempfile::tempdir().expect("a project");
+    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    (project, root)
+}
+
+/// The window's hooks for the project at `root`, bound by the window itself or heard from the
+/// host, and what they tell the window.
+fn hooks_of(root: &Path, relayed: bool) -> (Hooks, Arc<Mutex<Vec<Moved>>>) {
+    let plane: crate::planes::PlaneId =
+        serde_json::from_str(&serde_json::to_string(root).expect("a path")).expect("a plane");
+    let moved: Arc<Mutex<Vec<Moved>>> = Arc::default();
+    let tell: crate::planes::Teller = {
+        let moved = Arc::clone(&moved);
+        Arc::new(move |what| moved.lock().expect("the moves").push(what))
+    };
+    let at = crate::hooks::socket_for(Some(root));
+    let hooks = if relayed {
+        Hooks::relayed(plane, &at, tell, Arc::new(|_| {}))
+    } else {
+        Hooks::listening_on(plane, &at, tell, Arc::new(|_| {})).expect("the window listens")
+    };
+    (hooks, moved)
+}
+
 /// A chat in the window's own process: the switch off, the default.
 pub(crate) fn in_the_window() -> Target {
+    let (project, root) = a_project();
+    let (hooks, moved) = hooks_of(&root, false);
     Target {
-        sessions: Box::new(Sessions::new()),
-        _keeps: Vec::new(),
+        sessions: Box::new(Sessions::reporting_to(hooks.reporting())),
+        hooks,
+        moved,
+        _keeps: vec![Box::new(project)],
     }
 }
 
@@ -67,8 +110,11 @@ pub(crate) fn in_the_host() -> Target {
         .enable_all()
         .build()
         .expect("a runtime");
-    let hosting =
-        purlis_host::Hosting::new(purlis_host::FromTheWindow(crate::sessionhost::launched));
+    let hosting = purlis_host::Hosting::hearing_with(
+        purlis_host::FromTheWindow(crate::sessionhost::launched),
+        purlis_host::Terminals,
+        crate::sessionhost::HookChannels,
+    );
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
         let (client, served) = tokio::join!(
@@ -95,40 +141,53 @@ pub(crate) fn in_the_host() -> Target {
     });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link));
-    let project = tempfile::tempdir().expect("a project");
-    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
-    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    let (project, root) = a_project();
+    let (hooks, moved) = hooks_of(&root, true);
+    let sessions = HostedSessions::new(connection, &root);
+    sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
     Target {
-        sessions: Box::new(HostedSessions::new(connection, &root, None)),
+        sessions: Box::new(sessions),
+        hooks,
+        moved,
         _keeps: vec![Box::new(project), Box::new(runtime)],
     }
+}
+
+/// The `purlis` binary, whose `purlis hook` a chat's harness runs, built once beside this
+/// test's binary when it is not there yet.
+fn purlis() -> String {
+    static BUILT: OnceLock<PathBuf> = OnceLock::new();
+    BUILT
+        .get_or_init(|| built_beside("purlis", "purlis-cli"))
+        .display()
+        .to_string()
+}
+
+/// The binary `name` of package `package`, built beside this test's binary when it is not
+/// there yet.
+fn built_beside(name: &str, package: &str) -> PathBuf {
+    let deps = std::env::current_exe().expect("this test's path");
+    let beside = deps
+        .parent()
+        .and_then(Path::parent)
+        .expect("the target folder")
+        .join(name);
+    if !beside.is_file() {
+        let status = purlis_core::forklock::status(
+            std::process::Command::new(env!("CARGO"))
+                .args(["build", "--quiet", "-p", package, "--bin", name]),
+        )
+        .expect("cargo runs");
+        assert!(status.success(), "{name} did not build: {status}");
+    }
+    beside
 }
 
 /// The repo's fake harness, built once beside this test's binary when it is not there yet.
 fn fake_harness() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
-        .get_or_init(|| {
-            let deps = std::env::current_exe().expect("this test's path");
-            let beside = deps
-                .parent()
-                .and_then(Path::parent)
-                .expect("the target folder")
-                .join("fake-harness");
-            if !beside.is_file() {
-                let status = purlis_core::forklock::status(
-                    std::process::Command::new(env!("CARGO")).args([
-                        "build",
-                        "--quiet",
-                        "-p",
-                        "fake-harness",
-                    ]),
-                )
-                .expect("cargo runs");
-                assert!(status.success(), "the fake harness did not build: {status}");
-            }
-            beside
-        })
+        .get_or_init(|| built_beside("fake-harness", "fake-harness"))
         .clone()
 }
 
@@ -430,6 +489,188 @@ fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target
     target.sessions.close(id).expect("it closes");
 }
 
+/// The harnesses whose hooks report and ask through `purlis hook`, by the word a chat's
+/// environment names each with (`PURLIS_HARNESS`), and a permission ask's payload as each one's
+/// hook is handed it.
+const HOOKED_HARNESSES: [(&str, &str); 3] = [
+    (
+        "claude-code",
+        r#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
+    ),
+    (
+        "codex",
+        r#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
+    ),
+    (
+        "opencode",
+        r#"{"permission":"bash","patterns":["npm test"]}"#,
+    ),
+];
+
+/// Started as the window starts a chat: its number on the board before its program runs, so
+/// its first hook lands.
+fn a_chat_on_the_board(target: &Target, opening: &Opening) -> u32 {
+    target
+        .sessions
+        .open(None, opening, &|id| {
+            target.hooks.board().opened(id, None, None);
+        })
+        .expect("it starts")
+}
+
+fn a_chat_whose_turn_ends_needs_you_on_every_harness(target: &Target) {
+    for (harness, _) in HOOKED_HARNESSES {
+        let id = a_chat_on_the_board(
+            target,
+            &a_shell(&format!(
+                "PURLIS_HARNESS={harness} '{}' hook stop </dev/null; printf 'reported.'; read line",
+                purlis()
+            )),
+        );
+
+        Pane::on(target, id).shows("reported.");
+
+        until(
+            &format!("{harness}: the window is told the chat needs you"),
+            || {
+                target.moved.lock().expect("the moves").iter().any(|moved| {
+                    moved.session == id && moved.needs_you && moved.queue.contains(&id)
+                })
+            },
+        );
+        target.sessions.close(id).expect("it closes");
+    }
+}
+
+fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target) {
+    for (harness, payload) in HOOKED_HARNESSES {
+        let id = a_chat_on_the_board(
+            target,
+            &a_shell(&format!(
+                "printf '%s' '{payload}' | PURLIS_HARNESS={harness} '{}' hook permissionrequest; \
+                 printf 'decided.'; read line",
+                purlis()
+            )),
+        );
+        let pane = Pane::on(target, id);
+        let ask = {
+            let deadline = Instant::now() + PATIENCE;
+            loop {
+                let pending = target.hooks.asks().pending(Instant::now());
+                if let Some(ask) = pending.into_iter().find(|ask| ask.chat == id.to_string()) {
+                    break ask;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "{harness}: the window never held the ask"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        let option = ask.ask.options.first().expect("an option").id.clone();
+
+        target
+            .hooks
+            .answer(id, &ask.id.to_string(), &option)
+            .expect("answered in the window");
+
+        let source = purlis_core::harness::hooked::Source::of_harness(Some(harness))
+            .expect("a hooked harness");
+        let decision = purlis_core::harness::hooked::decision(
+            source,
+            &serde_json::from_str(payload).expect("a payload"),
+            &option,
+        )
+        .expect("a decision");
+        pane.shows(&decision);
+        pane.shows("decided.");
+        target.sessions.close(id).expect("it closes");
+    }
+}
+
+/// Where [`a_listener_beside_the_chat`] binds, when this test binary is run as that helper.
+const LISTEN_AT: &str = "PURLIS_BEHAVIOUR_LISTEN_AT";
+
+/// Not a behaviour: this binary, run again as a child of the test, takes the hook socket's
+/// path over with a listener of its own, which is beside every chat and below none, says so,
+/// and waits to be killed.
+#[test]
+#[ignore = "a helper the behaviours start as a child"]
+fn a_listener_beside_the_chat() {
+    let Some(path) = std::env::var_os(LISTEN_AT) else {
+        return;
+    };
+    let _ = std::fs::remove_file(&path);
+    let _listener = std::os::unix::net::UnixListener::bind(&path).expect("bound");
+    println!("up");
+    std::thread::sleep(Duration::from_secs(60));
+}
+
+/// A listener at `socket` in a process of its own, beside the chats: ended as it is dropped.
+struct Beside(std::process::Child);
+
+impl Beside {
+    fn listening_at(socket: &Path) -> Beside {
+        let mut child = purlis_core::forklock::spawn(
+            std::process::Command::new(std::env::current_exe().expect("this test"))
+                .args([
+                    "--exact",
+                    "behaviour::a_listener_beside_the_chat",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env(LISTEN_AT, socket)
+                .stdout(std::process::Stdio::piped()),
+        )
+        .expect("the listener starts");
+        let mut said = std::io::BufReader::new(child.stdout.take().expect("piped"));
+        let mut line = String::new();
+        while !line.contains("up") {
+            line.clear();
+            if std::io::BufRead::read_line(&mut said, &mut line).expect("it speaks") == 0 {
+                break;
+            }
+        }
+        Beside(child)
+    }
+}
+
+impl Drop for Beside {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn a_hook_refuses_a_listener_that_is_not_its_chats_ancestor(target: &Target) {
+    let (_, payload) = HOOKED_HARNESSES[0];
+    let id = a_chat_on_the_board(
+        target,
+        &a_shell(&format!(
+            "read line; printf '%s' '{payload}' | '{}' hook permissionrequest; \
+             printf 'left to its own prompt.'; read line",
+            purlis()
+        )),
+    );
+    let pane = Pane::on(target, id);
+    let socket = target
+        .hooks
+        .socket()
+        .expect("the project's hook socket")
+        .to_path_buf();
+    let _beside = Beside::listening_at(&socket);
+
+    target.sessions.input(id, b"\r").expect("typed");
+
+    pane.shows("is not the host that started this chat");
+    pane.shows("left to its own prompt.");
+    assert!(
+        target.hooks.asks().pending(Instant::now()).is_empty(),
+        "an ask reached the window through a listener that is not the chat's ancestor"
+    );
+    target.sessions.close(id).expect("it closes");
+}
+
 /// Each behaviour, as a test of its own on every target.
 macro_rules! on_every_target {
     ($($behaviour:ident),* $(,)?) => {
@@ -459,4 +700,7 @@ on_every_target!(
     a_closed_chat_is_ended_and_gone,
     a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key,
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
+    a_chat_whose_turn_ends_needs_you_on_every_harness,
+    a_permission_ask_is_answered_from_the_window_on_every_harness,
+    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
 );

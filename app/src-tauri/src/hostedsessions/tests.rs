@@ -73,7 +73,7 @@ fn hosted() -> Hosted {
     connection.ready(Arc::clone(&link));
     let (dir, root) = a_project();
     Hosted {
-        sessions: HostedSessions::new(connection, &root, None),
+        sessions: HostedSessions::new(connection, &root),
         link,
         runs,
         root,
@@ -161,7 +161,7 @@ fn with_no_host_a_chat_is_refused_with_why_and_never_announced() {
     let (_dir, root) = a_project();
     let connection = Arc::new(Connection::default());
     connection.gone("another session host already serves this user on this device");
-    let sessions = HostedSessions::new(connection, &root, None);
+    let sessions = HostedSessions::new(connection, &root);
     let announced = Mutex::new(Vec::new());
 
     let refused = sessions
@@ -415,7 +415,7 @@ fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
     // A program of the project's that the window does not know already has number 5.
     link.call(Command::StartProgram(Box::new(StartProgram {
         number: Some(5),
-        launch: Some(launch_of(&a_shell("true"), "/bin/sh".to_owned(), None)),
+        launch: Some(launch_of(&a_shell("true"), "/bin/sh".to_owned())),
         ..StartProgram::of(project, ProgramKind::Shell)
     })))
     .unwrap();
@@ -430,4 +430,236 @@ fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
     let started = hosted.runs.last();
     until("the host closes it", || started.seen().stopped);
     drop(hosted.link);
+}
+
+/// A project's hook channel standing in for the host's (#2000): what it hands on goes over the
+/// link exactly as the real one's does, and a test hears as its listener would through
+/// [`HooksHeard::hearing`], each line taken as admitted.
+#[derive(Clone, Default)]
+struct HooksHeard {
+    relaying: Arc<Mutex<Option<Arc<purlis_core::hookwire::relay::Relaying>>>>,
+    issued: Arc<Mutex<Vec<u32>>>,
+}
+
+impl HooksHeard {
+    /// What the project's listener would hear an admitted line with.
+    fn hearing(&self) -> purlis_core::hookwire::Hearing {
+        self.relaying
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("the project is held")
+            .hearing(Arc::new(purlis_core::hookwire::ChatTokens::default()))
+    }
+}
+
+impl purlis_host::Hear for HooksHeard {
+    fn open(
+        &self,
+        _project: &str,
+        _path: &std::path::Path,
+        hand_on: purlis_host::HandOn,
+    ) -> Result<Option<Arc<dyn purlis_host::Channel>>, String> {
+        let relaying = purlis_core::hookwire::relay::Relaying::new(Box::new(move |id, heard| {
+            serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line))
+        }));
+        *self.relaying.lock().unwrap() = Some(Arc::clone(&relaying));
+        Ok(Some(Arc::new(StandInChannel {
+            relaying,
+            issued: Arc::clone(&self.issued),
+        })))
+    }
+}
+
+struct StandInChannel {
+    relaying: Arc<purlis_core::hookwire::relay::Relaying>,
+    issued: Arc<Mutex<Vec<u32>>>,
+}
+
+impl purlis_host::Channel for StandInChannel {
+    fn report_to(&self, number: u32) -> Result<session::Reporting, String> {
+        self.issued.lock().unwrap().push(number);
+        Ok(session::Reporting {
+            socket: "/the/project/hooks.sock".into(),
+            token: format!("issued-by-the-host-{number}"),
+        })
+    }
+
+    fn bind(&self, _number: u32, _pid: u32) {}
+
+    fn ended(&self, _number: u32, _pid: u32) {}
+
+    fn forget(&self, _number: u32) {}
+
+    fn replied(&self, id: u64, reply: serde_json::Value) {
+        self.relaying
+            .replied(id, serde_json::from_value(reply).expect("a reply"));
+    }
+}
+
+/// A project's chats in a session host that owns its hook channel, heard by the window's own
+/// hooks: what each chat's board says, as the window is told.
+struct Heard {
+    hosted: Hosted,
+    hooks: crate::hooks::Hooks,
+    channel: HooksHeard,
+    moved: Arc<Mutex<Vec<crate::hooks::Moved>>>,
+}
+
+fn heard_in_the_window() -> Heard {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let runs = StandIns::default();
+    let channel = HooksHeard::default();
+    let hosting = Hosting::hearing_with(
+        FromTheWindow(crate::sessionhost::launched),
+        runs.clone(),
+        channel.clone(),
+    );
+    let link = runtime.block_on(async {
+        let (a, b) = tokio::io::duplex(256 * 1024);
+        let (client, served) = tokio::join!(
+            link::connect(
+                a,
+                session::speaks(),
+                Scope::LocalUi,
+                HELD.of(Scope::LocalUi)
+            ),
+            link::serve_any(b, session::speaks(), &HELD)
+        );
+        tokio::spawn(session::serve(served.unwrap(), hosting, None));
+        HostLink::over(client.unwrap(), tokio::runtime::Handle::current(), || {})
+            .await
+            .unwrap()
+    });
+    let link = Arc::new(link);
+    let connection = Arc::new(Connection::default());
+    connection.ready(Arc::clone(&link));
+    let (dir, root) = a_project();
+    let moved: Arc<Mutex<Vec<crate::hooks::Moved>>> = Arc::default();
+    let plane: crate::planes::PlaneId =
+        serde_json::from_str(&serde_json::to_string(&root).unwrap()).unwrap();
+    let hooks = crate::hooks::Hooks::relayed(
+        plane,
+        &crate::hooks::socket_for(Some(&root)),
+        {
+            let moved = Arc::clone(&moved);
+            Arc::new(move |what| moved.lock().unwrap().push(what))
+        },
+        Arc::new(|_| {}),
+    );
+    let sessions = HostedSessions::new(connection, &root);
+    sessions.hear_through(hooks.relayed_from_the_host().expect("relayed"));
+    Heard {
+        hosted: Hosted {
+            sessions,
+            link,
+            runs,
+            root,
+            _dir: dir,
+            _runtime: runtime,
+        },
+        hooks,
+        channel,
+        moved,
+    }
+}
+
+impl Heard {
+    /// A chat started in the host, announced to the window's board as the window does.
+    fn a_chat(&self) -> u32 {
+        self.hosted
+            .sessions
+            .open(None, &a_shell("true"), &|id| {
+                self.hooks.board().opened(id, None, None);
+            })
+            .expect("it starts")
+    }
+}
+
+fn reported(chat: u32, event: purlis_core::state::Event) -> purlis_core::hookwire::Report {
+    purlis_core::hookwire::Report {
+        chat,
+        event,
+        conversation: purlis_core::hookwire::Conversation::Unknown,
+        pid: None,
+        agent: None,
+        detail: purlis_core::state::Detail::default(),
+    }
+}
+
+#[test]
+fn the_host_issues_a_chat_its_token_and_the_window_never_holds_one() {
+    let heard = heard_in_the_window();
+
+    let id = heard.a_chat();
+
+    assert_eq!(*heard.channel.issued.lock().unwrap(), [id]);
+    let (spec, _) = &heard.hosted.runs.ran()[0];
+    assert_eq!(
+        value(spec, purlis_core::hookwire::TOKEN_ENV).as_deref(),
+        Some(format!("issued-by-the-host-{id}").as_str())
+    );
+    assert_eq!(
+        value(spec, purlis_core::hookwire::SOCKET_ENV).as_deref(),
+        Some("/the/project/hooks.sock")
+    );
+    assert_eq!(
+        heard.hosted.sessions.reports_to(),
+        Some(crate::hooks::socket_for(Some(&heard.hosted.root)).socket),
+        "the chat's sandbox lets it reach the socket the host binds"
+    );
+}
+
+#[test]
+fn a_report_the_host_hears_moves_the_windows_board_and_its_needs_you() {
+    let heard = heard_in_the_window();
+    let id = heard.a_chat();
+
+    let taken = (heard.channel.hearing().each)(reported(id, purlis_core::state::Event::Stop));
+
+    assert!(taken.is_ok(), "{taken:?}");
+    let moved = heard.moved.lock().unwrap().clone();
+    let last = moved.last().expect("the window is told");
+    assert_eq!((last.session, last.needs_you), (id, true));
+    assert_eq!(last.queue, [id]);
+}
+
+#[test]
+fn a_permission_ask_the_host_hears_is_held_in_the_window_and_answered_there() {
+    let heard = heard_in_the_window();
+    let id = heard.a_chat();
+
+    let waiting = (heard.channel.hearing().permission)(purlis_core::hookwire::PermissionAsked {
+        chat: id,
+        permission_request: purlis_core::harness::hooked::Source::ClaudeCode,
+        payload: serde_json::json!({"tool_name": "Bash",
+            "tool_input": {"command": "npm test"}}),
+        ran_for_ms: None,
+    })
+    .expect("the window holds it");
+    let held = heard.hooks.asks().pending(Instant::now());
+    let ask = held.first().expect("the window lists it");
+    let allow = ask
+        .ask
+        .options
+        .iter()
+        .find(|option| option.kind == purlis_core::harness::model::ChoiceKind::Allow)
+        .expect("an option to allow it")
+        .clone();
+    heard
+        .hooks
+        .answer(id, &ask.id.to_string(), &allow.id)
+        .expect("answered in the window");
+
+    assert_eq!(
+        waiting
+            .answered
+            .recv_timeout(PATIENCE)
+            .map(|chosen| chosen.id),
+        Ok(allow.id)
+    );
 }
