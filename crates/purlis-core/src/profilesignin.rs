@@ -449,8 +449,8 @@ fn handing(harness: &str, kind: SignInKind) -> Result<(), String> {
         _ => "a key",
     };
     Err(format!(
-        "{what} from your vault, and {title} is handed such a credential through purlis's key \
-         proxy, which this version of purlis does not have yet, so it is not put into the \
-         chat's environment instead"
+        "{what} from your vault, and {title} is handed such a credential only through \
+         purlis's key proxy, which this version of purlis does not have, so a chat on it \
+         does not start (#2151)"
     ))
 }
