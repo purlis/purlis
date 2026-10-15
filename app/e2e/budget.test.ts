@@ -65,6 +65,16 @@ describe("a scenario spec's timeout", () => {
     expect(Number(budget?.[1]) * 60_000).toBeGreaterThan(180_000);
   });
 
+  it("gives the fifty-sessions test an allowance per session, past the three minutes it outgrew", () => {
+    // #2157: each open costs a sandbox compile per listed profile since the floor became the
+    // default, and the test crossed `mochaOpts.timeout` on the macOS runner with nothing wrong.
+    const source = spec("panes.e2e.ts");
+    expect(source).toContain("this.timeout(FIFTY * EACH_SESSION_MS)");
+    const fifty = Number(/const FIFTY = (\d+);/.exec(source)?.[1]);
+    const each = Number(/const EACH_SESSION_MS = ([\d_]+);/.exec(source)?.[1]?.replace(/_/g, ""));
+    expect(fifty * each).toBeGreaterThan(180_000);
+  });
+
   it("gives the two-hundred-chat guard less than the suite's budget, so the guard can fire", () => {
     // Each test runs under BUDGET, and the two hundred still have to close after they open. A
     // guard at or past it never fires, and the test ends as the bare `Error: Timeout` the

@@ -5,12 +5,26 @@ import { endChat, pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { harnessesRunning } from "../processes.js";
+import { harnessesRunning, logLine } from "../processes.js";
 
 /**
  * The skeleton, driven the way a person drives it: buttons, tabs and typing, against the real
  * app with the fake harness in every pane.
  */
+
+/** How many sessions the stress test below keeps running at once. */
+const FIFTY = 50;
+
+/** The stress test's time for each session it opens: what its `describe` is given, per session. */
+const EACH_SESSION_MS = 20_000;
+
+/**
+ * **The longest one New tab may take**, from the press to its own session running (#2157):
+ * about 3.4 s on the macOS runner, where a sandbox compile is ~200 ms and an open compiles six
+ * times. A start that grows past this fails here by its number, where a fixed total for all
+ * fifty hid the slowdown until it crossed the line with nothing else wrong.
+ */
+const OPEN_CEILING_MS = 8_000;
 
 /** One pane, as a found element. */
 type Pane = WebdriverIO.Element;
@@ -100,7 +114,12 @@ async function tabsOpen(): Promise<number> {
   return counted;
 }
 
-describe("the window", () => {
+describe("the window", function () {
+  // **The fifty-sessions test's time is an allowance for each session it opens** (#2157), never
+  // one fixed total that a slower runner, or a slower start, crosses with nothing wrong. On the
+  // describe, where WebdriverIO reads it (`budget.test.ts`); every other test here bounds each
+  // of its own waits.
+  this.timeout(FIFTY * EACH_SESSION_MS);
   // The fifty chats below are ended again through the window, each by its number: one app
   // process serves the whole run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
   let wereOpen: Running = {};
@@ -152,11 +171,34 @@ describe("the window", () => {
   });
 
   it("keeps fifty sessions running at once, and stays usable", async () => {
-    for (let opened = 0; harnessesRunning() < 50 && opened < 60; opened++) {
+    // **Each session is waited for on its own** (#2157): every tab opened must bring its own
+    // harness up within `OPEN_CEILING_MS`, and one that does not says which open it was. Each
+    // open's time is written down (`logs/fifty-opens.jsonl`), so a slow run shows where.
+    for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
+      if (opened > FIFTY + 10) {
+        throw new Error(
+          `${opened - 1} tabs opened and only ${harnessesRunning()} sessions run: opening ` +
+            `stopped adding sessions`,
+        );
+      }
+      const before = harnessesRunning();
+      const pressed = Date.now();
       await pressAndStart("New tab");
+      await browser.waitUntil(() => harnessesRunning() > before, {
+        timeout: OPEN_CEILING_MS,
+        interval: 100,
+        timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_CEILING_MS / 1000} s`,
+      });
+      const took = Date.now() - pressed;
+      logLine("fifty-opens.jsonl", { open: opened, running: before + 1, ms: took });
+      if (took > OPEN_CEILING_MS) {
+        throw new Error(
+          `open ${opened} took ${took} ms, over the ${OPEN_CEILING_MS} ms one open may`,
+        );
+      }
     }
 
-    expect(harnessesRunning()).toBe(50);
+    expect(harnessesRunning()).toBe(FIFTY);
     const [pane] = await panes();
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
