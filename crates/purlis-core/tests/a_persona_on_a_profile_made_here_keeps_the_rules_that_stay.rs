@@ -40,6 +40,7 @@ fn made_here(name: &str, folder: &Path) -> MachineProfile {
         }),
         sign_in: None,
         pinned: None,
+        sandbox_only: false,
         rest: serde_json::Map::new(),
     }
 }

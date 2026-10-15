@@ -522,6 +522,9 @@ export const commands = {
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	openBrowser: __WINDOW_ONLY_RESULT,
+	unwatchBrowser: __WINDOW_ONLY_RESULT,
+	closeBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
 	/**
@@ -653,6 +656,8 @@ export const commands = {
 	typeProfileSignIn: __WINDOW_ONLY_RESULT,
 	dismissSignIn: __WINDOW_ONLY_RESULT,
 	machineProfilePin: __WINDOW_ONLY_RESULT,
+	makeSandboxOnlyProfile: __WINDOW_ONLY_RESULT,
+	dismissSandboxOnly: __WINDOW_ONLY_RESULT,
 	forgetProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
@@ -2004,6 +2009,12 @@ export type AnswerPath =
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
  */
 { via: "sign-in"; profile: string } | 
+/**
+ *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
+ *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
+ *  `dismiss_sandbox_only`.
+ */
+{ via: "sandbox-only" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2121,7 +2132,12 @@ export type AskSource =
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
  */
-"sign-in";
+"sign-in" | 
+/**
+ *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
+ *  making one and running Codex's own sign-in in it.
+ */
+"sandbox-only";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -2426,6 +2442,19 @@ export type BriefOf =
 ({ chat: number }) & { dispatch?: never } | 
 /**  A dispatch by its record's id: what a finished task's row is named by. */
 ({ dispatch: string }) & { chat?: never };
+
+/**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
+export type BrowserViewRole = "focused" | "thumbnail";
+
+/**
+ *  A browser view the window has open: its number, and the size of the page its frames are
+ *  painted at, in CSS pixels.
+ */
+export type BrowserWatching = {
+	view: number,
+	width: number,
+	height: number,
+};
 
 /**  What kind of build this is, which decides which section is shown. */
 export type Build = 
@@ -4990,6 +5019,13 @@ export type MachineProfileRow = {
 	 *  version installed, or follow it.
 	 */
 	offered: string | null,
+	/**  Whether it is for sandboxed chats only (#2037): only a sandboxed chat starts on it. */
+	sandbox_only: boolean,
+	/**
+	 *  Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
+	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.
+	 */
+	commands_can_read_sign_in: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

@@ -1521,6 +1521,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::profilestore::DIR),
             Access::ReadWrite,
         );
+        // The data folders of the browsers the session host runs (#2012): each holds its
+        // engine's profile, the cookies and storage of every site the person opens in it.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::datahome::BROWSERS),
+            Access::ReadWrite,
+        );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor
@@ -2606,10 +2613,14 @@ pub struct Homes {
     /// The operator's own Codex home: `$CODEX_HOME`, or `~/.codex`. A wrapped chat neither reads
     /// nor writes it (D-88q).
     pub codex: Option<PathBuf>,
-    /// The Codex home of this project's sandboxed chats, of their own (D-88q): under charter's
-    /// data home ([`crate::datahome`]), one per project. Set by [`Compiled::of`], which knows the
-    /// project.
+    /// The Codex home this project's sandboxed chats had of their own before they ran on a
+    /// profile for sandboxed chats only (D-88q, amended 2026-10-15): under charter's data home
+    /// ([`crate::datahome`]), one per project, its conversations brought to that profile once.
+    /// Set by [`Compiled::of`], which knows the project.
     pub codex_project: Option<PathBuf>,
+    /// The folders of the profiles purlis made on this machine (`<data>/profiles`, #2034):
+    /// denied to every chat, but a wrapped chat's own profile's folder.
+    pub profiles: Option<PathBuf>,
 }
 
 impl Homes {
@@ -2631,6 +2642,7 @@ impl Homes {
             cache: xdg("XDG_CACHE_HOME", ".cache"),
             codex: xdg("CODEX_HOME", ".codex"),
             codex_project: None,
+            profiles: Self::charter_data(machine).map(|data| data.join(crate::profilestore::DIR)),
         }
     }
 
@@ -3147,6 +3159,41 @@ impl Applied {
                 held.extend(more);
             }
         }
+    }
+
+    /// **This sandbox for a chat on the profile whose folders are `folders`** (#2037, ADR 0095
+    /// §5): the profile's sign-in files ([`signin::credential_files`]) denied to the agent's
+    /// commands, reading and writing, with the human-powers class, where the harness runs its
+    /// commands apart from itself. Claude Code does: its sandbox holds the commands its Bash tool
+    /// runs, and a deny rule its Read and Edit tools, while its own process reads its sign-in.
+    /// Codex and opencode run whole inside purlis's wrap with their commands, so what the harness
+    /// reads its commands can read too, and their declarations say so (`[sign_in]
+    /// kept_from_commands`). A wrapped Codex is also started in its profile's folder
+    /// ([`codex::Wrap::on_profile`]).
+    pub fn on_profile(&mut self, folders: &signin::ProfileFolders) {
+        // A wrapped Codex runs in its profile's folder: one purlis made for sandboxed chats
+        // only (#2037, ruled 2026-10-15), never the person's own Codex home.
+        if let Form::Codex(wrap) = &mut *self.form
+            && let (Some(name), Some(folder)) = (&folders.sandbox_only, &folders.config)
+        {
+            wrap.on_profile(name, folder);
+        }
+        let Form::ClaudeCode(settings) = &mut *self.form else {
+            return;
+        };
+        let more: Vec<Denial> = signin::credential_files(self.harness, folders)
+            .into_iter()
+            .map(|path| Denial {
+                class: Class::HumanPowers,
+                path,
+                access: Access::ReadWrite,
+                named: None,
+            })
+            .filter(|denial| !self.denied.contains(denial))
+            .collect();
+        *settings = settings.denying(&more);
+        self.confines.denied.extend(more.iter().cloned());
+        self.denied.extend(more);
     }
 
     /// The plane it was compiled for.
@@ -5036,6 +5083,20 @@ pub(crate) fn applied_for(
     let compile = compiler(harness).expect("a harness with a compiler");
     let compiled = Compiled::of(policy, plane, root, machine, None);
     applied_of(harness, compile, &compiled, root, machine)
+        .map(|applied| on_a_profile(applied, machine))
+}
+
+/// `applied` as a start applies it to a chat on a profile: a Codex chat on a profile for
+/// sandboxed chats only, whose folder is Codex's home (#2037); every other harness as compiled.
+#[cfg(test)]
+pub(crate) fn on_a_profile(mut applied: Applied, machine: &Machine) -> Applied {
+    // Its home as a start checks it on disk; these tests' machines are paths only.
+    if let Form::Codex(wrap) = &mut *applied.form {
+        wrap.home = Homes::of(machine)
+            .profiles
+            .map(|profiles| profiles.join("codex-sandbox/config"));
+    }
+    applied
 }
 
 /// [`for_start`] without asking this machine for a backend, for a test of a compiler alone.
@@ -5053,6 +5114,7 @@ pub(crate) fn compiled_anyway(
     let compile = compiler(harness).ok_or(NotStarted::NoCompiler(harness))?;
     let compiled = Compiled::of(&policy, &plane, root, machine, None);
     applied_of(harness, compile, &compiled, root, machine)
+        .map(|applied| on_a_profile(applied, machine))
 }
 
 /// A person's choice, in the window, to start one chat without the sandbox (ADR 0067 §7,
@@ -5707,6 +5769,7 @@ pub mod program;
 pub mod reach;
 pub mod seatbelt;
 pub mod services;
+pub mod signin;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
@@ -5733,6 +5796,8 @@ mod persona_tests;
 mod plan_tests;
 #[cfg(test)]
 mod reach_tests;
+#[cfg(test)]
+mod signin_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

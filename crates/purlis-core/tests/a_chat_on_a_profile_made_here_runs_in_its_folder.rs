@@ -26,7 +26,9 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
         return Some(PathBuf::from(data));
     }
     let data = tempfile::tempdir().unwrap();
-    let programs = tempfile::tempdir().unwrap();
+    // Outside the system's temp folders, which a sandboxed chat may write: a sandboxed start
+    // refuses a program there.
+    let programs = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     // Each answers `--version` as its harness does, as a sandboxed start asks it to.
     for (harness, version) in [("claude", "2.1.288 (Claude Code)"), ("opencode", "1.18.32")] {
         stand_in::program(
@@ -162,6 +164,84 @@ fn an_opencode_chat_on_a_profile_made_here_has_both_its_folders_at_the_profiles(
     };
     assert_eq!(set("XDG_CONFIG_HOME"), Some(record.folders.config));
     assert_eq!(set("XDG_DATA_HOME"), record.folders.data);
+}
+
+#[test]
+fn a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_its_commands() {
+    purlis_core::unsteered!();
+    let Some(_data) = in_a_data_home_of_its_own(
+        "a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_its_commands",
+    ) else {
+        return;
+    };
+    let machine = tempfile::tempdir().unwrap();
+    let settings = machine.path().join("claude-settings");
+    fs::create_dir_all(&settings).unwrap();
+    let record = made("work", "claude", "CLAUDE_CONFIG_DIR", &settings);
+    let plane = project();
+    fs::write(
+        plane.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+
+    let ready = start::ready(&start_on("work", plane.path()), plane.path()).expect("it starts");
+
+    let file = record.folders.config.join(".credentials.json");
+    let applied = ready.sandbox.as_ref().expect("sandboxed");
+    assert!(
+        applied
+            .confines()
+            .denied
+            .iter()
+            .any(|denial| denial.path == file
+                && denial.access == purlis_core::sandbox::Access::ReadWrite),
+        "{:?}",
+        applied.confines().denied
+    );
+    let purlis_core::sandbox::Form::ClaudeCode(settings) = applied.form() else {
+        panic!("Claude Code's settings");
+    };
+    assert!(
+        settings
+            .deny
+            .contains(&format!("Read(/{})", file.display())),
+        "{:?}",
+        settings.deny
+    );
+}
+
+#[test]
+fn a_chat_on_a_sandbox_only_profile_never_starts_without_the_sandbox() {
+    purlis_core::unsteered!();
+    // #2037, ruled 2026-10-15: a profile for sandboxed chats only runs no chat outside it,
+    // whether the project runs it at the floor or the full sandbox, when the person opts out.
+    let Some(_data) = in_a_data_home_of_its_own(
+        "a_chat_on_a_sandbox_only_profile_never_starts_without_the_sandbox",
+    ) else {
+        return;
+    };
+    let store = Homes::here().expect("the test's data home");
+    profilestore::create_sandbox_only(&store, "sandboxed", "claude", 1).expect("made");
+    for toml in ["", "[sandbox]\nmode = \"on\"\n"] {
+        let plane = project();
+        fs::write(plane.path().join("charter.toml"), toml).unwrap();
+        let start = Start {
+            without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+            ..start_on("sandboxed", plane.path())
+        };
+
+        let refused = start::ready(&start, plane.path()).expect_err("refused");
+
+        assert!(
+            refused.contains("for sandboxed chats only"),
+            "{toml:?}: {refused}"
+        );
+        assert!(
+            refused.contains("Start it sandboxed"),
+            "{toml:?}: {refused}"
+        );
+    }
 }
 
 #[test]

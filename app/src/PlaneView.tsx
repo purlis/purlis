@@ -277,6 +277,11 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
+import { BROWSER_TITLE, browserView, browsersLetGo } from "./browsers";
+
+/** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
+ *  you, or a browser (#2012). */
+type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser";
 import {
   askedByOf,
   chatsOfPane,
@@ -708,16 +713,15 @@ export const PlaneView = memo(function PlaneView({
    * succeeds — it used to stand until some other refusal replaced it.
    */
   const [trouble, setTrouble] = useState<{
-    from: "start-options" | "shell" | "needs-you";
+    from: TroubleFrom;
     said: string;
   }>();
   const refusedBy = useCallback(
-    (from: "start-options" | "shell" | "needs-you", said: string) => setTrouble({ from, said }),
+    (from: TroubleFrom, said: string) => setTrouble({ from, said }),
     [],
   );
   const succeeded = useCallback(
-    (from: "start-options" | "shell" | "needs-you") =>
-      setTrouble((was) => (was?.from === from ? undefined : was)),
+    (from: TroubleFrom) => setTrouble((was) => (was?.from === from ? undefined : was)),
     [],
   );
   const [sidebar, setSidebar] = useState<SidebarModel>();
@@ -3608,6 +3612,27 @@ export const PlaneView = memo(function PlaneView({
     [plane, present],
   );
 
+  /** A browser in the session host, opened in a view tab of its own (#2012); a refusal (Stop
+   *  all, no host) is said on the window's trouble line. */
+  const newBrowser = useCallback(() => {
+    void commands.openBrowser(plane).then((opened) => {
+      if (opened.status === "error") {
+        refusedBy("browser", opened.error);
+        return;
+      }
+      succeeded("browser");
+      showView(browserView(opened.data), BROWSER_TITLE);
+    });
+  }, [plane, refusedBy, showView, succeeded]);
+
+  /** **A browser lives as long as a tab shows it** (#2012): when the last one closes, it ends. */
+  const browsersBefore = useRef(tabs);
+  useEffect(() => {
+    for (const program of browsersLetGo(browsersBefore.current, tabs))
+      void commands.closeBrowser(program);
+    browsersBefore.current = tabs;
+  }, [tabs]);
+
   /**
    * Closes the tab showing `view` — a vault or a persona that was just deleted — **when that tab
    * shows nothing else.** A tab holding a chat beside it is left as it is: closing it would end
@@ -5786,6 +5811,7 @@ export const PlaneView = memo(function PlaneView({
     () => ({
       newChat: newTab,
       newShell,
+      newBrowser,
       runAction,
       split,
       closePane,
@@ -5922,6 +5948,7 @@ export const PlaneView = memo(function PlaneView({
       declareWorktreeDone,
       newTab,
       newShell,
+      newBrowser,
       pickVault,
       newTabIn,
       openAnswer,

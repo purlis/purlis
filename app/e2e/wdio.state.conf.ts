@@ -6,7 +6,7 @@ import {
   anEmptyRecord,
   built,
   copyFixturePlane,
-  declareAProfile,
+  declareTheStateRunsProfile,
   theRunsEnvironment,
   writeReportingShell,
 } from "./harness.js";
@@ -28,8 +28,14 @@ import { PANIC_LOG } from "./processes.js";
 const plane = copyFixturePlane();
 const harness = writeReportingShell(built("fake-harness"), built("charter"));
 // `codex`, because that is the kind this stand-in behaves like: it reports no pid and no
-// conversation id, which is exactly the rule Codex chats are judged by.
-declareAProfile(plane, harness, "codex");
+// conversation id, which is exactly the rule Codex chats are judged by. A sandboxed Codex chat,
+// the floor's included, runs only on a sandbox-only profile (#2037), so on macOS the run's
+// machine store gets one, and its program goes first on the app's `PATH`.
+const environment = theRunsEnvironment(plane, {
+  SHELL: harness,
+  CHARTER_PANIC_LOG: PANIC_LOG,
+});
+declareTheStateRunsProfile(plane, harness, environment);
 
 export const config: WebdriverIO.Config = {
   ...base,
@@ -52,10 +58,7 @@ export const config: WebdriverIO.Config = {
         // sharing either with the base run or with the runner's home is a test that passes
         // once (see `aConfigHomeOfItsOwn`). `theRunsEnvironment` gives it both, and the
         // fence that makes forgetting either of them a dead app rather than a poisoned plane.
-        env: theRunsEnvironment(plane, {
-          SHELL: harness,
-          CHARTER_PANIC_LOG: PANIC_LOG,
-        }),
+        env: environment,
       },
     ],
   ],

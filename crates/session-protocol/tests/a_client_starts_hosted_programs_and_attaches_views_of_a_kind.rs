@@ -68,6 +68,7 @@ impl Host for OneProgram {
             Command::AttachView {
                 program,
                 kind: ViewKind::Terminal,
+                ..
             } if program == SHELL => {
                 let view = peer
                     .views()
@@ -204,6 +205,8 @@ async fn an_attach_from_a_client_a_version_behind_is_a_terminal_view() {
             Command::AttachView {
                 program: SHELL.into(),
                 kind: ViewKind::Terminal,
+                role: None,
+                rate: None,
             },
             Command::DetachView {
                 program: SHELL.into(),

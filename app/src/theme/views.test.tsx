@@ -852,6 +852,12 @@ const STATES: State[] = [
   },
   { name: "Saving", view: { from: null, view: "saving", key: "" }, drawn: /site/ },
   {
+    name: "a browser whose view the host refused",
+    view: { from: null, view: "browser", key: "01J9ZQ8000000000000000000D" },
+    answers: { watch_browser: new Error("this session host holds no program 01J9ZQ8") },
+    drawn: /holds no program/,
+  },
+  {
     name: "a workspace's changes, a landing refused",
     view: CHANGES,
     answers: {

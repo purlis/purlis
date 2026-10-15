@@ -96,7 +96,11 @@ use crate::view::{Limits, Views};
 /// 1.5 added the kill switch held by the host (#2001, ADR 0071): `stop_all`, `rearm` (the
 /// window's alone) and `kill_switch`, each answered with the switch's state (`kill_switch`), and
 /// the `stopped` refusal of a start while every agent is stopped.
-pub const VERSION: Version = Version { major: 1, minor: 5 };
+///
+/// 1.6 added browsers (#2012): the program kind `browser`, the view kind `browser` whose stream
+/// carries whole frames ([`crate::view::frames`]), a view's `role` and `rate` on `attach_view`,
+/// and a listed program's `kind`.
+pub const VERSION: Version = Version { major: 1, minor: 6 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -196,8 +200,16 @@ pub enum Command {
     StartProgram(Box<StartProgram>),
     /// Open a view of `kind` on a hosted program: the host opens a stream for it
     /// ([`crate::view::Views::open`]), whose snapshot then live bytes follow, and answers
-    /// [`Answer::Attached`] with the view's `kind`.
-    AttachView { program: String, kind: ViewKind },
+    /// [`Answer::Attached`] with the view's `kind`. A browser view is also given its `role` and
+    /// the most frames a second it wants (1.6); a terminal view takes neither.
+    AttachView {
+        program: String,
+        kind: ViewKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        role: Option<ViewRole>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rate: Option<u32>,
+    },
     /// Close a view the client attached. The program keeps running.
     DetachView { program: String, view: u32 },
     /// Every event after `since`, then each as it is written ([`Pushed`]): ADR 0066's
@@ -551,6 +563,8 @@ pub enum ProgramKind {
     Harness,
     /// A shell, with no harness.
     Shell,
+    /// A browser, which only purlis drives, watched through browser views (1.6).
+    Browser,
 }
 
 /// What kind of view a client attaches: what its stream's snapshot and live bytes are. A
@@ -560,6 +574,21 @@ pub enum ProgramKind {
 pub enum ViewKind {
     /// A terminal's bytes: the snapshot draws its scrollback, screen, cursor and modes.
     Terminal,
+    /// A browser's frames (1.6): the snapshot is its latest frame, and the live bytes the frames
+    /// after it, each one whole ([`crate::view::frames`]). Frames are made only while a browser
+    /// view is attached.
+    Browser,
+}
+
+/// What a browser view is to the person (1.6): it decides how many frames a second it is sent
+/// when the attach names no `rate`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewRole {
+    /// The view the person is looking at: every frame the browser makes.
+    Focused,
+    /// A small view at a glance (a tab's thumbnail, a row): about one frame a second.
+    Thumbnail,
 }
 
 /// A subscription's cursor: for each device, the last `seq` the client holds of it (ADR 0066).
@@ -650,6 +679,10 @@ pub struct Chat {
     /// The run it is in (ADR 0066, 1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
+    /// What kind of hosted program it is, where it is not a chat's (1.6): a browser. Listed only
+    /// to a link that speaks 1.6, so a client one version behind never takes one for a chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ProgramKind>,
 }
 
 /// Whether a hosted program is ready to be typed at (1.2): the terminal's line discipline and
@@ -1165,6 +1198,8 @@ async fn carry_out<H: Host>(id: u64, command: Command, host: &H, peer: &Peer) ->
             let attach = Command::AttachView {
                 program: chat,
                 kind: ViewKind::Terminal,
+                role: None,
+                rate: None,
             };
             let answer = host.call(attach, peer).await.map(|answer| match answer {
                 Answer::Attached(attached) => Answer::Attached(Attached {
@@ -1341,6 +1376,20 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
             why: format!("a `{scope}` link may not `{word}`"),
+        });
+    }
+    let a_browser = match command {
+        Command::StartProgram(start) => start.kind == ProgramKind::Browser,
+        Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
+        _ => false,
+    };
+    if a_browser && !scope.may(Power::Browser) {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a browser is started and watched from purlis's window only, and this link is \
+                 `{scope}`"
+            ),
         });
     }
     if let Command::StartProgram(start) = command
@@ -1719,6 +1768,28 @@ impl Client {
         let attach = Command::AttachView {
             program: program.into(),
             kind,
+            role: None,
+            rate: None,
+        };
+        match self.call(attach).await? {
+            Answer::Attached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Attach a browser view of `program` as `role`, at most `rate` frames a second when given
+    /// (1.6): its stream of whole frames comes on the [`Acceptor`] [`Client::new`] gave.
+    pub async fn attach_browser_view(
+        &self,
+        program: &str,
+        role: ViewRole,
+        rate: Option<u32>,
+    ) -> Result<Attached, CallError> {
+        let attach = Command::AttachView {
+            program: program.into(),
+            kind: ViewKind::Browser,
+            role: Some(role),
+            rate,
         };
         match self.call(attach).await? {
             Answer::Attached(attached) => Ok(attached),

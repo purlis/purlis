@@ -44,13 +44,15 @@ use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
     self, Answer, Attached, Chat, Command, Exit, Launch, Peer, ProgramKind, Pushed, Readiness,
-    Refusal, SandboxTold, Since, StartProgram, ViewKind,
+    Refusal, SandboxTold, Since, StartProgram, ViewKind, ViewRole,
 };
+use purlis_session_protocol::version::Version;
 use purlis_session_protocol::view::{Attachment, Source, ViewId};
 use purlis_terminal::engine::{AlacrittyEngine, SCROLLBACK, Size};
 use purlis_terminal::session::{Session, Spec};
 use tokio::sync::mpsc;
 
+use crate::browsers::{Browser, Browsers, NoBrowsers};
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
 use crate::killswitch::Switch;
@@ -123,6 +125,22 @@ pub trait Running: Send + Sync + 'static {
     fn resize(&self, size: Size) -> Result<(), String>;
     /// What a view of it attaches to.
     fn source(&self) -> Arc<dyn Source>;
+    /// What a view of `kind` attaches to, as `role`, at most `rate` frames a second where it
+    /// says; `None` when it has no view of that kind. A terminal's is its terminal view.
+    fn view(
+        &self,
+        kind: ViewKind,
+        role: Option<ViewRole>,
+        rate: Option<u32>,
+    ) -> Option<Arc<dyn Source>> {
+        let _ = (role, rate);
+        (kind == ViewKind::Terminal).then(|| self.source())
+    }
+    /// The size its views are drawn at, where it is not its terminal's: a browser's page, in
+    /// CSS pixels.
+    fn view_size(&self) -> Option<(u16, u16)> {
+        None
+    }
     /// Ends it and everything it started, keeping its last screen; returns once it is gone.
     fn stop(&self);
     /// Its process, while it runs.
@@ -214,6 +232,8 @@ struct Inner {
     confine: Box<dyn Confine>,
     run: Box<dyn Run>,
     hear: Box<dyn Hear>,
+    /// What starts a browser (#2012).
+    browsers: Box<dyn Browsers>,
     state: Mutex<State>,
     switch: Switch,
 }
@@ -275,6 +295,7 @@ fn link_of(peer: &Peer) -> u64 {
 }
 
 struct Hosted {
+    kind: ProgramKind,
     project: String,
     number: u32,
     run: Option<String>,
@@ -364,10 +385,20 @@ impl Hosting {
                 confine: Box::new(confine),
                 run: Box::new(run),
                 hear: Box::new(hear),
+                browsers: Box::new(NoBrowsers),
                 state: Mutex::default(),
                 switch,
             }),
         }
+    }
+
+    /// A host whose browsers `browsers` starts, each with a data folder of its own in the
+    /// folder it names (#2012). Given before the host is shared.
+    pub fn with_browsers(mut self, browsers: impl Browsers) -> Hosting {
+        let inner =
+            Arc::get_mut(&mut self.inner).expect("browsers are given before the host is shared");
+        inner.browsers = Box::new(browsers);
+        self
     }
 
     /// The window that started this host and is the first thing its programs run below.
@@ -450,11 +481,15 @@ impl Hosting {
             .ok_or_else(|| no_such_program(program))
     }
 
-    fn list(&self) -> Vec<Chat> {
+    /// The programs it holds, as `version` lists them: a browser only from 1.6 on, so a client
+    /// one version behind never takes one for a chat.
+    fn list(&self, version: Version) -> Vec<Chat> {
+        let knows_browsers = version >= Version { major: 1, minor: 6 };
         let state = self.state();
         let mut chats: Vec<Chat> = state
             .programs
             .iter()
+            .filter(|(_, hosted)| knows_browsers || hosted.kind != ProgramKind::Browser)
             .map(|(id, hosted)| Chat {
                 chat: id.clone(),
                 project: hosted.project.clone(),
@@ -464,8 +499,9 @@ impl Hosting {
                     .map(|held| held.path.display().to_string()),
                 title: None,
                 state: if hosted.ended { "ended" } else { "running" }.into(),
-                number: Some(hosted.number),
+                number: (hosted.kind != ProgramKind::Browser).then_some(hosted.number),
                 run: hosted.run.clone(),
+                kind: (hosted.kind == ProgramKind::Browser).then_some(ProgramKind::Browser),
             })
             .collect();
         chats.sort_by(|a, b| (&a.project, a.number).cmp(&(&b.project, b.number)));
@@ -724,6 +760,7 @@ impl Hosting {
         self.state().programs.insert(
             program.clone(),
             Hosted {
+                kind: start.kind,
                 project: start.project.clone(),
                 number,
                 run: start.run.clone(),
@@ -762,14 +799,114 @@ impl Hosting {
         })
     }
 
-    async fn attach(&self, program: &str, peer: &Peer) -> Result<Answer, Refusal> {
+    /// Start a browser (#2012): in a project this host holds, with a fresh data folder of its
+    /// own under the host's store, removed once it has ended.
+    async fn start_browser(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
+        // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
+        self.let_through(&start, peer)?;
+        let program = {
+            let state = self.state();
+            if !state.projects.contains_key(&start.project) {
+                return Err(no_such_project(&start.project));
+            }
+            match &start.program {
+                Some(id) if state.programs.contains_key(id) => {
+                    return Err(Refusal {
+                        code: session::MALFORMED.into(),
+                        why: format!("this host already holds a program {id}"),
+                    });
+                }
+                Some(id) if !a_plain_name(id) => {
+                    return Err(Refusal {
+                        code: session::MALFORMED.into(),
+                        why: "a program's id is letters, digits, `-` and `_`".into(),
+                    });
+                }
+                Some(id) => id.clone(),
+                None => ulid::Ulid::generate().to_string(),
+            }
+        };
+        // Starting an engine forks and waits for it to answer: off the runtime.
+        let hosting = self.clone();
+        let named = program.clone();
+        let started = tokio::task::spawn_blocking(move || {
+            let data = hosting.inner.browsers.data_folders()?.join(&named);
+            match hosting.inner.browsers.start(&data) {
+                Ok(screen) => Ok((screen, data)),
+                Err(why) => {
+                    let _ = std::fs::remove_dir_all(&data);
+                    Err(why)
+                }
+            }
+        })
+        .await
+        .map_err(|why| not_started(why.to_string()))
+        .and_then(|started| started.map_err(not_started));
+        let (screen, data) = started?;
+        let (columns, rows) = screen.size();
+        let running: Arc<dyn Running> = Arc::new(Browser::new(screen));
+        let process = running.process();
+        self.state().programs.insert(
+            program.clone(),
+            Hosted {
+                kind: ProgramKind::Browser,
+                project: start.project.clone(),
+                number: 0,
+                run: start.run.clone(),
+                running: Arc::clone(&running),
+                size: Size { columns, rows },
+                process,
+                ended: false,
+            },
+        );
+        let hosting = self.clone();
+        let ended = program.clone();
+        let run = start.run.clone();
+        running.when_it_ends(Box::new(move |exit| {
+            if let Some(hosted) = hosting.state().programs.get_mut(&ended) {
+                hosted.ended = true;
+            }
+            // A fresh browser keeps nothing once it has ended.
+            let _ = std::fs::remove_dir_all(&data);
+            hosting.tell(&Pushed::Ended {
+                program: ended,
+                run,
+                exit,
+            });
+        }));
+        Ok(Answer::ProgramStarted {
+            program,
+            number: None,
+            process,
+        })
+    }
+
+    async fn attach(
+        &self,
+        program: &str,
+        kind: ViewKind,
+        role: Option<ViewRole>,
+        rate: Option<u32>,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
         let (source, size) = {
             let state = self.state();
             let hosted = state
                 .programs
                 .get(program)
                 .ok_or_else(|| no_such_program(program))?;
-            (hosted.running.source(), hosted.size)
+            let source = hosted
+                .running
+                .view(kind, role, rate)
+                .ok_or_else(|| Refusal {
+                    code: session::MALFORMED.into(),
+                    why: format!("program {program} has no view of that kind"),
+                })?;
+            let size = match hosted.running.view_size() {
+                Some((columns, rows)) => Size { columns, rows },
+                None => hosted.size,
+            };
+            (source, size)
         };
         let view = peer.views().open(source).await.map_err(|why| Refusal {
             code: session::NOT_STARTED.into(),
@@ -779,7 +916,7 @@ impl Hosting {
             view: view.0,
             cols: size.columns,
             rows: size.rows,
-            kind: Some(ViewKind::Terminal),
+            kind: Some(kind),
         }))
     }
 
@@ -1042,7 +1179,7 @@ fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
 impl session::Host for Hosting {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         match command {
-            Command::List => Ok(Answer::Chats(self.list())),
+            Command::List => Ok(Answer::Chats(self.list(peer.version()))),
             Command::HoldProject {
                 project,
                 project_path,
@@ -1050,11 +1187,14 @@ impl session::Host for Hosting {
             Command::LetGoOfProject { project } => self.let_go(&project, peer),
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
+                ProgramKind::Browser => self.start_browser(*start, peer).await,
             },
             Command::AttachView {
                 program,
-                kind: ViewKind::Terminal,
-            } => self.attach(&program, peer).await,
+                kind,
+                role,
+                rate,
+            } => self.attach(&program, kind, role, rate, peer).await,
             Command::DetachView { program, view } => {
                 self.running(&program)?;
                 peer.views().close(ViewId(view));
@@ -1172,6 +1312,15 @@ impl Chats for Hosting {
             None => std::process::id(),
         })
     }
+}
+
+/// Whether `id` may name a folder: letters, digits, `-` and `_`, as a ULID is.
+fn a_plain_name(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn no_such_program(program: &str) -> Refusal {
