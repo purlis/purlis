@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792026865453,
+  "lastUpdate": 1792027919758,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -11592,6 +11592,48 @@ window.BENCHMARK_DATA = {
             "value": 101.442834,
             "unit": "ms",
             "extra": "median of 5 runs: 100.473, 100.795, 101.443, 101.732, 102.085 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9850f295c4edeade2724c9e9d43c93aa4ad6669d",
+          "message": "fix: a removal says when the selection could not move; one long log line never cuts the late commands (#2103) (#2104)\n\n* fix: a removal says when the selection could not move; one long log line never cuts the late commands\n\nAfter a workspace removal, a selection pointer that could not be written\nis said as that, with a failing exit, as workspace use does; never as a\nreset (#2103). In the e2e annotations, a single core log line longer than\nthe room left after the late commands and covers is cut to that room, so\nthe final cut never reaches the late commands.\n\nCloses #2103\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* docs(select): each function keeps its own doc\n\nRefs #2103\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T05:15:48+04:00",
+          "tree_id": "a667bd2f141c5746298d78d0d02a98d2e89c998c",
+          "url": "https://github.com/purlis/purlis/commit/9850f295c4edeade2724c9e9d43c93aa4ad6669d"
+        },
+        "date": 1792027918632,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4434795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.429, 0.438, 0.443, 0.451, 0.458 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.442633,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.422, 16.431, 16.443, 16.444, 16.728 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.71432150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.599, 101.670, 101.714, 101.939, 102.143 ms"
           }
         ]
       }
