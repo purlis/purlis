@@ -501,9 +501,11 @@ pub fn detect_with_targets(
     // program only reads or prints merely printed what it handed back, and raises nothing
     // from it; any other line may have met the refusal its programs said.
     let runs = runs_a_program(payload);
-    let said = if client {
+    let said = if bash_output_failed(payload) {
+        Said::Failed
+    } else if client {
         Said::Client
-    } else if runs {
+    } else if may_run_a_program(payload) {
         Said::Unsaid
     } else {
         Said::Printed
@@ -554,7 +556,11 @@ pub fn detect_with_targets(
                     // reads or prints raises no refusal of the network from it (#1972).
                     let own = violations(stderr, place);
                     let mut read = reported_or_of_paths(stderr, place);
-                    if said != Said::Printed {
+                    if said == Said::Failed {
+                        // A background command that ended failed: its own error, read as a
+                        // failed command's is.
+                        found.extend(on_stdout(stderr, place, Said::Failed));
+                    } else if said != Said::Printed {
                         read.extend(of_the_network(stderr, place));
                     }
                     found.extend(read.into_iter().map(|(block, target)| {
@@ -773,7 +779,92 @@ fn without_bodies(line: &str) -> std::borrow::Cow<'_, str> {
 
 /// [`runs_a_program`] of one line, itself `shells` strings deep in the line a chat ran.
 fn runs_past_readers(line: &str, shells: usize) -> bool {
-    crate::shellseg::joined_argv(line).is_some_and(|segments| {
+    reads_past_readers(line, shells, Reading::Naming)
+}
+
+/// How a line is read for what it runs: to name the certificate check, where a line not read
+/// whole runs none ([`runs_a_program`]), or to decide whether what it handed back is a block
+/// at all, where a line not read whole, and a reader that can start a program, runs one
+/// ([`may_run_a_program`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reading {
+    Naming,
+    Raising,
+}
+
+/// **Whether the command line of `payload` may have run a program that met a refusal** (#1972):
+/// the reading that decides whether what a result with no failure beside it handed back is a
+/// block at all. It errs toward a program: a line too big for the guards, one that does not
+/// tokenize, a string a shell is handed nested past what is read, and a reader that can start
+/// a program of its own ([`starts_a_program`]) each run one. Only a line read whole, whose every
+/// program only reads or prints, runs none; and a result with no line beside it runs none,
+/// since nothing in it is a command this call ran.
+fn may_run_a_program(payload: &serde_json::Value) -> bool {
+    let Some(line) = payload["tool_input"]["command"].as_str() else {
+        return false;
+    };
+    if line.len() > crate::guardcaps::MAX_COMMAND_BYTES {
+        return true;
+    }
+    let line = without_bodies(line);
+    let (runs, too_deep) =
+        crate::shellseg::too_deep_within(|| reads_past_readers(&line, 0, Reading::Raising));
+    runs || too_deep
+}
+
+/// Whether a reader's call, `base` with `argv` (the program first), can start a program of its
+/// own: `find` with `-exec`, `-execdir`, `-ok` or `-okdir`; `awk`, whose script can run one
+/// (`system()`, a pipe); and `sed` with any script but a list of lines to print or delete,
+/// since GNU `sed` runs one with `e`.
+fn starts_a_program(base: &str, argv: &[String]) -> bool {
+    match base {
+        "find" => argv
+            .iter()
+            .any(|word| matches!(word.as_str(), "-exec" | "-execdir" | "-ok" | "-okdir")),
+        "awk" | "gawk" => true,
+        "sed" => !sed_only_prints(&argv[1.min(argv.len())..]),
+        _ => false,
+    }
+}
+
+/// Whether `sed`'s arguments only print or delete lines by their number (`sed -n 1,80p f`,
+/// `sed -n '5p;10p' f`): its flags only `-n`, `-E`, `-r`, `-s`, `-u`, `-z`, and its one script
+/// a list of such commands. Any other script, `-e`, `-f` or `-i` is read as one that may run a
+/// program.
+fn sed_only_prints(args: &[String]) -> bool {
+    let mut script = None;
+    for arg in args {
+        if let Some(flags) = arg.strip_prefix('-').filter(|flags| !flags.is_empty()) {
+            if !flags.chars().all(|flag| "nErsuz".contains(flag)) {
+                return false;
+            }
+        } else if script.is_none() {
+            script = Some(arg.as_str());
+        }
+    }
+    script.is_some_and(|script| {
+        script.split([';', '\n']).all(|command| {
+            let command = command.trim();
+            let Some(body) = command.strip_suffix(['p', 'd', '=']) else {
+                return command.is_empty();
+            };
+            let body = body.trim_end().trim_end_matches('!').trim_end();
+            body.split(',').count() <= 2
+                && body
+                    .split(',')
+                    .all(|address| address == "$" || address.chars().all(|c| c.is_ascii_digit()))
+        })
+    })
+}
+
+/// [`runs_past_readers`] as `reading` asks: a line not read whole runs a program only when the
+/// question is whether to raise a block.
+fn reads_past_readers(line: &str, shells: usize, reading: Reading) -> bool {
+    let unread = reading == Reading::Raising;
+    let Some(segments) = crate::shellseg::joined_argv(line) else {
+        return unread;
+    };
+    {
         segments.iter().any(|segment| {
             if segment
                 .argv
@@ -783,12 +874,15 @@ fn runs_past_readers(line: &str, shells: usize) -> bool {
                 return false;
             }
             let call = crate::shellwrap::split_env_chdir(&segment.argv);
-            if call.too_deep || call.prog.is_empty() {
+            if call.too_deep {
+                return unread;
+            }
+            if call.prog.is_empty() {
                 return false;
             }
             let base = crate::shellwrap::base_lower(&call.prog);
             if READERS.contains(&base.as_str()) {
-                return false;
+                return unread && starts_a_program(&base, &call.argv);
             }
             if base == "git" {
                 let (_, rest) = crate::shellwrap::git_globals(&call.argv);
@@ -799,12 +893,26 @@ fn runs_past_readers(line: &str, shells: usize) -> bool {
             // A shell handed a string runs what the string does; one handed none runs a file.
             let scripts = crate::shellwrap::shell_scripts_of(&call.prog, &call.argv);
             scripts.is_empty()
-                || (shells < MOST_SHELLS_DEEP
-                    && scripts
+                || if shells < MOST_SHELLS_DEEP {
+                    scripts
                         .iter()
-                        .any(|script| runs_past_readers(script, shells + 1)))
+                        .any(|script| reads_past_readers(script, shells + 1, reading))
+                } else {
+                    unread
+                }
         })
-    })
+    }
+}
+
+/// **Whether `payload` is the harness's own tool reading back a background command that ended
+/// failed** (#1972): `BashOutput` with `status` `failed`, or a non-zero `exitCode`. Its output is
+/// that command's own error, read as a failed command's is, and still marked read back
+/// ([`read_back`]).
+fn bash_output_failed(payload: &serde_json::Value) -> bool {
+    let response = &payload["tool_response"];
+    payload["tool_name"].as_str() == Some("BashOutput")
+        && (response["status"].as_str() == Some("failed")
+            || response["exitCode"].as_i64().is_some_and(|code| code != 0))
 }
 
 /// The harness's file tool, which the block words also hear (#1683); nothing it read is a

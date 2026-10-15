@@ -443,9 +443,19 @@ that names no socket". One reader (`sandboxblock::detect_with_targets`) serves e
   line whose every program only reads or prints (`cat`, `sed -n`, `grep`, `git show`, also
   inside a string a shell is handed) merely printed what it handed back, and raises no refusal
   of the network from it, on either stream or as one string. Any other line may have met the
-  refusal its programs said, and is read as before, naming no socket or service from it.
-- **A background command's output read back** later, with the harness's file tool or its own
-  tool for it, has no line beside it and raises nothing.
+  refusal its programs said, and is read as before, naming no socket or service from it. This
+  reading errs toward a program: a line too big for the guards, one that does not tokenize, a
+  string a shell is handed nested past what is read, and a reader that can start a program of
+  its own (`find` with `-exec`, `-execdir`, `-ok` or `-okdir`; `awk`; `sed` with any script but
+  lines to print or delete by number) each count as running one. The certificate check keeps
+  its stricter naming rule.
+- **A background command's output read back** later with the harness's file tool has no line
+  beside it and raises nothing. Polled with the harness's own tool (`BashOutput`), one that
+  ended failed (`status` `failed`, or a non-zero `exitCode`) is read as a failed command, and
+  still shown as a quiet line read back; one that did not fail raises nothing.
+- **A program's own refusal of a path on standard error** is read whatever the line runs: a
+  reader can be refused a path itself (`tee` writing one), and standard error is its own
+  error stream, not what it printed.
 - **A container client's line** names its socket as before.
 
 purlis's own proxy tells the app each host it refused, as before.

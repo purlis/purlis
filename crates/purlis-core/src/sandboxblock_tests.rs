@@ -2333,8 +2333,8 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
         "tool_response": {"file": {"content": read}},
     });
     assert_eq!(detect_with_targets(&file, &place()), Vec::new());
-    // A line too big to read, and one that does not tokenize, are read as lines that only read.
-    // A Claude Code chat's real refusal there is still named by the sandbox's own report.
+    // A line too big to read, and one that does not tokenize, name no service; they may have
+    // run a program, so the block is still raised (#1972).
     let big = format!(
         "gh pr list # {}",
         "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES)
@@ -2342,7 +2342,7 @@ fn a_line_that_only_reads_names_no_certificate_check_whatever_it_printed() {
     for command in [big.as_str(), "gh pr list 'unclosed"] {
         assert_eq!(
             detect_with_targets(&came_back(command, &read, ""), &place()),
-            Vec::new()
+            unnamed_check()
         );
     }
 }

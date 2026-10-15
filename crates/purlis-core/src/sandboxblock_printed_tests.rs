@@ -251,3 +251,177 @@ fn a_result_with_no_failure_beside_it_is_read_by_its_line() {
         );
     }
 }
+
+/// opencode's `PostToolUse` for a command that did not fail: one string, as its shim hands it.
+fn opencode_string(command: &str, said: &str) -> serde_json::Value {
+    json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "bash",
+        "tool_input": {"command": command},
+        "tool_response": said,
+    })
+}
+
+/// A refused socket, as a Go client says it, and the block it raises where nothing names it.
+fn refused_socket() -> String {
+    format!("dial unix {SOCKET}: connect: operation not permitted\n")
+}
+
+fn unnamed_socket() -> Vec<(Block, Option<String>)> {
+    vec![(
+        Block {
+            operation: Operation::Connect,
+            kind: Kind::LocalSocket,
+            ours: false,
+        },
+        None,
+    )]
+}
+
+/// Every shape a result with no failure beside it comes in, for `command`: Claude Code's,
+/// Codex's and opencode's. Codex and opencode have no sandbox report to fall back on.
+fn every_harness(command: &str, said: &str) -> [serde_json::Value; 3] {
+    [
+        came_back(command, said, ""),
+        one_string(command, said),
+        opencode_string(command, said),
+    ]
+}
+
+/// A line the guards cannot read whole may have run a program: a line too big for them, one
+/// that does not tokenize, and a string a shell is handed nested past what is read each raise
+/// the block, naming nothing.
+#[test]
+fn a_line_that_cannot_be_read_whole_still_raises_its_block() {
+    let big = format!(
+        "go run ./cmd/ping # {}",
+        "x".repeat(crate::guardcaps::MAX_COMMAND_BYTES)
+    );
+    for command in [
+        big.as_str(),
+        "cat notes.log 'unclosed",
+        "sh -c \"bash -c 'sh -c cat'\"",
+    ] {
+        for payload in every_harness(command, &refused_socket()) {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                unnamed_socket(),
+                "{payload}"
+            );
+        }
+    }
+}
+
+/// A reader that can start a program of its own is read as one that runs a program: `find`
+/// with `-exec`, `-execdir`, `-ok` or `-okdir`, `awk`'s script, and `sed` with any script but
+/// lines to print, since GNU `sed` runs one with `e`. `sed -n` over a range and a plain `find`
+/// still only read.
+#[test]
+fn a_reader_that_can_start_a_program_still_raises_its_block() {
+    for command in [
+        "find . -name '*.go' -exec go run {} \\;",
+        "find . -execdir ./ping \\;",
+        "find . -ok ./ping \\;",
+        "find . -okdir ./ping \\;",
+        "awk 'BEGIN { system(\"./ping\") }'",
+        "gawk '{ print | \"./ping\" }' list",
+        "sed 's/^/.\\/ping /e' list",
+        "sed -n '1e ./ping' list",
+        "sed -f run.sed list",
+        "sed -i 1d list",
+    ] {
+        for payload in every_harness(command, &refused_socket()) {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                unnamed_socket(),
+                "{payload}"
+            );
+        }
+    }
+    for command in [
+        "sed -n 1400,1460p src/sandboxblock_tests.rs",
+        "sed -n '5p;10p;$p' notes.log",
+        "sed -nE '1,$!d' notes.log",
+        "find . -name '*.rs' -print",
+    ] {
+        for payload in every_harness(command, &refused_socket()) {
+            assert_eq!(
+                detect_with_targets(&payload, &place()),
+                Vec::new(),
+                "{payload}"
+            );
+        }
+    }
+}
+
+/// A background command polled with the harness's own tool that ended failed is a failed
+/// command: its output is its own error, and its socket is named. It is still marked read back.
+#[test]
+fn a_background_command_that_ended_failed_raises_its_block() {
+    let said = format!(
+        "docker: permission denied while trying to connect to the docker API at \
+         unix://{SOCKET}: dial unix {SOCKET}: connect: operation not permitted\n"
+    );
+    let named = vec![(
+        Block {
+            operation: Operation::Connect,
+            kind: Kind::LocalSocket,
+            ours: false,
+        },
+        Some(SOCKET.to_owned()),
+    )];
+    for response in [
+        json!({"stdout": said, "stderr": "", "status": "failed"}),
+        json!({"stdout": "", "stderr": said, "status": "completed", "exitCode": 125}),
+    ] {
+        let polled = json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "BashOutput",
+            "tool_input": {"bash_id": "b7x2"},
+            "tool_response": response,
+        });
+        assert!(read_back(&polled));
+        assert_eq!(detect_with_targets(&polled, &place()), named, "{polled}");
+    }
+    // One that ended well, or still runs, merely printed what it handed back.
+    for response in [
+        json!({"stdout": said, "stderr": "", "status": "completed", "exitCode": 0}),
+        json!({"stdout": said, "stderr": "", "status": "running"}),
+    ] {
+        let polled = json!({
+            "tool_name": "BashOutput",
+            "tool_input": {"bash_id": "b7x2"},
+            "tool_response": response,
+        });
+        assert_eq!(
+            detect_with_targets(&polled, &place()),
+            Vec::new(),
+            "{polled}"
+        );
+    }
+}
+
+/// A program's own refusal of a path on standard error is read whatever the line runs: a
+/// reader can be refused a path itself (`tee` writing one), and standard error is its own
+/// error stream. So `cat` of a log sent to standard error is read the same way (D-1972-2).
+#[test]
+fn a_readers_refusal_of_a_path_on_standard_error_is_still_a_block() {
+    let write = vec![(
+        Block {
+            operation: Operation::Write,
+            kind: Kind::System,
+            ours: false,
+        },
+        Some("/opt/tool/cache".to_owned()),
+    )];
+    for command in ["echo x | tee /opt/tool/cache", "cat build.log 1>&2"] {
+        assert_eq!(
+            detect_with_targets(
+                &came_back(command, "", "tee: /opt/tool/cache: Operation not permitted"),
+                &place()
+            ),
+            write,
+            "{command}"
+        );
+    }
+}
