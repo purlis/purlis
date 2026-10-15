@@ -385,8 +385,9 @@ async fn closing_the_program_ends_its_confinement() {
 }
 
 #[tokio::test]
-async fn letting_go_of_a_confinement_ends_it() {
+async fn letting_go_of_a_confinement_ends_it_before_it_is_answered() {
     let linked = linked().await;
+    linked.confines.take_to_end(Duration::from_millis(300));
     confine(&linked.client, CONFINEMENT)
         .await
         .expect("confined");
@@ -399,7 +400,8 @@ async fn letting_go_of_a_confinement_ends_it() {
         .await
         .expect("let go");
 
-    until("it ends", || linked.confines.ended(CONFINEMENT)).await;
+    // Ended by the time the answer comes: a window told so may say the chat's network is gone.
+    assert!(linked.confines.ended(CONFINEMENT));
 }
 
 #[tokio::test]
