@@ -1226,3 +1226,21 @@ task never started, and the person relayed by hand.
   workspace's and a persona's override the project's, this machine's only lowers them, and a
   policy is a ceiling. A task whose program exits, or whose chat is closed, is reported at once
   as ended, as before (#1443).
+
+### Amended 2026-10-15: a finished task, and closing it (#1981 D-4)
+
+Ruled by the operator, 2026-10-15: **#1485 stands**. A task's program ends at its report, and
+what stays is its finished row under the chat that asked: a readable record of its report,
+with **Reopen** to continue its conversation as an ordinary chat, and **Clear** to put the row
+away. Nothing else closes by itself.
+
+- **`purlis dispatch close <chat>`** closes a finished task the asking chat dispatched itself,
+  and no other chat's, by the app's record: its finished row goes, and a task kept open after
+  its report (it came out blocked, or purlis made its report from its last message) has its
+  program ended first, by the chat's own close. Its report stays on its dispatch record.
+- **It is refused** for a task that has not reported (a cancel asks it for its report), one in
+  a turn or showing a prompt, one the person is stopping, one the person typed in, which is
+  theirs to close from its tab, and the two the #1485 end holds back: one the person is
+  looking at, and one with a task of its own still at work. Each is read again under the lock
+  a report is taken under, and the chat is closed in that same hold. Claude Code asks the
+  person before it runs: it ends a chat, and is no read.

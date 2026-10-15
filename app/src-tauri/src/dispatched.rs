@@ -413,6 +413,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
         }),
         What::Cancel { of } => cancel(held, asker, *of).unwrap_or_else(no),
         What::Output { of } => output(held, asker, *of).unwrap_or_else(no),
+        What::Close { of } => close(held, asker, *of).unwrap_or_else(no),
         What::Tell { to, text } => tell(held, asker, *to, text).unwrap_or_else(no),
         What::Note { text } => send_up(held, asker, Kind::Note, text).unwrap_or_else(no),
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
@@ -1609,6 +1610,111 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
             let ran = dispatched::Ran::shown(&command, exit, failed);
             held.tasks().ledger().ran(output.chat, ran);
         }
+    }
+}
+
+/// **`purlis dispatch close <chat>`** (#1981 D-4, ruled 2026-10-15): closes a finished task
+/// the asking chat dispatched itself, and no other chat's. #1485 stands: a task's program ends
+/// at its report, and what stays is its finished row, a readable record with Reopen and Clear.
+/// Close takes that row away. A task kept open after its report (it came out blocked, or
+/// purlis made its report from its last message) has its program ended first, by the chat's
+/// own close, as a reported task's always is.
+///
+/// **Refused where the task is not finished, or not the asking chat's to end**: one still owing
+/// its report (cancel asks it for one), one in a turn or showing a prompt, one the person is
+/// stopping, one the person typed in or is looking at, and one with a task of its own still at
+/// work: the holds the #1485 end keeps ([`is_held_back`]).
+///
+/// **Under the lock a report is taken under**, as a cancel is: every refusal is read again
+/// under it, and the chat is closed in the same hold, so a report, a stop and this close land
+/// in one order.
+fn close(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
+    let (name, above) = {
+        let deciding = held.chats().deciding();
+        let (from, name) = match owned(held, asker, of) {
+            Ok(owned) => owned,
+            Err(why) => {
+                let Some(name) = held
+                    .tasks()
+                    .ledger()
+                    .gone(asker, of)
+                    .map(|gone| gone.name.clone())
+                else {
+                    return Err(why);
+                };
+                drop(deciding);
+                clear_row(held, asker, of);
+                return Ok(task(Answered::Closed {
+                    of,
+                    name: purlis_core::personas::one_line(&name),
+                }));
+            }
+        };
+        let name = purlis_core::personas::one_line(&name);
+        close_refused(held, of, &from, &name)?;
+        if let Err(why) = held.close_chat_held(of, &deciding) {
+            tracing::warn!(
+                "purlis: task chat {of}, closed by its asking chat, did not end cleanly ({why})"
+            );
+        }
+        (name, from.chat)
+    };
+    held.stops_carry_on();
+    held.told_of_a_close(Some(above));
+    held.tell_stop(of, crate::stopping::StopPhase::Stopped);
+    clear_row(held, asker, of);
+    Ok(task(Answered::Closed { of, name }))
+}
+
+/// Why open task `of`, called `name`, with record `from`, is not one its asking chat may close
+/// now (#1981 D-4), or nothing. Asked under the lock a report is taken under.
+fn close_refused(held: &Held, of: u32, from: &HandedFrom, name: &str) -> Result<(), String> {
+    if from.report == Owed::Due {
+        return Err(format!(
+            "'{name}' (chat {of}) has not reported yet, so it is not finished. `purlis \
+             dispatch cancel {of}` asks it for its report; close it once it has."
+        ));
+    }
+    if held.stopping().is_stopping(of) {
+        return Err(format!(
+            "'{name}' (chat {of}) is being stopped by the person, and its stop ends it."
+        ));
+    }
+    if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
+        return Err(format!(
+            "the person has typed in '{name}' (chat {of}), so it is theirs to close, from its \
+             tab."
+        ));
+    }
+    if held.chats().looks_at(of) {
+        return Err(format!(
+            "the person is looking at '{name}' (chat {of}); close it once they have moved on."
+        ));
+    }
+    if !crate::handoff::running_below(held, of).is_empty() {
+        return Err(format!(
+            "a task '{name}' (chat {of}) dispatched is still at work; close it once that one \
+             has reported."
+        ));
+    }
+    let seen = seen(held, of);
+    if seen.running || seen.prompt_showing() {
+        return Err(format!(
+            "'{name}' (chat {of}) is in a turn now; close it once that turn ends."
+        ));
+    }
+    Ok(())
+}
+
+/// Clears task `of`'s finished row under the chat `asker`, where it has one.
+fn clear_row(held: &Held, asker: u32, of: u32) {
+    let ids: Vec<String> = crate::finished::listed(held)
+        .into_iter()
+        .filter(|row| row.asker == asker && row.chat == Some(of))
+        .map(|row| row.id)
+        .collect();
+    if !ids.is_empty() {
+        crate::finished::clear(held, &ids);
     }
 }
 
