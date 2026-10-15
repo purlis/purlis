@@ -30,10 +30,11 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::link::{LinkError, Opener, Stream};
+use crate::session::ViewEnd;
 
 /// What opens a view's stream.
 pub const VIEW: u8 = 0x01;
@@ -123,6 +124,8 @@ struct Shared {
     more: Notify,
     /// Cancelled when the host closes the view: the writer stops where it is.
     dropped: CancellationToken,
+    /// Cancelled once the writer has ended the view's stream, whatever ended it.
+    finished: CancellationToken,
     /// Why, once it has.
     why: OnceLock<Closed>,
     /// Bytes handed to the stream so far, header aside: what the client may acknowledge.
@@ -226,6 +229,7 @@ fn start(
         queue: Mutex::new(Queue::default()),
         more: Notify::new(),
         dropped: CancellationToken::new(),
+        finished: CancellationToken::new(),
         why: OnceLock::new(),
         sent: AtomicU64::new(0),
         drawn: AtomicU64::new(0),
@@ -249,6 +253,7 @@ fn start(
         }
         let _ = writer.out.shutdown().await;
         counting.abort();
+        pump.finished.cancel();
     });
     (
         Feed {
@@ -631,6 +636,9 @@ pub struct Views {
     attacher: Arc<Attacher>,
     next: AtomicU32,
     open: Arc<Mutex<Open>>,
+    /// Where a view that ended for good, unasked, is told ([`Views::ends`]).
+    ended: mpsc::UnboundedSender<(ViewId, ViewEnd)>,
+    ends: Mutex<Option<mpsc::UnboundedReceiver<(ViewId, ViewEnd)>>>,
 }
 
 #[derive(Default)]
@@ -644,11 +652,25 @@ struct Open {
 impl Views {
     /// The views of the link whose streams `opener` opens, each held to `limits`.
     pub fn new(opener: Opener, limits: Limits) -> Views {
+        let (ended, ends) = mpsc::unbounded_channel();
         Views {
             attacher: Arc::new(Attacher::new(opener, limits)),
             next: AtomicU32::new(1),
             open: Arc::default(),
+            ended,
+            ends: Mutex::new(Some(ends)),
         }
+    }
+
+    /// Each view that ended for good when nobody asked it to, and why, once its stream has
+    /// ended: its program ended, its client acknowledged more than it was sent, or it could not
+    /// be attached again. A view the client detached, or one closed with its link, is not told
+    /// here. Taken once; [`crate::session::serve`] takes it, and pushes each as `view_ended`.
+    pub fn ends(&self) -> Option<mpsc::UnboundedReceiver<(ViewId, ViewEnd)>> {
+        self.ends
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
     }
 
     fn open_views_lock(&self) -> MutexGuard<'_, Open> {
@@ -683,6 +705,7 @@ impl Views {
             Arc::clone(&self.attacher),
             closing,
             Arc::clone(&self.open),
+            self.ended.clone(),
         ));
         Ok(view)
     }
@@ -715,7 +738,9 @@ impl Views {
 }
 
 /// Follow one view's source until the view is closed, its client loses it, or the program's
-/// live bytes end; attach it again whenever it falls behind.
+/// live bytes end; attach it again whenever it falls behind. A view that ends for good
+/// unasked is told on `ended` once its stream has ended.
+#[allow(clippy::too_many_arguments)]
 async fn follow(
     view: ViewId,
     source: Arc<dyn Source>,
@@ -724,7 +749,9 @@ async fn follow(
     attacher: Arc<Attacher>,
     closing: CancellationToken,
     open: Arc<Mutex<Open>>,
+    ended: mpsc::UnboundedSender<(ViewId, ViewEnd)>,
 ) {
+    let mut why = ViewEnd::ProgramEnded;
     loop {
         let next = tokio::select! {
             biased;
@@ -754,10 +781,20 @@ async fn follow(
                         feed = again;
                         live = follows;
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        why = ViewEnd::Closed;
+                        break;
+                    }
                 }
             }
-            Err(_) => break,
+            Err(Closed::OverAcknowledged) => {
+                why = ViewEnd::OverAcknowledged;
+                break;
+            }
+            Err(_) => {
+                why = ViewEnd::Closed;
+                break;
+            }
         }
     }
     if closing.is_cancelled() {
@@ -775,5 +812,17 @@ async fn follow(
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .views
             .remove(&view);
+        // Told once the stream has ended, so a client reads the view's last bytes before it
+        // hears there are no more; unless the link ended meanwhile, and nobody is there.
+        let done = feed.shared.finished.clone();
+        drop(feed);
+        done.cancelled().await;
+        let link_ended = open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .ended;
+        if !link_ended {
+            let _ = ended.send((view, why));
+        }
     }
 }

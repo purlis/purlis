@@ -73,7 +73,14 @@ use crate::view::{Limits, Views};
 ///
 /// 1.1 added hosted programs and views of a kind (#1994): `start_program`, `attach_view`,
 /// `detach_view`, the `program_started` answer and an `attached` view's `kind`.
-pub const VERSION: Version = Version { major: 1, minor: 1 };
+///
+/// 1.2 added what a chat needs to run in the host (#1998): holding and letting go of a project
+/// (`hold_project`, `let_go_of_project`), the full start (a program's id, run and number, its
+/// persona, profile, size, conversation to resume, first message and the person's opt-out of
+/// the sandbox, and the window's own [`Launch`]), `close` beside `stop`, `readiness`, a started
+/// program's number and process, a listed chat's number and run, and two pushed notices: a
+/// program `ended`, and a view `view_ended` for good.
+pub const VERSION: Version = Version { major: 1, minor: 2 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -114,6 +121,9 @@ pub const NO_SUCH_CHAT: &str = "no_such_chat";
 pub const NO_SUCH_PROJECT: &str = "no_such_project";
 /// The link's scope may not do this (FD-27).
 pub const NOT_ALLOWED: &str = "not_allowed";
+/// The host cannot carry this out now, for a reason its `why` gives (1.2): a start the host
+/// cannot compose, or a program it could not run.
+pub const NOT_STARTED: &str = "not_started";
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
 /// some.
@@ -144,13 +154,15 @@ pub enum Command {
         ask: String,
         answer: String,
     },
-    /// End a chat and everything it started.
+    /// End a chat's program and everything it started. The hosted program stays, with its last
+    /// screen, until it is closed ([`Command::Close`]).
     Stop { chat: String },
     /// 1.0's word for [`Command::StartProgram`] of kind [`ProgramKind::Harness`], answered with
     /// [`Answer::Started`]. Never reaches a [`Host`].
     Start(Start),
     /// Start a hosted program of a kind, and answer [`Answer::ProgramStarted`] with its id.
-    StartProgram(StartProgram),
+    /// Boxed: the full start is the largest command by far.
+    StartProgram(Box<StartProgram>),
     /// Open a view of `kind` on a hosted program: the host opens a stream for it
     /// ([`crate::view::Views::open`]), whose snapshot then live bytes follow, and answers
     /// [`Answer::Attached`] with the view's `kind`.
@@ -162,6 +174,21 @@ pub enum Command {
     Subscribe { since: Since },
     /// Stop pushing events.
     Unsubscribe,
+    /// Hold a project on this host: the host may now start programs in it. A project is
+    /// named by its stable id, and `project_path` says where it is on the host's machine
+    /// (1.2).
+    HoldProject {
+        project: String,
+        project_path: String,
+    },
+    /// Let go of a project this link held (1.2). What runs in it runs on until it is closed.
+    LetGoOfProject { project: String },
+    /// End a hosted program and everything it started, and forget it: its views end, and it is
+    /// no longer listed (1.2). [`Command::Stop`] ends the program and keeps it.
+    Close { program: String },
+    /// Whether a hosted program is ready to be typed at, as its terminal and the clock say it,
+    /// never what it wrote (1.2): answered [`Answer::Readiness`].
+    Readiness { program: String },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -178,7 +205,7 @@ pub struct Start {
     pub harness: Option<String>,
 }
 
-/// What a [`Command::StartProgram`] asks for.
+/// What a [`Command::StartProgram`] asks for: the full start (1.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartProgram {
     /// The project it is in, by its stable id ([`Start::project`]).
@@ -191,6 +218,118 @@ pub struct StartProgram {
     /// For a [`ProgramKind::Harness`], which harness, or the project's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
+    /// The id the program is to have: its chat's own (ADR 0066), so a client that knows its
+    /// chats finds each again. A host mints one where none is given (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    /// The run this start begins (ADR 0066), where the client minted one (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
+    /// The chat's number in its project: what its hooks carry and its per-chat files are named
+    /// by. A host deals the next where none is given, and never one a program it holds in the
+    /// project already has (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<u32>,
+    /// The persona it runs as, or the project's default (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona: Option<String>,
+    /// The profile it runs on, or none (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// The size its terminal starts at, in columns and rows (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cols: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<u16>,
+    /// The harness's conversation to carry on, by its own id (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<String>,
+    /// What is typed to the harness once it is ready (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_message: Option<String>,
+    /// The person chose to run this one without the sandbox (ADR 0067 §7, 1.2).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub without_sandbox: bool,
+    /// The window's own start, composed above its seam: given only by the window, on a
+    /// `local-ui` link ([`crate::grants::Power::Launch`]), until what composes it lives in the
+    /// host (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch: Option<Launch>,
+}
+
+impl StartProgram {
+    /// A start of `kind` in `project`, with nothing else said.
+    pub fn of(project: impl Into<String>, kind: ProgramKind) -> StartProgram {
+        StartProgram {
+            project: project.into(),
+            kind,
+            workspace: None,
+            harness: None,
+            program: None,
+            run: None,
+            number: None,
+            persona: None,
+            profile: None,
+            cols: None,
+            rows: None,
+            resume: None,
+            first_message: None,
+            without_sandbox: false,
+            launch: None,
+        }
+    }
+}
+
+/// What the window composed for a start above its seam: the program and its words, and what
+/// its environment is made of (1.2). The host composes the environment from it the way the
+/// window did, against its own, which it was started with
+/// ([`crate::grants::Power::Launch`]: the window's alone).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Launch {
+    /// The program, by path or name.
+    pub program: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    /// Where it starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// The chat's own variables, in order: a later one of a name wins.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub set: Vec<(String, String)>,
+    /// Variable names kept out of the chat, set or inherited.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strip: Vec<String>,
+    /// The person's own additions to what a chat is started with.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pass: Vec<String>,
+    /// A declared harness's namespace, each variable judged on its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub declared: Vec<String>,
+    /// The harness it runs, whose own variables it keeps, by its word; none for a shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// The folder of purlis's git hooks its git is armed with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_hooks: Option<String>,
+    /// Where its hooks report, and the chat's token they carry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reporting: Option<Reporting>,
+}
+
+/// Where a chat's hooks report, and the token they carry (1.2).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reporting {
+    pub socket: String,
+    pub token: String,
+}
+
+/// Never prints the token.
+impl std::fmt::Debug for Reporting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reporting")
+            .field("socket", &self.socket)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What kind of program a session host holds. A later minor adds one (a browser, spec 2); a
@@ -227,16 +366,35 @@ pub enum Answer {
     Attached(Attached),
     /// The chat it started: 1.0's answer to [`Command::Start`].
     Started { chat: String },
-    /// The hosted program it started: [`Command::StartProgram`].
-    ProgramStarted { program: String },
+    /// The hosted program it started: [`Command::StartProgram`], with its number in its project
+    /// and its process, where the host says them (1.2).
+    ProgramStarted {
+        program: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        number: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        process: Option<u32>,
+    },
+    /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
+    Readiness(Readiness),
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
     Done,
 }
 
+/// What a host said of a program it started ([`Client::start_program_told`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgramStarted {
+    pub program: String,
+    /// Its number in its project.
+    pub number: Option<u32>,
+    /// Its process, while it runs.
+    pub process: Option<u32>,
+}
+
 /// One chat, as [`Command::List`] lists it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chat {
     /// Its id, a ULID (ADR 0066).
     pub chat: String,
@@ -253,6 +411,45 @@ pub struct Chat {
     /// `ended`); kebab-case is UI text only (V76). A word and not a closed set, so a later
     /// minor may add one.
     pub state: String,
+    /// Its number in its project (1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<u32>,
+    /// The run it is in (ADR 0066, 1.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
+}
+
+/// Whether a hosted program is ready to be typed at (1.2): the terminal's line discipline and
+/// the clock, never what the program wrote (ADR 0061).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Readiness {
+    /// Whether its terminal still edits lines (canonical mode) rather than handing each key to
+    /// the program; absent where the platform cannot say.
+    pub edits_lines: Option<bool>,
+    /// How long it has written nothing, in milliseconds.
+    pub quiet_for_ms: u64,
+}
+
+/// How a hosted program ended (1.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Exit {
+    /// It exited with this code.
+    Code(u32),
+    /// A signal ended it, named as the system names it.
+    Signal(String),
+}
+
+/// Why a view ended for good (1.2): no stream of it comes again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewEnd {
+    /// Its program ended, and the view sent its last screen first.
+    ProgramEnded,
+    /// The client acknowledged more than it was sent.
+    OverAcknowledged,
+    /// The host closed it.
+    Closed,
 }
 
 /// The view an attach opened.
@@ -294,6 +491,21 @@ pub enum Pushed {
         after: u64,
         resumes_at: u64,
     },
+    /// A hosted program ended (1.2), with the run it was in where the host knows it. Its views
+    /// end once they have sent what it wrote; it stays, with its last screen, until closed.
+    Ended {
+        program: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<String>,
+        exit: Exit,
+    },
+    /// A view on this link ended for good (1.2): no stream of it comes again, where a view that
+    /// fell behind comes back at its next epoch. Pushed to the link the view is on, subscribed
+    /// or not.
+    ViewEnded {
+        view: u32,
+        why: ViewEnd,
+    },
 }
 
 wire_words!(Command {
@@ -310,6 +522,10 @@ wire_words!(Command {
     DetachView => "detach_view",
     Subscribe => "subscribe",
     Unsubscribe => "unsubscribe",
+    HoldProject => "hold_project",
+    LetGoOfProject => "let_go_of_project",
+    Close => "close",
+    Readiness => "readiness",
 });
 
 impl Command {
@@ -318,7 +534,7 @@ impl Command {
     /// [`serve`] asks the host whether it is a secret's.
     pub fn power(&self) -> Power {
         match self {
-            Command::List => Power::List,
+            Command::List | Command::Readiness { .. } => Power::List,
             Command::Attach { .. }
             | Command::Detach { .. }
             | Command::AttachView { .. }
@@ -326,8 +542,11 @@ impl Command {
             Command::Write { .. } => Power::Write,
             Command::Resize { .. } => Power::Resize,
             Command::Answer { .. } => Power::Answer,
-            Command::Stop { .. } => Power::Stop,
-            Command::Start(_) | Command::StartProgram(_) => Power::Start,
+            Command::Stop { .. } | Command::Close { .. } => Power::Stop,
+            Command::Start(_)
+            | Command::StartProgram(_)
+            | Command::HoldProject { .. }
+            | Command::LetGoOfProject { .. } => Power::Start,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
         }
     }
@@ -338,6 +557,7 @@ wire_words!(Answer {
     Attached => "attached",
     Started => "started",
     ProgramStarted => "program_started",
+    Readiness => "readiness",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -357,6 +577,8 @@ wire_words!(Outcome {
 wire_words!(Pushed {
     Event => "event",
     Missed => "missed",
+    Ended => "ended",
+    ViewEnded => "view_ended",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -556,11 +778,16 @@ async fn answer<H: Host>(
     calls: &mut Calls,
 ) -> Result<(), LinkError> {
     let mut events: Option<mpsc::Receiver<Pushed>> = None;
+    // Each view of this link that ended for good unasked, told whether or not it subscribed.
+    let mut view_ends = peer.views().ends();
     loop {
         let next = tokio::select! {
             frame = link.control().next(), if !calls.full() => Next::Frame(frame),
             Some(finished) = calls.next() => Next::Finished(finished),
             pushed = next_pushed(&mut events) => Next::Pushed(pushed),
+            Some((view, why)) = next_view_end(&mut view_ends) => {
+                Next::Pushed(Some(Pushed::ViewEnded { view: view.0, why }))
+            }
         };
         let answer = match next {
             Next::Pushed(Some(pushed)) => Some(Frame::Pushed(pushed)),
@@ -629,14 +856,13 @@ async fn carry_out<H: Host>(id: u64, command: Command, host: &H, peer: &Peer) ->
             workspace,
             harness,
         }) => {
-            let start = Command::StartProgram(StartProgram {
-                project,
-                kind: ProgramKind::Harness,
+            let start = Command::StartProgram(Box::new(StartProgram {
                 workspace,
                 harness,
-            });
+                ..StartProgram::of(project, ProgramKind::Harness)
+            }));
             let answer = host.call(start, peer).await.map(|answer| match answer {
-                Answer::ProgramStarted { program } => Answer::Started { chat: program },
+                Answer::ProgramStarted { program, .. } => Answer::Started { chat: program },
                 other => other,
             });
             Finished::Answered(reply(id, answer))
@@ -700,7 +926,11 @@ impl Lane {
     /// exhaustive `match`, so a command added later says which it is.
     fn of(command: &Command) -> Option<Lane> {
         match command {
-            Command::List | Command::Start(_) | Command::StartProgram(_) => None,
+            Command::List
+            | Command::Start(_)
+            | Command::StartProgram(_)
+            | Command::HoldProject { .. }
+            | Command::LetGoOfProject { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -708,7 +938,9 @@ impl Lane {
             | Command::Write { chat: program, .. }
             | Command::Resize { chat: program, .. }
             | Command::Answer { chat: program, .. }
-            | Command::Stop { chat: program } => Some(Lane::Program(program.clone())),
+            | Command::Stop { chat: program }
+            | Command::Close { program }
+            | Command::Readiness { program } => Some(Lane::Program(program.clone())),
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
         }
     }
@@ -790,6 +1022,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             why: format!("a `{scope}` link may not `{word}`"),
         });
     }
+    if let Command::StartProgram(start) = command
+        && start.launch.is_some()
+        && !scope.may(Power::Launch)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a start the window composed is taken from purlis's window only, and this link \
+                 is `{scope}`"
+            ),
+        });
+    }
     if let Command::Answer { chat, ask, .. } = command
         && !scope.may(Power::AnswerASecret)
         && host.elicits_a_secret(chat, ask).await
@@ -809,6 +1053,15 @@ enum Next {
     Frame(Option<Result<Bytes, LinkError>>),
     Finished(Finished),
     Pushed(Option<Pushed>),
+}
+
+async fn next_view_end(
+    ends: &mut Option<mpsc::UnboundedReceiver<(crate::view::ViewId, ViewEnd)>>,
+) -> Option<(crate::view::ViewId, ViewEnd)> {
+    match ends {
+        Some(ends) => ends.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 async fn next_pushed(events: &mut Option<mpsc::Receiver<Pushed>>) -> Option<Pushed> {
@@ -1022,8 +1275,65 @@ impl Client {
     /// Start a hosted program, and answer with its id. A host one version behind refuses it
     /// `unknown_command`; [`Client::start`] is its word for a harness.
     pub async fn start_program(&self, start: StartProgram) -> Result<String, CallError> {
-        match self.call(Command::StartProgram(start)).await? {
-            Answer::ProgramStarted { program } => Ok(program),
+        self.start_program_told(start)
+            .await
+            .map(|started| started.program)
+    }
+
+    /// [`Client::start_program`], answering with all the host said of what it started: its
+    /// number and its process too, where it says them (1.2).
+    pub async fn start_program_told(
+        &self,
+        start: StartProgram,
+    ) -> Result<ProgramStarted, CallError> {
+        match self.call(Command::StartProgram(Box::new(start))).await? {
+            Answer::ProgramStarted {
+                program,
+                number,
+                process,
+            } => Ok(ProgramStarted {
+                program,
+                number,
+                process,
+            }),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Hold `project`, which is at `path` on the host's machine, so programs start in it (1.2).
+    pub async fn hold_project(&self, project: &str, path: &str) -> Result<(), CallError> {
+        self.done(Command::HoldProject {
+            project: project.into(),
+            project_path: path.into(),
+        })
+        .await
+    }
+
+    /// Let go of `project` (1.2).
+    pub async fn let_go_of_project(&self, project: &str) -> Result<(), CallError> {
+        self.done(Command::LetGoOfProject {
+            project: project.into(),
+        })
+        .await
+    }
+
+    /// End `program` and forget it (1.2).
+    pub async fn close(&self, program: &str) -> Result<(), CallError> {
+        self.done(Command::Close {
+            program: program.into(),
+        })
+        .await
+    }
+
+    /// Whether `program` is ready to be typed at (1.2).
+    pub async fn readiness(&self, program: &str) -> Result<Readiness, CallError> {
+        match self
+            .call(Command::Readiness {
+                program: program.into(),
+            })
+            .await?
+        {
+            Answer::Readiness(readiness) => Ok(readiness),
             other => Err(unexpected(&other)),
         }
     }
@@ -1125,19 +1435,32 @@ impl Subscribed {
     /// the host is to be told to stop: the queue has only its last place left, which takes the
     /// word of it. What comes after that is not kept, and is asked for again from the cursor.
     fn pushed(&mut self, pushed: Pushed) -> bool {
+        // A view's end is the link's own word, not an event: it is kept whether or not the
+        // client subscribed, while the queue has room for it beside the word it may need.
+        if let Pushed::ViewEnded { .. } = pushed {
+            if self.queue.capacity() > 1 {
+                let _ = self.queue.try_send(Told::Pushed(pushed));
+            }
+            return false;
+        }
         if !self.live {
             return false;
         }
         if self.queue.capacity() > 1 {
             match &pushed {
-                Pushed::Event(event) => self.cursor.insert(event.device_id.clone(), event.seq),
+                Pushed::Event(event) => {
+                    self.cursor.insert(event.device_id.clone(), event.seq);
+                }
                 // The gap is told by this very frame: reading on from before it would only
                 // tell it again.
                 Pushed::Missed {
                     device, resumes_at, ..
-                } => self
-                    .cursor
-                    .insert(device.clone(), resumes_at.saturating_sub(1)),
+                } => {
+                    self.cursor
+                        .insert(device.clone(), resumes_at.saturating_sub(1));
+                }
+                // Neither is an event of the log: the cursor stays where it is.
+                Pushed::Ended { .. } | Pushed::ViewEnded { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

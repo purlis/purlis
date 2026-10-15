@@ -92,6 +92,8 @@ impl Host for Waiting {
                 self.wait().await;
                 Ok(Answer::ProgramStarted {
                     program: ONE.into(),
+                    number: None,
+                    process: None,
                 })
             }
             Command::Write { chat, bytes } => {

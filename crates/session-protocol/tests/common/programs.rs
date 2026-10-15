@@ -22,6 +22,8 @@ struct Written {
     last: Bytes,
     /// Each attachment's live bytes, while its view holds them.
     watching: Vec<mpsc::UnboundedSender<Bytes>>,
+    /// The program has ended: every view's live bytes end, and a new one's end at once.
+    ended: bool,
 }
 
 /// How a program's snapshot is made.
@@ -59,6 +61,13 @@ impl Program {
             .retain(|view| view.send(bytes.clone()).is_ok());
     }
 
+    /// The program ends: every view's live bytes end where they are.
+    pub fn end(&self) {
+        let mut written = self.written.lock().unwrap();
+        written.ended = true;
+        written.watching.clear();
+    }
+
     /// How many views still hold this program's live bytes.
     pub fn watched_by(&self) -> usize {
         let mut written = self.written.lock().unwrap();
@@ -86,7 +95,9 @@ impl Source for Program {
             Snapshot::Frame => written.last.clone(),
         };
         let (live, mut follows) = mpsc::unbounded_channel();
-        written.watching.push(live);
+        if !written.ended {
+            written.watching.push(live);
+        }
         Attachment {
             snapshot,
             live: futures::stream::poll_fn(move |cx| follows.poll_recv(cx)).boxed(),

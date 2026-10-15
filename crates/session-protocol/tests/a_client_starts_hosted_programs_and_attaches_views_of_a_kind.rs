@@ -62,6 +62,8 @@ impl Host for OneProgram {
         match command {
             Command::StartProgram(_) => Ok(Answer::ProgramStarted {
                 program: SHELL.into(),
+                number: None,
+                process: None,
             }),
             Command::AttachView {
                 program,
@@ -113,36 +115,25 @@ async fn linked(host: OneProgram) -> (Client, Acceptor, Events) {
 }
 
 #[tokio::test]
-async fn the_protocol_is_version_one_point_one() {
-    assert_eq!(
-        (session::VERSION.major, session::VERSION.minor),
-        (1, 1),
-        "hosted programs and view kinds are a minor's additions"
-    );
-}
-
-#[tokio::test]
 async fn a_client_starts_a_hosted_program_of_a_kind() {
     let host = OneProgram::new();
     let (client, _views, _events) = linked(host.clone()).await;
     let started = client
         .start_program(StartProgram {
-            project: PROJECT.into(),
-            kind: ProgramKind::Shell,
             workspace: None,
             harness: None,
+            ..StartProgram::of(PROJECT, ProgramKind::Shell)
         })
         .await
         .unwrap();
     assert_eq!(started, SHELL);
     assert_eq!(
         host.heard(),
-        [Command::StartProgram(StartProgram {
-            project: PROJECT.into(),
-            kind: ProgramKind::Shell,
+        [Command::StartProgram(Box::new(StartProgram {
             workspace: None,
             harness: None,
-        })]
+            ..StartProgram::of(PROJECT, ProgramKind::Shell)
+        }))]
     );
 }
 
@@ -164,12 +155,11 @@ async fn a_start_from_a_client_a_version_behind_reaches_the_host_as_a_harness_pr
     );
     assert_eq!(
         host.heard(),
-        [Command::StartProgram(StartProgram {
-            project: PROJECT.into(),
-            kind: ProgramKind::Harness,
+        [Command::StartProgram(Box::new(StartProgram {
             workspace: Some("login".into()),
             harness: Some("claude".into()),
-        })]
+            ..StartProgram::of(PROJECT, ProgramKind::Harness)
+        }))]
     );
 }
 
