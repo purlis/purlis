@@ -3,7 +3,8 @@
 
 //! A program that stands in for a terminal's, for tests of what drives the host's programs: it
 //! echoes what is typed, keeps what it was asked, views like a terminal (its snapshot is all it
-//! wrote) and ends when stopped. Only tests build it (`test-support`).
+//! wrote) and ends when stopped. And a saver that stands in for the binary's ([`Savers`]): it
+//! keeps what it was asked and saves nothing. Only tests build it (`test-support`).
 
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +21,7 @@ use purlis_session_protocol::session::{
 };
 
 use crate::confining::{Askable, Confining, Tell};
-use crate::hosting::{Run, Running};
+use crate::hosting::{Looked, Poke, Run, Running, Save, Saving, ToSave, Working};
 
 /// What a stand-in program was asked, and what it wrote.
 #[derive(Default)]
@@ -154,6 +155,102 @@ impl Run for StandIns {
     }
 }
 
+/// Stands in for a binary's saver: keeps each project it was asked to save, what it was poked
+/// with, and whether its saving still runs.
+#[derive(Clone, Default)]
+pub struct Savers(Arc<Mutex<Saved>>, Arc<std::sync::atomic::AtomicBool>);
+
+#[derive(Default)]
+struct Saved {
+    started: Vec<(String, std::path::PathBuf)>,
+    running: usize,
+    poked: Vec<Poke>,
+    told: Vec<Arc<dyn Fn(Looked) + Send + Sync>>,
+    working: Vec<Arc<dyn Fn() -> Vec<Working> + Send + Sync>>,
+    asks: Vec<Arc<crate::hosting::AskTheWindow>>,
+}
+
+impl Savers {
+    /// Each project it was asked to save, by its id and path, in order.
+    pub fn started(&self) -> Vec<(String, std::path::PathBuf)> {
+        self.0.lock().unwrap().started.clone()
+    }
+
+    /// How many of its savings still run.
+    pub fn running(&self) -> usize {
+        self.0.lock().unwrap().running
+    }
+
+    /// What its savings were poked with, in order.
+    pub fn poked(&self) -> Vec<Poke> {
+        self.0.lock().unwrap().poked.clone()
+    }
+
+    /// Its last saving looks, and did `looked`.
+    pub fn looks(&self, looked: Looked) {
+        let told = self.0.lock().unwrap().told.last().cloned();
+        if let Some(told) = told {
+            told(looked);
+        }
+    }
+
+    /// Who its last saving is told works in its project.
+    pub fn working(&self) -> Vec<Working> {
+        let working = self.0.lock().unwrap().working.last().cloned();
+        working.map(|working| working()).unwrap_or_default()
+    }
+}
+
+impl Savers {
+    /// Its last saving asks the window who is mid-turn in `workspace`, and waits.
+    pub fn asks_the_window(&self, workspace: &str) -> Option<Vec<String>> {
+        let ask = self.0.lock().unwrap().asks.last().cloned();
+        ask.and_then(|ask| ask(workspace))
+    }
+}
+
+impl Save for Savers {
+    fn save(&self, saving: ToSave) -> Result<Box<dyn Saving>, String> {
+        let mut saved = self.0.lock().unwrap();
+        saved.started.push((saving.project, saving.project_path));
+        saved.running += 1;
+        saved.told.push(Arc::from(saving.told));
+        saved.working.push(Arc::from(saving.working));
+        saved.asks.push(Arc::from(saving.ask_the_window));
+        Ok(Box::new(StoodIn(Arc::clone(&self.0), Arc::clone(&self.1))))
+    }
+}
+
+impl Savers {
+    /// From now on a saving that is stopped is in the middle of a save, and lets go only once
+    /// [`Self::finish_saving`] says so.
+    pub fn mid_save(&self) {
+        self.1.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The save a stopped saving was in the middle of is done.
+    pub fn finish_saving(&self) {
+        self.1.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+struct StoodIn(Arc<Mutex<Saved>>, Arc<std::sync::atomic::AtomicBool>);
+
+impl Saving for StoodIn {
+    fn poke(&self, poke: Poke) {
+        self.0.lock().unwrap().poked.push(poke);
+    }
+}
+
+impl Drop for StoodIn {
+    fn drop(&mut self) {
+        while self.1.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        self.0.lock().unwrap().running -= 1;
+    }
+}
+
 /// What a stand-in confinement was planned with and asked, and whether it has ended (#1999).
 pub struct Confinement {
     pub confine: Confine,
@@ -185,6 +282,8 @@ struct Held {
     holding: bool,
     waiting: usize,
     refusing_changes: Option<String>,
+    /// How long each takes to end, as a proxy waits on its listeners.
+    ending_takes: std::time::Duration,
 }
 
 impl StandInConfines {
@@ -239,6 +338,11 @@ impl StandInConfines {
     pub fn let_starts_go(&self) {
         self.2.held.lock().unwrap().holding = false;
         self.2.changed.notify_all();
+    }
+
+    /// Each takes `long` to end from now on, as a proxy's end waits on its listeners.
+    pub fn take_to_end(&self, long: std::time::Duration) {
+        self.2.held.lock().unwrap().ending_takes = long;
     }
 
     /// It refuses every change the window makes from now on, saying `why`.
@@ -331,6 +435,140 @@ impl Confining for StandInConfining {
 
 impl Drop for StandInConfining {
     fn drop(&mut self) {
+        let takes = self.all.2.held.lock().unwrap().ending_takes;
+        std::thread::sleep(takes);
         self.all.with(&self.id, |one| one.ended = true);
+    }
+}
+
+/// A browser that stands in for an engine's, for tests of what the host does with browsers: it
+/// makes a frame when the test says so, and only while the host has asked it to show frames;
+/// it keeps what it was asked.
+#[derive(Clone, Default)]
+pub struct StandInScreen(Arc<Mutex<Shown>>);
+
+/// What a stand-in browser was asked.
+#[derive(Default)]
+pub struct Shown {
+    /// The folder it was started with.
+    pub data: std::path::PathBuf,
+    /// Whether the host asks it for frames now.
+    pub showing: bool,
+    /// Each time the host asked it for frames, and each time it stopped asking.
+    pub shows: u32,
+    pub hides: u32,
+    /// The least time between frames the host last asked for.
+    pub every: Option<std::time::Duration>,
+    /// Frames it made: only while showing.
+    pub made: u32,
+    pub stopped: bool,
+    sink: Option<crate::browsers::FrameSink>,
+    ends: Option<Box<dyn FnOnce(Exit) + Send>>,
+}
+
+impl StandInScreen {
+    pub fn shown(&self) -> std::sync::MutexGuard<'_, Shown> {
+        self.0.lock().unwrap()
+    }
+
+    /// It makes `image` as its next frame, when the host is asking for frames.
+    pub fn makes(&self, image: &[u8]) {
+        let sink = {
+            let mut shown = self.shown();
+            if !shown.showing {
+                return;
+            }
+            shown.made += 1;
+            shown.sink.clone()
+        };
+        if let Some(sink) = sink {
+            sink(Bytes::copy_from_slice(image));
+        }
+    }
+
+    /// The engine ended by itself.
+    pub fn ends(&self, exit: Exit) {
+        let tell = self.shown().ends.take();
+        if let Some(tell) = tell {
+            tell(exit);
+        }
+    }
+}
+
+impl crate::browsers::Screen for StandInScreen {
+    fn show(&self, frames: crate::browsers::FrameSink) {
+        let mut shown = self.shown();
+        shown.showing = true;
+        shown.shows += 1;
+        shown.sink = Some(frames);
+    }
+
+    fn pace(&self, every: std::time::Duration) {
+        self.shown().every = Some(every);
+    }
+
+    fn hide(&self) {
+        let mut shown = self.shown();
+        shown.showing = false;
+        shown.hides += 1;
+        shown.sink = None;
+    }
+
+    fn size(&self) -> (u16, u16) {
+        (1280, 800)
+    }
+
+    fn process(&self) -> Option<u32> {
+        Some(5151)
+    }
+
+    fn stop(&self) {
+        {
+            let mut shown = self.shown();
+            shown.stopped = true;
+            shown.showing = false;
+            shown.sink = None;
+        }
+        self.ends(Exit::Code(0));
+    }
+
+    fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
+        self.shown().ends = Some(tell);
+    }
+}
+
+/// Starts every browser as a stand-in, each with its data folder in one folder, and keeps each.
+#[derive(Clone)]
+pub struct StandInBrowsers {
+    folder: std::path::PathBuf,
+    started: Arc<Mutex<Vec<StandInScreen>>>,
+}
+
+impl StandInBrowsers {
+    /// Browsers whose data folders are made in `folder`.
+    pub fn in_folder(folder: impl Into<std::path::PathBuf>) -> Self {
+        StandInBrowsers {
+            folder: folder.into(),
+            started: Arc::default(),
+        }
+    }
+
+    /// Every browser it started, in order.
+    pub fn started(&self) -> Vec<StandInScreen> {
+        self.started.lock().unwrap().clone()
+    }
+}
+
+impl crate::browsers::Browsers for StandInBrowsers {
+    fn data_folders(&self) -> Result<std::path::PathBuf, String> {
+        Ok(self.folder.clone())
+    }
+
+    fn start(&self, data: &std::path::Path) -> Result<Arc<dyn crate::browsers::Screen>, String> {
+        std::fs::create_dir_all(data).map_err(|why| why.to_string())?;
+        let screen = StandInScreen::default();
+        screen.shown().data = data.to_path_buf();
+        self.started.lock().unwrap().push(screen.clone());
+        Ok(Arc::new(screen))
     }
 }

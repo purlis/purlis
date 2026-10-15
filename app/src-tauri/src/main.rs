@@ -5,6 +5,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // Started again by the session host as a browser engine's keeper (#2012): keep its process
+    // group and never return, before anything of the app starts.
+    #[cfg(unix)]
+    purlis_core::browsers::keep_if_asked();
     // Started again by the window as its session host (#1997): serve until the window closes
     // its end, before anything of the app starts. The same binary, so the Keychain sees the
     // same program and asks nothing (ADR 0068 §1, amended 2026-10-14).

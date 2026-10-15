@@ -30,6 +30,8 @@
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | |
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
+//! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
+//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.7) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -54,6 +56,13 @@
 //! - **A held project's hook lines are heard and answered by the window alone** (1.3). The host
 //!   pushes each line only to the links that hold the project, which only `local-ui` may, and
 //!   only `local-ui` replies: a reply can carry an ask's answer, which no other scope gives here.
+//! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
+//!   program started as the person, and what it shows is theirs: the pages of sites they are
+//!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
+//!   a view of one, `remote-link` included; a stop of one, like every stop, only removes power.
+//! - **Saving a held project is the window's alone** (1.7), with the `hold_project` row: the
+//!   project's commits and pushes are the person's, and the host's question of who is
+//!   mid-turn goes only to the window's links, which alone answer it.
 //! - **Only a human scope answers an ask, and a secret's ask only in the window** (V16, V75):
 //!   `local-ui` and `approval`. Whether an ask elicits a secret is the host's to say
 //!   ([`crate::session::Host::elicits_a_secret`]), and a host that does not say is taken to
@@ -103,6 +112,8 @@ pub enum Power {
     /// The UI RPC: the app's own commands, vault values and settings writes among them.
     UiRpc,
     /// `hold_project` and `let_go_of_project` (1.2): where a project is on the host's machine.
+    /// And `start_saving`, `stop_saving`, `fetch_project` and `mid_turn` (1.7): whether and how
+    /// the host saves it.
     Hold,
     /// A start's `launch` (1.2): a program, its words and its environment as the window composed
     /// them.
@@ -114,6 +125,9 @@ pub enum Power {
     Confine,
     /// `rearm` (1.5): lets programs start again after the kill switch.
     Rearm,
+    /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
+    /// person, and what it shows.
+    Browser,
 }
 
 impl Scope {
@@ -171,6 +185,17 @@ mod tests {
         for scope in Scope::ALL {
             assert_eq!(
                 scope.may(Power::Confine),
+                scope == Scope::LocalUi,
+                "{scope}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_window_starts_or_watches_a_browser() {
+        for scope in Scope::ALL {
+            assert_eq!(
+                scope.may(Power::Browser),
                 scope == Scope::LocalUi,
                 "{scope}"
             );

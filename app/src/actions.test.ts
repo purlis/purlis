@@ -99,6 +99,7 @@ function doing(): Doing & { calls: string[] } {
     calls,
     newChat: note("newChat"),
     newShell: note("newShell"),
+    newBrowser: note("newBrowser"),
     resumeSession: async (...args: unknown[]) => {
       note("resumeSession")(...args);
       return { ok: true };

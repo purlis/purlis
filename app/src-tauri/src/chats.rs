@@ -2390,6 +2390,12 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // A sandboxed Claude Code chat whose project's own settings it does not load says which
+        // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
+        // files and decided the same way.
+        if sandbox.is_some() && harness == Some(Harness::ClaudeCode) {
+            late.extend(purlis_core::harness::claude::project::screen(chat.cwd.as_deref()).note());
+        }
         if let Some(change) = &trust {
             let written = match (
                 lock(&self.trusting).as_ref(),

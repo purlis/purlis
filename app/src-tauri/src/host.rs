@@ -229,6 +229,18 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// Saves the project at `root` from now on, where its chats run: its auto-save, telling
+    /// `told` what each look that did something did. Dropping what it answers stops it. One
+    /// per project: the window starts none of its own where its chats run in the session host,
+    /// which saves the project there (#2002). This one is the window's own worker.
+    fn keep_saving(
+        &self,
+        root: &std::path::Path,
+        told: crate::autosave::Told,
+    ) -> Box<dyn crate::autosave::Saver> {
+        crate::autosave::here(root.to_path_buf(), told)
+    }
+
     /// Hears what the session host hands on from the hook channel it owns for this plane with
     /// `relayed` (#2000). A host that runs its chats in this process listens itself, and is
     /// never told this.

@@ -383,6 +383,8 @@ fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
         .expect("confined");
     let id = confinement.held_as().expect("held in the host").to_owned();
     confines.refuse_changes("the host's board is gone");
+    // A proxy's end waits on its listeners: the window is told only once it has ended.
+    confines.take_to_end(std::time::Duration::from_millis(300));
 
     let said = confinement.withdraw_port(5432).unwrap_err();
 

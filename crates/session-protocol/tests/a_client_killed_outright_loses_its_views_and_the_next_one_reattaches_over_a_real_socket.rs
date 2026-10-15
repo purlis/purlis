@@ -48,7 +48,7 @@ struct Ticking {
 impl Host for Ticking {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         match command {
-            Command::AttachView { program, kind } if program == PROGRAM => {
+            Command::AttachView { program, kind, .. } if program == PROGRAM => {
                 let view = peer
                     .views()
                     .open(Arc::new(self.program.clone()))

@@ -150,6 +150,8 @@ fn every_command() -> Vec<Command> {
         Command::AttachView {
             program: CHAT.into(),
             kind: session::ViewKind::Terminal,
+            role: None,
+            rate: None,
         },
         Command::DetachView {
             program: CHAT.into(),
@@ -171,6 +173,19 @@ fn every_command() -> Vec<Command> {
         },
         Command::Readiness {
             program: CHAT.into(),
+        },
+        Command::StartSaving {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::StopSaving {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::FetchProject {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::MidTurn {
+            question: 1,
+            chats: None,
         },
         // A start the window composed: the window's alone.
         Command::StartProgram(Box::new(session::StartProgram {
@@ -236,6 +251,17 @@ fn every_command() -> Vec<Command> {
         Command::StopAll,
         Command::KillSwitch,
         Command::Rearm,
+        // A browser, started and watched: the window's alone (1.6).
+        Command::StartProgram(Box::new(session::StartProgram::of(
+            "01J9PRJCT00000000000000000",
+            session::ProgramKind::Browser,
+        ))),
+        Command::AttachView {
+            program: CHAT.into(),
+            kind: session::ViewKind::Browser,
+            role: Some(session::ViewRole::Focused),
+            rate: None,
+        },
     ]
 }
 
@@ -261,6 +287,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "let_go_of_project",
             "close",
             "readiness",
+            "start_saving",
+            "stop_saving",
+            "fetch_project",
+            "mid_turn",
             "start_program",
             "deal",
             "dealt_already",
@@ -272,6 +302,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "stop_all",
             "kill_switch",
             "rearm",
+            "start_program",
+            "attach_view",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",

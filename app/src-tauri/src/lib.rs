@@ -31,6 +31,7 @@ mod autosave;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browsers;
 mod changes;
 mod chats;
 mod clipath;
@@ -73,6 +74,8 @@ mod behaviour;
 mod hostedconfinement;
 #[cfg(unix)]
 mod hostedsessions;
+#[cfg(unix)]
+mod hostsaving;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -592,7 +595,16 @@ async fn close_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<(), String
     // holds the project's turn throughout, so an open of it waits until it has let go.
     off_the_window("letting go of the project", move || {
         use tauri::Manager as _;
+        let root = app
+            .state::<Planes>()
+            .held(&plane)
+            .ok()
+            .map(|held| held.root().to_path_buf());
         app.state::<Planes>().closing(&plane)?.finish();
+        // The browsers the window started in it end with it (#2012): none is left with no tab.
+        if let Some(root) = root {
+            browsers::let_go_of(&app, &root);
+        }
         Ok(())
     })
     .await
@@ -2923,12 +2935,15 @@ fn refuse_beside_the_old_app() {
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
-        purlis_host::Hosting::kept(
-            &place.credentials,
-            purlis_host::FromTheWindow(sessionhost::launched),
-            purlis_host::Terminals,
-            sessionhost::HookChannels,
-            hostedconfinement::ConfinesHere,
+        purlis_core::browsers::given_to(
+            purlis_host::Hosting::kept(
+                &place.credentials,
+                purlis_host::FromTheWindow(sessionhost::launched),
+                purlis_host::Terminals,
+                sessionhost::HookChannels,
+                hostedconfinement::ConfinesHere,
+            )
+            .saving_with(hostsaving::InTheHost),
         )
     })
 }
@@ -2941,7 +2956,8 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     #[cfg(unix)]
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
-        let connection = app.state::<sessionhost::SessionHost>().connection();
+        let host = app.state::<sessionhost::SessionHost>();
+        let connection = host.connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);
         // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
         return planes
@@ -2953,7 +2969,10 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
                     ))
                 },
             ))
-            .hearing_hooks_through_the_host();
+            .hearing_hooks_through_the_host()
+            // The host saves the projects too (#2002): a quit it does not answer in time ends
+            // it before the save at quit.
+            .ending_the_host_with(host.ender());
     }
     let _ = app;
     planes
@@ -3237,6 +3256,10 @@ pub fn run() {
             {
                 let host = sessionhost::SessionHost::default();
                 host.start();
+                // The person's browsers run in it too (#2012).
+                app.manage(std::sync::Arc::new(browsers::WindowBrowsers::new(
+                    host.connection(),
+                )));
                 app.manage(host);
             }
             // The person's forge sign-ins, for the window's own forge calls (#1816).

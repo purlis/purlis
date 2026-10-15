@@ -1521,6 +1521,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::profilestore::DIR),
             Access::ReadWrite,
         );
+        // The data folders of the browsers the session host runs (#2012): each holds its
+        // engine's profile, the cookies and storage of every site the person opens in it.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::datahome::BROWSERS),
+            Access::ReadWrite,
+        );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor

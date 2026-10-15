@@ -1224,3 +1224,133 @@ fn blanking_the_focus_is_refused_when_more_than_one_element_says_it_has_it() {
     focus_on(&engine, &[]);
     assert_eq!(browser.blank_focused(None), Err(Refusal::NothingFocused));
 }
+
+// Frames (#2012): the engine's screencast of the current page, only while shown, paced by
+// when each frame is acknowledged.
+
+type Shown = Arc<Mutex<Vec<Vec<u8>>>>;
+
+fn shown_into(shown: &Shown) -> Arc<dyn Fn(Vec<u8>) + Send + Sync> {
+    let shown = shown.clone();
+    Arc::new(move |image| super::lock(&shown).push(image))
+}
+
+fn a_frame(engine: &Engine, image: &[u8], ack: i64) {
+    engine.emit(
+        "Page.screencastFrame",
+        json!({
+            "data": base64::engine::general_purpose::STANDARD.encode(image),
+            "metadata": {"offsetTop":0,"pageScaleFactor":1,"deviceWidth":1280,"deviceHeight":800,"scrollOffsetX":0,"scrollOffsetY":0},
+            "sessionId": ack,
+        }),
+        Some("S-PAGE-1"),
+    );
+}
+
+fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !done() {
+        assert!(start.elapsed() < Duration::from_secs(5), "{what}");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn no_frame_is_asked_of_the_engine_until_the_browser_is_shown() {
+    let (browser, engine) = browser();
+    let shown: Shown = Arc::default();
+    a_frame(&engine, b"early", 1);
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(engine.sent("Page.startScreencast").is_empty());
+
+    browser.show(shown_into(&shown));
+
+    wait_for("the current page's screencast starts", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    let started = &engine.sent("Page.startScreencast")[0];
+    assert_eq!(started.session.as_deref(), Some("S-PAGE-1"));
+    assert_eq!(started.params["format"], "jpeg");
+    assert!(
+        super::lock(&shown).is_empty(),
+        "a frame from before is not handed over"
+    );
+}
+
+#[test]
+fn each_frame_shown_is_handed_over_as_its_image_and_acknowledged() {
+    let (browser, engine) = browser();
+    let shown: Shown = Arc::default();
+    browser.show(shown_into(&shown));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+
+    a_frame(&engine, b"\xff\xd8 one", 11);
+
+    wait_for("acknowledged", || {
+        !engine.sent("Page.screencastFrameAck").is_empty()
+    });
+    assert_eq!(*super::lock(&shown), [b"\xff\xd8 one".to_vec()]);
+    let ack = &engine.sent("Page.screencastFrameAck")[0];
+    assert_eq!(ack.params["sessionId"], 11);
+    assert_eq!(ack.session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn a_paced_browser_acknowledges_no_sooner_than_its_pace_so_the_engine_makes_fewer_frames() {
+    let (browser, engine) = browser();
+    let shown: Shown = Arc::default();
+    browser.pace(Duration::from_millis(300));
+    browser.show(shown_into(&shown));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+
+    let start = std::time::Instant::now();
+    a_frame(&engine, b"one", 1);
+    wait_for("the first acknowledged", || {
+        engine.sent("Page.screencastFrameAck").len() == 1
+    });
+    a_frame(&engine, b"two", 2);
+    wait_for("the second acknowledged", || {
+        engine.sent("Page.screencastFrameAck").len() == 2
+    });
+
+    assert!(
+        start.elapsed() >= Duration::from_millis(300),
+        "the second frame was asked for {:?} after the first",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn a_hidden_browser_stops_its_screencast_and_hands_over_no_late_frame() {
+    let (browser, engine) = browser();
+    let shown: Shown = Arc::default();
+    browser.show(shown_into(&shown));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+
+    browser.hide();
+
+    wait_for("stopped", || !engine.sent("Page.stopScreencast").is_empty());
+    a_frame(&engine, b"late", 5);
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(super::lock(&shown).is_empty());
+}
+
+#[test]
+fn whoever_asked_is_told_once_the_engine_ends() {
+    let (browser, engine) = browser();
+    let told = Arc::new(Mutex::new(0));
+    let counting = told.clone();
+    browser.when_it_ends(Box::new(move || *super::lock(&counting) += 1));
+
+    // The engine's pipe closes: its events end.
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+
+    wait_for("told", || *super::lock(&told) == 1);
+}
