@@ -4990,6 +4990,11 @@ export type MachineProfileRow = {
 	 *  version installed, or follow it.
 	 */
 	offered: string | null,
+	/**
+	 *  Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
+	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.
+	 */
+	commands_can_read_sign_in: string | null,
 };
 
 /**  One project this machine remembers, with what it holds about it. */

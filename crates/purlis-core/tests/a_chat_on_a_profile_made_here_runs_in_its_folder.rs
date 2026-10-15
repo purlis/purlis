@@ -26,7 +26,9 @@ fn in_a_data_home_of_its_own(test: &str) -> Option<PathBuf> {
         return Some(PathBuf::from(data));
     }
     let data = tempfile::tempdir().unwrap();
-    let programs = tempfile::tempdir().unwrap();
+    // Outside the system's temp folders, which a sandboxed chat may write: a sandboxed start
+    // refuses a program there.
+    let programs = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     // Each answers `--version` as its harness does, as a sandboxed start asks it to.
     for (harness, version) in [("claude", "2.1.288 (Claude Code)"), ("opencode", "1.18.32")] {
         stand_in::program(
