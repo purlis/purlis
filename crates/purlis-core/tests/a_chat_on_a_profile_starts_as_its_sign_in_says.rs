@@ -229,8 +229,8 @@ fn a_chat_on_a_cloud_profile_says_its_credentials_are_not_handed_and_starts_noth
 
 #[test]
 fn a_cloud_profile_whose_harness_is_signed_out_is_never_asked_to_sign_in() {
-    // A cloud signs the chat in, not the harness's own plan (#2148's check is for that).
     purlis_core::unsteered!();
+    // A cloud signs the chat in, not the harness's own plan (#2148's check is for that).
     let Some(data) = in_a_data_home_of_its_own(
         "a_cloud_profile_whose_harness_is_signed_out_is_never_asked_to_sign_in",
     ) else {
