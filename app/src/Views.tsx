@@ -81,6 +81,8 @@ import {
 import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
+import { BrowserView } from "./BrowserView";
+import { BROWSER_VIEW, isBrowser } from "./browsers";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
@@ -295,6 +297,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [TASK_CHANGES_VIEW]: GitCompare,
   /** A change a chat proposed, whole (#1975, `proposedChangeOpen.ts`). */
   [PROPOSED_CHANGE_VIEW]: GitCompare,
+  /** A browser, drawn live (#2012, `browsers.ts`). */
+  [BROWSER_VIEW]: Globe,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -503,6 +507,10 @@ export function ViewPane({
             plane={plane}
             id={Number(view.key)}
           />
+        ) : isBrowser(view) ? (
+          /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
+             browser, so a pane that comes to show another one opens its own view. */
+          <BrowserView key={`${plane}\u0000${view.key}`} program={view.key} />
         ) : isRepoInstructions(view) ? (
           /* The agent instructions a workspace's repo carries, offered to its memory (FR-18a):
              a preview whose press is the only thing that writes. Keyed by both, as a

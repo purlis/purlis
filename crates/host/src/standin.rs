@@ -334,3 +334,135 @@ impl Drop for StandInConfining {
         self.all.with(&self.id, |one| one.ended = true);
     }
 }
+
+/// A browser that stands in for an engine's, for tests of what the host does with browsers: it
+/// makes a frame when the test says so, and only while the host has asked it to show frames;
+/// it keeps what it was asked.
+#[derive(Clone, Default)]
+pub struct StandInScreen(Arc<Mutex<Shown>>);
+
+/// What a stand-in browser was asked.
+#[derive(Default)]
+pub struct Shown {
+    /// The folder it was started with.
+    pub data: std::path::PathBuf,
+    /// Whether the host asks it for frames now.
+    pub showing: bool,
+    /// Each time the host asked it for frames, and each time it stopped asking.
+    pub shows: u32,
+    pub hides: u32,
+    /// The least time between frames the host last asked for.
+    pub every: Option<std::time::Duration>,
+    /// Frames it made: only while showing.
+    pub made: u32,
+    pub stopped: bool,
+    sink: Option<crate::browsers::FrameSink>,
+    ends: Option<Box<dyn FnOnce(Exit) + Send>>,
+}
+
+impl StandInScreen {
+    pub fn shown(&self) -> std::sync::MutexGuard<'_, Shown> {
+        self.0.lock().unwrap()
+    }
+
+    /// It makes `image` as its next frame, when the host is asking for frames.
+    pub fn makes(&self, image: &[u8]) {
+        let sink = {
+            let mut shown = self.shown();
+            if !shown.showing {
+                return;
+            }
+            shown.made += 1;
+            shown.sink.clone()
+        };
+        if let Some(sink) = sink {
+            sink(Bytes::copy_from_slice(image));
+        }
+    }
+
+    /// The engine ended by itself.
+    pub fn ends(&self, exit: Exit) {
+        let tell = self.shown().ends.take();
+        if let Some(tell) = tell {
+            tell(exit);
+        }
+    }
+}
+
+impl crate::browsers::Screen for StandInScreen {
+    fn show(&self, frames: crate::browsers::FrameSink) {
+        let mut shown = self.shown();
+        shown.showing = true;
+        shown.shows += 1;
+        shown.sink = Some(frames);
+    }
+
+    fn pace(&self, every: std::time::Duration) {
+        self.shown().every = Some(every);
+    }
+
+    fn hide(&self) {
+        let mut shown = self.shown();
+        shown.showing = false;
+        shown.hides += 1;
+        shown.sink = None;
+    }
+
+    fn size(&self) -> (u16, u16) {
+        (1280, 800)
+    }
+
+    fn process(&self) -> Option<u32> {
+        Some(5151)
+    }
+
+    fn stop(&self) {
+        {
+            let mut shown = self.shown();
+            shown.stopped = true;
+            shown.showing = false;
+            shown.sink = None;
+        }
+        self.ends(Exit::Code(0));
+    }
+
+    fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
+        self.shown().ends = Some(tell);
+    }
+}
+
+/// Starts every browser as a stand-in, each with its data folder in one folder, and keeps each.
+#[derive(Clone)]
+pub struct StandInBrowsers {
+    folder: std::path::PathBuf,
+    started: Arc<Mutex<Vec<StandInScreen>>>,
+}
+
+impl StandInBrowsers {
+    /// Browsers whose data folders are made in `folder`.
+    pub fn in_folder(folder: impl Into<std::path::PathBuf>) -> Self {
+        StandInBrowsers {
+            folder: folder.into(),
+            started: Arc::default(),
+        }
+    }
+
+    /// Every browser it started, in order.
+    pub fn started(&self) -> Vec<StandInScreen> {
+        self.started.lock().unwrap().clone()
+    }
+}
+
+impl crate::browsers::Browsers for StandInBrowsers {
+    fn data_folders(&self) -> Result<std::path::PathBuf, String> {
+        Ok(self.folder.clone())
+    }
+
+    fn start(&self, data: &std::path::Path) -> Result<Arc<dyn crate::browsers::Screen>, String> {
+        std::fs::create_dir_all(data).map_err(|why| why.to_string())?;
+        let screen = StandInScreen::default();
+        screen.shown().data = data.to_path_buf();
+        self.started.lock().unwrap().push(screen.clone());
+        Ok(Arc::new(screen))
+    }
+}

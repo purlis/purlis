@@ -1635,13 +1635,15 @@ fn start_on(
         .unwrap_or_else(|| held.chats().sessions().deal());
     let name = number.to_string();
     let start = start_of(name.clone())?;
-    let ready = start::ready_read(&start, held.root(), declared, launch).and_then(|ready| {
-        told_first(
-            ready,
-            start.profile.as_deref().unwrap_or_default(),
-            opening.message,
-        )
-    })?;
+    let ready = start::ready_read(&start, held.root(), declared, launch)
+        .map_err(|why| crate::asking::start_refused(held, why))
+        .and_then(|ready| {
+            told_first(
+                ready,
+                start.profile.as_deref().unwrap_or_default(),
+                opening.message,
+            )
+        })?;
     let chat = Chat {
         program: ready.program.clone(),
         args: Vec::new(),
@@ -7220,6 +7222,44 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_refused_sandboxed_codex_start_tells_the_window_and_its_asks_hold_one_sandbox_only_ask() {
+        // #2037 review: the refusal leaves the project's wait, and the window is told at once,
+        // so its one Ask stands without waiting for another event.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let plane = Plane::new();
+        let host = Pretend::default();
+        let planes = planes_on(&host);
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+        let told = Arc::new(AtomicUsize::new(0));
+        held.chats().tell_asks_moved_to({
+            let told = Arc::clone(&told);
+            Arc::new(move || {
+                told.fetch_add(1, Ordering::SeqCst);
+            })
+        });
+        let sandbox_only = || -> usize {
+            crate::asking::every_ask(&held)
+                .asks
+                .iter()
+                .filter(|one| one.source == crate::asking::AskSource::SandboxOnly)
+                .count()
+        };
+        assert_eq!(sandbox_only(), 0);
+
+        // What a refused sandboxed Codex start does: the core records the wait, and the start's
+        // refusal reaches the window through `start_refused`.
+        purlis_core::profilestore::sandbox_only::waits_on(held.root());
+        let why = crate::asking::start_refused(&held, "refused".to_owned());
+
+        assert_eq!(why, "refused");
+        assert_eq!(told.load(Ordering::SeqCst), 1, "the window was not told");
+        assert_eq!(sandbox_only(), 1);
+        purlis_core::profilestore::sandbox_only::dismiss(held.root());
+        assert_eq!(sandbox_only(), 0);
     }
 
     #[test]

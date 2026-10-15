@@ -207,9 +207,21 @@ fn no_host(why: &str) -> String {
     )
 }
 
+/// Where a browser view's frames go, each a JPEG image, whole (#2012). An empty one says the
+/// view has ended for good.
+pub type FrameSink = Box<dyn FnMut(bytes::Bytes) + Send>;
+
+/// What a view's stream is drawn into: a pane's terminal, as text, or a browser view's canvas,
+/// a whole frame at a time.
+#[derive(Clone)]
+enum Draws {
+    Text(Arc<Mutex<Sink>>),
+    Frames(Arc<Mutex<FrameSink>>),
+}
+
 /// What draws one view: the pane's sink, and where its stream stands.
 struct Drawing {
-    sink: Arc<Mutex<Sink>>,
+    sink: Draws,
     /// The host said the view ended for good.
     ended: bool,
     /// The view's current stream has ended.
@@ -319,7 +331,16 @@ impl HostLink {
 
     /// Draw view `view` with `sink`: its stream may already be here.
     fn draw(&self, view: u32, sink: Sink) {
-        let sink = Arc::new(Mutex::new(sink));
+        self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))));
+    }
+
+    /// Draw browser view `view`'s frames into `sink`, each whole (#2012): its stream may already
+    /// be here.
+    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink) {
+        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sink))));
+    }
+
+    fn draw_into(&self, view: u32, sink: Draws) {
         let waiting = {
             let mut views = lock(&self.shared.views);
             views.drawing.insert(
@@ -340,7 +361,7 @@ impl HostLink {
     }
 
     /// Stop drawing view `view`.
-    fn undraw(&self, view: u32) {
+    pub(crate) fn undraw(&self, view: u32) {
         let mut views = lock(&self.shared.views);
         views.drawing.remove(&view);
         views.waiting.remove(&view);
@@ -463,6 +484,16 @@ async fn take_views(mut views: Acceptor, shared: Arc<Shared>) {
 /// pane over.
 async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     let view = reader.view().0;
+    let frames = lock(&shared.views)
+        .drawing
+        .get(&view)
+        .and_then(|drawing| match &drawing.sink {
+            Draws::Frames(sink) => Some(Arc::clone(sink)),
+            Draws::Text(_) => None,
+        });
+    if let Some(sink) = frames {
+        return draw_frames_from(reader, &shared, &sink).await;
+    }
     let again = reader.epoch().0 > 1;
     let mut text = Utf8Stream::default();
     if again {
@@ -489,6 +520,42 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     }
 }
 
+/// Draw one stream of a browser view (#2012): each whole frame handed over as it completes,
+/// and acknowledged once handed. A stream after the first starts on a whole frame too: the
+/// host's snapshot is the latest frame.
+async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<Mutex<FrameSink>>) {
+    let view = reader.view().0;
+    let mut frames = purlis_session_protocol::view::frames::Frames::default();
+    while let Some(Ok(chunk)) = reader.next().await {
+        let bytes = match chunk {
+            Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
+        };
+        let Ok(whole) = frames.push(&bytes) else {
+            break;
+        };
+        for frame in whole {
+            if frame.format == purlis_session_protocol::view::frames::JPEG
+                && !frame.image.is_empty()
+            {
+                (lock(sink))(frame.image);
+            }
+        }
+        if reader.ack(bytes.len()).await.is_err() {
+            break;
+        }
+    }
+    let finish = lock(&shared.views)
+        .drawing
+        .get_mut(&view)
+        .is_some_and(|drawing| {
+            drawing.drained = true;
+            drawing.ended
+        });
+    if finish {
+        finish_view(shared, view);
+    }
+}
+
 /// Hand `text` to view `view`'s pane, if it still has one.
 fn give(shared: &Shared, view: u32, text: String) {
     if text.is_empty() {
@@ -497,7 +564,10 @@ fn give(shared: &Shared, view: u32, text: String) {
     let sink = lock(&shared.views)
         .drawing
         .get(&view)
-        .map(|drawing| Arc::clone(&drawing.sink));
+        .and_then(|drawing| match &drawing.sink {
+            Draws::Text(sink) => Some(Arc::clone(sink)),
+            Draws::Frames(_) => None,
+        });
     if let Some(sink) = sink {
         (lock(&sink))(text);
     }
@@ -510,13 +580,15 @@ fn finish_view(shared: &Shared, view: u32) {
         match views.drawing.get_mut(&view) {
             Some(one) if !one.finished => {
                 one.finished = true;
-                Some(Arc::clone(&one.sink))
+                Some(one.sink.clone())
             }
             _ => None,
         }
     };
-    if let Some(sink) = sink {
-        (lock(&sink))(ENDED.to_owned());
+    match sink {
+        Some(Draws::Text(sink)) => (lock(&sink))(ENDED.to_owned()),
+        Some(Draws::Frames(sink)) => (lock(&sink))(bytes::Bytes::new()),
+        None => {}
     }
 }
 
@@ -869,6 +941,8 @@ impl SessionHost for HostedSessions {
         let attached = match link.call(Command::AttachView {
             program,
             kind: ViewKind::Terminal,
+            role: None,
+            rate: None,
         })? {
             Answer::Attached(attached) => attached,
             other => return Err(format!("the session host answered a view with {other:?}")),

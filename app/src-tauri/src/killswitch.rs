@@ -559,6 +559,8 @@ pub async fn stop_every_agent(app: tauri::AppHandle) -> Result<u32, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let planes = app.state::<crate::planes::Planes>();
         let stopped = planes.stop_every_agent(Actor::Window);
+        // Every browser too (#2012): its engine's whole process group ends.
+        crate::browsers::stop_every_browser(&app);
         let _ = app.emit(CHANGED, planes.is_stopped());
         stopped.map(|count| u32::try_from(count).unwrap_or(u32::MAX))
     })
@@ -589,6 +591,7 @@ pub fn hear(app: &tauri::AppHandle) {
         let planes = told.state::<crate::planes::Planes>();
         if moved == Moved::Stopped {
             planes.end_every_chat();
+            crate::browsers::stop_every_browser(&told);
         }
         let _ = told.emit(CHANGED, planes.is_stopped());
     }) {
@@ -603,6 +606,7 @@ pub fn hear(app: &tauri::AppHandle) {
     // A stop written while the app was coming up, which the watch's first look caught.
     if planes.is_stopped() {
         planes.end_every_chat();
+        crate::browsers::stop_every_browser(app);
     }
 }
 

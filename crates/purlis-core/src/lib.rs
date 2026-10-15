@@ -61,6 +61,8 @@ pub mod doctor;
 pub mod doing;
 /// The terminal engine, from the crate that holds it without the rest of the core (#1995).
 pub use purlis_terminal::engine;
+#[cfg(unix)]
+pub mod browsers;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;

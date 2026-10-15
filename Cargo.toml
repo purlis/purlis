@@ -29,6 +29,7 @@ purlis-terminal = { path = "crates/terminal" }
 # The session host (`purlisd`): its socket, credentials and the protocol it serves, linked by the
 # window and by `purlis serve` without the rest of the core (#1997).
 purlis-host = { path = "crates/host" }
+purlis-browser-engine = { path = "crates/browser-engine" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

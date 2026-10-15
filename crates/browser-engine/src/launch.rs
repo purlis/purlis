@@ -34,6 +34,9 @@ use crate::install::Ready;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReachProxy(pub SocketAddr);
 
+/// The size of a browser's page, in CSS pixels: what its frames are painted at (#2012).
+pub const PAGE_SIZE: (u16, u16) = (1280, 800);
+
 /// One engine's start.
 #[derive(Debug, Clone)]
 pub struct Launch {
@@ -89,6 +92,7 @@ impl Launch {
             "--remote-debugging-pipe".into(),
             data_dir,
             "--headless".into(),
+            format!("--window-size={},{}", PAGE_SIZE.0, PAGE_SIZE.1).into(),
             format!("--proxy-server=http://{proxy}").into(),
             "--proxy-bypass-list=<-loopback>".into(),
             format!("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE {proxy_host}").into(),

@@ -178,6 +178,31 @@ pub fn create(
     machine: &MachineSettings,
     now: u64,
 ) -> Result<Made, String> {
+    make(homes, name, kind, Some(machine), now)
+}
+
+/// **Makes the profile `name` of the harness `kind` for sandboxed chats only** (#2037, ruled
+/// 2026-10-15): a folder of its own, with nothing imported, since its settings are purlis's,
+/// and no sign-in until its harness's own sign-in is run in it. The record, or the sentence
+/// saying why not; a refusal leaves nothing behind.
+pub fn create_sandbox_only(
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    now: u64,
+) -> Result<Made, String> {
+    make(homes, name, kind, None, now)
+}
+
+/// [`create`], with its settings imported from `machine`'s, or, with none, a profile for
+/// sandboxed chats only ([`create_sandbox_only`]).
+fn make(
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    machine: Option<&MachineSettings>,
+    now: u64,
+) -> Result<Made, String> {
     if !crate::profiles::name_ok(name) {
         return Err(format!(
             "'{}' cannot be a profile's name: use letters, digits, '-' and '_', starting with a \
@@ -222,7 +247,7 @@ pub fn create(
                 }
                 None => None,
             };
-            let from = machine.of(kind);
+            let from = machine.and_then(|machine| machine.of(kind));
             let copied = match &from {
                 Some(from) => import_into(allowed, from, &folder, &config)?,
                 None => Copied::default(),
@@ -239,6 +264,7 @@ pub fn create(
             imported: from.map(|from| Imported { at: now, from }),
             sign_in: None,
             pinned: None,
+            sandbox_only: machine.is_none(),
             rest: Map::new(),
         };
         store.profiles.push(record.clone());
@@ -272,6 +298,12 @@ pub fn import(
             return Err(format!(
                 "'{name}' is the harness's own folder, adopted in place, so its settings are \
                  already the machine's. There is nothing to import."
+            ));
+        }
+        if record.sandbox_only {
+            return Err(format!(
+                "'{name}' is a profile for sandboxed chats only, and its settings are purlis's, \
+                 so nothing is imported into it."
             ));
         }
         let (_, allowed) = harness_of(&record.harness)?;
@@ -461,6 +493,49 @@ fn own_folder(homes: &Homes, record: &MachineProfile) -> Result<PathBuf, String>
         return Err(refused());
     }
     Ok(folder)
+}
+
+/// **The Codex home a wrapped chat on the sandbox-only profile `name` runs in** (#2037), as the
+/// kernel names it: `folder`, where it is exactly `<profiles>/<name>/config` with no `..` in it,
+/// neither it nor the profile's folder is a link, both are folders this user owns, and the
+/// profile's folder sits directly in `profiles`. `None` for anything else, and the chat is not
+/// started.
+pub fn sandbox_home(profiles: &Path, name: &str, folder: &Path) -> Option<PathBuf> {
+    #[cfg(unix)]
+    let me = Some(rustix::process::getuid().as_raw());
+    #[cfg(not(unix))]
+    let me = None;
+    sandbox_home_of(profiles, name, folder, me)
+}
+
+/// [`sandbox_home`], for the user `me` where the system has users.
+fn sandbox_home_of(profiles: &Path, name: &str, folder: &Path, me: Option<u32>) -> Option<PathBuf> {
+    if !crate::profiles::name_ok(name)
+        || folder
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        || folder != profiles.join(name).join(CONFIG)
+    {
+        return None;
+    }
+    let ours = |path: &Path| {
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if me != Some(meta.uid()) {
+                return None;
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = me;
+        meta.file_type().is_dir().then_some(())
+    };
+    let profile = profiles.join(name);
+    ours(&profile)?;
+    ours(folder)?;
+    let (dir, found) = (profiles.canonicalize().ok()?, folder.canonicalize().ok()?);
+    (found == dir.join(name).join(CONFIG)).then_some(found)
 }
 
 /// Where `allowed`'s settings go in a profile whose `config_env` is `config`: under the folder

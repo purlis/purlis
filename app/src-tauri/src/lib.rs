@@ -31,6 +31,7 @@ mod autosave;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browsers;
 mod changes;
 mod chats;
 mod clipath;
@@ -602,7 +603,16 @@ async fn close_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<(), String
     // holds the project's turn throughout, so an open of it waits until it has let go.
     off_the_window("letting go of the project", move || {
         use tauri::Manager as _;
+        let root = app
+            .state::<Planes>()
+            .held(&plane)
+            .ok()
+            .map(|held| held.root().to_path_buf());
         app.state::<Planes>().closing(&plane)?.finish();
+        // The browsers the window started in it end with it (#2012): none is left with no tab.
+        if let Some(root) = root {
+            browsers::let_go_of(&app, &root);
+        }
         Ok(())
     })
     .await
@@ -1589,7 +1599,8 @@ fn start_chat_in(
         // The person's new chat, from the window's picker (#2071).
         made: purlis_core::sandbox::Made::Window,
     };
-    let ready = purlis_core::start::ready(&start, root)?;
+    let ready = purlis_core::start::ready(&start, root)
+        .map_err(|why| crate::asking::start_refused(held, why))?;
     let chat = Chat {
         program: ready.program.clone(),
         // What the RECORD keeps: the profile's own words, without charter's. A resume
@@ -2934,14 +2945,16 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
         // The event log, opened as the host first holds a project (#2003).
         let kept = sessionhost::Kept::on_this_machine();
-        purlis_host::Hosting::kept(
-            &place.credentials,
-            purlis_host::FromTheWindow(sessionhost::launched),
-            purlis_host::Terminals,
-            sessionhost::HookChannels(kept.clone()),
-            hostedconfinement::ConfinesHere,
+        purlis_core::browsers::given_to(
+            purlis_host::Hosting::kept(
+                &place.credentials,
+                purlis_host::FromTheWindow(sessionhost::launched),
+                purlis_host::Terminals,
+                sessionhost::HookChannels(kept.clone()),
+                hostedconfinement::ConfinesHere,
+            )
+            .recording_with(kept),
         )
-        .recording_with(kept)
     })
 }
 
@@ -3255,6 +3268,10 @@ pub fn run() {
             {
                 let host = sessionhost::SessionHost::default();
                 host.start();
+                // The person's browsers run in it too (#2012).
+                app.manage(std::sync::Arc::new(browsers::WindowBrowsers::new(
+                    host.connection(),
+                )));
                 app.manage(host);
             }
             // The person's forge sign-ins, for the window's own forge calls (#1816).

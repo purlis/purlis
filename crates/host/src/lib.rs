@@ -40,6 +40,8 @@
 //! socket.
 
 #[cfg(unix)]
+mod browsers;
+#[cfg(unix)]
 mod confining;
 #[cfg(unix)]
 mod hearing;
@@ -54,6 +56,8 @@ mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
 
+#[cfg(unix)]
+pub use browsers::{Browsers, FrameSink, NoBrowsers, Screen, THUMBNAIL_EVERY};
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfine};
 #[cfg(unix)]
@@ -83,9 +87,9 @@ pub const READY: &str = "ready";
 /// When the window's binary was started as its session host ([`SERVE_FOR_THE_WINDOW`]), serve
 /// at the place `place` names until the window closes this process's standard input, holding
 /// its programs and projects in what `hosting` gives (which composes each start, hears each held
-/// project's hooks and starts each chat's confinement), and give the code to exit with;
-/// otherwise `None`, before anything is read or opened. `hosting` is given the place, whose
-/// credentials folder is where the host keeps its kill switch ([`Hosting::kept`]).
+/// project's hooks, starts each chat's confinement and starts its browsers), and give the code
+/// to exit with; otherwise `None`, before anything is read or opened. `hosting` is given the
+/// place, whose credentials folder is where the host keeps its kill switch ([`Hosting::kept`]).
 ///
 /// The window is this process's parent, and every chat it runs is below it, so a peer below it
 /// is inside a chat ([`Window`]). The ready line goes to standard output and what the host has
@@ -115,17 +119,12 @@ pub fn serve_for_the_window_if_asked(
     })
 }
 
-/// Serve at `place` until this process is ended, as `purlis serve` does, composing each start
-/// with `compose`: no window started it, so its programs run below the host alone. The exit code
-/// is what a failure to start gives.
+/// Serve at `place` until this process is ended, as `purlis serve` does, holding the programs
+/// `hosting` makes: no window started it, so its programs run below the host alone. The exit
+/// code is what a failure to start gives.
 #[cfg(unix)]
-pub fn serve_alone(place: &Place, compose: impl Compose) -> i32 {
-    run(
-        place,
-        None,
-        Hosting::keeping_its_switch_in(&place.credentials, compose),
-        std::future::pending(),
-    )
+pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i32 {
+    run(place, None, hosting(place), std::future::pending())
 }
 
 #[cfg(unix)]

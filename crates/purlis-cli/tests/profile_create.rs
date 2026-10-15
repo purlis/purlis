@@ -152,3 +152,41 @@ fn a_chat_may_not_make_a_profile() {
     );
     assert!(!machine.folder("work").exists());
 }
+
+#[test]
+fn a_profile_for_sandboxed_chats_only_is_made_with_nothing_imported() {
+    // #2037, ruled 2026-10-15: what a sandboxed Codex chat runs on.
+    let machine = Machine::new();
+    write(
+        &machine.path("claude-settings").join("settings.json"),
+        "{\"theme\": \"dark\"}\n",
+    );
+
+    let said = machine.said(&[
+        "profile",
+        "create",
+        "claude-sandbox",
+        "--harness",
+        "claude",
+        "--sandbox-only",
+    ]);
+
+    assert!(
+        said.contains("made the profile 'claude-sandbox' (claude)"),
+        "{said}"
+    );
+    let config = machine.folder("claude-sandbox").join("config");
+    assert!(config.is_dir());
+    assert_eq!(
+        fs::read_dir(&config).unwrap().count(),
+        0,
+        "something was imported"
+    );
+    // The store, under whichever spelling of purlis's folder the config home has.
+    let store = fs::read_dir(machine.path("config-home"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .find_map(|dir| fs::read_to_string(dir.path().join("profiles.json")).ok())
+        .expect("the store");
+    assert!(store.contains("\"sandbox_only\": true"), "{store}");
+}

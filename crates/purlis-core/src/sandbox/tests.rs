@@ -1127,6 +1127,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::profilestore::DIR),
+            // The data folders of the browsers the session host runs (#2012).
+            Homes::charter_data(&machine(Os::Linux))
+                .expect("a data home")
+                .join(crate::datahome::BROWSERS),
             // The session host's socket folder (#1997), where the host itself takes it.
             crate::hostsocket::socket_for(None)
                 .parent()
@@ -1177,6 +1181,53 @@ fn no_chat_reads_or_writes_the_folders_of_this_machines_profiles() {
             wrapped
                 .iter()
                 .any(|it| it.path == profiles && it.access == Access::ReadWrite),
+            "{harness}: {wrapped:?}"
+        );
+    }
+}
+
+#[test]
+fn no_chat_reads_or_writes_the_data_folders_of_the_browsers_the_session_host_runs() {
+    // A running browser's data folder holds its engine's profile: the cookies and storage of
+    // every site the person opens in it (#2012). A chat neither reads nor writes any of them.
+    let browsers = Homes::charter_data(&machine(Os::MacOs))
+        .expect("a data home")
+        .join(crate::datahome::BROWSERS);
+    let (_plane, denied) = denied_with(None, Os::MacOs);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&browsers),
+        "{:?}",
+        denied.paths
+    );
+    let named = super::real(&browsers).display().to_string();
+    let settings = claude::settings(&compiled(denied.clone(), Os::MacOs)).expect("compiles");
+    for key in ["denyRead", "denyWrite"] {
+        assert!(
+            settings.sandbox["filesystem"][key]
+                .as_array()
+                .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+            "{key}: {}",
+            settings.sandbox["filesystem"][key]
+        );
+    }
+    for (harness, wrapped) in [
+        (
+            "codex",
+            codex::wrap(&compiled(denied.clone(), Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+        (
+            "opencode",
+            opencode::wrap(&compiled(denied, Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+    ] {
+        assert!(
+            wrapped
+                .iter()
+                .any(|it| it.path == browsers && it.access == Access::ReadWrite),
             "{harness}: {wrapped:?}"
         );
     }

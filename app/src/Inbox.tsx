@@ -548,7 +548,7 @@ function shapeOf(
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
     ignore: waits && onIgnore !== undefined,
-    go: ask.source !== "sign-in",
+    go: ask.source !== "sign-in" && ask.source !== "sandbox-only",
   };
 }
 
@@ -611,6 +611,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "workspace-removal": "Asks you to remove a workspace",
   "proposed-change": "Proposes a change for you to apply",
   "sign-in": "Asks you to sign a profile in",
+  "sandbox-only": "Asks you to make a sandbox-only profile",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };

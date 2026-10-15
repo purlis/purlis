@@ -1407,6 +1407,7 @@ function App() {
       // state that would then have to be cleared when a project arrives.
       newChat: () => undefined,
       newShell: () => undefined,
+      newBrowser: () => undefined,
       split: () => undefined,
       closePane: () => undefined,
       closeTab: () => undefined,

@@ -150,6 +150,8 @@ fn every_command() -> Vec<Command> {
         Command::AttachView {
             program: CHAT.into(),
             kind: session::ViewKind::Terminal,
+            role: None,
+            rate: None,
         },
         Command::DetachView {
             program: CHAT.into(),
@@ -236,6 +238,17 @@ fn every_command() -> Vec<Command> {
         Command::StopAll,
         Command::KillSwitch,
         Command::Rearm,
+        // A browser, started and watched: the window's alone (1.6).
+        Command::StartProgram(Box::new(session::StartProgram::of(
+            "01J9PRJCT00000000000000000",
+            session::ProgramKind::Browser,
+        ))),
+        Command::AttachView {
+            program: CHAT.into(),
+            kind: session::ViewKind::Browser,
+            role: Some(session::ViewRole::Focused),
+            rate: None,
+        },
         // A write in the event log the host holds: the window's alone (1.8).
         Command::Record {
             entry: serde_json::json!({ "entry": "kill_switch_read" }),
@@ -276,6 +289,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "stop_all",
             "kill_switch",
             "rearm",
+            "start_program",
+            "attach_view",
             "record",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
