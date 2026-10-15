@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { problems } from "./adr-amendments.mjs";
+import { amendmentFile, problems } from "./adr-amendments.mjs";
 
 function adrs(files) {
   const root = mkdtempSync(join(tmpdir(), "adr-amendments-"));
@@ -40,7 +40,7 @@ test("a dated amendment section added to an ADR is refused, naming the file to w
   const found = problems(dir);
   assert.equal(found.length, 1);
   assert.match(found[0], /^0067-a-sandbox\.md:11: /);
-  assert.match(found[0], /docs\/adr\/0067\/2026-10-16-<slug>\.md/);
+  assert.match(found[0], / docs\/adr\/0067\/2026-10-16-something-new\.md,/);
 });
 
 test("each of the words an amendment's heading starts with is refused", () => {
@@ -63,7 +63,7 @@ test("each of the words an amendment's heading starts with is refused", () => {
 
 test("an ADR with no folder yet is told to start one", () => {
   const dir = adrs({ "0090-x.md": "# X\n\n## Amended (2026-10-14): a task reports\n" });
-  assert.match(problems(dir)[0], /docs\/adr\/0090\/2026-10-14-<slug>\.md/);
+  assert.match(problems(dir)[0], / docs\/adr\/0090\/2026-10-14-a-task-reports\.md,/);
 });
 
 test("a heading that is not an amendment, or a dated line in a code block, passes", () => {
@@ -76,11 +76,33 @@ test("a heading that is not an amendment, or a dated line in a code block, passe
       "```markdown",
       "## Amended 2026-10-14: an example in a fence",
       "```",
-      "### Amended 2026-10-07: a sub-section is not this rule's",
+      "#### Amended 2026-10-07: a heading this deep is part of its section",
       "",
     ].join("\n"),
   });
   assert.deepEqual(problems(dir), []);
+});
+
+test("a dated amendment written as a sub-section is refused too", () => {
+  const dir = adrs({
+    "0064-x.md": "# X\n\n## The decision\n\n### Amended 2026-10-15: `dispatch_read` is allowed (#2084)\n",
+  });
+  const found = problems(dir);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /^0064-x\.md:5: .* docs\/adr\/0064\/2026-10-15-dispatch-read-is-allowed-2084\.md,/);
+});
+
+test("the file an amendment is to be written as is named from its heading", () => {
+  assert.equal(amendmentFile("Amended (2026-10-06, #1342): a block is never a dead end"), "2026-10-06-a-block-is-never-a-dead-end.md");
+  assert.equal(amendmentFile("Ruled (V21, 2026-09-30)"), "2026-09-30-ruled-v21.md");
+  assert.equal(
+    amendmentFile("Amended (2026-10-14, qw387): a chat's workspace create is made whole — ruled by the operator, 2026-10-15"),
+    "2026-10-14-a-chat-s-workspace-create-is-made-whole.md",
+  );
+  assert.equal(
+    amendmentFile("Amended (2026-10-14): what a sparse checkout leaves out, the clone guard does not count at all"),
+    "2026-10-14-what-a-sparse-checkout-leaves-out-the-clone-guard.md",
+  );
 });
 
 test("an amendments folder with no ADR of its number is refused", () => {
