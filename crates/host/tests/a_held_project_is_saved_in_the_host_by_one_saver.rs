@@ -3,7 +3,7 @@
 
 //! A project's saving in the session host (#2002), spoken over the session protocol on an
 //! in-memory link: the window asks the host to save a project it holds, the host runs its
-//! binary's saver for it, once, and tells every subscriber what each look did. The saver goes
+//! binary's saver for it, once, and tells every window that holds it what each look did. The saver goes
 //! on when the window's link ends without a word, and stops when the window says so. The saver
 //! here is a stand-in; the app's own, over a real project, is the app's behaviour suite.
 
@@ -112,7 +112,7 @@ async fn a_held_project_is_saved_by_one_saver_however_often_it_is_asked() {
 }
 
 #[tokio::test]
-async fn what_each_look_did_reaches_every_subscriber() {
+async fn what_each_look_did_reaches_every_window_that_holds_the_project() {
     let host = a_host();
     let (client, mut events) = a_window(&host).await;
     client.subscribe(Default::default()).await.unwrap();
@@ -137,6 +137,43 @@ async fn what_each_look_did_reaches_every_subscriber() {
             }) if project == PROJECT
         ),
         "{told:?}"
+    );
+}
+
+#[tokio::test]
+async fn each_clone_of_a_project_has_its_own_saver_and_only_its_window_hears_its_looks() {
+    // #2178: one project id, two folders, each held on a link of its own.
+    let host = a_host();
+    let (first, mut first_told) = a_window(&host).await;
+    first.subscribe(Default::default()).await.unwrap();
+    let clone = Host {
+        hosting: host.hosting.clone(),
+        savers: host.savers.clone(),
+        project: tempfile::tempdir().unwrap(),
+    };
+    let (second, mut second_told) = a_window(&clone).await;
+    second.subscribe(Default::default()).await.unwrap();
+
+    first.start_saving(PROJECT).await.unwrap();
+    second.start_saving(PROJECT).await.unwrap();
+    // The last saver started is the second clone's.
+    host.savers.looks(Looked {
+        saved: true,
+        moved_tree: false,
+    });
+
+    let started = host.savers.started();
+    assert_eq!(started.len(), 2, "each clone has a saver of its own");
+    assert_ne!(started[0].1, started[1].1);
+    assert!(matches!(
+        timeout(PATIENCE, second_told.recv()).await,
+        Ok(Some(Told::Pushed(Pushed::Saving { saved: true, .. })))
+    ));
+    assert!(
+        timeout(Duration::from_millis(200), first_told.recv())
+            .await
+            .is_err(),
+        "the first clone's window was told the second's look"
     );
 }
 

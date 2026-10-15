@@ -493,6 +493,92 @@ async fn a_held_project_is_not_moved_by_another_hold() {
 }
 
 #[tokio::test]
+async fn two_clones_of_one_project_each_held_on_a_link_of_its_own_both_start_chats() {
+    // #2178: one window, two clones of a project (one id, two folders), each on its own link.
+    let linked = linked().await;
+    linked.hold().await;
+    let clone = tempfile::tempdir().unwrap();
+    let (other, _views, _events) = another_window(&linked.hosting).await;
+    other
+        .hold_project(PROJECT, clone.path().to_str().unwrap())
+        .await
+        .expect("the second clone is held on its own link");
+
+    let first = linked.client.start_program_told(a_harness()).await.unwrap();
+    let second = other.start_program_told(a_harness()).await.unwrap();
+
+    let ran = linked.runs.ran();
+    assert_eq!(
+        ran[0].0.args,
+        [linked.project.path().as_os_str().to_owned(), "1".into()]
+    );
+    assert_eq!(
+        ran[1].0.args,
+        [clone.path().as_os_str().to_owned(), "1".into()],
+        "each clone deals its own numbers, as its own record keeps them"
+    );
+    let listed = linked.client.list().await.unwrap();
+    let path_of = |program: &str| {
+        listed
+            .iter()
+            .find(|chat| chat.chat == program)
+            .and_then(|chat| chat.project_path.clone())
+    };
+    assert_eq!(
+        path_of(&first.program).as_deref(),
+        linked.project.path().to_str()
+    );
+    assert_eq!(path_of(&second.program).as_deref(), clone.path().to_str());
+}
+
+#[tokio::test]
+async fn a_hold_on_another_link_never_moves_where_this_links_project_is() {
+    let linked = linked().await;
+    linked.hold().await;
+    let clone = tempfile::tempdir().unwrap();
+    let (other, _views, _events) = another_window(&linked.hosting).await;
+    other
+        .hold_project(PROJECT, clone.path().to_str().unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(linked.client.deal(PROJECT).await.unwrap(), 1);
+    linked.client.start_program(a_harness()).await.unwrap();
+    other.let_go_of_project(PROJECT).await.unwrap();
+    linked.client.start_program(a_harness()).await.unwrap();
+
+    for (spec, _) in linked.runs.ran() {
+        assert_eq!(spec.args[0], linked.project.path().as_os_str());
+    }
+    assert_eq!(
+        linked.client.deal(PROJECT).await.unwrap(),
+        4,
+        "this link's numbers are its clone's alone"
+    );
+}
+
+#[tokio::test]
+async fn a_link_that_holds_neither_of_two_clones_is_refused_rather_than_given_one() {
+    let linked = linked().await;
+    linked.hold().await;
+    let clone = tempfile::tempdir().unwrap();
+    let (other, _views, _events) = another_window(&linked.hosting).await;
+    other
+        .hold_project(PROJECT, clone.path().to_str().unwrap())
+        .await
+        .unwrap();
+    let (third, _views, _events) = another_window(&linked.hosting).await;
+
+    let refused = third.start_program(a_harness()).await.unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_PROJECT)
+    );
+    assert!(linked.runs.ran().is_empty());
+}
+
+#[tokio::test]
 async fn ending_the_host_ends_every_program_it_runs() {
     let linked = linked().await;
     linked.hold().await;
