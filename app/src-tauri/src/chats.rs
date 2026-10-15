@@ -215,8 +215,9 @@ pub type Trusting = Box<dyn Fn(Sandboxing<'_>) -> Result<(), String> + Send + Sy
 ///
 /// A chat that runs no harness (a shell) has [`purlis_core::eventlog::NONE`] for a harness and,
 /// unless it names one, a profile; a harness chat whose record names no profile does not know
-/// its profile, and says so. Nothing resolves a model choice yet (ADR 0087), so the model's
-/// source, provider and model are not known.
+/// its profile, and says so. Its model source is its profile's sign-in kind, which the start
+/// sets (ADR 0087 as amended, #2036); no model is chosen yet, so the provider and the model are
+/// not known.
 pub(crate) fn run_attributes(
     chat: &Chat,
     harness: Option<Harness>,
@@ -1342,6 +1343,7 @@ impl Chats {
             // A chat on a profile is an agent, never the operator's shell.
             false,
             why,
+            ready.sign_in.as_ref(),
         )?;
         self.floorless_at(session, ready.floorless.clone());
         Ok(session)
@@ -2205,6 +2207,8 @@ impl Chats {
             size,
             operator_shell,
             why,
+            // A chat on no profile has no sign-in of a profile's.
+            None,
         )
         // Where the floor could not be applied, its tab's sandbox mark says why (#2071, Q2).
         .inspect(|session| self.floorless_at(*session, floorless))
@@ -2278,6 +2282,7 @@ impl Chats {
         size: Size,
         operator_shell: bool,
         why: Why,
+        sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<u32, String> {
         // A project being let go of starts nothing more (#1949): its close may be running on
         // another thread than this start.
@@ -2288,6 +2293,30 @@ impl Chats {
         // its folder in the meantime is refused, and a folder that is going is no place to
         // start one (#1472).
         let _starting = self.going.starting_in(chat.cwd.as_deref())?;
+        // The persona it runs as is the one its environment names, which the core's start put
+        // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
+        // names none runs as the project's default.
+        let runs_as = env
+            .iter()
+            .find(|(name, _)| name == purlis_core::active::PERSONA_ENV)
+            .map(|(_, persona)| persona.clone())
+            .or_else(|| purlis_core::start::persona_for_a_new_chat(&self.project));
+        // A key or a cloud's credentials, read for this one start under the vault's own rules
+        // for the persona the chat runs as, before anything is recorded or started: a vault
+        // that does not open to it starts nothing, and leaves no event and no hook behind
+        // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
+        // starts inherit them.
+        let handed = match sign_in.filter(|s| !s.credentials.is_empty()) {
+            Some(sign_in) => purlis_core::profilesignin::read(
+                &purlis_core::secrets::Ctx::new(
+                    &self.project,
+                    purlis_core::secrets::Env::from_process(),
+                ),
+                runs_as.as_deref(),
+                &sign_in.credentials,
+            )?,
+            None => purlis_core::profilesignin::Handed::default(),
+        };
         // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
         // per clone and device (V43: a copy's was minted again before `put_back` got it),
         // when no record holds one, on this device, and a chat put back or started again keeps
@@ -2385,14 +2414,6 @@ impl Chats {
         // rest on (M8.3) — then the state hooks, then charter's own words: a chat's recorded
         // arguments may end in a positional prompt that nothing may come after.
         // `purlis_core::start::Ready::command_line` is the one place that order is decided.
-        // The persona it runs as is the one its environment names, which the core's start put
-        // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
-        // names none runs as the project's default.
-        let runs_as = env
-            .iter()
-            .find(|(name, _)| name == purlis_core::active::PERSONA_ENV)
-            .map(|(_, persona)| persona.clone())
-            .or_else(|| purlis_core::start::persona_for_a_new_chat(&self.project));
         let (hooks, armed) = self.state_hooks(
             harness,
             chat.cwd.as_deref(),
@@ -2400,14 +2421,16 @@ impl Chats {
             sandbox,
             runs_as.as_deref(),
         )?;
-        // What the run this start begins is, for its `run.started` (ADR 0066, #868).
-        let attributes = run_attributes(
+        // What the run this start begins is, for its `run.started` (ADR 0066, #868), its model
+        // source its profile's sign-in kind (ADR 0087 as amended, #2036).
+        let mut attributes = run_attributes(
             chat,
             harness,
             runs_as.as_deref(),
             sandbox.is_some(),
             conversation.as_deref(),
         );
+        attributes.model_source = sign_in.map(|s| s.kind.word().to_owned());
         // What a wrapped chat needs running beside it, started before it and kept for as long
         // as it is open: charter's egress proxy and its own temp directory (ADR 0067 §2).
         // Its proxy tells the app each host it refuses, by the proxy's word (#1663): the
@@ -2554,6 +2577,7 @@ impl Chats {
                     env_pass: operator_env_pass(&self.project),
                     operator_shell,
                     git_hooks: self.git_hooks_for(harness),
+                    handed,
                 },
                 &|session| {
                     announced.store(session, std::sync::atomic::Ordering::SeqCst);
@@ -7350,6 +7374,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         }
     }
 
@@ -9732,6 +9757,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         }
     }
 
@@ -10560,6 +10586,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         };
 
         let session = chats
@@ -10578,6 +10605,124 @@ pub(crate) mod tests {
         assert_eq!(open[0].harness, Some(Harness::ClaudeCode));
         assert_eq!(open[0].profile.as_deref(), Some("claude-work"));
         let _ = chats.close(session);
+    }
+    #[test]
+    fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_nowhere() {
+        // #2036, as ruled on 2026-10-15 (#2151): a cloud's credentials reach its chat's
+        // program at start, read from a vault its persona may use, and nothing purlis records
+        // or shows holds them. (Which start reaches here is `profilesignin`'s to decide.)
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let ctx = purlis_core::secrets::Ctx::new(&root, purlis_core::secrets::Env::of(&[]));
+        let file = ctx.vaults_dir().join("aws.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, r#"{"id": "the-aws-id-for-this-test"}"#).unwrap();
+        std::fs::create_dir_all(ctx.local_registry().parent().unwrap()).unwrap();
+        std::fs::write(
+            ctx.local_registry(),
+            serde_json::json!({"vaults": {"aws": {
+                "provider": "plain-file",
+                "persona": "dev",
+                "config": {"file": file.to_string_lossy()},
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+        let host = Pretend::default();
+        let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), root.clone());
+        let ready = purlis_core::start::Ready {
+            env: vec![(
+                purlis_core::active::PERSONA_ENV.to_owned(),
+                "dev".to_owned(),
+            )],
+            sign_in: Some(purlis_core::profilesignin::AtStart {
+                kind: purlis_core::harness_declaration::SignInKind::Cloud,
+                billed_to: "your cloud account · team".to_owned(),
+                credentials: vec![(
+                    "AWS_ACCESS_KEY_ID".to_owned(),
+                    purlis_core::profilesignin::Reference::parse("vault:aws/id").unwrap(),
+                )],
+            }),
+            ..a_claude_ready()
+        };
+
+        chats
+            .start_ready(&chat("/bin/sh", "dev 1", None), &ready, SIZE)
+            .expect("it starts");
+
+        let opening = host.openings().pop().expect("opened");
+        assert_eq!(opening.handed.names(), ["AWS_ACCESS_KEY_ID"]);
+        assert_eq!(
+            purlis_core::profilesignin::handed_onto(Vec::new(), &opening.handed),
+            [(
+                std::ffi::OsString::from("AWS_ACCESS_KEY_ID"),
+                std::ffi::OsString::from("the-aws-id-for-this-test")
+            )],
+            "the program is handed the value"
+        );
+        assert!(
+            !format!("{opening:?}").contains("the-aws-id-for-this-test"),
+            "nothing that shows the opening holds it"
+        );
+        assert!(
+            !format!("{:?}", chats.record()).contains("the-aws-id-for-this-test"),
+            "nor the chat's record"
+        );
+    }
+
+    #[test]
+    fn a_chat_whose_profile_names_a_key_in_a_vault_its_persona_may_not_read_starts_nothing() {
+        // #2036: a profile never widens who reads a vault. The read is made before anything
+        // is opened, so a refused one leaves no session, no tab and no value anywhere.
+        let chats = Chats::new();
+        let chat = Chat {
+            program: "/bin/sh".to_owned(),
+            name: "ide.7".to_owned(),
+            profile: Some("work".to_owned()),
+            ..Default::default()
+        };
+        let ready = purlis_core::start::Ready {
+            program: "/bin/sh".to_owned(),
+            command: vec!["-c".to_owned(), "sleep 30".to_owned()],
+            args: Vec::new(),
+            env: Vec::new(),
+            cwd: None,
+            harness: Some(Harness::ClaudeCode),
+            declared: None,
+            session: None,
+            how: purlis_core::reopen::Reopened::Fresh(
+                purlis_core::reopen::Fresh::NoConversationRecorded,
+            ),
+            plugins: std::collections::BTreeMap::new(),
+            sandbox: None,
+            unsandboxed: None,
+            floorless: None,
+            notices: Vec::new(),
+            agents_md: Vec::new(),
+            sign_in: Some(purlis_core::profilesignin::AtStart {
+                kind: purlis_core::harness_declaration::SignInKind::ApiKey,
+                billed_to: "your key · work".to_owned(),
+                credentials: vec![(
+                    "ANTHROPIC_API_KEY".to_owned(),
+                    purlis_core::profilesignin::Reference::parse("vault:providers/anthropic")
+                        .unwrap(),
+                )],
+            }),
+        };
+
+        let refused = chats
+            .start_ready(
+                &chat,
+                &ready,
+                Size {
+                    columns: 80,
+                    rows: 24,
+                },
+            )
+            .unwrap_err();
+
+        assert!(refused.contains("providers"), "{refused}");
+        assert!(chats.open_now().is_empty(), "nothing was started");
     }
     #[test]
     fn the_board_is_told_the_harness_the_profile_declared_before_the_program_starts() {
@@ -10637,6 +10782,7 @@ pub(crate) mod tests {
             floorless: None,
             notices: Vec::new(),
             agents_md: Vec::new(),
+            sign_in: None,
         };
 
         let session = chats.start_ready(&chat, &ready, SIZE).unwrap();

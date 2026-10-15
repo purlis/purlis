@@ -94,6 +94,10 @@ A subscription (a Claude plan, ChatGPT, Copilot and their like) is the harness's
   the person's vault. The profile names them by vault reference, and the adapter hands them to the
   chat at start, through ADR 0087 §7's path: the proxy where the harness takes a base URL, its
   process environment otherwise, under the key's approval setting (V15).
+- **Ruled 2026-10-15 (#2151):** cloud credentials go into the harness's process environment,
+  since a proxy that swaps one header cannot carry a cloud's signed requests; #2151 opens that
+  path. A key keeps waiting for the key proxy (#822). ADR 0087's *A model choice is a profile
+  plus a model* records how.
 - **They are sent only to devices the person owns.** A runner not marked owned never gets one.
 - **A local model** (`local`) has nothing to sign in.
 
@@ -128,7 +132,8 @@ acknowledgement is given.
   becomes: a subscription profile is signed in on the runner through the harness's own flow,
   shown in the window, and the desktop's sign-in never travels.
 - **§3's unattended acknowledgement** stands as it is (§6 above).
-- How a model choice names a profile is recorded with #2036.
+- How a model choice names a profile is recorded with #2036, in ADR 0087's *A model choice is a
+  profile plus a model*.
 
 ## ADR 0078, amended
 

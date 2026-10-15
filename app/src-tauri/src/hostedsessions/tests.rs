@@ -95,6 +95,7 @@ fn a_shell(script: &str) -> Opening {
         env_pass: Vec::new(),
         operator_shell: false,
         git_hooks: None,
+        handed: Default::default(),
     }
 }
 
@@ -130,6 +131,29 @@ fn only_the_switch_set_to_one_runs_chats_in_the_host() {
     for off in [None, Some(""), Some("0"), Some("true"), Some("yes")] {
         assert!(!switched_on(off), "{off:?}");
     }
+}
+
+#[test]
+fn a_chat_its_profile_hands_credentials_is_never_started_in_the_host() {
+    // #2036: what a profile hands its chat is set on a program the window starts, and never
+    // goes over the link.
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(Arc::new(Connection::default()), &root, None);
+    let announced = Mutex::new(Vec::new());
+    let handed = Opening {
+        handed: purlis_core::profilesignin::Handed::of(vec![(
+            "AWS_REGION".to_owned(),
+            "a-region-for-this-test".to_owned(),
+        )]),
+        ..a_shell("true")
+    };
+
+    let refused = sessions
+        .open(None, &handed, &|id| announced.lock().unwrap().push(id))
+        .unwrap_err();
+
+    assert_eq!(refused, crate::hostedsessions::NOT_HANDED_IN_THE_HOST);
+    assert!(announced.lock().unwrap().is_empty());
 }
 
 #[test]

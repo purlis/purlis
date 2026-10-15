@@ -41,7 +41,7 @@ export function ProfileMeta({
 }: {
   /** A picker row, or a waiting chat's approval (`NeedsApproval`, #1246), which has no default. */
   row: Pick<ProfileRow, "kind" | "shown" | "source" | "approval"> &
-    Partial<Pick<ProfileRow, "is_default">>;
+    Partial<Pick<ProfileRow, "is_default" | "model" | "billed_to">>;
   /** The id the radio's `aria-describedby` names, when the row does not name its own. */
   id?: string;
   /** What the surface adds, after the picker's own detail. */
@@ -56,6 +56,9 @@ export function ProfileMeta({
       <span className="from">{row.source}</span>
       {row.is_default && <span className="what">default</span>}
       {row.approval && <span className="what needs-approval">{row.approval}</span>}
+      {/* A model choice is this profile and a model, always shown with who pays (#2036). */}
+      {row.model && <span className="what">model: {row.model}</span>}
+      {row.billed_to && <span className="what">billed to {row.billed_to}</span>}
       {children}
     </span>
   );

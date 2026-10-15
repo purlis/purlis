@@ -326,15 +326,17 @@ with the fallback purlis uses, or unknown, which reads as no. The capability car
 _Avoid_: capability (unqualified, which is an extension's), feature, support
 
 **Model choice**:
-The model a chat runs on: the model, its provider, and the **model source** it is reached
-through. Set on the chat, or given as a default by its persona, its workspace or the project, and
-fixed for a run. It is always shown with the account it is billed to (ADR 0087).
+The **profile** a chat runs on and a model: the profile says how it signs in and who is billed,
+and the model, until one can be chosen, is the harness's default. Set on the chat, or given as a
+default by its persona, its workspace or the project, and fixed for a run. It is always shown
+with what it is billed to (ADR 0087, amended by #2036).
 _Avoid_: model config, model settings
 
 **Model source**:
-How a chat reaches its model: the harness's own sign-in (the `login` source), a **key** the user
-keeps in a vault, or a **local** model. None of them passes through purlis's servers. A
-subscription's sign-in is the harness's, kept in the chat's **profile**, and purlis never reads,
+How a chat reaches its model: its **profile**'s sign-in kind. A `subscription` signed in through
+the harness's own flow, an `api-key` or `cloud` credentials the person keeps in a vault and the
+profile names by reference, or a `local` model. None of them passes through purlis's servers. A
+subscription's sign-in is the harness's, kept in the profile's folder, and purlis never reads,
 copies, stores or relays it (ADR 0087, ADR 0095).
 _Avoid_: provider (that is who serves the model), backend, BYO (for the whole of it)
 

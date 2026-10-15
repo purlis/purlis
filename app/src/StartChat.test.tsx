@@ -77,6 +77,58 @@ describe("a persona's one-line description (#1460)", () => {
   });
 });
 
+describe("a model choice is a profile and a model, billed to someone (#2036)", () => {
+  const rows: Partial<StartOptions> = {
+    profiles: [
+      {
+        ...ONE.profiles[0],
+        model: "the harness's default",
+        billed_to: "whatever Claude Code is signed in with · claude",
+      },
+      {
+        ...ONE.profiles[0],
+        name: "work",
+        source: "this machine",
+        is_default: false,
+        model: "the harness's default",
+        billed_to: "your key · Work Anthropic key",
+      },
+      {
+        ...ONE.profiles[0],
+        name: "team",
+        kind: "codex",
+        shown: "codex",
+        source: "this machine",
+        is_default: false,
+        model: "the harness's default",
+        billed_to: "your cloud account · team Azure",
+      },
+    ],
+  };
+
+  it("shows every choice's profile, model and what it is billed to", () => {
+    show(rows);
+
+    for (const [name, billed] of [
+      ["claude", "whatever Claude Code is signed in with · claude"],
+      ["work", "your key · Work Anthropic key"],
+      ["team", "your cloud account · team Azure"],
+    ]) {
+      const row = screen.getByRole("radio", { name });
+      expect(row).toHaveAccessibleDescription(new RegExp(`model: the harness's default`));
+      expect(row).toHaveAccessibleDescription(new RegExp(`billed to ${billed}`));
+    }
+  });
+
+  it("says nothing of a bill for an answer that carries none", () => {
+    show();
+
+    expect(screen.getByRole("radio", { name: "claude" })).not.toHaveAccessibleDescription(
+      /billed to/,
+    );
+  });
+});
+
 describe("a persona's own profile (#1445)", () => {
   const codex = { ...ONE.profiles[0], name: "codex", kind: "codex", shown: "codex" };
   const work = { ...ONE.profiles[0], name: "work", shown: "claude --work", is_default: false };

@@ -237,6 +237,7 @@ pub fn create(
             folders: Folders { config, data },
             adopted: None,
             imported: from.map(|from| Imported { at: now, from }),
+            sign_in: None,
             rest: Map::new(),
         };
         store.profiles.push(record.clone());

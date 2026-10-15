@@ -219,6 +219,10 @@ impl SessionHost for Sessions {
                     ),
                 },
             );
+        // What the chat's profile hands its program, set last (#2036).
+        let mut spec = spec;
+        spec.env =
+            purlis_core::profilesignin::handed_onto(std::mem::take(&mut spec.env), &opening.handed);
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let engine = AlacrittyEngine::new(opening.size, SCROLLBACK as usize);
@@ -540,7 +544,41 @@ mod tests {
             env_pass: Vec::new(),
             operator_shell: false,
             git_hooks: None,
+            handed: Default::default(),
         }
+    }
+
+    #[test]
+    fn what_a_profile_hands_its_chat_is_in_its_programs_environment_and_nowhere_it_is_shown() {
+        // #2036: a key profile's chat gets its key at start, in its program's environment.
+        let sessions = Sessions::new();
+        let handed = Opening {
+            handed: purlis_core::profilesignin::Handed::of(vec![(
+                "ANTHROPIC_API_KEY".to_owned(),
+                "handed-at-this-start".to_owned(),
+            )]),
+            ..opening("printf 'got:%s.' \"$ANTHROPIC_API_KEY\"; read line")
+        };
+        assert!(
+            !format!("{handed:?}").contains("handed-at-this-start"),
+            "what records or shows an opening never holds the value"
+        );
+
+        let chat = sessions
+            .open(None, &handed, &|_| {})
+            .expect("the session opens");
+        let (_view, seen) = watching(&sessions, chat);
+        until_seen(&seen, "got:handed-at-this-start.");
+
+        let shell = sessions
+            .open(
+                None,
+                &opening("printf 'shell:%s.' \"$ANTHROPIC_API_KEY\"; read line"),
+                &|_| {},
+            )
+            .expect("the session opens");
+        let (_view, seen) = watching(&sessions, shell);
+        until_seen(&seen, "shell:.");
     }
 
     /// The text a view of `id` is sent, from now on.

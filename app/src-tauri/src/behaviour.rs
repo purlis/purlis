@@ -157,6 +157,7 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
         env_pass: Vec::new(),
         operator_shell: false,
         git_hooks: None,
+        handed: Default::default(),
     }
 }
 
