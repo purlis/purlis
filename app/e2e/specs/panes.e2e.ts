@@ -12,6 +12,13 @@ import { harnessesRunning } from "../processes.js";
  * app with the fake harness in every pane.
  */
 
+/** How many sessions the stress test below keeps running at once. */
+const FIFTY = 50;
+
+/** How long one tab opened may take to bring its session up, and the stress test's time for
+ *  each session it opens. */
+const EACH_SESSION_MS = 20_000;
+
 /** One pane, as a found element. */
 type Pane = WebdriverIO.Element;
 
@@ -151,12 +158,23 @@ describe("the window", () => {
     await until(pane, "you said: from the first pane");
   });
 
-  it("keeps fifty sessions running at once, and stays usable", async () => {
-    for (let opened = 0; harnessesRunning() < 50 && opened < 60; opened++) {
+  it("keeps fifty sessions running at once, and stays usable", async function () {
+    // **Each session is waited for on its own** (#2157): every tab opened must bring its own
+    // harness up within `EACH_SESSION_MS`, and a start that does not says which one it was.
+    // The whole test's time is that allowance for each session it can open, never one fixed
+    // total that a slower runner, or a slower start, crosses with nothing wrong.
+    this.timeout(FIFTY * EACH_SESSION_MS);
+    while (harnessesRunning() < FIFTY) {
+      const before = harnessesRunning();
       await pressAndStart("New tab");
+      await browser.waitUntil(() => harnessesRunning() > before, {
+        timeout: EACH_SESSION_MS,
+        interval: 100,
+        timeoutMsg: `the tab opened with ${before} sessions running started no session of its own in ${EACH_SESSION_MS / 1000} s`,
+      });
     }
 
-    expect(harnessesRunning()).toBe(50);
+    expect(harnessesRunning()).toBe(FIFTY);
     const [pane] = await panes();
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
