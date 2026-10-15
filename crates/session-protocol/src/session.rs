@@ -96,7 +96,11 @@ use crate::view::{Limits, Views};
 /// 1.5 added the kill switch held by the host (#2001, ADR 0071): `stop_all`, `rearm` (the
 /// window's alone) and `kill_switch`, each answered with the switch's state (`kill_switch`), and
 /// the `stopped` refusal of a start while every agent is stopped.
-pub const VERSION: Version = Version { major: 1, minor: 5 };
+///
+/// 1.8 added the event log written in the host (#2003): `record` carries one write the window
+/// decided to the host, which writes it in the log it alone holds while chats run in it, in the
+/// order the window sent them.
+pub const VERSION: Version = Version { major: 1, minor: 8 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -143,6 +147,9 @@ pub const NOT_STARTED: &str = "not_started";
 /// Every agent is stopped by the kill switch, and nothing starts until the window re-arms it
 /// (1.5, ADR 0071); or a re-arm that could not be kept, so every agent stays stopped.
 pub const STOPPED: &str = "stopped";
+/// The host keeps no event log, or could not write this in it durably, for a reason its `why`
+/// gives (1.8): what the window asked recorded is not, and the act it records does not go on.
+pub const NOT_RECORDED: &str = "not_recorded";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -154,6 +161,7 @@ pub const REFUSALS: &[&str] = &[
     NOT_ALLOWED,
     NOT_STARTED,
     STOPPED,
+    NOT_RECORDED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -260,6 +268,11 @@ pub enum Command {
     Rearm,
     /// Whether every agent is stopped (1.5): answered [`Answer::KillSwitch`].
     KillSwitch,
+    /// Write `entry` in the event log the host holds, durably, and answer once it is kept
+    /// (1.8): one write the window decided (the run a start begins, a person's grant, a kill
+    /// switch line), in the shape the binary's log reads. The window's alone
+    /// ([`crate::grants::Power::Record`]), in the order it sent them.
+    Record { entry: serde_json::Value },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -784,6 +797,7 @@ wire_words!(Command {
     StopAll => "stop_all",
     Rearm => "rearm",
     KillSwitch => "kill_switch",
+    Record => "record",
 });
 
 impl Command {
@@ -813,6 +827,7 @@ impl Command {
             | Command::ChangeReach { .. }
             | Command::ReachOf { .. } => Power::Confine,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
+            Command::Record { .. } => Power::Record,
         }
     }
 }
@@ -1217,6 +1232,8 @@ enum Lane {
     Heard(u64),
     /// The commands about one confinement (1.4).
     Confinement(String),
+    /// What the window asks the event log to write, in the order it asked (1.8).
+    Record,
 }
 
 impl Lane {
@@ -1252,6 +1269,8 @@ impl Lane {
             Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
             // The replies to one line keep their order: a command's frames, one after another.
             Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
+            // A run's start before what is written under it.
+            Command::Record { .. } => Some(Lane::Record),
         }
     }
 }

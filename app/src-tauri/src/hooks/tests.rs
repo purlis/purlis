@@ -537,10 +537,10 @@ fn every_hook_call_the_channel_hears_is_one_event_in_the_hosts_log() {
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     hooks.board().opened(3, Some(Harness::ClaudeCode), None);
     let socket = hooks.socket().expect("a socket");
     let token = hooks.token_for(3);
@@ -1680,10 +1680,10 @@ fn a_touched_path_reaches_the_window_and_no_file_the_host_writes() {
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     let (tx, heard) = std::sync::mpsc::channel();
     let tx = Mutex::new(tx);
     hooks.when_touching(Arc::new(move |touching| {
@@ -1771,10 +1771,10 @@ fn what_a_chat_is_doing_reaches_the_window_from_its_hooks_and_no_file_the_host_w
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     let (tx, told) = std::sync::mpsc::channel();
     let tx = Mutex::new(tx);
     hooks.doings().tell_to(Arc::new(move |doing| {
@@ -2149,10 +2149,10 @@ fn a_line_spooled_while_no_host_listened_is_recorded_when_the_project_is_opened_
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     hooks.drain_spool();
 
     let kinds: Vec<String> = eventlog::read(&logs)
@@ -2190,10 +2190,10 @@ fn a_closed_chats_spool_is_drained_into_the_log_and_its_key_does_not_outlive_it(
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     let spooling = spool::dir_for(&at.socket);
     let keys = || std::fs::read_to_string(spooling.join(spool::KEYS)).expect("the keys");
     let (closing, staying) = (hooks.token_for(7), hooks.token_for(8));
@@ -2305,10 +2305,10 @@ fn a_running_chats_spooled_line_is_recorded_once_the_chat_is_heard_from_again() 
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     let token = hooks.token_for(7);
     // The chat's hook did not hear from this host in time and spooled its call.
     spool::append(
@@ -2373,10 +2373,10 @@ fn the_run_a_clear_begins_is_told_with_the_conversation_it_moved_to() {
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
     let logs = dir.path().join("events");
-    hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+    hooks.record_into(Events::here(Recorder::new(
         Log::open(&logs, "DEVICE").expect("a log"),
         ArgsKey::open(&logs).expect("a key"),
-    ))));
+    )));
     let (tx, rx) = std::sync::mpsc::channel();
     let tx = Mutex::new(tx);
     hooks.when_it_follows(Arc::new(move |chat, id, run| {

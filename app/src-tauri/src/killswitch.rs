@@ -372,7 +372,25 @@ fn record(events: &crate::hooks::Events, config: &Path, told: &mpsc::Receiver<No
                 Noted::Wrote(entry) => wrote.push(entry),
             }
         }
-        let mut recorder = events.lock().unwrap_or_else(PoisonError::into_inner);
+        // The session host writes the log while chats run in it (#2003): each line and each
+        // read goes to it, and it reads the journal from the same machine store.
+        let Some(log) = events.held() else {
+            for line in wrote {
+                let line = purlis_core::eventlog::Entry::KillSwitchWrote { line };
+                if let Err(why) = events.record(line) {
+                    tracing::warn!(
+                        "purlis: a kill-switch line was not recorded in the event log ({why})"
+                    );
+                }
+            }
+            if read && let Err(why) = events.record(purlis_core::eventlog::Entry::KillSwitchRead) {
+                tracing::warn!(
+                    "purlis: the kill switch's journal was not recorded in the event log ({why})"
+                );
+            }
+            continue;
+        };
+        let mut recorder = log.lock().unwrap_or_else(PoisonError::into_inner);
         // Each on its own, so one that fails never keeps another from being recorded.
         for entry in wrote {
             if let Err(why) = recorder.kill_switch_wrote(entry, config) {
@@ -731,10 +749,10 @@ mod tests {
     /// An event log in `data`, for a switch to record into.
     fn a_log_in(data: &Path) -> crate::hooks::Events {
         use purlis_core::eventlog::{ArgsKey, Log, Recorder};
-        Arc::new(Mutex::new(Recorder::new(
+        crate::hooks::Events::here(Recorder::new(
             Log::open(data, "01J9ZZDEVICE0000000000000").expect("a log"),
             ArgsKey::open(data).expect("a key"),
-        )))
+        ))
     }
 
     /// The kill-switch events in the log in `data` once there are `n` of them, as (kind,

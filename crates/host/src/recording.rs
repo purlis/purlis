@@ -1,0 +1,77 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! The event log, and what is kept as a chat's program ends, written in the session host
+//! (#2003): the binary's, built on the core, as [`crate::Compose`] is, so this crate links none
+//! of it.
+//!
+//! **The host is the event log's one writer while chats run in it** (ADR 0066, ADR 0068). What
+//! the window decides (the run a start begins, a person's grant, a kill switch line) reaches the
+//! host as `record` ([`Record::record`]) and is written there; what a held project's hooks say
+//! is recorded by the binary's hook channel ([`crate::Hear`]), on the thread that heard it.
+//!
+//! **A program's end is kept here, window or no window** ([`Record::ended`]). The host is the
+//! first to know a program ended and why: whether it ended by itself, or by the host's own
+//! act (the kill switch, a quit, a stop, a close). It tells the binary at once, which records
+//! the end of the chat's run in the log, drains what its hooks spooled, and, where no window
+//! holds the project to decide it, ends the dispatch the chat worked as one that went without
+//! its report.
+
+use std::path::Path;
+
+use purlis_session_protocol::session::{Exit, ProgramKind};
+
+/// The host's own act that ended a program, where one did: the highest of them where several
+/// did, in this order (ADR 0076 §2, D-1084-1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Stopped {
+    /// A close forgot it, and ended it.
+    Closed,
+    /// A stop ended it, and kept it.
+    Operator,
+    /// The host ended every program as it stopped: the window quit.
+    Quit,
+    /// The kill switch.
+    Killed,
+}
+
+/// A program the host ran has ended.
+pub struct Ended<'a> {
+    /// The project it ran in, by its stable id.
+    pub project: &'a str,
+    /// Where that project is on this machine.
+    pub project_path: &'a Path,
+    /// Its number in the project.
+    pub number: u32,
+    /// What kind of program it was.
+    pub kind: ProgramKind,
+    /// How it ended.
+    pub exit: Exit,
+    /// The host's own act that ended it, or `None` for a program that ended by itself.
+    pub stopped: Option<Stopped>,
+    /// Whether a window held the project as it ended, and so decides what its end moves.
+    pub watched: bool,
+}
+
+/// Writes the event log, and keeps what a program's end leaves: the binary's (#2003).
+pub trait Record: Send + Sync + 'static {
+    /// Writes `entry`, one write the window decided, in the event log, durably: or why it is
+    /// not, in a sentence.
+    fn record(&self, entry: serde_json::Value) -> Result<(), String>;
+
+    /// A program the host ran has ended ([`Ended`]): called once, as it ends, off the host's
+    /// runtime.
+    fn ended(&self, ended: &Ended<'_>);
+}
+
+/// A host whose binary keeps no event log: every `record` is refused with a sentence, and a
+/// program's end is kept nowhere.
+pub struct RecordsNothing;
+
+impl Record for RecordsNothing {
+    fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
+        Err("this session host keeps no event log, so nothing was recorded".into())
+    }
+
+    fn ended(&self, _ended: &Ended<'_>) {}
+}

@@ -16,8 +16,16 @@
 //! back the same way and is written on the hook's connection. A line carries no token past the
 //! listener ([`super::read_delivered`] takes it off), so none crosses to the window.
 //!
+//! **The host writes the event log; the window decides what a line moves** (#2003). A report, a
+//! tool call and a refused commit are recorded in the event log, which the host alone writes
+//! while chats run in it. The window hears each with its own hearing, and what that hearing
+//! would have written (with what the board made of the line) is carried back with its reply
+//! ([`carry`], [`Replied::Record`]); the host writes it on the thread that heard the line, so a
+//! line its hook also spooled, and the host's drain recorded first, is recorded once (#952).
+//!
 //! **Each kind keeps its shape.** A report, a tool call and a refused commit are answered once
-//! the window has taken them, or not, within a hook's wait ([`A_RELAYED_LINE_IS_TAKEN_WITHIN`]);
+//! the window has taken them and the host has recorded them durably, or not, within a hook's
+//! wait ([`A_RELAYED_LINE_IS_TAKEN_WITHIN`]);
 //! an ask waits for its answer as long as the window takes, and the window is told when its
 //! asker hangs up ([`Heard::AskerGone`]); a permission ask is held in the window until it is
 //! answered there, its hook goes away or its deadline passes; a brokered `secret exec` runs in
@@ -25,6 +33,7 @@
 //! to hear, because no window holds the project, is answered as an app with nothing to answer
 //! it would answer.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,6 +45,7 @@ use super::{
     Answer, Ask, ChatTokens, CommitRefused, Doing, Hearing, Report, SandboxBlocked, SessionSaved,
     StartedByHand, ToolCall, Touching, TurnOutput,
 };
+use crate::eventlog::Entry;
 use crate::harness::model::Choice;
 use crate::secrets::brokered;
 
@@ -85,8 +95,11 @@ pub enum Heard {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Replied {
-    /// A report, a tool call or a refused commit is recorded.
+    /// A report, a tool call or a refused commit is taken, with nothing for the host to record.
     Taken,
+    /// A report, a tool call or a refused commit is taken, and this is what the host records of
+    /// it in the event log (#2003): what the window's hearing would have written itself.
+    Record(Entry),
     /// It is not, for `why`: its hook spools it where it may.
     NotTaken { why: String },
     /// An ask's answer.
@@ -124,6 +137,18 @@ pub struct Relaying {
     hand_on: HandOn,
     next: AtomicU64,
     waiting: Mutex<HashMap<u64, Awaiting>>,
+    /// Where what the window carries back is recorded, where this host keeps the event log.
+    keeping: Option<Keeping>,
+}
+
+/// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
+/// looks at a chat's hook spool soon after one of its lines comes, as the window did.
+pub struct Keeping {
+    /// Writes one entry in the event log, durably: the hook is told its line is taken only once
+    /// this answers `Ok`.
+    pub record: Box<dyn Fn(Entry) -> io::Result<()> + Send + Sync + 'static>,
+    /// Chat `chat` was heard from: its spool is looked at soon after.
+    pub heard_from: Box<dyn Fn(u32) + Send + Sync + 'static>,
 }
 
 /// What a line handed on waits for.
@@ -137,10 +162,21 @@ enum Awaiting {
 impl Relaying {
     /// Hands each line on through `hand_on`.
     pub fn new(hand_on: HandOn) -> Arc<Relaying> {
+        Self::built(hand_on, None)
+    }
+
+    /// Hands each line on through `hand_on`, and records what the window carries back of each
+    /// in the event log through `keeping` (#2003).
+    pub fn keeping(hand_on: HandOn, keeping: Keeping) -> Arc<Relaying> {
+        Self::built(hand_on, Some(keeping))
+    }
+
+    fn built(hand_on: HandOn, keeping: Option<Keeping>) -> Arc<Relaying> {
         Arc::new(Relaying {
             hand_on,
             next: AtomicU64::new(1),
             waiting: Mutex::default(),
+            keeping,
         })
     }
 
@@ -203,8 +239,12 @@ impl Relaying {
         self.waiting().remove(&id);
     }
 
-    /// Hands `heard` on and waits for the window to say it took it.
-    fn taken(&self, heard: &Heard) -> io::Result<()> {
+    /// Hands chat `chat`'s line `heard` on and waits for the window to say it took it, and
+    /// records what the window carried back of it.
+    fn taken(&self, chat: u32, heard: &Heard) -> io::Result<()> {
+        if let Some(keeping) = &self.keeping {
+            (keeping.heard_from)(chat);
+        }
         let Some((id, replied)) = self.exchange(heard) else {
             return Err(io::Error::other(NOBODY_HEARS));
         };
@@ -212,11 +252,25 @@ impl Relaying {
         self.done(id);
         match reply {
             Ok(Replied::Taken) => Ok(()),
+            Ok(Replied::Record(entry)) => self.record(entry),
             Ok(Replied::NotTaken { why }) => Err(io::Error::other(why)),
             Ok(other) => Err(io::Error::other(format!(
                 "the window replied {other:?} to a line it was to take"
             ))),
             Err(_) => Err(io::Error::other("the window did not take it in time")),
+        }
+    }
+
+    /// Records `entry`, what the window carried back of the line this thread is hearing: not
+    /// where its spooled copy was recorded first (#952), and as nothing where this host keeps
+    /// no event log, which a hook is told is taken as an app with no log tells it.
+    fn record(&self, entry: Entry) -> io::Result<()> {
+        if super::recorded_already() {
+            return Ok(());
+        }
+        match &self.keeping {
+            Some(keeping) => (keeping.record)(entry),
+            None => Ok(()),
         }
     }
 
@@ -348,7 +402,7 @@ impl Relaying {
         Hearing {
             each: {
                 let relaying = to(self);
-                Box::new(move |report| relaying.taken(&Heard::Report(report)))
+                Box::new(move |report| relaying.taken(report.chat, &Heard::Report(report)))
             },
             answer: {
                 let relaying = to(self);
@@ -364,11 +418,11 @@ impl Relaying {
             },
             refused: {
                 let relaying = to(self);
-                Box::new(move |refused| relaying.taken(&Heard::Refused(refused)))
+                Box::new(move |refused| relaying.taken(refused.chat, &Heard::Refused(refused)))
             },
             tool: {
                 let relaying = to(self);
-                Box::new(move |call| relaying.taken(&Heard::Tool(call)))
+                Box::new(move |call| relaying.taken(call.chat, &Heard::Tool(call)))
             },
             permission: {
                 let relaying = to(self);
@@ -457,14 +511,16 @@ impl Heeding {
     /// Hears the line handed on as `id`, and replies through `reply`: returns once it is heard,
     /// which for an ask, a permission ask or a `secret exec` is once it is answered or ended.
     pub fn hear(&self, id: u64, heard: Heard, reply: Reply) {
-        let taken = |recorded: io::Result<()>| match recorded {
-            Ok(()) => Replied::Taken,
-            Err(why) => Replied::NotTaken {
+        // What the hearing took, with what it would have recorded carried back to the host.
+        let taken = |heard: (io::Result<()>, Option<Entry>)| match heard {
+            (Ok(()), Some(entry)) => Replied::Record(entry),
+            (Ok(()), None) => Replied::Taken,
+            (Err(why), _) => Replied::NotTaken {
                 why: why.to_string(),
             },
         };
         match heard {
-            Heard::Report(report) => reply(taken((self.hearing.each)(report))),
+            Heard::Report(report) => reply(taken(carrying(|| (self.hearing.each)(report)))),
             Heard::Ask { connection, ask } => {
                 let answer = (self.hearing.answer)(connection, ask);
                 lock(&self.gone).remove(&connection);
@@ -472,8 +528,10 @@ impl Heeding {
             }
             Heard::StartedByHand(notice) => (self.hearing.noticed)(notice),
             Heard::Saved(saved) => (self.hearing.saved)(saved),
-            Heard::Refused(refused) => reply(taken((self.hearing.refused)(refused))),
-            Heard::Tool(call) => reply(taken((self.hearing.tool)(call))),
+            Heard::Refused(refused) => {
+                reply(taken(carrying(|| (self.hearing.refused)(refused))));
+            }
+            Heard::Tool(call) => reply(taken(carrying(|| (self.hearing.tool)(call)))),
             Heard::Touching(touching) => (self.hearing.touching)(touching),
             Heard::Blocked(blocked) => (self.hearing.blocked)(blocked),
             Heard::Doing(doing) => (self.hearing.doing)(doing),
@@ -629,6 +687,36 @@ impl Drop for Frames {
     fn drop(&mut self) {
         let _ = self.flush();
     }
+}
+
+thread_local! {
+    /// What the line this thread's hearing hears has asked to be recorded, while the window
+    /// hears one the host handed on ([`carrying`]): `None` when no such line is being heard.
+    static CARRIED: RefCell<Option<Option<Entry>>> = const { RefCell::new(None) };
+}
+
+/// **Carries `entry` back to the host with the reply to the line this thread is hearing**
+/// (#2003): the window's hearing asks the event log for `entry` where it hears a line the host
+/// handed on, and the host, which writes the log, records it. `Err` hands `entry` back where no
+/// such line is being heard on this thread, or one was carried for it already: the window then
+/// writes it as it writes anything else.
+pub fn carry(entry: Entry) -> Result<(), Entry> {
+    CARRIED.with(|carried| match &mut *carried.borrow_mut() {
+        Some(slot @ None) => {
+            *slot = Some(entry);
+            Ok(())
+        }
+        _ => Err(entry),
+    })
+}
+
+/// Runs `hear` with a line being heard on this thread, and answers what it answered and the
+/// entry it asked to be recorded ([`carry`]).
+fn carrying<T>(hear: impl FnOnce() -> T) -> (T, Option<Entry>) {
+    CARRIED.with(|carried| *carried.borrow_mut() = Some(None));
+    let heard = hear();
+    let entry = CARRIED.with(|carried| carried.borrow_mut().take().flatten());
+    (heard, entry)
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

@@ -349,7 +349,17 @@ fn refresh_installed_plugin(binary: PathBuf, plugin: PathBuf) {
 /// The host's event log, opened once for the process (FD-9). A machine with no data home, or
 /// one whose data home is refused, runs without it and says why: every chat still works, and
 /// only the record of its hook calls is missing.
+///
+/// **Not opened while chats run in the session host** (#2003): the host writes it then, and the
+/// window hands it every write (`where_chats_run`), so the device has one writer.
 fn events() -> Option<hooks::Events> {
+    #[cfg(unix)]
+    if hostedsessions::chats_run_in_the_host() {
+        if let Some(dir) = purlis_core::eventlog::Recorder::dir_on_this_machine() {
+            let _ = EVENT_LOG.set(Ok(dir));
+        }
+        return None;
+    }
     let opened = purlis_core::eventlog::Recorder::open();
     let _ = EVENT_LOG.set(match &opened {
         Ok(recorder) => Ok(recorder.dir().to_path_buf()),
@@ -2922,13 +2932,16 @@ fn refuse_beside_the_old_app() {
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
+        // The event log, opened as the host first holds a project (#2003).
+        let kept = sessionhost::Kept::on_this_machine();
         purlis_host::Hosting::kept(
             &place.credentials,
             purlis_host::FromTheWindow(sessionhost::launched),
             purlis_host::Terminals,
-            sessionhost::HookChannels,
+            sessionhost::HookChannels(kept.clone()),
             hostedconfinement::ConfinesHere,
         )
+        .recording_with(kept)
     })
 }
 
@@ -2942,8 +2955,14 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
         tracing::info!("purlis: chats run in the session host on this launch");
         let connection = app.state::<sessionhost::SessionHost>().connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);
+        // The host writes the event log, and the window hands it each write (#2003).
+        let events = hooks::Events::in_the_host({
+            let connection = std::sync::Arc::clone(&connection);
+            move |entry| hostedsessions::record_in_the_host(&connection, &entry)
+        });
         // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
         return planes
+            .recording_events(Some(events))
             .running_sessions_on(std::sync::Arc::new(
                 move |_reporting, root: &std::path::Path| {
                     Box::new(hostedsessions::HostedSessions::new(

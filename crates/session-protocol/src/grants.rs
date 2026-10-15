@@ -30,6 +30,7 @@
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | |
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
+//! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -61,6 +62,9 @@
 //! - **A stop needs no human** (ADR 0078 §4, ADR 0071): it only removes power. Every scope may
 //!   send one but `editor`, which can make no agent act or stop (ADR 0081). `stop_all`, the
 //!   kill switch, is a stop like any other, and its state a read like `list`.
+//! - **Only the window writes in the event log through the host** (1.8). What it records is
+//!   what the window decided (a run begun, a person's grant), and the log is the audit's source
+//!   (ADR 0075): a scope that could write in it could record a person's act no person made.
 //! - **Only the window re-arms** (ADR 0071, 1.5). Any agent can run a command, so a re-arm any
 //!   other scope could send would put a person's power in every agent's hands. A `rearm` from
 //!   another scope is refused in words saying where a re-arm is made.
@@ -114,6 +118,8 @@ pub enum Power {
     Confine,
     /// `rearm` (1.5): lets programs start again after the kill switch.
     Rearm,
+    /// `record` (1.8): a write in the event log the host holds.
+    Record,
 }
 
 impl Scope {

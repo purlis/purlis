@@ -4786,10 +4786,10 @@ mod tests {
     /// started only once its opt-out is recorded (ADR 0067 §7).
     fn planes_recording_events(at: &Path) -> Planes {
         use purlis_core::eventlog::{ArgsKey, Log, Recorder};
-        let events = Arc::new(std::sync::Mutex::new(Recorder::new(
+        let events = crate::hooks::Events::here(Recorder::new(
             Log::open(at, "DEVICE").expect("a log"),
             ArgsKey::open(at).expect("a key"),
-        )));
+        ));
         planes().recording_events(Some(events))
     }
 

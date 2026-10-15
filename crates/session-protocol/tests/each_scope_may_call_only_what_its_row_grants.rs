@@ -236,6 +236,10 @@ fn every_command() -> Vec<Command> {
         Command::StopAll,
         Command::KillSwitch,
         Command::Rearm,
+        // A write in the event log the host holds: the window's alone (1.8).
+        Command::Record {
+            entry: serde_json::json!({ "entry": "kill_switch_read" }),
+        },
     ]
 }
 
@@ -272,6 +276,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "stop_all",
             "kill_switch",
             "rearm",
+            "record",
         ],
         Scope::Terminal | Scope::RemoteLink => &[
             "list",

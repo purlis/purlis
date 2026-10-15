@@ -344,3 +344,149 @@ impl Write for Shared {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// the event log is written in the host (#2003)
+// ---------------------------------------------------------------------------------------
+
+/// What the host's keeping was given: each entry it recorded, and each chat heard from.
+#[derive(Default)]
+struct Kept {
+    recorded: Mutex<Vec<Entry>>,
+    heard_from: Mutex<Vec<u32>>,
+}
+
+fn a_report_entry(chat: u32) -> Entry {
+    Entry::Report {
+        plane: "/planes/one".into(),
+        report: report(chat),
+        followed: crate::eventlog::Followed::No,
+        begun: None,
+    }
+}
+
+/// The window's own hearing, as the window's hooks hear in a project whose chats run in the
+/// host: what it would record of a report it carries back ([`carry`]), and what it hands back
+/// written nothing of its own.
+fn the_windows_carrying(window: &Arc<Window>) -> Hearing {
+    let (_, holding) = a_window();
+    let mut hearing = the_windows(window, &holding);
+    hearing.each = {
+        let window = Arc::clone(window);
+        Box::new(move |report| {
+            window.said(format!("report {}", report.chat));
+            match carry(a_report_entry(report.chat)) {
+                Ok(()) => Ok(()),
+                Err(_) => Err(io::Error::other("nothing carried it")),
+            }
+        })
+    };
+    hearing
+}
+
+/// A host's hearing over JSON to `window`'s, keeping the event log in `kept`.
+fn relayed_keeping(window: Hearing, kept: &Arc<Kept>) -> Hearing {
+    let heeding = Arc::new(Heeding::new(window));
+    let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    let relaying = Relaying::keeping(
+        {
+            let host = Arc::clone(&host);
+            Box::new(move |id, heard| {
+                let heard: Heard =
+                    serde_json::from_str(&serde_json::to_string(heard).unwrap()).unwrap();
+                let host = Arc::clone(&host);
+                let reply: Reply = Arc::new(move |replied: Replied| {
+                    let replied: Replied =
+                        serde_json::from_str(&serde_json::to_string(&replied).unwrap()).unwrap();
+                    let relaying = host.lock().unwrap().clone().unwrap();
+                    relaying.replied(id, replied);
+                });
+                heeding.hear(id, heard, reply);
+                true
+            })
+        },
+        Keeping {
+            record: {
+                let kept = Arc::clone(kept);
+                Box::new(move |entry| {
+                    kept.recorded.lock().unwrap().push(entry);
+                    Ok(())
+                })
+            },
+            heard_from: {
+                let kept = Arc::clone(kept);
+                Box::new(move |chat| kept.heard_from.lock().unwrap().push(chat))
+            },
+        },
+    );
+    *host.lock().unwrap() = Some(Arc::clone(&relaying));
+    relaying.hearing(Arc::new(ChatTokens::default()))
+}
+
+#[test]
+fn what_the_windows_hearing_would_record_is_recorded_in_the_host_and_its_hook_told_it_is_taken() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let host = relayed_keeping(the_windows_carrying(&window), &kept);
+
+    let taken = (host.each)(report(3));
+
+    assert!(taken.is_ok(), "{taken:?}");
+    assert_eq!(window.heard(), ["report 3"], "the window still hears it");
+    assert_eq!(*kept.recorded.lock().unwrap(), [a_report_entry(3)]);
+    assert_eq!(*kept.heard_from.lock().unwrap(), [3]);
+}
+
+#[test]
+fn a_line_whose_spooled_copy_the_hosts_drain_recorded_first_moves_the_window_and_is_not_recorded_again()
+ {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let host = relayed_keeping(the_windows_carrying(&window), &kept);
+
+    // As the host's listener holds it for a line the drain recorded first (#952).
+    let taken = {
+        let _already = super::super::RecordedAlready::held();
+        (host.each)(report(3))
+    };
+
+    assert!(taken.is_ok(), "{taken:?}");
+    assert_eq!(window.heard(), ["report 3"], "what it moves, it moves");
+    assert!(
+        kept.recorded.lock().unwrap().is_empty(),
+        "recorded once, from its spooled copy"
+    );
+}
+
+#[test]
+fn a_line_the_window_could_not_take_is_recorded_nowhere_and_its_hook_spools_it() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let (_, holding) = a_window();
+    let host = relayed_keeping(the_windows(&window, &holding), &kept);
+
+    let refused = (host.each)(report(13));
+
+    assert_eq!(
+        refused.expect_err("not taken").to_string(),
+        "the event log is full"
+    );
+    assert!(kept.recorded.lock().unwrap().is_empty());
+}
+
+#[test]
+fn an_entry_carried_with_no_line_being_heard_is_handed_back_to_be_written_as_anything_else_is() {
+    let entry = a_report_entry(3);
+
+    assert_eq!(carry(entry.clone()), Err(entry.clone()));
+    let ((), carried) = carrying(|| {
+        assert_eq!(carry(entry.clone()), Ok(()));
+        assert_eq!(
+            carry(entry.clone()),
+            Err(entry.clone()),
+            "one line carries one entry"
+        );
+    });
+    assert_eq!(carried, Some(entry.clone()));
+    assert_eq!(carry(entry.clone()), Err(entry), "not past the line");
+}

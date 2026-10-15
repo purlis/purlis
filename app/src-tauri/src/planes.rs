@@ -2158,7 +2158,7 @@ impl Planes {
     /// and each line of the kill switch's journal (#1375).
     pub fn recording_events(mut self, events: Option<hooks::Events>) -> Self {
         if let Some(events) = &events {
-            self.kill_switch.record_into(Arc::clone(events));
+            self.kill_switch.record_into(events.clone());
         }
         self.events = events;
         self
@@ -3373,7 +3373,7 @@ impl Planes {
             Hooks::deaf(id.clone())
         });
         if let Some(events) = &self.events {
-            hooks.record_into(Arc::clone(events));
+            hooks.record_into(events.clone());
             // What this project's hooks spooled while no host took their lines, before a chat
             // is started and issued a token (FD-30).
             hooks.drain_spool();
@@ -3417,12 +3417,19 @@ impl Planes {
         // can send its first hook line (ADR 0066, #834): a chat put back after a relaunch
         // carries on under its id, and its first event is `run.started {cause: reopen}`.
         if let Some(events) = &self.events {
-            let events = Arc::clone(events);
+            let events = events.clone();
             // The key the hook channel records this project's chats under.
             let root = id.root().to_path_buf();
             chats.when_a_run_begins(Box::new(move |session, run, cause, attributes| {
-                let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Err(why) = log.begin(&root, session, run, cause, attributes) {
+                let begun = events.record(purlis_core::eventlog::Entry::Begin {
+                    plane: root.clone(),
+                    number: session,
+                    chat: run.chat.to_owned(),
+                    run: run.run.to_owned(),
+                    cause,
+                    attributes: attributes.clone(),
+                });
+                if let Err(why) = begun {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");
                 }
             }));
@@ -3440,13 +3447,14 @@ impl Planes {
                     let (Some(events), Some(run)) = (&events, decided.run) else {
                         return Err("purlis's event log is not open on this machine".to_owned());
                     };
-                    let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-                    let event = log
-                        .trust(run, change, decided.harness, decided.persona)
+                    events
+                        .record(purlis_core::eventlog::Entry::Trust {
+                            chat: run.chat.to_owned(),
+                            run: run.run.to_owned(),
+                            kind: change.kind().to_owned(),
+                            body: change.body(decided.harness, decided.persona),
+                        })
                         .map_err(|why| format!("the event log refused it: {why}"))?;
-                    log.durable()
-                        .through(event.seq)
-                        .map_err(|why| format!("the event log could not keep it: {why}"))?;
                 }
                 if let Some(counted) = decided.counted {
                     purlis_core::sandbox::local::count(&project, counted)
@@ -3547,8 +3555,10 @@ impl Planes {
                     let changed = hooks::held_board(&board).exited(session, hooks::code_of(&exit));
                     // **Its sub-agents' runs end with its own** (ADR 0076 §6, #1084), in the
                     // end state and for the cause the host knows its run ended by: its own stop,
-                    // or the exit status. Never a hook line, which the chat writes.
-                    if let Some(events) = &events {
+                    // or the exit status. Never a hook line, which the chat writes. Where the
+                    // session host writes the event log, it records this as the program ends
+                    // there, window or no window (#2003).
+                    if let Some(log) = events.as_ref().and_then(hooks::Events::held) {
                         let held = me.get().and_then(std::sync::Weak::upgrade);
                         let by = the_host_s_stop(
                             every_agent.is_stopped(),
@@ -3559,7 +3569,7 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         let (state, cause) = how_its_run_ended(by, &exit);
-                        its_children_end(events, &events_root, session, state, cause);
+                        its_children_end(log, &events_root, session, state, cause);
                     }
                     // A persona chat that still owed its asking chat a report has ended
                     // without one: that chat is told it failed, now (#1443). Before the
@@ -4483,7 +4493,7 @@ fn the_host_s_stop(
 /// host for `by` where it was (ADR 0076 §2): a stop the host caused is `stopped` whatever the
 /// code says; otherwise code 0 is `completed` and anything else, a signal included, `failed`,
 /// for `exited`.
-fn how_its_run_ended(
+pub(crate) fn how_its_run_ended(
     by: Option<purlis_core::state::run::StopBy>,
     exit: &purlis_core::session::Exit,
 ) -> (
@@ -4510,8 +4520,8 @@ fn how_its_run_ended(
 /// `run.ended` under each child run, in `state` for `cause`, written under the event log's
 /// lock. Nothing where none is live. A write that fails is warned of, and never holds up the
 /// rest of the chat's end.
-fn its_children_end(
-    events: &hooks::Events,
+pub(crate) fn its_children_end(
+    events: &Mutex<purlis_core::eventlog::Recorder>,
     plane: &Path,
     session: u32,
     state: purlis_core::state::run::RunState,
@@ -10512,10 +10522,10 @@ mod tests {
     /// An event log in `dir`, as the app keeps one.
     fn an_event_log(dir: &Path) -> hooks::Events {
         use purlis_core::eventlog::{ArgsKey, Log, Recorder};
-        Arc::new(Mutex::new(Recorder::new(
+        hooks::Events::here(Recorder::new(
             Log::open(dir, "DEVICE").expect("a log"),
             ArgsKey::open(dir).expect("a key"),
-        )))
+        ))
     }
 
     /// A tool call that sub-agent `agent` of chat `chat` made: what begins its child run.
@@ -10559,7 +10569,7 @@ mod tests {
         chat: u32,
         agents: &[&str],
     ) -> (String, Vec<String>) {
-        let mut log = events.lock().expect("the log");
+        let mut log = events.held().expect("held here").lock().expect("the log");
         let run = log
             .report(
                 plane,
@@ -10724,7 +10734,7 @@ mod tests {
         let events = an_event_log(&logs);
         let host = Pretend::default();
         let (planes, _told) = planes_on(&host);
-        let planes = planes.recording_events(Some(Arc::clone(&events)));
+        let planes = planes.recording_events(Some(events.clone()));
         let plane = planes.open(&a_plane(&dir.path().join("plane")));
         let held = planes.held(&plane).expect("it is held");
         let session = held
