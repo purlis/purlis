@@ -10,6 +10,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type {
+  YourLevel,
   LevelWaiting,
   PlainFileVault,
   SettingsEdit,
@@ -54,9 +55,16 @@ function core({
   vaults = [] as PlainFileVault[],
   move = (name: string) => `Moved ${name}.`,
   waiting = [] as LevelWaiting[],
+  yours = undefined as YourLevel | undefined,
+  modeOn = false,
 } = {}) {
   const files: Record<SettingsWhich, SettingsFile> = {
-    shared: file("shared"),
+    shared: file(
+      "shared",
+      modeOn
+        ? [{ path: [{ key: "sandbox" }, { key: "mode" }], value: { kind: "text", value: "on" } }]
+        : [],
+    ),
     local: file("local"),
   };
   const sent: { which: SettingsWhich; edits: SettingsEdit[] }[] = [];
@@ -86,6 +94,7 @@ function core({
             persona_hosts: [],
             besides: { project_hosts: 0, your_hosts: 0, folders: 0 },
             policy: null,
+            ...(yours === undefined ? {} : { yours }),
           };
         case "start_options":
           return {
@@ -249,5 +258,42 @@ describe("Settings › Sandbox › Your level", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /^Confirm/ })).not.toBeInTheDocument(),
     );
+  });
+});
+
+/**
+ * **The Sandbox page's summary says the level your chats start at** (#2071): the project's,
+ * unless your own level says otherwise, with Change your level straight to the page that sets it.
+ */
+describe("Settings › Sandbox's summary", () => {
+  async function atSandbox() {
+    render(<SettingsTab plane={PLANE} level="project" />);
+    await userEvent.click(
+      await within(await screen.findByRole("navigation", { name: "Groups" })).findByRole("button", {
+        name: "Sandbox",
+      }),
+    );
+  }
+
+  it("says your level where it turns the sandbox off for you, and goes to it", async () => {
+    core({ modeOn: true, yours: { level: "off", confirmed: true } });
+    await atSandbox();
+    expect(
+      await screen.findByText(/Off for you: your level, confirmed on this machine\./),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Change your level" }));
+    expect(await screen.findByRole("region", { name: "Your level" })).toBeInTheDocument();
+  });
+
+  it("says the floor where your level is the floor, and the project's own otherwise", async () => {
+    core({ modeOn: true, yours: { level: "floor", confirmed: true } });
+    await atSandbox();
+    expect(await screen.findByText(/Floor for you: your level/)).toBeInTheDocument();
+    cleanup();
+    core({ modeOn: true });
+    await atSandbox();
+    expect(await screen.findByText(/^On for everyone in this project\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change your level" })).toBeInTheDocument();
+    expect(screen.queryByText(/use that chat's tab/)).toBeNull();
   });
 });
