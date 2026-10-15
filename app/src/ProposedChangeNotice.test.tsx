@@ -41,7 +41,7 @@ const proposal = (more: Partial<Shown> = {}): Shown => ({
         says: "The file as it is, and as the change would make it",
         before: "[plane]\n",
         after: '[plane]\nmode = "pr"\n',
-        hunks: [{ old_start: 1, old_lines: 1, new_start: 1, new_lines: 2 }],
+        hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 }],
       },
     ],
   },
