@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792020926510,
+  "lastUpdate": 1792025253072,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2262,6 +2262,42 @@ window.BENCHMARK_DATA = {
             "value": 221.1,
             "unit": "MB",
             "extra": "median of 6 samples: 225.3, 223.3, 224.8, 218.2, 219, 143.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c6f53a5c8bb0284765365655c5e3f646fb5ce147",
+          "message": "state: a second prompt within one wait stamps the chat (#2100)\n\nWhere a chat already waits on a prompt and an ask changes the prompt or\nwho asked, the board counts it a move a reader sees, so the window takes\nit for a wait of its own: a line put away for the first prompt shows for\nthe second.\n\nCloses #2098\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-15T04:23:09+04:00",
+          "tree_id": "7da4214010390a37410789d43c74f4a2ebfadf3d",
+          "url": "https://github.com/purlis/purlis/commit/c6f53a5c8bb0284765365655c5e3f646fb5ce147"
+        },
+        "date": 1792025251552,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 531,
+            "unit": "MB",
+            "extra": "median of 3 samples: 515, 531, 602 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 287,
+            "unit": "MB",
+            "extra": "median of 6 samples: 286.8, 285.5, 286, 287.3, 288, 394.5 MB"
           }
         ]
       }
