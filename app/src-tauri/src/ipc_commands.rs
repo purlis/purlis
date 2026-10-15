@@ -218,6 +218,8 @@ macro_rules! app_commands {
                 machineprofiles::type_profile_sign_in,
                 machineprofiles::dismiss_sign_in,
                 machineprofiles::machine_profile_pin,
+                machineprofiles::make_sandbox_only_profile,
+                machineprofiles::dismiss_sandbox_only,
                 thismachine::forget_project,
                 thismachine::locate_project,
                 thismachine::revoke_approval,

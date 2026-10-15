@@ -495,6 +495,16 @@ fn ready_given(
             (None, None)
         }
     };
+    // Which profiles a sandboxed chat, and an unsandboxed one, may start on (#2037). A
+    // sandboxed Codex chat on a profile for every chat leaves one wait for the project, the Ask
+    // that makes a sandbox-only one.
+    let sandbox_only = profiles::sandbox_only(profile);
+    if let Some(why) = profile_refusal(harness, name, sandbox_only, sandbox.is_some()) {
+        if sandbox.is_some() && !sandbox_only {
+            crate::profilestore::sandbox_only::waits_on(root);
+        }
+        return Err(why);
+    }
     let (added, session, how) = match &declared {
         Some(declared) => declared_arguments(declared, profile, start),
         None => arguments(harness, profile, start),
@@ -521,6 +531,13 @@ fn ready_given(
     // sandboxed chat could have changed. Resolved once, here: the real file it names is what the
     // check asks and what the chat then runs.
     if let (Some(harness), Some(applied)) = (harness, &mut sandbox) {
+        // The profile's sign-in, kept from the agent's commands where the harness runs them
+        // apart from itself (#2037, ADR 0095 §5): in the folders the chat's own environment
+        // points its harness at.
+        applied.on_profile(&crate::sandbox::signin::ProfileFolders {
+            sandbox_only: profiles::sandbox_only(profile).then(|| profile.name.clone()),
+            ..crate::sandbox::signin::ProfileFolders::of(harness, &env, machine)
+        });
         let words: Vec<String> = std::iter::once(program.clone())
             .chain(argv.iter().cloned())
             .collect();
@@ -669,6 +686,41 @@ fn on_pinned_version(
     )
 }
 
+/// Why the picker offers no "Start without the sandbox" for a profile for sandboxed chats only
+/// (#2037): the start refuses that chat ([`profile_refusal`]).
+pub const SANDBOX_ONLY_LOCK: &str =
+    "This profile is for sandboxed chats only, so a chat on it starts only sandboxed.";
+
+/// **Why a chat may not start on the profile `name`, sandboxed or not** (#2037, ruled
+/// 2026-10-15), or `None`: a profile for sandboxed chats only (`sandbox_only`) never starts a
+/// chat without the sandbox, and a sandboxed Codex chat starts on no other profile, so no
+/// sandboxed chat writes the Codex home an unsandboxed run uses, and no sign-in is copied for
+/// one (ADR 0067, D-88q, as amended 2026-10-15).
+pub fn profile_refusal(
+    harness: Option<Harness>,
+    name: &str,
+    sandbox_only: bool,
+    sandboxed: bool,
+) -> Option<String> {
+    let name = crate::shown::short(name);
+    if sandbox_only && !sandboxed {
+        return Some(format!(
+            "'{name}' is a profile for sandboxed chats only, and this chat would start without \
+             the sandbox, so nothing was started. Start it sandboxed, or pick another profile."
+        ));
+    }
+    if harness == Some(Harness::Codex) && sandboxed && !sandbox_only {
+        return Some(format!(
+            "this chat runs sandboxed, and a sandboxed Codex chat runs only on a profile for \
+             sandboxed chats only, which '{name}' is not, so nothing was started. Make or \
+             choose a sandbox-only Codex profile: the Inbox's \"{ask}\" makes one and opens \
+             Codex's own sign-in in it; then start the chat on it.",
+            ask = crate::profilestore::sandbox_only::ASK
+        ));
+    }
+    None
+}
+
 /// Whether the picker may run `profile`'s program to check it: exactly when the start's own
 /// gate ([`crate::wiring::refusal`]) would let it start — a startable kind, a `charter.local.toml`
 /// git would not carry, and an approved command. One gate for both, so the picker never runs
@@ -731,6 +783,9 @@ pub fn sandbox_ahead(
         )
         .map(|_| ())
     };
+    // A sandboxed Codex chat on a profile for every chat is refused at its start, which leaves
+    // the Ask that makes a sandbox-only one (#2037): nothing is offered here that would start it
+    // without the sandbox instead.
     Some(crate::sandbox::ahead(
         harness, root, machine, has, os_release, &check,
     ))
@@ -1214,5 +1269,41 @@ mod tests {
             path_of(&declared),
             "/p/.purlis/app/tools/devops/bin:/only/this"
         );
+    }
+
+    #[test]
+    fn a_sandboxed_codex_chat_starts_only_on_a_sandbox_only_profile_and_says_the_way_out() {
+        // #2037, ruled 2026-10-15.
+        let refused = profile_refusal(Some(Harness::Codex), "codex", false, true).expect("refused");
+        assert!(
+            refused.contains("Make or choose a sandbox-only Codex profile"),
+            "{refused}"
+        );
+        assert!(
+            refused.contains(crate::profilestore::sandbox_only::ASK),
+            "{refused}"
+        );
+        assert_eq!(
+            profile_refusal(Some(Harness::Codex), "codex-sandbox", true, true),
+            None
+        );
+        // Without the sandbox, a Codex chat runs on the person's own profiles as before.
+        assert_eq!(
+            profile_refusal(Some(Harness::Codex), "codex", false, false),
+            None
+        );
+        // Another harness is not held to it.
+        assert_eq!(
+            profile_refusal(Some(Harness::ClaudeCode), "claude", false, true),
+            None
+        );
+    }
+
+    #[test]
+    fn a_sandbox_only_profile_never_starts_a_chat_without_the_sandbox() {
+        let refused =
+            profile_refusal(Some(Harness::Codex), "codex-sandbox", true, false).expect("refused");
+        assert!(refused.contains("for sandboxed chats only"), "{refused}");
+        assert!(refused.contains("Start it sandboxed"), "{refused}");
     }
 }

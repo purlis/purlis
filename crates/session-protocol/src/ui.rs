@@ -245,6 +245,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "type_profile_sign_in",
     "dismiss_sign_in",
     "machine_profile_pin",
+    // A sandbox-only Codex profile made from its Ask (#2037): the person's own profile.
+    "make_sandbox_only_profile",
+    "dismiss_sandbox_only",
     // Whether a folder on this machine is in a project (#1822): the welcome's question before
     // it offers to make one. A probe of the person's folders, which no link needs.
     "folder_is_a_project",

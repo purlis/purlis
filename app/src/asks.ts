@@ -263,6 +263,19 @@ export async function answerTaken(
           return { status: "ok" };
         }
         break;
+      case "sandbox-only": {
+        // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
+        // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.
+        if (option === "dismiss") return commands.dismissSandboxOnly(plane);
+        if (option === "make") {
+          const made = await commands.makeSandboxOnlyProfile(plane);
+          if (made.status === "error") return made;
+          askProfileSignIn(plane, made.data);
+          opened = true;
+          return { status: "ok" };
+        }
+        break;
+      }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

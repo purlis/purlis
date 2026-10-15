@@ -83,6 +83,7 @@ fn store_of(name: &str, harness: &str, adopted: bool, pinned: Option<&str>) -> t
             }),
             imported: None,
             sign_in: None,
+            sandbox_only: false,
             pinned: pinned.map(|version| Pinned {
                 version: version.to_owned(),
                 at: 1,

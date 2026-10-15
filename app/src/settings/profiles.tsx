@@ -17,7 +17,8 @@ import { askProfileSignIn } from "./links";
  * is pinned to (#2038), and a profile whose next chat would not start on the version installed
  * (another major) offers **Update the pin**. **Remove…** asks first,
  * naming the conversations that go, and an adopted harness folder is never deleted: purlis only
- * forgets the profile, and the question says so.
+ * forgets the profile, and the question says so. A profile whose sign-in the commands its chats
+ * run can read says so plainly in its row, in the core's words (#2037, ADR 0095 §5).
  *
  * A profile is the person's, for the whole machine, so it is under You, beside This machine and
  * Accounts. The list and every act are the core's (`machine_profiles`, `machine_profile_*`), the
@@ -163,6 +164,7 @@ function remove(shown: MachineProfileRemoval) {
 /** What a profile's row says beside its name. */
 function note(profile: MachineProfileRow): string {
   if (profile.origin === "adopted") return `${profile.harness}, the harness's own folder`;
+  if (profile.sandbox_only) return `${profile.harness}, for sandboxed chats only`;
   if (profile.imported_at === null) return profile.harness;
   const when = new Date(profile.imported_at * 1000).toLocaleDateString();
   return `${profile.harness}, settings imported ${when}`;
@@ -299,7 +301,10 @@ const listed = (plane: string | undefined): LiveSetting => ({
                         }}
                       />
                     )}
-                    {profile.origin === "made" && (
+                    {profile.commands_can_read_sign_in !== null && (
+                      <span className="ui-setting-help">{profile.commands_can_read_sign_in}</span>
+                    )}
+                    {profile.origin === "made" && !profile.sandbox_only && (
                       <EntryButton
                         label="Import again"
                         spoken={`Import the settings of ${profile.name} again`}
@@ -410,14 +415,17 @@ const add: LiveSetting = {
     const now = useSyncExternalStore(subscribe, () => held);
     const [name, setName] = useState("");
     const [kind, setKind] = useState("claude");
+    const [sandboxOnly, setSandboxOnly] = useState(false);
     const submit = () => {
       const named = name.trim();
       if (named === "" || now.busy) return;
       void acting(
-        () => commands.machineProfileCreate(named, kind),
+        () => commands.machineProfileCreate(named, kind, sandboxOnly),
         (done) => {
           setName("");
-          return importedSays(named, done);
+          return sandboxOnly
+            ? `${named}: made for sandboxed chats only, with nothing imported. Its first chat signs in through the harness's own sign-in.`
+            : importedSays(named, done);
         },
       );
     };
@@ -456,6 +464,19 @@ const add: LiveSetting = {
                 value={kind}
                 disabled={now.busy}
                 onValueChange={setKind}
+              />
+            )}
+          />
+          <SettingRow
+            label="For sandboxed chats only"
+            help="Only a sandboxed chat starts on it, and a sandboxed Codex chat starts on no other profile. Nothing is imported into it."
+            control={(inner) => (
+              <Choice
+                kind="switch"
+                ids={inner}
+                checked={sandboxOnly}
+                disabled={now.busy}
+                onCheckedChange={setSandboxOnly}
               />
             )}
           />

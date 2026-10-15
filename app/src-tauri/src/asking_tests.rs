@@ -102,6 +102,7 @@ struct World {
     since: Vec<(&'static str, u32)>,
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
+    sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
 }
 
 impl World {
@@ -121,6 +122,7 @@ impl World {
             held: Vec::new(),
             since: Vec::new(),
             sign_ins: Vec::new(),
+            sandbox_only: None,
         }
     }
 
@@ -146,6 +148,7 @@ impl World {
         };
         derive(&Waiting {
             sign_ins: self.sign_ins.clone(),
+            sandbox_only: self.sandbox_only.clone(),
             proposals: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
@@ -1084,4 +1087,40 @@ fn an_opencode_profile_is_signed_in_to_a_plan_named_and_never_to_claude() {
         ["sign-in:openai", "sign-in:github-copilot", "dismiss"]
     );
     assert!(ask.options.iter().all(|one| !one.label.contains("Claude")));
+}
+
+#[test]
+fn a_sandboxed_codex_chat_without_a_sandbox_only_profile_is_one_ask_that_makes_one() {
+    // #2037, the operator's ruling of 2026-10-15.
+    let mut world = World::new();
+    world.queue = vec![3];
+    world.names = vec![(3, "steward 3")];
+    world.sandbox_only = Some(purlis_core::profilestore::sandbox_only::Wait {
+        root: std::path::PathBuf::from("/p"),
+        since: 9,
+    });
+    world.since = vec![("sandbox-only:codex", 9)];
+
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::SandboxOnly)
+        .expect("the project asks");
+
+    assert_eq!(ask.session, 0);
+    assert_eq!(ask.chain, ["Codex"]);
+    assert_eq!(ids(ask), ["make", "dismiss"]);
+    assert_eq!(ask.answer, AnswerPath::SandboxOnly);
+    assert!(
+        ask.says
+            .starts_with("Codex needs a sandbox-only profile here"),
+        "{}",
+        ask.says
+    );
+    assert_eq!(ask.since, Some(9));
+    assert!(
+        asks.iter()
+            .any(|one| one.session == 3 && one.chain == ["steward 3"]),
+        "the chats keep their own chains"
+    );
 }
