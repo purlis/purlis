@@ -422,13 +422,28 @@ impl SessionHost {
     /// the host on a thread of its own and connects to it once it is ready. Nothing waits for
     /// the host; what goes wrong is said in the log.
     pub fn start(&self) {
-        let connection = &self.connection;
         let Some(place) = place() else {
             let why = "there is no home folder to keep its credentials in";
             tracing::warn!("purlis: no session host: {why}");
-            connection.gone(why);
+            self.connection.gone(why);
             return;
         };
+        self.start_at(place, || {
+            std::env::current_exe()
+                .map(|binary| command(&binary))
+                .map_err(|why| format!("this program's path is unknown: {why}"))
+        });
+    }
+
+    /// [`SessionHost::start`], the host serving at `place` and started by the command `starts`
+    /// gives, on the host's own thread: the window's own binary as [`command`] makes it, or,
+    /// for the behaviour suite, that binary in an environment of the test's (#2170).
+    pub(crate) fn start_at(
+        &self,
+        place: purlis_host::Place,
+        starts: impl FnOnce() -> Result<Command, String> + Send + 'static,
+    ) {
+        let connection = &self.connection;
         if let Err(why) = purlis_core::hostsocket::make_the_folder(&place.socket) {
             let why = format!(
                 "its folder {} could not be made this user's alone: {why}",
@@ -444,7 +459,7 @@ impl SessionHost {
             .name("session host".into())
             .spawn({
                 let connection = Arc::clone(&connection);
-                move || start_here(&held, place, &connection)
+                move || start_here(&held, place, starts, &connection)
             });
         if let Err(why) = spawned {
             tracing::warn!("purlis: the session host was not started: {why}");
@@ -490,17 +505,22 @@ fn end_held(held: &Mutex<Option<Held>>) {
     let _ = held.child.wait();
 }
 
-/// Starts the host and connects to it, on the calling thread.
-fn start_here(held: &Mutex<Option<Held>>, place: purlis_host::Place, connection: &Arc<Connection>) {
-    let binary = match std::env::current_exe() {
-        Ok(binary) => binary,
+/// Starts the host with the command `starts` gives and connects to it, on the calling thread.
+fn start_here(
+    held: &Mutex<Option<Held>>,
+    place: purlis_host::Place,
+    starts: impl FnOnce() -> Result<Command, String>,
+    connection: &Arc<Connection>,
+) {
+    let mut command = match starts() {
+        Ok(command) => command,
         Err(why) => {
-            tracing::warn!("purlis: no session host: this program's path is unknown: {why}");
-            connection.gone(format!("this program's path is unknown: {why}"));
+            tracing::warn!("purlis: no session host: {why}");
+            connection.gone(why);
             return;
         }
     };
-    let mut child = match purlis_core::forklock::spawn(&mut command(&binary)) {
+    let mut child = match purlis_core::forklock::spawn(&mut command) {
         Ok(child) => child,
         Err(why) => {
             tracing::warn!("purlis: the session host did not start: {why}");

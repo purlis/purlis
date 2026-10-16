@@ -2713,6 +2713,52 @@ fn a_task_whose_chat_ended_with_no_window_there_ends_unreported_and_is_owed_to_i
 }
 
 #[test]
+fn a_task_ended_unreported_is_owed_to_its_asker_in_the_same_write_that_ends_it() {
+    // #2272: a reader of the record never finds the task ended and owed to nobody. Each
+    // version of the record is read as it lands, the instant before any reader could see it.
+    let (_d, root) = project();
+    let task = open(
+        &root,
+        Opening {
+            mode: Mode::Task,
+            ..a_handoff()
+        },
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+    let landed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = landed.clone();
+    let _watching = crate::rewrite::hook::set(move |_, temp| {
+        let text = std::fs::read_to_string(temp)?;
+        seen.borrow_mut()
+            .push(parse(&text).expect("a record lands"));
+        Ok(())
+    });
+
+    let settled = ended_unwatched(
+        &root,
+        devops().id.as_deref().unwrap(),
+        devops().chat,
+        at("2026-10-08T09:00:00Z"),
+    );
+
+    assert_eq!(settled, 1);
+    let landed = landed.borrow();
+    assert!(
+        landed
+            .iter()
+            .any(|record| record.id == task.id && !record.running()),
+        "the task's end was written"
+    );
+    for record in landed.iter().filter(|record| record.id == task.id) {
+        assert!(
+            record.running() || record.undelivered.is_some(),
+            "ended, it is owed to the chat that asked in the same write"
+        );
+    }
+}
+
+#[test]
 fn a_chat_that_ended_with_no_window_there_and_worked_no_dispatch_settles_nothing() {
     let (_d, root) = project();
     let running = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
