@@ -191,7 +191,8 @@ pub fn project_id(root: &Path) -> Option<String> {
 /// is, a ULID of the SHA-256 of its resolved path, so it is held by the same id at every launch
 /// and nothing is written into its `charter.toml`. Holding a project never writes it: with chats
 /// in the session host by default, every project a person opens is held, and none of them gains
-/// a committed change by being opened (D-2004-7, to be confirmed).
+/// a committed change by being opened (D-2004-7, ruled 2026-10-16: write nothing, and mint a
+/// stored id later, where something needs one).
 pub fn id_to_hold_by(root: &Path) -> std::io::Result<String> {
     if let Some(id) = project_id(root) {
         return Ok(id);
@@ -202,101 +203,6 @@ pub fn id_to_hold_by(root: &Path) -> std::io::Result<String> {
     let mut bytes = [0u8; 16];
     bytes.copy_from_slice(&digest[..16]);
     Ok(ulid::Ulid::from_bytes(bytes).to_string())
-}
-
-/// [`project_id`], minting it first when the project has none: a fresh ULID, written into
-/// `charter.toml` as `[project] id` by the same text edit as [`set_key`], so every byte the
-/// operator wrote is kept. Read, decided and written under one lock, so two processes asking
-/// at once get one id.
-///
-/// An id that is there and is not a ULID is an error, and the file is left as it is: an id is
-/// never written over. So is a directory with no `charter.toml`, which is not a project.
-pub fn ensure_project_id(root: &Path) -> std::io::Result<String> {
-    let path = super::linked_to(&crate::names::manifest(root));
-    let dir = path.parent().unwrap_or(root);
-    let mut id = None;
-    crate::rewrite::update(dir, &path, |body| {
-        let Some(body) = body else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("{} is not there, so this is not a project", path.display()),
-            ));
-        };
-        let table: toml::Table = body.parse().map_err(|e: toml::de::Error| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "{} is not valid TOML: {}",
-                    path.display(),
-                    e.message().trim()
-                ),
-            )
-        })?;
-        match id_in(&table) {
-            Ok(Some(held)) => {
-                id = Some(held);
-                Ok(None)
-            }
-            Ok(None) => {
-                let minted = crate::reopen::mint();
-                let next = with_project_id(body, &minted).map_err(|why| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("{}: {why}", path.display()),
-                    )
-                })?;
-                id = Some(minted);
-                Ok(Some(next))
-            }
-            Err(why) => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("{}: {why}", path.display()),
-            )),
-        }
-    })?;
-    id.ok_or_else(|| std::io::Error::other("no project id was read or minted"))
-}
-
-/// `body` with `[project] id = "<minted>"` added, through `toml_edit` as the Settings
-/// tab's save edits (`settings::save`), so every comment, key order and spacing is kept and a
-/// `project` table written any way TOML allows (a header with a comment, spaces or quotes, an
-/// inline table, a dotted key, a subtable) is the one the id goes into.
-///
-/// The text is parsed again before it is handed back, and must read as holding exactly this
-/// id; anything else is an error and nothing is written. A `project` that is not a table has no
-/// room for an id, and is an error too.
-fn with_project_id(body: &str, minted: &str) -> Result<String, String> {
-    let (section, key) = PROJECT_ID;
-    let mut doc: toml_edit::DocumentMut = body
-        .parse()
-        .map_err(|e: toml_edit::TomlError| format!("not valid TOML: {}", e.message().trim()))?;
-    match doc.get_mut(section) {
-        None => {
-            let mut table = toml_edit::Table::new();
-            table.insert(key, toml_edit::value(minted));
-            doc.insert(section, toml_edit::Item::Table(table));
-        }
-        Some(item) => match item.as_table_like_mut() {
-            Some(table) => {
-                table.insert(key, toml_edit::value(minted));
-            }
-            None => {
-                return Err(format!(
-                    "`{section}` is not a table, so it has no room for an id"
-                ));
-            }
-        },
-    }
-    let next = doc.to_string();
-    let reread: toml::Table = next.parse().map_err(|e: toml::de::Error| {
-        format!("the id would leave a file that does not parse: {e}")
-    })?;
-    match id_in(&reread) {
-        Ok(Some(held)) if held == minted => Ok(next),
-        other => Err(format!(
-            "the id would not read back as written ({other:?}), so nothing was written"
-        )),
-    }
 }
 
 /// The id `table` holds: `Ok(None)` for none, an error for one that is not a ULID.

@@ -3029,13 +3029,27 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
             .ending_the_host_with(host.ender());
     }
     #[cfg(unix)]
-    tracing::info!(
-        "purlis: chats run in the window's own process on this launch, as {}=0 asks",
-        hostedsessions::SWITCH
-    );
+    {
+        tracing::info!(
+            "purlis: chats run in the window's own process on this launch, as {}=0 asks",
+            hostedsessions::SWITCH
+        );
+        // No chat is put back while a host a crashed window left may still run it (#2004).
+        if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
+            return planes.putting_back_chats_after(
+                host.before_chats_are_put_back(PUT_BACK_WAITS_FOR_THE_HOST),
+            );
+        }
+    }
     let _ = app;
     planes
 }
+
+/// How long a window whose chats run in its own process waits for its session host to settle
+/// before it puts chats back (#2004): long enough for a host a crashed window left to end the
+/// chats it kept as a quit, and for this window's own to start.
+#[cfg(unix)]
+const PUT_BACK_WAITS_FOR_THE_HOST: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The kill switch is the session host's too while chats run in it (#2001, ADR 0071): every
 /// stop reaches the host, a re-arm is the host's first, and once the host answers, the two are
@@ -3323,6 +3337,11 @@ pub fn run() {
                     })
                 });
                 app.manage(failing);
+                // With chats in the window's own process, a host a crashed window left is ended,
+                // with the chats it kept, before this window puts any back (#2004).
+                if !hostedsessions::chats_run_in_the_host() {
+                    host.ending_a_host_it_finds();
+                }
                 host.start();
                 // The person's browsers run in it too (#2012).
                 app.manage(std::sync::Arc::new(browsers::WindowBrowsers::new(

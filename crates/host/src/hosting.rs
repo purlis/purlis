@@ -439,9 +439,10 @@ struct Inner {
     switch: Switch,
     /// What reads a stop written elsewhere (#2190): the binary's, or nothing.
     elsewhere: OnceLock<Box<dyn StopsElsewhere>>,
-    /// Whether the last look found a stop written elsewhere: the host acts on a stop as it is
-    /// written, so files the window has yet to clear after its re-arm stop nothing again.
-    seen_elsewhere: std::sync::atomic::AtomicBool,
+    /// The stop written elsewhere the last look found: the host acts on each stop as it is
+    /// written, so files the window has yet to clear after its re-arm stop nothing again, and
+    /// a stop written after that, while the files still say stopped, is heard.
+    seen_elsewhere: Mutex<Option<String>>,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -715,7 +716,7 @@ impl Hosting {
                 starting_a_saver: Mutex::new(()),
                 switch,
                 elsewhere: OnceLock::new(),
-                seen_elsewhere: std::sync::atomic::AtomicBool::new(false),
+                seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
             }),
@@ -758,22 +759,29 @@ impl Hosting {
     }
 
     /// Throws the kill switch where a stop was written elsewhere since the last look, and the
-    /// host is not stopped already. A stop is acted on as it is written: files that still say
-    /// stopped after the window re-armed the host, before the window clears them, stop nothing
-    /// again.
+    /// host is not stopped already. Each stop is acted on as it is written: files that still
+    /// hold the stop the host was re-armed past, before the window clears them, stop nothing
+    /// again, and any stop written after it does.
     async fn heed_a_stop_written_elsewhere(&self) {
         let stops: &dyn StopsElsewhere = match self.inner.elsewhere.get() {
             Some(stops) => stops.as_ref(),
             None => &NoStopsElsewhere,
         };
-        let stopped = stops.stopped();
-        let before = self
-            .inner
-            .seen_elsewhere
-            .swap(stopped, std::sync::atomic::Ordering::SeqCst);
-        if stopped && !before && !self.inner.switch.is_stopped() {
+        let now = stops.last_stop();
+        let written = {
+            let mut seen = self
+                .inner
+                .seen_elsewhere
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let written = now.is_some() && *seen != now;
+            *seen = now;
+            written
+        };
+        if written && !self.inner.switch.is_stopped() {
             crate::say(
-                "every agent was stopped from elsewhere (purlis stop --all); the host stops every program it runs",
+                "every agent was stopped from elsewhere (purlis stop --all); the host stops \
+                 every program it runs",
             );
             self.stop_all().await;
         }

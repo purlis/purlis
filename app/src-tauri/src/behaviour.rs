@@ -1847,6 +1847,73 @@ fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
     first.ended_by_the_quit();
 }
 
+/// **The way back after a crash** (#2004): a window running its chats in the session host is
+/// killed outright, and the host keeps a chat for the grace period. The window started again
+/// with its chats in its own process (`PURLIS_CHATS_IN_THE_HOST=0`) ends that host as a quit
+/// before it puts any chat back: by the time its gate lets the chats back, the chat the host
+/// kept has ended, so its conversation never has two programs at once. Then it starts a host of
+/// its own. A host process's target only. The test ends every host it started.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_window_flipped_back_after_a_crash_ends_the_chats_the_host_kept_before_it_puts_any_back() {
+    let home = tempfile::tempdir().expect("the host's home");
+    let HostHome {
+        place, inherited, ..
+    } = a_host_home(home.path());
+    let (_project, root) = a_project();
+    let marks = tempfile::tempdir().expect("a folder for the chat's process");
+    let pid_file = marks.path().join("pid");
+    let starts = {
+        let inherited = inherited.clone();
+        move || {
+            let mut command = crate::sessionhost::command(&charter_app());
+            command.env_clear().envs(inherited.iter().cloned());
+            Ok(command)
+        }
+    };
+    let first = KilledWindow::start(&place, &root, starts.clone());
+    let script = format!("echo $$ > '{}'; exec sleep 600", pid_file.display());
+    first
+        .sessions
+        .open(None, &a_shell(&script), &|_| {})
+        .expect("the chat starts in the host");
+    until("the chat to say its process", || {
+        std::fs::read_to_string(&pid_file).is_ok_and(|said| said.ends_with('\n'))
+    });
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .expect("its process")
+        .trim()
+        .parse()
+        .expect("a pid");
+    let first = first.killed();
+    // Running, and not a zombie waiting for its parent.
+    let alive = |pid: i32| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .is_ok_and(|stat| stat.split_whitespace().nth(2) != Some("Z"))
+    };
+    assert!(
+        alive(pid),
+        "the host keeps the chat while no window is there"
+    );
+
+    let back = Ends(crate::sessionhost::SessionHost::default());
+    back.0.ending_a_host_it_finds();
+    purlis_core::hostsocket::make_the_folder(&place.socket).expect("the socket's folder");
+    back.0.start_at(place, starts);
+    let gate = back.0.before_chats_are_put_back(PATIENCE);
+
+    assert_eq!(gate(), Ok(()), "the window may put its chats back");
+    assert!(
+        !alive(pid),
+        "the chat the host kept still runs as the window puts chats back"
+    );
+    first.ended_by_the_quit();
+    back.0
+        .connection()
+        .wait(PATIENCE)
+        .expect("a host of the window's own serves");
+}
+
 /// **A change written while the window is gone is committed by the host process** (#2287,
 /// #2002): a window started on a real git plane has the host save it, and is killed outright
 /// (its links and the host's standard input gone, with no quit). A file then written in the

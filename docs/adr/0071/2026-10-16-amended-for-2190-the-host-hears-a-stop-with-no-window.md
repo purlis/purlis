@@ -14,9 +14,12 @@ D-2004-6).
    window's watch looks (D-88l). A stop it finds is its own, kept in
    `<config>/purlisd/kill-switch` and acted on as `stop_all`: every program it runs ends, and
    nothing starts until the window re-arms. *D-2004-5, to be confirmed.*
-2. **The host acts on a stop as it is written, and never re-arms from the files.** A look that
-   finds the files stopped after one that did not stops the host; files that go on saying
-   stopped stop nothing again, so the window's re-arm, which re-arms the host first and clears
-   the files after, holds between the two. Files cleared while the host is stopped re-arm
-   nothing: only the window re-arms the host, as this record says of every re-arm. *D-2004-6,
-   to be confirmed.*
+2. **The host acts on each stop as it is written, and never re-arms from the files.** The
+   seam names the newest stop the files hold (its journal line), so each stop the command line
+   writes is told from the one before. A look that finds a stop the last look did not stops the
+   host. Files that go on holding the stop the window re-armed the host past stop nothing
+   again, so the window's re-arm, which re-arms the host first and clears the files after,
+   holds between the two; and a stop written after it while they still say stopped, as after a
+   window that went between the two, is a new stop and is heard. Files cleared while the host
+   is stopped re-arm nothing: only the window re-arms the host, as this record says of every
+   re-arm. *D-2004-6, to be confirmed.*

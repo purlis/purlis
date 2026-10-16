@@ -193,3 +193,55 @@ fn a_quit_while_chats_come_back_leaves_every_chat_in_the_record() {
         held.chats().drawn_now().is_empty() && held.chats().open_now().is_empty()
     });
 }
+
+/// #2004: a window whose chats run in its own process puts none back before its gate lets it,
+/// so a session host a crashed window left has ended the chats it kept first; and a gate that
+/// refuses puts none back and leaves the record as it was.
+#[cfg(unix)]
+#[test]
+fn no_chat_is_put_back_before_the_gate_lets_it_and_none_when_it_refuses() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    let host = Pretend::default();
+    let (open, opened) = std::sync::mpsc::channel::<()>();
+    let opened = Mutex::new(opened);
+    let planes = planes_on(&[&host], &dir.path().join("config")).putting_back_chats_after(
+        Arc::new(move || {
+            opened
+                .lock()
+                .unwrap()
+                .recv()
+                .map_err(|_| "the gate stayed shut".to_owned())
+        }),
+    );
+
+    let plane = approve_and_open(&planes, &root);
+    let held = planes.held(&plane).expect("it is held");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        host.asked().is_empty(),
+        "a chat started before the gate let it"
+    );
+    assert_eq!(held.chats().drawn_now().len(), 2, "each still has its tab");
+
+    open.send(()).expect("the gate opens");
+    until("both chats to start", || held.chats().open_now().len() == 2);
+    planes.let_go_of_all();
+
+    // A gate that refuses: nothing starts, and the record still holds every chat.
+    let refusing = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&refusing.path().join("plane"), 2);
+    let host = Pretend::default();
+    let planes = planes_on(&[&host], &refusing.path().join("config"))
+        .putting_back_chats_after(Arc::new(|| Err("a host still runs them".to_owned())));
+    let plane = approve_and_open(&planes, &root);
+    let held = planes.held(&plane).expect("it is held");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(host.asked().is_empty(), "a chat started past a refusal");
+    assert!(held.chats().open_now().is_empty());
+    planes.let_go_of_all();
+    let kept = reopen::read_or_refusal(&root).expect("the record reads");
+    let mut names: Vec<String> = kept.chats.iter().map(|chat| chat.name.clone()).collect();
+    names.sort();
+    assert_eq!(names, ["chat 1", "chat 2"], "the record lost a chat");
+}

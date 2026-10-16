@@ -8,8 +8,8 @@ among its targets (#2170); every part of a chat has moved into the host (#1998 t
 #2007, #2194); and a host the window left for the grace period hears `purlis stop --all` itself
 (ADR 0071, amended for #2190). This note flips the default. The operator's condition of
 2026-10-14, "users should not lose their profiles and sessions", is held by a test (item 3).
-Item 1 is that ruling; items 2 to 5 are **decided in implementation, to be confirmed** (D-2004-2
-to D-2004-4, D-2004-7).
+Items 1 and 5 are rulings; items 2 to 4 and 6 are **decided in implementation, to be
+confirmed** (D-2004-2 to D-2004-4, D-2004-8).
 
 1. **The session host is the default** (ruled 2026-10-14; amends item 2 of the amendment for
    #1998). A launch runs its chats in the session host unless `PURLIS_CHATS_IN_THE_HOST` is set
@@ -22,14 +22,14 @@ to D-2004-4, D-2004-7).
    #2114). The socket keeps its place and its name, `purlisd.sock`, for the config home a
    person's purlis finds by itself. Where `PURLIS_CONFIG_HOME` names another one (a scenario
    run, a development build beside an installed one), the socket in the same folder is
-   `purlisd-<key>.sock`, `<key>` the first 16 hex digits of the SHA-256 of that config home as
-   written, and the lock beside it takes the socket's name with `.lock`. Such a purlis keeps its
-   own credentials, kill switch, event log and machine store, so it serves its own chats rather
-   than finding another's host it holds no credential for. One host still serves every project
-   of a config home (§1, Ruled 1). Rejected: refusing chats in the second purlis and saying why,
-   which stops scenario runs and a development build beside an installed one; and connecting it
-   to the host that serves, which would hand it another config home's chats, switch and log.
-   *D-2004-2, to be confirmed.*
+   `purlisd-<key>.sock`, `<key>` the first 16 hex digits of the SHA-256 of that config home
+   resolved (so one config home spelled two ways has one host), and the lock beside it takes the
+   socket's name with `.lock`. Such a purlis keeps its own credentials, kill switch, event log
+   and machine store, so it serves its own chats rather than finding another's host it holds no
+   credential for. One host still serves every project of a config home (§1, Ruled 1). Rejected:
+   refusing chats in the second purlis and saying why, which stops scenario runs and a
+   development build beside an installed one; and connecting it to the host that serves, which
+   would hand it another config home's chats, switch and log. *D-2004-2, to be confirmed.*
 3. **Nothing is lost across the upgrade, and a test holds it.** A project holds chats on two
    profiles the person declared, one of them in a worktree on a branch, and a session record.
    One launch runs them in the window's own process and quits to install an update; the next
@@ -50,15 +50,21 @@ to D-2004-4, D-2004-7).
    and a cloud's credentials for #2151, which deliver them through the host when they come.
    *D-2004-4, to be confirmed.*
 
-5. **Holding a project writes nothing into it** (amends D-1998-6). The window held a project
-   by the `[project] id` it minted into the project's `charter.toml` where there was none (V76).
-   With every project a person opens now held, that would give each one a committed change on
-   its first open after the upgrade. A project that keeps an id is still held by it; one that
-   keeps none is held by an id derived from its resolved path, a ULID of its SHA-256, the same
-   at every launch, and nothing is written. Two clones of such a project are two projects to the
-   host, which tells clones apart by their links already (#2178). Minting stays for whatever
-   needs a project named alike on every clone and device. *D-2004-7, decided as the interim
-   that writes nothing, to be confirmed by the operator.*
+5. **Holding a project writes nothing into it** (ruled 2026-10-16; amends D-1998-6). The
+   window held a project by the `[project] id` it minted into the project's `charter.toml`
+   where there was none (V76). With every project a person opens now held, that would give each
+   one a committed change on its first open after the upgrade. The operator ruled on 2026-10-16
+   to write nothing, and to mint a stored id later, where something needs one. A project that
+   keeps an id is held by it; one that keeps none is held by an id derived from its resolved
+   path, a ULID of its SHA-256, the same at every launch. Two clones of such a project are two
+   projects to the host, which tells clones apart by their links already (#2178). *D-2004-7,
+   ruled.*
+6. **The way back is safe after a crash.** A window whose chats run in its own process
+   (`PURLIS_CHATS_IN_THE_HOST=0`) that finds a host a crashed window left still serving tells
+   it `quit`, so every chat it kept ends as a quit, and only then starts a host of its own; it
+   puts no chat back until its host has settled so, and none at all while a host it found
+   could not be ended. A conversation never has a program in the host and one in the window
+   at once. *D-2004-8, to be confirmed.*
 
 **What this does not do.** An update still ends every chat until the upgrade handoff (#665).
 The window's own path stays built until #2005 deletes it.

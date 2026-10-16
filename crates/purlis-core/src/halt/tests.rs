@@ -31,22 +31,6 @@ fn a_stop_is_an_empty_marker_and_one_journal_line() {
     );
 }
 
-/// #2190: what the session host is given reads the command line's stop, and its re-arm.
-#[cfg(unix)]
-#[test]
-fn the_session_hosts_seam_reads_a_stop_and_a_re_arm_from_the_files() {
-    use purlis_host::StopsElsewhere as _;
-    let config = tempfile::tempdir().expect("a config home");
-    let seam = OnDisk(config.path().to_path_buf());
-    assert!(!seam.stopped());
-
-    stop(config.path(), Actor::Cli, 100).expect("stopped");
-    assert!(seam.stopped());
-
-    rearm(config.path(), 200).expect("re-armed");
-    assert!(!seam.stopped());
-}
-
 #[test]
 fn removing_the_marker_by_hand_does_not_re_arm_the_machine() {
     let config = tempfile::tempdir().expect("a config home");
@@ -194,4 +178,25 @@ fn the_journal_keeps_only_the_newest_lines() {
     let kept = journal(config.path());
     assert_eq!(kept.len(), JOURNAL_LINES);
     assert_eq!(kept[0].at, 5);
+}
+
+/// #2190: what the session host is given names each stop the command line writes, so a stop
+/// written while the files still hold an older one is told from it, and a re-arm is none.
+#[cfg(unix)]
+#[test]
+fn the_session_hosts_seam_names_each_stop_and_none_after_a_re_arm() {
+    use purlis_host::StopsElsewhere as _;
+    let config = tempfile::tempdir().expect("a config home");
+    let seam = OnDisk(config.path().to_path_buf());
+    assert_eq!(seam.last_stop(), None);
+
+    stop(config.path(), Actor::Cli, 100).expect("stopped");
+    let first = seam.last_stop().expect("a stop");
+
+    stop(config.path(), Actor::Cli, 200).expect("stopped again");
+    let second = seam.last_stop().expect("a stop");
+    assert_ne!(first, second, "a later stop is a stop of its own");
+
+    rearm(config.path(), 300).expect("re-armed");
+    assert_eq!(seam.last_stop(), None);
 }

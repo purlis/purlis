@@ -85,13 +85,18 @@ pub fn here_for(runtime: Option<&OsStr>, config: Option<&Path>) -> PathBuf {
 /// **The socket's name for the config home `config`** (#2114): `socket` as it is where `config`
 /// is the one a person's purlis finds by itself (`default`), or none is known, so every build
 /// finds its host where the last one listened; otherwise `purlisd-<key>.sock` in the same
-/// folder, `<key>` the first 16 hex digits of the SHA-256 of `config` as written. So another
+/// folder, `<key>` the first 16 hex digits of the SHA-256 of `config` resolved (as written
+/// where it cannot be), so one config home spelled two ways is one. So another
 /// purlis on this device with a config home of its own, whose credentials are its own (a
 /// scenario run, a development build beside an installed one), has a session host of its own,
 /// and one host still serves every project of a config home (ADR 0068 §1).
+#[cfg(unix)]
 pub fn named_for(socket: &Path, config: Option<&Path>, default: Option<&Path>) -> PathBuf {
     use sha2::{Digest, Sha256};
-    let Some(config) = config.filter(|config| Some(*config) != default) else {
+    let resolved = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let config = config.map(resolved);
+    let default = default.map(resolved);
+    let Some(config) = config.filter(|config| Some(config) != default.as_ref()) else {
         return socket.to_path_buf();
     };
     let digest = Sha256::digest(config.as_os_str().as_encoded_bytes());

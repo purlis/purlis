@@ -2008,6 +2008,3 @@ pub(crate) fn open_within(
 
 #[cfg(test)]
 pub(crate) mod tests;
-
-#[cfg(test)]
-mod upgrading;

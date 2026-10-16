@@ -12,7 +12,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use purlis_host::standin::StandIns;
@@ -39,22 +39,47 @@ impl Compose for Echo {
     }
 }
 
-/// ADR 0071's files as a test throws them: thrown or not.
+/// ADR 0071's files as a test writes them: the stops written so far, whether they still say
+/// stopped, and how many times the host has looked at them.
 #[derive(Clone, Default)]
-struct Files(Arc<AtomicBool>);
+struct Files(Arc<Written>);
+
+#[derive(Default)]
+struct Written {
+    stops: AtomicUsize,
+    stopped: AtomicBool,
+    looks: AtomicUsize,
+}
 
 impl Files {
+    /// `purlis stop --all`: one more stop, and the files say stopped.
     fn throw(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.0.stops.fetch_add(1, Ordering::SeqCst);
+        self.0.stopped.store(true, Ordering::SeqCst);
     }
+    /// The window's re-arm of the files.
     fn clear(&self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.0.stopped.store(false, Ordering::SeqCst);
+    }
+    /// Waits until the host has looked at the files again, twice over, so a look began after
+    /// this was asked: bounded, as every wait here is.
+    async fn looked_at_again(&self) {
+        let from = self.0.looks.load(Ordering::SeqCst);
+        let began = Instant::now();
+        while self.0.looks.load(Ordering::SeqCst) < from + 2 {
+            assert!(began.elapsed() < HEARD_WITHIN, "the host stopped looking");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     }
 }
 
 impl StopsElsewhere for Files {
-    fn stopped(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+    fn last_stop(&self) -> Option<String> {
+        self.0.looks.fetch_add(1, Ordering::SeqCst);
+        self.0
+            .stopped
+            .load(Ordering::SeqCst)
+            .then(|| format!("stop {}", self.0.stops.load(Ordering::SeqCst)))
     }
 }
 
@@ -160,7 +185,7 @@ async fn files_cleared_while_stopped_re_arm_nothing_in_the_host() {
     until_the_host_is_stopped(&window).await;
 
     files.clear();
-    tokio::time::sleep(Duration::from_secs(4)).await;
+    files.looked_at_again().await;
 
     assert!(window.kill_switch().await.unwrap().stopped);
     assert_eq!(
@@ -181,15 +206,36 @@ async fn the_windows_re_arm_holds_while_its_files_are_cleared_and_a_later_stop_i
     // The window re-arms the host first and its files after: a look between the two does not
     // stop the host again.
     window.rearm().await.expect("re-armed");
-    tokio::time::sleep(Duration::from_secs(4)).await;
+    files.looked_at_again().await;
     window.start_program(a_harness()).await.expect("it starts");
-    // The window clears its files, and the host looks at them again.
     files.clear();
-    tokio::time::sleep(Duration::from_secs(4)).await;
+    files.looked_at_again().await;
 
     // And the next stop the command line writes is heard.
     files.throw();
     until("the next stop to be heard", || runs.last().seen().stopped).await;
+}
+
+/// A window gone between re-arming the host and clearing its files leaves them saying stopped.
+/// A stop written after that, with no window there, is a stop of its own, and is heard.
+#[tokio::test]
+async fn a_stop_written_while_the_files_still_hold_an_older_one_is_heard() {
+    let (folder, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (runs, files) = (StandIns::default(), Files::default());
+    let hosting = a_host(folder.path(), &runs, &files);
+    {
+        let window = the_window(&hosting, project.path()).await;
+        files.throw();
+        until_the_host_is_stopped(&window).await;
+        window.rearm().await.expect("re-armed");
+        files.looked_at_again().await;
+        window.start_program(a_harness()).await.expect("it starts");
+        // The window goes before it clears its files.
+    }
+
+    files.throw();
+
+    until("the stop to be heard", || runs.last().seen().stopped).await;
 }
 
 /// Waits until the host says every agent is stopped.

@@ -617,6 +617,11 @@ struct Supervision {
     said: Mutex<std::collections::VecDeque<String>>,
     /// What the window says while the breaker holds the host stopped.
     failing: Arc<crate::hostfailing::HostFailing>,
+    /// A host found serving is ended, not reattached to (#2004): the window runs its chats in
+    /// its own process.
+    ends_a_host_it_finds: std::sync::atomic::AtomicBool,
+    /// A host found serving could not be ended, and may still run a window's chats (#2004).
+    left_serving: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Default)]
@@ -732,6 +737,42 @@ impl SessionHost {
         }
     }
 
+    /// **A host found serving is ended, not reattached to** (#2004): for a window whose chats
+    /// run in its own process (`PURLIS_CHATS_IN_THE_HOST=0`), which puts back each chat its
+    /// record holds in that process. A host a window that crashed left serving still runs that
+    /// window's chats for the grace period, so the window tells it `quit`, which ends each of
+    /// them as a quit, and only then starts a host of its own and connects: a chat is never
+    /// run by the host and the window at once. Said before [`Self::start`].
+    pub fn ending_a_host_it_finds(&self) {
+        self.supervision
+            .ends_a_host_it_finds
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// **What a window whose chats run in its own process waits on before it puts any back**
+    /// (#2004, with [`Self::ending_a_host_it_finds`]): the host settled, at most `within`, so a
+    /// host a crashed window left has ended its chats first. Refused, with why, while a host
+    /// found serving could not be ended: a chat it may still run is not started again here.
+    pub fn before_chats_are_put_back(&self, within: Duration) -> crate::planes::Gate {
+        let (connection, supervision) =
+            (Arc::clone(&self.connection), Arc::clone(&self.supervision));
+        Arc::new(move || {
+            // Ready, or gone with why: settled either way.
+            let _ = connection.wait(within);
+            if supervision
+                .left_serving
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(
+                    "a session host a window left serving may still run these chats, \
+                            and it could not be ended; quit purlis and start it again"
+                        .to_owned(),
+                );
+            }
+            Ok(())
+        })
+    }
+
     /// The link to the host, for the chats that run in it: ready once the host is, or gone with
     /// the reason there is none.
     pub fn connection(&self) -> Arc<Connection> {
@@ -819,6 +860,9 @@ enum Started {
     Serving,
     /// Another host of this user already serves: this window reattached to it (#2006).
     AnotherServes,
+    /// Another host of this user already serves, and this window ends it rather than
+    /// reattaching (#2004).
+    AnotherToEnd,
     /// It did not start, or ended before it was ready.
     Failed,
 }
@@ -838,6 +882,7 @@ fn supervise(
     connection: &Arc<Connection>,
     supervision: &Arc<Supervision>,
 ) {
+    let mut ended_in_a_row = 0;
     loop {
         if supervision.ending() {
             return;
@@ -851,7 +896,30 @@ fn supervise(
                     return;
                 }
             }
-            Started::Serving => wait_for_an_unexpected_end(held, supervision),
+            Started::Serving => {
+                ended_in_a_row = 0;
+                supervision
+                    .left_serving
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                wait_for_an_unexpected_end(held, supervision);
+            }
+            // Ended as a quit, then a host of this window's own is started at once (#2004).
+            // A host that keeps being found is an unexpected end like any other.
+            Started::AnotherToEnd => match end_the_one_serving(place) {
+                Ok(()) if ended_in_a_row < ENDS_IN_A_ROW => {
+                    ended_in_a_row += 1;
+                    continue;
+                }
+                Ok(()) => {}
+                Err(why) => {
+                    tracing::warn!(
+                        "purlis: the session host a window left serving could not be ended: {why}"
+                    );
+                    supervision
+                        .left_serving
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+            },
             Started::Failed => {}
         }
         if supervision.ending() {
@@ -1008,6 +1076,13 @@ fn start_here(
             // The host a window that went without a quit left serving: this window reattaches
             // to it, and every chat it kept is put back where it is (#2006). It is not started
             // again: it serves.
+            NotReady::AnotherServes
+                if supervision
+                    .ends_a_host_it_finds
+                    .load(std::sync::atomic::Ordering::SeqCst) =>
+            {
+                return Started::AnotherToEnd;
+            }
             NotReady::AnotherServes => {
                 tracing::info!(
                     "purlis: a session host already serves at {}; this window reattaches to it",
@@ -1085,6 +1160,33 @@ fn log_what_it_says(said: std::process::ChildStderr, supervision: Arc<Supervisio
                 supervision.heard(&line);
             }
         });
+}
+
+/// How many hosts found serving a window ends in a row before it counts the next as an
+/// unexpected end (#2004).
+const ENDS_IN_A_ROW: u32 = 3;
+
+/// **Ends the host serving at `place` as a quit** (#2004): every chat it kept ends as a quit,
+/// and it stops. Answers once its socket is gone, so a host started next takes its place.
+fn end_the_one_serving(place: &purlis_host::Place) -> Result<(), String> {
+    let credential = Credential::read(&place.credentials, Scope::LocalUi)
+        .map_err(|why| format!("its credential could not be read: {why}"))?;
+    let link = tauri::async_runtime::block_on(open_link(&place.socket, &credential, || {}))?;
+    tracing::info!(
+        "purlis: chats run in the window on this launch, so the session host a window left \
+         serving at {} is told to quit, ending the chats it kept",
+        place.socket.display()
+    );
+    link.quit_within(QUITS_WITHIN)?;
+    drop(link);
+    let deadline = Instant::now() + QUITS_WITHIN;
+    while place.socket.exists() {
+        if Instant::now() > deadline {
+            return Err("it answered the quit and did not stop".to_owned());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok(())
 }
 
 /// Connect to the host as `local-ui`, the window's scope, and hold the link for as long as the

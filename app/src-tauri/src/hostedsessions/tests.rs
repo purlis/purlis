@@ -16,6 +16,8 @@ use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
 
+mod upgrading;
+
 /// The window's connection to the host `hosting` serves as, over in-memory links, run on
 /// `runtime`: its own link, ready, and one more opened for each project root, as the window's
 /// are over the host's socket.

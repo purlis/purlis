@@ -149,3 +149,29 @@ fn the_default_config_home_keeps_the_socket_every_earlier_build_named() {
     assert_eq!(named_for(&socket, None, Some(default)), socket);
     assert_eq!(named_for(&socket, None, None), socket);
 }
+
+/// #2114: one config home spelled two ways (through a link, or `/tmp` for `/private/tmp`) is one
+/// config home, with one host.
+#[test]
+fn a_config_home_spelled_two_ways_names_one_socket() {
+    let socket = PathBuf::from("/run/user/501/purlis/purlisd.sock");
+    let homes = tempfile::tempdir().unwrap();
+    let (real, default) = (homes.path().join("real"), homes.path().join("default"));
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::create_dir_all(&default).unwrap();
+    let (to_real, to_default) = (
+        homes.path().join("to-real"),
+        homes.path().join("to-default"),
+    );
+    std::os::unix::fs::symlink(&real, &to_real).unwrap();
+    std::os::unix::fs::symlink(&default, &to_default).unwrap();
+
+    assert_eq!(
+        named_for(&socket, Some(&to_real), Some(&default)),
+        named_for(&socket, Some(&real), Some(&default)),
+    );
+    assert_eq!(
+        named_for(&socket, Some(&to_default), Some(&default)),
+        socket
+    );
+}

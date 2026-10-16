@@ -9,7 +9,7 @@
 //! worktree on a branch of its own, and the project keeps a session record. The launch before
 //! the upgrade runs its chats in the window's own process, as every build before #2004 did, and
 //! quits to install the update. The launch after it runs them in the session host, as this
-//! build does by default ([`super::chats_in_the_host`], the same composition the app's launch
+//! build does by default ([`crate::hostedsessions::chats_in_the_host`], the same composition the app's launch
 //! makes), and the person reopens what was open. Every chat comes back on its own conversation,
 //! on its own profile, with that profile's command and environment and nothing asked again, in
 //! its own folder on its own branch, and the branch, its commit and the session record are as
@@ -35,8 +35,7 @@ const LAUNCH: &str = "PURLIS_TEST_UPGRADE_LAUNCH";
 /// Where the test's project and homes are, for a child.
 const AT: &str = "PURLIS_TEST_UPGRADE_AT";
 /// This test, by the name a child runs it by.
-const THIS: &str =
-    "hostedsessions::upgrading::an_upgrade_to_chats_in_the_host_reopens_every_chat_as_it_was";
+const THIS: &str = "hostedsessions::tests::upgrading::an_upgrade_to_chats_in_the_host_reopens_every_chat_as_it_was";
 
 const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     columns: 80,
@@ -418,8 +417,8 @@ fn the_launch_after_the_upgrade(world: &World) {
         let (folder, data) = (host_folder.clone(), world.data());
         runtime.block_on(async move { crate::behaviour::a_host(&folder, &data) })
     };
-    let (connection, _window) = super::tests::in_memory(host, &runtime);
-    let planes = super::chats_in_the_host(
+    let (connection, _window) = super::in_memory(host, &runtime);
+    let planes = crate::hostedsessions::chats_in_the_host(
         Planes::telling(
             Arc::new(|_: Moved| {}),
             crate::Shipped::default(),

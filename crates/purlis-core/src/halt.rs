@@ -153,14 +153,22 @@ pub fn stopped_on_disk(config_root: &Path) -> bool {
 
 /// **The files of a config home, as the session host reads them** (#2190): what the window's
 /// binary and `purlis serve` give their host, so it hears `purlis stop --all` with no window
-/// there ([`stopped_on_disk`]). The host reads them only; a re-arm is the window's.
+/// there. The host reads them only; a re-arm is the window's.
 #[cfg(unix)]
 pub struct OnDisk(pub std::path::PathBuf);
 
 #[cfg(unix)]
 impl purlis_host::StopsElsewhere for OnDisk {
-    fn stopped(&self) -> bool {
-        stopped_on_disk(&self.0)
+    fn last_stop(&self) -> Option<String> {
+        if !stopped_on_disk(&self.0) {
+            return None;
+        }
+        // Each stop the command line writes is a journal line of its own, so the newest line
+        // names it; a stop the journal does not hold is the marker's.
+        Some(match last(&self.0) {
+            Some(entry) => format!("{}:{:?}:{:?}", entry.at, entry.event, entry.by),
+            None => "marker".to_owned(),
+        })
     }
 }
 
