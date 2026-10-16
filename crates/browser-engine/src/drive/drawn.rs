@@ -57,8 +57,8 @@ pub(crate) struct Drawn {
 
 /// The engine's answer could not be read.
 #[derive(Debug, thiserror::Error)]
-#[error("what the page draws could not be read")]
-pub(crate) struct Unread;
+#[error("what the page draws could not be read (at {0})")]
+pub(crate) struct Unread(u32);
 
 /// What `answer` (of `DOMSnapshot.captureSnapshot`, with [`STYLES`]) draws that is to be painted
 /// over on a page that keeps `kept` out.
@@ -66,14 +66,14 @@ pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
     let strings: Vec<&str> = answer
         .get("strings")
         .and_then(Value::as_array)
-        .ok_or(Unread)?
+        .ok_or(Unread(line!()))?
         .iter()
-        .map(|s| s.as_str().ok_or(Unread))
+        .map(|s| s.as_str().ok_or(Unread(line!())))
         .collect::<Result<_, _>>()?;
     let documents = answer
         .get("documents")
         .and_then(Value::as_array)
-        .ok_or(Unread)?;
+        .ok_or(Unread(line!()))?;
     let mut out = Drawn::default();
     for document in documents {
         read_document(document, &strings, kept, &mut out)?;
@@ -87,8 +87,8 @@ fn read_document(
     kept: &[&str],
     out: &mut Drawn,
 ) -> Result<(), Unread> {
-    let nodes = document.get("nodes").ok_or(Unread)?;
-    let layout = document.get("layout").ok_or(Unread)?;
+    let nodes = document.get("nodes").ok_or(Unread(line!()))?;
+    let layout = document.get("layout").ok_or(Unread(line!()))?;
     let string = |index: i64| -> Result<&str, Unread> {
         if index < 0 {
             return Ok("");
@@ -96,7 +96,7 @@ fn read_document(
         usize::try_from(index)
             .ok()
             .and_then(|at| strings.get(at).copied())
-            .ok_or(Unread)
+            .ok_or(Unread(line!()))
     };
     let parents = numbers(nodes, "parentIndex")?;
     let names = numbers(nodes, "nodeName")?;
@@ -105,28 +105,28 @@ fn read_document(
     let attributes = nodes
         .get("attributes")
         .and_then(Value::as_array)
-        .ok_or(Unread)?;
+        .ok_or(Unread(line!()))?;
     let count = parents.len();
     if [names.len(), values.len(), backends.len(), attributes.len()]
         .iter()
         .any(|n| *n != count)
     {
-        return Err(Unread);
+        return Err(Unread(line!()));
     }
     let laid = numbers(layout, "nodeIndex")?;
     let texts = numbers(layout, "text")?;
     let styles = layout
         .get("styles")
         .and_then(Value::as_array)
-        .ok_or(Unread)?;
+        .ok_or(Unread(line!()))?;
     if texts.len() != laid.len() || styles.len() != laid.len() {
-        return Err(Unread);
+        return Err(Unread(line!()));
     }
     let node_at = |n: i64| {
         usize::try_from(n)
             .ok()
             .filter(|at| *at < count)
-            .ok_or(Unread)
+            .ok_or(Unread(line!()))
     };
     let name = |at: usize| string(names[at]).map(str::to_ascii_uppercase);
     let parent = |at: usize| usize::try_from(parents[at]).ok().filter(|p| *p < count);
@@ -160,23 +160,23 @@ fn read_document(
         let name = name(at)?;
         let style: Vec<String> = styles[entry]
             .as_array()
-            .ok_or(Unread)?
+            .ok_or(Unread(line!()))?
             .iter()
             .map(|v| {
                 v.as_i64()
-                    .ok_or(Unread)
+                    .ok_or(Unread(line!()))
                     .and_then(string)
                     .map(str::to_ascii_lowercase)
             })
             .collect::<Result<_, _>>()?;
         let [images @ .., reflected] = style.as_slice() else {
-            return Err(Unread);
+            return Err(Unread(line!()));
         };
         if images.len() + 1 != STYLES.len() {
-            return Err(Unread);
+            return Err(Unread(line!()));
         }
         if !reflected.is_empty() && reflected != "none" {
-            return Err(Unread);
+            return Err(Unread(line!()));
         }
         let image = images
             .iter()
@@ -205,7 +205,7 @@ fn read_document(
         }
         if let Some(up) = parent(at) {
             if up >= at {
-                return Err(Unread);
+                return Err(Unread(line!()));
             }
             inside[up] |= holding;
             own[up].insert_str(0, &text);
@@ -256,9 +256,9 @@ fn read_document(
 fn numbers(of: &Value, field: &str) -> Result<Vec<i64>, Unread> {
     of.get(field)
         .and_then(Value::as_array)
-        .ok_or(Unread)?
+        .ok_or(Unread(line!()))?
         .iter()
-        .map(|n| n.as_i64().ok_or(Unread))
+        .map(|n| n.as_i64().ok_or(Unread(line!())))
         .collect()
 }
 
@@ -270,12 +270,12 @@ fn rare(of: &Value, field: &str) -> Result<Vec<(usize, i64)>, Unread> {
     let index = numbers(data, "index")?;
     let value = numbers(data, "value")?;
     if index.len() != value.len() {
-        return Err(Unread);
+        return Err(Unread(line!()));
     }
     index
         .into_iter()
         .zip(value)
-        .map(|(i, v)| Ok((usize::try_from(i).map_err(|_| Unread)?, v)))
+        .map(|(i, v)| Ok((usize::try_from(i).map_err(|_| Unread(line!()))?, v)))
         .collect()
 }
 
@@ -286,14 +286,14 @@ fn attribute<'a>(
     string: &impl Fn(i64) -> Result<&'a str, Unread>,
     wanted: &str,
 ) -> Result<&'a str, Unread> {
-    let pairs = pairs.as_array().ok_or(Unread)?;
+    let pairs = pairs.as_array().ok_or(Unread(line!()))?;
     for pair in pairs.chunks(2) {
         let [name, value] = pair else {
-            return Err(Unread);
+            return Err(Unread(line!()));
         };
-        let name = string(name.as_i64().ok_or(Unread)?)?;
+        let name = string(name.as_i64().ok_or(Unread(line!()))?)?;
         if name.eq_ignore_ascii_case(wanted) {
-            return string(value.as_i64().ok_or(Unread)?);
+            return string(value.as_i64().ok_or(Unread(line!()))?);
         }
     }
     Ok("")
