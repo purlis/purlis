@@ -75,6 +75,8 @@ mod behaviour;
 mod hostedconfinement;
 #[cfg(unix)]
 mod hostedsessions;
+mod hostfailing;
+mod hostlost;
 #[cfg(unix)]
 mod hostsaving;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -3286,6 +3288,15 @@ pub fn run() {
             #[cfg(unix)]
             {
                 let host = sessionhost::SessionHost::default();
+                // The window says so when its supervisor gives up on the host (#2007).
+                let failing = host.failing();
+                failing.telling({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |now: Option<hostfailing::Failing>| {
+                        let _ = window.emit(hostfailing::FAILING, now);
+                    })
+                });
+                app.manage(failing);
                 host.start();
                 // The person's browsers run in it too (#2012).
                 app.manage(std::sync::Arc::new(browsers::WindowBrowsers::new(
@@ -3293,6 +3304,9 @@ pub fn run() {
                 )));
                 app.manage(host);
             }
+            // No session host to fail where none runs.
+            #[cfg(not(unix))]
+            app.manage(std::sync::Arc::new(hostfailing::HostFailing::default()));
             // The person's forge sign-ins, for the window's own forge calls (#1816).
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
@@ -3684,6 +3698,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             mcpfailed::FAILED,
+                            &told,
+                        );
+                    })
+                })
+                // A chat whose program ended with its session host: the window says so on its
+                // pane, with Resume (#2007).
+                .telling_lost_chats({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: hostlost::LostChat| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            hostlost::LOST,
                             &told,
                         );
                     })

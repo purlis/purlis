@@ -400,7 +400,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
         let inherited = inherited.clone();
         move || {
             let mut command = crate::sessionhost::command(&charter_app());
-            command.env_clear().envs(inherited);
+            command.env_clear().envs(inherited.iter().cloned());
             Ok(command)
         }
     });

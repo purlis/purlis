@@ -226,6 +226,35 @@ impl purlis_host::Record for Kept {
             purlis_core::dispatchrecord::ended_unwatched(root, &chat, number, chrono::Utc::now());
         }
     }
+
+    fn left_by_its_last_host(&self, left: &purlis_host::Started) {
+        self.left_by_a_crash(left);
+    }
+}
+
+/// **What a chat the last host ran leaves, kept by the host that took its place** (#2007): the
+/// last host ended without ending it, so what its hooks spooled is recorded now, and its
+/// sub-agents' runs end with its own, `failed` for the cause `host-crash` (ADR 0076 §5, §6).
+impl Kept {
+    fn left_by_a_crash(&self, left: &purlis_host::Started) {
+        use purlis_core::state::run::{Cause, RunState};
+        let Some(log) = self.log() else { return };
+        let root = left.project_path.as_path();
+        let socket = crate::hooks::socket_for(Some(root)).socket;
+        crate::hooks::drain_while_running(
+            &purlis_core::hookwire::spool::dir_for(&socket),
+            root,
+            &log,
+            left.number,
+        );
+        crate::planes::its_children_end(
+            &log,
+            root,
+            left.number,
+            RunState::Failed,
+            Cause::HostCrash,
+        );
+    }
 }
 
 /// The host's own act that ended a program, as a run's end names it (ADR 0076 §2).
@@ -493,12 +522,13 @@ fn purlis_host_says(line: &str) {
     let _ = writeln!(std::io::stderr(), "purlisd: {line}");
 }
 
-/// The window's session host, while it runs.
+/// The window's session host, while it runs, and its supervisor (#2007).
 #[derive(Default)]
 pub struct SessionHost {
     held: Arc<Mutex<Option<Held>>>,
     /// The link to it, for the chats that run in it.
     connection: Arc<Connection>,
+    supervision: Arc<Supervision>,
 }
 
 struct Held {
@@ -507,11 +537,78 @@ struct Held {
     stdin: Option<ChildStdin>,
 }
 
+/// **The window supervises its host** (ADR 0068 §3, #2007): no service manager may be used
+/// for a host that is not a login item, so the window is the one that starts it again. What the
+/// supervisor shares with the window's other threads.
+#[derive(Default)]
+struct Supervision {
+    /// The window is ending its host: nothing starts it again.
+    ending: std::sync::atomic::AtomicBool,
+    /// What wakes the supervisor.
+    woken: Mutex<Woken>,
+    changed: std::sync::Condvar,
+    breaker: Mutex<breaker::Breaker>,
+    /// The last lines the host wrote to its log, oldest first.
+    said: Mutex<std::collections::VecDeque<String>>,
+    /// What the window says while the breaker holds the host stopped.
+    failing: Arc<crate::hostfailing::HostFailing>,
+}
+
+#[derive(Default)]
+struct Woken {
+    /// The window's link to the host ended without the window ending it.
+    link_lost: bool,
+    /// The person pressed Try again.
+    try_again: bool,
+}
+
+/// How many of the host's last lines the window keeps, to say them when it is failing.
+const LINES_KEPT: usize = 20;
+
+/// How often the supervisor looks at its host when nothing wakes it.
+const LOOK_EVERY: Duration = Duration::from_millis(100);
+
+impl Supervision {
+    fn ending(&self) -> bool {
+        self.ending.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn wake(&self, how: impl FnOnce(&mut Woken)) {
+        how(&mut self.woken.lock().unwrap_or_else(PoisonError::into_inner));
+        self.changed.notify_all();
+    }
+
+    /// The link ended: a host the window cannot speak to is ended, and started again.
+    fn link_lost(&self) {
+        self.wake(|woken| woken.link_lost = true);
+    }
+
+    fn heard(&self, line: &str) {
+        let mut said = self.said.lock().unwrap_or_else(PoisonError::into_inner);
+        if said.len() == LINES_KEPT {
+            said.pop_front();
+        }
+        said.push_back(line.to_owned());
+    }
+
+    /// Waits up to [`LOOK_EVERY`] for something to wake it, and answers what did.
+    fn rest(&self) -> Woken {
+        let woken = self.woken.lock().unwrap_or_else(PoisonError::into_inner);
+        let (mut woken, _) = self
+            .changed
+            .wait_timeout_while(woken, LOOK_EVERY, |woken| {
+                !woken.link_lost && !woken.try_again && !self.ending()
+            })
+            .unwrap_or_else(PoisonError::into_inner);
+        std::mem::take(&mut *woken)
+    }
+}
+
 impl SessionHost {
     /// Makes the host's socket folder this user's alone now, on the calling thread, so that
     /// every chat's sandbox, compiled from here on, denies a folder that is there; then starts
-    /// the host on a thread of its own and connects to it once it is ready. Nothing waits for
-    /// the host; what goes wrong is said in the log.
+    /// the host on a thread of its own and connects to it once it is ready, and supervises it
+    /// from there. Nothing waits for the host; what goes wrong is said in the log.
     pub fn start(&self) {
         let Some(place) = place() else {
             let why = "there is no home folder to keep its credentials in";
@@ -526,13 +623,14 @@ impl SessionHost {
         });
     }
 
-    /// [`SessionHost::start`], the host serving at `place` and started by the command `starts`
-    /// gives, on the host's own thread: the window's own binary as [`command`] makes it, or,
-    /// for the behaviour suite, that binary in an environment of the test's (#2170).
+    /// [`SessionHost::start`], the host serving at `place` and started, each time, by the
+    /// command `starts` gives, on the host's own thread: the window's own binary as [`command`]
+    /// makes it, or, for the behaviour suite, that binary in an environment of the test's
+    /// (#2170).
     pub(crate) fn start_at(
         &self,
         place: purlis_host::Place,
-        starts: impl FnOnce() -> Result<Command, String> + Send + 'static,
+        starts: impl Fn() -> Result<Command, String> + Send + Sync + 'static,
     ) {
         let connection = &self.connection;
         if let Err(why) = purlis_core::hostsocket::make_the_folder(&place.socket) {
@@ -546,11 +644,16 @@ impl SessionHost {
         }
         let held = Arc::clone(&self.held);
         let connection = Arc::clone(connection);
+        let supervision = Arc::clone(&self.supervision);
+        let try_again = Arc::clone(&self.supervision);
+        self.supervision.failing.tried_again_by(Arc::new(move || {
+            try_again.wake(|woken| woken.try_again = true)
+        }));
         let spawned = std::thread::Builder::new()
             .name("session host".into())
             .spawn({
                 let connection = Arc::clone(&connection);
-                move || start_here(&held, place, starts, &connection)
+                move || supervise(&held, &place, &starts, &connection, &supervision)
             });
         if let Err(why) = spawned {
             tracing::warn!("purlis: the session host was not started: {why}");
@@ -564,9 +667,18 @@ impl SessionHost {
         Arc::clone(&self.connection)
     }
 
-    /// Ends the host: closes its standard input, waits [`ENDS_WITHIN`] for it to go, and kills
-    /// it if it has not. For the app's exit.
+    /// What the window says while the host is failing, and its Try again (#2007).
+    pub fn failing(&self) -> Arc<crate::hostfailing::HostFailing> {
+        Arc::clone(&self.supervision.failing)
+    }
+
+    /// Ends the host: nothing starts it again, its standard input is closed, it is given
+    /// [`ENDS_WITHIN`] to go, and is killed if it has not. For the app's exit.
     pub fn end(&self) {
+        self.supervision
+            .ending
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.supervision.wake(|_| {});
         end_held(&self.held);
     }
 
@@ -574,7 +686,14 @@ impl SessionHost {
     /// answer in time ends it before the save at quit (#2002). Ending it twice ends it once.
     pub fn ender(&self) -> Arc<dyn Fn() + Send + Sync> {
         let held = Arc::clone(&self.held);
-        Arc::new(move || end_held(&held))
+        let supervision = Arc::clone(&self.supervision);
+        Arc::new(move || {
+            supervision
+                .ending
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            supervision.wake(|_| {});
+            end_held(&held);
+        })
     }
 }
 
@@ -596,19 +715,140 @@ fn end_held(held: &Mutex<Option<Held>>) {
     let _ = held.child.wait();
 }
 
+/// How a start of the host went.
+enum Started {
+    /// It serves, and the window connects to it.
+    Serving,
+    /// Another host of this user already serves: this window leaves it be.
+    AnotherServes,
+    /// It did not start, or ended before it was ready.
+    Failed,
+}
+
+/// **The supervisor** (ADR 0068 §3, #2007), on the host's own thread: starts the host, and
+/// after each unexpected exit starts it again, until its breaker trips; then says the host is
+/// failing and waits for the person's Try again. Nothing starts it once the window ends it.
+///
+/// An unexpected exit is any end the window did not ask for: the host crashed or was killed, it
+/// ended before it was ready, or the window's link to it ended, after which the host is ended
+/// first. Each chat that ran in it has ended with it (`crate::hostedsessions::HostLink`), and the
+/// next host settles what the last one left from its run journal.
+fn supervise(
+    held: &Mutex<Option<Held>>,
+    place: &purlis_host::Place,
+    starts: &(dyn Fn() -> Result<Command, String> + Send + Sync),
+    connection: &Arc<Connection>,
+    supervision: &Arc<Supervision>,
+) {
+    loop {
+        if supervision.ending() {
+            return;
+        }
+        match start_here(held, place, starts, connection, supervision) {
+            Started::AnotherServes => return,
+            Started::Serving => wait_for_an_unexpected_end(held, supervision),
+            Started::Failed => {}
+        }
+        if supervision.ending() {
+            return;
+        }
+        // Every start from here waits for the next host, as the first waited for the first.
+        connection.restarting();
+        let after = supervision
+            .breaker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .exited(Instant::now());
+        if after == breaker::After::StartAgain {
+            tracing::warn!("purlis: the session host ended unexpectedly; starting it again");
+            continue;
+        }
+        let said: Vec<String> = supervision
+            .said
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .cloned()
+            .collect();
+        let why = format!(
+            "it ended unexpectedly {} times within {} minutes, so purlis stopped starting it \
+             again",
+            breaker::EXITS,
+            breaker::WITHIN.as_secs() / 60
+        );
+        tracing::warn!("purlis: the session host is failing: {why}");
+        connection.gone(why);
+        supervision.failing.failing(crate::hostfailing::Failing {
+            exits: u32::try_from(breaker::EXITS).unwrap_or(u32::MAX),
+            within_minutes: u32::try_from(breaker::WITHIN.as_secs() / 60).unwrap_or(u32::MAX),
+            said,
+        });
+        loop {
+            let woken = supervision.rest();
+            if supervision.ending() {
+                return;
+            }
+            if woken.try_again {
+                break;
+            }
+        }
+        tracing::info!("purlis: the session host is tried again");
+        supervision
+            .breaker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .reset();
+        supervision.failing.not_failing();
+        connection.restarting();
+    }
+}
+
+/// Returns once the host has ended without the window ending it, or the window is ending it.
+/// A host whose link to the window ended is ended here first: the window cannot speak to it.
+fn wait_for_an_unexpected_end(held: &Mutex<Option<Held>>, supervision: &Supervision) {
+    loop {
+        let woken = supervision.rest();
+        let mut held = held.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(host) = held.as_mut() else {
+            // The window took it to end it.
+            return;
+        };
+        match host.child.try_wait() {
+            Ok(Some(status)) => {
+                tracing::warn!("purlis: the session host ended ({status})");
+                *held = None;
+                return;
+            }
+            Ok(None) if woken.link_lost && !supervision.ending() => {
+                tracing::warn!(
+                    "purlis: the window's link to the session host ended while it ran; it is \
+                     ended, to be started again"
+                );
+                let _ = host.child.kill();
+            }
+            Ok(None) => {}
+            Err(why) => {
+                tracing::warn!("purlis: the session host could not be waited for: {why}");
+                let _ = host.child.kill();
+            }
+        }
+    }
+}
+
 /// Starts the host with the command `starts` gives and connects to it, on the calling thread.
 fn start_here(
     held: &Mutex<Option<Held>>,
-    place: purlis_host::Place,
-    starts: impl FnOnce() -> Result<Command, String>,
+    place: &purlis_host::Place,
+    starts: &(dyn Fn() -> Result<Command, String> + Send + Sync),
     connection: &Arc<Connection>,
-) {
+    supervision: &Arc<Supervision>,
+) -> Started {
     let mut command = match starts() {
         Ok(command) => command,
         Err(why) => {
             tracing::warn!("purlis: no session host: {why}");
             connection.gone(why);
-            return;
+            return Started::Failed;
         }
     };
     let mut child = match purlis_core::forklock::spawn(&mut command) {
@@ -616,11 +856,11 @@ fn start_here(
         Err(why) => {
             tracing::warn!("purlis: the session host did not start: {why}");
             connection.gone(format!("it did not start: {why}"));
-            return;
+            return Started::Failed;
         }
     };
     if let Some(said) = child.stderr.take() {
-        log_what_it_says(said);
+        log_what_it_says(said, Arc::clone(supervision));
     }
     let stdout = child.stdout.take();
     let stdin = child.stdin.take();
@@ -631,13 +871,27 @@ fn start_here(
         let code = wait_for_its_end(held, Instant::now() + ENDS_WITHIN);
         tracing::warn!("purlis: {} (process {pid})", why_not_ready(code));
         connection.gone(why_not_ready(code));
-        return;
+        if code == Some(ANOTHER_SERVES) {
+            return Started::AnotherServes;
+        }
+        // One that never said it was ready and still runs is ended: it is started again.
+        if let Some(mut host) = held.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = host.child.kill();
+            let _ = host.child.wait();
+        }
+        return Started::Failed;
     }
     tracing::info!(
         "purlis: the session host serves at {}",
         place.socket.display()
     );
-    connect(place.socket, place.credentials, Arc::clone(connection));
+    connect(
+        place.socket.clone(),
+        place.credentials.clone(),
+        Arc::clone(connection),
+        Arc::clone(supervision),
+    );
+    Started::Serving
 }
 
 /// The host's exit code, once it has ended by `deadline`.
@@ -668,63 +922,72 @@ fn said_ready(stdout: std::process::ChildStdout) -> bool {
     reading.is_ok() && heard.recv_timeout(READY_WITHIN).unwrap_or(false)
 }
 
-/// Each line the host says on its standard error, into the window's log.
-fn log_what_it_says(said: std::process::ChildStderr) {
+/// Each line the host says on its standard error, into the window's log, the last of them kept
+/// to say when the host is failing.
+fn log_what_it_says(said: std::process::ChildStderr, supervision: Arc<Supervision>) {
     let _ = std::thread::Builder::new()
         .name("session host log".into())
         .spawn(move || {
             for line in BufReader::new(said).lines().map_while(Result::ok) {
                 tracing::info!("{line}");
+                supervision.heard(&line);
             }
         });
 }
 
 /// Connect to the host as `local-ui`, the window's scope, and hold the link for as long as the
-/// window runs: the chats that run in the host go over it ([`HostLink`]).
-fn connect(socket: PathBuf, credentials: PathBuf, connection: Arc<Connection>) {
+/// window runs: the chats that run in the host go over it ([`HostLink`]). A link that cannot be
+/// made, or ends, wakes the supervisor.
+fn connect(
+    socket: PathBuf,
+    credentials: PathBuf,
+    connection: Arc<Connection>,
+    supervision: Arc<Supervision>,
+) {
     tauri::async_runtime::spawn(async move {
+        let lost = |why: String| {
+            tracing::warn!("purlis: {why}");
+            connection.gone(why);
+            supervision.link_lost();
+        };
         let credential = match Credential::read(&credentials, Scope::LocalUi) {
             Ok(credential) => credential,
             Err(why) => {
-                tracing::warn!("purlis: the session host's credential could not be read: {why}");
-                connection.gone(format!("its credential could not be read: {why}"));
-                return;
+                return lost(format!("its credential could not be read: {why}"));
             }
         };
         let linked = match tokio::net::UnixStream::connect(&socket).await {
             Ok(stream) => {
                 link::connect(stream, session::speaks(), Scope::LocalUi, &credential).await
             }
-            Err(why) => {
-                tracing::warn!("purlis: the session host's socket did not answer: {why}");
-                connection.gone(format!("its socket did not answer: {why}"));
-                return;
-            }
+            Err(why) => return lost(format!("its socket did not answer: {why}")),
         };
         let link = match linked {
             Ok(link) => link,
-            Err(why) => {
-                tracing::warn!("purlis: the session host refused the window: {why}");
-                connection.gone(format!("it refused the window: {why}"));
-                return;
-            }
+            Err(why) => return lost(format!("it refused the window: {why}")),
         };
         let ended = {
             let connection = Arc::clone(&connection);
+            let supervision = Arc::clone(&supervision);
             move || {
-                tracing::info!("purlis: the link to the session host ended");
-                connection.gone("the link to it ended");
+                if supervision.ending() {
+                    tracing::info!("purlis: the link to the session host ended");
+                    connection.gone("the link to it ended");
+                    return;
+                }
+                tracing::warn!("purlis: the link to the session host ended unexpectedly");
+                connection.restarting();
+                supervision.link_lost();
             }
         };
         match HostLink::over(link, tokio::runtime::Handle::current(), ended).await {
             Ok(link) => connection.ready(Arc::new(link)),
-            Err(why) => {
-                tracing::warn!("purlis: {why}");
-                connection.gone(why);
-            }
+            Err(why) => lost(why),
         }
     });
 }
+
+mod breaker;
 
 #[cfg(test)]
 mod tests;

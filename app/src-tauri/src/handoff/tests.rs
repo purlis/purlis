@@ -2277,6 +2277,34 @@ fn a_task_whose_program_ends_without_a_report_is_recorded_as_failed_saying_so() 
 }
 
 #[test]
+fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_says_so() {
+    // #2007: the host was killed outright, so the task did not end by itself. As after a quit,
+    // its record runs on and it reports once resumed; its pane says how its run was left.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    host.program_ends_with_its_host(task);
+
+    let record = record_of(&held, task);
+    assert!(record.running(), "{record:?}");
+    assert_eq!(record.report, None);
+    assert_eq!(
+        held.lost_with_the_host().of(task),
+        Some((false, false)),
+        "failed: it never said its turn ended, and named no conversation"
+    );
+    let _ = held.close_chat(task);
+    assert_eq!(
+        held.lost_with_the_host().of(task),
+        None,
+        "gone with its tab"
+    );
+}
+
+#[test]
 fn a_task_started_again_in_its_place_keeps_its_record_which_ends_with_its_report() {
     // A restart (for a sandbox grant, say) is the same chat going on: its dispatch's
     // record follows it by the chat's id, and is not ended by the old session's end.

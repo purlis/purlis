@@ -186,6 +186,14 @@ pub trait SessionHost: Send + Sync {
     /// operating system telling the app, not charter reading a screen (ADR 0018).
     fn when_one_ends(&self, tell: Ends);
 
+    /// Whether session `id`'s program ended with the session host it ran in, which ended
+    /// unexpectedly (#2007), rather than by itself or by the window's act: so until it is
+    /// started again or closed. Never, where chats run in the window's own process.
+    fn lost_with_its_host(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
     /// The sessions that are running, in the order they were opened.
     fn running(&self) -> Vec<u32>;
 
@@ -388,6 +396,8 @@ pub(crate) mod pretend {
         /// How many ends of every session are under way now, and the most there were at once.
         ending: AtomicU32,
         most_ending: AtomicU32,
+        /// The sessions whose program ended with their host ([`Pretend::program_ends_with_its_host`]).
+        lost: Mutex<Vec<u32>>,
     }
 
     impl Pretend {
@@ -482,6 +492,13 @@ pub(crate) mod pretend {
             if let Some(tell) = tell {
                 tell(id, exit);
             }
+        }
+
+        /// Session `id`'s program ends with its session host, which ended unexpectedly
+        /// (#2007), and whoever asked is told.
+        pub fn program_ends_with_its_host(&self, id: u32) {
+            lock(&self.seen.lost).push(id);
+            self.program_ends(id, Exit::Signal("Hangup".to_owned()));
         }
 
         fn here(&self, id: u32) -> Result<(), String> {
@@ -589,6 +606,9 @@ pub(crate) mod pretend {
         }
         fn when_one_ends(&self, tell: Ends) {
             *lock(&self.seen.ends) = Some(tell);
+        }
+        fn lost_with_its_host(&self, id: u32) -> bool {
+            lock(&self.seen.lost).contains(&id)
         }
         fn running(&self) -> Vec<u32> {
             lock(&self.seen.running).clone()

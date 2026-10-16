@@ -307,6 +307,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",
+    // Dismiss on a chat's Notice that its program ended with its session host (#2007): the
+    // person's answer.
+    "put_away_lost_chat",
+    // Try again on the Notice that the session host is failing (#2007): it starts the host
+    // every chat runs in, on the person's word.
+    "start_the_session_host_again",
     // Dismiss on a task's Notice that it has gone quiet (#1981): the person's answer.
     "put_away_task_quiet",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
@@ -710,6 +716,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_attended",
     "chat_doings",
     "chat_in_front",
+    // A chat whose program ended with its session host (#2007): what its pane says.
+    "chat_lost_with_the_host",
     "chat_network",
     "chat_order",
     "chat_states",
@@ -829,6 +837,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "see_on_this_machine",
     "seen_on_this_machine",
     "session_bus",
+    // Whether the session host is failing, and what the window says of it (#2007).
+    "session_host_failing",
     "session_record",
     "set_dismissed",
     "show_window_holding",
