@@ -1630,6 +1630,11 @@ mod tests {
                 &purlis_core::profiletrust::fingerprint(work),
             )
             .expect("approved");
+            // Codex and opencode run wrapped on macOS and Linux (#1040); these tests are about
+            // typing into a chat, so it starts without the sandbox here.
+            if matches!(kind, "codex" | "opencode") {
+                crate::sandboxing::no_sandbox_here_for_tests(&root);
+            }
             Self { _dir: dir, root }
         }
     }

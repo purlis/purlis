@@ -716,6 +716,23 @@ pub struct GrantsHeld {
 
 /// Whether `persona`'s hosts in the project at `root` wait for the person's Allow on this
 /// machine: it lists hosts a chat would reach, or tools, and they are not allowed as they stand.
+/// **In a test of something else: no sandbox for this project's chats on this machine**, as a
+/// person sets it in Settings (`[sandbox] level = "off"` in the local file, confirmed in this
+/// machine's record). Codex and opencode run inside purlis's own wrap on macOS and Linux
+/// (#1040), at the floor too, and a test about typing, a handoff or a relaunch starts its
+/// stand-in harness without it.
+#[cfg(test)]
+pub(crate) fn no_sandbox_here_for_tests(root: &std::path::Path) {
+    use purlis_core::sandbox::personal::{self, Choice};
+    let local = root.join(purlis_core::profiles::LOCAL_FILE);
+    let text = std::fs::read_to_string(&local).unwrap_or_default();
+    if !text.contains("[sandbox]") {
+        std::fs::write(&local, format!("{text}\n[sandbox]\nlevel = \"off\"\n"))
+            .expect("the local file");
+    }
+    personal::set_by_you(root, None, Some(Choice::Off)).expect("your level");
+}
+
 pub(crate) fn persona_hosts_wait(root: &std::path::Path, persona: Option<&str>) -> bool {
     let Some(persona) = persona else {
         return false;

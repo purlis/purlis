@@ -5538,6 +5538,7 @@ dependencies = [
  "notify",
  "purlis-core",
  "purlis-host",
+ "purlis-linux-sandbox",
  "purlis-session-protocol",
  "rfd",
  "rustix",

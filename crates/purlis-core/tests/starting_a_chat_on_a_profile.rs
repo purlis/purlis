@@ -829,7 +829,13 @@ fn a_codex_chat_is_started_with_no_plugin_choice_whatever_its_project_says() {
         ),
     );
 
-    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    // Started without the sandbox: what is asked here is the plugins, and a sandboxed Codex chat
+    // starts only on a profile for sandboxed chats (#2037), wrapped on macOS and Linux (#1040).
+    let start = Start {
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..plane.start("work")
+    };
+    let ready = start::ready(&start, plane.root()).expect("it starts");
 
     assert!(ready.plugins.is_empty(), "{:?}", ready.plugins);
     let line = ready.command_line(armed_with(Harness::Codex, plane.root(), &ready.plugins));

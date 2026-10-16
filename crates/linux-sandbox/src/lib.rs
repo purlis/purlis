@@ -49,6 +49,33 @@ pub const END: &str = "--";
 /// The longest piece of a profile one argument carries: under the kernel's 128 KiB for one.
 pub const MOST_PIECE: usize = 96 * 1024;
 
+/// **`purlis _sandbox …`, run, where this process was started as that**, before anything else
+/// of the program it is: the status to exit with, or `None` for every other start. The `purlis`
+/// command and the app call it first, so whichever purlis program starts a chat can wrap it.
+pub fn serve_if_asked() -> Option<i32> {
+    let mut words = std::env::args_os().skip(1);
+    if words.next()? != COMMAND {
+        return None;
+    }
+    let Ok(words) = words
+        .map(std::ffi::OsString::into_string)
+        .collect::<Result<Vec<String>, _>>()
+    else {
+        eprintln!(
+            "purlis: the sandbox was started with words that are not text, so nothing was started."
+        );
+        return Some(126);
+    };
+    #[cfg(target_os = "linux")]
+    return Some(linux::entry(&words));
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = words;
+        eprintln!("purlis: this sandbox is purlis's own on Linux, so nothing was started.");
+        Some(126)
+    }
+}
+
 /// A wrapped chat's arguments after purlis's own program: [`COMMAND`], the profile in pieces
 /// of whole lines, [`END`], then `program` and its `args`.
 pub fn line(profile: &str, program: String, args: Vec<String>) -> Vec<String> {

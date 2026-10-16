@@ -2964,6 +2964,8 @@ impl Chats {
         // the wrap's program, with its whole line after it (ADR 0067).
         let socket = self.sessions.reports_to();
         // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
+        // This program answers the hidden `_sandbox` a wrapped chat's line starts with on Linux.
+        let this_program = std::env::current_exe().ok();
         let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {
             Some(applied) => {
                 let line = applied.line(
@@ -2978,9 +2980,9 @@ impl Chats {
                         hook_socket: socket.as_deref(),
                         confinement: confinement.as_ref(),
                         no_opt_out: false,
-                        // The `purlis` the app ships, which a wrapped chat's line starts with on
-                        // Linux (#1040).
-                        purlis: self.shipped.binary.as_deref(),
+                        // This program, which answers the hidden `_sandbox` a wrapped chat's line
+                        // starts with on Linux (#1040).
+                        purlis: this_program.as_deref(),
                     },
                 )?;
                 (line.program, line.args, line.env)

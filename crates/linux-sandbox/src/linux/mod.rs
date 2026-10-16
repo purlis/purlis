@@ -19,7 +19,7 @@ mod walk;
 use std::io::{IoSlice, IoSliceMut};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
-use std::process::{Command, ExitCode};
+use std::process::Command;
 use std::sync::Arc;
 
 use nix::sys::signal::{SigSet, SigmaskHow, Signal, kill, pthread_sigmask};
@@ -42,10 +42,10 @@ const CHAT: &str = "--chat";
 const SERVERS: usize = 16;
 
 /// The status a wrap ends with when it could not start the chat.
-const NOT_STARTED: u8 = 126;
+const NOT_STARTED: i32 = 126;
 
-/// `purlis _sandbox`, given the words after it.
-pub fn entry(words: &[String]) -> ExitCode {
+/// `purlis _sandbox`, given the words after it: the status to exit with.
+pub fn entry(words: &[String]) -> i32 {
     if words.first().map(String::as_str) == Some(CHAT) {
         return chat_side(&words[1..]);
     }
@@ -58,12 +58,12 @@ pub fn entry(words: &[String]) -> ExitCode {
     }
 }
 
-fn refuse(why: &str) -> ExitCode {
+fn refuse(why: &str) -> i32 {
     eprintln!("purlis: {why}, so nothing was started.");
-    ExitCode::from(NOT_STARTED)
+    NOT_STARTED
 }
 
-fn supervise(profile: &str, program: &[String]) -> Result<ExitCode, String> {
+fn supervise(profile: &str, program: &[String]) -> Result<i32, String> {
     let profile = Profile::parse(profile).map_err(|why| why.to_string())?;
     let abi = abi();
     if abi < crate::MIN_ABI {
@@ -146,13 +146,9 @@ fn supervise(profile: &str, program: &[String]) -> Result<ExitCode, String> {
     drop(child);
     loop {
         match nix::sys::wait::waitpid(None, None) {
-            Ok(WaitStatus::Exited(at, code)) if at == pid => {
-                return Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)));
-            }
+            Ok(WaitStatus::Exited(at, code)) if at == pid => return Ok(code),
             Ok(WaitStatus::Signaled(at, signal, _)) if at == pid => {
-                return Ok(ExitCode::from(
-                    u8::try_from(128 + signal as i32).unwrap_or(1),
-                ));
+                return Ok(128 + signal as i32);
             }
             Ok(_) | Err(nix::errno::Errno::EINTR) => {}
             Err(why) => return Err(why.to_string()),
@@ -189,7 +185,7 @@ fn adopt(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
 
 /// The chat's side: its own layer and filters, the listener to the supervisor, then the
 /// program.
-fn chat_side(words: &[String]) -> ExitCode {
+fn chat_side(words: &[String]) -> i32 {
     let (Some(socket), Some(end)) = (words.first(), words.get(1)) else {
         return refuse("the sandbox's chat side was started without its socket");
     };
@@ -201,7 +197,7 @@ fn chat_side(words: &[String]) -> ExitCode {
         Ok(()) => {
             let why = Command::new(&program[0]).args(&program[1..]).exec();
             eprintln!("purlis: {} could not be started: {why}", program[0]);
-            ExitCode::from(127)
+            127
         }
         Err(why) => refuse(&why),
     }

@@ -7,10 +7,10 @@
 
 #[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
-    let words: Vec<String> = std::env::args().skip(1).collect();
-    if words.first().map(String::as_str) == Some(purlis_linux_sandbox::COMMAND) {
-        return purlis_linux_sandbox::entry(&words[1..]);
+    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+        std::process::exit(code);
     }
+    let words: Vec<String> = std::env::args().skip(1).collect();
     let said = match probe::run(&words) {
         Ok(()) => "ok".to_owned(),
         Err(why) => why,

@@ -7029,6 +7029,8 @@ fn a_codex_chat_s_conversation_reported_by_its_hook_is_recorded_and_resumed_at_r
     // it back — so every codex chat came back fresh (`NoConversationRecorded`).
     let dir = tempfile::tempdir().expect("a directory");
     let (planes, root, held) = a_plane_writing_its_record(dir.path());
+    // Codex runs wrapped on macOS and Linux (#1040); this is about its conversation's record.
+    crate::sandboxing::no_sandbox_here_for_tests(&root);
     let session = a_chat_on_a_stand_in(&held, dir.path(), "codex");
     assert_eq!(recorded_resume(&root), None, "codex chooses its own id");
 
@@ -7059,6 +7061,8 @@ fn a_codex_chat_s_conversation_reported_by_its_hook_is_recorded_and_resumed_at_r
 fn an_opencode_chat_s_conversation_reported_by_its_plugin_is_recorded_and_resumed_at_relaunch() {
     let dir = tempfile::tempdir().expect("a directory");
     let (planes, root, held) = a_plane_writing_its_record(dir.path());
+    // opencode runs wrapped on macOS and Linux (#1040); this is about its conversation's record.
+    crate::sandboxing::no_sandbox_here_for_tests(&root);
     let session = a_chat_on_a_stand_in(&held, dir.path(), "opencode");
 
     let id = "ses_3a1b2c3d4e5fGhIjKlMnOp";

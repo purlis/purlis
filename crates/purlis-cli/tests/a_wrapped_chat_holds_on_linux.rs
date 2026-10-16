@@ -18,14 +18,13 @@
 
 #![cfg(target_os = "linux")]
 
+mod support;
+
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use purlis_core::harness::Harness;
 use purlis_core::sandbox::{self, Decided, Form, Level, Machine, Os};
-
-const PURLIS: &str = env!("CARGO_BIN_EXE_purlis");
 
 const LEVELS: [(Level, &str, &str); 2] = [
     (
@@ -51,7 +50,7 @@ fn under(profile: &str, root: &Path, script: &str) -> String {
         "/bin/sh".to_owned(),
         vec!["-c".to_owned(), script.to_owned()],
     );
-    let out = Command::new(PURLIS)
+    let out = support::purlis()
         .args(&words)
         .current_dir(root)
         .output()
