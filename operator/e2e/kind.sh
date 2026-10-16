@@ -39,9 +39,23 @@ chart=$here/charts/purlis-cluster-operator
 # The image the plain manifests name until an install sets the real one (tests/the_chart.rs).
 placeholder=ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
 
+# Each stage says its name, and in a GitHub Actions run a failure names the stage it stopped in
+# as an annotation, beside what it said.
+stage=start
+step() {
+  stage=$1
+  echo "--- $1"
+}
+annotate() {
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    printf '::error title=%s::%s\n' "$1" "$(printf '%s' "$2" | tail -c 4000 | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\n/%0A/g')"
+  fi
+}
+
 end() {
   status=$?
   if [ "$status" -ne 0 ]; then
+    annotate "operator/e2e/kind.sh stopped with $status" "during: $stage"
     echo "--- what the cluster shows" >&2
     kubectl --context "$context" get pools,claims,sandboxclaims,sandboxes,pods -A -o wide >&2 || true
     kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator --tail=100 >&2 || true
@@ -60,7 +74,7 @@ end() {
 }
 trap end EXIT
 
-echo "--- a registry and a kind cluster"
+step "a registry and a kind cluster"
 docker run -d --restart=no -p "127.0.0.1:$port:5000" --name "$registry" "$registry_image" >/dev/null
 # API_PORT fixes the API server's port on this machine, where kind would otherwise pick one.
 printf 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnetworking:\n  apiServerPort: %s\n' "${API_PORT:-0}" |
@@ -84,11 +98,11 @@ operator=$(by_digest "$operator_local" purlis-cluster-operator)
 echo "runner image: $runner"
 echo "operator image: $operator"
 
-echo "--- upstream agent-sandbox v1.0.6"
+step "upstream agent-sandbox v1.0.6"
 kubectl --context "$context" apply --server-side -f "$upstream" >/dev/null
 kubectl --context "$context" -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
 
-echo "--- purlis's definitions, policy and operator, by the chart"
+step "purlis's definitions, policy and operator, by the chart"
 # The release's namespace, made as docs/cluster-operator.md makes it: only pods that meet the
 # restricted Pod Security Standard are admitted in it, so the operator's pod has to.
 kubectl --context "$context" create namespace purlis-system
@@ -99,19 +113,23 @@ helm install purlis-cluster-operator "$chart" --kube-context "$context" --namesp
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 
-echo "--- the plain manifests are what the chart installed"
+step "the plain manifests are what the chart installed"
 # `kubectl diff` exits 1 when applying them would change anything the chart made.
 sed "s|image: $placeholder\$|image: $operator|" "$here/deploy/operator.yaml" > "$helm_home/operator.yaml"
 grep -qxF "          image: $operator" "$helm_home/operator.yaml"
-kubectl --context "$context" diff --server-side \
-  -f "$here/deploy/policy.yaml" -f "$here/deploy/crds.yaml" -f "$helm_home/operator.yaml"
+if ! diff=$(kubectl --context "$context" diff --server-side \
+  -f "$here/deploy/policy.yaml" -f "$here/deploy/crds.yaml" -f "$helm_home/operator.yaml" 2>&1); then
+  echo "$diff" >&2
+  annotate "the plain manifests are not what the chart installed" "$diff"
+  exit 1
+fi
 
-echo "--- the tests"
+step "the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
   --test on_a_kind_cluster -- --ignored --test-threads=1
 
-echo "--- uninstalled, the chart leaves the definitions and the policy"
+step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait
 kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev \
   validatingadmissionpolicy/purlis-claims-use-their-pool \
