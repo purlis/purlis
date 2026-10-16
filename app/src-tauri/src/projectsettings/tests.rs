@@ -40,7 +40,7 @@ fn a_change_the_screen_no_longer_passes_is_told_and_the_chat_watched_no_more() {
     write(dir.path(), KEPT);
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
-    watch.chat(7, dir.path());
+    assert!(watch.chat(7, dir.path()));
     assert!(
         told.lock().expect("told").is_empty(),
         "it passes at its start"
@@ -58,7 +58,7 @@ fn a_change_that_still_passes_changes_nothing() {
     write(dir.path(), KEPT);
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
-    watch.chat(7, dir.path());
+    assert!(watch.chat(7, dir.path()));
     write(
         dir.path(),
         r#"{"permissions": {"ask": ["Bash(git push *)"]}, "model": "sonnet"}"#,
@@ -74,7 +74,7 @@ fn a_settings_folder_made_after_the_start_is_watched_too() {
     let dir = tempfile::tempdir().expect("a project");
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
-    watch.chat(3, dir.path());
+    assert!(watch.chat(3, dir.path()));
     std::fs::create_dir_all(dir.path().join(".claude")).expect(".claude");
     // Heard as the folder is made, and listened to from then on.
     std::thread::sleep(Duration::from_millis(1000));
@@ -89,8 +89,11 @@ fn a_change_between_the_prepare_and_the_start_is_not_missed() {
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
     write(dir.path(), NOT_KEPT);
-    watch.chat(5, dir.path());
-    assert!(told_within(&told, 5));
+    // Answered to the start, which starts it again itself: nobody is told, nothing is watched.
+    assert!(!watch.chat(5, dir.path()));
+    std::thread::sleep(Duration::from_millis(1000));
+    assert!(told.lock().expect("told").is_empty());
+    assert_eq!(watch.watched(), Vec::<u32>::new());
 }
 
 #[test]
@@ -105,7 +108,7 @@ fn a_chat_forgotten_is_told_nothing() {
     write(dir.path(), KEPT);
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
-    watch.chat(9, dir.path());
+    assert!(watch.chat(9, dir.path()));
     watch.forget(9);
     write(dir.path(), NOT_KEPT);
     watch.screen_all();
@@ -120,7 +123,7 @@ fn a_file_renamed_over_the_settings_is_heard() {
     write(dir.path(), KEPT);
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
-    watch.chat(4, dir.path());
+    assert!(watch.chat(4, dir.path()));
     let saved = dir.path().join(".claude/.settings.json.tmp");
     std::fs::write(&saved, NOT_KEPT).expect("written beside it");
     std::fs::rename(&saved, dir.path().join(".claude/settings.json")).expect("renamed over it");
@@ -134,7 +137,7 @@ fn a_settings_folder_taken_away_and_made_again_is_still_watched() {
     write(dir.path(), KEPT);
     let (watch, told) = telling();
     watch.prepare(dir.path()).expect("watched");
-    watch.chat(6, dir.path());
+    assert!(watch.chat(6, dir.path()));
     std::fs::remove_dir_all(dir.path().join(".claude")).expect("taken away");
     std::thread::sleep(Duration::from_millis(1000));
     write(dir.path(), KEPT);
@@ -155,7 +158,7 @@ fn the_local_file_at_the_top_of_the_repository_is_watched() {
     std::fs::create_dir_all(&chat).expect("the chat's folder");
     let (watch, told) = telling();
     watch.prepare(&chat).expect("watched");
-    watch.chat(8, &chat);
+    assert!(watch.chat(8, &chat));
     std::fs::write(repo.join(".claude/settings.local.json"), NOT_KEPT).expect("written");
     assert!(told_within(&told, 8));
 }

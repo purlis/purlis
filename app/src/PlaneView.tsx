@@ -5158,9 +5158,16 @@ export const PlaneView = memo(function PlaneView({
       } else if (told.ended !== null) {
         const why = told.ended;
         setRestartTrouble((was) => ({ ...was, [told.session]: why }));
+        // The core keeps it among the chats that would not start, with why and a Retry.
+        void commands
+          .chatsThatWouldNotStart(plane)
+          .then((trouble) => {
+            if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+          })
+          .catch(() => undefined);
       }
     };
-  }, [chatRestarted]);
+  }, [chatRestarted, plane]);
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;

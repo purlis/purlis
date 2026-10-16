@@ -97,6 +97,10 @@ pub type Told = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 /// One chat watched: the folder it runs in.
 struct Watched {
     cwd: PathBuf,
+    /// Its first screen is under way, whose answer goes to its start ([`Watch::chat`]).
+    first: bool,
+    /// A change was heard during its first screen: screened again once that is answered.
+    heard: bool,
 }
 
 #[derive(Default)]
@@ -253,9 +257,11 @@ impl Watch {
         Ok(())
     }
 
-    /// Chat `session`, started in `cwd` on its project's files, is watched from now: and
-    /// screened at once, so a change since [`Self::prepare`] is not missed.
-    pub fn chat(&self, session: u32, cwd: &Path) {
+    /// Chat `session`, started in `cwd` on its project's files, is watched from now, and
+    /// screened at once, so a change since [`Self::prepare`] is not missed. **The answer is the
+    /// start's**: whether its files still pass, told to nobody. One that does not is not
+    /// watched. A change heard while it was screened is screened again afterwards, as any is.
+    pub fn chat(&self, session: u32, cwd: &Path) -> bool {
         #[cfg(test)]
         {
             let before = self.lock().before_chat.take();
@@ -267,9 +273,27 @@ impl Watch {
             session,
             Watched {
                 cwd: cwd.to_path_buf(),
+                first: true,
+                heard: false,
             },
         );
-        self.screen(&[session]);
+        let listened = Self::listen(&mut self.lock(), cwd);
+        let passes = listened.is_ok() && project::screen(Some(cwd)).loads_the_project();
+        if !passes {
+            self.forget(session);
+            return false;
+        }
+        let heard = {
+            let mut inner = self.lock();
+            inner.chats.get_mut(&session).is_some_and(|chat| {
+                chat.first = false;
+                std::mem::take(&mut chat.heard)
+            })
+        };
+        if heard {
+            self.screen(&[session]);
+        }
+        true
     }
 
     /// Chat `session` is watched no more, and folders no other chat needs are let go of.
@@ -316,8 +340,17 @@ impl Watch {
     fn screen(&self, sessions: &[u32]) {
         let mut failed = Vec::new();
         for &session in sessions {
-            let Some(cwd) = self.lock().chats.get(&session).map(|chat| chat.cwd.clone()) else {
-                continue;
+            let cwd = {
+                let mut inner = self.lock();
+                match inner.chats.get_mut(&session) {
+                    // Its start is screening it, and screens it again afterwards.
+                    Some(chat) if chat.first => {
+                        chat.heard = true;
+                        continue;
+                    }
+                    Some(chat) => chat.cwd.clone(),
+                    None => continue,
+                }
             };
             // Listened to before it is read, so what is written after the read is heard.
             let listened = Self::listen(&mut self.lock(), &cwd);

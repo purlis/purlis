@@ -1138,6 +1138,18 @@ impl Held {
     /// conversation to resume, a start refused), the old run is ended all the same, and why is
     /// answered for its tab.
     pub fn contain_project_settings(&self, session: u32) -> Result<u32, String> {
+        // A chat the person is stopping is not started again (#1448): it is ended, as the stop
+        // would have ended it.
+        if self.stopping.is_stopping(session) {
+            if let Err(ended) = self.end_chat(session) {
+                tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
+            }
+            return Err(
+                "This project's Claude Code settings changed and a sandboxed chat does not load \
+                 them as they are now, so purlis ended this chat, which you were stopping."
+                    .to_owned(),
+            );
+        }
         for ask in self
             .asks()
             .asks
@@ -1154,14 +1166,18 @@ impl Held {
                 Ok(started)
             }
             Err(why) => {
-                if let Err(ended) = self.end_chat(session) {
-                    tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
-                }
-                Err(format!(
+                let said = format!(
                     "This project's Claude Code settings changed and a sandboxed chat does not \
                      load them as they are now, so purlis ended this chat: it could not be \
                      started again on its conversation ({why}). Start it again to go on."
-                ))
+                );
+                // Kept with why among the chats that would not start, so a window that opens
+                // later still says so.
+                self.chats.keep_aside(session, &said);
+                if let Err(ended) = self.end_chat(session) {
+                    tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
+                }
+                Err(said)
             }
         }
     }
@@ -3637,6 +3653,16 @@ impl Planes {
                 .when_one_ends(Arc::new(move |session, exit| {
                     // A curation prompt still waiting is for a chat that is gone: never typed.
                     typed.forget(session);
+                    // A run ended so that the same chat starts again at once (ADR 0067 as
+                    // amended 2026-10-16) has not ended the chat: what follows its place says
+                    // so, and nothing here does.
+                    if me
+                        .get()
+                        .and_then(std::sync::Weak::upgrade)
+                        .is_some_and(|held| held.chats.replaced(session))
+                    {
+                        return;
+                    }
                     // A chat that ended on its own while it wrapped up wrote no record, and the
                     // window says so (ADR 0064). One closed by Close or by its record was let go
                     // of before its program was ended, so it says nothing here.
@@ -7728,6 +7754,84 @@ mod tests {
             .collect();
         assert!(open.contains(&started) && !open.contains(&chat), "{open:?}");
         held.close_chat(started).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_start_whose_project_settings_stop_passing_as_it_runs_answers_the_run_that_goes_on() {
+        // ADR 0067 as amended 2026-10-16: the first screen after the spawn is the start's own.
+        // A change caught there ends that run and starts the chat once more on the person's
+        // settings; the number the start answers is that run, open and running, and nobody is
+        // told of a restart.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("plane"));
+        std::fs::create_dir_all(root.join(".claude")).expect(".claude");
+        std::fs::write(
+            root.join(".claude/settings.json"),
+            r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}}"#,
+        )
+        .expect("settings");
+        let told = Arc::new(Mutex::new(Vec::new()));
+        let planes = Planes::telling(
+            Arc::new(|_| {}),
+            crate::Shipped {
+                binary: Some(dir.path().join("purlis")),
+                plugin: Some(dir.path().join("plugin")),
+                shims: None,
+                git_hooks: None,
+            },
+            None,
+        )
+        .telling_project_settings({
+            let told = Arc::clone(&told);
+            Arc::new(move |one: crate::projectsettings::Rescreened| {
+                told.lock().expect("told").push(one.session);
+            })
+        });
+        let held = planes.held(&planes.open(&root)).expect("it is held");
+        let changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        held.chats()
+            .project_settings_watch()
+            .changing_before_the_next_chat({
+                let (root, changed) = (root.clone(), Arc::clone(&changed));
+                move || {
+                    changed.store(true, std::sync::atomic::Ordering::SeqCst);
+                    std::fs::write(
+                        root.join(".claude/settings.json"),
+                        r#"{"permissions": {"allow": ["Bash"]}}"#,
+                    )
+                    .expect("changed");
+                }
+            });
+        let at = dir.path().join("chat");
+        std::fs::create_dir_all(&at).expect("a directory");
+        let program = stand_in::claude_code(&at, "claude", "#!/bin/sh\nexec sleep 600\n");
+        let mut record = one_chat_on(&program.display().to_string()).chats.remove(0);
+        record.cwd = Some(root.clone());
+        let session = held
+            .chats()
+            .start(&record, STARTING)
+            .expect("the chat starts");
+        let open: Vec<u32> = held
+            .chats()
+            .open_now()
+            .iter()
+            .map(|one| one.session)
+            .collect();
+        assert_eq!(open, [session], "the start answers the run that goes on");
+        assert!(told.lock().expect("told").is_empty(), "no restart is told");
+        if changed.load(std::sync::atomic::Ordering::SeqCst) {
+            // Where a sandbox applies here, the change was caught: the run that goes on is the
+            // one started again, its project's files not loaded.
+            assert!(
+                held.chats()
+                    .start_notes(session)
+                    .iter()
+                    .any(|note| note.contains("permissions.allow")),
+                "its tab says why"
+            );
+        }
+        held.close_chat(session).unwrap();
     }
 
     #[cfg(unix)]

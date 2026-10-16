@@ -19,8 +19,15 @@ decision now holds for as long as the chat runs:
   Its tab shows the same Notice a start shows, naming the keys that were not applied. The chat
   is told, as it starts again, that it was restarted because the project's settings changed.
   The window only redraws.
+- **The old run ends before the new one starts**, so two runs never share a conversation.
+- **A chat the person is stopping is ended**, as the stop would have ended it, and not started
+  again.
 - **A chat that cannot be started again is ended.** Where there is no conversation to resume,
-  or the start is refused, the old run is ended, and its tab says why.
+  or the start is refused, the old run is ended. It is kept, with why, among the chats that
+  would not start, so a window that opens later shows it with a Retry.
+- **A change caught as the chat starts is the start's own.** The first screen after its program
+  starts answers the start. On a change, that run is ended and the chat is started once more on
+  the person's settings and purlis's, and the start answers that run, the one that goes on.
 - **Fail closed.** Where the watch cannot be set up, the chat starts on the person's settings and
   purlis's from the first, and its tab says so.
 - A chat started on the person's settings is not watched. A later change does not move it back
