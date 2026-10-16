@@ -2985,24 +2985,29 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
         // The event log, opened as the host first holds a project (#2003).
         let kept = sessionhost::Kept::on_this_machine();
-        purlis_core::browsers::given_to(
-            purlis_host::Hosting::kept(
-                &place.credentials,
-                sessionhost::Composes::shipped(),
-                purlis_host::Terminals,
-                sessionhost::HookChannels(kept.clone()),
-                hostedconfinement::ConfinesHere,
-            )
-            .recording_with(kept)
-            .saving_with(hostsaving::InTheHost),
+        let hosting = purlis_host::Hosting::kept(
+            &place.credentials,
+            sessionhost::Composes::shipped(),
+            purlis_host::Terminals,
+            sessionhost::HookChannels(kept.clone()),
+            hostedconfinement::ConfinesHere,
         )
+        .recording_with(kept)
+        .saving_with(hostsaving::InTheHost);
+        // `purlis stop --all` is heard with no window there (#2190).
+        let hosting = match purlis_core::machine::config_root() {
+            Some(config) => hosting.heeding(purlis_core::halt::OnDisk(config)),
+            None => hosting,
+        };
+        purlis_core::browsers::given_to(hosting)
     })
 }
 
-/// Where every project's chats run, chosen once as the app starts: in the window's own
-/// process, the default, or in the session host the window started, behind the start-time
-/// switch (`hostedsessions`, #1998). With the switch on and no host of the window's own, its
-/// chats are refused with the reason, never run in the window instead (ADR 0068, Ruled 3).
+/// Where every project's chats run, chosen once as the app starts: in the session host the
+/// window started, the default since #2004, or in the window's own process, where the
+/// start-time switch says so (`hostedsessions`, #1998) until #2005 deletes that path. With no
+/// host of the window's own, its chats are refused with the reason, never run in the window
+/// instead (ADR 0068, Ruled 3).
 fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
     // The chats' browsers run in the window's session host, wherever its chats run (#2013).
     #[cfg(unix)]
@@ -3018,27 +3023,16 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
         let host = app.state::<sessionhost::SessionHost>();
         let connection = host.connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);
-        // The host writes the event log, and the window hands it each write (#2003).
-        let events = hooks::Events::in_the_host({
-            let connection = std::sync::Arc::clone(&connection);
-            move |entry| hostedsessions::record_in_the_host(&connection, &entry)
-        });
-        // The host owns each project's hook channel, so nothing here reports anywhere (#2000).
-        return planes
-            .recording_events(Some(events))
-            .running_sessions_on(std::sync::Arc::new(
-                move |_reporting, root: &std::path::Path| {
-                    Box::new(hostedsessions::HostedSessions::new(
-                        std::sync::Arc::clone(&connection),
-                        root,
-                    ))
-                },
-            ))
-            .hearing_hooks_through_the_host()
+        return hostedsessions::chats_in_the_host(planes, &connection)
             // The host saves the projects too (#2002): a quit it does not answer in time ends
             // it before the save at quit.
             .ending_the_host_with(host.ender());
     }
+    #[cfg(unix)]
+    tracing::info!(
+        "purlis: chats run in the window's own process on this launch, as {}=0 asks",
+        hostedsessions::SWITCH
+    );
     let _ = app;
     planes
 }

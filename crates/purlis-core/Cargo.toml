@@ -201,8 +201,9 @@ log = { version = "0.4", features = ["std"] }
 workspace = true
 
 [target."cfg(unix)".dependencies]
-# The session host's browsers (#2012): the engine and the host's seam it is started behind.
-# Neither links the core, so this is the one place the two meet.
+# The session host's browsers (#2012): the engine and the host's seam it is started behind; and
+# the host's seam that reads a stop written elsewhere (#2190). Neither links the core, so this is
+# the one place the two meet.
 purlis-browser-engine.workspace = true
 purlis-host.workspace = true
 bytes = "1"

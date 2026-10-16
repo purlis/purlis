@@ -62,10 +62,44 @@ pub fn socket_for(runtime: Option<&OsStr>) -> PathBuf {
     socket_in(base.as_deref(), purlis_same_user::Uid::effective().as_raw())
 }
 
-/// Where the host's socket is for this process.
+/// Where the host's socket is for this process: the place [`socket_for`] names, under the name
+/// [`named_for`] gives this process's config home.
 #[cfg(unix)]
 pub fn here() -> PathBuf {
-    socket_for(std::env::var_os("XDG_RUNTIME_DIR").as_deref())
+    here_for(
+        std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+        crate::machine::config_root_unheld().as_deref(),
+    )
+}
+
+/// Where the session host of the config home `config` listens for this user, with `runtime`
+/// as [`socket_for`] reads it: for a test that names both, and must find the host its child
+/// serves at.
+#[cfg(unix)]
+pub fn here_for(runtime: Option<&OsStr>, config: Option<&Path>) -> PathBuf {
+    let default =
+        crate::machine::rooted(None, std::env::var_os("XDG_CONFIG_HOME"), dirs::home_dir());
+    named_for(&socket_for(runtime), config, default.as_deref())
+}
+
+/// **The socket's name for the config home `config`** (#2114): `socket` as it is where `config`
+/// is the one a person's purlis finds by itself (`default`), or none is known, so every build
+/// finds its host where the last one listened; otherwise `purlisd-<key>.sock` in the same
+/// folder, `<key>` the first 16 hex digits of the SHA-256 of `config` as written. So another
+/// purlis on this device with a config home of its own, whose credentials are its own (a
+/// scenario run, a development build beside an installed one), has a session host of its own,
+/// and one host still serves every project of a config home (ADR 0068 §1).
+pub fn named_for(socket: &Path, config: Option<&Path>, default: Option<&Path>) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let Some(config) = config.filter(|config| Some(*config) != default) else {
+        return socket.to_path_buf();
+    };
+    let digest = Sha256::digest(config.as_os_str().as_encoded_bytes());
+    let key: String = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    socket.with_file_name(format!("purlisd-{key}.sock"))
 }
 
 /// Makes the socket's folder this user's alone now (`purlis_same_user::private_directory`),

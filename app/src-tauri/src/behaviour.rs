@@ -132,7 +132,7 @@ fn an_event_log(dir: &Path) -> std::io::Result<purlis_core::eventlog::Recorder> 
 /// The device every target's event log is written for.
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 
-/// A chat in the window's own process: the switch off, the default.
+/// A chat in the window's own process: the switch set to `0`, the way back until #2005.
 pub(crate) fn in_the_window() -> Target {
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, false);
@@ -159,7 +159,7 @@ pub(crate) fn in_the_window() -> Target {
     }
 }
 
-/// A chat in the session host: the switch on. The host's own code, serving the session protocol
+/// A chat in the session host: the default. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them, and its projects saved as the window's binary saves them.
 pub(crate) fn in_the_host() -> Target {
@@ -206,7 +206,7 @@ pub(crate) fn through_a_link() -> Target {
 /// starts composed from the window's launch, each in a real terminal, its chats' hooks heard on
 /// their project's channel, each confined here, and the device's event log kept in `data`,
 /// opened as it first holds a project (#2003).
-fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
+pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
     let kept = {
         let data = data.to_path_buf();
         crate::sessionhost::Kept::opening(move || an_event_log(&data))
@@ -407,8 +407,10 @@ fn a_host_home(home: &Path) -> HostHome {
     let log = data
         .join(purlis_core::eventlog::EVENTS)
         .join(purlis_core::machine::device_id(&config).expect("the host's device"));
+    // The place the host process names for itself: its runtime directory, and the name its
+    // config home gives its socket (#2114).
     let place = purlis_host::Place::at(
-        purlis_core::hostsocket::socket_for(Some(run.as_os_str())),
+        purlis_core::hostsocket::here_for(Some(run.as_os_str()), Some(&config)),
         purlis_core::machine::charterd(&config),
     );
     HostHome {

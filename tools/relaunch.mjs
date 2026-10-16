@@ -25,8 +25,16 @@
 // what it leaves behind — each record saying a restart to update wrote it, and the
 // `restarted-to-update` word beside the machine store — and that the launch reading them says
 // so, with Reopen all as the answer in front, and spends the word.
+//
+// **And the upgrade to chats in the session host** (#2004): the first launch runs its chats in
+// the window's own process, as every build before #2004 did (`PURLIS_CHATS_IN_THE_HOST=0`), and
+// every launch after it runs them in the session host, this build's default, so the second
+// launch is an upgrade that has to bring the chat back on its conversation. Ending the app with
+// a signal is not a quit: its host keeps the chats for the grace period, for a window that comes
+// back to reattach to (ADR 0068 §2, #2006). Each launch here stands for a quit, so the host that
+// launch started is ended with it, by its pid.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
 import {
   chmodSync,
@@ -196,7 +204,7 @@ function pressing(answer, argvFile, hold = 2_000) {
  * `answer`, when given, is run beside the wait with the app's WebDriver port — it is how the
  * launch's question is answered — and what it returns comes back as `answered`.
  */
-async function theAppRuns(plane, done, answer) {
+async function theAppRuns(plane, done, answer, extra = {}) {
   const port = await aFreePort();
   // `CHARTER_LAUNCH_LOG` makes the app say how far up it got. A launch that never reaches
   // its first chat says nothing at all otherwise, which cost three round trips of guessing.
@@ -219,6 +227,7 @@ async function theAppRuns(plane, done, answer) {
       CHARTER_CONFIG_HOME: CONFIG_HOME,
       CHARTER_DATA_HOME: DATA_HOME,
       TAURI_WEBDRIVER_PORT: String(port),
+      ...extra,
     },
   });
   let output = "";
@@ -243,11 +252,44 @@ async function theAppRuns(plane, done, answer) {
     return { ok: false, output, answered };
   } finally {
     // The pid this started, never a name: other things on this machine are called claude.
+    // Its session host first, while the app is still its parent: a signal is not a quit, and
+    // the host would keep the chats for a window that comes back (#2006).
+    const hosts = app.exitCode === null ? hostsOf(app.pid) : [];
     app.kill("SIGTERM");
     await new Promise((gone) => {
       app.on("exit", gone);
       setTimeout(gone, 3_000);
     });
+    for (const host of hosts) {
+      if (alive(host)) process.kill(host, "SIGTERM");
+    }
+    const until = Date.now() + 5_000;
+    while (hosts.some(alive) && Date.now() < until) {
+      await new Promise((tick) => setTimeout(tick, 100));
+    }
+  }
+}
+
+/** The argument the app starts itself again with, as its session host (`purlis_host`). */
+const SERVE_FOR_THE_WINDOW = "purlis-serve-for-the-window";
+
+/** The pids of the session hosts the app at `pid` started, as `ps` lists them now. */
+function hostsOf(pid) {
+  const listed = execFileSync("ps", ["-A", "-o", "pid=,ppid=,command="], { encoding: "utf8" });
+  return listed
+    .split("\n")
+    .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/))
+    .filter((found) => found && Number(found[2]) === pid && found[3].includes(SERVE_FOR_THE_WINDOW))
+    .map((found) => Number(found[1]));
+}
+
+/** Whether a process of this user's is still there at `pid`. */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -296,10 +338,12 @@ writeFileSync(
 
 console.log(`a plane at ${plane}`);
 
+// The build before the upgrade: chats in the window's own process.
 const first = await theAppRuns(
   plane,
   () => argvSeen(argvFile).length >= 1,
   pressing("Reopen all sessions", argvFile),
+  { PURLIS_CHATS_IN_THE_HOST: "0" },
 );
 check(
   "an ordinary relaunch does not say it followed an update",
@@ -364,7 +408,16 @@ const second = await theAppRuns(
   () => argvSeen(argvFile).length >= 2,
   pressing("Reopen all sessions", argvFile, 0),
 );
-check("a second launch brings the chat back again", second.ok, second.ok ? "" : `the app said:\n${second.output}`);
+check(
+  "a second launch, chats now in the session host, brings the chat back again",
+  second.ok,
+  second.ok ? "" : `the app said:\n${second.output}`,
+);
+check(
+  "and runs it in the session host, the default after the upgrade",
+  second.output.includes("chats run in the session host on this launch"),
+  second.ok ? "the launch never said where its chats run" : "",
+);
 check(
   "still as a resume of the same conversation",
   argvSeen(argvFile)[1]?.includes(`--resume ${CONVERSATION}`),

@@ -200,10 +200,12 @@ fn two_clones_of_one_project_in_one_window_both_start_chats() {
 }
 
 #[test]
-fn only_the_switch_set_to_one_runs_chats_in_the_host() {
-    assert!(switched_on(Some("1")));
-    for off in [None, Some(""), Some("0"), Some("true"), Some("yes")] {
-        assert!(!switched_on(off), "{off:?}");
+fn chats_run_in_the_host_unless_the_switch_is_set_to_zero() {
+    // #2004: the session host is the default, and `0` is the way back to the window's own
+    // process until #2005 deletes it.
+    assert!(!switched_on(Some("0")));
+    for on in [None, Some(""), Some("1"), Some("true"), Some("no")] {
+        assert!(switched_on(on), "{on:?}");
     }
 }
 

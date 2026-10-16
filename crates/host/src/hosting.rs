@@ -77,7 +77,7 @@ use crate::browsers::{Browser, Browsers, NoBrowsers};
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
 use crate::hostrecord::{HostRecord, Started};
-use crate::killswitch::Switch;
+use crate::killswitch::{NoStopsElsewhere, StopsElsewhere, Switch};
 use crate::recording::{Ended, Record, RecordsNothing, Stopped};
 use crate::serving::Window;
 
@@ -437,6 +437,11 @@ struct Inner {
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
     switch: Switch,
+    /// What reads a stop written elsewhere (#2190): the binary's, or nothing.
+    elsewhere: OnceLock<Box<dyn StopsElsewhere>>,
+    /// Whether the last look found a stop written elsewhere: the host acts on a stop as it is
+    /// written, so files the window has yet to clear after its re-arm stop nothing again.
+    seen_elsewhere: std::sync::atomic::AtomicBool,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -709,6 +714,8 @@ impl Hosting {
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
                 switch,
+                elsewhere: OnceLock::new(),
+                seen_elsewhere: std::sync::atomic::AtomicBool::new(false),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
             }),
@@ -729,6 +736,47 @@ impl Hosting {
             Arc::get_mut(&mut self.inner).expect("browsers are given before the host is shared");
         inner.browsers = Box::new(browsers);
         self
+    }
+
+    /// This host hears a stop written elsewhere through `stops` (#2190, ADR 0071): `purlis
+    /// stop --all` with no window there. Set once, as the binary builds its host; a second is let
+    /// go of. A host given none hears only `stop_all`.
+    pub fn heeding(self, stops: impl StopsElsewhere) -> Hosting {
+        let _ = self.inner.elsewhere.set(Box::new(stops));
+        self
+    }
+
+    /// **Looks for a stop written elsewhere, now and then every [`crate::killswitch::LOOK_EVERY`]**
+    /// (#2190), for as long as the host serves: what [`crate::serve`] runs beside its socket. A
+    /// stop it finds is the host's own, kept as `stop_all` keeps one, and every program the host
+    /// runs ends; only the window re-arms. The host also looks before every start.
+    pub async fn heed_stops_written_elsewhere(self) {
+        loop {
+            self.heed_a_stop_written_elsewhere().await;
+            tokio::time::sleep(crate::killswitch::LOOK_EVERY).await;
+        }
+    }
+
+    /// Throws the kill switch where a stop was written elsewhere since the last look, and the
+    /// host is not stopped already. A stop is acted on as it is written: files that still say
+    /// stopped after the window re-armed the host, before the window clears them, stop nothing
+    /// again.
+    async fn heed_a_stop_written_elsewhere(&self) {
+        let stops: &dyn StopsElsewhere = match self.inner.elsewhere.get() {
+            Some(stops) => stops.as_ref(),
+            None => &NoStopsElsewhere,
+        };
+        let stopped = stops.stopped();
+        let before = self
+            .inner
+            .seen_elsewhere
+            .swap(stopped, std::sync::atomic::Ordering::SeqCst);
+        if stopped && !before && !self.inner.switch.is_stopped() {
+            crate::say(
+                "every agent was stopped from elsewhere (purlis stop --all); the host stops every program it runs",
+            );
+            self.stop_all().await;
+        }
     }
 
     /// This host writes the event log, and keeps each program's end, with `record` (#2003). Set
@@ -1113,6 +1161,8 @@ impl Hosting {
     }
 
     async fn start(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
+        // A stop written elsewhere since the last look is heard before anything starts (#2190).
+        self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
         let start = ids_of(start, peer.scope());
         let size = Size {
@@ -1353,6 +1403,7 @@ impl Hosting {
     /// own under the host's store, removed once it has ended.
     async fn start_browser(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
         // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
+        self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
         let (program, at) = {
             let state = self.state();

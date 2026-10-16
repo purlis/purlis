@@ -72,7 +72,19 @@ fn purlis_serve_listens_under_the_runtime_directory_and_a_second_one_leaves_it_s
     }
 
     let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
-    let socket = dir.path().join("run").join("purlis").join("purlisd.sock");
+    // Its config home is one of the test's own, so its socket has a name of its own (#2114).
+    let socket = purlis_core::hostsocket::here_for(
+        Some(dir.path().join("run").as_os_str()),
+        Some(&dir.path().join("config")),
+    );
+    assert_eq!(
+        socket.parent(),
+        Some(dir.path().join("run").join("purlis").as_path())
+    );
+    assert_ne!(
+        socket.file_name(),
+        Some(std::ffi::OsStr::new("purlisd.sock"))
+    );
     assert_eq!(mode(&socket), 0o600, "{}", socket.display());
     assert_eq!(mode(socket.parent().unwrap()), 0o700);
     let mut beside: Vec<String> = std::fs::read_dir(dir.path())

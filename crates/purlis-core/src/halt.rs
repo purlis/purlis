@@ -151,6 +151,19 @@ pub fn stopped_on_disk(config_root: &Path) -> bool {
             .any(|dir| stopped_by_journal_in(dir))
 }
 
+/// **The files of a config home, as the session host reads them** (#2190): what the window's
+/// binary and `purlis serve` give their host, so it hears `purlis stop --all` with no window
+/// there ([`stopped_on_disk`]). The host reads them only; a re-arm is the window's.
+#[cfg(unix)]
+pub struct OnDisk(pub std::path::PathBuf);
+
+#[cfg(unix)]
+impl purlis_host::StopsElsewhere for OnDisk {
+    fn stopped(&self) -> bool {
+        stopped_on_disk(&self.0)
+    }
+}
+
 /// Stops every agent on this machine until [`rearm`]: the marker, then one journal line.
 ///
 /// The journal line is written even when the marker cannot be, because it alone keeps the stop
@@ -315,6 +328,22 @@ mod tests {
             journal(config.path()),
             [entry(100, Event::Stop, Actor::Cli)]
         );
+    }
+
+    /// #2190: what the session host is given reads the command line's stop, and its re-arm.
+    #[cfg(unix)]
+    #[test]
+    fn the_session_hosts_seam_reads_a_stop_and_a_re_arm_from_the_files() {
+        use purlis_host::StopsElsewhere as _;
+        let config = tempfile::tempdir().expect("a config home");
+        let seam = OnDisk(config.path().to_path_buf());
+        assert!(!seam.stopped());
+
+        stop(config.path(), Actor::Cli, 100).expect("stopped");
+        assert!(seam.stopped());
+
+        rearm(config.path(), 200).expect("re-armed");
+        assert!(!seam.stopped());
     }
 
     #[test]
