@@ -363,7 +363,7 @@ async fn stop_all_ends_every_browser_and_no_browser_starts_until_the_window_rear
     linked.browser().await;
 }
 
-// ---- A chat's browser (#2013): what it may reach, and the acts the window hands on (1.9) ----
+// ---- A chat's browser (#2013): what it may reach, and the acts the window hands on (1.11) ----
 
 #[tokio::test]
 async fn a_browser_is_started_with_the_reach_the_window_gives_it() {

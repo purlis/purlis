@@ -19,6 +19,12 @@
 //! window that holds the project ([`Pushed::Heard`]), whose reply comes back
 //! ([`Command::ReplyHeard`]). The host is each chat's ancestor, so a hook admits it.
 //!
+//! **Each held project's board is kept here too** (#2194): the window tells the channel each
+//! move it makes (`board_moved`) and reads the board whole as it holds the project (`board`).
+//! A project outlives the link that held it, with its channel and its board, while it has a
+//! program the window has not closed, running or ended: its chats are heard while no window is
+//! there, and a window that comes back reads how each one ended.
+//!
 //! **Every hosted program is inside a chat to the admission check.** The holder the check is
 //! given is the window, when the window started this host, or the host itself: a hosted
 //! program, and everything it starts, is below both from its first instruction, so a peer among
@@ -797,19 +803,28 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    /// A link ended: its holds go with it.
+    /// A link ended: its holds go with it. A project that has a program the window has not
+    /// closed, running or ended, is kept with its hook channel and its board, held by no link, so
+    /// its chats are heard and a window that holds it again reads them as they are, how each
+    /// ended included (#2194).
     fn let_go_of_the_links(&self, peer: &Peer) {
         let link = link_of(peer);
         let gone: Vec<Held> = {
             let mut state = self.state();
             let held = std::mem::take(&mut state.projects);
+            // Every program not yet closed, running or ended: closing is what takes one out.
+            let unclosed: std::collections::HashSet<String> = state
+                .programs
+                .values()
+                .map(|hosted| hosted.project.clone())
+                .collect();
             let (kept, gone): (Vec<_>, Vec<_>) = held
                 .into_iter()
                 .map(|(project, mut held)| {
                     held.links.remove(&link);
                     (project, held)
                 })
-                .partition(|(_, held)| !held.links.is_empty());
+                .partition(|(project, held)| !held.links.is_empty() || unclosed.contains(project));
             state.projects = kept.into_iter().collect();
             gone.into_iter().map(|(_, held)| held).collect()
         };
@@ -859,10 +874,7 @@ impl Hosting {
         // The number and the id are taken under one hold, so two starts never share either.
         let (program, number, path) = {
             let mut state = self.state();
-            let Some(path) = state
-                .projects
-                .get(&start.project)
-                .map(|held| held.path.clone())
+            let Some(path) = held_by_a_link(&state, &start.project).map(|held| held.path.clone())
             else {
                 return Err(no_such_project(&start.project));
             };
@@ -1025,6 +1037,10 @@ impl Hosting {
                 stopped,
                 watched: hosting.watched(&project),
             });
+            // With no window to tell its board, the board the host keeps is told (#2194).
+            if let Some(channel) = channel.as_ref().filter(|_| !hosting.watched(&project)) {
+                channel.ended_with_no_window(number, &exit);
+            }
             hosting.tell(&Pushed::Ended {
                 program: ended,
                 run,
@@ -1045,7 +1061,7 @@ impl Hosting {
         self.let_through(&start, peer)?;
         let program = {
             let state = self.state();
-            if !state.projects.contains_key(&start.project) {
+            if held_by_a_link(&state, &start.project).is_none() {
                 return Err(no_such_project(&start.project));
             }
             match &start.program {
@@ -1221,7 +1237,7 @@ impl Hosting {
     /// Deals the next number in held `project` (#2000): it only rises, so no chat has had it.
     fn deal(&self, project: &str) -> Result<Answer, Refusal> {
         let mut state = self.state();
-        if !state.projects.contains_key(project) {
+        if held_by_a_link(&state, project).is_none() {
             return Err(no_such_project(project));
         }
         let dealt = state.dealt.entry(project.to_owned()).or_default();
@@ -1234,12 +1250,28 @@ impl Hosting {
     /// The numbers up to `dealt` went out in held `project` before: none of them is dealt again.
     fn dealt_already(&self, project: &str, dealt: u32) -> Result<Answer, Refusal> {
         let mut state = self.state();
-        if !state.projects.contains_key(project) {
+        if held_by_a_link(&state, project).is_none() {
             return Err(no_such_project(project));
         }
         let was = state.dealt.entry(project.to_owned()).or_default();
         *was = (*was).max(dealt);
         Ok(Answer::Done)
+    }
+
+    /// The hook channel of `project`, where it has one, for the link `peer` came on, which must
+    /// hold the project.
+    fn held_channel(
+        &self,
+        project: &str,
+        peer: &Peer,
+    ) -> Result<Option<Arc<dyn Channel>>, Refusal> {
+        let state = self.state();
+        let held = state
+            .projects
+            .get(project)
+            .filter(|held| held.links.contains_key(&link_of(peer)))
+            .ok_or_else(|| no_such_project(project))?;
+        Ok(held.channel.clone())
     }
 
     /// The window's reply to line `heard` of `project`'s hooks, from a link that holds it.
@@ -1250,16 +1282,7 @@ impl Hosting {
         reply: serde_json::Value,
         peer: &Peer,
     ) -> Result<Answer, Refusal> {
-        let channel = {
-            let state = self.state();
-            let held = state
-                .projects
-                .get(project)
-                .filter(|held| held.links.contains_key(&link_of(peer)))
-                .ok_or_else(|| no_such_project(project))?;
-            held.channel.clone()
-        };
-        if let Some(channel) = channel {
+        if let Some(channel) = self.held_channel(project, peer)? {
             channel.replied(heard, reply);
         }
         Ok(Answer::Done)
@@ -1311,9 +1334,7 @@ impl Hosting {
             if state.confinements.contains_key(&id) {
                 return Err(already_confined(&id));
             }
-            state
-                .projects
-                .get(&confine.project)
+            held_by_a_link(&state, &confine.project)
                 .map(|held| held.path.clone())
                 .ok_or_else(|| no_such_project(&confine.project))?
         };
@@ -1425,6 +1446,15 @@ impl Hosting {
         }
         Answer::Done
     }
+}
+
+/// Held project `project`, where a link holds it: nothing starts, is dealt or is confined in a
+/// project kept only for the programs in it the window has not closed (#2194).
+fn held_by_a_link<'a>(state: &'a State, project: &str) -> Option<&'a Held> {
+    state
+        .projects
+        .get(project)
+        .filter(|held| !held.links.is_empty())
 }
 
 /// Takes every confinement whose owner `whose` says, out of `state`.
@@ -1624,6 +1654,20 @@ impl session::Host for Hosting {
                 }
                 Ok(Answer::Done)
             }
+            Command::BoardMoved {
+                project,
+                chat,
+                moved,
+            } => {
+                if let Some(channel) = self.held_channel(&project, peer)? {
+                    channel.moved(chat, moved);
+                }
+                Ok(Answer::Done)
+            }
+            Command::Board { project } => Ok(Answer::Board(
+                self.held_channel(&project, peer)?
+                    .map_or(serde_json::Value::Null, |channel| channel.board()),
+            )),
             Command::Confine(confine) => self.confine(*confine, peer).await,
             Command::LetGoOfConfinement { confinement } => {
                 Ok(self.let_go_of_confinement(&confinement).await)

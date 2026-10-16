@@ -266,7 +266,16 @@ fn every_command() -> Vec<Command> {
         Command::Record {
             entry: serde_json::json!({ "entry": "kill_switch_read" }),
         },
-        // A browser driven for a chat: the window's alone (1.9).
+        // A held project's board, read and moved: the window's alone (1.10).
+        Command::BoardMoved {
+            project: "01J9PRJCT00000000000000000".into(),
+            chat: 7,
+            moved: serde_json::json!({"move": "ignored"}),
+        },
+        Command::Board {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        // A browser driven for a chat: the window's alone (1.11).
         Command::Browse {
             program: CHAT.into(),
             call_id: "c-1".into(),
@@ -315,6 +324,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program",
             "attach_view",
             "record",
+            "board_moved",
+            "board",
             "browse",
         ],
         Scope::Terminal => &[

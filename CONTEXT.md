@@ -377,6 +377,14 @@ the same for every kind (ADR 0068, amended for #1994).
 _Avoid_: process (that is the OS's), session (that is the host), job, task (that is a
 dispatch's)
 
+**Kept board** (of a held project):
+The session host's copy of what each chat of a project is doing and its **Needs you** items,
+kept so it outlives the window. While a window holds the project, the window decides each move,
+makes it on its own copy and tells the host, which makes the same move; with no window there, the
+host moves it by the lines the chats' hooks write. A window that holds the project takes it whole
+(ADR 0068, amended for #2194). Not the **Board** of work items, which is derived and never stored.
+_Avoid_: board (unqualified: that is the work items'), state store, snapshot
+
 **View** (of a hosted program):
 One client's live look at a hosted program, of a kind: a terminal view, or a **browser view**.
 It opens with a snapshot of the program as it is now and then follows it. One that falls behind

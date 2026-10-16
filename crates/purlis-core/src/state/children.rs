@@ -16,7 +16,7 @@
 use super::State;
 
 /// One child agent of a chat: the harness's id for it, and where it is.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Child {
     /// The harness's `agent_id`. Unique within the chat, never across chats.
     pub agent: String,
@@ -46,7 +46,7 @@ pub fn is_agent_id(agent: &str) -> bool {
 }
 
 /// A chat's children, in the order they were first seen.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Children {
     list: Vec<Child>,
 }

@@ -444,6 +444,8 @@ fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
 struct HooksHeard {
     relaying: Arc<Mutex<Option<Arc<purlis_core::hookwire::relay::Relaying>>>>,
     issued: Arc<Mutex<Vec<u32>>>,
+    /// The project's board, kept as the window's binary keeps it in the host (#2194).
+    board: crate::sessionhost::KeptBoard,
 }
 
 impl HooksHeard {
@@ -465,13 +467,12 @@ impl purlis_host::Hear for HooksHeard {
         _path: &std::path::Path,
         hand_on: purlis_host::HandOn,
     ) -> Result<Option<Arc<dyn purlis_host::Channel>>, String> {
-        let relaying = purlis_core::hookwire::relay::Relaying::new(Box::new(move |id, heard| {
-            serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line))
-        }));
+        let relaying = purlis_core::hookwire::relay::Relaying::new(self.board.handing_on(hand_on));
         *self.relaying.lock().unwrap() = Some(Arc::clone(&relaying));
         Ok(Some(Arc::new(StandInChannel {
             relaying,
             issued: Arc::clone(&self.issued),
+            board: self.board.clone(),
         })))
     }
 }
@@ -479,6 +480,7 @@ impl purlis_host::Hear for HooksHeard {
 struct StandInChannel {
     relaying: Arc<purlis_core::hookwire::relay::Relaying>,
     issued: Arc<Mutex<Vec<u32>>>,
+    board: crate::sessionhost::KeptBoard,
 }
 
 impl purlis_host::Channel for StandInChannel {
@@ -500,6 +502,18 @@ impl purlis_host::Channel for StandInChannel {
         self.relaying
             .replied(id, serde_json::from_value(reply).expect("a reply"));
     }
+
+    fn moved(&self, number: u32, moved: serde_json::Value) {
+        self.board.moved(number, moved);
+    }
+
+    fn board(&self) -> serde_json::Value {
+        self.board.whole()
+    }
+
+    fn ended_with_no_window(&self, number: u32, exit: &session::Exit) {
+        self.board.ended(number, exit);
+    }
 }
 
 /// A project's chats in a session host that owns its hook channel, heard by the window's own
@@ -509,6 +523,7 @@ struct Heard {
     hooks: crate::hooks::Hooks,
     channel: HooksHeard,
     moved: Arc<Mutex<Vec<crate::hooks::Moved>>>,
+    hosting: Hosting,
 }
 
 fn heard_in_the_window() -> Heard {
@@ -524,6 +539,38 @@ fn heard_in_the_window() -> Heard {
         runs.clone(),
         channel.clone(),
     );
+    let (dir, root) = a_project();
+    let (link, hooks, sessions, moved) = a_window_of(&hosting, &root, &runtime);
+    Heard {
+        hosted: Hosted {
+            sessions,
+            link,
+            runs,
+            savers: Savers::default(),
+            root,
+            _dir: dir,
+            _runtime: runtime,
+        },
+        hooks,
+        channel,
+        moved,
+        hosting,
+    }
+}
+
+/// A window on `hosting`, over a link of its own, whose hooks for the project at `root` hear
+/// what the host hands on.
+fn a_window_of(
+    hosting: &Hosting,
+    root: &std::path::Path,
+    runtime: &tokio::runtime::Runtime,
+) -> (
+    Arc<HostLink>,
+    crate::hooks::Hooks,
+    HostedSessions,
+    Arc<Mutex<Vec<crate::hooks::Moved>>>,
+) {
+    let hosting = hosting.clone();
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(256 * 1024);
         let (client, served) = tokio::join!(
@@ -543,35 +590,21 @@ fn heard_in_the_window() -> Heard {
     let link = Arc::new(link);
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::clone(&link));
-    let (dir, root) = a_project();
     let moved: Arc<Mutex<Vec<crate::hooks::Moved>>> = Arc::default();
     let plane: crate::planes::PlaneId =
-        serde_json::from_str(&serde_json::to_string(&root).unwrap()).unwrap();
+        serde_json::from_str(&serde_json::to_string(root).unwrap()).unwrap();
     let hooks = crate::hooks::Hooks::relayed(
         plane,
-        &crate::hooks::socket_for(Some(&root)),
+        &crate::hooks::socket_for(Some(root)),
         {
             let moved = Arc::clone(&moved);
             Arc::new(move |what| moved.lock().unwrap().push(what))
         },
         Arc::new(|_| {}),
     );
-    let sessions = HostedSessions::new(connection, &root);
+    let sessions = HostedSessions::new(connection, root);
     sessions.hear_through(hooks.relayed_from_the_host().expect("relayed"));
-    Heard {
-        hosted: Hosted {
-            sessions,
-            link,
-            runs,
-            savers: Savers::default(),
-            root,
-            _dir: dir,
-            _runtime: runtime,
-        },
-        hooks,
-        channel,
-        moved,
-    }
+    (link, hooks, sessions, moved)
 }
 
 impl Heard {
@@ -718,6 +751,70 @@ fn a_quit_that_the_host_does_not_answer_gives_up_on_it_by_the_deadline() {
         started.elapsed()
     );
     hosted.savers.finish_saving();
+}
+
+/// The board the host keeps, as a window takes it.
+fn the_hosts_board(heard: &Heard) -> purlis_core::state::Board {
+    let mut taken = purlis_core::state::Board::new();
+    taken.keep(serde_json::from_value(heard.channel.board.whole()).expect("a whole board"));
+    taken
+}
+
+#[test]
+fn each_move_the_window_makes_on_its_board_is_made_on_the_hosts() {
+    use crate::host::ChatBoard;
+    use purlis_core::state::{Event, State};
+    let heard = heard_in_the_window();
+    let id = heard.a_chat();
+    let other = heard.a_chat();
+
+    (heard.channel.hearing().each)(reported(id, Event::Stop)).expect("taken");
+    (heard.channel.hearing().each)(reported(other, Event::Stop)).expect("taken");
+    heard.hooks.ignored(other);
+    heard.hooks.task_failed(
+        id,
+        purlis_core::state::FailedTask::new(
+            "task-1",
+            "the task",
+            purlis_core::state::HowFailed::Failed,
+            "it broke",
+        ),
+    );
+
+    until("the host's board follows the window's", || {
+        the_hosts_board(&heard).failed_tasks(id).len() == 1
+    });
+    let host = the_hosts_board(&heard);
+    assert_eq!(host.needs_you(), [id]);
+    assert_eq!(host.needs_you(), heard.hooks.board().needs_you());
+    assert_eq!(host.state(other), State::Waiting);
+
+    heard.hooks.closed(other);
+    until("the close reaches the host's board", || {
+        the_hosts_board(&heard).chats().count() == 1
+    });
+}
+
+#[test]
+fn a_window_that_holds_the_project_again_reads_every_chat_as_the_host_kept_it() {
+    use purlis_core::state::{Event, State};
+    let heard = heard_in_the_window();
+    let id = heard.a_chat();
+    (heard.channel.hearing().each)(reported(id, Event::Stop)).expect("taken");
+    until("the host's board has the chat's end of turn", || {
+        the_hosts_board(&heard).needs_you() == [id]
+    });
+
+    let (_link, hooks, sessions, moved) =
+        a_window_of(&heard.hosting, &heard.hosted.root, &heard.hosted._runtime);
+    sessions.hold().expect("it holds the project");
+
+    assert_eq!(hooks.board().state(id), State::Waiting);
+    assert_eq!(hooks.board().needs_you(), [id]);
+    let told = moved.lock().unwrap().clone();
+    let told = told.last().expect("the window is told the chat");
+    assert_eq!((told.session, told.needs_you), (id, true));
+    assert_eq!(told.queue, [id]);
 }
 
 #[test]

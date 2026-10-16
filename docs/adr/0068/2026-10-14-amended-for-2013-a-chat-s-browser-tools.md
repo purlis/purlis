@@ -14,7 +14,7 @@ implementation, to be confirmed** (D-2013-1 to D-2013-6).
    what the chat's tool server asks the window over the hook socket and what the window asks the
    session host. Only the driver itself turns an act into its own call. *D-2013-1, to be
    confirmed.*
-2. **Session protocol 1.9, a minor.** `browse` carries one act to a browser under the act's own
+2. **Session protocol 1.11, a minor.** `browse` carries one act to a browser under the act's own
    id, answered `browsed`, refused `browser_refused` with the driver's sentence, or refused
    `browser_ended` where the browser has ended. A browser's start may carry `reach`: the hosts
    its chat's sandbox lists, each at its layer, the hosts policy pins as never allowed, the

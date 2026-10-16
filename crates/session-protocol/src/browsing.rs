@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What a browser is asked to do, and what it answers** (1.9, #2013): the words a chat's
+//! **What a browser is asked to do, and what it answers** (1.11, #2013): the words a chat's
 //! browser tools, the window and the session host share.
 //!
 //! A chat's agent drives its browser through typed tools (spec #2008): a snapshot of a page
@@ -213,7 +213,7 @@ pub struct Browsed {
     pub repeated: bool,
 }
 
-/// What a browser may reach, given as it starts (1.9): the hosts its chat's sandbox lists, each
+/// What a browser may reach, given as it starts (1.11): the hosts its chat's sandbox lists, each
 /// with the layer that lists it, the hosts policy pins as never allowed, the ports of this
 /// machine the person withdrew from the chat while it runs, and whether a public site nothing
 /// lists is carried too (the open web). Absent from a start, a browser reaches nothing listed

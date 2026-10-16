@@ -34,7 +34,8 @@
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.7) | yes | | | | | |
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
-//! | `browse`, an act of a chat's browser, and a browser's `reach` (1.9) | yes | | | | | |
+//! | `board_moved`, `board` (1.10) | yes | | | | | |
+//! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -74,11 +75,15 @@
 //!   0078 §4, ADR 0068 amended 2026-10-15). It is refused from every other scope before the
 //!   host hears of it, `remote-link` included: an opt-out is asked again on the device a chat
 //!   moves to. What a relayed start runs is what the runner's trusted peer composed.
+//! - **A held project's kept board is read and moved by the window's own link alone** (1.10,
+//!   #2194). The kept board is what the window draws Needs you from, and its moves are the
+//!   window's decisions on the lines it heard and the person's acts (an Ignore, an answer, a
+//!   close). Only `local-ui` sends either; a relayed `remote-link` does not.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
 //!   a view of one, `remote-link` included; a stop of one, like every stop, only removes power.
-//! - **A chat's browser is driven through the window alone** (1.9, #2013). The window asks the
+//! - **A chat's browser is driven through the window alone** (1.11, #2013). The window asks the
 //!   person what a chat's browser may reach, starts it with that reach, and hands on each of
 //!   the chat's acts with `browse`. No other scope sends an act, `remote-link` included: a
 //!   relayed hold does not carry a chat's browser.
@@ -153,13 +158,16 @@ pub enum Power {
     /// `rearm` (1.5): lets programs start again after the kill switch.
     Rearm,
     /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
-    /// person, and what it shows; and `browse` (1.9), an act of a chat's browser, which the
+    /// person, and what it shows; and `browse` (1.11), an act of a chat's browser, which the
     /// window hands on once it has decided the chat may have one.
     Browser,
     /// `record` (1.8): a write in the event log the host holds.
     Record,
     /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
     OptOut,
+    /// `board_moved` and `board` (1.10): what a held project's kept board holds, and the
+    /// window's moves of it.
+    Board,
 }
 
 impl Scope {
@@ -235,6 +243,13 @@ mod tests {
                 scope == Scope::LocalUi,
                 "{scope}"
             );
+        }
+    }
+
+    #[test]
+    fn only_the_window_reads_or_moves_a_projects_board() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Board), scope == Scope::LocalUi, "{scope}");
         }
     }
 
