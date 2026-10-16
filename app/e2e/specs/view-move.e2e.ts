@@ -12,10 +12,11 @@ import { closeMenus } from "../acting.js";
  * overflows the window.
  *
  * **The key a person presses, on the icon that has the keyboard, and the menu's own state
- * waited on** (#1973): the driver's Shift+F10, which the menu's key handler hears as it hears a
- * person's, sent only while the icon holds the keyboard and until the icon says its menu is open
- * ({@link openMenuOf}). Every focus is given from the page. **It leaves the window as it found it**: Search is moved back to the sidebar by its menu
- * there, and the left side shows Chats again, picked as a person picks it and waited for.
+ * waited on** (#1973): the keydown Shift+F10 makes, dispatched from the page to the icon while
+ * it holds the keyboard, until the icon says its menu is open ({@link openMenuOf}). The
+ * driver's own Shift+F10 arrives without Shift held and opens nothing. Every focus is given from
+ * the page. **It leaves the window as it found it**: Search is moved back to the sidebar by its
+ * menu there, and the left side shows Chats again, picked as a person picks it and waited for.
  */
 
 const NAVIGATION = '[role="tablist"][aria-label="Navigation"]';
@@ -24,62 +25,47 @@ const HALF = '[data-panel][id="region-panel"] .panel-half[data-side="left"]';
 const MENU = '[role="menu"]';
 
 /**
- * **Opens the menu of the view icon `name` in the bar `bar` as a person does from the keyboard**
- * (#1973): the icon given the keyboard, Shift+F10 pressed, and the icon's own menu state waited
- * on — Radix marks the trigger `data-state="open"` once its menu is up.
+ * **Opens the menu of the view icon `name` in the bar `bar` with the keydown a person's
+ * Shift+F10 makes** (#1973), and waits on the icon's own menu state: Radix marks the trigger
+ * `data-state="open"` once its menu is up.
  *
- * **Each try gives the icon the keyboard again, right before the key.** The window may move the
- * keyboard on its own a moment after the spec gave it: a moved view takes it in a frame of its
- * own (`PlaneView`'s `moveSideView`). A Shift+F10 sent then goes to wherever the keyboard went
- * and opens nothing, and a fallback dispatched from the page goes there too — which is how this
- * spec failed on main. So the key is sent only while the icon holds the keyboard, and sent
- * again until the icon says its menu is open; an icon already open is never focused again,
- * which would close its menu.
+ * **The key is dispatched from the page, to the icon, in the same step that gives the icon the
+ * keyboard.** The menu opens only for a Shift+F10 whose target is the icon itself
+ * (`Menus.tsx`, `openFromTheKeyboard`). The driver's Shift+F10 cannot be that key: measured on
+ * both engines' scenario runs, the WebDriver plugin's F10 reaches the icon with `shiftKey`
+ * false, so it opens nothing. And a key sent to whatever has the keyboard a moment later misses
+ * whenever the window has moved the keyboard in between — a moved view takes it in a frame of
+ * its own (`PlaneView`'s `moveSideView`) — which is how this spec failed on main. Focus, the
+ * check that the icon holds it, and the key are one synchronous script, so nothing runs between
+ * them. A try that opens nothing is tried again; an icon whose menu is open is left alone, since
+ * focusing it again would close the menu.
  */
 async function openMenuOf(bar: string, name: string): Promise<void> {
   const icon = `${bar} [role="tab"][aria-label="${name}"]`;
-  // DIAGNOSTIC (#1973, removed before merge): what the page hears of the driver's key.
-  await browser.execute(() => {
-    const w = window as unknown as { vmLog?: string[] };
-    if (w.vmLog !== undefined) return;
-    w.vmLog = [];
-    document.addEventListener(
-      "keydown",
-      (e) => {
-        const t = e.target as HTMLElement | null;
-        w.vmLog?.push(`${e.key}${e.shiftKey ? "+S" : ""}@${t?.getAttribute("role") ?? t?.tagName}`);
-      },
-      true,
-    );
-  });
-  await browser
-    .waitUntil(
-      async () => {
-        const now = await browser.execute((css: string) => {
-          const tab = document.querySelector<HTMLElement>(css);
-          if (tab === null) return "absent";
-          if (tab.getAttribute("data-state") === "open") return "open";
-          tab.focus();
-          return document.activeElement === tab ? "held" : "refused";
-        }, icon);
-        if (now === "open") return true;
-        if (now === "held") await browser.keys(["Shift", "F10"]);
-        return false;
-      },
-      {
-        timeout: 20_000,
-        interval: 500,
-        timeoutMsg: `Shift+F10 on the ${name} icon in ${bar} never opened its menu`,
-      },
-    )
-    .catch(async (err: Error) => {
-      const seen = await browser.execute((css: string) => {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((css: string) => {
         const tab = document.querySelector<HTMLElement>(css);
-        const log = (window as unknown as { vmLog?: string[] }).vmLog ?? [];
-        return `ds=${tab?.getAttribute("data-state") ?? "-"} n=${log.length} ${log.slice(-6).join(",")}`;
-      }, icon);
-      throw new Error(`DIAG ${seen} :: ${err.message}`);
-    });
+        if (tab === null) return false;
+        if (tab.getAttribute("data-state") === "open") return true;
+        tab.focus();
+        if (document.activeElement !== tab) return false;
+        tab.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "F10",
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        return false;
+      }, icon),
+    {
+      timeout: 20_000,
+      interval: 500,
+      timeoutMsg: `Shift+F10 on the ${name} icon in ${bar} never opened its menu`,
+    },
+  );
   await $(MENU).waitForDisplayed({ timeout: 10_000 });
 }
 
