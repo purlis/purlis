@@ -25,6 +25,11 @@
 //! them is refused every person's scope (ADR 0068 §5, FD-27's item 2). Each program's pid is
 //! listed too, so one that left the host's tree and kept its session is refused as well.
 //!
+//! **The event log is the host's, and so is what a program's end leaves** (#2003, [`Record`]):
+//! the window's writes reach it as `record`, and as each program ends the host tells its binary
+//! how and why, with whether a window held its project then, so the end is kept with the window
+//! gone.
+//!
 //! **The kill switch is the host's** (#2001, ADR 0071): `stop_all` ends every program it runs
 //! and starts none until the window re-arms, and the stop is kept in the host's own folder
 //! ([`crate::killswitch`]), so a host started again while stopped starts nothing either. The
@@ -41,7 +46,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -63,6 +68,7 @@ use crate::browsers::{Browser, Browsers, NoBrowsers};
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
 use crate::killswitch::Switch;
+use crate::recording::{Ended, Record, RecordsNothing, Stopped};
 use crate::serving::Window;
 
 /// A start, as the host hands it to its [`Compose`]: the project it is in, the number the chat
@@ -324,6 +330,9 @@ struct Inner {
     hear: Box<dyn Hear>,
     /// What starts a browser (#2012).
     browsers: Box<dyn Browsers>,
+    /// What writes the event log and keeps a program's end (#2003): nothing until the binary
+    /// gives one ([`Hosting::recording_with`]).
+    record: OnceLock<Box<dyn Record>>,
     state: Mutex<State>,
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
@@ -404,6 +413,16 @@ struct Hosted {
     /// Where it started, where its start said: what its project's saver asks.
     cwd: Option<PathBuf>,
     ended: bool,
+    /// The host's own act that is ending it, where one is ([`Stopped`]).
+    stopping: Arc<Mutex<Option<Stopped>>>,
+}
+
+/// Says the host's act `by` is ending a program, keeping the highest where another is already.
+fn stopping_by(stopping: &Mutex<Option<Stopped>>, by: Stopped) {
+    let mut stopping = stopping
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *stopping = (*stopping).max(Some(by));
 }
 
 impl Hosting {
@@ -487,6 +506,7 @@ impl Hosting {
                 save: std::sync::OnceLock::new(),
                 hear: Box::new(hear),
                 browsers: Box::new(NoBrowsers),
+                record: OnceLock::new(),
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
                 switch,
@@ -508,6 +528,30 @@ impl Hosting {
             Arc::get_mut(&mut self.inner).expect("browsers are given before the host is shared");
         inner.browsers = Box::new(browsers);
         self
+    }
+
+    /// This host writes the event log, and keeps each program's end, with `record` (#2003). Set
+    /// once, as the binary builds its host; a second is let go of.
+    pub fn recording_with(self, record: impl Record) -> Hosting {
+        let _ = self.inner.record.set(Box::new(record));
+        self
+    }
+
+    /// What writes this host's event log: the binary's, or nothing.
+    fn record(&self) -> &dyn Record {
+        match self.inner.record.get() {
+            Some(record) => record.as_ref(),
+            None => &RecordsNothing,
+        }
+    }
+
+    /// Whether a link holds `project` now: a window that decides what a program's end in it
+    /// moves.
+    fn watched(&self, project: &str) -> bool {
+        self.state()
+            .projects
+            .get(project)
+            .is_some_and(|held| !held.links.is_empty())
     }
 
     /// The window that started this host and is the first thing its programs run below.
@@ -794,7 +838,10 @@ impl Hosting {
             .programs
             .values()
             .filter(|hosted| !hosted.ended)
-            .map(|hosted| Arc::clone(&hosted.running))
+            .map(|hosted| {
+                stopping_by(&hosted.stopping, Stopped::Killed);
+                Arc::clone(&hosted.running)
+            })
             .collect();
         let _ = tokio::task::spawn_blocking(move || stop_together(programs)).await;
         Answer::KillSwitch(switch)
@@ -919,6 +966,7 @@ impl Hosting {
         if let (Some(channel), Some(pid)) = (&channel, process) {
             channel.bind(number, pid);
         }
+        let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
         self.state().programs.insert(
             program.clone(),
             Hosted {
@@ -935,13 +983,15 @@ impl Hosting {
                     .and_then(|launch| launch.cwd.as_ref())
                     .map(PathBuf::from),
                 ended: false,
+                stopping: Arc::clone(&stopping),
             },
         );
         // A stop thrown while this one was being started: it is listed by now, so either the
         // stop's sweep reached it or this check sees the switch thrown.
         if self.let_through(&start, peer).is_err() {
-            let stopping = Arc::clone(&running);
-            let _ = tokio::task::spawn_blocking(move || stopping.stop()).await;
+            stopping_by(&stopping, Stopped::Killed);
+            let ending = Arc::clone(&running);
+            let _ = tokio::task::spawn_blocking(move || ending.stop()).await;
         }
         let hosting = self.clone();
         let ended = program.clone();
@@ -961,6 +1011,18 @@ impl Hosting {
             if let (Some(channel), Some(pid)) = (&channel, process) {
                 channel.ended(number, pid);
             }
+            // What its end leaves is kept before anyone is told it ended, window or no window
+            // (#2003).
+            let stopped = *stopping
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hosting.record().ended(&Ended {
+                project_path: &path,
+                number,
+                exit: exit.clone(),
+                stopped,
+                watched: hosting.watched(&project),
+            });
             hosting.tell(&Pushed::Ended {
                 program: ended,
                 run,
@@ -1035,6 +1097,8 @@ impl Hosting {
                 // A browser writes no project's files: its project's saver does not wait for it.
                 cwd: None,
                 ended: false,
+                // A browser's end leaves nothing in the event log.
+                stopping: Arc::default(),
             },
         );
         let hosting = self.clone();
@@ -1133,7 +1197,15 @@ impl Hosting {
     }
 
     async fn stop(&self, program: &str) -> Result<Answer, Refusal> {
-        let running = self.running(program)?;
+        let running = {
+            let state = self.state();
+            let hosted = state
+                .programs
+                .get(program)
+                .ok_or_else(|| no_such_program(program))?;
+            stopping_by(&hosted.stopping, Stopped::Operator);
+            Arc::clone(&hosted.running)
+        };
         let _ = tokio::task::spawn_blocking(move || running.stop()).await;
         Ok(Answer::Done)
     }
@@ -1194,6 +1266,7 @@ impl Hosting {
                 .programs
                 .remove(program)
                 .ok_or_else(|| no_such_program(program))?;
+            stopping_by(&hosted.stopping, Stopped::Closed);
             state.closed.extend(hosted.process);
             let confinements = take_confinements(&mut state, |owner| {
                 *owner == Owner::Program(program.to_owned())
@@ -1572,6 +1645,16 @@ impl session::Host for Hosting {
                     why,
                 }),
             Command::KillSwitch => Ok(Answer::KillSwitch(self.inner.switch.state())),
+            // Only the window's link reaches this: the grants refuse every other. A write is
+            // made durable, so off the runtime.
+            Command::Record { entry } => {
+                let hosting = self.clone();
+                tokio::task::spawn_blocking(move || hosting.record().record(entry))
+                    .await
+                    .map_err(|why| not_recorded(why.to_string()))?
+                    .map(|()| Answer::Done)
+                    .map_err(not_recorded)
+            }
             Command::Browse {
                 program,
                 call_id,
@@ -1685,6 +1768,13 @@ fn already_confined(id: &str) -> Refusal {
     }
 }
 
+fn not_recorded(why: String) -> Refusal {
+    Refusal {
+        code: session::NOT_RECORDED.into(),
+        why,
+    }
+}
+
 fn not_started(why: String) -> Refusal {
     Refusal {
         code: session::NOT_STARTED.into(),
@@ -1709,7 +1799,14 @@ impl Hosting {
         drop(saving);
         let (hosted, confinements) = {
             let mut state = self.state();
-            let hosted: Vec<Hosted> = state.programs.drain().map(|(_, hosted)| hosted).collect();
+            let hosted: Vec<Hosted> = state
+                .programs
+                .drain()
+                .map(|(_, hosted)| {
+                    stopping_by(&hosted.stopping, Stopped::Quit);
+                    hosted
+                })
+                .collect();
             let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
             state.closed.extend(processes);
             let confinements: Vec<Arc<dyn Confining>> = state

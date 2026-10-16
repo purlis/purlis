@@ -9,9 +9,10 @@
 //! **What it does** (#1997, #1998): it listens on its socket, admits the scopes whose
 //! credentials it minted, refuses everyone else, and serves the session protocol: it holds
 //! projects, and starts, views, drives, stops and closes the programs a client starts in them
-//! ([`Hosting`]). How a start is composed is the binary's ([`Compose`]), and so is how a chat's
-//! confinement, its egress proxy, is started from the window's plan (#1999, [`Confine`]), each
-//! built on the core, so this crate links none of it.
+//! ([`Hosting`]). While chats run in it, it is the event log's one writer, and keeps what each
+//! program's end leaves, window or no window (#2003, [`Record`]). How a start is composed is the
+//! binary's ([`Compose`]), and so is how a chat's confinement, its egress proxy, is started from
+//! the window's plan (#1999, [`Confine`]), each built on the core, so this crate links none of it.
 //!
 //! **How it starts, in order, each step failing closed:**
 //!
@@ -49,6 +50,8 @@ mod hosting;
 #[cfg(unix)]
 mod killswitch;
 #[cfg(unix)]
+mod recording;
+#[cfg(unix)]
 mod relay;
 #[cfg(unix)]
 mod serving;
@@ -71,6 +74,8 @@ pub use killswitch::KILL_SWITCH;
 /// The session protocol this host speaks, for a binary's [`Compose`].
 #[cfg(unix)]
 pub use purlis_session_protocol as protocol;
+#[cfg(unix)]
+pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Relay};
 #[cfg(unix)]

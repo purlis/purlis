@@ -262,6 +262,10 @@ fn every_command() -> Vec<Command> {
             role: Some(session::ViewRole::Focused),
             rate: None,
         },
+        // A write in the event log the host holds: the window's alone (1.8).
+        Command::Record {
+            entry: serde_json::json!({ "entry": "kill_switch_read" }),
+        },
         // A browser driven for a chat: the window's alone (1.9).
         Command::Browse {
             program: CHAT.into(),
@@ -310,6 +314,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "rearm",
             "start_program",
             "attach_view",
+            "record",
             "browse",
         ],
         Scope::Terminal => &[

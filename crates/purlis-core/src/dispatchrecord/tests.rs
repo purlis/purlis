@@ -2662,3 +2662,71 @@ fn a_record_before_the_cut_whose_app_quit_is_settled_as_the_project_opens() {
     );
     assert!(again.is_err());
 }
+
+#[test]
+fn a_task_whose_chat_ended_with_no_window_there_ends_unreported_and_is_owed_to_its_asker() {
+    // #2003: the session host settles it as its program ends, and the window, back, hands the
+    // asking chat the report.
+    let (_d, root) = project();
+    let task = Opening {
+        mode: Mode::Task,
+        ..a_handoff()
+    };
+    let ended = open(&root, task.clone(), at("2026-10-07T12:00:00Z")).unwrap();
+    let another = open(
+        &root,
+        Opening {
+            worker: Worker {
+                chat: ChatRef {
+                    chat: 9,
+                    id: Some("01K6W0RKER000000000000000C".to_owned()),
+                    name: "devops 9".to_owned(),
+                    persona: Some("devops".to_owned()),
+                },
+                ..task.worker.clone()
+            },
+            ..task
+        },
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+
+    let settled = ended_unwatched(
+        &root,
+        devops().id.as_deref().unwrap(),
+        devops().chat,
+        at("2026-10-08T09:00:00Z"),
+    );
+
+    assert_eq!(settled, 1);
+    let ended = read(&root, &ended.id).unwrap();
+    assert_eq!(ended.ended_by, Some(EndedBy::Unreported));
+    assert_eq!(
+        ended.report.map(|report| (report.outcome, report.text)),
+        Some((Outcome::Failed, ENDED_WITHOUT_A_REPORT.to_owned()))
+    );
+    assert_eq!(ended.undelivered, Some(Undelivered { kept: None }));
+    assert!(
+        read(&root, &another.id).unwrap().running(),
+        "another chat's is not touched"
+    );
+}
+
+#[test]
+fn a_chat_that_ended_with_no_window_there_and_worked_no_dispatch_settles_nothing() {
+    let (_d, root) = project();
+    let running = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+
+    let settled = ended_unwatched(
+        &root,
+        "01K6NOTAWORKER00000000000D",
+        7,
+        at("2026-10-08T09:00:00Z"),
+    );
+
+    assert_eq!(
+        settled, 0,
+        "a record names its chat by its id, never its number alone"
+    );
+    assert!(read(&root, &running.id).unwrap().running());
+}

@@ -32,6 +32,10 @@
 //! the same link ([`Connection`] is its [`crate::killswitch::Authority`]), so a stop ends every
 //! program the host runs and holds across the host's restart, and only the window re-arms.
 //!
+//! **The event log is the host's too** (#2003): the window opens none, and hands the host each
+//! write it decides ([`record_in_the_host`]); what its hooks' hearing would write of a line goes
+//! back with the line's reply. The host keeps what a program's end leaves, window or no window.
+//!
 //! **One link for every project.** The window's link to its host ([`HostLink`]) carries every
 //! project's chats: their views come on it, word that a program ended, and their hooks' lines.
 //!
@@ -90,6 +94,24 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 /// What a view is written before the screen of its next epoch: a full reset, so a pane drawn
 /// from a fresh snapshot after its view fell behind starts from blank, as the snapshot assumes.
 const RESET: &str = "\x1bc";
+
+/// **Writes `entry` in the event log the session host holds** (#2003), once the link is ready:
+/// `Ok` once the host has written it durably, or why it did not. What the window's
+/// [`crate::hooks::Events`] hands every write it decides to while chats run in the host.
+pub fn record_in_the_host(
+    connection: &Connection,
+    entry: &purlis_core::eventlog::Entry,
+) -> Result<(), String> {
+    let entry = serde_json::to_value(entry)
+        .map_err(|why| format!("the write could not be put in words for the host: {why}"))?;
+    match connection
+        .wait(LINK_WITHIN)?
+        .call(Command::Record { entry })?
+    {
+        Answer::Done => Ok(()),
+        other => Err(format!("the session host answered a write with {other:?}")),
+    }
+}
 
 /// Where the window's link to its session host stands: being made, ready, or not to be had and
 /// why. Shared by every project's [`HostedSessions`].
