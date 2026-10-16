@@ -8120,6 +8120,12 @@ export type StaleRemote = {
 	origin: string,
 	/**  The address the Fix sets, whole, as it is set. */
 	now: string,
+	/**
+	 *  The places `origin` pushes to that the Fix leaves as they are, as `<host>/<owner>/<repo>`
+	 *  (a user never drawn): empty where it has no push URL of its own, or where every one names
+	 *  the old place and goes with `origin` (#2117).
+	 */
+	pushes_kept: string[],
 };
 
 /**  Everything the picker draws, read from the plane when it is opened. */
