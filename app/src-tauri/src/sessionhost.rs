@@ -442,13 +442,10 @@ fn dialing(
         let connection = connection
             .upgrade()
             .ok_or("the window no longer holds its link to it")?;
-        let (opened, link) = std::sync::mpsc::channel();
         let (socket, credential) = (socket.clone(), credential.clone());
-        runtime.spawn(async move {
-            let _ = opened.send(open_link(&socket, &credential, &connection).await);
-        });
-        link.recv_timeout(within)
-            .map_err(|_| "it did not open another link in time".to_owned())?
+        crate::hostedsessions::open_within(&runtime, within, async move {
+            open_link(&socket, &credential, &connection).await
+        })
     })
 }
 

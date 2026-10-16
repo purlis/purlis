@@ -346,7 +346,7 @@ fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
         confines.clone(),
         purlis_host::standin::StandIns::default(),
     );
-    let (connection, _window) = crate::hostedsessions::in_memory(hosting, &runtime);
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
     let project = tempfile::tempdir().expect("a project");
     let root = std::fs::canonicalize(project.path()).expect("a resolved project");
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");

@@ -222,7 +222,7 @@ fn a_window_on<H: session::Host + Clone>(host: impl FnOnce() -> H + Send + 'stat
     let config = tempfile::tempdir().expect("a config home");
     // Made on the runtime, as a host is made where it serves.
     let host = runtime.block_on(async move { host() });
-    let (connection, _window) = crate::hostedsessions::in_memory(host, &runtime);
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(host, &runtime);
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));

@@ -32,7 +32,7 @@ fn window() -> Window {
     let started = StandInBrowsers::in_folder(store.path().join("browsers"));
     let hosting =
         Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(started.clone());
-    let (connection, _window) = crate::hostedsessions::in_memory(hosting, &runtime);
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
     let project = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(project.path()).unwrap();
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();

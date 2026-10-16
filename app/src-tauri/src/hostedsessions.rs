@@ -106,6 +106,9 @@ pub struct Connection {
     dial: Mutex<Option<Dial>>,
     /// The link each project root is held on, by the root (#2178).
     projects: Mutex<HashMap<PathBuf, Arc<HostLink>>>,
+    /// Held while a root's link is being opened, by the root: one root never gets two links,
+    /// and nothing waits for another root's.
+    opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
 }
 
 /// Opens another `local-ui` link to the window's host, waiting at most the time it is given: one
@@ -131,16 +134,14 @@ impl Connection {
     /// The link the project at `root` is held on: its own, opened the first time it is asked
     /// for, so two clones of one project are held apart (#2178). Waits at most `within` for the
     /// window's link, and for the new one; with no time to wait, only a link already open is
-    /// answered.
+    /// answered, whatever link is being opened meanwhile.
     pub(crate) fn of_project(
         &self,
         root: &Path,
         within: Duration,
     ) -> Result<Arc<HostLink>, String> {
         self.wait(within)?;
-        // Under the lock, so one root never gets two links.
-        let mut projects = lock(&self.projects);
-        if let Some(link) = projects.get(root) {
+        if let Some(link) = lock(&self.projects).get(root) {
             return Ok(Arc::clone(link));
         }
         if within.is_zero() {
@@ -149,11 +150,17 @@ impl Connection {
                 root.display()
             ));
         }
+        let opening = Arc::clone(lock(&self.opening).entry(root.to_path_buf()).or_default());
+        let _opening = lock(&opening);
+        // Another call may have opened it while this one waited its turn.
+        if let Some(link) = lock(&self.projects).get(root) {
+            return Ok(Arc::clone(link));
+        }
         let dial = lock(&self.dial)
             .clone()
             .ok_or_else(|| no_host("there is no way to open another link to it"))?;
         let link = Arc::new(dial(within).map_err(|why| no_host(&why))?);
-        projects.insert(root.to_path_buf(), Arc::clone(&link));
+        lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
         Ok(link)
     }
 
@@ -263,6 +270,16 @@ pub struct HostLink {
     client: Arc<Client>,
     runtime: tokio::runtime::Handle,
     shared: Arc<Shared>,
+    /// What hears the host on it, which keeps it open: the link closes once this ends.
+    hearing: tokio::task::AbortHandle,
+}
+
+/// A link nobody holds any more is closed: one that opened after nobody waited for it, among
+/// them.
+impl Drop for HostLink {
+    fn drop(&mut self) {
+        self.hearing.abort();
+    }
 }
 
 #[derive(Default)]
@@ -326,14 +343,17 @@ impl HostLink {
                 runtime: runtime.clone(),
             },
         );
-        runtime.spawn(async move {
-            hearing.await;
-            ended();
-        });
+        let hearing = runtime
+            .spawn(async move {
+                hearing.await;
+                ended();
+            })
+            .abort_handle();
         Ok(HostLink {
             client,
             runtime,
             shared,
+            hearing,
         })
     }
 
@@ -1420,56 +1440,21 @@ fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The window's connection to the host `hosting` serves as, over in-memory links, run on
-/// `runtime`: its own link, ready, and one more opened for each project root, as the window's
-/// are over the host's socket.
-#[cfg(test)]
-pub(crate) fn in_memory<H: session::Host + Clone>(
-    hosting: H,
-    runtime: &tokio::runtime::Runtime,
-) -> (Arc<Connection>, Arc<HostLink>) {
-    use purlis_session_protocol::auth::{Credentials, Scope};
-    use purlis_session_protocol::link;
-
-    static HELD: std::sync::LazyLock<Credentials> =
-        std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
-
-    async fn linked<H: session::Host>(hosting: H) -> Result<HostLink, String> {
-        let (a, b) = tokio::io::duplex(1 << 20);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        let served = served.map_err(|why| why.to_string())?;
-        tokio::spawn(session::serve(served, hosting, None));
-        let client = client.map_err(|why| why.to_string())?;
-        HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
-    }
-
-    let link = Arc::new(
-        runtime
-            .block_on(linked(hosting.clone()))
-            .expect("the window speaks to the host"),
-    );
-    let handle = runtime.handle().clone();
-    let dial: Dial = Arc::new(move |within| {
-        let (opened, link) = std::sync::mpsc::channel();
-        let hosting = hosting.clone();
-        handle.spawn(async move {
-            let _ = opened.send(linked(hosting).await);
-        });
-        link.recv_timeout(within)
-            .map_err(|_| "it did not open another link in time".to_owned())?
+/// A link to the window's host, opened by `opening` on `runtime` and waited for at most
+/// `within`, from any thread but the runtime's own: what a [`Dial`] answers.
+pub(crate) fn open_within(
+    runtime: &tokio::runtime::Handle,
+    within: Duration,
+    opening: impl std::future::Future<Output = Result<HostLink, String>> + Send + 'static,
+) -> Result<HostLink, String> {
+    let (opened, link) = std::sync::mpsc::channel();
+    runtime.spawn(async move {
+        // A link that opens once nobody waits for it any more is dropped here.
+        let _ = opened.send(opening.await);
     });
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::clone(&link), dial);
-    (connection, link)
+    link.recv_timeout(within)
+        .map_err(|_| "it did not open another link in time".to_owned())?
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
