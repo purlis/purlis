@@ -502,6 +502,17 @@ pub struct Shown {
     pub reach: Option<purlis_session_protocol::browsing::BrowserReach>,
     /// Each act it was asked, with its id, in order (#2013).
     pub acts: Vec<(String, purlis_session_protocol::browsing::Act)>,
+    /// The epoch each act was made under, in order (#2014).
+    pub epochs: Vec<u64>,
+    /// Whether the person drives it now, and its lease's epoch (#2014).
+    pub taken_over: bool,
+    pub epoch: u64,
+    /// Each event of the person's it took, in order (#2014).
+    pub inputs: Vec<purlis_session_protocol::browsing::Input>,
+    /// The document its page shows: input aimed at another is missed, and each frame names it.
+    pub document: u64,
+    /// Its pages' size.
+    pub size: (u16, u16),
     /// What it answers its next acts with, in order; once none is left, a settled page.
     answers: std::collections::VecDeque<Result<purlis_session_protocol::browsing::Browsed, String>>,
     sink: Option<crate::browsers::FrameSink>,
@@ -515,16 +526,22 @@ impl StandInScreen {
 
     /// It makes `image` as its next frame, when the host is asking for frames.
     pub fn makes(&self, image: &[u8]) {
-        let sink = {
+        let (sink, document) = {
             let mut shown = self.shown();
             if !shown.showing {
                 return;
             }
             shown.made += 1;
-            shown.sink.clone()
+            (shown.sink.clone(), shown.document)
         };
         if let Some(sink) = sink {
-            sink(Bytes::copy_from_slice(image));
+            sink(
+                purlis_session_protocol::browsing::Aim {
+                    page: "p1".into(),
+                    document,
+                },
+                Bytes::copy_from_slice(image),
+            );
         }
     }
 
@@ -566,7 +583,8 @@ impl crate::browsers::Screen for StandInScreen {
     }
 
     fn size(&self) -> (u16, u16) {
-        (1280, 800)
+        let size = self.shown().size;
+        if size == (0, 0) { (1280, 800) } else { size }
     }
 
     fn process(&self) -> Option<u32> {
@@ -591,12 +609,19 @@ impl crate::browsers::Screen for StandInScreen {
         &self,
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
+        epoch: u64,
     ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
         let mut shown = self.shown();
         if shown.stopped {
             return Err(crate::browsers::NotActed::Ended);
         }
+        if shown.taken_over || epoch != shown.epoch {
+            return Err(crate::browsers::NotActed::Refused(
+                "the person took this browser over while the call ran".into(),
+            ));
+        }
         shown.acts.push((call_id.to_owned(), act));
+        shown.epochs.push(epoch);
         shown
             .answers
             .pop_front()
@@ -607,6 +632,49 @@ impl crate::browsers::Screen for StandInScreen {
                 })
             })
             .map_err(crate::browsers::NotActed::Refused)
+    }
+
+    fn take_over(&self) -> u64 {
+        let mut shown = self.shown();
+        shown.taken_over = true;
+        shown.epoch += 1;
+        shown.epoch
+    }
+
+    fn hand_back(&self) -> u64 {
+        let mut shown = self.shown();
+        shown.taken_over = false;
+        shown.epoch += 1;
+        shown.epoch
+    }
+
+    fn input(
+        &self,
+        input: &purlis_session_protocol::browsing::Input,
+    ) -> Result<(), crate::browsers::NotTaken> {
+        use purlis_session_protocol::browsing::Input;
+        let mut shown = self.shown();
+        if shown.stopped {
+            return Err(crate::browsers::NotTaken::Ended);
+        }
+        if !shown.taken_over {
+            return Err(crate::browsers::NotTaken::NotDriving);
+        }
+        let (Input::Mouse { aim, .. } | Input::Key { aim, .. }) = input;
+        if aim.document != shown.document {
+            return Err(crate::browsers::NotTaken::Missed);
+        }
+        shown.inputs.push(input.clone());
+        Ok(())
+    }
+
+    fn size_to(&self, width: u16, height: u16) -> Result<(), crate::browsers::NotTaken> {
+        let mut shown = self.shown();
+        if !shown.taken_over {
+            return Err(crate::browsers::NotTaken::NotDriving);
+        }
+        shown.size = (width, height);
+        Ok(())
     }
 }
 

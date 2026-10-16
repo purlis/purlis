@@ -2062,6 +2062,57 @@ impl Client {
         }
     }
 
+    /// The person takes browser `program` over (1.12): who drives it now.
+    pub async fn take_over(&self, program: &str) -> Result<crate::browsing::Driver, CallError> {
+        self.driving(Command::TakeOver {
+            program: program.into(),
+        })
+        .await
+    }
+
+    /// The person hands browser `program` back (1.12): who drives it now.
+    pub async fn hand_back(&self, program: &str) -> Result<crate::browsing::Driver, CallError> {
+        self.driving(Command::HandBack {
+            program: program.into(),
+        })
+        .await
+    }
+
+    async fn driving(&self, command: Command) -> Result<crate::browsing::Driver, CallError> {
+        match self.call(command).await? {
+            Answer::Driving { driver } => Ok(driver),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// One event of the person's in browser `program`, which they drive (1.12).
+    pub async fn browser_input(
+        &self,
+        program: &str,
+        input: crate::browsing::Input,
+    ) -> Result<(), CallError> {
+        self.done(Command::BrowserInput {
+            program: program.into(),
+            input,
+        })
+        .await
+    }
+
+    /// The person sets the size of browser `program`'s pages, in CSS pixels (1.12).
+    pub async fn size_browser(
+        &self,
+        program: &str,
+        width: u16,
+        height: u16,
+    ) -> Result<(), CallError> {
+        self.done(Command::SizeBrowser {
+            program: program.into(),
+            width,
+            height,
+        })
+        .await
+    }
+
     /// Close a view this client attached. The program keeps running.
     pub async fn detach_view(&self, program: &str, view: u32) -> Result<(), CallError> {
         self.done(Command::DetachView {

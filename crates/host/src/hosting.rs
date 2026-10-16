@@ -60,6 +60,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::auth::Scope;
+use purlis_session_protocol::browsing::{Driver, Input};
 use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
@@ -229,14 +230,16 @@ pub trait Running: Send + Sync + 'static {
     /// What a view of it attaches to.
     fn source(&self) -> Arc<dyn Source>;
     /// What a view of `kind` attaches to, as `role`, at most `rate` frames a second where it
-    /// says; `None` when it has no view of that kind. A terminal's is its terminal view.
+    /// says, its frames naming what they show where the view `aims` (1.12); `None` when it has
+    /// no view of that kind. A terminal's is its terminal view.
     fn view(
         &self,
         kind: ViewKind,
         role: Option<ViewRole>,
         rate: Option<u32>,
+        aims: bool,
     ) -> Option<Arc<dyn Source>> {
-        let _ = (role, rate);
+        let _ = (role, rate, aims);
         (kind == ViewKind::Terminal).then(|| self.source())
     }
     /// The size its views are drawn at, where it is not its terminal's: a browser's page, in
@@ -267,6 +270,41 @@ pub trait Running: Send + Sync + 'static {
         Err(crate::browsers::NotActed::Refused(
             "this program is not a browser, so it takes no browser's act".into(),
         ))
+    }
+    /// The person takes it over (#2014): refused for every program that is not a browser.
+    fn take_over(&self) -> Result<Driver, Refusal> {
+        Err(not_a_browser())
+    }
+    /// The person hands it back (#2014).
+    fn hand_back(&self) -> Result<Driver, Refusal> {
+        Err(not_a_browser())
+    }
+    /// One event of the person's (#2014).
+    fn input(&self, input: &Input) -> Result<(), Refusal> {
+        let _ = input;
+        Err(not_a_browser())
+    }
+    /// The person sets its pages' size (#2014).
+    fn size_browser(&self, width: u16, height: u16) -> Result<(), Refusal> {
+        let _ = (width, height);
+        Err(not_a_browser())
+    }
+    /// Who drives it, where it is a browser (#2014).
+    fn driver(&self) -> Option<Driver> {
+        None
+    }
+}
+
+/// Who drives a browser now, as an answer.
+fn driving(driver: Driver) -> Answer {
+    Answer::Driving { driver }
+}
+
+/// What a browser's command for a program that is no browser is refused with.
+fn not_a_browser() -> Refusal {
+    Refusal {
+        code: session::MALFORMED.into(),
+        why: "this program is not a browser".into(),
     }
 }
 
@@ -813,6 +851,11 @@ impl Hosting {
     /// one version behind never takes one for a chat.
     fn list(&self, version: Version) -> Vec<Chat> {
         let knows_browsers = version >= Version { major: 1, minor: 6 };
+        let knows_drivers = version
+            >= Version {
+                major: 1,
+                minor: 12,
+            };
         let state = self.state();
         let mut chats: Vec<Chat> = state
             .programs
@@ -830,6 +873,7 @@ impl Hosting {
                 number: (hosted.kind != ProgramKind::Browser).then_some(hosted.number),
                 run: hosted.run.clone(),
                 kind: (hosted.kind == ProgramKind::Browser).then_some(ProgramKind::Browser),
+                driver: hosted.running.driver().filter(|_| knows_drivers),
             })
             .collect();
         chats.sort_by(|a, b| (&a.project, a.number).cmp(&(&b.project, b.number)));
@@ -1309,6 +1353,18 @@ impl Hosting {
             })
     }
 
+    /// One of the person's commands on browser `program` (#2014), carried out off the runtime.
+    async fn driving(
+        &self,
+        program: &str,
+        command: impl FnOnce(&dyn Running) -> Result<Answer, Refusal> + Send + 'static,
+    ) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || command(&*running))
+            .await
+            .map_err(|why| not_started(why.to_string()))?
+    }
+
     async fn attach(
         &self,
         program: &str,
@@ -1323,9 +1379,14 @@ impl Hosting {
                 .programs
                 .get(program)
                 .ok_or_else(|| no_such_program(program))?;
+            let aims = peer.version()
+                >= Version {
+                    major: 1,
+                    minor: 12,
+                };
             let source = hosted
                 .running
-                .view(kind, role, rate)
+                .view(kind, role, rate, aims)
                 .ok_or_else(|| Refusal {
                     code: session::MALFORMED.into(),
                     why: format!("program {program} has no view of that kind"),
@@ -1841,6 +1902,32 @@ impl session::Host for Hosting {
                 call_id,
                 act,
             } => self.browse(&program, call_id, act).await,
+            // The person's own (#2014): each may wait on the engine (a take-over on an act's
+            // last input, a key on a read of the page), so off the runtime.
+            Command::TakeOver { program } => {
+                self.driving(&program, |running| running.take_over().map(driving))
+                    .await
+            }
+            Command::HandBack { program } => {
+                self.driving(&program, |running| running.hand_back().map(driving))
+                    .await
+            }
+            Command::BrowserInput { program, input } => {
+                self.driving(&program, move |running| {
+                    running.input(&input).map(|()| Answer::Done)
+                })
+                .await
+            }
+            Command::SizeBrowser {
+                program,
+                width,
+                height,
+            } => {
+                self.driving(&program, move |running| {
+                    running.size_browser(width, height).map(|()| Answer::Done)
+                })
+                .await
+            }
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
