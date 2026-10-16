@@ -114,10 +114,12 @@ kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 
 step "the plain manifests are what the chart installed"
-# `kubectl diff` exits 1 when applying them would change anything the chart made.
+# `kubectl diff` exits 1 when applying them would change anything the chart made. Helm owns
+# those fields, and the policy's match rules are one atomic field the server fills defaults
+# into, so the dry run takes the fields over (`--force-conflicts`) to compare values only.
 sed "s|image: $placeholder\$|image: $operator|" "$here/deploy/operator.yaml" > "$helm_home/operator.yaml"
 grep -qxF "          image: $operator" "$helm_home/operator.yaml"
-if ! diff=$(kubectl --context "$context" diff --server-side \
+if ! diff=$(kubectl --context "$context" diff --server-side --force-conflicts \
   -f "$here/deploy/policy.yaml" -f "$here/deploy/crds.yaml" -f "$helm_home/operator.yaml" 2>&1); then
   echo "$diff" >&2
   annotate "the plain manifests are not what the chart installed" "$diff"
