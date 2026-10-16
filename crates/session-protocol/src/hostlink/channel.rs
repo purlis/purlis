@@ -104,7 +104,7 @@ pub(super) async fn refuse<S: AsyncRead + AsyncWrite + Unpin>(
     why: &str,
 ) {
     let _ = send(&mut messages, seal.as_mut(), REFUSED, why.as_bytes()).await;
-    let _ = messages.close().await;
+    let _ = SinkExt::<Bytes>::close(&mut messages).await;
 }
 
 async fn send<S: AsyncRead + AsyncWrite + Unpin>(

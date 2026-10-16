@@ -110,9 +110,13 @@ use crate::view::{Limits, Views};
 /// decided to the host, which writes it in the log it alone holds while chats run in it, in the
 /// order the window sent them.
 ///
+/// 1.9 added to what `record` carries (#2252): a held run's `begin` may hold the start's trust
+/// event, written just before its `run.started`, and `taken_back` says a held start was put
+/// aside. A window sends a host before 1.9 the trust event on its own, and no `taken_back`.
+///
 /// 1.10 added the kept board (#2194, CONTEXT.md): `board_moved` tells the host each move the
 /// window made on its copy of a held project's chats and Needs you, and `board`, answered
-/// `board`, reads the host's kept board whole. 1.9 is held for a change not yet merged.
+/// `board`, reads the host's kept board whole.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 10,

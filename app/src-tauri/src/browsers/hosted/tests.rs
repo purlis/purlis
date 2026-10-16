@@ -137,13 +137,14 @@ fn letting_go_of_a_project_ends_the_browsers_the_window_started_in_it_and_its_ho
     let ended = window.browsers.let_go(&window.root);
 
     assert_eq!(ended, 1, "the one still running");
-    assert!(
+    // A close answers once the host has forgotten the browser, and ends it after.
+    until("every browser the window started has stopped", || {
         window
             .started
             .started()
             .iter()
             .all(|screen| screen.shown().stopped)
-    );
+    });
     let link = window.browsers.link().unwrap();
     assert!(
         matches!(

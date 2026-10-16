@@ -7,14 +7,17 @@
 //!
 //! **The targets are the two ways the start-time switch runs a chat** (`crate::hostedsessions`):
 //! in the window's own process ([`crate::sessions::Sessions`]), and in a session host the window
-//! speaks the session protocol to ([`crate::hostedsessions::HostedSessions`], here over an
-//! in-memory link to the host's own code, with real terminals); **and a third, through a link**:
-//! the window's host relaying to another host over the link between hosts
-//! ([`through_a_link`], #2042). Each behaviour speaks only what the window speaks to any of
-//! them, [`SessionHost`], and checks only what the window can observe:
-//! what its pane draws, what it is told, what ends. When the in-app path is deleted (#2005), its
-//! target goes with it, and the host's stays; Docker and a cluster join as targets of their own
-//! (spec #2041).
+//! speaks the session protocol to ([`crate::hostedsessions::HostedSessions`]). The host is a
+//! real host process (`in_a_host_process`, #2170): the window's own binary, started and
+//! connected to by the window's own code ([`crate::sessionhost::SessionHost`]), spoken to over
+//! its socket, with real terminals. It runs on Linux, where each test gives its host a socket
+//! and a config home of its own; the host's code over an in-memory link (`in_the_host`) runs
+//! everywhere beside it. **And a third, through a link**: the window's host relaying to another
+//! host over the link between hosts ([`through_a_link`], #2042). Each behaviour speaks only what
+//! the window speaks to any of them, [`SessionHost`], and checks only what the window can
+//! observe: what its pane draws, what it is told, what ends. A test ends the host process it
+//! started. When the in-app path is deleted (#2005), its target goes with it, and the host's
+//! stay; Docker and a cluster join as targets of their own (spec #2041).
 //!
 //! **The chat's program is the repo's fake harness** (`crates/fake-harness`), or a shell where a
 //! behaviour needs the terminal itself (its size, its line discipline) or runs `purlis hook` as
@@ -40,6 +43,7 @@
 //! **To add a behaviour:** write `fn the_behaviour(target: &Target)`, and name it in the
 //! [`on_every_target!`] list at the bottom.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -76,6 +80,12 @@ pub(crate) struct Target {
     pub moved: Arc<Mutex<Vec<Moved>>>,
     /// The kill switch, as the title bar throws and re-arms it.
     pub switch: Arc<KillSwitch>,
+    /// The environment of the process that starts the target's chats, as it was started.
+    pub inherited: Vec<(OsString, OsString)>,
+    /// How many savers of its project run in the test's own process while it is saved: one
+    /// where the window, or the host's code, runs in it; none where the host is a process of
+    /// its own, whose saver the window sees only by what it is told and what is committed.
+    pub savers_here: usize,
     /// Where the device's event log is: the window's, or that of the host its chats run in.
     pub log: PathBuf,
     /// The window's link to the host, on a host's target: what the host is asked directly.
@@ -138,6 +148,8 @@ pub(crate) fn in_the_window() -> Target {
         moved,
         root,
         switch,
+        inherited: std::env::vars_os().collect(),
+        savers_here: 1,
         log: data.path().to_path_buf(),
         host: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
@@ -263,7 +275,6 @@ fn a_window_on<H: session::Host>(
         .enable_all()
         .build()
         .expect("a runtime");
-    let config = tempfile::tempdir().expect("a config home");
     let link = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
         let (client, served) = tokio::join!(
@@ -290,6 +301,20 @@ fn a_window_on<H: session::Host>(
     });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::new(link));
+    let mut target = a_window_over(connection, std::env::vars_os().collect(), log);
+    target._keeps.push(Box::new(runtime));
+    target
+}
+
+/// The window, its chats run in the session host it reaches over `connection`, whose process
+/// was started with `inherited` and keeps the device's event log in `log`: its project, its
+/// hooks heard from the host, and its own switch in a config home of its own, held by the host.
+fn a_window_over(
+    connection: Arc<Connection>,
+    inherited: Vec<(OsString, OsString)>,
+    log: PathBuf,
+) -> Target {
+    let config = tempfile::tempdir().expect("a config home");
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, true);
     hooks.record_into(crate::hooks::Events::in_the_host({
@@ -307,10 +332,117 @@ fn a_window_on<H: session::Host>(
         moved,
         root,
         switch,
+        inherited,
+        savers_here: 1,
         log,
         host: Some(connection),
-        _keeps: vec![Box::new(project), Box::new(config), Box::new(runtime)],
+        _keeps: vec![Box::new(project), Box::new(config)],
     }
+}
+
+/// A chat in a session host of its own process (#2170): the window's binary, started as the
+/// window starts it ([`crate::sessionhost::SessionHost`]), the window speaking the session
+/// protocol to it over its socket. Its config home, data home and runtime directory are in
+/// `home`, so it serves at a place of its own and keeps its kill switch and the device's event
+/// log there; its `PATH` leads with a folder
+/// the test's own does not, so what a chat inherits is seen to be the host's.
+///
+/// Run on Linux alone: on macOS the host's socket is in this user's own temporary directory,
+/// which a test cannot move aside, and a window running there would already hold it. It is
+/// built everywhere, so a change that breaks it is seen on every machine.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn in_a_host_process_at(home: &Path) -> Target {
+    use std::os::unix::fs::PermissionsExt;
+    let (run, config, data) = (home.join("run"), home.join("config"), home.join("data"));
+    for folder in [&run, &config, &data] {
+        std::fs::create_dir_all(folder).expect("a folder of the host's");
+    }
+    std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o700))
+        .expect("a runtime directory this user's alone");
+    let path = std::env::join_paths(std::iter::once(home.join("bin")).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .expect("a PATH");
+    let ours = [
+        ("PATH", path),
+        ("XDG_RUNTIME_DIR", run.clone().into_os_string()),
+        (
+            purlis_core::machine::HOME_VAR,
+            config.clone().into_os_string(),
+        ),
+        (
+            purlis_core::datahome::HOME_VAR,
+            data.clone().into_os_string(),
+        ),
+    ];
+    let inherited: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| {
+            let name = name.to_string_lossy();
+            !ours
+                .iter()
+                .any(|(ours, _)| purlis_core::envvar::same(ours, &name))
+        })
+        .chain(ours.clone().map(|(name, value)| (name.into(), value)))
+        .collect();
+    // Where the host process keeps the device's event log (`Recorder::open`): its device's own
+    // folder in its data home, the device named in its config home before it starts.
+    let log = data
+        .join(purlis_core::eventlog::EVENTS)
+        .join(purlis_core::machine::device_id(&config).expect("the host's device"));
+    let place = purlis_host::Place::at(
+        purlis_core::hostsocket::socket_for(Some(run.as_os_str())),
+        purlis_core::machine::charterd(&config),
+    );
+    // Held to be ended from here on, so a host that never says it is ready is ended too when
+    // the wait below fails the test.
+    let host = Ends(crate::sessionhost::SessionHost::default());
+    host.0.start_at(place, {
+        let inherited = inherited.clone();
+        move || {
+            let mut command = crate::sessionhost::command(&charter_app());
+            command.env_clear().envs(inherited);
+            Ok(command)
+        }
+    });
+    let connection = host.0.connection();
+    connection
+        .wait(PATIENCE)
+        .expect("the window connects to its host");
+    let mut target = a_window_over(connection, inherited, log);
+    target.savers_here = 0;
+    // Ended before the folders it serves from go.
+    target._keeps.insert(0, Box::new(host));
+    target
+}
+
+/// [`in_a_host_process_at`] in a folder of its own.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn in_a_host_process() -> Target {
+    let home = tempfile::tempdir().expect("the host's home");
+    let mut target = in_a_host_process_at(home.path());
+    target._keeps.push(Box::new(home));
+    target
+}
+
+/// Ends the host the test started, as the window's quit does, however the test ends: CI's
+/// orphan check fails a run that leaves one alive.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+struct Ends(crate::sessionhost::SessionHost);
+
+impl Drop for Ends {
+    fn drop(&mut self) {
+        self.0.end();
+    }
+}
+
+/// The window's own binary, which it starts again as its session host, built once beside this
+/// test's binary when it is not there yet.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn charter_app() -> PathBuf {
+    static BUILT: OnceLock<PathBuf> = OnceLock::new();
+    BUILT
+        .get_or_init(|| built_beside("charter-app", "purlis-app"))
+        .clone()
 }
 
 /// The `purlis` binary, whose `purlis hook` a chat's harness runs, built once beside this
@@ -602,10 +734,11 @@ fn a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key(target: &
 }
 
 fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target) {
-    // What the window's own composition gives a chat started with nothing of its own: every
-    // target must give the same, whichever process starts it.
+    // What the window's own composition gives a chat started with nothing of its own, from
+    // what the process that starts it inherited: every target must give the same, whichever
+    // process starts it, and a host gives what it inherited, not what the window has.
     let expected = purlis_core::chatspec::spec(
-        std::env::vars_os(),
+        target.inherited.iter().cloned(),
         &purlis_core::chatspec::Terminal {
             program: "/bin/sh",
             args: &[],
@@ -632,13 +765,25 @@ fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target
             .map(|(_, value)| value.to_string_lossy().into_owned())
             .unwrap_or_default()
     };
-    let (path, home) = (value("PATH"), value("HOME"));
-    assert!(!path.is_empty(), "a chat is given a PATH");
+    let (path, home, runtime) = (value("PATH"), value("HOME"), value("XDG_RUNTIME_DIR"));
+    let inherited_path = target
+        .inherited
+        .iter()
+        .find(|(name, _)| name == "PATH")
+        .map(|(_, value)| value.to_string_lossy().into_owned());
+    assert_eq!(
+        Some(&path),
+        inherited_path.as_ref(),
+        "a chat is given the PATH its starter inherited"
+    );
     let id = target
         .sessions
         .open(
             None,
-            &a_shell("read line; printf 'P[%s]H[%s].' \"$PATH\" \"$HOME\"; read line"),
+            &a_shell(
+                "read line; printf 'P[%s]H[%s]R[%s].' \"$PATH\" \"$HOME\" \"$XDG_RUNTIME_DIR\"; \
+                 read line",
+            ),
             &|_| {},
         )
         .expect("it starts");
@@ -646,7 +791,7 @@ fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target
 
     target.sessions.input(id, b"\r").expect("typed");
 
-    pane.shows(&format!("P[{path}]H[{home}]."));
+    pane.shows(&format!("P[{path}]H[{home}]R[{runtime}]."));
     target.sessions.close(id).expect("it closes");
 }
 
@@ -738,17 +883,26 @@ fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told
 
 fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &Target) {
     a_plane_saved_after_a_second(&target.root);
-    let (told, _looks) = told_of_looks();
+    let (told, looks) = told_of_looks();
     let saving = target.sessions.keep_saving(&target.root, told);
+    std::fs::write(target.root.join("first.md"), "saved\n").expect("written");
 
-    until("a saver runs", || {
-        crate::autosave::running::on(&target.root) == 1
-    });
-    // Whatever was to start has had the time to.
+    let deadline = Instant::now() + A_SAVE_WITHIN;
+    while !looks
+        .lock()
+        .expect("the looks")
+        .iter()
+        .any(|looked| looked.saved)
+    {
+        assert!(Instant::now() < deadline, "no saver ever saved");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // Whatever was to start has had the time to. The window's own process runs a saver only
+    // where the target's saver is in it: never one beside the host's.
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(
         crate::autosave::running::on(&target.root),
-        1,
+        target.savers_here,
         "the window and the host both save the project"
     );
 
@@ -757,6 +911,27 @@ fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &T
     until("the saver stops", || {
         crate::autosave::running::on(&target.root) == 0
     });
+    let told_before = looks.lock().expect("the looks").len();
+    std::fs::write(target.root.join("second.md"), "not saved\n").expect("written");
+    // Its quiet period and two of its looks, two seconds apart, go by with nothing saved.
+    std::thread::sleep(Duration::from_secs(5));
+    assert_eq!(
+        looks.lock().expect("the looks").len(),
+        told_before,
+        "the window was told of a look after its saving stopped"
+    );
+    let tracked = purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&target.root)
+            .args(["ls-files", "second.md"]),
+    )
+    .expect("git runs");
+    assert_eq!(
+        String::from_utf8_lossy(&tracked.stdout).trim(),
+        "",
+        "a write after the saving stopped was saved"
+    );
 }
 
 /// A harness whose hooks report and ask through `purlis hook`: the word a chat's environment
@@ -1189,14 +1364,16 @@ fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
     target.sessions.close(id).expect("it closes");
 }
 
-/// **The host's own target only**: the window's own process has no host to start again, and it
+/// **The host's own targets only**: the window's own process has no host to start again, and it
 /// is the host that keeps the stop across its restart and refuses a start the window did not
-/// stop first (#2001). The window here is one that never heard of the stop.
-#[test]
-fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart() {
+/// stop first (#2001). The window here is one that never heard of the stop. `a_host` starts a
+/// host keeping what it keeps in the folder it is given, and a window on it.
+fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart(
+    a_host: fn(&Path) -> Target,
+) {
     let kept = tempfile::tempdir().expect("the host's folder");
     {
-        let before = in_a_host_keeping_its_switch_in(kept.path());
+        let before = a_host(kept.path());
         let id = before
             .sessions
             .open(
@@ -1210,7 +1387,7 @@ fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart(
         before.sessions.close(id).expect("it closes");
     }
 
-    let after = in_a_host_keeping_its_switch_in(kept.path());
+    let after = a_host(kept.path());
     assert!(!after.switch.is_stopped(), "this window never heard of it");
 
     let refused = after
@@ -1393,6 +1570,23 @@ fn a_window_killed_and_back_reads_every_chats_state_and_needs_you_as_the_host_ke
     assert!(back.told_it_needs_you(speaks_while_away));
 }
 
+mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart {
+    #[test]
+    fn in_the_host() {
+        super::the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart(
+            super::in_a_host_keeping_its_switch_in,
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn in_a_host_process() {
+        super::the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart(
+            super::in_a_host_process_at,
+        );
+    }
+}
+
 /// **The event log has one writer** (#2003): what a chat's hook says is written once, by the
 /// window where the chat runs in the window and by the host where it runs there, and while
 /// chats run in the host the window holds no log of its own.
@@ -1464,6 +1658,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
         cause: Began::Start,
         attributes: Attributes::default(),
         held: false,
+        trust: None,
     });
     record(Entry::Tool {
         plane: root.clone(),
@@ -1571,6 +1766,12 @@ macro_rules! on_every_target {
                     super::$behaviour(&super::in_the_host());
                 }
 
+                #[cfg(target_os = "linux")]
+                #[test]
+                fn in_a_host_process() {
+                    super::$behaviour(&super::in_a_host_process());
+                }
+
                 #[test]
                 fn through_a_link() {
                     super::$behaviour(&super::through_a_link());
@@ -1587,6 +1788,12 @@ macro_rules! on_every_target {
                 #[test]
                 fn in_the_host() {
                     super::$waiting(&super::in_the_host());
+                }
+
+                #[cfg(target_os = "linux")]
+                #[test]
+                fn in_a_host_process() {
+                    super::$waiting(&super::in_a_host_process());
                 }
 
                 #[test]
