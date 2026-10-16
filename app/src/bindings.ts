@@ -9520,6 +9520,8 @@ export type StaleFix = "branch" | "remote";
 export type StaleRemote = {
 	/**  `origin` as `<host>/<owner>/<repo>`: a recorded address can carry a user, never drawn. */
 	origin: string,
+	/**  The address the Fix sets, whole, as it is set. */
+	now: string,
 	/**
 	 *  The places `origin` pushes to that the Fix leaves as they are, as `<host>/<owner>/<repo>`
 	 *  (a user never drawn): empty where it has no push URL of its own, or where every one names
