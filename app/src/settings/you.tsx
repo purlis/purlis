@@ -52,7 +52,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
       id: "you.chats",
       label: "Chats list",
       help: "How chats are listed and summed up, on this machine.",
-      settings: [chatsGrouped, tasksTabbed, awaySummary],
+      settings: [chatsGrouped, tasksTabbed, awaySummary, browsersBeside],
     },
     notificationsGroup(),
     thisMachineGroup(),
@@ -156,6 +156,26 @@ const chatsGrouped: Setting = {
           ids={ids}
           checked={grouped}
           onCheckedChange={(to) => setChatsListPrefs({ grouped: to })}
+        />
+      ),
+    };
+  },
+};
+
+/** Whether a chat's new browser opens beside it (#2024, spec #2008). */
+const browsersBeside: Setting = {
+  id: "you.chats.beside",
+  label: "Open a chat's browser beside it",
+  help: "A browser a chat starts opens beside the chat, in its tab, so you watch both without arranging panes. Off, it opens when you press its picture on the chat's tab or its row in the Chats list.",
+  useControl: function useBrowsersBeside() {
+    const { beside } = useChatsListPrefs();
+    return {
+      control: (ids) => (
+        <Choice
+          kind="switch"
+          ids={ids}
+          checked={beside}
+          onCheckedChange={(to) => setChatsListPrefs({ beside: to })}
         />
       ),
     };

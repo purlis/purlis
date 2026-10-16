@@ -18,6 +18,8 @@ import {
   wheelInput,
 } from "./browserDriving";
 import { frameBytes, latestOnly, paint } from "./browserFrames";
+import { addressChip, thisDevice } from "./browsers";
+import { useWindowSeen } from "./browserWatch";
 import { EmptyState } from "./EmptyState";
 import { Select } from "./primitives/Select";
 import { useProjectShown } from "./projectShown";
@@ -32,17 +34,6 @@ type Shown =
   | { kind: "live"; width: number; height: number }
   | { kind: "ended" }
   | { kind: "refused"; why: string };
-
-/** Whether the window can be seen now: not minimised, hidden or behind a full-screen app. */
-function useWindowSeen(): boolean {
-  const [seen, setSeen] = useState(() => typeof document === "undefined" || !document.hidden);
-  useEffect(() => {
-    const look = () => setSeen(!document.hidden);
-    document.addEventListener("visibilitychange", look);
-    return () => document.removeEventListener("visibilitychange", look);
-  }, []);
-  return seen;
-}
 
 /** What waits to be sent: one event of the person's, or their hand-back, after every event
  *  before it. */
@@ -329,6 +320,9 @@ export function BrowserView({ program }: { program: string }) {
   return (
     <div className="browser-view" data-testid="browser-view">
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
+        {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
+            page, so a page cannot fake it. */}
+        <BrowserChip mac={mac} />
         <p className="browser-bar-said" role="status">
           {driving
             ? "You are driving this browser. The agent is paused until you press Done."
@@ -379,5 +373,15 @@ export function BrowserView({ program }: { program: string }) {
         />
       </div>
     </div>
+  );
+}
+
+/** A browser's address and device, as its view says them above its page (#2024). */
+function BrowserChip({ mac }: { mac: boolean }) {
+  const chip = addressChip(null, thisDevice(mac));
+  return (
+    <span className="browser-chip" data-testid="browser-chip" title={chip.whole ?? undefined}>
+      {chip.said}
+    </span>
   );
 }

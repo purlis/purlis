@@ -1,16 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { contentsOf, type Tabs, type ViewRef } from "./tabs";
+import { contentsOf, openViewBeside, type Tabs, type ViewRef } from "./tabs";
 
 /**
  * **A browser, in a view tab** (#2012, spec #2008).
  *
  * A browser runs in the session host and is watched in a view tab of the window: the view
  * `browser`, keyed by the browser's id in the host, drawn by `BrowserView`. Like every view tab
- * it splits like a chat, and the browser lives as long as some tab shows it: when the last one
- * closes, the browser ends with it ({@link browsersLetGo}), since nothing else lists it yet
- * (the Chats list's rows, #2024).
+ * it splits like a chat. A browser the person opened lives as long as some tab shows it: when
+ * the last one closes, the browser ends with it ({@link browsersLetGo}). **A chat's browser**
+ * (#2013, #2024) is listed under its chat in the Chats list and drawn live on its chat's tab, so
+ * closing a tab that shows it only closes the view: it ends with its chat.
  */
 
 /**
@@ -46,8 +47,62 @@ export function browsersShown(tabs: Tabs): Set<string> {
   return shown;
 }
 
-/** The browsers `before` showed and `after` no longer does: theirs was the last tab. */
-export function browsersLetGo(before: Tabs, after: Tabs): string[] {
+/**
+ * The browsers `before` showed and `after` no longer does, theirs having been the last tab:
+ * each ends. Never one of `endWithTheirChats`: a chat's, which ends with its chat.
+ */
+export function browsersLetGo(
+  before: Tabs,
+  after: Tabs,
+  endWithTheirChats: ReadonlySet<string> = new Set(),
+): string[] {
   const still = browsersShown(after);
-  return [...browsersShown(before)].filter((program) => !still.has(program));
+  return [...browsersShown(before)].filter(
+    (program) => !still.has(program) && !endWithTheirChats.has(program),
+  );
+}
+
+/** What the tab of chat `chat`'s browser `name` (`b1`, as the chat knows it) is called. */
+export function chatBrowserTitle(chat: string, name: string): string {
+  return `Browser ${name} of ${chat}`;
+}
+
+/**
+ * **A chat's browser, opened beside its chat** (#2024, the setting *Open a chat's browser
+ * beside it*): in the chat's tab, to the right of its pane, and nothing else moves. One some
+ * tab shows already, or of a chat with no pane, is left as it is.
+ */
+export function openBrowserBeside(
+  tabs: Tabs,
+  session: number,
+  program: string,
+  workspace: string,
+): Tabs {
+  return openViewBeside(tabs, session, browserView(program), workspace);
+}
+
+/** The device a browser runs on, as its chip names it: the window's host, this machine. */
+export function thisDevice(onAMac: boolean): string {
+  return onAMac ? "this Mac" : "this computer";
+}
+
+/**
+ * **What a browser's chip says** (#2024, spec #2008): the page's host and the device the browser
+ * runs on, `localhost:5173 on this Mac`, drawn by purlis outside the page so a page cannot fake
+ * it; `whole` is the full address, for its tooltip. Before a page, or on a blank one, the device
+ * alone.
+ */
+export function addressChip(
+  address: string | null,
+  device: string,
+): { said: string; whole: string | null } {
+  if (address === null || address === "") return { said: `On ${device}`, whole: null };
+  if (address === "about:blank") return { said: `A blank page on ${device}`, whole: null };
+  let host: string;
+  try {
+    host = new URL(address).host;
+  } catch {
+    host = "";
+  }
+  return { said: `${host === "" ? address : host} on ${device}`, whole: address };
 }

@@ -459,8 +459,9 @@ has it; nothing reads the key after that.
   task does (#1489, V100-74): **`tabbed`**, `true` when it opens in a tab of its own, with a
   minimise button in place of the close; `false`, its session's tab is switched to it. And
   **`away`** (#1514, V100-73), `false` when coming back to the window draws no summary of what
-  happened while you were away. Leave any out for its default, `false`, `false` and
-  `true`; purlis leaves the whole of `chats` out
+  happened while you were away. And **`beside`** (#2024), `true` when a browser a chat starts
+  opens beside the chat, in its tab. Leave any out for its default, `false`, `false`, `true`
+  and `false`; purlis leaves the whole of `chats` out
   while all are the defaults. A value that is neither is the default, and the Inbox says so. Settings
   writes it (`app/src/chatsListPrefs.ts`). It is in this file because it is how one person
   likes their window, and a project would carry it to every clone.

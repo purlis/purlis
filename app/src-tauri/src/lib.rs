@@ -2742,6 +2742,7 @@ fn commands() -> Builder<tauri::Wry> {
         // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
         .typ::<projectsettings::Rescreened>()
         .typ::<chatbrowsers::BrowsersEnded>()
+        .typ::<chatbrowsers::BrowsersListed>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chat-stop` carries (#1448).
@@ -3717,6 +3718,19 @@ pub fn run() {
                             &told.plane.clone(),
                             chatbrowsers::ENDED,
                             &told,
+                        );
+                    })
+                })
+                // A project whose chats' browsers came or went: the window draws them under
+                // their chats and on their tabs (#2024).
+                .telling_browsers_listed({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |plane: crate::planes::PlaneId| {
+                        windows::emit_for_plane(
+                            &window,
+                            &plane.clone(),
+                            chatbrowsers::LISTED,
+                            chatbrowsers::BrowsersListed { plane },
                         );
                     })
                 })
