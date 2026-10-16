@@ -893,6 +893,27 @@ mod tests {
         assert_eq!(settings["permissions"].get("deny"), None);
     }
 
+    #[test]
+    fn a_browser_tool_a_persona_disallows_is_denied_beside_the_browser_tools_allow() {
+        // #2245: the browser tools are allowed on the chat's browser Ask, and a persona's
+        // `disallowed-tools:` still takes one away: its deny outranks the allow beside it.
+        use crate::personaverbs::tests_plane::Plane;
+        let plane = Plane::fixture("minimal");
+        plane.write(
+            "personas/reviewer/persona.md",
+            "---\nname: reviewer\ndisallowed-tools: mcp__purlis__browser_click\n---\n",
+        );
+
+        let (_, settings) = armed_as(&plane, "reviewer");
+        assert_eq!(
+            settings["permissions"]["deny"],
+            serde_json::json!(["mcp__purlis__browser_click"])
+        );
+        let allow = settings["permissions"]["allow"].as_array().expect("allow");
+        assert!(allow.contains(&serde_json::json!("mcp__purlis__browser_click")));
+        assert!(allow.contains(&serde_json::json!("mcp__purlis__browser_open")));
+    }
+
     /// Whether a rule of `allow` lets `command` run in Claude Code without asking: a `Bash(…)`
     /// rule by its glob, as the dispatch guard's tests match one.
     fn bash_allowed(allow: &[serde_json::Value], command: &str) -> bool {
