@@ -22,6 +22,7 @@ use purlis_session_protocol::session::{
 
 use crate::confining::{Askable, Confining, Tell};
 use crate::hosting::{Looked, Poke, Run, Running, Save, Saving, ToSave, Working};
+use crate::journal::Started;
 
 /// What a stand-in program was asked, and what it wrote.
 #[derive(Default)]
@@ -111,6 +112,11 @@ impl Running for StandIn {
         Some(4242)
     }
 
+    /// A stand-in's own word, never the kernel's: its process is no real one.
+    fn process_started(&self) -> Option<String> {
+        Some("a stand-in's start".to_owned())
+    }
+
     fn readiness(&self) -> Readiness {
         Readiness {
             edits_lines: Some(false),
@@ -123,9 +129,14 @@ impl Running for StandIn {
     }
 }
 
-/// Runs every start as a stand-in, and keeps each, with the spec it was given.
+/// Runs every start as a stand-in, and keeps each, with the spec it was given, and each program
+/// the last host left that it was asked to end.
 #[derive(Clone, Default)]
-pub struct StandIns(Arc<Mutex<Vec<(Spec, StandIn)>>>, Arc<Mutex<bool>>);
+pub struct StandIns(
+    Arc<Mutex<Vec<(Spec, StandIn)>>>,
+    Arc<Mutex<bool>>,
+    Arc<Mutex<Vec<Started>>>,
+);
 
 impl StandIns {
     /// Every start it ran, with its spec, in order.
@@ -136,6 +147,11 @@ impl StandIns {
     /// The last start it ran.
     pub fn last(&self) -> StandIn {
         self.ran().last().expect("something ran").1.clone()
+    }
+
+    /// Each program the last host left running that it was asked to end, in order.
+    pub fn ended_left(&self) -> Vec<Started> {
+        self.2.lock().unwrap().clone()
     }
 }
 
@@ -152,6 +168,10 @@ impl Run for StandIns {
         program.seen().holds_on = *self.1.lock().unwrap();
         self.0.lock().unwrap().push((spec, program.clone()));
         Ok(Arc::new(program))
+    }
+
+    fn end_what_was_left(&self, left: &Started) {
+        self.2.lock().unwrap().push(left.clone());
     }
 }
 

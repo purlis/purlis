@@ -74,6 +74,7 @@ use tokio::sync::mpsc;
 use crate::browsers::{Browser, Browsers, NoBrowsers};
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
+use crate::journal::{Journal, Started};
 use crate::killswitch::Switch;
 use crate::recording::{Ended, Record, RecordsNothing, Stopped};
 use crate::serving::Window;
@@ -207,6 +208,14 @@ impl Save for SavesNothing {
 /// Runs a composed start.
 pub trait Run: Send + Sync + 'static {
     fn run(&self, spec: Spec) -> Result<Arc<dyn Running>, String>;
+
+    /// **Ends what a program the last host ran left behind** (#2007), as that host's run journal
+    /// wrote it down: its process group, where its process is still the one that was started.
+    /// Called before this host serves anyone, for each program the last host left running.
+    /// Nothing, for what runs no process of its own.
+    fn end_what_was_left(&self, left: &Started) {
+        let _ = left;
+    }
 }
 
 /// A program the host runs, as the host drives it. Each call that can wait on the program
@@ -238,6 +247,11 @@ pub trait Running: Send + Sync + 'static {
     fn stop(&self);
     /// Its process, while it runs.
     fn process(&self) -> Option<u32>;
+    /// When its process started, as the kernel says it, where it says: what the run journal
+    /// tells it apart from a later process given the same number by (#2007).
+    fn process_started(&self) -> Option<String> {
+        self.process().and_then(purlis_same_user::Parents::started)
+    }
     /// Whether it is ready to be typed at.
     fn readiness(&self) -> Readiness;
     /// Calls `tell` once, as it ends.
@@ -264,6 +278,31 @@ impl Run for Terminals {
         let engine = AlacrittyEngine::new(spec.size, SCROLLBACK as usize);
         let session = Session::spawn(spec, Box::new(engine)).map_err(|why| why.to_string())?;
         Ok(Arc::new(Terminal(Arc::new(session))))
+    }
+
+    /// A terminal's program leads a session of its own, so its process group's id is its pid,
+    /// and the group holds what it started that did not leave on purpose. The group is killed
+    /// only while its leader is the very process that was started, by the kernel's word on when
+    /// it started: a number that has since gone to another process is left alone, and so is a
+    /// leader the kernel cannot say anything of.
+    fn end_what_was_left(&self, left: &Started) {
+        let (Some(process), Some(started)) = (left.process, left.process_started.as_deref()) else {
+            return;
+        };
+        if process <= 1 || purlis_same_user::Parents::started(process).as_deref() != Some(started) {
+            return;
+        }
+        let Ok(group) = i32::try_from(process) else {
+            return;
+        };
+        let group = nix::unistd::Pid::from_raw(group);
+        if nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok() {
+            crate::say(&format!(
+                "chat {} of {} was still running after its session host ended, and is ended now",
+                left.number,
+                left.project_path.display()
+            ));
+        }
     }
 }
 
@@ -342,6 +381,10 @@ struct Inner {
     /// What writes the event log and keeps a program's end (#2003): nothing until the binary
     /// gives one ([`Hosting::recording_with`]).
     record: OnceLock<Box<dyn Record>>,
+    /// Where each program is written down as it starts and as it ends, so the next host
+    /// settles what this one leaves running if it is killed outright (#2007): in the host's own
+    /// folder, for a host kept there; none for a host kept in memory only (a test's).
+    journal: Option<Journal>,
     state: Mutex<State>,
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
@@ -469,7 +512,7 @@ impl Hosting {
         hear: impl Hear,
         confine: impl Confine,
     ) -> Hosting {
-        Hosting::built(compose, run, hear, confine, Switch::in_memory())
+        Hosting::built(compose, run, hear, confine, Switch::in_memory(), None)
     }
 
     /// A host whose starts `compose` composes, each run in a terminal of its own, which hears
@@ -490,7 +533,7 @@ impl Hosting {
     }
 
     /// [`Hosting::with`], with its kill switch kept in `folder`, its own, and read from there
-    /// now (ADR 0071): what the window's host runs.
+    /// now (ADR 0071), and its run journal kept there (#2007): what the window's host runs.
     pub fn kept(
         folder: &Path,
         compose: impl Compose,
@@ -498,7 +541,14 @@ impl Hosting {
         hear: impl Hear,
         confine: impl Confine,
     ) -> Hosting {
-        Hosting::built(compose, run, hear, confine, Switch::kept_in(folder))
+        Hosting::built(
+            compose,
+            run,
+            hear,
+            confine,
+            Switch::kept_in(folder),
+            Some(Journal::in_folder(folder)),
+        )
     }
 
     fn built(
@@ -507,6 +557,7 @@ impl Hosting {
         hear: impl Hear,
         confine: impl Confine,
         switch: Switch,
+        journal: Option<Journal>,
     ) -> Hosting {
         Hosting {
             inner: Arc::new(Inner {
@@ -517,6 +568,7 @@ impl Hosting {
                 hear: Box::new(hear),
                 browsers: Box::new(NoBrowsers),
                 record: OnceLock::new(),
+                journal,
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
                 switch,
@@ -1010,6 +1062,19 @@ impl Hosting {
                 stopping: Arc::clone(&stopping),
             },
         );
+        // Written down before the start is answered, so a host killed from here on leaves it
+        // for the next to settle (#2007).
+        if let Some(journal) = &self.inner.journal {
+            journal.started(Started {
+                program: program.clone(),
+                project: start.project.clone(),
+                project_path: path.clone(),
+                number,
+                run: start.run.clone(),
+                process,
+                process_started: running.process_started(),
+            });
+        }
         // A stop thrown while this one was being started: it is listed by now, so either the
         // stop's sweep reached it or this check sees the switch thrown.
         if self.let_through(&start, peer).is_err() {
@@ -1050,6 +1115,10 @@ impl Hosting {
             // With no window to tell its board, the board the host keeps is told (#2194).
             if let Some(channel) = channel.as_ref().filter(|_| !hosting.watched(&project)) {
                 channel.ended_with_no_window(number, &exit);
+            }
+            // Only once its end is kept: a host killed before then leaves it to be settled.
+            if let Some(journal) = &hosting.inner.journal {
+                journal.ended(&ended);
             }
             hosting.tell(&Pushed::Ended {
                 program: ended,
@@ -1883,6 +1952,36 @@ impl Hosting {
         stop_together(hosted.into_iter().map(|hosted| hosted.running).collect());
         // Each chat's proxy ends with the programs: no chat reaches anything once the host has.
         drop(confinements);
+        // Every program was ended as the host stopped, whether or not its end was told in
+        // time: there is nothing for the next host to settle (#2007).
+        if let Some(journal) = &self.inner.journal {
+            journal.empty();
+        }
+    }
+
+    /// **Settles what the last host left running** (#2007, ADR 0068 §3), and answers how many
+    /// programs that was. The run journal is read and forgotten; each program it says that host
+    /// started and never ended is ended by what runs programs where its process is still the
+    /// one started ([`Run::end_what_was_left`]), and told to the binary, which keeps its end as
+    /// a crash's ([`Record::left_by_its_last_host`]). Called once, as the host starts serving,
+    /// under its lock and before anyone is served. Nothing for a host kept in memory only.
+    pub fn take_over_from_the_last_host(&self) -> usize {
+        let Some(journal) = &self.inner.journal else {
+            return 0;
+        };
+        let left = journal.take_over();
+        if !left.is_empty() {
+            crate::say(&format!(
+                "the last session host ended without ending {} of its programs; each is \
+                 settled as ended by its crash",
+                left.len()
+            ));
+        }
+        for program in &left {
+            self.inner.run.end_what_was_left(program);
+            self.record().left_by_its_last_host(program);
+        }
+        left.len()
     }
 }
 

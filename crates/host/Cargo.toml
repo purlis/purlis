@@ -31,8 +31,11 @@ ulid = "3"
 purlis-same-user.workspace = true
 # The lines a held project's hooks write, handed on to the window as they are (#2000).
 serde_json.workspace = true
-# `O_NOFOLLOW` for the host's lock: the version and features purlis-same-user already links.
-nix = { version = "0.31", default-features = false, features = ["fs"] }
+# The run journal's lines (#2007).
+serde.workspace = true
+# `O_NOFOLLOW` for the host's lock and its run journal, and the signal that ends what a host
+# left running (#2007): the version purlis-same-user already links.
+nix = { version = "0.31", default-features = false, features = ["fs", "signal"] }
 
 [features]
 # `standin`: a program that stands in for a terminal's, for tests of what drives the host.
