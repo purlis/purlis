@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792148260936,
+  "lastUpdate": 1792149538403,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13986,6 +13986,48 @@ window.BENCHMARK_DATA = {
             "value": 104.29297650000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.793, 103.412, 104.293, 105.339, 105.940 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6e3651435a0c53137c1445d8115e0d3991fcf625",
+          "message": "Session host: saving updates reach only the link that may save (#2280)\n\n* Only the link that may save hears how saving goes; kill switch and relay tests over a remote link\n\nThe session host pushes `saving` and `who_is_mid_turn` only to a subscribed link that may save\nthe project (`Power::Save`, the window's `local-ui`) and holds it. Every other scope, a relayed\n`remote-link` holder included, hears neither. ADR 0068 gains a dated amendment; no session\nprotocol change.\n\nThe kill switch's tests now include `remote-link` in both loops (a shell while stopped, a\nre-arm), and the relay's has-ended check after its dial has a test of its own: a window that\nends while host A dials sends host B nothing, and the link to host B is closed.\n\nCloses #2247\nCloses #2246\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Saving test: a window's link that does not hold the project hears nothing; wrap the module doc\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T15:12:40+04:00",
+          "tree_id": "e180c8e029d1d8842aedc4ae51526589aab8b5d6",
+          "url": "https://github.com/purlis/purlis/commit/6e3651435a0c53137c1445d8115e0d3991fcf625"
+        },
+        "date": 1792149536840,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4656395,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.455, 0.460, 0.466, 0.466, 0.478 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.263679000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.171, 16.241, 16.264, 16.868, 16.884 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.96746250000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.447, 100.918, 100.967, 101.584, 101.685 ms"
           }
         ]
       }
