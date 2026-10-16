@@ -337,7 +337,7 @@ describe("the persona sub-agent files purlis generated, as a Notice (#1990, Q67)
     render(<App />);
 
     const found = await screen.findAllByText(
-      /^personas: 1 generated sub-agent file\(s\) remain in \.claude\/agents\//,
+      /^personas: 1 generated sub-agent file remains in \.claude\/agents\//,
     );
     expect(found).toHaveLength(1);
     const notice = found[0].closest("[data-cause]") as HTMLElement;
