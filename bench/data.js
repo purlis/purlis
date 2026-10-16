@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792162974484,
+  "lastUpdate": 1792164260075,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14322,6 +14322,48 @@ window.BENCHMARK_DATA = {
             "value": 101.47833800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.523, 101.094, 101.478, 101.580, 101.613 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a90eb589f90256a997c25846a9812fda5ab6d4ed",
+          "message": "Browsers: a persona declares its browser, and Always for this persona (#2299)\n\n* Browsers: a persona declares its browser, and Always for this persona\n\nA persona's sandbox section may say `browser = \"project\"` or\n`\"open-web\"` in the committed charter.toml: the browser Ask of a chat\nrunning as it has that answer drawn first and preselected, and the\nperson still answers it (ADR 0073). The Ask offers Always for this\npersona beside Allow for this chat and Keep off: kept in this machine's\nsandbox-grants file for the project, listed and removable in Settings ›\nSandbox, held where an administrator's allow-scopes leaves out `you`.\nRemoving it ends the browsers it opened and their chats ask again.\n\nCloses #2241\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: Always for a persona's browser is written in the sandbox lane\n\nallow_chat_browser and Remove of Always write this machine's\nsandbox-grants file and the network record: listed in the window's\ntable of write sites, and allowChatBrowser runs in the sandbox lane.\n\nRefs #2241\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a declared browser marks its answer in place; Always answered again is followed at once\n\nThe browser Ask's answers keep their places whatever a persona declares,\nso the same keys always press the same answer: the declared reach marks\nits answer for this chat by its label and style, its Always beside it\nunmarked. Always answered again for a persona is followed at once by the\nchats it allowed: a narrower answer ends their browsers now. The docs\nname the project's root charter.toml, which no sandboxed chat writes.\n\nRefs #2241\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T19:05:54+04:00",
+          "tree_id": "de6da1e9427e1869d5c19bf717056402e4085272",
+          "url": "https://github.com/purlis/purlis/commit/a90eb589f90256a997c25846a9812fda5ab6d4ed"
+        },
+        "date": 1792164259125,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.544137,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.498, 0.529, 0.544, 0.556, 0.570 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.952060000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.562, 16.773, 16.952, 16.977, 17.189 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.158795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.365, 103.364, 104.159, 104.642, 104.984 ms"
           }
         ]
       }
