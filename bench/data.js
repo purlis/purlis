@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792145903927,
+  "lastUpdate": 1792147029569,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13902,6 +13902,48 @@ window.BENCHMARK_DATA = {
             "value": 104.4628825,
             "unit": "ms",
             "extra": "median of 5 runs: 102.569, 104.415, 104.463, 106.101, 107.061 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bb1425ed9d9ca904ab6aed53f43cf57acfa4a541",
+          "message": "Runners: CI builds and signs the cluster operator's image (#2282)\n\n* Runners: CI builds and signs the cluster operator's image (#2238)\n\noperator-image.yml builds purlis-cluster-operator for linux/amd64 and linux/arm64 on every\ngreen `cluster operator` run on a push to main, the way runner-image.yml builds the runner\nimage: native per architecture, pushed by digest into the organisation's private package,\nchecked on the pulled-back bytes, then tagged (main forward-only), signed keyless and verified.\nThe run records the digest and an operator.yaml naming it.\n\nThe registry questions move to tools/image-registry.mjs, shared by both workflows: the package\ncomes from the workflow's own IMAGE, and `ensure-private` holds the placeholder-first push.\ntools/operator-image-check.mjs checks the operator image's config and that its binary starts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* operator image: no run started by hand\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T14:29:15+04:00",
+          "tree_id": "e27c3b6629393e87d50e9e541c96367e3bb814c0",
+          "url": "https://github.com/purlis/purlis/commit/bb1425ed9d9ca904ab6aed53f43cf57acfa4a541"
+        },
+        "date": 1792147028509,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.468734,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.460, 0.461, 0.469, 0.470, 0.474 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3193175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.244, 16.255, 16.319, 16.371, 16.952 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.417224,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.828, 101.350, 101.417, 102.252, 102.471 ms"
           }
         ]
       }
