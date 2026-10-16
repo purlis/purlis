@@ -32,7 +32,7 @@
 //! | a start's sandbox opt-out (`without_sandbox`) | yes | | | | | |
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
-//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.7) | yes | | | | | |
+//! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn`, and the pushed `saving` and `who_is_mid_turn` (1.7) | yes | | | | | |
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | `board_moved`, `board` (1.10) | yes | | | | | |
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
@@ -88,8 +88,9 @@
 //!   the chat's acts with `browse`. No other scope sends an act, `remote-link` included: a
 //!   relayed hold does not carry a chat's browser.
 //! - **Saving a held project is the window's alone** (1.7): the project's commits and pushes
-//!   are the person's, and the host's question of who is mid-turn goes only to the window's
-//!   links, which alone answer it. A hold relayed over a link does not carry it.
+//!   are the person's, and only the link that may save a project hears how saving it goes: what
+//!   each look did and the host's question of who is mid-turn go only to the window's links that
+//!   hold it, which alone answer the question. A hold relayed over a link does not carry it.
 //! - **Only a human scope answers an ask, and a secret's ask only in the window** (V16, V75):
 //!   `local-ui` and `approval`. Whether an ask elicits a secret is the host's to say
 //!   ([`crate::session::Host::elicits_a_secret`]), and a host that does not say is taken to
@@ -145,7 +146,8 @@ pub enum Power {
     /// `hold_project` and `let_go_of_project` (1.2): where a project is on the host's machine.
     Hold,
     /// `start_saving`, `stop_saving`, `fetch_project` and `mid_turn` (1.7): whether and how the
-    /// host saves a held project. The window's alone: a relayed hold does not carry it.
+    /// host saves a held project, and hearing the pushed `saving` and `who_is_mid_turn`. The
+    /// window's alone: a relayed hold does not carry it.
     Save,
     /// A start's `launch` (1.2): a program, its words and its environment as the window composed
     /// them.

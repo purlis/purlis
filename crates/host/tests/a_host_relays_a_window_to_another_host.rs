@@ -420,3 +420,75 @@ async fn a_window_link_that_ends_while_host_a_dials_leaves_no_link_to_host_b() {
         "host A dialed again for a gone window"
     );
 }
+
+/// A host that counts the commands it hears and the links that ended on it, and answers none.
+#[derive(Clone, Default)]
+struct HearsAndEnds {
+    heard: Arc<AtomicUsize>,
+    ended: Arc<AtomicUsize>,
+}
+
+impl session::Host for HearsAndEnds {
+    async fn call(
+        &self,
+        _command: session::Command,
+        _peer: &session::Peer,
+    ) -> Result<session::Answer, session::Refusal> {
+        self.heard.fetch_add(1, Ordering::SeqCst);
+        std::future::pending().await
+    }
+
+    async fn link_ended(&self, _peer: &session::Peer) {
+        self.ended.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn a_window_that_ends_while_host_a_dials_sends_host_b_nothing_and_its_link_is_closed() {
+    let host_b = HearsAndEnds::default();
+    let dials = Arc::new(AtomicUsize::new(0));
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let relay = Relay::new({
+        let (host_b, dials, gate) = (host_b.clone(), Arc::clone(&dials), Arc::clone(&gate));
+        Arc::new(move || {
+            dials.fetch_add(1, Ordering::SeqCst);
+            let (host_b, gate) = (host_b.clone(), Arc::clone(&gate));
+            Box::pin(async move {
+                let _open = gate.acquire().await.unwrap();
+                Ok(local_ui(host_b).await)
+            })
+        })
+    });
+    let (window, views, events) = Client::new(local_ui(relay).await);
+    // The window's one command makes host A dial, and the dial waits at the gate.
+    let window = Arc::new(window);
+    let asking = tokio::spawn({
+        let window = Arc::clone(&window);
+        async move { window.list().await }
+    });
+    while dials.load(Ordering::SeqCst) == 0 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // The window goes while host A dials; then the dial finishes.
+    asking.abort();
+    drop(window);
+    drop((views, events));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    gate.add_permits(1);
+
+    let ended = timeout(PATIENCE, async {
+        while host_b.ended.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(
+        ended.is_ok(),
+        "the link host A dialed for a gone window was kept"
+    );
+    assert_eq!(
+        host_b.heard.load(Ordering::SeqCst),
+        0,
+        "host B was sent a command of a gone window"
+    );
+}

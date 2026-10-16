@@ -3,18 +3,20 @@
 
 //! A project's saving in the session host (#2002), spoken over the session protocol on an
 //! in-memory link: the window asks the host to save a project it holds, the host runs its
-//! binary's saver for it, once, and tells every subscriber what each look did. The saver goes
-//! on when the window's link ends without a word, and stops when the window says so. The saver
-//! here is a stand-in; the app's own, over a real project, is the app's behaviour suite.
+//! binary's saver for it, once, and tells the window what each look did. Only a link that may
+//! save a project (`local-ui`) and holds it hears how saving it goes: what each look did, and the
+//! saver's question of who is mid-turn. The saver goes on when the window's link ends without a
+//! word, and stops when the window says so. The saver here is a stand-in; the app's own, over a
+//! real project, is the app's behaviour suite.
 
 #![cfg(unix)]
 
 use std::time::Duration;
 
 use purlis_host::standin::{Savers, StandIns};
-use purlis_host::{ComposesNothing, Hosting, Looked, Poke};
+use purlis_host::{ComposesNothing, Dial, Hosting, Looked, Poke, Relay};
 use purlis_session_protocol::auth::{Credentials, Scope};
-use purlis_session_protocol::link;
+use purlis_session_protocol::link::{self, Link};
 use purlis_session_protocol::session::{
     self, Client, Events, Launch, ProgramKind, Pushed, StartProgram, Told,
 };
@@ -69,6 +71,86 @@ async fn a_window(host: &Host) -> (Client, Events) {
     (client, events)
 }
 
+/// A link to the host admitted as `scope`, one of those proved by a credential.
+async fn a_link(host: &Host, scope: Scope) -> (Client, Events) {
+    let (a, b) = duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(a, session::speaks(), scope, HELD.of(scope)),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    tokio::spawn(session::serve(served.unwrap(), host.hosting.clone(), None));
+    let (client, _views, events) = Client::new(client.unwrap());
+    (client, events)
+}
+
+/// A link to `hosting` from another host: `remote-link`, proved as a peer device.
+async fn from_another_host(hosting: Hosting) -> Link {
+    let (a, b) = duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect_as_a_device(a, session::speaks()),
+        link::serve_as_a_device(b, session::speaks(), link::ProvenDevice::stand_in())
+    );
+    tokio::spawn(session::serve(served.unwrap(), hosting, None));
+    client.unwrap()
+}
+
+/// A window on another host, which relays to this one: its holds reach this host over a
+/// `remote-link` link, as a relayed window's do.
+async fn a_window_relayed_from_another_host(host: &Host) -> (Client, Events) {
+    let hosting = host.hosting.clone();
+    let dial: Dial = std::sync::Arc::new(move || {
+        let hosting = hosting.clone();
+        Box::pin(async move { Ok(from_another_host(hosting).await) })
+    });
+    let (a, b) = duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    tokio::spawn(session::serve(served.unwrap(), Relay::new(dial), None));
+    let (client, _views, events) = Client::new(client.unwrap());
+    (client, events)
+}
+
+/// What `events` is pushed up to and including the first program's end.
+async fn pushed_until_an_end(who: &str, events: &mut Events) -> Vec<Pushed> {
+    let mut pushed = Vec::new();
+    loop {
+        let told = timeout(PATIENCE, events.recv())
+            .await
+            .unwrap_or_else(|_| panic!("{who} was never told of the end"))
+            .expect("the link is up");
+        if let Told::Pushed(one) = told {
+            let ended = matches!(one, Pushed::Ended { .. });
+            pushed.push(one);
+            if ended {
+                return pushed;
+            }
+        }
+    }
+}
+
+fn a_launch() -> Launch {
+    Launch {
+        program: "/bin/sh".into(),
+        args: Vec::new(),
+        cwd: None,
+        set: Vec::new(),
+        strip: Vec::new(),
+        pass: Vec::new(),
+        declared: Vec::new(),
+        harness: None,
+        git_hooks: None,
+        reporting: None,
+        confinement: None,
+    }
+}
+
 async fn until(what: &str, done: impl Fn() -> bool) {
     timeout(PATIENCE, async {
         while !done() {
@@ -112,7 +194,7 @@ async fn a_held_project_is_saved_by_one_saver_however_often_it_is_asked() {
 }
 
 #[tokio::test]
-async fn what_each_look_did_reaches_every_subscriber() {
+async fn what_each_look_did_reaches_the_window() {
     let host = a_host();
     let (client, mut events) = a_window(&host).await;
     client.subscribe(Default::default()).await.unwrap();
@@ -138,6 +220,113 @@ async fn what_each_look_did_reaches_every_subscriber() {
         ),
         "{told:?}"
     );
+}
+
+#[tokio::test]
+async fn only_the_link_that_may_save_hears_how_saving_goes() {
+    let host = a_host();
+    let path = host.project.path().to_str().unwrap().to_owned();
+    let (window, mut window_events) = a_window(&host).await;
+    window.subscribe(Default::default()).await.unwrap();
+    let mut others: Vec<(String, Client, Events)> = Vec::new();
+    for scope in [
+        Scope::Terminal,
+        Scope::FleetMcp,
+        Scope::Approval,
+        Scope::Editor,
+    ] {
+        let (client, events) = a_link(&host, scope).await;
+        let subscribed = client.subscribe(Default::default()).await;
+        if scope == Scope::Editor {
+            // An editor subscribes to nothing at all.
+            let refused = subscribed.unwrap_err();
+            assert_eq!(
+                refused.refusal().map(|r| r.code.as_str()),
+                Some(session::NOT_ALLOWED)
+            );
+            continue;
+        }
+        subscribed.unwrap();
+        others.push((scope.to_string(), client, events));
+    }
+    // A window's link that may save but does not hold the project.
+    let (not_holding, not_holding_events) = a_link(&host, Scope::LocalUi).await;
+    not_holding.subscribe(Default::default()).await.unwrap();
+    others.push((
+        "a window's link that does not hold it".into(),
+        not_holding,
+        not_holding_events,
+    ));
+    // Another host's link, holding the project as a relayed hold does.
+    let (remote, remote_events) = {
+        let (client, _views, events) = Client::new(from_another_host(host.hosting.clone()).await);
+        (client, events)
+    };
+    remote
+        .hold_project(PROJECT, &path)
+        .await
+        .expect("a link from another host holds it");
+    remote.subscribe(Default::default()).await.unwrap();
+    others.push(("remote-link".into(), remote, remote_events));
+    // And a window on another host, holding it here through its host's relay.
+    let (relayed, relayed_events) = a_window_relayed_from_another_host(&host).await;
+    relayed
+        .hold_project(PROJECT, &path)
+        .await
+        .expect("a relayed window holds it");
+    relayed.subscribe(Default::default()).await.unwrap();
+    others.push(("a relayed window".into(), relayed, relayed_events));
+
+    window.start_saving(PROJECT).await.unwrap();
+    host.savers.looks(Looked {
+        saved: true,
+        moved_tree: true,
+    });
+    let savers = host.savers.clone();
+    let asking = tokio::task::spawn_blocking(move || savers.asks_the_window("alpha"));
+    let mut heard_a_look = false;
+    loop {
+        let told = timeout(PATIENCE, window_events.recv())
+            .await
+            .expect("the window is told how saving goes")
+            .expect("the link is up");
+        match told {
+            Told::Pushed(Pushed::Saving { .. }) => heard_a_look = true,
+            Told::Pushed(Pushed::WhoIsMidTurn { question, .. }) => {
+                window
+                    .call(session::Command::MidTurn {
+                        question,
+                        chats: Some(Vec::new()),
+                    })
+                    .await
+                    .expect("the answer is taken");
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(heard_a_look, "the window was not told what the look did");
+    assert_eq!(asking.await.unwrap(), Some(Vec::new()));
+    // Every subscriber is told of a program's end: what each heard before it is all it heard
+    // of the save.
+    let program = window
+        .start_program(StartProgram {
+            launch: Some(a_launch()),
+            ..StartProgram::of(PROJECT, ProgramKind::Harness)
+        })
+        .await
+        .unwrap();
+    window.stop(&program).await.unwrap();
+
+    for (who, _client, mut events) in others {
+        let pushed = pushed_until_an_end(&who, &mut events).await;
+        assert!(
+            !pushed
+                .iter()
+                .any(|one| matches!(one, Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. })),
+            "{who} heard how saving goes: {pushed:?}"
+        );
+    }
 }
 
 #[tokio::test]
