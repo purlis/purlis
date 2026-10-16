@@ -15,9 +15,27 @@ use purlis_core::hookwire::{
     CHAT_ENV, Decision, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, spool,
 };
 
+/// The tool call a hook told the host: recorded by it live, or spooled beside its socket for
+/// the next drain, as a hook does when the host is slower than it waits.
+#[derive(Debug)]
+enum Heard {
+    Live(ToolCall),
+    Spooled(ToolCall),
+}
+
+impl std::ops::Deref for Heard {
+    type Target = ToolCall;
+
+    fn deref(&self) -> &ToolCall {
+        match self {
+            Heard::Live(call) | Heard::Spooled(call) => call,
+        }
+    }
+}
+
 /// Runs `charter hook <word>` with `payload`, a host listening. Answers its exit code, its
-/// stdout, and the tool call the host heard.
-fn hook(word: &str, payload: &serde_json::Value) -> (i32, String, Option<ToolCall>) {
+/// stdout, and the tool call the host was told.
+fn hook(word: &str, payload: &serde_json::Value) -> (i32, String, Option<Heard>) {
     hook_with(word, payload, &[])
 }
 
@@ -26,7 +44,7 @@ fn hook_with(
     word: &str,
     payload: &serde_json::Value,
     env: &[(&str, &str)],
-) -> (i32, String, Option<ToolCall>) {
+) -> (i32, String, Option<Heard>) {
     let dir = tempfile::tempdir().expect("a directory");
     let path = dir.path().join("hooks.sock");
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
@@ -67,11 +85,41 @@ fn hook_with(
         .expect("charter runs");
     stand_in::feed(&mut child, payload.to_string().as_bytes());
     let out = child.wait_with_output().expect("charter finishes");
+    // A hook answers its harness once the host has recorded its line, or once it has spooled
+    // the line beside the socket for the next drain: a host slower than the hook waits is told
+    // by the spool.
+    let told = spooled_beside(&path)
+        .into_iter()
+        .next()
+        .map(Heard::Spooled)
+        .or_else(|| {
+            heard
+                .recv_timeout(Duration::from_secs(5))
+                .ok()
+                .map(Heard::Live)
+        });
     (
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stdout).into_owned(),
-        heard.recv_timeout(Duration::from_secs(5)).ok(),
+        told,
     )
+}
+
+/// The tool calls spooled beside the host's socket at `path`, drained.
+fn spooled_beside(path: &std::path::Path) -> Vec<ToolCall> {
+    let mut spooled = Vec::new();
+    spool::drain(&spool::dir_for(path), &mut |item| {
+        if let spool::Drained::Line {
+            line: spool::Spooled::Tool(call),
+            ..
+        } = item
+        {
+            spooled.push(call);
+        }
+        Ok(())
+    })
+    .expect("the spool drains");
+    spooled
 }
 
 #[test]
@@ -99,11 +147,14 @@ fn a_refused_tool_call_tells_the_host_what_was_refused_and_by_which_rule() {
     assert_eq!(heard.call.as_deref(), Some("toolu_9"));
     assert_eq!(heard.decision, Decision::Deny);
     assert_eq!(heard.rule.as_deref(), Some("git-hook-skip"));
-    assert_eq!(
-        heard.args.as_deref(),
-        Some(purlis_core::eventlog::args_hash(&input).as_str()),
-        "the arguments' hash, never the arguments"
-    );
+    match &heard {
+        Heard::Live(call) => assert_eq!(
+            call.args.as_deref(),
+            Some(purlis_core::eventlog::args_hash(&input).as_str()),
+            "the arguments' hash, never the arguments"
+        ),
+        Heard::Spooled(call) => assert_eq!(call.args, None, "a spooled line keeps no digest"),
+    }
 }
 
 #[test]
@@ -260,22 +311,10 @@ fn hook_with_no_host(word: &str, payload: &serde_json::Value) -> (i32, String, V
         .expect("charter runs");
     stand_in::feed(&mut child, payload.to_string().as_bytes());
     let out = child.wait_with_output().expect("charter finishes");
-    let mut spooled = Vec::new();
-    spool::drain(&spool::dir_for(&path), &mut |item| {
-        if let spool::Drained::Line {
-            line: spool::Spooled::Tool(call),
-            ..
-        } = item
-        {
-            spooled.push(call);
-        }
-        Ok(())
-    })
-    .expect("the spool drains");
     (
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stdout).into_owned(),
-        spooled,
+        spooled_beside(&path),
     )
 }
 

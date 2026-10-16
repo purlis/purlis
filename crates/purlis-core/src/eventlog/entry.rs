@@ -19,7 +19,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use super::{Attributes, Began, Event, Followed, Recorder, RunOf};
+use super::{Attributes, Began, Event, Followed, HeldTrust, Recorder, RunOf};
 
 /// One write the window asks of the event log, as it travels to the log's writer.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -53,10 +53,17 @@ pub enum Entry {
         attributes: Attributes,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         held: bool,
+        /// The trust event held with a `held` run, written just before its `run.started`
+        /// (#2252).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trust: Option<Box<HeldTrust>>,
     },
     /// The start whose run was held goes on: its `run.started` is written now
     /// ([`Recorder::begun`]).
     Begun { plane: PathBuf, number: u32 },
+    /// The start whose run was held was put aside: its run is never said, and what its program
+    /// still sends is of no run ([`Recorder::taken_back`], #2252).
+    TakenBack { plane: PathBuf, number: u32 },
     /// What a start decided about a chat's sandbox, under the run it begins
     /// ([`Recorder::trust`]): its kind and body as the window composed them.
     Trust {
@@ -120,19 +127,32 @@ impl Recorder {
                 cause,
                 attributes,
                 held,
+                trust,
             } => {
+                held_trust(held, trust.as_deref())?;
                 let run = RunOf {
                     chat: &chat,
                     run: &run,
                 };
                 if held {
-                    self.begin_held(&plane, number, run, cause, &attributes);
+                    self.begin_held(
+                        &plane,
+                        number,
+                        run,
+                        cause,
+                        &attributes,
+                        trust.map(|trust| *trust),
+                    );
                     Ok(Vec::new())
                 } else {
                     one(self.begin(&plane, number, run, cause, &attributes))
                 }
             }
             Entry::Begun { plane, number } => Ok(self.begun(&plane, number)?.into_iter().collect()),
+            Entry::TakenBack { plane, number } => {
+                self.taken_back(&plane, number);
+                Ok(Vec::new())
+            }
             Entry::Trust {
                 chat,
                 run,
@@ -195,6 +215,28 @@ fn trust_kind(kind: &str) -> io::Result<()> {
             format!("{kind:?} is not a kind of trust event, so nothing was written"),
         ))
     }
+}
+
+/// What a [`Entry::Begin`] may hold with its run: only the sandbox coming back on, and only
+/// with a run that is `held` (#2252).
+fn held_trust(held: bool, trust: Option<&HeldTrust>) -> io::Result<()> {
+    let Some(trust) = trust else {
+        return Ok(());
+    };
+    let refused = |why: String| Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+    if !held {
+        return refused(
+            "a trust event is held only with a run that is held, so nothing was written".into(),
+        );
+    }
+    let back_on = crate::sandbox::Change::On.kind();
+    if trust.kind() != back_on {
+        return refused(format!(
+            "{:?} is not held with a run, only {back_on:?} is, so nothing was written",
+            trust.kind()
+        ));
+    }
+    Ok(())
 }
 
 /// Where every trust event's kind begins (ADR 0075's registry).

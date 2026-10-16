@@ -1330,6 +1330,42 @@ struct Identity {
     attributes: Attributes,
     /// Why the run began, while its `run.started` is held ([`Recorder::begin_held`]).
     held: Option<Began>,
+    /// The trust event held with it, written just before it (#2252).
+    held_trust: Option<HeldTrust>,
+}
+
+/// A start's trust event held with its run's `run.started` ([`Recorder::begin_held`]): the
+/// sandbox coming back on for a start the host may still take back (#2252). Written just
+/// before the `run.started`, as at any start (ADR 0067 §7), and never for a start taken back.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HeldTrust {
+    kind: String,
+    body: serde_json::Value,
+}
+
+impl HeldTrust {
+    /// The trust event for `change`, with the chat's `harness` and `persona`, as
+    /// [`Recorder::trust`] writes it.
+    pub fn of(
+        change: &crate::sandbox::Change,
+        harness: Option<crate::harness::Harness>,
+        persona: Option<&str>,
+    ) -> Self {
+        Self {
+            kind: change.kind().to_owned(),
+            body: change.body(harness, persona),
+        }
+    }
+
+    /// The event's kind: `trust.sandbox.on` or `trust.sandbox.off`.
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    /// The event's body.
+    pub fn body(&self) -> &serde_json::Value {
+        &self.body
+    }
 }
 
 /// The run an event is recorded under, and the run that one came from.
@@ -1501,6 +1537,11 @@ pub struct Recorder {
     key: ArgsKey,
     /// By project and number: a number means nothing outside the project that dealt it.
     chats: HashMap<(PathBuf, u32), Identity>,
+    /// The numbers whose held run was taken back ([`Recorder::taken_back`]), by project: a
+    /// later line from one is recorded with no chat or run, never under a run of its own. It
+    /// stays small: only a start put aside adds a number, one each, and a number told again
+    /// ([`Recorder::begin_held`], [`Recorder::knows`]) leaves it.
+    taken_back: std::collections::HashSet<(PathBuf, u32)>,
     /// Each live sub-agent's child run, by chat id and the harness's agent id.
     children: HashMap<(String, String), (String, String)>,
     /// The sub-agents whose `SubagentStop` was heard, by chat id and agent id: a later line
@@ -1588,6 +1629,7 @@ impl Recorder {
             chats: HashMap::new(),
             children: HashMap::new(),
             stopped: std::collections::HashSet::new(),
+            taken_back: std::collections::HashSet::new(),
             calls: HashMap::new(),
             kill_switch: None,
             kill_switch_skipped: None,
@@ -1641,11 +1683,15 @@ impl Recorder {
         };
         let top = match followed {
             Followed::Moved if known => {
-                self.new_run(plane, report.chat, Began::Clear, cleared, named)?
+                Some(self.new_run(plane, report.chat, Began::Clear, cleared, named)?)
             }
             Followed::Moved | Followed::No | Followed::FirstNamed => {
                 self.identity(plane, report.chat)?
             }
+        };
+        let Some(top) = top else {
+            let body = spooled_as(serde_json::json!({}), spooled);
+            return self.of_no_run(report.chat, &format!("hook.{}", report.event.word()), body);
         };
         // A harness naming its conversation for the first time keeps the run, which gains it
         // (ADR 0066): what a clear or a child of the run carries on from here.
@@ -1721,7 +1767,10 @@ impl Recorder {
         now: Instant,
         spooled: Option<u64>,
     ) -> io::Result<Event> {
-        let top = self.identity(plane, call.chat)?;
+        let Some(top) = self.identity(plane, call.chat)? else {
+            let body = spooled_as(self.tool_body(call), spooled);
+            return self.of_no_run(call.chat, &tool_kind(call), body);
+        };
         let under = self.under(top, call.agent.as_deref())?;
         let phase = phase(&call.tool_hook);
         let mut body = spooled_as(self.tool_body(call), spooled);
@@ -1774,6 +1823,7 @@ impl Recorder {
     /// event: a chat the reopen record names, before the host starts anything, so a line it
     /// spooled before the host went away is recorded under the run it ran in (FD-30).
     pub fn knows(&mut self, plane: &Path, number: u32, RunOf { chat, run }: RunOf<'_>) {
+        self.taken_back.remove(&(plane.to_path_buf(), number));
         self.chats.insert(
             (plane.to_path_buf(), number),
             Identity {
@@ -1781,6 +1831,7 @@ impl Recorder {
                 run: run.to_owned(),
                 attributes: Attributes::default(),
                 held: None,
+                held_trust: None,
             },
         );
     }
@@ -1861,8 +1912,10 @@ impl Recorder {
         number: u32,
         spooled: Option<u64>,
     ) -> io::Result<Event> {
-        let who = self.identity(plane, number)?;
         let body = spooled_as(serde_json::json!({}), spooled);
+        let Some(who) = self.identity(plane, number)? else {
+            return self.of_no_run(number, COMMIT_REFUSED, body);
+        };
         self.log
             .append(Some(&who.chat), Some(&who.run), None, COMMIT_REFUSED, body)
     }
@@ -1922,7 +1975,8 @@ impl Recorder {
     ) -> io::Result<Event> {
         let who = number
             .map(|number| self.identity(plane, number))
-            .transpose()?;
+            .transpose()?
+            .flatten();
         let event = self.log.append(
             who.as_ref().map(|who| who.chat.as_str()),
             who.as_ref().map(|who| who.run.as_str()),
@@ -2278,7 +2332,7 @@ impl Recorder {
         cause: Began,
         attributes: &Attributes,
     ) -> io::Result<Event> {
-        self.begin_held(plane, number, RunOf { chat, run }, cause, attributes);
+        self.begin_held(plane, number, RunOf { chat, run }, cause, attributes, None);
         self.begun(plane, number)?
             .ok_or_else(|| io::Error::other("the run was not held"))
     }
@@ -2286,7 +2340,8 @@ impl Recorder {
     /// [`Recorder::begin`], its `run.started` held until [`Recorder::begun`] says the run goes
     /// on: a start the host may still take back (#2250). A line of the run that comes first is
     /// written after it, so a run's first event is still its `run.started`; one never begun
-    /// writes nothing.
+    /// writes nothing. `trust` is its start's trust event, held with it and written just before
+    /// it (#2252).
     pub fn begin_held(
         &mut self,
         plane: &Path,
@@ -2294,7 +2349,9 @@ impl Recorder {
         RunOf { chat, run }: RunOf<'_>,
         cause: Began,
         attributes: &Attributes,
+        trust: Option<HeldTrust>,
     ) {
+        self.taken_back.remove(&(plane.to_path_buf(), number));
         self.chats.insert(
             (plane.to_path_buf(), number),
             Identity {
@@ -2302,6 +2359,7 @@ impl Recorder {
                 run: run.to_owned(),
                 attributes: attributes.clone(),
                 held: Some(cause),
+                held_trust: trust,
             },
         );
     }
@@ -2317,7 +2375,19 @@ impl Recorder {
         let Some(cause) = who.held.take() else {
             return Ok(None);
         };
+        let trust = who.held_trust.take();
         let who = who.clone();
+        // Its start's trust event first, as at any start, made durable as the host makes it.
+        // One the log refuses costs the record of the sandbox coming back on, never the run.
+        if let Some(HeldTrust { kind, body }) = trust {
+            let kept = self
+                .log
+                .append(Some(&who.chat), Some(&who.run), None, &kind, body)
+                .and_then(|event| self.log.durable().through(event.seq));
+            if let Err(why) = kept {
+                tracing::warn!(error = %why, "the event log did not keep a held trust event");
+            }
+        }
         // A child still live is of the run this one takes the place of, which has ended
         // superseded (ADR 0076 §2): a run whose own end was told has none left.
         let ended = self.end_children(&who.chat, RunState::Completed, Cause::Superseded);
@@ -2328,12 +2398,48 @@ impl Recorder {
             .map(Some)
     }
 
-    /// The chat's identity, giving it one and its first run when it has none.
-    fn identity(&mut self, plane: &Path, number: u32) -> io::Result<Identity> {
+    /// Chat `number`'s start whose run is held ([`Recorder::begin_held`]) was put aside: its
+    /// `run.started` and the trust event held with it are never written, and a later line from
+    /// its program is recorded with no chat or run, under its number (`chat_number`), as a line
+    /// of a chat the log does not know is (#2252); an audit naming the number is of no run. A
+    /// run a line of it already said is kept: the log is append-only.
+    pub fn taken_back(&mut self, plane: &Path, number: u32) {
+        let key = (plane.to_path_buf(), number);
+        if self.chats.get(&key).is_some_and(|who| who.held.is_some()) {
+            self.chats.remove(&key);
+            self.taken_back.insert(key);
+        }
+    }
+
+    /// Whether chat `number`'s start was taken back ([`Recorder::taken_back`]).
+    fn was_taken_back(&self, plane: &Path, number: u32) -> bool {
+        self.taken_back.contains(&(plane.to_path_buf(), number))
+    }
+
+    /// A line of `kind` from chat `number`, under no chat or run.
+    fn of_no_run(
+        &mut self,
+        number: u32,
+        kind: &str,
+        mut body: serde_json::Value,
+    ) -> io::Result<Event> {
+        body["chat_number"] = number.into();
+        self.log.append(None, None, None, kind, body)
+    }
+
+    /// The chat's identity, giving it one and its first run when it has none. `None` for a
+    /// number whose start was taken back ([`Recorder::taken_back`]): what it sends is of no run,
+    /// and never begins one.
+    fn identity(&mut self, plane: &Path, number: u32) -> io::Result<Option<Identity>> {
+        if self.was_taken_back(plane, number) {
+            return Ok(None);
+        }
         self.begun(plane, number)?;
         match self.chats.get(&(plane.to_path_buf(), number)) {
-            Some(who) => Ok(who.clone()),
-            None => self.new_run(plane, number, Began::Start, None, None),
+            Some(who) => Ok(Some(who.clone())),
+            None => self
+                .new_run(plane, number, Began::Start, None, None)
+                .map(Some),
         }
     }
 
@@ -2421,6 +2527,7 @@ impl Recorder {
                 ..before
             },
             held: None,
+            held_trust: None,
         };
         if cause == Began::Clear {
             // The cleared run is superseded, and its children end with it, before the run
