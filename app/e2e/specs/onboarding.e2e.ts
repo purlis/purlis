@@ -244,7 +244,22 @@ describe("the guided steps", function () {
       timeoutMsg: `the project never came to the front; in front is ${String(await inFront())}`,
     });
     expect(await $(STEPS).isExisting()).toBe(false);
-    expect(await ask<Kept>("onboarding_progress")).toEqual({ ...FRESH, finished_once: true });
+    // The window keeps the finish once it has drawn the project: waited for, so the next test's
+    // own place is written after it.
+    const finished: Kept = { ...FRESH, finished_once: true };
+    let keptLast: Kept | undefined;
+    await browser
+      .waitUntil(
+        async () => {
+          keptLast = await ask<Kept>("onboarding_progress");
+          return (Object.keys(finished) as (keyof Kept)[]).every(
+            (key) => JSON.stringify(keptLast?.[key]) === JSON.stringify(finished[key]),
+          );
+        },
+        { timeout: 20_000, timeoutMsg: "the window never kept the finish" },
+      )
+      .catch(() => undefined);
+    expect(keptLast).toEqual(finished);
   });
 
   it("come back at the step a quit left them at", async () => {
