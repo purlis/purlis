@@ -154,9 +154,26 @@ pub(crate) async fn offer_unbounded<S: AsyncRead + AsyncWrite>(
     io: S,
     speaks: &Speaks,
 ) -> Result<(Version, Negotiated<S>), Refused> {
+    offer_opening_with(io, speaks, MAGIC)
+        .await
+        .map(|(version, _, io)| (version, io))
+}
+
+/// [`offer_unbounded`] for another protocol that negotiates the same way and opens each message
+/// with its own `magic`: the link between hosts (`crate::hostlink`). It also says the versions
+/// the hello offered, as it offered them.
+pub(crate) async fn offer_opening_with<S: AsyncRead + AsyncWrite>(
+    io: S,
+    speaks: &Speaks,
+    magic: &[u8; 8],
+) -> Result<(Version, Vec<Version>, Negotiated<S>), Refused> {
     let (mut reads, mut writes) = split(io);
-    let (version, left) = offer_now(&mut reads, &mut writes, speaks).await?;
-    Ok((version, join(Cursor::new(left).chain(reads), writes)))
+    let (version, offered, left) = offer_now(&mut reads, &mut writes, speaks, magic).await?;
+    Ok((
+        version,
+        offered,
+        join(Cursor::new(left).chain(reads), writes),
+    ))
 }
 
 /// The host's side: read a client's hello, and agree to the highest major both speak or
@@ -175,9 +192,26 @@ pub(crate) async fn answer_unbounded<S: AsyncRead + AsyncWrite>(
     io: S,
     speaks: &Speaks,
 ) -> Result<(Version, Negotiated<S>), Refused> {
+    answer_opening_with(io, speaks, MAGIC)
+        .await
+        .map(|(version, _, io)| (version, io))
+}
+
+/// [`answer_unbounded`] for another protocol that negotiates the same way and opens each
+/// message with its own `magic` ([`offer_opening_with`]). It also says the versions the
+/// client's hello offered, as they were read.
+pub(crate) async fn answer_opening_with<S: AsyncRead + AsyncWrite>(
+    io: S,
+    speaks: &Speaks,
+    magic: &[u8; 8],
+) -> Result<(Version, Vec<Version>, Negotiated<S>), Refused> {
     let (mut reads, mut writes) = split(io);
-    let (version, left) = answer_now(&mut reads, &mut writes, speaks).await?;
-    Ok((version, join(Cursor::new(left).chain(reads), writes)))
+    let (version, offered, left) = answer_now(&mut reads, &mut writes, speaks, magic).await?;
+    Ok((
+        version,
+        offered,
+        join(Cursor::new(left).chain(reads), writes),
+    ))
 }
 
 pub(crate) async fn within_the_deadline<T>(
@@ -192,18 +226,20 @@ async fn offer_now<S: AsyncRead + AsyncWrite>(
     reads: &mut ReadHalf<S>,
     writes: &mut WriteHalf<S>,
     speaks: &Speaks,
-) -> Result<(Version, BytesMut), Refused> {
-    send(
+    magic: &[u8; 8],
+) -> Result<(Version, Vec<Version>, BytesMut), Refused> {
+    send_opening_with(
         writes,
         &Hello {
             versions: speaks.0.clone(),
         },
+        magic,
     )
     .await?;
-    let (answer, left) = receive::<_, Answer>(reads).await?;
+    let (answer, left) = receive_opening_with::<_, Answer>(reads, magic).await?;
     match answer {
         Answer::Accept(version) => match speaks.minor_of(version.major) {
-            Some(minor) if version.minor <= minor => Ok((version, left)),
+            Some(minor) if version.minor <= minor => Ok((version, speaks.0.clone(), left)),
             Some(_) => Err(Refused::Malformed(format!(
                 "the host agreed to minor {} of major {}, past this client's",
                 version.minor, version.major
@@ -220,9 +256,11 @@ async fn answer_now<S: AsyncRead + AsyncWrite>(
     reads: &mut ReadHalf<S>,
     writes: &mut WriteHalf<S>,
     speaks: &Speaks,
-) -> Result<(Version, BytesMut), Refused> {
-    let (hello, left): (Hello, _) = receive(reads).await?;
-    let theirs = Speaks::new(hello.versions);
+    magic: &[u8; 8],
+) -> Result<(Version, Vec<Version>, BytesMut), Refused> {
+    let (hello, left): (Hello, _) = receive_opening_with(reads, magic).await?;
+    let offered = hello.versions;
+    let theirs = Speaks::new(offered.clone());
     let agreed = speaks.0.iter().find_map(|ours| {
         theirs.minor_of(ours.major).map(|minor| Version {
             major: ours.major,
@@ -231,15 +269,16 @@ async fn answer_now<S: AsyncRead + AsyncWrite>(
     });
     match agreed {
         Some(version) => {
-            send(writes, &Answer::Accept(version)).await?;
-            Ok((version, left))
+            send_opening_with(writes, &Answer::Accept(version), magic).await?;
+            Ok((version, offered, left))
         }
         None => {
-            send(
+            send_opening_with(
                 writes,
                 &Answer::Refuse {
                     speaks: speaks.majors(),
                 },
+                magic,
             )
             .await?;
             Err(Refused::NoSharedMajor {
@@ -262,13 +301,21 @@ pub(crate) async fn send<W: AsyncWrite + Unpin, T: Serialize>(
     io: &mut W,
     message: &T,
 ) -> Result<(), Refused> {
+    send_opening_with(io, message, MAGIC).await
+}
+
+async fn send_opening_with<W: AsyncWrite + Unpin, T: Serialize>(
+    io: &mut W,
+    message: &T,
+    magic: &[u8; 8],
+) -> Result<(), Refused> {
     let body = serde_json::to_vec(message).map_err(|e| Refused::Malformed(e.to_string()))?;
     if body.len() > MOST_HELLO_BYTES {
         return Err(Refused::TooLong {
             most: MOST_HELLO_BYTES,
         });
     }
-    io.write_all(MAGIC).await?;
+    io.write_all(magic).await?;
     FramedWrite::new(&mut *io, codec())
         .send(Bytes::from(body))
         .await?;
@@ -279,9 +326,16 @@ pub(crate) async fn send<W: AsyncWrite + Unpin, T: Serialize>(
 pub(crate) async fn receive<R: AsyncRead + Unpin, T: for<'de> Deserialize<'de>>(
     io: &mut R,
 ) -> Result<(T, BytesMut), Refused> {
-    let mut magic = [0u8; MAGIC.len()];
-    match io.read_exact(&mut magic).await {
-        Ok(_) if &magic == MAGIC => {}
+    receive_opening_with(io, MAGIC).await
+}
+
+async fn receive_opening_with<R: AsyncRead + Unpin, T: for<'de> Deserialize<'de>>(
+    io: &mut R,
+    magic: &[u8; 8],
+) -> Result<(T, BytesMut), Refused> {
+    let mut opening = [0u8; 8];
+    match io.read_exact(&mut opening).await {
+        Ok(_) if &opening == magic => {}
         Ok(_) => return Err(Refused::NotThisProtocol),
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
             return Err(Refused::NotThisProtocol);
