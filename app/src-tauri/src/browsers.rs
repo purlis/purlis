@@ -99,9 +99,19 @@ mod hosted {
             }
         }
 
-        fn close(&self, program: &str) {
-            if let Err(why) = WindowBrowsers::close(self, program) {
-                tracing::warn!("purlis: a chat's browser was not ended: {why}");
+        fn close(&self, program: &str) -> Result<(), String> {
+            WindowBrowsers::close(self, program)
+        }
+
+        fn stop(&self, program: &str) -> Result<(), String> {
+            match self.link()?.call_refused_within(
+                Command::Stop {
+                    chat: program.to_owned(),
+                },
+                LINK_WITHIN,
+            ) {
+                Err(refusal) if refusal.code != session::NO_SUCH_CHAT => Err(refusal.why),
+                _ => Ok(()),
             }
         }
     }
@@ -235,14 +245,24 @@ mod hosted {
 
         /// Ends `program` and forgets it.
         pub(crate) fn close(&self, program: &str) -> Result<(), String> {
+            // Forgotten only once the host has ended it: one it could not be told of stays
+            // listed, so letting go of its project and Stop all still end it.
+            let closed = self.link()?.call_refused_within(
+                Command::Close {
+                    program: program.to_owned(),
+                },
+                LINK_WITHIN,
+            );
+            match closed {
+                // Gone already: there is nothing left to end.
+                Err(refusal) if refusal.code == session::NO_SUCH_CHAT => {}
+                Err(refusal) => return Err(refusal.why),
+                Ok(_) => {}
+            }
             for held in self.projects().values_mut() {
                 held.browsers.retain(|one| one != program);
             }
-            self.link()?
-                .call(Command::Close {
-                    program: program.to_owned(),
-                })
-                .map(|_| ())
+            Ok(())
         }
 
         /// The project at `root` is let go of (#2012): every browser the window started in it is

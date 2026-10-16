@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
 
-use super::{ChatBrowsers, Driver, Posture, Refused};
+use super::{ChatBrowsers, Driver, Ended, Posture, Refused};
 
 /// A driver that stands in for the session host: it starts numbered browsers, answers every
 /// act settled, and keeps what it was asked.
@@ -16,8 +16,20 @@ struct Hosted {
     started: Mutex<Vec<BrowserReach>>,
     acts: Mutex<Vec<(String, String, Act)>>,
     closed: Mutex<Vec<String>>,
+    /// Programs ended by their id, when a close did not end them.
+    stopped: Mutex<Vec<String>>,
     /// Programs that have ended in the host.
     ended: Mutex<Vec<String>>,
+    /// How many closes, and how many stops by id, fail from now.
+    closes_fail: Mutex<u32>,
+    stops_fail: Mutex<u32>,
+}
+
+fn fails(left: &Mutex<u32>) -> bool {
+    let mut left = left.lock().unwrap();
+    let failing = *left > 0;
+    *left = left.saturating_sub(1);
+    failing
 }
 
 impl Driver for Hosted {
@@ -41,8 +53,20 @@ impl Driver for Hosted {
         })
     }
 
-    fn close(&self, program: &str) {
+    fn close(&self, program: &str) -> Result<(), String> {
+        if fails(&self.closes_fail) {
+            return Err("the session host did not answer in time".into());
+        }
         self.closed.lock().unwrap().push(program.to_owned());
+        Ok(())
+    }
+
+    fn stop(&self, program: &str) -> Result<(), String> {
+        if fails(&self.stops_fail) {
+            return Err("the session host did not answer in time".into());
+        }
+        self.stopped.lock().unwrap().push(program.to_owned());
+        Ok(())
     }
 }
 
@@ -281,7 +305,13 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
 
     let ended = browsers.narrowed(Some(&driver), 3);
 
-    assert_eq!(ended, 1);
+    assert_eq!(
+        ended,
+        Ended {
+            ended: 1,
+            unended: 0
+        }
+    );
     assert_eq!(
         *hosted.closed.lock().unwrap(),
         ["program-1"],
@@ -289,7 +319,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
     );
     assert_eq!(
         browsers.narrowed(Some(&driver), 3),
-        0,
+        Ended::default(),
         "nothing left to end"
     );
     let narrower = BrowserReach {
@@ -363,4 +393,87 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
     );
 
     assert!(why.contains("session host"), "{why}");
+}
+
+#[test]
+fn a_browser_whose_chats_reach_narrowed_is_ended_retried_until_it_is() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, click()));
+    let driver: Arc<dyn Driver> = hosted.clone();
+    // The host cannot be told: every close and every stop by its id fails, for now.
+    *hosted.closes_fail.lock().unwrap() = u32::MAX;
+    *hosted.stops_fail.lock().unwrap() = u32::MAX;
+
+    let ended = browsers.narrowed(Some(&driver), 3);
+
+    assert_eq!(
+        ended,
+        Ended {
+            ended: 0,
+            unended: 1
+        }
+    );
+    assert_eq!(browsers.unended(), ["program-1"], "it stays known");
+    // The chat's next act never reaches it: a new browser opens on what the chat reaches now.
+    answered(&browsers, &hosted, &ask(3, click()));
+    let acts: Vec<String> = hosted
+        .acts
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(program, _, _)| program.clone())
+        .collect();
+    assert_eq!(acts, ["program-1", "program-2"]);
+    // Once the host hears, the next call retries it, and it is ended.
+    *hosted.closes_fail.lock().unwrap() = 0;
+    *hosted.stops_fail.lock().unwrap() = 0;
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert!(browsers.unended().is_empty());
+}
+
+#[test]
+fn a_browser_a_close_did_not_end_is_ended_by_its_id() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, click()));
+    let driver: Arc<dyn Driver> = hosted.clone();
+    *hosted.closes_fail.lock().unwrap() = u32::MAX;
+
+    let ended = browsers.narrowed(Some(&driver), 3);
+
+    assert_eq!(
+        ended,
+        Ended {
+            ended: 1,
+            unended: 0
+        }
+    );
+    assert_eq!(*hosted.stopped.lock().unwrap(), ["program-1"]);
+    assert!(browsers.unended().is_empty());
+}
+
+#[test]
+fn a_browser_not_yet_ended_counts_toward_the_projects_three() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    for _ in 0..3 {
+        answered(&browsers, &hosted, &ask(3, Browsing::New));
+    }
+    let driver: Arc<dyn Driver> = hosted.clone();
+    *hosted.closes_fail.lock().unwrap() = u32::MAX;
+    *hosted.stops_fail.lock().unwrap() = u32::MAX;
+    browsers.narrowed(Some(&driver), 3);
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, click())).0);
+
+    assert!(why.contains("this project"), "{why}");
+    assert_eq!(hosted.started.lock().unwrap().len(), 3);
 }

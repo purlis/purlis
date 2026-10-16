@@ -59,8 +59,19 @@ pub trait Driver: Send + Sync + 'static {
     fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, String>;
     /// Carries `act` out on browser `program` under its own id `call_id`.
     fn act(&self, program: &str, call_id: &str, act: Act) -> Result<Browsed, Refused>;
-    /// Ends browser `program`.
-    fn close(&self, program: &str);
+    /// Ends browser `program`, and forgets it.
+    fn close(&self, program: &str) -> Result<(), String>;
+    /// Ends browser `program` by its id, with its reach proxy: what is tried when a close did
+    /// not end it.
+    fn stop(&self, program: &str) -> Result<(), String>;
+}
+
+/// How many of a chat's browsers were ended, and how many could not be yet: those are kept, and
+/// tried again at every browser call of the project's and every narrowing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Ended {
+    pub ended: usize,
+    pub unended: usize,
 }
 
 /// What the person said a chat's browser may reach.
@@ -133,6 +144,21 @@ impl Chat {
 #[derive(Debug, Default)]
 pub struct ChatBrowsers {
     chats: Mutex<HashMap<u32, Chat>>,
+    /// Browsers that were to end and could not be ended yet: no chat uses them, and each is
+    /// tried again until it ends. They count toward the project's browsers.
+    unended: Mutex<Vec<String>>,
+}
+
+/// Ends `program`: a close, once more, then a stop by its id. Whether it ended.
+fn end(driver: &dyn Driver, program: &str) -> bool {
+    let closed = driver.close(program).or_else(|_| driver.close(program));
+    match closed.or_else(|_| driver.stop(program)) {
+        Ok(()) => true,
+        Err(why) => {
+            tracing::warn!("purlis: a chat's browser was not ended yet, and is tried again: {why}");
+            false
+        }
+    }
 }
 
 /// What a chat is told while the person has not answered its Ask.
@@ -202,15 +228,56 @@ impl ChatBrowsers {
         }
     }
 
+    /// The browsers that were to end and are not ended yet.
+    #[cfg(test)]
+    pub fn unended(&self) -> Vec<String> {
+        self.unended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Ends each of `programs` ([`end`]), and keeps those that did not end, with those kept
+    /// before, which are tried again first. Answers how many of `programs` ended and did not.
+    fn end_all(&self, driver: Option<&Arc<dyn Driver>>, programs: Vec<String>) -> Ended {
+        let before =
+            std::mem::take(&mut *self.unended.lock().unwrap_or_else(PoisonError::into_inner));
+        let left = |programs: Vec<String>| -> Vec<String> {
+            match driver {
+                Some(driver) => programs
+                    .into_iter()
+                    .filter(|program| !end(driver.as_ref(), program))
+                    .collect(),
+                None => programs,
+            }
+        };
+        let count = programs.len();
+        let mut kept = left(before);
+        let now = left(programs);
+        let unended = now.len();
+        kept.extend(now);
+        self.unended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(kept);
+        Ended {
+            ended: count - unended,
+            unended,
+        }
+    }
+
     /// **The person narrowed chat `session`'s reach while it runs**: a port withdrawn, an Allow
-    /// removed. Its browsers end, since each was given the chat's reach as it started; the
-    /// person's answer to its Ask stands, and its next call opens a browser on what the chat
-    /// reaches then, and says why. Answers how many ended.
-    pub fn narrowed(&self, driver: Option<&Arc<dyn Driver>>, session: u32) -> usize {
+    /// removed. Its browsers end, since each was given the chat's reach as it started; one that
+    /// cannot be ended yet is kept and tried again until it is, and no call of the chat's
+    /// reaches it. The person's answer to its Ask stands, and its next call opens a browser on
+    /// what the chat reaches then, and says why.
+    pub fn narrowed(&self, driver: Option<&Arc<dyn Driver>>, session: u32) -> Ended {
         let programs: Vec<String> = {
             let mut chats = self.lock();
             let Some(chat) = chats.get_mut(&session) else {
-                return 0;
+                drop(chats);
+                self.end_all(driver, Vec::new());
+                return Ended::default();
             };
             let programs: Vec<String> = chat
                 .browsers
@@ -221,22 +288,22 @@ impl ChatBrowsers {
             chat.narrowed |= !programs.is_empty();
             programs
         };
-        if let Some(driver) = driver {
-            for program in &programs {
-                driver.close(program);
-            }
-        }
-        programs.len()
+        self.end_all(driver, programs)
     }
 
-    /// Chat `session` has closed: its browsers end, and nothing of it is kept.
+    /// Chat `session` has closed: its browsers end, and nothing of it is kept but a browser that
+    /// could not be ended yet, which is tried again until it is.
     pub fn forget(&self, driver: Option<&Arc<dyn Driver>>, session: u32) {
         let gone = self.lock().remove(&session);
-        if let (Some(chat), Some(driver)) = (gone, driver) {
-            for (_, program) in chat.browsers {
-                driver.close(&program);
-            }
-        }
+        let programs = gone
+            .map(|chat| {
+                chat.browsers
+                    .into_iter()
+                    .map(|(_, program)| program)
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.end_all(driver, programs);
     }
 
     /// **Answers one browser call of a chat's**, and whether it raised the chat's Ask.
@@ -252,6 +319,8 @@ impl ChatBrowsers {
         reach: &dyn Fn() -> BrowserReach,
         now: u64,
     ) -> (Answer, bool) {
+        // A browser that was to end and did not is tried again first.
+        self.end_all(driver, Vec::new());
         let (mut answer, raised) = self.answer_now(driver, root, browse, reach, now);
         // The first answer after its browsers were ended for a narrowed reach says why.
         if let Answer::Browsed { browsed, .. } = &mut answer
@@ -277,12 +346,18 @@ impl ChatBrowsers {
         let no = |why: &str| Answer::No {
             why: why.to_owned(),
         };
+        let unended = self
+            .unended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len();
         let mut chats = self.lock();
-        let elsewhere: usize = chats
-            .iter()
-            .filter(|(session, _)| **session != browse.chat)
-            .map(|(_, chat)| chat.browsers.len())
-            .sum();
+        let elsewhere: usize = unended
+            + chats
+                .iter()
+                .filter(|(session, _)| **session != browse.chat)
+                .map(|(_, chat)| chat.browsers.len())
+                .sum::<usize>();
         let chat = chats.entry(browse.chat).or_default();
         let open_web = match chat.posture {
             Posture::Unasked => {
@@ -356,7 +431,15 @@ impl ChatBrowsers {
                 };
                 chat.drop_browser(&name);
                 drop(chats);
-                driver.close(&program);
+                if self.end_all(Some(driver), vec![program]).unended > 0 {
+                    return (
+                        no(&format!(
+                            "purlis could not end browser {name} yet, and keeps trying: this chat \
+                             no longer uses it. Go on; the next browser call opens a new one"
+                        )),
+                        false,
+                    );
+                }
                 return (
                     Answer::Browsed {
                         browser: name,
@@ -420,6 +503,12 @@ pub const ENDED_ON_ITS_TAB: &str = "purlis ended this chat's browsers, since you
                                     of what it may reach. Its next browser call opens one on \
                                     what it reaches now.";
 
+/// What a chat's tab says when one of its browsers could not be ended yet as its reach narrowed.
+pub const NOT_ENDED_ON_ITS_TAB: &str = "purlis could not end one of this chat's browsers after \
+                                        you withdrew part of what it may reach. The chat no \
+                                        longer uses it, and purlis keeps trying to end it; Stop \
+                                        all in the title bar ends it now.";
+
 /// **A chat whose browsers ended because the person narrowed its reach**, as its tab says so.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct BrowsersEnded {
@@ -440,7 +529,14 @@ pub fn narrowed(
     session: u32,
     told: &dyn Fn(BrowsersEnded),
 ) {
-    if held.browsers().narrowed(held.browser_driver(), session) > 0 {
+    let Ended { ended, unended } = held.browsers().narrowed(held.browser_driver(), session);
+    if unended > 0 {
+        told(BrowsersEnded {
+            plane: plane.clone(),
+            session,
+            note: NOT_ENDED_ON_ITS_TAB.to_owned(),
+        });
+    } else if ended > 0 {
         told(BrowsersEnded {
             plane: plane.clone(),
             session,

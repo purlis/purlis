@@ -32,7 +32,9 @@ implementation, to be confirmed** (D-2013-1 to D-2013-6).
    its own alone, and they end with it. A browser's reach follows its chat's reach, including
    what the person withdraws: when the person narrows a chat's reach while it runs, its
    browsers end and its tab says so, and its next call opens one on what the chat reaches then.
-   Held in memory: a relaunch asks again. *D-2013-3, D-2013-7, D-2013-11, to be confirmed.*
+   A browser whose chat's reach narrowed is ended, retried until it is, and no call of the
+   chat's reaches it meanwhile. Held in memory: a relaunch asks again. *D-2013-3, D-2013-7,
+   D-2013-11, D-2013-16, to be confirmed.*
 4. **A screenshot fits the control lane.** A browser's answer crosses the session protocol, whose
    control frames are bounded, so a screenshot's PNG past 600 KiB is halved until it fits, and
    the answer says so. On the hook socket it is attached as `image/png` after the answer, and the
