@@ -977,5 +977,4 @@ fn kept_why(config_root: &Path) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "localproject_tests.rs"]
 mod tests;
