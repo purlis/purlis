@@ -7,15 +7,16 @@
 //! Once a page keeps anything out, a screenshot paints over:
 //!
 //! - every text the page lays out that holds a text kept out, whatever its tree says of it
-//!   (hidden from the tree, drawn by the page's style, deeper than a snapshot reads), and every
-//!   field, button or drop-down whose value or options hold one;
-//! - every canvas, image, video and embedded object, and every element drawn with an image or a
-//!   paint script: what they show cannot be read, so they are painted whatever they show;
+//!   (hidden from the tree, drawn by the page's style, deeper than a snapshot reads, split over
+//!   elements), and every field, button or drop-down whose value, options or labels hold one;
 //! - every frame whose document this read does not hold, unless it is read in a session of its
 //!   own.
 //!
-//! An answer purlis cannot read, or a page that draws an element again outside its box (a
-//! reflection), withholds the screenshot.
+//! On a page whose site a text was kept out on (`opaque`), it also paints over every canvas,
+//! image, video and embedded object, and every element drawn with an image or a paint script:
+//! what they show cannot be read, so they are painted whatever they show.
+//!
+//! An answer purlis cannot read, or a page that draws a reflection, withholds the screenshot.
 
 use std::collections::HashSet;
 
@@ -24,8 +25,7 @@ use serde_json::Value;
 use super::tree::holds_any;
 
 /// The styles read for each element laid out: an image in any of them is painted over, and a
-/// reflection (the last), which draws the element again outside its box, withholds the
-/// screenshot.
+/// reflection (the last) withholds the screenshot.
 pub(crate) const STYLES: [&str; 7] = [
     "background-image",
     "border-image-source",
@@ -58,40 +58,72 @@ pub(crate) struct Drawn {
     pub frames: Vec<Vec<i64>>,
 }
 
-/// The engine's answer could not be read.
+/// The engine's answer could not be read, or shows what a screenshot cannot paint over.
 #[derive(Debug, thiserror::Error)]
-#[error("what the page draws could not be read (at {0})")]
-pub(crate) struct Unread(u32);
+#[error("what the page draws could not be read: {0}")]
+pub(crate) struct Unread(&'static str);
 
 /// What `answer` (of `DOMSnapshot.captureSnapshot`, with [`STYLES`]) draws that is to be painted
-/// over on a page that keeps `kept` out.
-pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
+/// over on a page that keeps `kept` out; with what cannot be read when `opaque`.
+pub(crate) fn drawn(answer: &Value, kept: &[&str], opaque: bool) -> Result<Drawn, Unread> {
     let strings: Vec<&str> = answer
         .get("strings")
         .and_then(Value::as_array)
-        .ok_or(Unread(line!()))?
+        .ok_or(Unread("it names no strings"))?
         .iter()
-        .map(|s| s.as_str().ok_or(Unread(line!())))
+        .map(|s| s.as_str().ok_or(Unread("a string is not text")))
         .collect::<Result<_, _>>()?;
     let documents = answer
         .get("documents")
         .and_then(Value::as_array)
-        .ok_or(Unread(line!()))?;
+        .ok_or(Unread("it lists no documents"))?;
+    let kept: Vec<String> = kept
+        .iter()
+        .map(|k| collapsed(k).trim().to_owned())
+        .collect();
+    let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
     let mut out = Drawn::default();
     for document in documents {
-        read_document(document, &strings, kept, &mut out)?;
+        read_document(document, &strings, &kept, opaque, &mut out)?;
     }
     Ok(out)
+}
+
+/// `text` with every run of white space (a line break and a no-break space among them) one
+/// space, as the page draws it.
+fn collapsed(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut space = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            space = true;
+        } else {
+            if space && !out.is_empty() {
+                out.push(' ');
+            }
+            space = false;
+            out.push(c);
+        }
+    }
+    if space {
+        out.push(' ');
+    }
+    out
 }
 
 fn read_document(
     document: &Value,
     strings: &[&str],
     kept: &[&str],
+    opaque: bool,
     out: &mut Drawn,
 ) -> Result<(), Unread> {
-    let nodes = document.get("nodes").ok_or(Unread(line!()))?;
-    let layout = document.get("layout").ok_or(Unread(line!()))?;
+    let nodes = document
+        .get("nodes")
+        .ok_or(Unread("a document has no nodes"))?;
+    let layout = document
+        .get("layout")
+        .ok_or(Unread("a document has no layout"))?;
     let string = |index: i64| -> Result<&str, Unread> {
         if index < 0 {
             return Ok("");
@@ -99,7 +131,7 @@ fn read_document(
         usize::try_from(index)
             .ok()
             .and_then(|at| strings.get(at).copied())
-            .ok_or(Unread(line!()))
+            .ok_or(Unread("a string is not listed"))
     };
     let parents = numbers(nodes, "parentIndex")?;
     let names = numbers(nodes, "nodeName")?;
@@ -109,7 +141,7 @@ fn read_document(
     let attributes = nodes
         .get("attributes")
         .and_then(Value::as_array)
-        .ok_or(Unread(line!()))?;
+        .ok_or(Unread("its nodes have no attributes"))?;
     let count = parents.len();
     if [
         names.len(),
@@ -121,22 +153,22 @@ fn read_document(
     .iter()
     .any(|n| *n != count)
     {
-        return Err(Unread(line!()));
+        return Err(Unread("its nodes do not line up"));
     }
     let laid = numbers(layout, "nodeIndex")?;
     let texts = numbers(layout, "text")?;
     let styles = layout
         .get("styles")
         .and_then(Value::as_array)
-        .ok_or(Unread(line!()))?;
+        .ok_or(Unread("its layout has no styles"))?;
     if texts.len() != laid.len() || styles.len() != laid.len() {
-        return Err(Unread(line!()));
+        return Err(Unread("its layout does not line up"));
     }
     let node_at = |n: i64| {
         usize::try_from(n)
             .ok()
             .filter(|at| *at < count)
-            .ok_or(Unread(line!()))
+            .ok_or(Unread("its layout names a node it does not have"))
     };
     let name = |at: usize| string(names[at]).map(str::to_ascii_uppercase);
     let parent = |at: usize| usize::try_from(parents[at]).ok().filter(|p| *p < count);
@@ -152,7 +184,7 @@ fn read_document(
         }
         out
     };
-    let holds = |text: &str| !text.is_empty() && holds_any(text, kept);
+    let holds = |text: &str| !text.is_empty() && holds_any(&collapsed(text), kept);
     let mut painted: HashSet<usize> = HashSet::new();
     let mut paint = |at: usize, out: &mut Drawn| {
         if painted.insert(at) {
@@ -170,11 +202,11 @@ fn read_document(
         let name = name(at)?;
         let style: Vec<String> = styles[entry]
             .as_array()
-            .ok_or(Unread(line!()))?
+            .ok_or(Unread("a style list is not a list"))?
             .iter()
             .map(|v| {
                 v.as_i64()
-                    .ok_or(Unread(line!()))
+                    .ok_or(Unread("a style is not a string"))
                     .and_then(string)
                     .map(str::to_ascii_lowercase)
             })
@@ -186,24 +218,23 @@ fn read_document(
             _ => style,
         };
         let [images @ .., reflected] = style.as_slice() else {
-            return Err(Unread(line!()));
+            return Err(Unread("an element has no styles"));
         };
         if images.len() + 1 != STYLES.len() {
-            return Err(Unread(line!()));
+            return Err(Unread("an element has styles missing"));
         }
         if !reflected.is_empty() && reflected != "none" {
-            return Err(Unread(line!()));
+            return Err(Unread("the page draws a reflection"));
         }
         let image = images
             .iter()
             .any(|style| style.contains("url(") || style.contains("paint("));
         own[at].push_str(string(texts[entry])?);
-        if image || OPAQUE.contains(&name.as_str()) {
-            paint(at, out);
-        }
-        if name == "INPUT"
-            && attribute(&attributes[at], &string, "type")?.eq_ignore_ascii_case("image")
-        {
+        let pictured = image
+            || OPAQUE.contains(&name.as_str())
+            || (name == "INPUT"
+                && attribute(&attributes[at], &string, "type")?.eq_ignore_ascii_case("image"));
+        if opaque && pictured {
             paint(at, out);
         }
         if FRAMES.contains(&name.as_str()) && !contents.iter().any(|(i, _)| *i == at) {
@@ -211,20 +242,36 @@ fn read_document(
         }
     }
     // Text laid out that holds a text kept out, whole or split over elements: the innermost
-    // element whose text, read in order, holds it. Each node comes after the one it is in.
+    // node whose text, read in order, holds it. Each node comes after the one it is in, and an
+    // element whose text already holds one passes no text on.
+    let drew: Vec<bool> = own.iter().map(|t| !t.is_empty()).collect();
     let mut inside = vec![false; count];
+    let mut holders: HashSet<usize> = HashSet::new();
     for at in (0..count).rev() {
         let text = std::mem::take(&mut own[at]);
         let holding = inside[at] || holds(&text);
         if holding && !inside[at] {
             paint(at, out);
+            holders.insert(at);
         }
         if let Some(up) = parent(at) {
             if up >= at {
-                return Err(Unread(line!()));
+                return Err(Unread("a node comes before the one it is in"));
             }
-            inside[up] |= holding;
-            own[up].insert_str(0, &text);
+            if holding {
+                inside[up] = true;
+            } else if !inside[up] {
+                own[up].insert_str(0, &text);
+            }
+        }
+    }
+    // A text split over elements is painted at each text it is drawn in as well, wherever
+    // each is drawn.
+    let mut under = vec![false; count];
+    for at in 0..count {
+        under[at] = parent(at).is_some_and(|up| holders.contains(&up) || under[up]);
+        if under[at] && drew[at] {
+            paint(at, out);
         }
     }
     // What a field, a button or a drop-down shows is its value or its options, not text laid
@@ -246,11 +293,9 @@ fn read_document(
             }
         }
     }
-    // A drop-down shows its chosen option's text, which is laid out nowhere the read reaches.
-    for (at, value) in values.iter().enumerate() {
-        if !holds(string(*value)?) {
-            continue;
-        }
+    // A drop-down shows its options' text and labels, which are laid out nowhere the read
+    // reaches: the drop-down they are in is painted.
+    let drop_down = |at: usize| -> Result<Option<usize>, Unread> {
         let mut next = parent(at);
         let mut steps = 0;
         while let Some(up) = next {
@@ -258,11 +303,20 @@ fn read_document(
                 break;
             }
             if shown.contains(&up) && name(up)? == "SELECT" {
-                paint(up, out);
-                break;
+                return Ok(Some(up));
             }
             next = parent(up);
             steps += 1;
+        }
+        Ok(None)
+    };
+    for at in 0..count {
+        let labelled = matches!(name(at)?.as_str(), "OPTION" | "OPTGROUP")
+            && holds(attribute(&attributes[at], &string, "label")?);
+        if (labelled || holds(string(values[at])?))
+            && let Some(list) = drop_down(at)?
+        {
+            paint(list, out);
         }
     }
     Ok(())
@@ -272,9 +326,12 @@ fn read_document(
 fn numbers(of: &Value, field: &str) -> Result<Vec<i64>, Unread> {
     of.get(field)
         .and_then(Value::as_array)
-        .ok_or(Unread(line!()))?
+        .ok_or(Unread("a list is missing"))?
         .iter()
-        .map(|n| n.as_i64().ok_or(Unread(line!())))
+        .map(|n| {
+            n.as_i64()
+                .ok_or(Unread("a list holds what is not a number"))
+        })
         .collect()
 }
 
@@ -286,12 +343,17 @@ fn rare(of: &Value, field: &str) -> Result<Vec<(usize, i64)>, Unread> {
     let index = numbers(data, "index")?;
     let value = numbers(data, "value")?;
     if index.len() != value.len() {
-        return Err(Unread(line!()));
+        return Err(Unread("a field for some nodes does not line up"));
     }
     index
         .into_iter()
         .zip(value)
-        .map(|(i, v)| Ok((usize::try_from(i).map_err(|_| Unread(line!()))?, v)))
+        .map(|(i, v)| {
+            Ok((
+                usize::try_from(i).map_err(|_| Unread("a field names no node"))?,
+                v,
+            ))
+        })
         .collect()
 }
 
@@ -302,14 +364,20 @@ fn attribute<'a>(
     string: &impl Fn(i64) -> Result<&'a str, Unread>,
     wanted: &str,
 ) -> Result<&'a str, Unread> {
-    let pairs = pairs.as_array().ok_or(Unread(line!()))?;
+    let pairs = pairs
+        .as_array()
+        .ok_or(Unread("an attribute list is not a list"))?;
     for pair in pairs.chunks(2) {
         let [name, value] = pair else {
-            return Err(Unread(line!()));
+            return Err(Unread("an attribute has no value"));
         };
-        let name = string(name.as_i64().ok_or(Unread(line!()))?)?;
+        let name = string(name.as_i64().ok_or(Unread("an attribute is not named"))?)?;
         if name.eq_ignore_ascii_case(wanted) {
-            return string(value.as_i64().ok_or(Unread(line!()))?);
+            return string(
+                value
+                    .as_i64()
+                    .ok_or(Unread("an attribute's value is not text"))?,
+            );
         }
     }
     Ok("")

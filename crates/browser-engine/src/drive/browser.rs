@@ -20,6 +20,7 @@ use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
 use super::settle::{Activity, Settle, activity};
+use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Painted, Ref,
@@ -140,6 +141,8 @@ struct Page {
     /// another document, or a frame in it goes (#2014): the document a frame's aim names.
     shows: u64,
     frames: HashMap<String, Frame>,
+    /// The page that opened this one, if one did.
+    opener: Option<String>,
 }
 
 impl Page {
@@ -261,9 +264,51 @@ struct State {
     /// What the person typed while driving (#2014): kept out of every answer about every page
     /// of the browser, a page opened later included.
     kept: Vec<String>,
+    /// The sites a text was kept out on (#2303): their pages' screenshots paint over what
+    /// cannot be read.
+    kept_sites: HashSet<String>,
+    /// A text was kept out on a page on no site with no opener: every page's screenshot paints
+    /// over what cannot be read.
+    kept_off_site: bool,
 }
 
 impl State {
+    /// The site `target`'s page is on: its address's, or for a page at an address that is not a
+    /// web address, the site of the page that opened it.
+    fn site_of(&self, target: &str) -> Option<String> {
+        let mut at = self.page(target)?;
+        for _ in 0..=self.pages.len() {
+            if let Some(site) = site(&at.url) {
+                return Some(site);
+            }
+            at = self.page(at.opener.as_deref()?)?;
+        }
+        None
+    }
+
+    /// A text was kept out on `target`'s page: its site's pages paint over what cannot be read.
+    fn kept_on(&mut self, target: &str) {
+        match self.site_of(target) {
+            Some(site) => {
+                self.kept_sites.insert(site);
+            }
+            None => self.kept_off_site = true,
+        }
+    }
+
+    /// Whether screenshots of `target`'s page paint over what cannot be read (the person's
+    /// ruling of 2026-10-17): a text was kept out on its site, or it is on no site it can be
+    /// told by while anything is kept out.
+    fn greys(&self, target: &str) -> bool {
+        if self.kept_sites.is_empty() && !self.kept_off_site {
+            return false;
+        }
+        match self.site_of(target) {
+            Some(site) => self.kept_off_site || self.kept_sites.contains(&site),
+            None => true,
+        }
+    }
+
     fn page(&self, target: &str) -> Option<&Page> {
         self.pages.iter().find(|p| p.target == target)
     }
@@ -658,7 +703,11 @@ impl Browser {
     }
 
     fn blank_node(&self, target: &str, key: NodeKey) -> Result<(), Refusal> {
-        lock(&self.inner.state).excluded.insert(key);
+        {
+            let mut state = lock(&self.inner.state);
+            state.excluded.insert(key);
+            state.kept_on(target);
+        }
         // Read the page now, so what the element holds is kept out from this moment.
         self.snapshot_of(target).map(|_| ())
     }
@@ -1648,8 +1697,10 @@ impl Browser {
             false,
         );
         // Where each blanked element is, and each element that shows a text kept out, before and
-        // after the picture: both are painted.
-        let mut boxes = self.blanked_boxes(&target)?;
+        // after the picture: each is painted over the whole way from where it was to where it is,
+        // so one that moves while the picture is taken is covered wherever the picture caught it.
+        let mut placings = Placings::default();
+        let before = self.blanked_boxes(&target, &mut placings)?;
         let shot = self
             .devtools()
             .call(
@@ -1658,7 +1709,13 @@ impl Browser {
                 Some(&session),
             )
             .map_err(refusal)?;
-        boxes.extend(self.blanked_boxes(&target)?);
+        let mut placings = Placings::default();
+        let mut boxes = self.blanked_boxes(&target, &mut placings)?;
+        for (item, was) in before {
+            let now = boxes.entry(item).or_insert(was);
+            *now = hull(now, &was);
+        }
+        let boxes: Vec<Rect> = boxes.into_values().collect();
         let png = shot
             .get("data")
             .and_then(Value::as_str)
@@ -1682,9 +1739,9 @@ impl Browser {
 
     /// The box of every blanked element on `target`'s page, of every element that shows a text
     /// kept out (#2014), and of everything else the page draws that may show one (#2303), in CSS
-    /// pixels. An element the engine says it cannot place is not drawn; any other failure
-    /// withholds the screenshot.
-    fn blanked_boxes(&self, target: &str) -> Result<Vec<Rect>, Refusal> {
+    /// pixels, each by its session and node. An element the engine says it cannot place is not
+    /// drawn; any other failure withholds the screenshot.
+    fn blanked_boxes(&self, target: &str, placings: &mut Placings) -> Result<Boxes, Refusal> {
         let mut keys: Vec<NodeKey> = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
@@ -1699,59 +1756,85 @@ impl Browser {
             .snapshot_of(target)
             .map_err(|why| Refusal::Withheld(why.to_string()))?;
         keys.extend(echoes.echoes().iter().cloned());
-        let mut boxes = Vec::new();
+        let mut boxes = Boxes::new();
         for key in keys {
-            let at = {
+            let (session, boundaries) = {
                 let state = lock(&self.inner.state);
                 let page = state.page(target).ok_or(Refusal::NoPage)?;
                 let Some(frame) = page.frames.get(&key.frame) else {
                     continue;
                 };
-                Located {
-                    target: target.to_owned(),
-                    page_session: page.session.clone().unwrap_or_default(),
-                    node_session: frame.session.clone(),
-                    backend: key.backend,
-                    boundaries: page.boundaries(&key.frame),
-                }
+                (frame.session.clone(), page.boundaries(&key.frame))
             };
-            boxes.extend(self.placed(&at)?);
+            if let Some(rect) = self.placed(placings, &session, &boundaries, key.backend)? {
+                boxes.insert((session, key.backend), rect);
+            }
         }
-        boxes.extend(self.drawn_boxes(target)?);
+        self.drawn_boxes(target, placings, &mut boxes)?;
         Ok(boxes)
     }
 
-    /// Where `at` is drawn, in CSS pixels; `None` when the engine says it is not drawn.
-    fn placed(&self, at: &Located) -> Result<Option<Rect>, Refusal> {
-        let placed = self.frame_offset(at, false).and_then(|offset| {
-            self.devtools()
-                .call(
-                    "DOM.getContentQuads",
-                    json!({ "backendNodeId": at.backend }),
-                    Some(&at.node_session),
-                )
-                .map(|quads| (offset, quads))
-        });
-        match placed {
-            Ok(((dx, dy), quads)) => Ok(bounds(&quads).map(|mut rect| {
+    /// Where the node `backend` of `session` is drawn, in CSS pixels, its session sitting where
+    /// `boundaries` put it; `None` when the engine says it is not drawn. Where each session sits
+    /// is asked once in `placings`.
+    fn placed(
+        &self,
+        placings: &mut Placings,
+        session: &str,
+        boundaries: &[(String, String)],
+        backend: i64,
+    ) -> Result<Option<Rect>, Refusal> {
+        let offset = match placings.get(boundaries) {
+            Some(offset) => *offset,
+            None => {
+                let at = Located {
+                    target: String::new(),
+                    page_session: String::new(),
+                    node_session: session.to_owned(),
+                    backend,
+                    boundaries: boundaries.to_vec(),
+                };
+                let offset = match self.frame_offset(&at, false) {
+                    Ok(offset) => Some(offset),
+                    Err(why) => undrawn(why)?,
+                };
+                placings.insert(boundaries.to_vec(), offset);
+                offset
+            }
+        };
+        let Some((dx, dy)) = offset else {
+            return Ok(None);
+        };
+        match self.devtools().call(
+            "DOM.getContentQuads",
+            json!({ "backendNodeId": backend }),
+            Some(session),
+        ) {
+            Ok(quads) => Ok(bounds(&quads).map(|mut rect| {
                 rect.x += dx;
                 rect.y += dy;
                 rect
             })),
-            Err(CallError::Engine { message, .. }) if not_drawn(&message) => Ok(None),
-            Err(why) => Err(Refusal::Withheld(why.to_string())),
+            Err(why) => undrawn(why),
         }
     }
 
-    /// The box of everything `target`'s page draws that may show a text it keeps out (#2303):
-    /// none while it keeps nothing out. Each of the page's sessions is read for what its
-    /// documents lay out; one that cannot be read withholds the screenshot.
-    fn drawn_boxes(&self, target: &str) -> Result<Vec<Rect>, Refusal> {
-        let (kept, page_session, roots) = {
+    /// Adds to `boxes` the box of everything `target`'s page draws that may show a text it keeps
+    /// out (#2303), and on a page whose site a text was kept out on, of everything it draws that
+    /// cannot be read: nothing while neither holds. Each of the page's sessions is read for
+    /// what its documents lay out; one that cannot be read withholds the screenshot.
+    fn drawn_boxes(
+        &self,
+        target: &str,
+        placings: &mut Placings,
+        boxes: &mut Boxes,
+    ) -> Result<(), Refusal> {
+        let (kept, greys, roots) = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
-            if page.scrubbed.is_empty() {
-                return Ok(Vec::new());
+            let greys = state.greys(target);
+            if page.scrubbed.is_empty() && !greys {
+                return Ok(());
             }
             let page_session = page.session.clone().ok_or(Refusal::Unknown)?;
             let mut roots: Vec<Root> = page
@@ -1773,12 +1856,12 @@ impl Browser {
             if !roots.iter().any(|root| root.session == page_session) {
                 roots.push(Root {
                     frame: target.to_owned(),
-                    session: page_session.clone(),
+                    session: page_session,
                     parent: None,
                     boundaries: Vec::new(),
                 });
             }
-            (page.scrubbed.clone(), page_session, roots)
+            (page.scrubbed.clone(), greys, roots)
         };
         let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
         // The frame elements whose documents are read in sessions of their own.
@@ -1798,7 +1881,6 @@ impl Browser {
                 Some((parent.clone(), owner))
             })
             .collect();
-        let mut boxes = Vec::new();
         for Root {
             session,
             boundaries,
@@ -1813,29 +1895,53 @@ impl Browser {
                     Some(session),
                 )
                 .map_err(|why| Refusal::Withheld(why.to_string()))?;
-            let found = drawn(&answer, &kept).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let found =
+                drawn(&answer, &kept, greys).map_err(|why| Refusal::Withheld(why.to_string()))?;
             let frames = found.frames.into_iter().filter(|chain| {
                 chain
                     .first()
                     .is_none_or(|own| !read_apart.contains(&(session.clone(), *own)))
             });
             for chain in found.paint.into_iter().chain(frames) {
+                let Some(item) = chain.first().copied() else {
+                    continue;
+                };
                 for backend in chain {
-                    let at = Located {
-                        target: target.to_owned(),
-                        page_session: page_session.clone(),
-                        node_session: session.clone(),
-                        backend,
-                        boundaries: boundaries.clone(),
-                    };
-                    if let Some(rect) = self.placed(&at)? {
-                        boxes.push(rect);
+                    if let Some(rect) = self.placed(placings, session, boundaries, backend)? {
+                        boxes.insert((session.clone(), item), rect);
                         break;
                     }
                 }
             }
         }
-        Ok(boxes)
+        Ok(())
+    }
+}
+
+/// What is painted over in a screenshot, in CSS pixels, by the session and node it is.
+type Boxes = HashMap<(String, i64), Rect>;
+
+/// Where each session sits on its page, by the frames between them, once asked: `None` where the
+/// engine says it is not drawn.
+type Placings = HashMap<Vec<(String, String)>, Option<(f64, f64)>>;
+
+/// `None` when `why` says a node is not drawn; any other failure withholds the screenshot.
+fn undrawn<T>(why: CallError) -> Result<Option<T>, Refusal> {
+    match why {
+        CallError::Engine { message, .. } if not_drawn(&message) => Ok(None),
+        why => Err(Refusal::Withheld(why.to_string())),
+    }
+}
+
+/// The box around `a` and `b`.
+fn hull(a: &Rect, b: &Rect) -> Rect {
+    let left = a.x.min(b.x);
+    let top = a.y.min(b.y);
+    Rect {
+        x: left,
+        y: top,
+        width: (a.x + a.width).max(b.x + b.width) - left,
+        height: (a.y + a.height).max(b.y + b.height) - top,
     }
 }
 
@@ -1888,8 +1994,8 @@ impl Inner {
                         if created {
                             state.pages_listed += 1;
                             let opener = text("/targetInfo/openerId");
-                            if let Some(opener) = opener
-                                && let Some(by) = state.page_mut(&opener)
+                            if let Some(opener) = &opener
+                                && let Some(by) = state.page_mut(opener)
                             {
                                 by.settle.observe("", Activity::Changed, now);
                             }
@@ -1905,6 +2011,7 @@ impl Inner {
                                 scrubbed: kept,
                                 shows: 0,
                                 frames: HashMap::new(),
+                                opener,
                             });
                         }
                         if let Some(page) = state.page_mut(&target) {

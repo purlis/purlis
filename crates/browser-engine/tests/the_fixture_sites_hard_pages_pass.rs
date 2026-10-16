@@ -15,86 +15,11 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
-
-use common::site::started;
-use purlis_browser_engine::WebAddress;
-use purlis_browser_engine::drive::{
-    Answer, Browser, Call, CallId, Content, DragTo, Field, Ref, Settled,
+use common::drive::{
+    call, find, next_id, open, red_pixels, ref_on, screenshot, sees, snapshot, text,
 };
-
-fn next_id() -> CallId {
-    static NEXT: AtomicU32 = AtomicU32::new(1);
-    CallId::new(format!("call-{}", NEXT.fetch_add(1, Ordering::Relaxed))).unwrap()
-}
-
-fn call(browser: &Browser, call: Call) -> Answer {
-    let what = format!("{call:?}");
-    browser
-        .call(&next_id(), call)
-        .unwrap_or_else(|why| panic!("{what}: {why}"))
-}
-
-fn open(browser: &Browser, path: &str) -> Answer {
-    let address = WebAddress::parse(&format!("http://fixture.test/{path}")).unwrap();
-    call(browser, Call::Open { address })
-}
-
-fn text(answer: &Answer) -> String {
-    match &answer.content {
-        Content::Text(text) => text.clone(),
-        other => panic!("not text: {other:?}"),
-    }
-}
-
-fn snapshot(browser: &Browser) -> String {
-    text(&call(
-        browser,
-        Call::Snapshot {
-            page: None,
-            within: None,
-            from: 1,
-            lines: None,
-        },
-    ))
-}
-
-fn find(browser: &Browser, words: &str) -> String {
-    text(&call(
-        browser,
-        Call::Find {
-            page: None,
-            text: Some(words.into()),
-            role: None,
-            within: None,
-        },
-    ))
-}
-
-/// The reference on the first line of `text` that holds `words`.
-fn ref_on(text: &str, words: &str) -> Ref {
-    let line = text
-        .lines()
-        .find(|l| l.contains(words) && l.contains('['))
-        .unwrap_or_else(|| panic!("no element with {words:?} in\n{text}"));
-    let start = line.find('[').unwrap() + 1;
-    let end = line[start..].find(']').unwrap() + start;
-    Ref::new(&line[start..end])
-}
-
-fn sees(browser: &Browser, words: &str) -> bool {
-    let answer = call(
-        browser,
-        Call::WaitForText {
-            page: None,
-            text: words.into(),
-            gone: false,
-            within: Duration::from_secs(10),
-        },
-    );
-    answer.content == Content::Seen(true)
-}
+use common::site::started;
+use purlis_browser_engine::drive::{Call, Content, DragTo, Field, Settled};
 
 #[test]
 fn a_page_longer_than_one_snapshot_is_read_in_pages_and_reached_past_the_cut() {
@@ -272,27 +197,6 @@ fn a_retried_click_with_the_same_id_clicks_once() {
     assert!(again.repeated);
     let tree = snapshot(&browser);
     assert!(tree.contains("Count: 1"), "{tree}");
-}
-
-/// How many pixels of a PNG are the fixture's pure red.
-fn red_pixels(png_bytes: &[u8]) -> usize {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    let channels = info.color_type.samples();
-    buf[..info.line_size * info.height as usize]
-        .chunks(channels)
-        .filter(|p| p.len() >= 3 && p[0] > 200 && p[1] < 60 && p[2] < 60)
-        .count()
-}
-
-fn screenshot(browser: &Browser) -> Vec<u8> {
-    match call(browser, Call::Screenshot { page: None }).content {
-        Content::Image(png) => png,
-        other => panic!("a screenshot is an image: {other:?}"),
-    }
 }
 
 #[test]

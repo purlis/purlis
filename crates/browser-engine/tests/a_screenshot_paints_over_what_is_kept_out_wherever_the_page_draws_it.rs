@@ -16,49 +16,14 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicU32, Ordering};
-
+use common::drive::{call, find, open, red_pixels, ref_on, screenshot};
 use common::site::started;
-use purlis_browser_engine::WebAddress;
-use purlis_browser_engine::drive::{Answer, Browser, Call, CallId, Content, Field, Ref};
-
-fn next_id() -> CallId {
-    static NEXT: AtomicU32 = AtomicU32::new(1);
-    CallId::new(format!("call-{}", NEXT.fetch_add(1, Ordering::Relaxed))).unwrap()
-}
-
-fn call(browser: &Browser, call: Call) -> Answer {
-    let what = format!("{call:?}");
-    browser
-        .call(&next_id(), call)
-        .unwrap_or_else(|why| panic!("{what}: {why}"))
-}
+use purlis_browser_engine::drive::{Browser, Call, Field, Ref};
 
 /// The reference of the field labelled "Say something" on `path`, opened.
 fn open_at_the_field(browser: &Browser, path: &str) -> Ref {
-    let address = WebAddress::parse(&format!("http://fixture.test/{path}")).unwrap();
-    call(browser, Call::Open { address });
-    let found = match call(
-        browser,
-        Call::Find {
-            page: None,
-            text: Some("Say something".into()),
-            role: None,
-            within: None,
-        },
-    )
-    .content
-    {
-        Content::Text(text) => text,
-        other => panic!("a find is text: {other:?}"),
-    };
-    let line = found
-        .lines()
-        .find(|l| l.contains("Say something") && l.contains('['))
-        .unwrap_or_else(|| panic!("no field in\n{found}"));
-    let start = line.find('[').unwrap() + 1;
-    let end = line[start..].find(']').unwrap() + start;
-    Ref::new(&line[start..end])
+    open(browser, path);
+    ref_on(&find(browser, "Say something"), "Say something")
 }
 
 /// `text` is typed into `field`, and the field blanked, as a login fills one: what it holds is
@@ -76,27 +41,6 @@ fn filled_and_blanked(browser: &Browser, field: Ref, text: &str) {
         },
     );
     browser.blank(&field).unwrap();
-}
-
-/// How many pixels of a PNG are the fixture's pure red.
-fn red_pixels(png_bytes: &[u8]) -> usize {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    let channels = info.color_type.samples();
-    buf[..info.line_size * info.height as usize]
-        .chunks(channels)
-        .filter(|p| p.len() >= 3 && p[0] > 200 && p[1] < 60 && p[2] < 60)
-        .count()
-}
-
-fn screenshot(browser: &Browser) -> Vec<u8> {
-    match call(browser, Call::Screenshot { page: None }).content {
-        Content::Image(png) => png,
-        other => panic!("a screenshot is an image: {other:?}"),
-    }
 }
 
 #[test]

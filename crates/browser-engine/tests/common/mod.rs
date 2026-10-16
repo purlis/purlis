@@ -9,6 +9,7 @@
 
 #![allow(dead_code)]
 
+pub mod drive;
 pub mod fixture;
 pub mod site;
 
