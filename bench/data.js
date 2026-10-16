@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792116721904,
+  "lastUpdate": 1792121184286,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13356,6 +13356,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6175345,
             "unit": "ms",
             "extra": "median of 5 runs: 100.485, 100.739, 101.618, 101.837, 102.149 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "13d6ba6f237ee5cb7755598a2963f715db532b04",
+          "message": "A chat started again at once counts and records one run (#2250) (#2251)\n\nA sandboxed Claude Code chat whose start screens its project's settings\nnow has its run.started held in the event log until the screen passes,\nand is counted for the sandbox only then. A start put aside at once\nwrites neither; the start in its place is said and counted once.\n\nThe recorder learns the run before the program runs (begin_held) and\nwrites its run.started when the start goes on (begun), or before the\nfirst line of that run if one comes first, so a run's first event is\nstill its run.started.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T07:25:04+04:00",
+          "tree_id": "cd2183132a9d9dd546b8d11b566d5cd6628e3ddf",
+          "url": "https://github.com/purlis/purlis/commit/13d6ba6f237ee5cb7755598a2963f715db532b04"
+        },
+        "date": 1792121182759,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.462057,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.459, 0.460, 0.462, 0.462, 0.467 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2864085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.259, 16.285, 16.286, 16.309, 16.854 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9481675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.168, 100.867, 100.948, 101.321, 101.547 ms"
           }
         ]
       }
