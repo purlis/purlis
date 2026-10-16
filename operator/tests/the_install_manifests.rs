@@ -7,9 +7,10 @@
 //! `deploy/crds.yaml` is generated from the Rust types. When a type changes, regenerate it with
 //! `PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests` and read its diff.
 
+mod common;
+
 use kube::CustomResourceExt;
 use purlis_cluster_operator::{Claim, Pool};
-use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -20,14 +21,7 @@ fn deploy(file: &str) -> PathBuf {
 }
 
 fn documents(file: &str) -> Vec<Value> {
-    let text = std::fs::read_to_string(deploy(file)).expect("the manifest");
-    serde_yaml::Deserializer::from_str(&text)
-        .map(|document| {
-            serde_json::to_value(serde_yaml::Value::deserialize(document).expect("YAML"))
-                .expect("as JSON")
-        })
-        .filter(|document| !document.is_null())
-        .collect()
+    common::yaml_documents(&deploy(file))
 }
 
 const HEADER: &str = "# Copyright 2026 Purlis
@@ -142,7 +136,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
         (
             "extensions.agents.x-k8s.io",
             "sandboxclaims",
-            "create,get,list,patch,watch",
+            "create,list,patch,watch",
         ),
         (
             "extensions.agents.x-k8s.io",
@@ -154,7 +148,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             "sandboxwarmpools",
             "create,patch",
         ),
-        ("runners.purlis.dev", "claims", "get,list,watch"),
+        ("runners.purlis.dev", "claims", "list,watch"),
         ("runners.purlis.dev", "claims/status", "patch"),
         ("runners.purlis.dev", "pools", "get,list,watch"),
     ]
@@ -178,4 +172,36 @@ fn the_operator_runs_as_a_user_who_is_not_root_with_nothing_added() {
     assert_eq!(security["capabilities"]["drop"], json!(["ALL"]));
     assert_eq!(security["seccompProfile"]["type"], "RuntimeDefault");
     assert_eq!(pod["containers"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
+    let documents = documents("policy.yaml");
+    let policy = documents
+        .iter()
+        .find(|d| d["kind"] == "ValidatingAdmissionPolicy")
+        .expect("the policy");
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules");
+    assert_eq!(rules.len(), 1, "{spec}");
+    assert_eq!(strings(&rules[0]["apiGroups"]), ["runners.purlis.dev"]);
+    assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
+    assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
+    let validations = spec["validations"].as_array().expect("validations");
+    assert_eq!(validations.len(), 1, "{spec}");
+    let expression = validations[0]["expression"].as_str().expect("expression");
+    assert_eq!(
+        expression.split_whitespace().collect::<String>(),
+        "authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
+    );
+
+    let binding = documents
+        .iter()
+        .find(|d| d["kind"] == "ValidatingAdmissionPolicyBinding")
+        .expect("its binding");
+    assert_eq!(binding["spec"]["policyName"], policy["metadata"]["name"]);
+    assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
 }

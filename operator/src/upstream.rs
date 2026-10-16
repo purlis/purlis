@@ -16,7 +16,7 @@ use crate::resources::{Claim, Pool};
 use k8s_openapi::api::core::v1::{
     Capabilities, Container, PodSpec, PodTemplateSpec, SeccompProfile, SecurityContext,
 };
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta};
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta, OwnerReference};
 use kube::{CustomResource, Resource, ResourceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -88,11 +88,23 @@ pub fn name_for(pool: &str) -> String {
     format!("purlis-pool-{pool}")
 }
 
+/// The one owner of an object the operator makes: its controller, which never blocks its own
+/// deletion. Blocking it would need update rights on the owner's finalizers wherever a cluster
+/// enforces owner-reference permissions; the garbage collector removes the object either way.
+fn owners(owner: Option<OwnerReference>) -> Option<Vec<OwnerReference>> {
+    owner.map(|owner| {
+        vec![OwnerReference {
+            block_owner_deletion: None,
+            ..owner
+        }]
+    })
+}
+
 fn owned_by_the_pool(pool: &Pool, namespace: &str) -> ObjectMeta {
     ObjectMeta {
         name: Some(name_for(&pool.name_any())),
         namespace: Some(namespace.to_owned()),
-        owner_references: pool.controller_owner_ref(&()).map(|owner| vec![owner]),
+        owner_references: owners(pool.controller_owner_ref(&())),
         ..ObjectMeta::default()
     }
 }
@@ -156,7 +168,7 @@ pub fn sandbox_claim_for(claim: &Claim) -> SandboxClaim {
         metadata: ObjectMeta {
             name: Some(claim.name_any()),
             namespace: claim.namespace(),
-            owner_references: claim.controller_owner_ref(&()).map(|owner| vec![owner]),
+            owner_references: owners(claim.controller_owner_ref(&())),
             ..ObjectMeta::default()
         },
         spec: SandboxClaimSpec {

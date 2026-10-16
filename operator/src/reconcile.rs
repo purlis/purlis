@@ -139,9 +139,12 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
     Ok(Action::await_change())
 }
 
+/// How long a claim that could not be reconciled waits before it is tried again.
+const RETRY: Duration = Duration::from_secs(10);
+
 fn error_policy(claim: Arc<Claim>, error: &Error, _: Arc<Context>) -> Action {
-    tracing::warn!(claim = %claim.name_any(), %error, "trying again in 10 seconds");
-    Action::requeue(Duration::from_secs(10))
+    tracing::warn!(claim = %claim.name_any(), %error, retry = ?RETRY, "trying again");
+    Action::requeue(RETRY)
 }
 
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).

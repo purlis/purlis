@@ -10,8 +10,9 @@ use kube::{CustomResource, KubeSchema};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Where a team's runners come from. Cluster-wide, defined once for the team; who may claim from
-/// it is the cluster's own access control on the Pool.
+/// Where a team's runners come from. Cluster-wide, defined once for the team. Who may claim from
+/// it is the cluster's own access control: a Claim is admitted only for someone allowed to `use`
+/// the Pool (deploy/policy.yaml).
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[kube(
     group = "runners.purlis.dev",

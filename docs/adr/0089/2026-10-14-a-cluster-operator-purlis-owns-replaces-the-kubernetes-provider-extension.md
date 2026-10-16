@@ -11,9 +11,12 @@ above is left as accepted, and this note amends it. Where it disagrees with it, 
    cluster, not an extension on the desktop, and #906 is superseded by it. The provider seam
    stays for every other backend.
 2. **Its objects are purlis's own.** A team defines a `Pool` (cluster-wide) and a person makes a
-   `Claim` (in a namespace), in `runners.purlis.dev/v1alpha1`. The operator turns them into the
-   objects of one pinned, tested upstream agent-sandbox release whose definitions are vendored,
-   and never re-implements what upstream does. Upstream's controller writes its own claim's
+   `Claim` (in a namespace), in `runners.purlis.dev/v1alpha1`. The cluster operator turns them
+   into the objects of one pinned, tested upstream agent-sandbox release whose definitions are
+   vendored, and never re-implements what upstream does. Upstream's controller writes its own claim's
    status, which is why purlis's Claim is an object of its own.
-3. **What it may do.** It holds no right to `exec` or `attach` to a pod and reads no Secret.
-   docs/cluster-operator.md lists its permissions, and its tests hold them.
+3. **Who may use a Pool** is the cluster's own access control: a Claim is admitted only for
+   someone the cluster lets `use` the Pool it names, checked by an admission policy as that
+   person when the Claim is made.
+4. **What the cluster operator may do.** It holds no right to `exec` or `attach` to a pod and
+   reads no Secret. docs/cluster-operator.md lists its permissions, and its tests hold them.

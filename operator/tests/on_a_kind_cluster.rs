@@ -277,3 +277,150 @@ async fn the_cluster_refuses_the_operator_exec_attach_and_secrets() {
         .await
     );
 }
+
+/// A client acting as `user`, through the admin's right to impersonate.
+async fn acting_as(user: &str) -> Client {
+    let mut config = kube::Config::infer().await.expect("the cluster");
+    config.auth_info.impersonate = Some(user.to_owned());
+    Client::try_from(config).expect("a client")
+}
+
+fn rbac(value: serde_json::Value) -> kube::api::DynamicObject {
+    serde_json::from_value(value).expect("an RBAC object")
+}
+
+async fn apply_rbac(client: &Client, kind: &str, namespace: Option<&str>, body: serde_json::Value) {
+    let resource = kube::api::ApiResource {
+        group: "rbac.authorization.k8s.io".into(),
+        version: "v1".into(),
+        api_version: "rbac.authorization.k8s.io/v1".into(),
+        kind: kind.into(),
+        plural: format!("{}s", kind.to_lowercase()),
+    };
+    let api: Api<kube::api::DynamicObject> = match namespace {
+        Some(namespace) => Api::namespaced_with(client.clone(), namespace, &resource),
+        None => Api::all_with(client.clone(), &resource),
+    };
+    let object = rbac(body);
+    api.patch(
+        &object.name_any(),
+        &PatchParams::apply("e2e").force(),
+        &Patch::Apply(&object),
+    )
+    .await
+    .unwrap_or_else(|error| panic!("{kind}: {error}"));
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-use").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-use",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-use",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    // Both may make claims in the namespace; only bea may use the pool.
+    apply_rbac(
+        &client,
+        "Role",
+        Some(&scratch.name),
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role",
+            "metadata": { "name": "e2e-claims", "namespace": scratch.name },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["claims"],
+                        "verbs": ["create", "get"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "RoleBinding",
+        Some(&scratch.name),
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
+            "metadata": { "name": "e2e-claims", "namespace": scratch.name },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "e2e-claims" },
+            "subjects": [
+                { "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-ada" },
+                { "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-bea" }
+            ]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-use-pool" },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["pools"],
+                        "resourceNames": ["e2e-use"], "verbs": ["use"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRoleBinding",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": { "name": "e2e-use-pool" },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "e2e-use-pool" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-bea" }]
+        }),
+    )
+    .await;
+
+    let as_ada = Api::<Claim>::namespaced(acting_as("e2e-ada").await, &scratch.name);
+    let refused = as_ada
+        .create(&PostParams::default(), &claim("ada-1", "e2e-use"))
+        .await;
+    match &refused {
+        Err(kube::Error::Api(status)) => {
+            assert_eq!(status.code, 403, "{status:?}");
+            assert!(status.message.contains("e2e-use"), "{status:?}");
+        }
+        other => panic!("ada's claim was not refused: {other:?}"),
+    }
+
+    let as_bea = Api::<Claim>::namespaced(acting_as("e2e-bea").await, &scratch.name);
+    as_bea
+        .create(&PostParams::default(), &claim("bea-1", "e2e-use"))
+        .await
+        .expect("bea may use the pool");
+
+    let delete = DeleteParams::default();
+    let roles = kube::api::ApiResource {
+        group: "rbac.authorization.k8s.io".into(),
+        version: "v1".into(),
+        api_version: "rbac.authorization.k8s.io/v1".into(),
+        kind: "ClusterRole".into(),
+        plural: "clusterroles".into(),
+    };
+    let bindings = kube::api::ApiResource {
+        kind: "ClusterRoleBinding".into(),
+        plural: "clusterrolebindings".into(),
+        ..roles.clone()
+    };
+    let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &bindings)
+        .delete("e2e-use-pool", &delete)
+        .await;
+    let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &roles)
+        .delete("e2e-use-pool", &delete)
+        .await;
+    let _ = pools.delete("e2e-use", &delete).await;
+    scratch.end().await;
+}

@@ -5,9 +5,10 @@
 //! are vendored verbatim. Every field it writes must be one those definitions declare, so moving
 //! the pin to a version that renames or drops one turns this red before a cluster does.
 
+mod common;
+
 use kube::api::ObjectMeta;
 use purlis_cluster_operator::{Claim, ClaimSpec, Pool, PoolSpec, upstream};
-use serde::Deserialize;
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -19,14 +20,7 @@ fn vendored() -> PathBuf {
 }
 
 fn documents() -> Vec<Value> {
-    let text = std::fs::read_to_string(vendored()).expect("the vendored upstream definitions");
-    serde_yaml::Deserializer::from_str(&text)
-        .map(|document| {
-            let yaml = serde_yaml::Value::deserialize(document).expect("YAML");
-            serde_json::to_value(yaml).expect("as JSON")
-        })
-        .filter(|document| !document.is_null())
-        .collect()
+    common::yaml_documents(&vendored())
 }
 
 /// The schema upstream declares for `kind` at `apiVersion`.

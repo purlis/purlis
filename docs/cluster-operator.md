@@ -25,15 +25,17 @@ Claim says whether it is ready. The operator's image is not published yet; build
 
 ## Install
 
-Three steps, in order. The definitions are a step of their own, so a cluster admin can review
-and apply them apart from the controllers.
+Three steps, in order. The definitions and their policy are a step of their own, so a
+cluster admin can review and apply them apart from the controllers.
 
 ```bash
 # 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
 kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
 
-# 2. purlis's definitions: Pool and Claim.
+# 2. purlis's definitions, Pool and Claim, and the policy that admits a Claim only for
+#    someone who may use its Pool.
 kubectl apply --server-side -f operator/deploy/crds.yaml
+kubectl apply --server-side -f operator/deploy/policy.yaml
 
 # 3. The operator, in the `purlis-system` namespace, with its image set to your build.
 kubectl apply --server-side -f operator/deploy/operator.yaml
@@ -74,8 +76,25 @@ spec:
 `Pool` and `Claim` are `v1alpha1`: no stability promise before upstream agent-sandbox leaves
 beta.
 
-Who may create a Claim, and in which namespace, and who may use a Pool, is the cluster's own
-access control (RBAC) on those objects.
+**Who may use a Pool is the cluster's own access control.** A Claim is admitted only when the
+person making it may `use` the Pool it names: a ValidatingAdmissionPolicy
+([`operator/deploy/policy.yaml`](../operator/deploy/policy.yaml)) asks the cluster's
+authorizer, as that person, when the Claim is created. Anyone else's Claim is refused with
+the pool's name. A cluster admin grants `use` with RBAC, on one pool or on all of them:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: use-pool-team
+rules:
+  - apiGroups: [runners.purlis.dev]
+    resources: [pools]
+    resourceNames: [team]
+    verbs: [use]
+```
+
+Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
 ## What it makes
 
@@ -98,9 +117,10 @@ it holds:
 
 | API group | Resources | Verbs |
 |---|---|---|
-| `runners.purlis.dev` | `pools`, `claims` | get, list, watch |
+| `runners.purlis.dev` | `pools` | get, list, watch |
+| `runners.purlis.dev` | `claims` | list, watch |
 | `runners.purlis.dev` | `claims/status` | patch |
-| `extensions.agents.x-k8s.io` | `sandboxclaims` | create, get, list, patch, watch |
+| `extensions.agents.x-k8s.io` | `sandboxclaims` | create, list, patch, watch |
 | `extensions.agents.x-k8s.io` | `sandboxtemplates`, `sandboxwarmpools` | create, patch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod, reads no Secret, and touches no
@@ -124,7 +144,7 @@ and memory included. Give cluster-admin and node access accordingly.
   `PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests`).
 - [`operator/e2e/kind.sh`](../operator/e2e/kind.sh) `<runner image> <operator image>`: a kind
   cluster of Kubernetes 1.36 with a registry beside it, so images are named by digest; the
-  pinned upstream, purlis's definitions and the operator; then
+  pinned upstream, purlis's definitions, the policy and the operator; then
   `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows. It removes
   everything it started. `.github/workflows/operator.yml` runs it, with a runner image built
   from the same commit, on every pull request that changes `operator/` or `runner-image/`.

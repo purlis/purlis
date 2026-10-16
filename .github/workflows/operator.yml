@@ -8,25 +8,36 @@ name: cluster operator
 # Kubernetes purlis supports with the pinned upstream agent-sandbox and a runner image built
 # from this commit (`operator/e2e/kind.sh`).
 #
-# Only a change to the operator, the runner image or this file runs it, so every other pull
-# request waits on none of it. It publishes nothing and holds no write permission.
+# Only a change to the operator, the runner image, the toolchain, the licence and advisory
+# rules or this file runs it on a pull request, so every other pull request waits on none of
+# it; it also runs nightly on `main`. It publishes nothing and holds no write permission.
 
 on:
   pull_request:
     paths:
       - operator/**
       - runner-image/**
+      - deny.toml
+      - rust-toolchain.toml
+      - .github/actions/rust-toolchain/**
       - .github/workflows/operator.yml
   push:
     branches: [main]
     paths:
       - operator/**
       - runner-image/**
+      - deny.toml
+      - rust-toolchain.toml
+      - .github/actions/rust-toolchain/**
       - .github/workflows/operator.yml
+  # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that
+  # breaks the runner image the kind run builds, is reported though nothing here changed.
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 concurrency:
-  group: operator-${{ github.ref }}
+  group: operator-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:

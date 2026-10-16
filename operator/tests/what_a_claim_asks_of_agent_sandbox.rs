@@ -189,3 +189,18 @@ fn a_claims_ready_keeps_the_time_it_last_changed_until_it_changes_again() {
         before.conditions[0].last_transition_time
     );
 }
+
+#[test]
+fn an_owner_reference_never_blocks_its_owners_deletion() {
+    // Blocking would need update rights on the owner's finalizers wherever the cluster enforces
+    // owner-reference permissions; the garbage collector removes the dependents either way.
+    for object in [
+        json_of(&upstream::template_for(&pool(), "ada")),
+        json_of(&upstream::warm_pool_for(&pool(), "ada")),
+        json_of(&upstream::sandbox_claim_for(&claim())),
+    ] {
+        let owner = &object["metadata"]["ownerReferences"][0];
+        assert_eq!(owner["controller"], true, "{object}");
+        assert!(owner.get("blockOwnerDeletion").is_none(), "{object}");
+    }
+}

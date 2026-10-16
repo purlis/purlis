@@ -24,10 +24,14 @@ kind: ClusterRole
 metadata:
   name: purlis-cluster-operator
 rules:
-  # A team's pools and people's claims: read, and a claim's status written.
+  # A team's pools and people's claims: read, and a claim's status written. Claims are read
+  # from the operator's own watch; a pool is read by name when a claim names it.
   - apiGroups: [runners.purlis.dev]
-    resources: [pools, claims]
+    resources: [pools]
     verbs: [get, list, watch]
+  - apiGroups: [runners.purlis.dev]
+    resources: [claims]
+    verbs: [list, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
@@ -35,7 +39,7 @@ rules:
   # garbage collector's, through their owners: the operator holds no delete.
   - apiGroups: [extensions.agents.x-k8s.io]
     resources: [sandboxclaims]
-    verbs: [create, get, list, patch, watch]
+    verbs: [create, list, patch, watch]
   - apiGroups: [extensions.agents.x-k8s.io]
     resources: [sandboxtemplates, sandboxwarmpools]
     verbs: [create, patch]
