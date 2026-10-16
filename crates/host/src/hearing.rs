@@ -14,11 +14,18 @@
 //! **What a line moves is the window's to decide.** Each line the channel admits is handed on
 //! ([`HandOn`]) and pushed to the links that hold the project, the window's, which reply with
 //! what the window answered ([`Channel::replied`]).
+//!
+//! **The board is kept here** (#2194). The channel keeps the project's board: the window tells
+//! it each move it makes on its own copy ([`Channel::moved`]), and reads it whole as it holds
+//! the project ([`Channel::board`]). While no window holds the project, the channel moves the
+//! board itself by the lines it admits, and the host tells it of a program that ends
+//! ([`Channel::ended_with_no_window`]), so a window that comes back reads every chat as the
+//! host kept it.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use purlis_session_protocol::session::Reporting;
+use purlis_session_protocol::session::{Exit, Reporting};
 
 /// Hands line `id`, as JSON, on to whoever holds the project: `false` when nobody is there to
 /// hear it.
@@ -51,6 +58,16 @@ pub trait Channel: Send + Sync + 'static {
     fn forget(&self, number: u32);
     /// What the window replied to line `id`.
     fn replied(&self, id: u64, reply: serde_json::Value);
+    /// The window made `moved` of chat `number` on its board: the board this channel keeps
+    /// makes it too, after every move told before it. A channel that keeps no board ignores it.
+    fn moved(&self, _number: u32, _moved: serde_json::Value) {}
+    /// The board this channel keeps, whole, as the board says it: `null` where it keeps none.
+    fn board(&self) -> serde_json::Value {
+        serde_json::Value::Null
+    }
+    /// Chat `number`'s program ended, `exit`, while no window held the project: the board this
+    /// channel keeps says so, as the window says it when it is there.
+    fn ended_with_no_window(&self, _number: u32, _exit: &Exit) {}
 }
 
 /// A host whose binary hears no hooks: a held project has no channel, and a chat's start keeps

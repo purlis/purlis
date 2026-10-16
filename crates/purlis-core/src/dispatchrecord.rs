@@ -906,17 +906,27 @@ pub fn close_as(
     way: Option<EndedWay>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> io::Result<bool> {
-    change(root, id, |record| {
-        if !record.running() {
-            return false;
-        }
-        record.ended_by = by;
-        record.ended_way = way.filter(|_| matches!(by, Some(EndedBy::Person | EndedBy::Limit)));
-        record.ended = Some(crate::dispatch::stamp(now));
-        record.report = ending.report.as_ref().map(capped_report);
-        record.usage = ending.usage.filter(|usage| !usage.is_empty());
-        true
-    })
+    change(root, id, |record| end(record, ending, by, way, now))
+}
+
+/// Ends `record` in memory, as [`close_as`] writes it. `false`, and nothing changed, for one
+/// that has already ended.
+fn end(
+    record: &mut Record,
+    ending: Ending,
+    by: Option<EndedBy>,
+    way: Option<EndedWay>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    if !record.running() {
+        return false;
+    }
+    record.ended_by = by;
+    record.ended_way = way.filter(|_| matches!(by, Some(EndedBy::Person | EndedBy::Limit)));
+    record.ended = Some(crate::dispatch::stamp(now));
+    record.report = ending.report.as_ref().map(capped_report);
+    record.usage = ending.usage.filter(|usage| !usage.is_empty());
+    true
 }
 
 /// **Task `id` reported once more** (#1768): it came out `blocked`, or the person took it up
@@ -2051,11 +2061,19 @@ pub fn settle_asked(
         .filter(|record| record.running() && !still_open(&record.worker.chat))
         .filter(|record| {
             let by = record.report_owed.then_some(EndedBy::Unreported);
-            let ended = close_by(root, &record.id, ended_unreported(record, None), by, now)
-                .unwrap_or(false);
-            if ended && record.mode == Mode::Task && record.report_owed && !record.asker.by_person {
-                let _ = kept_undelivered(root, &record.id, None);
-            }
+            let owed = record.mode == Mode::Task && record.report_owed && !record.asker.by_person;
+            // Ended and owed in one write (#2272): no reader finds it ended and owed to nobody.
+            let ended = change(root, &record.id, |held| {
+                let ending = ended_unreported(held, None);
+                if !end(held, ending, by, None, now) {
+                    return false;
+                }
+                if owed && held.undelivered.is_none() {
+                    held.undelivered = Some(Undelivered { kept: None });
+                }
+                true
+            })
+            .unwrap_or(false);
             if ended && record.mode == Mode::Task && !asker_back(record) {
                 let _ = clear_forgetting(root, &record.id);
             }

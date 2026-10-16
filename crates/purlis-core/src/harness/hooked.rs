@@ -96,7 +96,8 @@ impl Source {
 /// or unread, where the payload names an agent in a shape this does not read. An answer in the
 /// window clears only the prompt of the one who asked ([`crate::state::Board::answered_by`]);
 /// an unread asker's answer clears every prompt the chat waits on, as before.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Asker {
     Chat,
     Helper(String),
