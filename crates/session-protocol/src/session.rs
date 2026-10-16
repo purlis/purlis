@@ -111,8 +111,12 @@ use crate::view::{Limits, Views};
 /// order the window sent them.
 ///
 /// 1.9 added browsers for chats (#2013): `browse` carries one act to a browser
-/// ([`crate::browsing::Act`]), answered `browsed` or refused `browser_refused` in the driver's
-/// words; a browser's start may say what it reaches (`reach`, [`crate::browsing::BrowserReach`]).
+/// ([`crate::browsing::Act`]), answered `browsed`, or refused `browser_refused` in the driver's
+/// words or `browser_ended`; a browser's start may say what it reaches (`reach`,
+/// [`crate::browsing::BrowserReach`]). It also added to what `record` carries (#2252): a held
+/// run's `begin` may hold the start's trust event, written just before its `run.started`, and
+/// `taken_back` says a held start was put aside. A window sends a host before 1.9 the trust
+/// event on its own, and no `taken_back`.
 pub const VERSION: Version = Version { major: 1, minor: 9 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
