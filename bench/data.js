@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792154241455,
+  "lastUpdate": 1792156619122,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14154,6 +14154,48 @@ window.BENCHMARK_DATA = {
             "value": 102.059393,
             "unit": "ms",
             "extra": "median of 5 runs: 100.942, 101.313, 102.059, 102.111, 102.124 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "456109e0eeccc34aa7838fd227b35c712802881c",
+          "message": "Supervisor, breaker and run journal for the session host (#2273)\n\n* The session host keeps a run journal, and the next host settles what a crash left\n\nEach program the host starts is written down in its own folder as it starts and as it ends.\nA host that starts where the last one ended without ending its programs ends what each left\nrunning, where its process is still the one started, and tells its binary, which keeps its end\nas a crash's. A host that ends every program as it stops leaves nothing to settle.\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The window supervises its session host and brings each chat back as failed or hibernated\n\nThe window starts its session host again after each unexpected exit, and its breaker stops\nafter three within five minutes: the window then says the host is failing, with its last\nlines and Try again. Every chat in a host that ended unexpectedly ends with it, its pane says\nwhether its run failed or was hibernated, and Resume starts it again on its conversation in\nthe host that took its place. Projects are held again, and saved again, on the new host.\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* ADR 0068 amended for #2007: the supervisor, the breaker and the run journal\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The session host's module says the window supervises it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The behaviour suite kills a real session host with twenty chats in it\n\nEvery chat is told it ended with its host, and the window's supervisor has a new host serving,\nwithin thirty seconds; each chat then starts again there.\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The host's Notices draw only what the core answered in their shape\n\nA lost task with a conversation is resumable, as its test now says.\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Review round: the host record, a boot-safe sweep, an end that wins a start's race\n\nThe session host's note of its programs is the host record (hosts.jsonl), not ADR 0076's run\njournal; it is written again with only the programs still running once it grows, and a start\nnoted in another boot of the machine is never ended. A host started as the window ends it is\nended, never left running. Failed or hibernated reads the harness's resumes_by_id. The crash\ntest bounds its thirty seconds at every chat told and a host serving, with a hibernated chat\namong them; Resume is tested through the chat's restart on its conversation. The host's last\nlog lines sit under a disclosure.\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The crash test hears each chat's end from before the chat starts\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The host record is written again by rename, read line by line, and an idle chat needs a conversation to hibernate\n\nPart of #2007.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T17:15:32+04:00",
+          "tree_id": "08f21812311cb086a5f4595e71a536093b62fb8d",
+          "url": "https://github.com/purlis/purlis/commit/456109e0eeccc34aa7838fd227b35c712802881c"
+        },
+        "date": 1792156617773,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.560037,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.522, 0.559, 0.560, 0.567, 0.574 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6172125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.514, 16.564, 16.617, 17.190, 17.875 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.4372195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.984, 105.090, 105.437, 105.492, 105.869 ms"
           }
         ]
       }
