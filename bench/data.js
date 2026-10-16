@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792176920680,
+  "lastUpdate": 1792180184217,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14490,6 +14490,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8546235,
             "unit": "ms",
             "extra": "median of 5 runs: 100.959, 101.502, 101.855, 102.209, 102.437 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "637d4da0b61e569e445c6b901ce29fd604a99c0e",
+          "message": "Browsers: the chat's tab and the Chats list (#2301)\n\n* Browsers: a chat's browser on its tab and in the Chats list (#2024)\n\nEach browser a chat drives is drawn live as a thumbnail beside its chat's\ntab, counted there, and listed as a row under its chat in the Chats list;\neither opens its browser view in a tab of its own, whose chip names the\ndevice it runs on. Closing a tab that shows a chat's browser closes only\nthe view, and the core refuses to end one a chat uses. Stop all takes the\nchats' browsers off their rows; one that could not be ended yet stays a\nrow marked so. The window reads them with the window-only\n`chat_browsers` and again on `chat-browsers-listed`. The setting \"Open a\nchat's browser beside it\" (layout `chats.beside`) opens each new one\nbeside its chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a chat's thumbnail reads the view's frames as #2014 sends them, and its view is taken over like any (#2024)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T23:48:21+04:00",
+          "tree_id": "da80a30d130ee2608f068c451bfc7907678f4062",
+          "url": "https://github.com/purlis/purlis/commit/637d4da0b61e569e445c6b901ce29fd604a99c0e"
+        },
+        "date": 1792180182227,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5451405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.521, 0.530, 0.545, 0.548, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.088496499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.760, 16.854, 17.088, 17.222, 17.402 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.866938,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.510, 102.201, 102.867, 102.995, 106.751 ms"
           }
         ]
       }
