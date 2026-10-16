@@ -367,6 +367,15 @@ fn settings(
             .iter()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
+    // **And a chat's browser tools, each by name** (#2245, ruled 2026-10-16, amending ADR
+    // 0064): the person's answer to the chat's browser Ask is the consent, which the app asks
+    // at the first call and holds in front of every one, as the dispatch grant is for a
+    // dispatch. On the same arguments as the `--mcp-config` that hands the chat the server
+    // that serves them, so only a chat that may have a browser carries them.
+    allow.extend(
+        crate::browsertools::run_on_the_browser_ask()
+            .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
+    );
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command

@@ -47,6 +47,15 @@ pub fn fresh_call_id() -> String {
     format!("mcp-{}", uuid::Uuid::new_v4())
 }
 
+/// **The browser tools a harness runs without its own prompt** (#2245, ruled 2026-10-16,
+/// amending ADR 0064): every one of [`TOOLS`], by name. The consent for them is the person's
+/// answer to the chat's browser Ask, which the app holds in front of every call, as the
+/// dispatch grant is for [`crate::chattools::DISPATCH_TOOLS`]; each harness's adapter turns
+/// these names into its own rule where it has one.
+pub fn run_on_the_browser_ask() -> impl Iterator<Item = &'static str> {
+    TOOLS.iter().map(|tool| tool.name)
+}
+
 /// Whether `name` is one of the browser tools.
 pub fn is_one(name: &str) -> bool {
     TOOLS.iter().any(|tool| tool.name == name)
