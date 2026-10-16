@@ -88,7 +88,8 @@ function useLost(plane: PlaneId, session: number): { lost: LostChat | null; read
     void commands
       .chatLostWithTheHost(plane, session)
       .then((answer) => {
-        if (answer.status === "ok") setLost(answer.data);
+        if (answer.status === "ok")
+          setLost(typeof answer.data?.hibernated === "boolean" ? answer.data : null);
       })
       .catch(() => {});
   }, [plane, session]);

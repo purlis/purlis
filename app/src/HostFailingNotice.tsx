@@ -28,12 +28,12 @@ export function HostFailingNotice() {
     void commands
       .sessionHostFailing()
       .then((now) => {
-        if (!gone && now) setFailing((was) => was ?? now);
+        if (!gone && isFailing(now)) setFailing((was) => was ?? now);
       })
       .catch(() => undefined);
     const listening = listen<Failing | null>(FAILING, (event) => {
       if (gone) return;
-      setFailing(event.payload);
+      setFailing(isFailing(event.payload) ? event.payload : null);
       setTrying(false);
     }).catch(() => undefined);
     return () => {
@@ -68,5 +68,15 @@ export function HostFailingNotice() {
       minutes, so purlis stopped starting it again. No chat starts until it runs.
       {failing.said.length > 0 && " The last lines it wrote to its log are below."}
     </Notice>
+  );
+}
+
+/** Whether what the core answered is a failing host, as the window draws one. */
+function isFailing(said: unknown): said is Failing {
+  return (
+    typeof said === "object" &&
+    said !== null &&
+    Array.isArray((said as Failing).said) &&
+    typeof (said as Failing).exits === "number"
   );
 }

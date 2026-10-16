@@ -2293,8 +2293,8 @@ fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_sa
     assert_eq!(record.report, None);
     assert_eq!(
         held.lost_with_the_host().of(task),
-        Some((false, false)),
-        "failed: it never said its turn ended, and named no conversation"
+        Some((false, true)),
+        "failed: it never said its turn ended; it has its conversation to resume"
     );
     let _ = held.close_chat(task);
     assert_eq!(
