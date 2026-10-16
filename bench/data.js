@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792159260934,
+  "lastUpdate": 1792161020603,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14238,6 +14238,48 @@ window.BENCHMARK_DATA = {
             "value": 102.197228,
             "unit": "ms",
             "extra": "median of 5 runs: 100.846, 101.433, 102.197, 102.277, 102.555 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8fdfe41ce5c4a6678d6de585abbf1be39403f846",
+          "message": "Chats survive an app crash and reattach (#2284)\n\n* Chats survive a crash of the app and reattach\n\nThe window's session host outlives a window that goes without a quit for\nthe grace period (ADR 0068 §2): a window started again connects to it and\nreattaches every chat under its number, its run and its confinement, a\ndispatched task and a chat its start would now refuse among them, and\neach project no window holds again is let go of as a quit once its own\ngrace period passes. Session protocol 1.13 adds programs_of, quit and the\ntoo_large refusal.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Reattach: the supervisor's end of a reattached host is its link's\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T18:28:35+04:00",
+          "tree_id": "0a2fc8323d354151748fd85dc19e94765e6ea9ac",
+          "url": "https://github.com/purlis/purlis/commit/8fdfe41ce5c4a6678d6de585abbf1be39403f846"
+        },
+        "date": 1792161019417,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4321615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.422, 0.428, 0.432, 0.433, 0.444 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.351679999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.266, 16.292, 16.352, 16.446, 16.498 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7484795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.238, 101.423, 101.748, 101.978, 102.528 ms"
           }
         ]
       }
