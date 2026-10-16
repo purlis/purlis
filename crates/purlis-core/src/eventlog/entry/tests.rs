@@ -129,6 +129,7 @@ fn an_entry_sent_as_json_writes_what_the_windows_own_call_writes() {
                 cause: Began::Start,
                 attributes: attributes(),
                 held: false,
+                trust: None,
             },
             Entry::Trust {
                 chat: CHAT.into(),
@@ -196,6 +197,7 @@ fn a_chat_a_begun_run_names_is_known_by_its_id_and_one_never_named_is_not() {
         cause: Began::Reopen,
         attributes: Attributes::default(),
         held: false,
+        trust: None,
     })
     .unwrap();
 
@@ -302,13 +304,13 @@ fn a_held_run_sent_as_entries_is_written_as_the_windows_own_held_run_is() {
     let here = tempfile::tempdir().unwrap();
     {
         let mut window = recorder(here.path());
-        window.begin_held(plane, 3, run, Began::Start, &attributes());
+        window.begin_held(plane, 3, run, Began::Start, &attributes(), None);
         window.begun(plane, 3).unwrap();
-        window.begin_held(plane, 4, run, Began::Start, &attributes());
+        window.begin_held(plane, 4, run, Began::Start, &attributes(), None);
         window
             .report_with(plane, &report(4, Stop), Followed::No, None)
             .unwrap();
-        window.begin_held(plane, 5, run, Began::Start, &attributes());
+        window.begin_held(plane, 5, run, Began::Start, &attributes(), None);
     }
 
     let there = tempfile::tempdir().unwrap();
@@ -322,6 +324,7 @@ fn a_held_run_sent_as_entries_is_written_as_the_windows_own_held_run_is() {
             cause: Began::Start,
             attributes: attributes(),
             held: true,
+            trust: None,
         };
         assert!(
             host.apply(sent(held(3))).unwrap().is_empty(),

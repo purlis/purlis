@@ -206,14 +206,15 @@ pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sy
 pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes, RunSaid) + Send + Sync>;
 
 /// When a run's `run.started` is written (#2250).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
     /// As it begins.
     Now,
     /// Once its start goes on ([`Chats::when_a_held_start_is_settled`]): a sandboxed Claude Code
     /// chat whose project settings its start screens, which may be started once more at once.
-    /// A start put aside says nothing of it.
-    Held,
+    /// A start put aside says nothing of it, nor of the trust event its start holds with it
+    /// (the sandbox coming back on, #2252), which is written just before it.
+    Held(Option<purlis_core::eventlog::HeldTrust>),
 }
 
 /// What became of a start whose run was held ([`RunSaid::Held`]) (#2250, #2252).
@@ -2554,31 +2555,6 @@ impl Chats {
         .map(|(session, _)| session)
     }
 
-    /// Writes a start's trust event `change` under the run `identity` begins, through the app's
-    /// callback (ADR 0067 §7).
-    fn trust_written(
-        &self,
-        change: &purlis_core::sandbox::Change,
-        identity: &purlis_core::reopen::Identity,
-        harness: Option<Harness>,
-        chat: &Chat,
-    ) -> Result<(), String> {
-        match (
-            lock(&self.trusting).as_ref(),
-            identity.id.as_deref(),
-            identity.run.as_deref(),
-        ) {
-            (Some(trusting), Some(id), Some(run)) => trusting(Sandboxing {
-                change: Some(change),
-                run: Some(RunOf { chat: id, run }),
-                counted: None,
-                harness,
-                persona: chat.persona.as_deref(),
-            }),
-            _ => Err("purlis's event log is not open".to_owned()),
-        }
-    }
-
     /// [`Self::open_it`] once: the session, and whether its project settings failed the first
     /// screen after its program started. `limited` starts a sandboxed Claude Code chat on the
     /// person's settings and purlis's, unwatched, whatever its project's files hold.
@@ -2714,21 +2690,36 @@ impl Chats {
             _ => None,
         };
         // A start its screen may put aside says its run once it goes on (#2250), and the sandbox
-        // coming back on with it (#2252): a start put aside leaves nothing under its run.
+        // coming back on with it, held with its run in the event log (#2252): a start put aside
+        // leaves nothing under its run. An opt-out is never held.
         let said = match settings_watched {
-            Some(Ok(_)) => RunSaid::Held,
+            Some(Ok(_)) => RunSaid::Held(match trust {
+                Some(purlis_core::sandbox::Change::On) => trust.take().map(|change| {
+                    purlis_core::eventlog::HeldTrust::of(&change, harness, chat.persona.as_deref())
+                }),
+                _ => None,
+            }),
             _ => RunSaid::Now,
-        };
-        let back_on_later = match (said, &trust) {
-            (RunSaid::Held, Some(purlis_core::sandbox::Change::On)) => trust.take(),
-            _ => None,
         };
         // The trust event, written before anything runs. **An opt-out is never unaudited**
         // (ADR 0067 §7): a person's is not started when it cannot be written. A system with no
         // backend still starts — every chat there would otherwise be refused — and its tab
         // says the record is missing.
         if let Some(change) = &trust
-            && let Err(why) = self.trust_written(change, &identity, harness, chat)
+            && let Err(why) = match (
+                lock(&self.trusting).as_ref(),
+                identity.id.as_deref(),
+                identity.run.as_deref(),
+            ) {
+                (Some(trusting), Some(id), Some(run)) => trusting(Sandboxing {
+                    change: Some(change),
+                    run: Some(RunOf { chat: id, run }),
+                    counted: None,
+                    harness,
+                    persona: chat.persona.as_deref(),
+                }),
+                _ => Err("purlis's event log is not open".to_owned()),
+            }
         {
             use purlis_core::sandbox::{By, Change, Lifted};
             match change {
@@ -2965,7 +2956,13 @@ impl Chats {
                     if let Some(beginning) = lock(&self.beginning).as_ref()
                         && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
                     {
-                        beginning(session, RunOf { chat, run }, cause, &attributes, said);
+                        beginning(
+                            session,
+                            RunOf { chat, run },
+                            cause,
+                            &attributes,
+                            said.clone(),
+                        );
                     }
                 },
             )
@@ -2982,8 +2979,6 @@ impl Chats {
                     gone(announced);
                 }
             })?;
-        // The run the sandbox came back on for, written once the start goes on.
-        let identity_said = back_on_later.as_ref().map(|_| identity.clone());
         // Under the id it was actually given, not the one it was recorded with: a chat
         // started fresh is under an id the app just chose, and that is what has to be
         // written down for the next launch to resume it.
@@ -3034,15 +3029,8 @@ impl Chats {
             _ => false,
         };
         // A start put aside here is no run and no chat (#2250): the one started in its place
-        // is said and counted. The sandbox back on for one that goes on is written before its
-        // run is said, as at any start; a chat sandboxed has nothing unrecorded meanwhile.
-        if !failed
-            && let (Some(change), Some(identity)) = (&back_on_later, &identity_said)
-            && let Err(why) = self.trust_written(change, identity, harness, chat)
-        {
-            tracing::warn!("purlis: a chat's sandbox came back on and was not recorded ({why})");
-        }
-        if said == RunSaid::Held
+        // is said and counted.
+        if matches!(said, RunSaid::Held(_))
             && let Some(settled) = lock(&self.settled).as_ref()
         {
             settled(
@@ -11904,20 +11892,32 @@ pub(crate) mod tests {
         let said: Said = std::sync::Arc::default();
         let runs = std::sync::Arc::clone(&said);
         // A run held is said once its start goes on, as the event log writes it.
-        let held: std::sync::Arc<Mutex<HashMap<u32, Began>>> = std::sync::Arc::default();
+        // So is the trust event held with it, just before it.
+        type Holding = HashMap<u32, (Began, Option<purlis_core::eventlog::HeldTrust>)>;
+        let held: std::sync::Arc<Mutex<Holding>> = std::sync::Arc::default();
         let holding = std::sync::Arc::clone(&held);
         chats.when_a_run_begins(Box::new(move |session, _, cause, _, when| match when {
             RunSaid::Now => lock(&runs).push(format!("{session} run {}", cause.word())),
-            RunSaid::Held => {
-                lock(&holding).insert(session, cause);
+            RunSaid::Held(trust) => {
+                lock(&holding).insert(session, (cause, trust));
             }
         }));
         let runs = std::sync::Arc::clone(&said);
         chats.when_a_held_start_is_settled(Box::new(move |session, how| {
-            if let Some(cause) = lock(&held).remove(&session)
+            if let Some((cause, trust)) = lock(&held).remove(&session)
                 && how == HeldStart::GoesOn
             {
-                lock(&runs).push(format!("{session} run {}", cause.word()));
+                let mut runs = lock(&runs);
+                if let Some(trust) = trust {
+                    let said = |key: &str| trust.body()[key].as_str().unwrap_or("-").to_owned();
+                    runs.push(format!(
+                        "{} {} {}",
+                        trust.kind(),
+                        said("harness"),
+                        said("persona")
+                    ));
+                }
+                runs.push(format!("{session} run {}", cause.word()));
             }
         }));
         let decided = std::sync::Arc::clone(&said);

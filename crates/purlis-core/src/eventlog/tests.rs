@@ -2812,7 +2812,7 @@ fn a_run_held_for_its_start_is_written_once_when_it_begins() {
         run: RUN,
     };
 
-    host.begin_held(plane, 4, of, Began::Start, &Attributes::default());
+    host.begin_held(plane, 4, of, Began::Start, &Attributes::default(), None);
     assert!(read(dir.path()).unwrap().is_empty(), "nothing yet");
 
     host.begun(plane, 4).unwrap();
@@ -2839,7 +2839,14 @@ fn a_held_run_taken_back_writes_nothing() {
         run: RUN,
     };
 
-    host.begin_held(plane, 4, held, Began::Start, &Attributes::default());
+    host.begin_held(
+        plane,
+        4,
+        held,
+        Began::Start,
+        &Attributes::default(),
+        Some(back_on()),
+    );
     host.taken_back(plane, 4);
     host.begin(
         plane,
@@ -2881,6 +2888,7 @@ fn a_late_line_of_a_start_taken_back_is_recorded_with_no_run() {
         },
         Began::Start,
         &Attributes::default(),
+        None,
     );
     host.taken_back(plane, 4);
     host.report(plane, &report(4, SessionStart), Followed::Moved)
@@ -2923,6 +2931,7 @@ fn a_start_taken_back_after_a_line_said_its_run_keeps_that_run() {
         },
         Began::Start,
         &Attributes::default(),
+        None,
     );
     host.report(plane, &report(4, SessionStart), Followed::No)
         .unwrap();
@@ -2956,6 +2965,7 @@ fn a_line_of_a_held_run_comes_after_its_run_started() {
         },
         Began::Start,
         &Attributes::default(),
+        None,
     );
     host.report(plane, &report(4, SessionStart), Followed::No)
         .unwrap();
@@ -2967,5 +2977,90 @@ fn a_line_of_a_held_run_comes_after_its_run_started() {
             ("run.started".to_owned(), Some(RUN.to_owned())),
             ("hook.sessionstart".to_owned(), Some(RUN.to_owned())),
         ]
+    );
+}
+
+/// The sandbox coming back on for a chat, as its start holds it (#2252).
+fn back_on() -> HeldTrust {
+    HeldTrust::of(
+        &crate::sandbox::Change::On,
+        Some(crate::harness::Harness::ClaudeCode),
+        None,
+    )
+}
+
+#[test]
+fn a_held_runs_trust_event_comes_first_whatever_reaches_the_log_first() {
+    // ADR 0067 §7, #2252: a hook line of the program before the host's start goes on still
+    // finds the sandbox's trust event, then the run's `run.started`, ahead of it.
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+        Some(back_on()),
+    );
+    host.report(plane, &report(4, SessionStart), Followed::No)
+        .unwrap();
+    host.begun(plane, 4).unwrap();
+
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [
+            ("trust.sandbox.on".to_owned(), Some(RUN.to_owned())),
+            ("run.started".to_owned(), Some(RUN.to_owned())),
+            ("hook.sessionstart".to_owned(), Some(RUN.to_owned())),
+        ]
+    );
+    assert_eq!(read(dir.path()).unwrap()[0].body, back_on().body);
+}
+
+#[test]
+fn an_audit_naming_a_start_taken_back_begins_no_run() {
+    // #2252: a grant, a change applied or a dispatch grant from that number is of no run.
+    use crate::sandbox::grant::{Audited, Level};
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+        Some(back_on()),
+    );
+    host.taken_back(plane, 4);
+    let granted = host
+        .sandbox_grant(
+            plane,
+            Some(4),
+            &Audited {
+                granted: true,
+                what: "host",
+                target: "api.example.com",
+                level: Level::Chat,
+            },
+        )
+        .unwrap();
+
+    assert_eq!((granted.chat, granted.run), (None, None));
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [("trust.sandbox.grant".to_owned(), None)],
+        "no run begun, and the held trust event dropped"
     );
 }

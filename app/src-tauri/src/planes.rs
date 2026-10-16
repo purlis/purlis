@@ -3536,8 +3536,9 @@ impl Planes {
             let events = events.clone();
             // The key the hook channel records this project's chats under.
             let root = id.root().to_path_buf();
-            // A run its start may still put aside is held until the start goes on (#2250); a
-            // line of it that comes first is written after its `run.started`.
+            // A run its start may still put aside is held until the start goes on (#2250), with
+            // its start's trust event (#2252); a line of it that comes first is written after
+            // them.
             chats.when_a_run_begins(Box::new({
                 let (events, root) = (events.clone(), root.clone());
                 move |session, run, cause, attributes, said| {
@@ -3548,7 +3549,11 @@ impl Planes {
                         run: run.run.to_owned(),
                         cause,
                         attributes: attributes.clone(),
-                        held: said == crate::chats::RunSaid::Held,
+                        trust: match &said {
+                            crate::chats::RunSaid::Held(trust) => trust.clone(),
+                            crate::chats::RunSaid::Now => None,
+                        },
+                        held: said != crate::chats::RunSaid::Now,
                     });
                     if let Err(why) = begun {
                         tracing::warn!("purlis: a run was not written to the event log ({why})");
@@ -3563,12 +3568,10 @@ impl Planes {
                         plane,
                         number: session,
                     },
-                    crate::chats::HeldStart::TakenBack => {
-                        purlis_core::eventlog::Entry::TakenBack {
-                            plane,
-                            number: session,
-                        }
-                    }
+                    crate::chats::HeldStart::TakenBack => purlis_core::eventlog::Entry::TakenBack {
+                        plane,
+                        number: session,
+                    },
                 });
                 if let Err(why) = settled {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");

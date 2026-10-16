@@ -19,7 +19,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use super::{Attributes, Began, Event, Followed, Recorder, RunOf};
+use super::{Attributes, Began, Event, Followed, HeldTrust, Recorder, RunOf};
 
 /// One write the window asks of the event log, as it travels to the log's writer.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -53,6 +53,10 @@ pub enum Entry {
         attributes: Attributes,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         held: bool,
+        /// The trust event held with a `held` run, written just before its `run.started`
+        /// (#2252).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trust: Option<HeldTrust>,
     },
     /// The start whose run was held goes on: its `run.started` is written now
     /// ([`Recorder::begun`]).
@@ -123,13 +127,17 @@ impl Recorder {
                 cause,
                 attributes,
                 held,
+                trust,
             } => {
                 let run = RunOf {
                     chat: &chat,
                     run: &run,
                 };
                 if held {
-                    self.begin_held(&plane, number, run, cause, &attributes);
+                    if let Some(trust) = &trust {
+                        trust_kind(trust.kind())?;
+                    }
+                    self.begin_held(&plane, number, run, cause, &attributes, trust);
                     Ok(Vec::new())
                 } else {
                     one(self.begin(&plane, number, run, cause, &attributes))
