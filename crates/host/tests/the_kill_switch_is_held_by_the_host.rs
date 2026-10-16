@@ -40,13 +40,21 @@ fn a_host_keeping_its_switch_in(folder: &Path, runs: &StandIns) -> Hosting {
     Hosting::running_with_its_switch_in(folder, Echo, runs.clone())
 }
 
-/// A link to `hosting` admitted as `scope`.
+/// A link to `hosting` admitted as `scope`: proved by its credential, or, for `remote-link`,
+/// as another host's link is, by its device.
 async fn a_link(hosting: &Hosting, scope: Scope) -> Client {
     let (a, b) = duplex(256 * 1024);
-    let (client, served) = tokio::join!(
-        link::connect(a, session::speaks(), scope, HELD.of(scope)),
-        link::serve_any(b, session::speaks(), &HELD)
-    );
+    let (client, served) = if scope == Scope::RemoteLink {
+        tokio::join!(
+            link::connect_as_a_device(a, session::speaks()),
+            link::serve_as_a_device(b, session::speaks(), link::ProvenDevice::stand_in())
+        )
+    } else {
+        tokio::join!(
+            link::connect(a, session::speaks(), scope, HELD.of(scope)),
+            link::serve_any(b, session::speaks(), &HELD)
+        )
+    };
     tokio::spawn(session::serve(served.unwrap(), hosting.clone(), None));
     let (client, _views, _events) = Client::new(client.unwrap());
     client
@@ -170,7 +178,12 @@ async fn a_link_that_is_not_the_window_stops_every_program_and_cannot_re_arm() {
     let window = the_window(&hosting, project.path()).await;
     window.start_program(a_harness()).await.expect("it starts");
 
-    for scope in [Scope::Terminal, Scope::FleetMcp, Scope::Approval] {
+    for scope in [
+        Scope::Terminal,
+        Scope::FleetMcp,
+        Scope::Approval,
+        Scope::RemoteLink,
+    ] {
         let other = a_link(&hosting, scope).await;
 
         assert!(
@@ -199,13 +212,20 @@ async fn while_stopped_the_window_may_open_a_shell_and_no_other_link_may() {
     let runs = StandIns::default();
     let hosting = a_host_keeping_its_switch_in(folder.path(), &runs);
     let window = the_window(&hosting, project.path()).await;
-    let terminal = a_link(&hosting, Scope::Terminal).await;
     window.stop_all().await.expect("stopped");
     let a_shell = || StartProgram::of(PROJECT, ProgramKind::Shell);
 
-    assert_eq!(
-        refused_start(&terminal, a_shell()).await.as_deref(),
-        Some(session::STOPPED)
+    for scope in [Scope::Terminal, Scope::RemoteLink] {
+        let other = a_link(&hosting, scope).await;
+        assert_eq!(
+            refused_start(&other, a_shell()).await.as_deref(),
+            Some(session::STOPPED),
+            "{scope}"
+        );
+    }
+    assert!(
+        runs.ran().is_empty(),
+        "a shell opened for a link not the window's"
     );
     window
         .start_program(a_shell())

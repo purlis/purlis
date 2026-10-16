@@ -107,6 +107,12 @@ fn both_names(path: &Path) -> Vec<std::path::PathBuf> {
 /// sandbox, so the sandbox's allowed hosts do not hold them.
 pub const WEB_TOOLS: [&str; 2] = ["WebFetch", "WebSearch"];
 
+/// Claude Code's own browser tools, by the permission rule that names every tool of their
+/// server: its Chrome integration, which drives the person's own Chrome. A chat purlis
+/// sandboxes is offered none of them, at either level (#2013, spec #2008): the browser a chat
+/// drives is purlis's, the one the person watches and whose reach purlis holds.
+pub const BROWSER_TOOLS: [&str; 1] = ["mcp__claude-in-chrome"];
+
 /// What a Claude Code chat's `--settings` carries for the sandbox.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -351,6 +357,7 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     }
     let deny = WEB_TOOLS
         .iter()
+        .chain(BROWSER_TOOLS.iter())
         .map(|tool| (*tool).to_owned())
         .chain(read_rules)
         .chain(edit_rules)
@@ -421,7 +428,12 @@ fn floor(
     }
     Settings {
         sandbox,
-        deny: read_rules.into_iter().chain(edit_rules).collect(),
+        deny: BROWSER_TOOLS
+            .iter()
+            .map(|tool| (*tool).to_owned())
+            .chain(read_rules)
+            .chain(edit_rules)
+            .collect(),
     }
 }
 

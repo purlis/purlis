@@ -117,9 +117,14 @@ use crate::view::{Limits, Views};
 /// 1.10 added the kept board (#2194, CONTEXT.md): `board_moved` tells the host each move the
 /// window made on its copy of a held project's chats and Needs you, and `board`, answered
 /// `board`, reads the host's kept board whole.
+///
+/// 1.11 added browsers for chats (#2013): `browse` carries one act to a browser
+/// ([`crate::browsing::Act`]), answered `browsed`, or refused `browser_refused` in the driver's
+/// words or `browser_ended`; a browser's start may say what it reaches (`reach`,
+/// [`crate::browsing::BrowserReach`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 10,
+    minor: 11,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -170,6 +175,12 @@ pub const STOPPED: &str = "stopped";
 /// The host keeps no event log, or could not write this in it durably, for a reason its `why`
 /// gives (1.8): what the window asked recorded is not, and the act it records does not go on.
 pub const NOT_RECORDED: &str = "not_recorded";
+/// A browser's driver refused an act, or could not tell whether it acted (1.11): its `why` is
+/// the driver's sentence, which says what to do.
+pub const BROWSER_REFUSED: &str = "browser_refused";
+/// The browser an act was for has ended: stopped, closed, or its engine ended (1.11). Nothing
+/// was done; a new browser is opened for the next act.
+pub const BROWSER_ENDED: &str = "browser_ended";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -182,6 +193,8 @@ pub const REFUSALS: &[&str] = &[
     NOT_STARTED,
     STOPPED,
     NOT_RECORDED,
+    BROWSER_REFUSED,
+    BROWSER_ENDED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -330,6 +343,15 @@ pub enum Command {
     /// switch line), in the shape the binary's log reads. The window's alone
     /// ([`crate::grants::Power::Record`]), in the order it sent them.
     Record { entry: serde_json::Value },
+    /// One act of a browser's (1.11, #2013), carried out by its driver: answered
+    /// [`Answer::Browsed`], or refused [`BROWSER_REFUSED`] in the driver's words. `call_id` is
+    /// the act's own id: a retry with the same id answers again and acts on nothing. The
+    /// window's alone ([`crate::grants::Power::Browser`]).
+    Browse {
+        program: String,
+        call_id: String,
+        act: crate::browsing::Act,
+    },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -532,6 +554,10 @@ pub struct StartProgram {
     /// ([`crate::grants::Power::Launch`]), until what composes it lives in the host (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch: Option<Launch>,
+    /// For a [`ProgramKind::Browser`], what it may reach (1.11): absent, nothing listed and
+    /// every site new to the project refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reach: Option<crate::browsing::BrowserReach>,
 }
 
 impl StartProgram {
@@ -553,6 +579,7 @@ impl StartProgram {
             first_message: None,
             without_sandbox: false,
             launch: None,
+            reach: None,
         }
     }
 }
@@ -689,6 +716,8 @@ pub enum Answer {
     /// The kill switch as it stands: [`Command::StopAll`], [`Command::Rearm`] and
     /// [`Command::KillSwitch`] (1.5).
     KillSwitch(KillSwitch),
+    /// What a browser answered an act with: [`Command::Browse`] (1.11).
+    Browsed(Box<crate::browsing::Browsed>),
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -851,7 +880,8 @@ pub enum Pushed {
     /// One look of a project's auto-save did something (1.7): it `saved` the project, or only
     /// fetched, pushed or looked at a request; `moved_tree` when what it did moved files in the
     /// tree (a fast-forward, a save's rebase), so a client reads everything again, and only the
-    /// git standing otherwise.
+    /// git standing otherwise. Pushed only to a link that may save ([`crate::grants::Power::Save`])
+    /// and holds the project.
     Saving {
         project: String,
         saved: bool,
@@ -902,6 +932,7 @@ wire_words!(Command {
     FetchProject => "fetch_project",
     MidTurn => "mid_turn",
     Record => "record",
+    Browse => "browse",
 });
 
 impl Command {
@@ -937,6 +968,7 @@ impl Command {
             | Command::ReachOf { .. } => Power::Confine,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
             Command::Record { .. } => Power::Record,
+            Command::Browse { .. } => Power::Browser,
         }
     }
 }
@@ -953,6 +985,7 @@ wire_words!(Answer {
     ReachChanged => "reach_changed",
     Reach => "reach",
     KillSwitch => "kill_switch",
+    Browsed => "browsed",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -1353,6 +1386,9 @@ enum Lane {
     Record,
     /// The moves and reads of one held project's kept board, by the project (1.10).
     Board(String),
+    /// The acts asked of one browser (1.11): in order among themselves, and never ahead of or
+    /// behind its views, so a long wait for text holds up no view of it.
+    Browsing(String),
 }
 
 impl Lane {
@@ -1399,6 +1435,7 @@ impl Lane {
             Command::BoardMoved { project, .. } | Command::Board { project } => {
                 Some(Lane::Board(project.clone()))
             }
+            Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
         }
     }
 }
@@ -1941,6 +1978,27 @@ impl Client {
         };
         match self.call(attach).await? {
             Answer::Attached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// One act of browser `program`'s, under the act's own id `call_id` (1.11): what the browser
+    /// answered, or its driver's refusal ([`BROWSER_REFUSED`]).
+    pub async fn browse(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: crate::browsing::Act,
+    ) -> Result<crate::browsing::Browsed, CallError> {
+        match self
+            .call(Command::Browse {
+                program: program.into(),
+                call_id: call_id.into(),
+                act,
+            })
+            .await?
+        {
+            Answer::Browsed(browsed) => Ok(*browsed),
             other => Err(unexpected(&other)),
         }
     }

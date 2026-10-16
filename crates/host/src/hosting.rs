@@ -45,9 +45,11 @@
 //!
 //! **A held project is saved here when the window asks** (#2002): the host runs the binary's
 //! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
-//! is composed, and tells every window that holds the project there what each look did. One
-//! saver per project at each place it is held (#2178), however often it is asked. A link that
-//! ends without a word leaves it saving, so the project is saved while the window is gone for a
+//! is composed, and tells the window what each look did: only a link that may save a project
+//! ([`Power::Save`]) and holds it there hears how saving it goes, its saver's question of who is
+//! mid-turn included. One saver per project at each place it is held (#2178), however often it
+//! is asked. A link that ends without a word leaves it saving, so the project is saved while the
+//! window is gone for a
 //! moment; the window's own stop, or every window letting go of the project, ends it.
 
 use std::collections::HashMap;
@@ -241,6 +243,17 @@ pub trait Running: Send + Sync + 'static {
     fn readiness(&self) -> Readiness;
     /// Calls `tell` once, as it ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
+    /// Carries out a browser's act (#2013): refused for every program that is not a browser.
+    fn act(
+        &self,
+        call_id: &str,
+        act: purlis_session_protocol::browsing::Act,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
+        let _ = (call_id, act);
+        Err(crate::browsers::NotActed::Refused(
+            "this program is not a browser, so it takes no browser's act".into(),
+        ))
+    }
 }
 
 /// Runs each start in a terminal of its own: a pseudo-terminal, and the engine that keeps its
@@ -365,12 +378,13 @@ struct State {
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
-/// ([`Power::Confine`]).
+/// ([`Power::Confine`]) and how saving a project it holds goes ([`Power::Save`]).
 struct Subscriber {
     /// The link it came on ([`link_of`]).
     link: u64,
     told: mpsc::Sender<Pushed>,
     confines: bool,
+    saves: bool,
 }
 
 /// A chat's confinement the host holds (#1999), and whose it is.
@@ -644,21 +658,20 @@ impl Hosting {
         });
     }
 
-    /// Tell every subscriber whose link holds the project `at` that place, letting go of one
-    /// that is gone or has stopped reading: whether one was told. One clone's news is never
-    /// told to the window of another (#2178).
-    fn tell_holders(&self, at: &HeldAt, pushed: &Pushed) -> bool {
-        let mut state = self.state();
-        let Some(holders) = state
+    /// Tell `pushed` to every subscriber whose link holds the project `at` that place, letting go
+    /// of one that is gone or has stopped reading: whether one was told. One clone's news is
+    /// never told to the window of another (#2178). How saving goes, its saver's question of
+    /// who is mid-turn included, is `for_savers`: told only to a link that may save the project
+    /// ([`Power::Save`]).
+    fn tell_holders(state: &mut State, at: &HeldAt, pushed: &Pushed, for_savers: bool) -> bool {
+        let holders: Vec<u64> = state
             .projects
             .get(at)
-            .map(|held| held.links.keys().copied().collect::<Vec<u64>>())
-        else {
-            return false;
-        };
+            .map(|held| held.links.keys().copied().collect())
+            .unwrap_or_default();
         let mut told = false;
         state.subscribers.retain(|subscriber| {
-            if !holders.contains(&subscriber.link) {
+            if (for_savers && !subscriber.saves) || !holders.contains(&subscriber.link) {
                 return true;
             }
             let sent = subscriber.told.try_send(pushed.clone()).is_ok();
@@ -670,8 +683,8 @@ impl Hosting {
 
     /// Asks the window which chats are mid-turn in `workspace` of the project held `at`, and
     /// waits for its answer, at most `within`: `None` with no window holding the project there
-    /// linked, or none that answered (#2002). Asked of the links that hold it there, as its hook
-    /// lines are.
+    /// linked, or none that answered (#2002). Asked of the links that may save the project and
+    /// hold it there ([`Self::tell_holders`]), which alone answer it.
     fn ask_the_window(
         &self,
         at: &HeldAt,
@@ -681,11 +694,6 @@ impl Hosting {
         let (answered, answer) = std::sync::mpsc::channel();
         let question = {
             let mut state = self.state();
-            let holders: Vec<u64> = state
-                .projects
-                .get(at)
-                .map(|held| held.links.keys().copied().collect())
-                .unwrap_or_default();
             state.asked += 1;
             let question = state.asked;
             let pushed = Pushed::WhoIsMidTurn {
@@ -693,16 +701,7 @@ impl Hosting {
                 project: at.project.clone(),
                 workspace: workspace.to_owned(),
             };
-            let mut asked = false;
-            state.subscribers.retain(|subscriber| {
-                if !holders.contains(&subscriber.link) {
-                    return true;
-                }
-                let sent = subscriber.told.try_send(pushed.clone()).is_ok();
-                asked |= sent;
-                sent
-            });
-            if !asked {
+            if !Self::tell_holders(&mut state, at, &pushed, true) {
                 return None;
             }
             state.questions.insert(question, answered);
@@ -716,14 +715,12 @@ impl Hosting {
     /// Push line `id` that the hooks of the project held `at` wrote to every subscriber whose
     /// link holds it there: whether one was told.
     fn hand_on(&self, at: &HeldAt, id: u64, line: serde_json::Value) -> bool {
-        self.tell_holders(
-            at,
-            &Pushed::Heard {
-                project: at.project.clone(),
-                heard: id,
-                line,
-            },
-        )
+        let pushed = Pushed::Heard {
+            project: at.project.clone(),
+            heard: id,
+            line,
+        };
+        Self::tell_holders(&mut self.state(), at, &pushed, false)
     }
 
     /// What hands a line the hooks of the project held `at` wrote on to whoever holds it
@@ -1153,9 +1150,10 @@ impl Hosting {
         // Starting an engine forks and waits for it to answer: off the runtime.
         let hosting = self.clone();
         let named = program.clone();
+        let reach = start.reach.clone();
         let started = tokio::task::spawn_blocking(move || {
             let data = hosting.inner.browsers.data_folders()?.join(&named);
-            match hosting.inner.browsers.start(&data) {
+            match hosting.inner.browsers.start(&data, reach.as_ref()) {
                 Ok(screen) => Ok((screen, data)),
                 Err(why) => {
                     let _ = std::fs::remove_dir_all(&data);
@@ -1207,6 +1205,31 @@ impl Hosting {
             number: None,
             process,
         })
+    }
+
+    /// One act of browser `program`'s (#2013), carried out off the runtime, since it waits on
+    /// the engine: what the browser answered, or its driver's refusal in its words.
+    async fn browse(
+        &self,
+        program: &str,
+        call_id: String,
+        act: purlis_session_protocol::browsing::Act,
+    ) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.act(&call_id, act))
+            .await
+            .map_err(|why| not_started(why.to_string()))?
+            .map(|browsed| Answer::Browsed(Box::new(browsed)))
+            .map_err(|not| match not {
+                crate::browsers::NotActed::Ended => Refusal {
+                    code: session::BROWSER_ENDED.into(),
+                    why: crate::browsers::AN_ENDED_BROWSER.into(),
+                },
+                crate::browsers::NotActed::Refused(why) => Refusal {
+                    code: session::BROWSER_REFUSED.into(),
+                    why,
+                },
+            })
     }
 
     async fn attach(
@@ -1544,14 +1567,12 @@ impl Hosting {
             let at = at.clone();
             Box::new(move |looked: Looked| {
                 if let Some(inner) = host.upgrade() {
-                    Hosting { inner }.tell_holders(
-                        &at,
-                        &Pushed::Saving {
-                            project: at.project.clone(),
-                            saved: looked.saved,
-                            moved_tree: looked.moved_tree,
-                        },
-                    );
+                    let pushed = Pushed::Saving {
+                        project: at.project.clone(),
+                        saved: looked.saved,
+                        moved_tree: looked.moved_tree,
+                    };
+                    Hosting::tell_holders(&mut Hosting { inner }.state(), &at, &pushed, true);
                 }
             })
         };
@@ -1738,6 +1759,11 @@ impl session::Host for Hosting {
                     .map(|()| Answer::Done)
                     .map_err(not_recorded)
             }
+            Command::Browse {
+                program,
+                call_id,
+                act,
+            } => self.browse(&program, call_id, act).await,
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -1774,6 +1800,7 @@ impl session::Host for Hosting {
             link: link_of(peer),
             told,
             confines: peer.scope().may(Power::Confine),
+            saves: peer.scope().may(Power::Save),
         });
         Ok(notices)
     }

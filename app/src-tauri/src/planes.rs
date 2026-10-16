@@ -269,6 +269,10 @@ pub struct Held {
     vault_refusals: crate::vaultroute::Refusals,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
+    /// Each chat's browsers, and what the person said they may reach (#2013).
+    browsers: crate::chatbrowsers::ChatBrowsers,
+    /// Where the chats' browsers run: the window's session host, where it has one.
+    browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// The changes each chat proposed to purlis's own configuration, until the person answers
     /// (#1975).
     proposals: crate::proposals::Proposals,
@@ -521,6 +525,16 @@ impl Held {
     /// (qw356).
     pub fn removal_asks(&self) -> &crate::removalasks::Asked {
         &self.removal_asks
+    }
+
+    /// Each chat's browsers, and what the person said they may reach (#2013).
+    pub fn browsers(&self) -> &crate::chatbrowsers::ChatBrowsers {
+        &self.browsers
+    }
+
+    /// Where the chats' browsers run: none where the window has no session host.
+    pub fn browser_driver(&self) -> Option<&Arc<dyn crate::chatbrowsers::Driver>> {
+        self.browser_driver.as_ref()
     }
 
     /// The changes each chat proposed to purlis's own configuration, for the person to apply
@@ -989,6 +1003,8 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
+        // Its browsers end with it (#2013).
+        self.browsers.forget(self.browser_driver.as_ref(), session);
         self.proposals.forget(session);
         self.mcp_failures.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
@@ -1933,6 +1949,10 @@ pub struct Planes {
     vault_refused: crate::vaultroute::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
+    /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
+    browsers_ended: crate::chatbrowsers::Teller,
+    /// Where the chats' browsers run (#2013): the window's session host, once it is given.
+    browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -2187,6 +2207,8 @@ impl Planes {
             project_settings: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
+            browsers_ended: Arc::new(|_| {}),
+            browser_driver: None,
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2397,10 +2419,23 @@ impl Planes {
         self
     }
 
+    /// Runs the browsers of the chats of every plane this registry holds in `driver` (#2013).
+    pub fn driving_browsers_with(mut self, driver: Arc<dyn crate::chatbrowsers::Driver>) -> Self {
+        self.browser_driver = Some(driver);
+        self
+    }
+
     /// Tells `refused` each vault a chat is refused for its persona in a plane this registry
     /// holds, so the window can show the ways forward on the chat's tab (#1430).
     pub fn telling_vault_refusals(mut self, refused: crate::vaultroute::Teller) -> Self {
         self.vault_refused = refused;
+        self
+    }
+
+    /// Tells `ended` each chat whose browsers ended because the person narrowed its reach, so
+    /// the window says so on its tab (#2013).
+    pub fn telling_browsers_ended(mut self, ended: crate::chatbrowsers::Teller) -> Self {
+        self.browsers_ended = ended;
         self
     }
 
@@ -2898,6 +2933,18 @@ impl Planes {
         // purlis's word on a chat's held connections (#1666) is handed to its next turn on
         // the road the person's words take: the app's memory, never a file. Weak for the
         // handoff's reason.
+        // A chat whose reach the person narrowed while it runs: its browsers end, and its tab
+        // says so (#2013). Weak for the handoff's reason.
+        held.chats().tell_narrowed_to({
+            let weak = Arc::downgrade(&held);
+            let plane = id.clone();
+            let told = Arc::clone(&self.browsers_ended);
+            Arc::new(move |session| {
+                if let Some(strong) = weak.upgrade() {
+                    crate::chatbrowsers::narrowed(&strong, &plane, session, &*told);
+                }
+            })
+        });
         held.chats().tell_network_words_to({
             let weak = Arc::downgrade(&held);
             Arc::new(move |session, word| {
@@ -3829,6 +3876,8 @@ impl Planes {
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
+            browsers: crate::chatbrowsers::ChatBrowsers::default(),
+            browser_driver: self.browser_driver.clone(),
             proposals: crate::proposals::Proposals::default(),
             mcp_failures,
             dispatch_grants: crate::dispatchgrants::Store::default(),

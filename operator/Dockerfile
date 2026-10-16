@@ -3,7 +3,8 @@
 
 # purlis's cluster operator image (#2054). Built from a context holding ONE file: the
 # `purlis-cluster-operator` binary compiled on Ubuntu 24.04 with the repository's pinned
-# toolchain, so nothing else of the repository can reach the image.
+# toolchain, so nothing else of the repository can reach the image. Built for each architecture
+# and checked (`tools/operator-image-check.mjs`) by `.github/workflows/operator-image.yml`.
 #
 # The base is the runner image's (runner-image/Dockerfile): the C library the binary was linked
 # against, pinned by the digest of its multi-architecture index, moved by Dependabot.

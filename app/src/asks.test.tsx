@@ -122,6 +122,20 @@ const SANDBOX_ONLY: Shown = {
   answer: { via: "sandbox-only" },
 };
 
+const BROWSER: Shown = {
+  session: 8,
+  ask: "browser:8",
+  says: "Wants a browser: what may it reach?",
+  options: [
+    { id: "project", label: "This project's sites", allows: true },
+    { id: "open-web", label: "Also the open web", allows: true },
+    { id: "keep", label: "Keep off", allows: false },
+  ],
+  source: "browser",
+  chain: ["steward 8"],
+  answer: { via: "browser" },
+};
+
 const QUESTION: Shown = {
   session: 6,
   ask: "question:6",
@@ -269,6 +283,18 @@ describe("answering through the path an ask names", () => {
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["make_sandbox_only_profile", { plane: PLANE }],
       ["dismiss_sandbox_only", { plane: PLANE }],
+    ]);
+  });
+
+  it("sets what a chat's browser reaches by its own commands, or keeps it off with the reason (#2013)", async () => {
+    const calls = sent({ allow_chat_browser: null, keep_chat_browser_off: null });
+    await answerThrough(PLANE, BROWSER, "project");
+    await answerThrough(PLANE, BROWSER, "open-web");
+    await answerTaken(PLANE, BROWSER, "keep", "  not for this task ");
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: false }],
+      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: true }],
+      ["keep_chat_browser_off", { plane: PLANE, session: 8, reason: "not for this task" }],
     ]);
   });
 

@@ -79,7 +79,8 @@ spec:
       enableServiceLinks: false
       containers:
         - name: operator
-          # Not published yet: build it from operator/Dockerfile and name your build by digest.
+          # A tag, which moves. Install it named by digest: `.github/workflows/operator-image.yml`
+          # records each image's digest, and an operator.yaml naming it (docs/cluster-operator.md).
           image: ghcr.io/purlis/purlis-cluster-operator:main
           resources:
             requests:

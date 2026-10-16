@@ -232,12 +232,40 @@ pub struct Reply {
     pub attached: Vec<Attached>,
 }
 
+/// **An answer as a line carries it** (#2013): never with bytes inside it. A browser's
+/// screenshot goes back only on the framed stream, as an image after its answer, so on a line
+/// it is left out and the answer says where to ask for it.
+pub fn on_a_line(answer: Answer) -> Answer {
+    let Reply {
+        mut answer,
+        attached,
+    } = Reply::from(answer);
+    if !attached.is_empty()
+        && let Answer::Browsed { browsed, .. } = &mut answer
+    {
+        let left_out = "its screenshot is sent only to purlis's browser tools (purlis mcp)";
+        browsed.note = Some(match browsed.note.take() {
+            Some(note) => format!("{note}; {left_out}"),
+            None => left_out.to_owned(),
+        });
+    }
+    answer
+}
+
+/// An answer as it goes back framed: what it carries as bytes (a browser's screenshot, #2013)
+/// taken out of it and attached after it, so the model is handed an image.
 impl From<Answer> for Reply {
-    fn from(answer: Answer) -> Self {
-        Self {
-            answer,
-            attached: Vec::new(),
+    fn from(mut answer: Answer) -> Self {
+        let mut attached = Vec::new();
+        if let Answer::Browsed { browsed, .. } = &mut answer
+            && let Some(png) = browsed.png.take()
+        {
+            attached.push(Attached {
+                media_type: "image/png".to_owned(),
+                bytes: png,
+            });
         }
+        Self { answer, attached }
     }
 }
 

@@ -33,6 +33,7 @@ mod branchwatch;
 mod brokered;
 mod browsers;
 mod changes;
+mod chatbrowsers;
 mod chats;
 mod clipath;
 mod createproject;
@@ -2707,6 +2708,7 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::RefusedMore>()
         // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
         .typ::<projectsettings::Rescreened>()
+        .typ::<chatbrowsers::BrowsersEnded>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chat-stop` carries (#1448).
@@ -2968,6 +2970,14 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
 /// switch (`hostedsessions`, #1998). With the switch on and no host of the window's own, its
 /// chats are refused with the reason, never run in the window instead (ADR 0068, Ruled 3).
 fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
+    // The chats' browsers run in the window's session host, wherever its chats run (#2013).
+    #[cfg(unix)]
+    let planes = match app.try_state::<std::sync::Arc<browsers::WindowBrowsers>>() {
+        Some(browsers) => planes.driving_browsers_with(
+            std::sync::Arc::clone(&*browsers) as std::sync::Arc<dyn chatbrowsers::Driver>
+        ),
+        None => planes,
+    };
     #[cfg(unix)]
     if hostedsessions::chats_run_in_the_host() {
         tracing::info!("purlis: chats run in the session host on this launch");
@@ -3648,6 +3658,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             vaultroute::REFUSED,
+                            &told,
+                        );
+                    })
+                })
+                // A chat whose browsers ended because the person narrowed its reach: the
+                // window says so on its tab (#2013).
+                .telling_browsers_ended({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: chatbrowsers::BrowsersEnded| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            chatbrowsers::ENDED,
                             &told,
                         );
                     })

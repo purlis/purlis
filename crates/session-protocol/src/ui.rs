@@ -293,6 +293,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.
     "keep_asked_workspace",
+    // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
+    // answer alone. No chat answers its own Ask.
+    "allow_chat_browser",
+    "keep_chat_browser_off",
     // Apply and Dismiss on a chat's proposed change (#1975): only the person applies a change to
     // purlis's own configuration, and no chat answers its own proposal (PC-3).
     "apply_proposed_change",

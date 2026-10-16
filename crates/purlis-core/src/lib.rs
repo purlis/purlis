@@ -15,6 +15,7 @@ pub mod awareness;
 pub mod briefing;
 pub mod brokered;
 pub mod browser;
+pub mod browsertools;
 pub mod change;
 pub mod chatenv;
 pub mod chatpiece;

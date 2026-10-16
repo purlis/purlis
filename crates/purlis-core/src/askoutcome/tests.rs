@@ -43,6 +43,19 @@ fn every_kind() -> Vec<(About, &'static str)> {
             },
             "using vault `devops`",
         ),
+        (About::Browser { open_web: None }, "using a browser"),
+        (
+            About::Browser {
+                open_web: Some(false),
+            },
+            "using a browser that reaches this project's sites and its dev servers",
+        ),
+        (
+            About::Browser {
+                open_web: Some(true),
+            },
+            "using a browser that reaches this project's sites, its dev servers and the open web",
+        ),
     ]
 }
 

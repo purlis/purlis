@@ -14,8 +14,12 @@
 //! - **This runs in the session host.** The window's host is the window's own binary, so with
 //!   browsers it runs core code: the engine's download and the data home are read there, as a
 //!   browser starts and never before (D-2012-4).
-//! - **Its reach**, until a browser has a chat and a posture (#2013, #2018): nothing listed, and
-//!   every site new to the project refused ([`NewSites::refusing`]), so it fails closed.
+//! - **Its reach** is what the window gives it as it starts ([`reach_of`], #2013): the hosts its
+//!   chat's sandbox lists, and a public site nothing lists only where the person let it reach
+//!   the open web. A browser started with none (the person's own, #2012) reaches nothing listed,
+//!   and every site new to the project is refused ([`NewSites::refusing`]), so it fails closed.
+//! - **Its acts** are the driver's own calls ([`call_of`]), answered in the protocol's words
+//!   ([`browsed`]), a screenshot made to fit the control lane ([`MOST_SCREENSHOT_BYTES`]).
 //! - **Its data folder** is the one the host gives it, under `<data>/browsers`, fresh: the host
 //!   removes it once the browser has ended.
 
@@ -24,17 +28,19 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
-use purlis_browser_engine::drive::{Browser, Limits};
+use purlis_browser_engine::WebAddress;
+use purlis_browser_engine::drive::{self, Browser, CallId, Limits, PageId, Ref};
 use purlis_browser_engine::install::{
     EngineSettings, Engines, Https, Manifest, NoSigner, Platform,
 };
 use purlis_browser_engine::launch::{self, Launch, PAGE_SIZE};
 use purlis_browser_engine::process::{Engine, Keeper};
+use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
-use purlis_host::{Browsers, FrameSink, Screen};
+use purlis_host::{Browsers, FrameSink, NotActed, Screen};
 
 use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
-use crate::sandbox::reach::Reach;
+use crate::sandbox::reach::{Reach, Written};
 
 /// The argument that starts this binary as an engine's keeper.
 pub const KEEPER: &str = "purlis-engine-keeper";
@@ -115,7 +121,7 @@ impl Browsers for EngineBrowsers {
         self.places().map(|(data, _)| browsers_in(&data))
     }
 
-    fn start(&self, data: &Path) -> Result<Arc<dyn Screen>, String> {
+    fn start(&self, data: &Path, reach: Option<&BrowserReach>) -> Result<Arc<dyn Screen>, String> {
         let (home, program) = self.places()?;
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
@@ -128,7 +134,8 @@ impl Browsers for EngineBrowsers {
         let ready = engines
             .prepare(&EngineSettings::default(), &Https, chrono::Utc::now())
             .map_err(|why| why.to_string())?;
-        let proxy = ReachProxy::start(Lane::of(Reach::of(Vec::new())), NewSites::refusing())
+        let (reach, new_sites) = reach_of(reach)?;
+        let proxy = ReachProxy::start(Lane::of(reach), new_sites)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let launch = Launch::new(&ready, data, launch::ReachProxy(proxy.address()));
         let engine =
@@ -136,14 +143,212 @@ impl Browsers for EngineBrowsers {
         let browser = Browser::new(engine, Limits::default()).map_err(|why| why.to_string())?;
         Ok(Arc::new(EngineScreen {
             process: browser.process(),
-            held: Mutex::new(Some(Held { browser, proxy })),
+            held: Mutex::new(Some(Held {
+                browser: Arc::new(browser),
+                proxy,
+            })),
         }))
     }
 }
 
+/// The most bytes a screenshot's PNG is carried as: with its base64 and the answer around it,
+/// well inside one control frame of the session protocol
+/// (`purlis_host::protocol::link::MOST_CONTROL_FRAME_BYTES`), so a larger one is halved to fit
+/// (`drive::fit`).
+pub const MOST_SCREENSHOT_BYTES: usize = 600 * 1024;
+
+/// **What a browser reaches** (#2013): the hosts `reach` lists, each at its layer, and the hosts
+/// policy pins as never allowed, read as the chat's own reach reads them; and a public site
+/// nothing lists only where `reach` lets it reach the open web. None given, nothing is listed
+/// and every new site is refused. A listing that does not read is refused, never dropped.
+pub fn reach_of(reach: Option<&BrowserReach>) -> Result<(Reach, NewSites), String> {
+    let Some(reach) = reach else {
+        return Ok((Reach::of(Vec::new()), NewSites::refusing()));
+    };
+    let written = Written {
+        listed: reach
+            .listed
+            .iter()
+            .map(|listed| {
+                (
+                    listed.host.clone(),
+                    crate::sandbox::reach::by_of(listed.layer),
+                )
+            })
+            .collect(),
+        never: reach.never.clone(),
+        withdrawn: reach.withdrawn.clone(),
+        anything: false,
+    };
+    let read = Reach::from_written(&written)
+        .map_err(|why| format!("the browser's reach does not read: {why}"))?;
+    let new_sites = if reach.open_web {
+        NewSites::carrying()
+    } else {
+        NewSites::refusing()
+    };
+    Ok((read, new_sites))
+}
+
+/// **A chat's act as the driver's own call** (#2013), or why it is refused before the driver
+/// hears of it: an address that is not an http or https one, in the words that say so.
+pub fn call_of(act: Act) -> Result<drive::Call, String> {
+    use drive::Call;
+    let page = |page: Option<String>| page.map(PageId::new);
+    let target = |r: Option<String>| r.map(Ref::new);
+    let address = |address: &str| WebAddress::parse(address).map_err(|why| why.to_string());
+    Ok(match act {
+        Act::Open { address: to } => Call::Open {
+            address: address(&to)?,
+        },
+        Act::Navigate {
+            page: on,
+            address: to,
+        } => Call::Navigate {
+            page: page(on),
+            address: address(&to)?,
+        },
+        Act::Snapshot {
+            page: on,
+            within,
+            from,
+            lines,
+        } => Call::Snapshot {
+            page: page(on),
+            within: target(within),
+            from: from.map_or(1, |from| from.max(1) as usize),
+            lines: lines.map(|lines| lines as usize),
+        },
+        Act::Find {
+            page: on,
+            text,
+            role,
+            within,
+        } => Call::Find {
+            page: page(on),
+            text,
+            role,
+            within: target(within),
+        },
+        Act::Click { target: t } => Call::Click {
+            target: Ref::new(t),
+        },
+        Act::DoubleClick { target: t } => Call::DoubleClick {
+            target: Ref::new(t),
+        },
+        Act::Hover { target: t } => Call::Hover {
+            target: Ref::new(t),
+        },
+        Act::Type { page: on, fields } => Call::Type {
+            page: page(on),
+            fields: fields
+                .into_iter()
+                .map(|field| drive::Field {
+                    into: target(field.into),
+                    text: field.text,
+                    replace: field.replace,
+                })
+                .collect(),
+        },
+        Act::Press { page: on, keys } => Call::Press {
+            page: page(on),
+            keys,
+        },
+        Act::Select { target: t, options } => Call::Select {
+            target: Ref::new(t),
+            options,
+        },
+        Act::Drag { from, to } => Call::Drag {
+            from: Ref::new(from),
+            to: match to {
+                wire::DragTo::Element(to) => drive::DragTo::Element(Ref::new(to)),
+                wire::DragTo::Offset { x, y } => drive::DragTo::Offset {
+                    x: f64::from(x),
+                    y: f64::from(y),
+                },
+            },
+        },
+        Act::Scroll { page: on, at, x, y } => Call::Scroll {
+            page: page(on),
+            at: target(at),
+            x: f64::from(x),
+            y: f64::from(y),
+        },
+        Act::Back { page: on } => Call::Back { page: page(on) },
+        Act::WaitForText {
+            page: on,
+            text,
+            gone,
+            within_ms,
+        } => Call::WaitForText {
+            page: page(on),
+            text,
+            gone,
+            within: Duration::from_millis(within_ms),
+        },
+        Act::Pages => Call::Pages,
+        Act::SwitchPage { page: to } => Call::SwitchPage {
+            page: PageId::new(to),
+        },
+        Act::Screenshot { page: on } => Call::Screenshot { page: page(on) },
+    })
+}
+
+fn said(page: drive::PageInfo) -> PageSaid {
+    PageSaid {
+        page: page.id.as_str().to_owned(),
+        address: page.address,
+        title: page.title,
+        current: page.current,
+    }
+}
+
+/// **The driver's answer in the protocol's words** (#2013), a screenshot made to fit `most`
+/// bytes: halved until it does, and said so in the answer's note, or left out and said why.
+pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
+    let (settled, waiting_for) = match answer.settled {
+        drive::Settled::Yes => (true, Vec::new()),
+        drive::Settled::No(waiting) => (false, waiting),
+    };
+    let mut out = Browsed {
+        page: answer.page.map(said),
+        settled,
+        waiting_for,
+        opened: answer.opened.into_iter().map(said).collect(),
+        note: answer.note,
+        repeated: answer.repeated,
+        ..Browsed::default()
+    };
+    let mut also = |note: String| {
+        out.note = Some(match out.note.take() {
+            Some(before) => format!("{before}; {note}"),
+            None => note,
+        });
+    };
+    match answer.content {
+        drive::Content::Nothing => {}
+        drive::Content::Text(text) => out.text = Some(text),
+        drive::Content::Pages(pages) => out.pages = pages.into_iter().map(said).collect(),
+        drive::Content::Seen(seen) => out.seen = Some(seen),
+        drive::Content::Image(png) => match drive::fit::to_fit(&png, most) {
+            Ok(fitted) => {
+                if fitted.halved > 0 {
+                    also(format!(
+                        "the screenshot was made smaller to fit, to {}×{} pixels",
+                        fitted.width, fitted.height
+                    ));
+                }
+                out.png = Some(fitted.png);
+            }
+            Err(why) => also(format!("no screenshot is attached: {why}")),
+        },
+    }
+    out
+}
+
 /// A running browser and its reach proxy, which lives exactly as long as it.
 struct Held {
-    browser: Browser,
+    browser: Arc<Browser>,
     proxy: ReachProxy,
 }
 
@@ -154,7 +359,7 @@ struct EngineScreen {
 }
 
 impl EngineScreen {
-    fn with<T>(&self, act: impl FnOnce(&Browser) -> T) -> Option<T> {
+    fn with<T>(&self, act: impl FnOnce(&Arc<Browser>) -> T) -> Option<T> {
         self.held
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -173,7 +378,7 @@ impl Screen for EngineScreen {
     }
 
     fn hide(&self) {
-        self.with(Browser::hide);
+        self.with(|browser| browser.hide());
     }
 
     fn size(&self) -> (u16, u16) {
@@ -194,6 +399,23 @@ impl Screen for EngineScreen {
             browser.stop(STOP_GRACE);
             drop(proxy);
         }
+    }
+
+    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
+        let id = CallId::new(call_id).map_err(|why| NotActed::Refused(why.to_string()))?;
+        let call = call_of(act).map_err(NotActed::Refused)?;
+        // The call waits on the engine: it is made outside the lock, so frames and a stop are
+        // never held up behind it.
+        let browser = self.with(Arc::clone);
+        browser
+            .map_or(Err(drive::Refusal::Ended), |browser| {
+                browser.call(&id, call)
+            })
+            .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
+            .map_err(|refusal| match refusal {
+                drive::Refusal::Ended => NotActed::Ended,
+                other => NotActed::Refused(other.to_string()),
+            })
     }
 
     /// Told once the engine has ended, however it ended; at once when it was stopped already.

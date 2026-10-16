@@ -544,7 +544,9 @@ function shapeOf(
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
     // while it is itself waiting, it gets the box beside the reason (#1700).
     reply: ask.source === "question" && (why === undefined || asked?.(ask.session) === true),
-    reason: ask.answer.via === "sandbox-block" && ask.options.some((one) => one.id === "keep"),
+    reason:
+      (ask.answer.via === "sandbox-block" || ask.answer.via === "browser") &&
+      ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
     ignore: waits && onIgnore !== undefined,
@@ -612,6 +614,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "proposed-change": "Proposes a change for you to apply",
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
+  browser: "Asks what its browser may reach",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };

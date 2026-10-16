@@ -652,6 +652,16 @@ export const commands = {
 	 */
 	keepAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<null, string>(__TAURI_INVOKE("keep_asked_workspace", { plane, session, workspace })),
 	/**
+	 *  **This project's sites, or also the open web**, on chat `session`'s browser Ask (#2013): its
+	 *  browser starts at its next browser call, reaching that; the chat is told on its next turn.
+	 */
+	allowChatBrowser: (plane: PlaneId, session: number, openWeb: boolean) => typedError<null, string>(__TAURI_INVOKE("allow_chat_browser", { plane, session, openWeb })),
+	/**
+	 *  **Keep off** on chat `session`'s browser Ask (#2013): its every browser call is refused,
+	 *  and it is told on its next turn not to retry, with the reason the person typed.
+	 */
+	keepChatBrowserOff: (plane: PlaneId, session: number, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_chat_browser_off", { plane, session, reason })),
+	/**
 	 *  **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
 	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
 	 *  Window-only.
@@ -3384,6 +3394,11 @@ export type AnswerPath =
  *  `dismiss_sandbox_only`.
  */
 { via: "sandbox-only" } | 
+/**
+ *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
+ *  Keep off, with the person's reason (#2013).
+ */
+{ via: "browser" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3506,7 +3521,9 @@ export type AskSource =
  *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
  *  making one and running Codex's own sign-in in it.
  */
-"sandbox-only";
+"sandbox-only" | 
+/**  A chat's first browser call, asking what its browser may reach (#2013). */
+"browser";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3823,6 +3840,14 @@ export type BrowserWatching = {
 	view: number,
 	width: number,
 	height: number,
+};
+
+/**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
+export type BrowsersEnded = {
+	plane: PlaneId,
+	session: number,
+	/**  What its tab says, in purlis's words. */
+	note: string,
 };
 
 /**  What kind of build this is, which decides which section is shown. */

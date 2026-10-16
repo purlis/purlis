@@ -2925,6 +2925,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Removal(_) => 11,
             Ask::Keys { .. } => 12,
             Ask::Propose(_) => 13,
+            Ask::Browse(_) => 14,
         }
     }
     let asks = vec![
@@ -2993,10 +2994,18 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 content: "[plane]\n".to_owned(),
             },
         })),
+        Ask::Browse(Box::new(purlis_core::hookwire::BrowseAsk {
+            chat,
+            browser: None,
+            call_id: "c-1".to_owned(),
+            asked: purlis_core::hookwire::Browsing::Act(
+                purlis_session_protocol::browsing::Act::Pages,
+            ),
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=13).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=14).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

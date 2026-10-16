@@ -2,26 +2,48 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// What `runner-image.yml` asks before it pushes, tags or signs the runner image (#2043).
+// What `runner-image.yml` (#2043) and `operator-image.yml` (#2238) ask before they push, tag or
+// sign an image into a private package of the organisation.
 //
-//   node tools/runner-image-registry.mjs visibility
+//   node tools/image-registry.mjs visibility
 //       `private` or `absent` (no package yet), from the forge's packages API; exits 1 on any
 //       other answer, or none.
-//   node tools/runner-image-registry.mjs anonymous DIGEST...
+//   node tools/image-registry.mjs ensure-private ARCH
+//       `private` once the packages API shows the package private. When there is no package
+//       yet, it first pushes a placeholder for linux/ARCH (one small text file, nothing of
+//       purlis) to make it, and asks again until it is shown; exits 1 on any other answer.
+//   node tools/image-registry.mjs anonymous DIGEST...
 //       `refused` when the registry refuses each digest to a puller who has not signed in;
 //       exits 1 when it serves one, or when its answers do not show that it refuses.
-//   node tools/runner-image-registry.mjs order SHA
+//   node tools/image-registry.mjs order SHA
 //       `main: <why>` when the image of SHA may be tagged `main`, `sha-only: <why>` when it may
 //       not (an image of a later commit holds `main`); exits 1 when it cannot place SHA.
 //
-// Needs GH_TOKEN (the job's token, which may read the package), GITHUB_REPOSITORY and
-// GITHUB_REPOSITORY_OWNER, as the workflow's jobs have them. The package is `purlis-runner`
-// of the repository's owner. **Every question fails closed:** a guess never pushes, tags or
-// signs.
+// Needs IMAGE (`ghcr.io/<owner>/<package>`, the workflow's own name for the image it pushes, so
+// the package asked about is the one pushed to), GH_TOKEN (the job's token, which may read the
+// package), GITHUB_REPOSITORY and GITHUB_REPOSITORY_OWNER, as the workflows' jobs have them.
+// **Every question fails closed:** a guess never pushes, tags or signs.
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const NAME = "purlis-runner";
+/**
+ * The package `image` names: `{ org, name }` for `ghcr.io/<owner>/<name>`, where `<owner>` is the
+ * repository's owner. Throws for any other registry, owner or shape, and for a tag or a digest.
+ */
+export function packageOf({ image, owner }) {
+  const org = String(owner ?? "").toLowerCase();
+  const match = /^ghcr\.io\/([a-z0-9-]+)\/([a-z0-9][a-z0-9._-]*)$/.exec(String(image ?? ""));
+  if (!org || !match || match[1] !== org) {
+    throw new Error(
+      `IMAGE is ${JSON.stringify(image ?? null)}; it has to be ghcr.io/${org || "<owner>"}/<package>, a package of the repository's owner, with no tag or digest`,
+    );
+  }
+  return { org, name: match[2] };
+}
 
 /**
  * The package's visibility: `private`, or `absent` when it does not exist yet. Throws for any
@@ -47,6 +69,27 @@ export function visibility({ org, name, api }) {
     );
   }
   return "private";
+}
+
+/**
+ * `private` once the packages API shows the package private. A package that does not exist yet
+ * is made by `pushPlaceholder()` and asked about again, `tries` times with `wait()` before each,
+ * until it is there. Throws when it is shown anything but private, when it cannot be asked, and
+ * when it is still not there, so nothing of purlis is pushed into it.
+ */
+export async function ensurePrivate({ org, name, api, pushPlaceholder, wait, tries = 6 }) {
+  let state = visibility({ org, name, api });
+  if (state === "absent") {
+    await pushPlaceholder();
+    for (let left = tries; left > 0 && state === "absent"; left -= 1) {
+      await wait();
+      state = visibility({ org, name, api });
+    }
+  }
+  if (state !== "private") {
+    throw new Error(`the package ${org}/${name} is still not there after its placeholder was pushed, so nothing is pushed into it`);
+  }
+  return state;
 }
 
 /**
@@ -156,20 +199,54 @@ async function httpGet(url, headers) {
   return { status: response.status, body: await response.text() };
 }
 
+/** Pushes a placeholder for linux/`arch` into `image`, by digest: one text file, nothing of purlis. */
+function pushPlaceholder(image, arch) {
+  const context = mkdtempSync(join(tmpdir(), "placeholder-"));
+  try {
+    writeFileSync(join(context, "README"), `The package of ${image}, made private before the image is pushed.\n`);
+    writeFileSync(join(context, "Dockerfile"), "FROM scratch\nCOPY README /README\n");
+    execFileSync(
+      "docker",
+      [
+        "buildx",
+        "build",
+        "--platform",
+        `linux/${arch}`,
+        "--provenance=false",
+        "--output",
+        `type=image,name=${image},push-by-digest=true,name-canonical=true,push=true`,
+        context,
+      ],
+      { stdio: ["ignore", "inherit", "inherit"] },
+    );
+  } finally {
+    rmSync(context, { recursive: true, force: true });
+  }
+}
+
 async function main([command, ...rest]) {
   const org = process.env.GITHUB_REPOSITORY_OWNER;
   const repo = process.env.GITHUB_REPOSITORY;
   if (!org || !repo) throw new Error("GITHUB_REPOSITORY and GITHUB_REPOSITORY_OWNER have to be set");
-  const pkg = { org: org.toLowerCase(), name: NAME };
+  const image = process.env.IMAGE;
+  const pkg = packageOf({ image, owner: org });
   if (command === "visibility" && rest.length === 0) {
     console.log(visibility({ ...pkg, api: ghApi }));
+  } else if (command === "ensure-private" && rest.length === 1 && /^(amd64|arm64)$/.test(rest[0])) {
+    const shown = await ensurePrivate({
+      ...pkg,
+      api: ghApi,
+      pushPlaceholder: () => pushPlaceholder(image, rest[0]),
+      wait: () => sleep(10_000),
+    });
+    console.log(shown);
   } else if (command === "anonymous" && rest.length > 0) {
-    console.log(await anonymousPull({ repository: `${pkg.org}/${NAME}`, digests: rest, get: httpGet }));
+    console.log(await anonymousPull({ repository: `${pkg.org}/${pkg.name}`, digests: rest, get: httpGet }));
   } else if (command === "order" && rest.length === 1) {
     const order = mainTag({ ...pkg, repo, sha: rest[0], api: ghApi });
     console.log(`${order.main ? "main" : "sha-only"}: ${order.why}`);
   } else {
-    throw new Error("usage: runner-image-registry.mjs visibility | anonymous DIGEST... | order SHA");
+    throw new Error("usage: image-registry.mjs visibility | ensure-private amd64|arm64 | anonymous DIGEST... | order SHA");
   }
 }
 

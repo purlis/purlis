@@ -5452,6 +5452,7 @@ dependencies = [
  "purlis-core",
  "purlis-host",
  "purlis-same-user",
+ "purlis-session-protocol",
  "purlis-terminal",
  "regex",
  "rustix",
