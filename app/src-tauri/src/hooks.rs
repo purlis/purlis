@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use purlis_core::eventlog::Entry;
 use purlis_core::hookwire::{
     Answer, Ask, ChatTokens, Hearing, Listener, NOTHING_ANSWERS, Reading, Report, SessionSaved,
     StartedByHand,
@@ -1490,8 +1491,65 @@ pub type Following = Arc<dyn Fn(u32, &str, Option<&str>) + Send + Sync + 'static
 /// What answers an ask, told which connection it came on.
 pub type Answering = Arc<dyn Fn(u64, Ask) -> Answer + Send + Sync + 'static>;
 
-/// The host's event log, shared by every project this process holds: one writer per device.
-pub type Events = Arc<Mutex<purlis_core::eventlog::Recorder>>;
+/// The host's event log, shared by every project this process holds: one writer per device
+/// (ADR 0066, ADR 0068).
+///
+/// **Held in this process, or written in the session host** (#2003). In the window's own
+/// process the window holds the log ([`Events::here`]). While chats run in the session host,
+/// the host holds it and the window never opens it: each write the window decides travels to
+/// the host as an [`Entry`] and is written there by the same code ([`Events::in_the_host`]),
+/// and what the window's hooks would record of a line the host handed on goes back with the
+/// line's reply ([`purlis_core::hookwire::relay::carry`]).
+#[derive(Clone)]
+pub struct Events(Writer);
+
+#[derive(Clone)]
+enum Writer {
+    Here(Arc<Mutex<purlis_core::eventlog::Recorder>>),
+    InTheHost(Arc<dyn Fn(Entry) -> Result<(), String> + Send + Sync + 'static>),
+}
+
+impl Events {
+    /// The log `recorder` holds, written in this process: its one writer.
+    pub fn here(recorder: purlis_core::eventlog::Recorder) -> Self {
+        Self(Writer::Here(Arc::new(Mutex::new(recorder))))
+    }
+
+    /// The log the session host holds: each write is handed to `send`, which answers once the
+    /// host has written it durably, or why it did not.
+    pub fn in_the_host(send: impl Fn(Entry) -> Result<(), String> + Send + Sync + 'static) -> Self {
+        Self(Writer::InTheHost(Arc::new(send)))
+    }
+
+    /// **Writes `entry` durably**, where this process holds the log or in the host that does:
+    /// `Ok` once it is kept, which is when a hook is told its line is taken (FD-30). The `fsync`
+    /// is outside the log's lock, so lines recorded at once share one.
+    pub fn record(&self, entry: Entry) -> std::io::Result<()> {
+        match &self.0 {
+            Writer::Here(log) => {
+                let (written, durable) = {
+                    let mut log = log.lock().unwrap_or_else(PoisonError::into_inner);
+                    (log.apply(entry), log.durable())
+                };
+                match written?.last() {
+                    Some(last) => durable.through(last.seq),
+                    None => Ok(()),
+                }
+            }
+            Writer::InTheHost(send) => send(entry).map_err(std::io::Error::other),
+        }
+    }
+
+    /// The log itself, where this process holds it: only its writer drains a hook spool into
+    /// it, so a line and its spooled copy are told apart in one process (#952). `None` where
+    /// the session host holds it.
+    pub fn held(&self) -> Option<&Arc<Mutex<purlis_core::eventlog::Recorder>>> {
+        match &self.0 {
+            Writer::Here(log) => Some(log),
+            Writer::InTheHost(_) => None,
+        }
+    }
+}
 
 /// Where this app listens, and where containment of that path begins.
 ///
@@ -1699,12 +1757,23 @@ impl Hooks {
             let hear = Arc::clone(&hear);
             Arc::new(move |line| hear(line.into()))
         };
-        // A chat's spool drained while the host runs (#952), set off by its lines here.
-        let spooled = watching_spools(
-            purlis_core::hookwire::spool::dir_for(&socket),
-            plane.clone(),
-            Arc::clone(&events),
-        );
+        // A chat's spool drained while the host runs (#952), set off by its lines here, where
+        // this process holds the event log (`Events::held`).
+        let spooled = {
+            let dir = purlis_core::hookwire::spool::dir_for(&socket);
+            let root = plane.root().to_path_buf();
+            let events = Arc::clone(&events);
+            watching_spools(move |chat| {
+                let held = events
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .as_ref()
+                    .and_then(|events| events.held().cloned());
+                if let Some(log) = held {
+                    drain_while_running(&dir, &root, &log, chat);
+                }
+            })
+        };
         let hearing = Hearing {
             // A brokered `secret exec` (#1407), held on its connection while the command runs.
             // Taken out of the lock before it runs, as an answer is. A host its sandbox refused
@@ -1832,13 +1901,25 @@ impl Hooks {
                     // names it whether or not this machine keeps an event log (ADR 0066).
                     let begun = (followed == purlis_core::eventlog::Followed::Moved)
                         .then(purlis_core::reopen::mint);
-                    let recorded = record(&events, |log| {
-                        log.report_with(plane.root(), &report, followed, begun.as_deref())
-                    });
-                    // Before the window is told, so the record already names the conversation
-                    // by the time anything the move prompts could ask for it. Whether or not a
-                    // reader sees a difference: after `/clear` the chat may be in the state it
-                    // was in, under a conversation it was not.
+                    let recorded = record(
+                        &events,
+                        Entry::Report {
+                            plane: plane.root().to_path_buf(),
+                            report: report.clone(),
+                            followed,
+                            begun: begun.clone(),
+                        },
+                    );
+                    // The chats' record (`following`) is told before the window is, so it
+                    // already names the conversation by the time anything the move prompts
+                    // could ask for it. Whether or not a reader sees a difference: after
+                    // `/clear` the chat may be in the state it was in, under a conversation it
+                    // was not. Where the session host writes the event log (#2003), the event
+                    // above is written there once this hearing returns, after the window is
+                    // told and before the hook is told its line is taken: nothing the window
+                    // is told reads the event log. It is not sent ahead as `record`, because
+                    // only the host thread that heard the line tells it from its spooled copy
+                    // (#952, D-2003-4).
                     if let Some(id) = applied.followed {
                         let listener = following
                             .lock()
@@ -1926,7 +2007,13 @@ impl Hooks {
                 let moved = Arc::clone(&moved);
                 let spooled = spooled.clone();
                 Box::new(move |refused| {
-                    let recorded = record(&events, |log| log.refused(plane.root(), refused.chat));
+                    let recorded = record(
+                        &events,
+                        Entry::Refused {
+                            plane: plane.root().to_path_buf(),
+                            chat: refused.chat,
+                        },
+                    );
                     let what = {
                         moving(&mut held_board(&board), &plane, refused.chat, |board| {
                             board.commit_refused(refused.chat, &refused.commit_refused)
@@ -1944,9 +2031,13 @@ impl Hooks {
                 let board = Arc::clone(&board);
                 let plane = plane.clone();
                 Box::new(move |call| {
-                    let recorded = record(&events, |log| {
-                        log.tool(plane.root(), &call, std::time::Instant::now())
-                    });
+                    let recorded = record(
+                        &events,
+                        Entry::Tool {
+                            plane: plane.root().to_path_buf(),
+                            call: call.clone(),
+                        },
+                    );
                     // **A chat refused an update of the project's root asks the person for
                     // it** (qw348): the guard's own verdict (arm A3c) raises a needs-you item
                     // on that chat, in the app's words, which names the window's Update. No
@@ -2057,6 +2148,38 @@ impl Hooks {
         *self.events.lock().unwrap_or_else(PoisonError::into_inner) = Some(events);
     }
 
+    /// One audited act (`kind` with `body`) in the event log, under chat `number` where it came
+    /// from one, made durable before it answers. Refused where this machine has no event log
+    /// open, saying that nothing was `done` and that every `what` is recorded.
+    fn audit(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        kind: &str,
+        body: serde_json::Value,
+        (done, what): (&str, &str),
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| {
+                format!(
+                    "purlis's event log is not open on this machine, so nothing was {done}: \
+                     every {what} is recorded"
+                )
+            })?;
+        events
+            .record(Entry::Audited {
+                plane: root.to_path_buf(),
+                number,
+                kind: kind.to_owned(),
+                body,
+            })
+            .map_err(|why| format!("the event log refused it ({why}), so nothing was {done}"))
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.
@@ -2066,22 +2189,13 @@ impl Hooks {
         number: Option<u32>,
         audited: &purlis_core::sandbox::grant::Audited<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was changed: every \
-                 sandbox grant is recorded"
-                    .to_owned(),
-            );
-        };
-        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-        log.sandbox_grant(root, number, audited)
-            .map(|_| ())
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+        self.audit(
+            root,
+            number,
+            audited.kind(),
+            audited.body(),
+            ("changed", "sandbox grant"),
+        )
     }
 
     /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
@@ -2092,22 +2206,13 @@ impl Hooks {
         number: u32,
         applied: &purlis_core::proposed::Applied<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was written: every \
-                 applied change is recorded"
-                    .to_owned(),
-            );
-        };
-        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-        log.proposed_applied(root, number, applied)
-            .map(|_| ())
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was written"))
+        self.audit(
+            root,
+            Some(number),
+            purlis_core::proposed::APPLIED_KIND,
+            applied.body(),
+            ("written", "applied change"),
+        )
     }
 
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
@@ -2117,22 +2222,16 @@ impl Hooks {
         root: &Path,
         audited: &purlis_core::dispatchgrant::Audited<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was changed: every \
-                 dispatch grant is recorded"
-                    .to_owned(),
-            );
-        };
-        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-        log.dispatch_grant_from(root, None, audited, purlis_core::dispatchaway::AUDITED_FROM)
-            .map(|_| ())
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+        self.audit(
+            root,
+            None,
+            audited.kind(),
+            purlis_core::eventlog::dispatch_grant_body(
+                audited,
+                Some(purlis_core::dispatchaway::AUDITED_FROM),
+            ),
+            ("changed", "dispatch grant"),
+        )
     }
 
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
@@ -2144,22 +2243,13 @@ impl Hooks {
         number: Option<u32>,
         audited: &purlis_core::dispatchgrant::Audited<'_>,
     ) -> Result<(), String> {
-        let Some(events) = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            return Err(
-                "purlis's event log is not open on this machine, so nothing was changed: every \
-                 dispatch grant is recorded"
-                    .to_owned(),
-            );
-        };
-        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-        log.dispatch_grant(root, number, audited)
-            .map(|_| ())
-            .map_err(|why| format!("the event log refused it ({why}), so nothing was changed"))
+        self.audit(
+            root,
+            number,
+            audited.kind(),
+            purlis_core::eventlog::dispatch_grant_body(audited, None),
+            ("changed", "dispatch grant"),
+        )
     }
 
     /// Drains this project's hook spool into the event log (FD-30, ADR 0068 §6): the lines its
@@ -2176,55 +2266,19 @@ impl Hooks {
     /// was drained under each, so a hook of theirs that is still about loses no line. With no
     /// event log an ended chat's key is dropped all the same, unless its spool still holds a
     /// line (`spool::forget_ended_at_open`, #983), so keys do not pile up launch after launch.
+    ///
+    /// **While chats run in the session host, the host drains it** (#2003): the host owns the
+    /// socket and writes the log, so this does nothing.
     pub fn drain_spool(&self) {
         let Some(socket) = &self.socket else { return };
-        let dir = purlis_core::hookwire::spool::dir_for(socket);
-        let root = self.plane.root();
-        let record = purlis_core::reopen::path(root)
-            .is_file()
-            .then(|| purlis_core::reopen::read_or_refusal(root).ok())
-            .flatten();
-        let chats = record.map(|record| record.chats).unwrap_or_default();
-        // The numbers of the chats this open brings back.
-        let back: Vec<u32> = chats.iter().filter_map(|chat| chat.number).collect();
-        let Some(events) = self
+        let events = self
             .events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        else {
-            if let Err(why) = purlis_core::hookwire::spool::forget_ended_at_open(&dir, &back) {
-                tracing::warn!(
-                    "purlis: the ended chats' hook spool keys were not dropped ({why}); they \
-                     are dropped at the next start"
-                );
-            }
-            return;
-        };
-        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-        for chat in chats {
-            if let (Some(number), Some(id), Some(run)) =
-                (chat.number, chat.identity.id, chat.identity.run)
-            {
-                log.knows(
-                    root,
-                    number,
-                    purlis_core::eventlog::RunOf {
-                        chat: &id,
-                        run: &run,
-                    },
-                );
-            }
-        }
-        let durable = log.durable();
-        let drained = purlis_core::hookwire::spool::drain_at_open(&dir, &back, &mut |item| {
-            let event = log.spooled(root, item)?;
-            durable.through(event.seq)
-        });
-        if let Err(why) = drained {
-            tracing::warn!(
-                "purlis: the hook spool was not drained ({why}); it is drained at the next start"
-            );
+            .clone();
+        match events.as_ref().map(Events::held) {
+            Some(None) => {}
+            held => drain_at_open(socket, self.plane.root(), held.flatten().map(Arc::as_ref)),
         }
     }
 
@@ -2241,25 +2295,23 @@ impl Hooks {
     /// while this one's spool is drained, where a hold across the drain would have each of
     /// them wait and, past 250 ms, spool.
     pub fn chat_ended(&self, chat: u32) {
-        use purlis_core::hookwire::spool;
         // What its sandbox refused again within the minute is told as it ends.
         tell_repeats(&self.throttle, &self.repeated, |t| t.repeats_of(chat));
         let Some(socket) = &self.socket else { return };
-        let dir = spool::dir_for(socket);
         let events = self
             .events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let ended = match events {
-            Some(events) => spool::end_chat(&dir, chat, &mut into_the_log(&events, &self.plane)),
-            None => spool::forget_chat(&dir, chat),
-        };
-        if let Err(why) = ended {
-            tracing::warn!(
-                "purlis: chat {chat}'s hook spool was not drained as it ended ({why}); its \
-                 key is kept until the next open of the project"
-            );
+        match events.as_ref().map(Events::held) {
+            // The session host drains it as the chat is closed there (#2003).
+            Some(None) => {}
+            held => spool_ended(
+                socket,
+                self.plane.root(),
+                held.flatten().map(Arc::as_ref),
+                chat,
+            ),
         }
     }
 
@@ -2531,7 +2583,13 @@ impl ChatBoard for Hooks {
     fn commit_refused(&self, session: u32, what: &str) -> Option<Moved> {
         // An event in the log, as a chat's own refused commit records one. The item is raised
         // whether or not the log could be written: the commit was refused either way.
-        if let Err(e) = record(&self.events, |log| log.refused(self.plane.root(), session)) {
+        if let Err(e) = record(
+            &self.events,
+            Entry::Refused {
+                plane: self.plane.root().to_path_buf(),
+                chat: session,
+            },
+        ) {
             tracing::warn!("purlis: a refused commit of chat {session} was not logged: {e}");
         }
         moving(&mut self.board(), &self.plane, session, |board| {
@@ -2789,15 +2847,17 @@ fn apply(
 /// log there is nothing to wait for, and that is `Ok`. A line whose spooled copy the drain
 /// recorded first is not written again (#952, [`purlis_core::hookwire::recorded_already`]):
 /// that too is `Ok`.
-fn record(
-    events: &Mutex<Option<Events>>,
-    write: impl FnOnce(
-        &mut purlis_core::eventlog::Recorder,
-    ) -> std::io::Result<purlis_core::eventlog::Event>,
-) -> std::io::Result<()> {
+///
+/// **A line the session host handed on is recorded there** (#2003): `entry` goes back with the
+/// line's reply ([`purlis_core::hookwire::relay::carry`]), and the host, which writes the log,
+/// writes it on the thread that heard the line.
+fn record(events: &Mutex<Option<Events>>, entry: Entry) -> std::io::Result<()> {
     if purlis_core::hookwire::recorded_already() {
         return Ok(());
     }
+    let Some(entry) = purlis_core::hookwire::relay::carry(entry) else {
+        return Ok(());
+    };
     let Some(held) = events
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -2805,15 +2865,9 @@ fn record(
     else {
         return Ok(());
     };
-    let (event, durable) = {
-        let mut log = held.lock().unwrap_or_else(PoisonError::into_inner);
-        (write(&mut log), log.durable())
-    };
-    event
-        .and_then(|event| durable.through(event.seq))
-        .inspect_err(|why| {
-            tracing::warn!("purlis: a hook call was not recorded durably ({why})");
-        })
+    held.record(entry).inspect_err(|why| {
+        tracing::warn!("purlis: a hook call was not recorded durably ({why})");
+    })
 }
 
 /// What a drain of the hook spool found, each item into the host's log and made durable before
@@ -2821,15 +2875,91 @@ fn record(
 /// held for one item at a time, as a live line holds it, so the hooks of every other chat go
 /// on being recorded while one chat's spool is drained.
 fn into_the_log<'a>(
-    events: &'a Events,
-    plane: &'a PlaneId,
+    log: &'a Mutex<purlis_core::eventlog::Recorder>,
+    root: &'a Path,
 ) -> impl FnMut(purlis_core::hookwire::spool::Drained) -> std::io::Result<()> + 'a {
     move |item| {
         let (event, durable) = {
-            let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-            (log.spooled(plane.root(), item), log.durable())
+            let mut log = log.lock().unwrap_or_else(PoisonError::into_inner);
+            (log.spooled(root, item), log.durable())
         };
         durable.through(event?.seq)
+    }
+}
+
+/// **Drains the hook spool beside `socket`, of the project at `root`, into `log`, as the project
+/// is held** ([`Hooks::drain_spool`]): the window's, or the session host's as it first holds
+/// the project (#2003), whichever writes the event log. With no log, the keys of the chats the
+/// reopen record does not bring back are dropped, unless their spools still hold a line.
+pub(crate) fn drain_at_open(
+    socket: &Path,
+    root: &Path,
+    log: Option<&Mutex<purlis_core::eventlog::Recorder>>,
+) {
+    let dir = purlis_core::hookwire::spool::dir_for(socket);
+    let record = purlis_core::reopen::path(root)
+        .is_file()
+        .then(|| purlis_core::reopen::read_or_refusal(root).ok())
+        .flatten();
+    let chats = record.map(|record| record.chats).unwrap_or_default();
+    // The numbers of the chats this open brings back.
+    let back: Vec<u32> = chats.iter().filter_map(|chat| chat.number).collect();
+    let Some(log) = log else {
+        if let Err(why) = purlis_core::hookwire::spool::forget_ended_at_open(&dir, &back) {
+            tracing::warn!(
+                "purlis: the ended chats' hook spool keys were not dropped ({why}); they are \
+                 dropped at the next start"
+            );
+        }
+        return;
+    };
+    let mut log = log.lock().unwrap_or_else(PoisonError::into_inner);
+    for chat in chats {
+        if let (Some(number), Some(id), Some(run)) =
+            (chat.number, chat.identity.id, chat.identity.run)
+        {
+            log.knows(
+                root,
+                number,
+                purlis_core::eventlog::RunOf {
+                    chat: &id,
+                    run: &run,
+                },
+            );
+        }
+    }
+    let durable = log.durable();
+    let drained = purlis_core::hookwire::spool::drain_at_open(&dir, &back, &mut |item| {
+        let event = log.spooled(root, item)?;
+        durable.through(event.seq)
+    });
+    if let Err(why) = drained {
+        tracing::warn!(
+            "purlis: the hook spool was not drained ({why}); it is drained at the next start"
+        );
+    }
+}
+
+/// **Chat `chat` of the project at `root` was closed**: what its hooks spooled is drained into
+/// `log` and its spool keys dropped ([`Hooks::chat_ended`]), by whichever process writes the
+/// event log (#2003). With no log the keys are dropped all the same.
+pub(crate) fn spool_ended(
+    socket: &Path,
+    root: &Path,
+    log: Option<&Mutex<purlis_core::eventlog::Recorder>>,
+    chat: u32,
+) {
+    use purlis_core::hookwire::spool;
+    let dir = spool::dir_for(socket);
+    let ended = match log {
+        Some(log) => spool::end_chat(&dir, chat, &mut into_the_log(log, root)),
+        None => spool::forget_chat(&dir, chat),
+    };
+    if let Err(why) = ended {
+        tracing::warn!(
+            "purlis: chat {chat}'s hook spool was not drained as it ended ({why}); its key is \
+             kept until the next open of the project"
+        );
     }
 }
 
@@ -2846,11 +2976,11 @@ const A_SPOOL_IS_LOOKED_AT_AFTER: std::time::Duration = if cfg!(test) {
 /// Where the host's hearers tell which chat they heard from, so its spool is drained while the
 /// host runs (#952): one thread per project, [`watching_spools`]'s.
 #[derive(Clone)]
-struct SpoolWatch(std::sync::mpsc::Sender<u32>);
+pub(crate) struct SpoolWatch(std::sync::mpsc::Sender<u32>);
 
 impl SpoolWatch {
     /// Chat `chat` was heard from on the hook channel. Never waits: the look is the thread's.
-    fn heard_from(&self, chat: u32) {
+    pub(crate) fn heard_from(&self, chat: u32) {
         // A thread that is gone (it could not be started) drains nothing, and the spool waits
         // for the chat's end or the project's next open, as it did before #952.
         let _ = self.0.send(chat);
@@ -2873,14 +3003,14 @@ impl SpoolWatch {
 /// The thread ends with the hearers, when the project stops listening; a look still pending
 /// then is let go, and the chat's spool is drained at its end or the next open.
 ///
-/// **With chats in the session host, a line taken late can be recorded twice** (#2000). The
-/// host takes the live line, and this drain records the copy its hook spooled. Which copy was
-/// recorded already (#952) is known per process, so each process records its own. This holds
-/// until the event log is written in the host (#2003).
+/// **With chats in the session host, the host looks** (#2003): it takes each live line and
+/// drains each spool into the log it writes, so which copy of a line was recorded is known in
+/// one process, and a line its hook spooled after the host took it late is recorded once.
+/// `drain` drains one chat's spool, where there is a log to drain it into.
 ///
 /// [`spool::holds_lines`]: purlis_core::hookwire::spool::holds_lines
 /// [`spool::drain_running`]: purlis_core::hookwire::spool::drain_running
-fn watching_spools(dir: PathBuf, plane: PlaneId, events: Arc<Mutex<Option<Events>>>) -> SpoolWatch {
+pub(crate) fn watching_spools(drain: impl Fn(u32) + Send + 'static) -> SpoolWatch {
     use std::sync::mpsc::RecvTimeoutError;
     use std::time::Instant;
     let (heard, hears) = std::sync::mpsc::channel::<u32>();
@@ -2910,7 +3040,7 @@ fn watching_spools(dir: PathBuf, plane: PlaneId, events: Arc<Mutex<Option<Events
                     .collect();
                 for chat in ready {
                     due.remove(&chat);
-                    drain_while_running(&dir, &plane, &events, chat);
+                    drain(chat);
                 }
             }
         });
@@ -2923,21 +3053,19 @@ fn watching_spools(dir: PathBuf, plane: PlaneId, events: Arc<Mutex<Option<Events
     SpoolWatch(heard)
 }
 
-/// Chat `chat`'s spool, drained into the event log while the host runs, where it holds a line
-/// and there is a log to record it in ([`watching_spools`]).
-fn drain_while_running(dir: &Path, plane: &PlaneId, events: &Mutex<Option<Events>>, chat: u32) {
+/// Chat `chat`'s spool in `dir`, of the project at `root`, drained into `log` while the host
+/// runs, where it holds a line ([`watching_spools`]).
+pub(crate) fn drain_while_running(
+    dir: &Path,
+    root: &Path,
+    log: &Mutex<purlis_core::eventlog::Recorder>,
+    chat: u32,
+) {
     use purlis_core::hookwire::spool;
     if !spool::holds_lines(dir, chat) {
         return;
     }
-    let Some(events) = events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
-    else {
-        return;
-    };
-    if let Err(why) = spool::drain_running(dir, chat, &mut into_the_log(&events, plane)) {
+    if let Err(why) = spool::drain_running(dir, chat, &mut into_the_log(log, root)) {
         tracing::warn!(
             "purlis: chat {chat}'s hook spool was not drained while it runs ({why}); it is \
              drained at the next look, at its end or at the next open"

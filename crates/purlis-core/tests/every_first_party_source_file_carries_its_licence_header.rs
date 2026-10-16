@@ -60,6 +60,9 @@ const EXCLUDED: &[(&str, &str)] = &[
       change it, so its header waits for the operator"),
     ("app/icons/",
      "vendored third-party assets, under their own licences"),
+    ("operator/vendor/",
+     "upstream agent-sandbox's release manifests, vendored verbatim under their own licence \
+      (Apache-2.0); a test reads them as upstream published them"),
 ];
 
 fn repository() -> PathBuf {

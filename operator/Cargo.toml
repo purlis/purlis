@@ -1,0 +1,43 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# purlis's cluster operator (spec #2041, #2054): a workspace of its own, with a lock of its own.
+# It runs in a cluster, links nothing of the rest of purlis, and its Kubernetes client is a large
+# tree, so the root workspace's builds, tests and lints never compile it and a pull request that
+# does not touch `operator/` waits on none of it. `.github/workflows/operator.yml` checks it.
+[workspace]
+
+[package]
+name = "purlis-cluster-operator"
+description = "purlis in your cluster: turns a team's Pools and people's Claims into runners on the pinned upstream agent-sandbox"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+repository = "https://github.com/purlis/purlis"
+publish = false
+
+[dependencies]
+# kube-rs, the Rust Kubernetes client and controller runtime (CNCF). Only what the operator
+# uses: no `ws` feature, so this binary cannot even ask for `exec` or `attach`.
+kube = { version = "4.2", default-features = false, features = ["client", "derive", "runtime", "rustls-tls", "ring"] }
+# The Kubernetes API types, for the oldest Kubernetes purlis supports (1.36, spec #2041).
+k8s-openapi = { version = "0.28", features = ["v1_36", "schemars"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+futures = "0.3"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "std"] }
+
+[dev-dependencies]
+# The manifests in `deploy/` and the vendored upstream definitions are read as YAML.
+serde_yaml = "0.9"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

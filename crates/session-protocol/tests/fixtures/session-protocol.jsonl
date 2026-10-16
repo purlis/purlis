@@ -68,6 +68,7 @@
 {"call":{"id":34,"command":"stop_all"}}
 {"call":{"id":35,"command":"kill_switch"}}
 {"call":{"id":36,"command":"rearm"}}
+{"call":{"id":81,"command":"record","entry":{"entry":"begin","plane":"/home/me/project","number":3,"chat":"01J9CHAT000000000000000000","run":"01J9RUN0000000000000000000","cause":"start","attributes":{"persona":"devops","harness":"claude"}}}}
 {"reply":{"re":34,"ok":{"kill_switch":{"stopped":true}}}}
 {"reply":{"re":35,"ok":{"kill_switch":{"stopped":true,"why":"the kill switch's state could not be read (permission denied), so every agent is held stopped until purlis's window re-arms it"}}}}
 {"reply":{"re":19,"refused":{"code":"stopped","why":"every agent is stopped by the kill switch; nothing starts until it is re-armed in purlis's window"}}}
@@ -83,3 +84,4 @@
 {"pushed":{"saving":{"project":"01J9PRJCT00000000000000000","saved":true,"moved_tree":false}}}
 {"call":{"id":43,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
 {"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}
+{"reply":{"re":81,"refused":{"code":"not_recorded","why":"the session host keeps no event log on this machine, so nothing was recorded"}}}
