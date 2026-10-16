@@ -384,10 +384,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **The doctor's personas row counts in words that agree.** It, and the Inbox Notice that
-  carries its text, said "1 generated sub-agent file(s) remain" and "1 persona(s), all clean".
-  It now says *1 generated sub-agent file remains*, *2 generated sub-agent files remain*,
-  *1 persona, all clean*, and *2 with warnings* (#2078).
 - **`purlis doctor` names `purlis persona optimize` for a persona's memory.** Its memory
   indexes row said curating a persona's memory from the CLI was "not in this version yet",
   although `purlis persona optimize` has shipped. It now names that command, as it names

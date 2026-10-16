@@ -1511,6 +1511,26 @@ fn a_generated_sub_agent_that_is_still_there_is_counted_and_its_fix_is_offered()
     assert!(!agents.join("gone.md").exists());
 }
 
+#[test]
+fn the_personas_row_counts_drafts_in_words_that_agree() {
+    let (_d, root) = plane("schema = 1\n");
+    let persona = |name: &str| {
+        std::fs::create_dir_all(root.join(format!("personas/{name}"))).unwrap();
+        std::fs::write(
+            root.join(format!("personas/{name}/persona.md")),
+            format!(
+                "---\nname: {name}\nrole: R\nvault: none\ndelegate-when: x\ndraft: true\n---\nbody\n"
+            ),
+        )
+        .unwrap();
+    };
+    persona("alpha");
+    assert_eq!(one(&root, "personas").detail, "1 draft: alpha");
+
+    persona("beta");
+    assert_eq!(one(&root, "personas").detail, "2 drafts: alpha, beta");
+}
+
 // ---- harness profiles -------------------------------------------------------------------------
 
 #[test]

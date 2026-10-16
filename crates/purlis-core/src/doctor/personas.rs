@@ -77,7 +77,11 @@ fn roster(d: &Doctor) -> Row {
         ));
     }
     if !drafts.is_empty() {
-        bits.push(format!("{} draft: {}", drafts.len(), drafts.join(", ")));
+        let counted = match drafts.len() {
+            1 => "1 draft".to_owned(),
+            n => format!("{n} drafts"),
+        };
+        bits.push(format!("{counted}: {}", drafts.join(", ")));
     }
     let soft: Vec<&str> = warns.into_iter().filter(|n| !drafts.contains(n)).collect();
     if !soft.is_empty() {
