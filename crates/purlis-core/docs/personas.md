@@ -366,6 +366,30 @@ its own when the dispatch names no place (`purlis docs show handoff`, *Where it 
 Nothing asks before two chats write in one tree any more. To keep a persona from a tool, name the tool in
 `disallowed-tools:`.
 
+### Its browser
+
+A chat's first browser tool asks you what its browser may reach: this project's sites and its
+dev servers, or the open web too, for this chat or **always for its persona**, or Keep off. A
+persona that usually needs one says so in its sandbox section of the project's `charter.toml`,
+so you confirm it instead of choosing:
+
+```toml
+[sandbox.personas.research]
+browser = "open-web"     # or "project": this project's sites and its dev servers
+```
+
+**Declaring never grants** (ADR 0073). The declared answer is drawn first and preselected on
+the Ask, and you still answer it; what you answer is what the browser reaches. Only the
+committed `charter.toml` declares a browser: a `browser` line in `persona.md`, which a chat may
+edit, declares nothing.
+
+**Always for this persona** holds for every chat opened as that persona in this project on this
+machine: their browsers open with no Ask. It is kept on this machine, where no chat writes, and
+listed in Settings › Sandbox with Remove; removing it ends the browsers it opened, and each of
+those chats asks again at its next browser tool. An administrator's policy whose
+`sandbox.allow-scopes` leaves out `you` forbids it: the Ask offers it no more, and one kept
+before reaches no chat while the policy stands.
+
 ### After updating: `purlis doctor --fix persona-agents`
 
 A project that used `sync-agents` still has the files it wrote, and Claude Code still offers

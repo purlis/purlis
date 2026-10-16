@@ -635,8 +635,21 @@ _Avoid_: screen share, preview (that is a tab's), remote desktop, video
 The typed tools a chat's agent drives its browsers with, the same on every harness: a
 **snapshot**, actions on its **references**, and a screenshot. None runs script. A chat's first
 one asks the person what its browser may reach: this project's sites and its dev servers, also
-the open web, or off.
+the open web, or off; for this chat, or **Always for this persona**.
 _Avoid_: browser automation, Playwright, DevTools (that is the **engine**'s)
+
+**Declared browser** (of a persona):
+What a persona says its chats' browser usually reaches, in its sandbox section
+(`browser = "project"` or `"open-web"`). It only preselects the answer of the browser's Ask; the
+person still answers it (ADR 0073: declaring never grants).
+_Avoid_: browser grant, browser permission (it grants nothing)
+
+**Always for this persona**:
+An answer to a chat's browser Ask that holds for every chat opened as that persona, in this
+project on this machine: kept where no chat writes, listed and removable in Settings, and
+forbidden where an administrator's policy leaves out the scope it is kept at. Removing it ends
+the browsers it opened.
+_Avoid_: remember, persona grant (that is a persona's hosts and tools)
 
 **Browser login**:
 A persona's declared tool that signs a browser in from a vault: purlis drives the browser to the

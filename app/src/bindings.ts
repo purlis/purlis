@@ -654,8 +654,10 @@ export const commands = {
 	/**
 	 *  **This project's sites, or also the open web**, on chat `session`'s browser Ask (#2013): its
 	 *  browser starts at its next browser call, reaching that; the chat is told on its next turn.
+	 *  With `always`, **Always for this persona** (#2241): kept for every chat as the chat's
+	 *  persona in this project on this machine, and answering each of them that waits.
 	 */
-	allowChatBrowser: (plane: PlaneId, session: number, openWeb: boolean) => typedError<null, string>(__TAURI_INVOKE("allow_chat_browser", { plane, session, openWeb })),
+	allowChatBrowser: (plane: PlaneId, session: number, openWeb: boolean, always: boolean) => typedError<null, string>(__TAURI_INVOKE("allow_chat_browser", { plane, session, openWeb, always })),
 	/**
 	 *  **Keep off** on chat `session`'s browser Ask (#2013): its every browser call is refused,
 	 *  and it is told on its next turn not to retry, with the reason the person typed.
@@ -5835,7 +5837,13 @@ export type GrantWhat =
 /**  A system service to look up by name (D-sock-1): this machine's alone. */
 "service" | 
 /**  A service on this Mac, by its one loopback port (qw384): this machine's alone. */
-"port";
+"port" | 
+/**
+ *  Always for a persona's browser (#2241): what every chat as the persona may have its
+ *  browser reach in this project on this machine. Allowed from a chat's browser Ask
+ *  (`allow_chat_browser`), never from a block's Allow.
+ */
+"browser";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -6819,6 +6827,11 @@ export type Offered = {
 	label: string,
 	/**  Whether choosing it lets the call run. */
 	allows: boolean,
+	/**
+	 *  **The answer drawn first and marked as the one the source suggests** (#2241): a
+	 *  persona's declared browser. Never an answer: only the person's press answers.
+	 */
+	preselected?: boolean | null,
 };
 
 /**

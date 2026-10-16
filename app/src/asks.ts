@@ -278,10 +278,16 @@ export async function answerTaken(
       }
       case "browser":
         // What a chat's browser may reach (#2013): this project's sites and its dev servers,
-        // also the open web, or Keep off. The chat is told on its next turn, with the reason
-        // the person typed for Keep off.
-        if (option === "project") return commands.allowChatBrowser(plane, ask.session, false);
-        if (option === "open-web") return commands.allowChatBrowser(plane, ask.session, true);
+        // also the open web, each for this chat or always for its persona (#2241), or Keep
+        // off. The chat is told on its next turn, with the reason the person typed for Keep off.
+        if (option === "project")
+          return commands.allowChatBrowser(plane, ask.session, false, false);
+        if (option === "open-web")
+          return commands.allowChatBrowser(plane, ask.session, true, false);
+        if (option === "project-always")
+          return commands.allowChatBrowser(plane, ask.session, false, true);
+        if (option === "open-web-always")
+          return commands.allowChatBrowser(plane, ask.session, true, true);
         if (option === "keep")
           return commands.keepChatBrowserOff(plane, ask.session, reason?.trim() || null);
         break;

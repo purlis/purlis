@@ -365,6 +365,46 @@ describe("answering in place", () => {
     );
   });
 
+  it("draws a persona's declared browser first as the primary answer, and answers only on a press (#2241)", async () => {
+    const calls = core();
+    const browser: Shown = {
+      session: 8,
+      ask: "browser:8",
+      says: "Wants a browser: what may it reach? Its persona qa declares the open web too",
+      options: [
+        {
+          id: "open-web-always",
+          label: "Also the open web, always for qa",
+          allows: true,
+          preselected: true,
+        },
+        { id: "project", label: "This project's sites", allows: true },
+        { id: "open-web", label: "Also the open web", allows: true },
+        { id: "project-always", label: "This project's sites, always for qa", allows: true },
+        { id: "keep", label: "Keep off", allows: false },
+      ],
+      source: "browser",
+      chain: ["qa 8"],
+      answer: { via: "browser" },
+    };
+    draw([browser]);
+    const declared = screen.getByRole("button", { name: "Also the open web, always for qa" });
+    expect(declared).toHaveClass("ui-button-primary");
+    expect(screen.getByRole("button", { name: "This project's sites" })).not.toHaveClass(
+      "ui-button-primary",
+    );
+    expect(calls.some((one) => one.cmd === "allow_chat_browser")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "This project's sites" }));
+    await waitFor(() =>
+      expect(calls.find((one) => one.cmd === "allow_chat_browser")?.args).toEqual({
+        plane: PLANE,
+        session: 8,
+        openWeb: false,
+        always: false,
+      }),
+    );
+  });
+
   it("allows a refused host by the block Notice's own command, and owes the chat its restart", async () => {
     const calls = core({ allow_sandbox_block: { said: "Allowed." } });
     const { props } = draw([HOST]);
