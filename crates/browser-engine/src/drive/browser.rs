@@ -463,6 +463,8 @@ pub(crate) struct Inner {
     judge: Option<Judge>,
     /// Whether the person drives (#2014): every request is then theirs (#2018).
     person_drives: AtomicBool,
+    /// Where each held request is sent to be judged, on a thread of its own (#2018).
+    judging: Mutex<Option<std::sync::mpsc::Sender<(String, Outbound)>>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -553,8 +555,25 @@ impl Browser {
             ends: Mutex::new(None),
             judge,
             person_drives: AtomicBool::new(false),
+            judging: Mutex::new(None),
         });
         Screencast::start(&inner);
+        if inner.judge.is_some() {
+            let (judging, held) = std::sync::mpsc::channel::<(String, Outbound)>();
+            let judge_for = Arc::downgrade(&inner);
+            thread::Builder::new()
+                .name("browser-judge".to_owned())
+                .spawn(move || {
+                    for (request, outbound) in held {
+                        let Some(inner) = judge_for.upgrade() else {
+                            break;
+                        };
+                        inner.judged(&request, &outbound);
+                    }
+                })
+                .map_err(|e| Refusal::Engine(e.to_string()))?;
+            *lock(&inner.judging) = Some(judging);
+        }
         let reading = inner.clone();
         thread::Builder::new()
             .name("browser-events".to_owned())
@@ -2095,6 +2114,34 @@ impl Inner {
         }
     }
 
+    /// Judges held request `request` (#2018), and lets it on or fails it as the judge says.
+    fn judged(&self, request: &str, outbound: &Outbound) {
+        // Requests are held only where there is a judge, so this always has one.
+        let gate = self
+            .judge
+            .as_ref()
+            .map_or(Gate::Go, |judge| judge(outbound));
+        let said = match gate {
+            Gate::Go => self.devtools.call_within(
+                "Fetch.continueRequest",
+                json!({ "requestId": request }),
+                None,
+                JUDGED_WITHIN,
+            ),
+            Gate::Ask { site } => {
+                lock(&self.state).ask(&site);
+                self.devtools.call_within(
+                    "Fetch.failRequest",
+                    json!({ "requestId": request, "errorReason": "BlockedByClient" }),
+                    None,
+                    JUDGED_WITHIN,
+                )
+            }
+        };
+        // A request whose page has gone went with it: there is nothing more to say.
+        let _ = said;
+    }
+
     fn follow_up(&self, step: FollowUp) {
         let devtools = &*self.devtools;
         match step {
@@ -2143,30 +2190,15 @@ impl Inner {
                 let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
             }
             FollowUp::Judge { request, outbound } => {
-                // Requests are held only where there is a judge, so this always has one.
-                let gate = self
-                    .judge
-                    .as_ref()
-                    .map_or(Gate::Go, |judge| judge(&outbound));
-                let said = match gate {
-                    Gate::Go => devtools.call_within(
-                        "Fetch.continueRequest",
-                        json!({ "requestId": request }),
-                        None,
-                        JUDGED_WITHIN,
-                    ),
-                    Gate::Ask { site } => {
-                        lock(&self.state).ask(&site);
-                        devtools.call_within(
-                            "Fetch.failRequest",
-                            json!({ "requestId": request, "errorReason": "BlockedByClient" }),
-                            None,
-                            JUDGED_WITHIN,
-                        )
-                    }
+                // Judged on a thread of its own, so a request is never held up behind another
+                // follow-up's calls; where that thread is gone, judged here.
+                let unsent = match &*lock(&self.judging) {
+                    Some(judging) => judging.send((request, outbound)).err().map(|e| e.0),
+                    None => Some((request, outbound)),
                 };
-                // A request whose page has gone went with it: there is nothing more to say.
-                let _ = said;
+                if let Some((request, outbound)) = unsent {
+                    self.judged(&request, &outbound);
+                }
             }
             FollowUp::Release(session) => {
                 let on = Some(session.as_str());

@@ -153,8 +153,8 @@ fn a_form_submitted_to_the_site_sends_whether_by_get_or_by_post() {
         return;
     };
     for (field, button) in [
-        ("Search", "Search the other site"),
-        ("Note", "Post to the other site"),
+        ("textbox \"Search\"", "button \"Search the other site\""),
+        ("textbox \"Note\"", "button \"Post to the other site\""),
     ] {
         open_the_way_out(&browser);
         let page = snapshot(&browser);
