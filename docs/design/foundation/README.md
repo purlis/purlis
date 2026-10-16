@@ -1,7 +1,7 @@
 # The foundation record
 
 **The designer's foundation for Purlis, read once from Figma and written down here.** Work on
-the Purlis theme builds from this record and the render beside it, and does not call Figma
+the Purlis theme builds from this record and the 2× render linked below, and does not call Figma
 again (#2313, "The two shipped themes"). Purlis Classic is not described here: it is today's
 look, and `app/src/theme/purlis-dark.json` and `purlis-light.json` stay its source.
 
@@ -15,7 +15,7 @@ look, and `app/src/theme/purlis-dark.json` and `purlis-light.json` stay its sour
 | variables     | none: the file has no variables and no styles, so every value is raw    |
 
 The frame draws one window: a title bar, the workspace strip, a rail down each side, the Chats
-panel, a file open in the light editor, the Notices column, Repos and Todos, and the status bar.
+panel, a file open in the editor, the Notices column, Repos and Todos, and the status bar.
 Its layer names are generic (`Container`, `Text`), so this record names each value by the
 region and the node id it was read from.
 
@@ -23,8 +23,6 @@ region and the node id it was read from.
 (`app/src/theme/theme.ts`). Where the frame draws a role purlis has no token for, the row says
 **no token** and names the nearest one. Choosing the final mapping is the Purlis theme's work,
 not this record's.
-
-![The Purlis foundation frame](purlis-frame-6-2-2x.png)
 
 ## Layout
 
@@ -53,20 +51,21 @@ level after.
 
 ## Colours
 
-Every distinct colour in the frame. "uses" counts the nodes that paint it.
+Every distinct colour in the frame. "uses" counts the nodes that paint it. Each token is proposed
+for one colour only; a second colour in the same role says **no token** and names the nearest.
 
 ### Surfaces
 
-| colour    | where it is used                                                                                            | proposed token (proposal)                                                    |
-| --------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `#121215` | behind the window: the frame `6:2`; shows as the 4 px under the window's rounded bottom                     | **no token**: the native window background; nearest `surface.sunken`         |
-| `#141417` | status bar `6:609`                                                                                          | `surface.deep`                                                               |
-| `#17171b` | the window `6:6` (title bar, workspace strip and rails draw on it); text fields `6:70`, `6:556`; the Chats scope switch's track `6:63` | `surface.base`; the fields and the track: `surface.sunken`, at the same value |
-| `#1d1d22` | the five panels: Chats `6:58`, editor `6:81`, Notices `6:501`, Repos `6:532`, Todos `6:550`                  | `surface.raised`                                                             |
-| `#202026` | the editor's toolbar `6:112` and code `6:130`; the file tab in front `6:104`                                 | code: `terminal.background` (no editor surface token); the tab in front: `tab.active` |
-| `#24242a` | the workspace tab `6:24`; filter pills `6:74`, `6:76`; notice cards `6:507`, `6:516`; Repos count `6:546`    | workspace tab: `layer.selected`; pills: `control.base`; cards: `surface.overlay`; count: `control.count` |
-| `#2a2a31` | workspace count `6:29`; the scope switch's chosen segment `6:64`; the toolbar's plain button `6:128`         | count: `control.count`; segment and button: `control.hover`                  |
-| `#2f2f37` | the "Got it" buttons on notice cards `6:512`, `6:520`                                                        | `control.hover` on a card: **no token** for a control on `surface.overlay`   |
+| colour    | uses | where it is used                                                                                            | proposed token (proposal)                                                    |
+| --------- | ---- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `#121215` | 1    | behind the window: the frame `6:2`; shows as the 4 px under the window's rounded bottom                     | **no token**: the native window background; nearest `surface.sunken`         |
+| `#141417` | 1    | status bar `6:609`                                                                                          | `surface.deep`                                                               |
+| `#17171b` | 4    | the window `6:6` (title bar, workspace strip and rails draw on it); text fields `6:70`, `6:556`; the Chats scope switch's track `6:63` | `surface.base`; the fields and the track: `surface.sunken`, at the same value |
+| `#1d1d22` | 5    | the five panels: Chats `6:58`, editor `6:81`, Notices `6:501`, Repos `6:532`, Todos `6:550`                  | `surface.raised`                                                             |
+| `#202026` | 3    | the editor's toolbar `6:112` and code `6:130`; the file tab in front `6:104`                                 | code: `terminal.background` (no editor surface token); the tab in front: `tab.active` |
+| `#24242a` | 6    | the workspace tab `6:24`; filter pills `6:74`, `6:76`; notice cards `6:507`, `6:516`; Repos count `6:546`    | workspace tab: `layer.selected`; pills: `control.base`; cards: `surface.overlay`; count: **no token**, nearest `control.count` |
+| `#2a2a31` | 3    | workspace count `6:29`; the scope switch's chosen segment `6:64`; the toolbar's plain button `6:128`         | count: `control.count`; segment and button: `control.hover`                  |
+| `#2f2f37` | 2    | the "Got it" buttons on notice cards `6:512`, `6:520`                                                        | **no token** for a control on a card; nearest `control.hover`               |
 
 ### Text
 
@@ -79,30 +78,30 @@ The frame uses five greys for text; purlis has three text tokens.
 | `#a09eab` | 9    | chrome labels: title bar, pills, toolbar buttons, the `+` buttons; the rails' idle icons                 | **no token** between `text.secondary` and `text.muted`; nearest `text.muted` |
 | `#8a8896` | 18   | quieter labels: tabs behind, scope segments, counts, empty states, status bar items, a notice's detail   | `text.muted`                                                       |
 | `#6f6d7a` | 14   | placeholders, the × on tabs, heading counts ("Notices 3"), paths, "Earlier", the status bar's folder     | **no token** for placeholder or faint text; nearest `text.muted`   |
-| `#55535f` | 26   | line numbers in the editor (also the todo checkbox's ring, below)                                        | **no token** for a gutter; nearest `tree.guide` / `border.strong`  |
+| `#55535f` | 32   | line numbers in the editor (and the 6 todo checkbox rings, below)                                      | **no token** for a gutter; nearest `tree.guide` / `border.strong`  |
 
 ### Accent: lavender
 
-| colour                   | where it is used                                                                               | proposed token (proposal)                                           |
-| ------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `#a99cf0`                | the workspace's dot `6:25`, the status bar's workspace dot `6:611`                             | `accent.base`, `focus.ring`, `list.selected-edge`                   |
-| `#c3baf5`                | text on an accent wash ("Update 0.4.2-dev.781", "Ask a chat"); a rail's chosen icons; JSON keys | **no token** for accent text; JSON keys: syntax, **no token**       |
-| `#b3a8f2`                | text buttons on notice cards ("Review hosts", "Review access")                                 | **no token** for links; nearest `accent.base`                       |
-| `rgba(169,156,240,0.10)` | the chosen repo row `6:538`                                                                    | `list.selected` (as `#a99cf01a`)                                    |
-| `rgba(169,156,240,0.12)` | the update pill `6:21`, the "Ask a chat" button `6:126`                                        | `accent.surface` (as `#a99cf01f`)                                   |
-| `rgba(169,156,240,0.14)` | a rail's chosen buttons `6:7813`, `6:7826`, `6:7882`, `6:7889`                                 | `tab.active` for the rails (as `#a99cf024`)                         |
+| colour                   | uses | where it is used                                                                               | proposed token (proposal)                                           |
+| ------------------------ | ---- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `#a99cf0`                | 2    | the workspace's dot `6:25`, the status bar's workspace dot `6:611`                             | `accent.base`, `focus.ring`, `list.selected-edge`                   |
+| `#c3baf5`                | 25   | text on an accent wash ("Update 0.4.2-dev.781", "Ask a chat"); a rail's chosen icons; JSON keys | **no token** for accent text; JSON keys: syntax, **no token**       |
+| `#b3a8f2`                | 2    | text buttons on notice cards ("Review hosts", "Review access")                                 | **no token** for links; nearest `accent.base`                       |
+| `rgba(169,156,240,0.10)` | 1    | the chosen repo row `6:538`                                                                    | `list.selected` (as `#a99cf01a`)                                    |
+| `rgba(169,156,240,0.12)` | 2    | the update pill `6:21`, the "Ask a chat" button `6:126`                                        | `accent.surface` (as `#a99cf01f`)                                   |
+| `rgba(169,156,240,0.14)` | 4    | a rail's chosen buttons `6:7813`, `6:7826`, `6:7882`, `6:7889`                                 | **no token** for a rail's chosen button (as `#a99cf024`); nearest `accent.surface` |
 
 ### Amber, green and code
 
-| colour                   | where it is used                                                                                         | proposed token (proposal)                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `#e5c08a`                | the unsaved dot in the title bar, "1 unpushed · ↓20", "Reinit", "Update layout", "6 warnings"; JSON `true` | `state.waiting`; JSON literals: syntax, **no token**          |
-| `rgba(229,192,138,0.07)` | the Reinit notice card `6:524`                                                                           | **no token** for a waiting wash (as `#e5c08a12`); the pattern of `danger.wash` |
-| `rgba(229,192,138,0.10)` | the unpushed pill `6:16`                                                                                 | **no token** (as `#e5c08a1a`)                                 |
-| `rgba(229,192,138,0.14)` | the "Update layout" button `6:528`                                                                       | **no token** (as `#e5c08a24`)                                 |
-| `#8fc79a`                | "Nothing is waiting on you" and its dot `6:502`                                                          | `state.success`                                               |
-| `#9fcfa8`                | JSON string values                                                                                       | syntax, **no token**; nearest `terminal.ansi.green`           |
-| `#77757f`                | JSON punctuation (`:`, `,`, braces)                                                                      | syntax, **no token**; nearest `terminal.ansi.bright-black`    |
+| colour                   | uses | where it is used                                                                                         | proposed token (proposal)                                     |
+| ------------------------ | ---- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `#e5c08a`                | 8    | the unsaved dot in the title bar, "1 unpushed · ↓20", "Reinit", "Update layout", "6 warnings"; JSON `true` | `state.waiting`; JSON literals: syntax, **no token**          |
+| `rgba(229,192,138,0.07)` | 1    | the Reinit notice card `6:524`                                                                           | **no token** for a waiting wash (as `#e5c08a12`); the pattern of `danger.wash` |
+| `rgba(229,192,138,0.10)` | 1    | the unpushed pill `6:16`                                                                                 | **no token** (as `#e5c08a1a`)                                 |
+| `rgba(229,192,138,0.14)` | 1    | the "Update layout" button `6:528`                                                                       | **no token** (as `#e5c08a24`)                                 |
+| `#8fc79a`                | 2    | "Nothing is waiting on you" and its dot `6:502`                                                          | `state.success`                                               |
+| `#9fcfa8`                | 15   | JSON string values                                                                                       | syntax, **no token**; nearest `terminal.ansi.green`           |
+| `#77757f`                | 43   | JSON punctuation (`:`, `,`, braces)                                                                      | syntax, **no token**; nearest `terminal.ansi.bright-black`    |
 
 The 8-digit hex in brackets is the nearest byte to the frame's alpha (0.10 → `1a`, 0.12 →
 `1f`, 0.14 → `24`, 0.07 → `12`); the frame's own values are the decimals.
@@ -242,15 +241,16 @@ it: the render shows the status bar where it would be.
 
 The other glyphs are text, not icons: `×`, `+`, `⌄`, `›`, `•`, `↓`, `·`.
 
-## Fonts and icons to license
+## Fonts and icons
 
-Nothing here is bundled by this record. Bundling is the operator's decision (#2313).
+The frame's type and icons, as it draws them. Nothing here is bundled by this record: the
+licence check and the bundling decision are the operator's (#2313).
 
-| asset                | used for                 | note                                                                              |
-| -------------------- | ------------------------ | --------------------------------------------------------------------------------- |
-| IBM Plex Sans        | the interface            | Regular 400, Medium 500, SemiBold 600                                             |
-| JetBrains Mono       | code, paths              | Regular 400; the spec names IBM Plex Mono for Purlis, the frame draws JetBrains Mono |
-| Untitled UI Icons    | the rails' eleven icons  | the licence for bundling them in an open-source app is to be checked              |
+| asset             | what the frame uses                     | used for                |
+| ----------------- | --------------------------------------- | ----------------------- |
+| IBM Plex Sans     | Regular 400, Medium 500, SemiBold 600   | the interface           |
+| JetBrains Mono    | Regular 400                             | code and paths          |
+| Untitled UI Icons | eleven icons, by name                   | the rails               |
 
 ## The render and the tables agree
 
