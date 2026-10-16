@@ -232,6 +232,14 @@ What a release brought is written as it merges, one changelog fragment per pull 
 #      tag (`[Unreleased]: …/compare/vX.Y.Z...HEAD`, `[X.Y.Z]: …/releases/tag/vX.Y.Z`)
 #    - [workspace.package] version in Cargo.toml AND "version" in app/src-tauri/tauri.conf.json
 #      set to X.Y.Z
+#    - the browser engine's trust, refreshed (#2073, ADR 0042 amended 2026-10-16): Sigstore's
+#      trusted root as its TUF repository serves it (`cosign initialize` fetches and verifies
+#      it; copy ~/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json) into
+#      crates/browser-engine/sigstore-trusted-root.json, and the newest published
+#      engine-manifest.json, once `cosign verify-blob` with that root, its bundle and
+#      --certificate-identity https://github.com/purlis/purlis/.github/workflows/engine-manifest.yml@refs/heads/main
+#      --certificate-oidc-issuer https://token.actions.githubusercontent.com accepts it, into
+#      crates/browser-engine/engine-pin.json
 git switch main && git pull
 git tag vX.Y.Z && git push origin vX.Y.Z      # this, and only this, publishes a stable release
 # 2. afterwards, bump both version fields to the NEXT version and merge, so dev builds are
