@@ -1,0 +1,45 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Who may use a Pool is the cluster's own access control on it: a Claim is admitted only when
+# the person making it may `use` the Pool it names, asked of the cluster's authorizer as that
+# person. Applied before purlis's definitions (crds.yaml), so no Claim is admitted before it
+# holds, and before the operator.
+#
+# A cluster admin grants `use` with RBAC, on one pool or on all of them:
+#
+#   apiGroups: [runners.purlis.dev]
+#   resources: [pools]
+#   resourceNames: [team]
+#   verbs: [use]
+#
+# A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
+# this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
+# the cluster refuses a Claim from someone who may not use its pool.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-claims-use-their-pool
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [CREATE]
+        resources: [claims]
+  validations:
+    - expression: >-
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed()
+      messageExpression: >-
+        'You may not use the pool ' + object.spec.pool + '. A cluster admin can grant use on it.'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-claims-use-their-pool
+spec:
+  policyName: purlis-claims-use-their-pool
+  validationActions: [Deny]

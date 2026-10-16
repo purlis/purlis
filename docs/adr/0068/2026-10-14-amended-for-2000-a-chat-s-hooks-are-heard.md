@@ -60,11 +60,10 @@ D-2000-9).
    heard at once go one after another on the project's own thread in the window, as the
    project's listener heard them when the window bound it (FD-9's turns). An ask, a permission
    ask and a `secret exec` each get a thread of their own. *D-2000-7, to be confirmed.*
-8. **A line taken late can be recorded twice in the event log.** A hook spools a line the host
-   does not answer within its wait. The window drains the spool, and a live line the host took
-   late is recorded too. Which copy was recorded already (#952) is known per process. The host
-   holds the live line and the window holds the drain, so each records its own copy. This holds
-   until the event log is written in the host (#2003). *D-2000-8, to be confirmed.*
+8. **A line taken late is recorded once.** A hook spools a line the host does not answer within
+   its wait. The host takes the live line and drains the spool, and writes the event log
+   (#2003), so which copy was recorded already (#952) is known in the one process that records
+   both. *D-2000-8, to be confirmed.*
 9. **With the switch off nothing changes**, by the operator's ruling of 2026-10-14 on the
    start-time switch: the window binds the socket and issues the tokens, as before. The
    behaviour suite's targets each have the window's hooks for a project. Three behaviours run

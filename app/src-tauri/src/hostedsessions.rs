@@ -32,12 +32,16 @@
 //! the same link ([`Connection`] is its [`crate::killswitch::Authority`]), so a stop ends every
 //! program the host runs and holds across the host's restart, and only the window re-arms.
 //!
-//! **A link for each project root.** The window's own link to its host carries the kill switch;
-//! each project root the window opens is held on a link of its own ([`Connection::of_project`]),
-//! which carries that root's chats, its browsers and its saving: their views, word that a
-//! program ended, its hooks' lines and what each look of its auto-save did. The host knows a
-//! project by its stable id, which every clone of it shares, and tells two clones apart by the
-//! link that holds each (#2178).
+//! **The event log is the host's too** (#2003): the window opens none, and hands the host each
+//! write it decides ([`record_in_the_host`]); what its hooks' hearing would write of a line goes
+//! back with the line's reply. The host keeps what a program's end leaves, window or no window.
+//!
+//! **A link for each project root.** The window's own link to its host carries the kill switch
+//! and the event log's writes; each project root the window opens is held on a link of its own
+//! ([`Connection::of_project`]), which carries that root's chats, its browsers and its saving:
+//! their views, word that a program ended, its hooks' lines and what each look of its auto-save
+//! did. The host knows a project by its stable id, which every clone of it shares, and tells two
+//! clones apart by the link that holds each (#2178).
 //!
 //! **The host saves the project too** (#2002): the window asks it to as the project opens
 //! ([`HostedSessions`]'s `keep_saving`), and starts no auto-save of its own, so exactly one
@@ -94,6 +98,24 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 /// What a view is written before the screen of its next epoch: a full reset, so a pane drawn
 /// from a fresh snapshot after its view fell behind starts from blank, as the snapshot assumes.
 const RESET: &str = "\x1bc";
+
+/// **Writes `entry` in the event log the session host holds** (#2003), once the link is ready:
+/// `Ok` once the host has written it durably, or why it did not. What the window's
+/// [`crate::hooks::Events`] hands every write it decides to while chats run in the host.
+pub fn record_in_the_host(
+    connection: &Connection,
+    entry: &purlis_core::eventlog::Entry,
+) -> Result<(), String> {
+    let entry = serde_json::to_value(entry)
+        .map_err(|why| format!("the write could not be put in words for the host: {why}"))?;
+    match connection
+        .wait(LINK_WITHIN)?
+        .call(Command::Record { entry })?
+    {
+        Answer::Done => Ok(()),
+        other => Err(format!("the session host answered a write with {other:?}")),
+    }
+}
 
 /// Where the window's link to its session host stands: being made, ready, or not to be had and
 /// why; and the link each project root is held on. Shared by every project's

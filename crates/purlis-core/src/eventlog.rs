@@ -42,6 +42,9 @@ use std::time::Instant;
 
 use crate::state::run::{Cause, RunState};
 
+mod entry;
+pub use entry::Entry;
+
 /// One event, in ADR 0066's envelope.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Event {
@@ -1107,7 +1110,8 @@ pub fn args_hash(args: &serde_json::Value) -> String {
 
 /// What the board did with a report's conversation, which is how the host tells a new run
 /// (ADR 0066, "A run is a stretch…").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Followed {
     /// The chat is in the conversation it was in, or the board refused the report.
     No,
@@ -1119,7 +1123,8 @@ pub enum Followed {
 }
 
 /// Why a run began: ADR 0066's `cause`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Began {
     /// The chat was created: its first run. Also a chat's first line when the host was never
     /// told who it is, which no chat charter starts produces.
@@ -1195,7 +1200,8 @@ pub const NONE: &str = "none";
 /// **A fact the host does not have is said** (#868): `None` is written as [`UNKNOWN`], never
 /// left out, so a reader tells "not known" from "not written by this version". The chat and
 /// the parent run are the envelope's, and the cause is the [`Began`] the run began for.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Attributes {
     /// The persona the chat has adopted, by name, or [`NONE`].
     pub persona: Option<String>,
@@ -1488,6 +1494,9 @@ const KILL_SWITCH_MARK: &[u8] = b"\"killswitch.";
 pub struct Recorder {
     /// The device's directory under `<data>/events/`, where it is known.
     dir: PathBuf,
+    /// The machine store it read its device id from, where it was opened from one: where the
+    /// kill switch's journal is ([`Entry::KillSwitchWrote`]).
+    config: Option<PathBuf>,
     log: Log,
     key: ArgsKey,
     /// By project and number: a number means nothing outside the project that dealt it.
@@ -1539,6 +1548,7 @@ impl Recorder {
         let dir = data.join(EVENTS).join(&device);
         let mut recorder = Recorder::new(Log::open(&dir, &device)?, ArgsKey::open(&dir)?);
         recorder.dir = dir;
+        recorder.config = Some(config.to_path_buf());
         // The kill switch's journal, read as the host starts (#1375): a line written while no
         // host ran is recorded now. Never a refusal to log: the switch holds whatever this says.
         if let Err(why) = recorder.kill_switch_read(config) {
@@ -1556,9 +1566,23 @@ impl Recorder {
         Recorder::open_in(&config, &data)
     }
 
+    /// Where [`Recorder::open`] keeps this machine's log, without opening it: what the window
+    /// says of the log while the session host writes it (#2003). `None` where there is none to
+    /// open.
+    pub fn dir_on_this_machine() -> Option<PathBuf> {
+        let config = crate::machine::config_root()?;
+        let data = crate::datahome::root()?;
+        if crate::datahome::refusal(&data).is_some() {
+            return None;
+        }
+        let device = crate::machine::device_id(&config).ok()?;
+        Some(data.join(EVENTS).join(device))
+    }
+
     pub fn new(log: Log, key: ArgsKey) -> Recorder {
         Recorder {
             dir: PathBuf::new(),
+            config: None,
             log,
             key,
             chats: HashMap::new(),
@@ -1737,6 +1761,15 @@ impl Recorder {
         body
     }
 
+    /// The id chat `number` in `plane` is known by here, where this recorder was told it or
+    /// gave it one: what the session host finds a chat's dispatch by as its program ends
+    /// (#2003). `None` for a chat it knows nothing of.
+    pub fn chat_of(&self, plane: &Path, number: u32) -> Option<String> {
+        self.chats
+            .get(&(plane.to_path_buf(), number))
+            .map(|who| who.chat.clone())
+    }
+
     /// Tells the recorder who chat `number` in `plane` is and which run it is in, without an
     /// event: a chat the reopen record names, before the host starts anything, so a line it
     /// spooled before the host went away is recorded under the run it ran in (FD-30).
@@ -1847,13 +1880,22 @@ impl Recorder {
         harness: Option<crate::harness::Harness>,
         persona: Option<&str>,
     ) -> io::Result<Event> {
-        self.log.append(
-            Some(chat),
-            Some(run),
-            None,
+        self.trust_said(
+            RunOf { chat, run },
             change.kind(),
             change.body(harness, persona),
         )
+    }
+
+    /// [`Recorder::trust`], its kind and body composed already: what an [`Entry::Trust`]
+    /// carries from the window.
+    fn trust_said(
+        &mut self,
+        RunOf { chat, run }: RunOf<'_>,
+        kind: &str,
+        body: serde_json::Value,
+    ) -> io::Result<Event> {
+        self.log.append(Some(chat), Some(run), None, kind, body)
     }
 
     /// The audit of a sandbox grant or revoke (#1342, [`crate::sandbox::grant::Audited`]):
@@ -1865,6 +1907,19 @@ impl Recorder {
         number: Option<u32>,
         audited: &crate::sandbox::grant::Audited<'_>,
     ) -> io::Result<Event> {
+        self.audited(plane, number, audited.kind(), audited.body())
+    }
+
+    /// One event that audits a person's act, `kind` with `body`, under chat `number`'s current
+    /// run where it came from one, made durable before it answers: what a grant, a revoke and
+    /// an applied change each write, and what an [`Entry::Audited`] carries from the window.
+    fn audited(
+        &mut self,
+        plane: &Path,
+        number: Option<u32>,
+        kind: &str,
+        body: serde_json::Value,
+    ) -> io::Result<Event> {
         let who = number
             .map(|number| self.identity(plane, number))
             .transpose()?;
@@ -1872,8 +1927,8 @@ impl Recorder {
             who.as_ref().map(|who| who.chat.as_str()),
             who.as_ref().map(|who| who.run.as_str()),
             None,
-            audited.kind(),
-            audited.body(),
+            kind,
+            body,
         )?;
         self.log.durable().through(event.seq)?;
         Ok(event)
@@ -1889,16 +1944,12 @@ impl Recorder {
         number: u32,
         applied: &crate::proposed::Applied<'_>,
     ) -> io::Result<Event> {
-        let who = self.identity(plane, number)?;
-        let event = self.log.append(
-            Some(who.chat.as_str()),
-            Some(who.run.as_str()),
-            None,
+        self.audited(
+            plane,
+            Some(number),
             crate::proposed::APPLIED_KIND,
             applied.body(),
-        )?;
-        self.log.durable().through(event.seq)?;
-        Ok(event)
+        )
     }
 
     /// The audit of a dispatch grant or revoke (#1437, [`crate::dispatchgrant::Audited`]):
@@ -1936,22 +1987,12 @@ impl Recorder {
         audited: &crate::dispatchgrant::Audited<'_>,
         from: Option<&str>,
     ) -> io::Result<Event> {
-        let who = number
-            .map(|number| self.identity(plane, number))
-            .transpose()?;
-        let mut body = audited.body();
-        if let (Some(from), Some(fields)) = (from, body.as_object_mut()) {
-            fields.insert("from".to_owned(), from.into());
-        }
-        let event = self.log.append(
-            who.as_ref().map(|who| who.chat.as_str()),
-            who.as_ref().map(|who| who.run.as_str()),
-            None,
+        self.audited(
+            plane,
+            number,
             audited.kind(),
-            body,
-        )?;
-        self.log.durable().through(event.seq)?;
-        Ok(event)
+            dispatch_grant_body(audited, from),
+        )
     }
 
     /// Chat `number`'s current run has ended, in `state` for `cause`: each of its sub-agents
@@ -2392,6 +2433,20 @@ impl Recorder {
         self.chats.insert(key, who.clone());
         Ok(who)
     }
+}
+
+/// A dispatch grant's audited body, saying `from` where the person made it somewhere other
+/// than a chat's Notice or Settings ([`Recorder::dispatch_grant_from`]): what the window puts in
+/// an [`Entry::Audited`] for one too.
+pub fn dispatch_grant_body(
+    audited: &crate::dispatchgrant::Audited<'_>,
+    from: Option<&str>,
+) -> serde_json::Value {
+    let mut body = audited.body();
+    if let (Some(from), Some(fields)) = (from, body.as_object_mut()) {
+        fields.insert("from".to_owned(), from.into());
+    }
+    body
 }
 
 /// An end state's word, as `run.ended`'s body says it (ADR 0076 §1). Every caller passes an

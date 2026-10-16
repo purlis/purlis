@@ -109,3 +109,18 @@ updates:
     schedule: { interval: weekly }
     groups:
       runner-image: { patterns: ["*"] }
+
+  # The cluster operator (`operator/`, #2054): a cargo workspace with its own lock, and its
+  # image's base, pinned by digest like the runner image's. The upstream agent-sandbox it is
+  # tested against is pinned by its vendored definitions and moved by hand
+  # (docs/cluster-operator.md).
+  - package-ecosystem: cargo
+    directory: /operator
+    schedule: { interval: weekly }
+    groups:
+      operator: { patterns: ["*"] }
+  - package-ecosystem: docker
+    directory: /operator
+    schedule: { interval: weekly }
+    groups:
+      operator-image: { patterns: ["*"] }
