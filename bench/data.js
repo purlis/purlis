@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792125134417,
+  "lastUpdate": 1792132231339,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13482,6 +13482,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8004685,
             "unit": "ms",
             "extra": "median of 5 runs: 100.477, 101.271, 101.800, 102.658, 103.120 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0b2016643d25f0d2bcdf4c3c0a37c1da51bde56",
+          "message": "fix(deps): move the browser engine to zip 9, off the yanked zip 4 (#2256)\n\nEvery zip 4.x release is yanked, so `cargo deny check` failed on every\nbranch. purlis-browser-engine now asks for zip 9.0 with the same single\nfeature (the deflate reader on flate2's zlib-rs backend); install.rs needs\nno change. zip 9 adds one crate, typed-path.\n\ntauri-plugin-updater, up to its newest 2.x, still requires zip 4, and only\non Windows, which purlis does not ship yet. deny.toml ignores that one\nyanked crate, zip@4.6.1, with the reason, until the updater moves.\n\nCloses #2254\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T10:29:04+04:00",
+          "tree_id": "bceba8fd147e90296050875ec0baca269407bbe5",
+          "url": "https://github.com/purlis/purlis/commit/e0b2016643d25f0d2bcdf4c3c0a37c1da51bde56"
+        },
+        "date": 1792132229727,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5374524999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.516, 0.537, 0.541, 0.558 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.838676,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.361, 16.458, 16.839, 17.009, 17.334 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.864371,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.895, 103.399, 104.864, 105.253, 106.374 ms"
           }
         ]
       }
