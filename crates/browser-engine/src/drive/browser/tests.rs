@@ -20,6 +20,8 @@ use crate::drive::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, Ref, Refusal, Settled,
 };
 
+mod takeover;
+
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
 const PAYMENT_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-payment-frame.json");
 
@@ -1266,9 +1268,9 @@ fn blanking_the_focus_is_refused_when_more_than_one_element_says_it_has_it() {
 
 type Shown = Arc<Mutex<Vec<Vec<u8>>>>;
 
-fn shown_into(shown: &Shown) -> Arc<dyn Fn(Vec<u8>) + Send + Sync> {
+fn shown_into(shown: &Shown) -> Arc<dyn Fn(crate::drive::Painted) + Send + Sync> {
     let shown = shown.clone();
-    Arc::new(move |image| super::lock(&shown).push(image))
+    Arc::new(move |painted| super::lock(&shown).push(painted.jpeg))
 }
 
 fn a_frame(engine: &Engine, image: &[u8], ack: i64) {

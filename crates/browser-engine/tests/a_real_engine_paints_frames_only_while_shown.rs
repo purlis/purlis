@@ -19,13 +19,13 @@ use std::time::{Duration, Instant};
 
 use common::site::started;
 use purlis_browser_engine::WebAddress;
-use purlis_browser_engine::drive::{Call, CallId};
+use purlis_browser_engine::drive::{Call, CallId, Painted};
 
 type Frames = Arc<Mutex<Vec<Vec<u8>>>>;
 
-fn collecting(frames: &Frames) -> Arc<dyn Fn(Vec<u8>) + Send + Sync> {
+fn collecting(frames: &Frames) -> Arc<dyn Fn(Painted) + Send + Sync> {
     let frames = frames.clone();
-    Arc::new(move |image| frames.lock().unwrap().push(image))
+    Arc::new(move |painted| frames.lock().unwrap().push(painted.jpeg))
 }
 
 #[test]

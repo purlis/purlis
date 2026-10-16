@@ -24,10 +24,10 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::browser::Inner;
-use super::lock;
+use super::{Aim, Painted, lock};
 
-/// Where each frame's image goes.
-pub(crate) type Sink = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
+/// Where each frame goes: its image, and what it showed.
+pub(crate) type Sink = Arc<dyn Fn(Painted) + Send + Sync>;
 
 /// The JPEG quality frames are made at: what the frames prototype measured (2026-10-14).
 pub const QUALITY: u8 = 60;
@@ -86,9 +86,9 @@ impl Screencast {
         self.ask(Ask::Pace(every));
     }
 
-    /// A `Page.screencastFrame` event, from the event reader: handed over while shown, and
-    /// acknowledged on the screencast's thread.
-    pub(crate) fn frame(&self, params: &Value, session: Option<&str>) {
+    /// A `Page.screencastFrame` event, from the event reader: handed over while shown, with
+    /// `aim`, what it showed (#2014), and acknowledged on the screencast's thread.
+    pub(crate) fn frame(&self, params: &Value, session: Option<&str>, aim: Aim) {
         let Some(sink) = lock(&self.sink).clone() else {
             return;
         };
@@ -99,8 +99,8 @@ impl Screencast {
         ) else {
             return;
         };
-        if let Ok(image) = base64::engine::general_purpose::STANDARD.decode(data) {
-            sink(image);
+        if let Ok(jpeg) = base64::engine::general_purpose::STANDARD.decode(data) {
+            sink(Painted { aim, jpeg });
         }
         self.ask(Ask::Frame {
             session: session.to_owned(),
