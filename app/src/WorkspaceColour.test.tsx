@@ -16,6 +16,7 @@ import {
   tinted,
 } from "./theme/theme";
 import { stripNamed } from "./test-strips";
+import { themeInForce } from "./theme/inForce.testkit";
 
 /**
  * **A workspace's theme and colour, against the whole window** (charter-app#281).
@@ -88,6 +89,7 @@ function core() {
     if (cmd === "extension_views") return [];
     if (cmd === "extension_panels") return [];
     if (cmd === "extensions_on") return [];
+    if (cmd === "theme_in_force") return themeInForce(given);
     if (cmd === "project_theme_drawn") return given.workspace === "alpha" ? "purlis-light" : null;
     if (cmd === "workspace_panels")
       return {

@@ -27,6 +27,7 @@ import {
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
 import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
+import { themeInForce } from "./theme/inForce.testkit";
 
 /**
  * A window holding more than one project (ADR 0033, spec decision 23).
@@ -189,6 +190,7 @@ function core(
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
+    if (cmd === "theme_in_force") return themeInForce(args);
     if (cmd === "project_theme_drawn") return over.themes?.[plane ?? ""] ?? null;
     if (cmd === "asks_waiting" && over.asks !== undefined)
       return {

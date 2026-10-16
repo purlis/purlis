@@ -443,7 +443,8 @@ fn a_theme_may_turn_motion_off() {
         .iter()
         .map(|token| ((*token).to_owned(), json!(0)))
         .collect();
-    let resolved = load(&json!({ "name": "still", "appearance": "dark", "tokens": {}, "motion": off }));
+    let resolved =
+        load(&json!({ "name": "still", "appearance": "dark", "tokens": {}, "motion": off }));
     assert!(resolved.complaints.is_empty());
     assert!(resolved.theme.motion.durations.values().all(|ms| *ms == 0));
 }
