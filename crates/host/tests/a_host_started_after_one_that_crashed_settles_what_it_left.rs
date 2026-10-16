@@ -113,6 +113,7 @@ async fn each_program_the_last_host_left_running_is_told_to_the_binary() {
     let settled = next.take_over_from_the_last_host();
 
     assert_eq!(settled, 2);
+    let project = std::fs::canonicalize(project.path()).unwrap();
     let left: Vec<(PathBuf, u32, Option<String>)> = kept
         .left
         .lock()
@@ -123,8 +124,8 @@ async fn each_program_the_last_host_left_running_is_told_to_the_binary() {
     assert_eq!(
         left,
         [
-            (project.path().to_path_buf(), 2, Some("run-2".to_owned())),
-            (project.path().to_path_buf(), 3, Some("run-3".to_owned())),
+            (project.clone(), 2, Some("run-2".to_owned())),
+            (project.clone(), 3, Some("run-3".to_owned())),
         ]
     );
 }

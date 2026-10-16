@@ -333,9 +333,7 @@ fn a_chats_proxy_in_the_host_still_reaches_its_hosts_once_the_windows_link_is_go
 #[test]
 fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
     use crate::host::SessionHost;
-    use crate::hostedsessions::{Connection, HostLink, HostedSessions};
-    use purlis_session_protocol::auth::Scope;
-    use purlis_session_protocol::{link, session};
+    use crate::hostedsessions::HostedSessions;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -348,32 +346,7 @@ fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
         confines.clone(),
         purlis_host::standin::StandIns::default(),
     );
-    let host_link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(1 << 20);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(
-            served.expect("admitted"),
-            hosting.clone(),
-            None,
-        ));
-        HostLink::over(
-            client.expect("the window"),
-            tokio::runtime::Handle::current(),
-            || {},
-        )
-        .await
-        .expect("the window speaks to the host")
-    });
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::new(host_link));
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
     let project = tempfile::tempdir().expect("a project");
     let root = std::fs::canonicalize(project.path()).expect("a resolved project");
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");

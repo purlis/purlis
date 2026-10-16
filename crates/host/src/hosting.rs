@@ -46,9 +46,10 @@
 //! **A held project is saved here when the window asks** (#2002): the host runs the binary's
 //! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
 //! is composed, and tells the window what each look did: only a link that may save a project
-//! ([`Power::Save`]) and holds it hears how saving it goes, its saver's question of who is
-//! mid-turn included. One saver per project, however often it is asked. A link that ends
-//! without a word leaves it saving, so the project is saved while the window is gone for a
+//! ([`Power::Save`]) and holds it there hears how saving it goes, its saver's question of who is
+//! mid-turn included. One saver per project at each place it is held (#2178), however often it
+//! is asked. A link that ends without a word leaves it saving, so the project is saved while the
+//! window is gone for a
 //! moment; the window's own stop, or every window letting go of the project, ends it.
 
 use std::collections::HashMap;
@@ -400,15 +401,18 @@ struct Inner {
 
 #[derive(Default)]
 struct State {
-    projects: HashMap<String, Held>,
+    /// Each project held, at each place it is held: one project is at another path in every
+    /// clone, and a window may hold two clones of it at once, each on a link of its own (#2178).
+    projects: HashMap<HeldAt, Held>,
     programs: HashMap<String, Hosted>,
     /// The processes of programs closed or ended by the host, kept for the admission check for
     /// as long as the host runs: a process a program started may outlive it in its session, in
     /// a group of its own the close did not reach, and is still inside that chat. Keeping a
     /// number past its session errs towards refusing a peer, never towards admitting one.
     closed: Vec<u32>,
-    /// Each project's highest number dealt: it only rises, so a number names one chat.
-    dealt: HashMap<String, u32>,
+    /// Each held place's highest number dealt: it only rises, so a number names one chat of
+    /// that clone, as the clone's own record keeps them.
+    dealt: HashMap<HeldAt, u32>,
     /// Who is told what the host pushes ([`Subscriber`]).
     subscribers: Vec<Subscriber>,
     /// The chats' confinements (#1999), by the id the window gave each.
@@ -419,8 +423,8 @@ struct State {
     asked: u64,
     /// The window that started this host, if one did.
     window: Option<Window>,
-    /// Each project being saved, by its id: one saver each (#2002).
-    saving: HashMap<String, Box<dyn Saving>>,
+    /// Each project being saved, at the place it is held: one saver each (#2002, #2178).
+    saving: HashMap<HeldAt, Box<dyn Saving>>,
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
@@ -447,8 +451,72 @@ enum Owner {
     Program(String),
 }
 
-struct Held {
+/// A place: a project, by its stable id, at the folder it is held at on this machine, by the
+/// folder's canonical path, so one folder is one place however its path is spelled. What the
+/// host holds, deals numbers in, hears hooks from and saves. The id is the project's on the
+/// wire; which of its clones a command means is the one its link holds (#2178).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct HeldAt {
+    project: String,
     path: PathBuf,
+}
+
+/// The place `link` holds `project` at, if it holds it.
+fn held_by<'a>(state: &'a State, project: &str, link: u64) -> Option<&'a HeldAt> {
+    state
+        .projects
+        .iter()
+        .find(|(at, held)| at.project == project && held.links.contains_key(&link))
+        .map(|(at, _)| at)
+}
+
+/// The places a link holds `project` at: not one kept only for the programs in it the window
+/// has not closed (#2194).
+fn held_by_a_link<'a>(state: &'a State, project: &'a str) -> impl Iterator<Item = &'a HeldAt> {
+    state
+        .projects
+        .iter()
+        .filter(move |(at, held)| at.project == project && !held.links.is_empty())
+        .map(|(at, _)| at)
+}
+
+/// Where `project` is for a command from `link`: the place the link holds it at, or, for a link
+/// that holds it nowhere, the one place a link holds it at. A project held at two places,
+/// neither the link's, is not guessed at; nothing starts, is dealt or is confined in a place no
+/// link holds.
+fn held_at(state: &State, project: &str, link: u64) -> Result<HeldAt, Refusal> {
+    if let Some(at) = held_by(state, project, link) {
+        return Ok(at.clone());
+    }
+    let mut places = held_by_a_link(state, project);
+    match (places.next(), places.next()) {
+        (None, _) => Err(no_such_project(project)),
+        (Some(at), None) => Ok(at.clone()),
+        (Some(_), Some(_)) => Err(Refusal {
+            code: session::NO_SUCH_PROJECT.into(),
+            why: format!(
+                "project {project} is held at more than one place on this host, and this link \
+                 holds it at none of them"
+            ),
+        }),
+    }
+}
+
+/// Where `project` is saved for a command from `link`: as [`held_at`] says while any place
+/// holds it, or, once nobody holds it any more (a window that ended leaves it saved), the one
+/// place it is still saved, if there is one.
+fn saved_at(state: &State, project: &str, link: u64) -> Result<Option<HeldAt>, Refusal> {
+    if held_by_a_link(state, project).next().is_some() {
+        return held_at(state, project, link).map(Some);
+    }
+    let mut saved = state.saving.keys().filter(|at| at.project == project);
+    Ok(match (saved.next(), saved.next()) {
+        (Some(at), None) => Some(at.clone()),
+        _ => None,
+    })
+}
+
+struct Held {
     /// How many holds each link has on it, by the link.
     links: HashMap<u64, usize>,
     /// Its hook channel, where the host hears hooks and it could be opened.
@@ -463,7 +531,8 @@ fn link_of(peer: &Peer) -> u64 {
 
 struct Hosted {
     kind: ProgramKind,
-    project: String,
+    /// The project it is in, at the place it was started there.
+    at: HeldAt,
     number: u32,
     run: Option<String>,
     running: Arc<dyn Running>,
@@ -614,12 +683,12 @@ impl Hosting {
         }
     }
 
-    /// Whether a link holds `project` now: a window that decides what a program's end in it
-    /// moves.
-    fn watched(&self, project: &str) -> bool {
+    /// Whether a link holds the project at `at` now: a window that decides what a program's end
+    /// there moves.
+    fn watched(&self, at: &HeldAt) -> bool {
         self.state()
             .projects
-            .get(project)
+            .get(at)
             .is_some_and(|held| !held.links.is_empty())
     }
 
@@ -648,18 +717,20 @@ impl Hosting {
         });
     }
 
-    /// Tell how saving `project` goes to every subscriber whose link may save it
-    /// ([`Power::Save`]) and holds it, letting go of one that is gone or has stopped reading:
-    /// whether one was told. Only the link that may save a project hears how saving it goes.
-    fn tell_the_savers(state: &mut State, project: &str, pushed: &Pushed) -> bool {
+    /// Tell `pushed` to every subscriber whose link holds the project `at` that place, letting go
+    /// of one that is gone or has stopped reading: whether one was told. One clone's news is
+    /// never told to the window of another (#2178). How saving goes, its saver's question of
+    /// who is mid-turn included, is `for_savers`: told only to a link that may save the project
+    /// ([`Power::Save`]).
+    fn tell_holders(state: &mut State, at: &HeldAt, pushed: &Pushed, for_savers: bool) -> bool {
         let holders: Vec<u64> = state
             .projects
-            .get(project)
+            .get(at)
             .map(|held| held.links.keys().copied().collect())
             .unwrap_or_default();
         let mut told = false;
         state.subscribers.retain(|subscriber| {
-            if !subscriber.saves || !holders.contains(&subscriber.link) {
+            if (for_savers && !subscriber.saves) || !holders.contains(&subscriber.link) {
                 return true;
             }
             let sent = subscriber.told.try_send(pushed.clone()).is_ok();
@@ -669,13 +740,13 @@ impl Hosting {
         told
     }
 
-    /// Asks the window which chats are mid-turn in `workspace` of `project`, and waits for its
-    /// answer, at most `within`: `None` with no window holding the project linked, or none that
-    /// answered (#2002). Asked of the links that may save the project and hold it
-    /// ([`Self::tell_the_savers`]), which alone answer it.
+    /// Asks the window which chats are mid-turn in `workspace` of the project held `at`, and
+    /// waits for its answer, at most `within`: `None` with no window holding the project there
+    /// linked, or none that answered (#2002). Asked of the links that may save the project and
+    /// hold it there ([`Self::tell_holders`]), which alone answer it.
     fn ask_the_window(
         &self,
-        project: &str,
+        at: &HeldAt,
         workspace: &str,
         within: Duration,
     ) -> Option<Vec<String>> {
@@ -686,10 +757,10 @@ impl Hosting {
             let question = state.asked;
             let pushed = Pushed::WhoIsMidTurn {
                 question,
-                project: project.to_owned(),
+                project: at.project.clone(),
                 workspace: workspace.to_owned(),
             };
-            if !Self::tell_the_savers(&mut state, project, &pushed) {
+            if !Self::tell_holders(&mut state, at, &pushed, true) {
                 return None;
             }
             state.questions.insert(question, answered);
@@ -700,50 +771,33 @@ impl Hosting {
         said
     }
 
-    /// Push line `id` that `project`'s hooks wrote to every subscriber whose link holds the
-    /// project, letting go of one that is gone or has stopped reading: whether one was told.
-    fn hand_on(&self, project: &str, id: u64, line: serde_json::Value) -> bool {
-        let mut state = self.state();
-        let Some(holders) = state
-            .projects
-            .get(project)
-            .map(|held| held.links.keys().copied().collect::<Vec<u64>>())
-        else {
-            return false;
-        };
+    /// Push line `id` that the hooks of the project held `at` wrote to every subscriber whose
+    /// link holds it there: whether one was told.
+    fn hand_on(&self, at: &HeldAt, id: u64, line: serde_json::Value) -> bool {
         let pushed = Pushed::Heard {
-            project: project.to_owned(),
+            project: at.project.clone(),
             heard: id,
             line,
         };
-        let mut told = false;
-        state.subscribers.retain(|subscriber| {
-            if !holders.contains(&subscriber.link) {
-                return true;
-            }
-            let sent = subscriber.told.try_send(pushed.clone()).is_ok();
-            told |= sent;
-            sent
-        });
-        told
+        Self::tell_holders(&mut self.state(), at, &pushed, false)
     }
 
-    /// What hands a line `project`'s hooks wrote on to whoever holds it: nothing, once this
-    /// host has gone.
-    fn handing_on(&self, project: &str) -> HandOn {
+    /// What hands a line the hooks of the project held `at` wrote on to whoever holds it
+    /// there: nothing, once this host has gone.
+    fn handing_on(&self, at: &HeldAt) -> HandOn {
         let host = Arc::downgrade(&self.inner);
-        let project = project.to_owned();
+        let at = at.clone();
         Arc::new(move |id, line| {
             host.upgrade()
-                .is_some_and(|inner| Hosting { inner }.hand_on(&project, id, line))
+                .is_some_and(|inner| Hosting { inner }.hand_on(&at, id, line))
         })
     }
 
-    /// The hook channel of `project`, where it has one.
-    fn channel(&self, project: &str) -> Option<Arc<dyn Channel>> {
+    /// The hook channel of the project held `at`, where it has one.
+    fn channel(&self, at: &HeldAt) -> Option<Arc<dyn Channel>> {
         self.state()
             .projects
-            .get(project)
+            .get(at)
             .and_then(|held| held.channel.clone())
     }
 
@@ -766,11 +820,11 @@ impl Hosting {
             .filter(|(_, hosted)| knows_browsers || hosted.kind != ProgramKind::Browser)
             .map(|(id, hosted)| Chat {
                 chat: id.clone(),
-                project: hosted.project.clone(),
+                project: hosted.at.project.clone(),
                 project_path: state
                     .projects
-                    .get(&hosted.project)
-                    .map(|held| held.path.display().to_string()),
+                    .contains_key(&hosted.at)
+                    .then(|| hosted.at.path.display().to_string()),
                 title: None,
                 state: if hosted.ended { "ended" } else { "running" }.into(),
                 number: (hosted.kind != ProgramKind::Browser).then_some(hosted.number),
@@ -783,66 +837,80 @@ impl Hosting {
     }
 
     fn hold(&self, project: String, path: String, peer: &Peer) -> Result<Answer, Refusal> {
-        let path = PathBuf::from(path);
-        if !path.is_absolute() || !path.is_dir() {
+        let given = PathBuf::from(path);
+        // One folder is one place however its path is spelled.
+        let path = match std::fs::canonicalize(&given) {
+            Ok(path) if given.is_absolute() && path.is_dir() => path,
+            _ => {
+                return Err(Refusal {
+                    code: session::NO_SUCH_PROJECT.into(),
+                    why: format!(
+                        "{} is not a folder on this machine, so project {project} is not held",
+                        given.display()
+                    ),
+                });
+            }
+        };
+        let link = link_of(peer);
+        let at = HeldAt { project, path };
+        let mut state = self.state();
+        // A project held is where this link first held it until the link lets go: a link holds
+        // each project at one place, and no hold moves where another link holds it (#2178).
+        if let Some(elsewhere) =
+            held_by(&state, &at.project, link).filter(|held| held.path != at.path)
+        {
             return Err(Refusal {
-                code: session::NO_SUCH_PROJECT.into(),
+                code: session::NOT_ALLOWED.into(),
                 why: format!(
-                    "{} is not a folder on this machine, so project {project} is not held",
-                    path.display()
+                    "this link holds project {} at {}, not at {}",
+                    at.project,
+                    elsewhere.path.display(),
+                    at.path.display()
                 ),
             });
         }
-        let mut state = self.state();
-        if !state.projects.contains_key(&project) {
-            // Opened under the hold, so two holds of a project never open two channels on one
+        if !state.projects.contains_key(&at) {
+            // Opened under the hold, so two holds of a place never open two channels on one
             // socket. Opening binds a socket: no wait on anything else.
             let channel = match self
                 .inner
                 .hear
-                .open(&project, &path, self.handing_on(&project))
+                .open(&at.project, &at.path, self.handing_on(&at))
             {
                 Ok(channel) => channel,
                 Err(why) => {
                     crate::say(&format!(
-                        "project {project}'s hooks are not heard, so its chats' states and \
-                         asks will not reach the window: {why}"
+                        "project {} at {}: its hooks are not heard, so its chats' states and \
+                         asks will not reach the window: {why}",
+                        at.project,
+                        at.path.display()
                     ));
                     None
                 }
             };
             state.projects.insert(
-                project.clone(),
+                at.clone(),
                 Held {
-                    path: path.clone(),
                     links: HashMap::new(),
                     channel,
                 },
             );
         }
-        let Some(held) = state.projects.get_mut(&project) else {
-            return Err(no_such_project(&project));
+        let Some(held) = state.projects.get_mut(&at) else {
+            return Err(no_such_project(&at.project));
         };
-        // A project held is where it was first held until every hold is let go of: no client
-        // moves another's.
-        if held.path != path {
-            return Err(Refusal {
-                code: session::NOT_ALLOWED.into(),
-                why: format!(
-                    "project {project} is held at {}, not at {}",
-                    held.path.display(),
-                    path.display()
-                ),
-            });
-        }
-        *held.links.entry(link_of(peer)).or_default() += 1;
+        *held.links.entry(link).or_default() += 1;
         Ok(Answer::Done)
     }
 
     fn let_go(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let link = link_of(peer);
         let mut state = self.state();
-        let Some(held) = state.projects.get_mut(project) else {
+        // A link lets go only of its own holds.
+        let Some(at) = held_by(&state, project, link).cloned() else {
+            return Err(no_such_project(project));
+        };
+        let Some(held) = state.projects.get_mut(&at) else {
             return Err(no_such_project(project));
         };
         match held.links.get_mut(&link) {
@@ -850,19 +918,12 @@ impl Hosting {
             Some(_) => {
                 held.links.remove(&link);
             }
-            // A link lets go only of its own holds.
             None => return Err(no_such_project(project)),
         }
-        let gone = held
-            .links
-            .is_empty()
-            .then(|| state.projects.remove(project));
+        let gone = held.links.is_empty().then(|| state.projects.remove(&at));
         // Nobody holds it now: it is saved no more. A link that ended is not a let go
         // ([`Self::let_go_of_the_links`]), so a crashed window's project goes on saving.
-        let saving = gone
-            .is_some()
-            .then(|| state.saving.remove(project))
-            .flatten();
+        let saving = gone.is_some().then(|| state.saving.remove(&at)).flatten();
         // Its hook channel stops outside the hold: a line it is handing on waits for the hold.
         drop(state);
         drop(gone);
@@ -882,18 +943,18 @@ impl Hosting {
             let mut state = self.state();
             let held = std::mem::take(&mut state.projects);
             // Every program not yet closed, running or ended: closing is what takes one out.
-            let unclosed: std::collections::HashSet<String> = state
+            let unclosed: std::collections::HashSet<HeldAt> = state
                 .programs
                 .values()
-                .map(|hosted| hosted.project.clone())
+                .map(|hosted| hosted.at.clone())
                 .collect();
             let (kept, gone): (Vec<_>, Vec<_>) = held
                 .into_iter()
-                .map(|(project, mut held)| {
+                .map(|(at, mut held)| {
                     held.links.remove(&link);
-                    (project, held)
+                    (at, held)
                 })
-                .partition(|(project, held)| !held.links.is_empty() || unclosed.contains(project));
+                .partition(|(at, held)| !held.links.is_empty() || unclosed.contains(at));
             state.projects = kept.into_iter().collect();
             gone.into_iter().map(|(_, held)| held).collect()
         };
@@ -941,12 +1002,9 @@ impl Hosting {
         }
         .at_least_min();
         // The number and the id are taken under one hold, so two starts never share either.
-        let (program, number, path) = {
+        let (program, number, at) = {
             let mut state = self.state();
-            let Some(path) = held_by_a_link(&state, &start.project).map(|held| held.path.clone())
-            else {
-                return Err(no_such_project(&start.project));
-            };
+            let at = held_at(&state, &start.project, link_of(peer))?;
             let program = match &start.program {
                 Some(id) if state.programs.contains_key(id) => {
                     return Err(Refusal {
@@ -961,7 +1019,7 @@ impl Hosting {
                 state
                     .programs
                     .values()
-                    .any(|hosted| hosted.project == start.project && hosted.number == number)
+                    .any(|hosted| hosted.at == at && hosted.number == number)
             };
             // The confinement it runs in becomes the program's, under the same hold, so no two
             // programs run in one. Only one this link made for this project, and nothing runs in
@@ -983,7 +1041,7 @@ impl Hosting {
                     }
                 }
             }
-            let dealt = state.dealt.get(&start.project).copied().unwrap_or(0);
+            let dealt = state.dealt.get(&at).copied().unwrap_or(0);
             let number = match start.number {
                 Some(wanted) if wanted > 0 && !in_use(wanted, &state) => wanted,
                 _ => match dealt.checked_add(1) {
@@ -991,12 +1049,12 @@ impl Hosting {
                     _ => return Err(no_number_left(&start.project)),
                 },
             };
-            state.dealt.insert(start.project.clone(), dealt.max(number));
-            (program, number, path)
+            state.dealt.insert(at.clone(), dealt.max(number));
+            (program, number, at)
         };
         // Its token, issued by the project's hook channel and composed into its start: the
         // window's launch says where it runs, never where it reports (#2000).
-        let channel = self.channel(&start.project);
+        let channel = self.channel(&at);
         let mut start = start;
         if let (Some(channel), Some(launch)) = (&channel, start.launch.as_mut()) {
             match channel.report_to(number) {
@@ -1016,8 +1074,8 @@ impl Hosting {
             }
         };
         let spec = match self.inner.compose.compose(&ToCompose {
-            project: &start.project,
-            project_path: &path,
+            project: &at.project,
+            project_path: &at.path,
             number,
             size,
             start: &start,
@@ -1054,7 +1112,7 @@ impl Hosting {
             program.clone(),
             Hosted {
                 kind: start.kind,
-                project: start.project.clone(),
+                at: at.clone(),
                 number,
                 run: start.run.clone(),
                 running: Arc::clone(&running),
@@ -1075,7 +1133,7 @@ impl Hosting {
             host_record.started(Started {
                 program: program.clone(),
                 project: start.project.clone(),
-                project_path: path.clone(),
+                project_path: at.path.clone(),
                 number,
                 run: start.run.clone(),
                 process,
@@ -1093,7 +1151,6 @@ impl Hosting {
         let hosting = self.clone();
         let ended = program.clone();
         let run = start.run.clone();
-        let project = start.project.clone();
         running.when_it_ends(Box::new(move |exit| {
             {
                 let mut state = hosting.state();
@@ -1101,7 +1158,7 @@ impl Hosting {
                     hosted.ended = true;
                 }
                 // A program's end is the moment its work is done: its project's saver hears it.
-                if let Some(saving) = state.saving.get(&project) {
+                if let Some(saving) = state.saving.get(&at) {
                     saving.poke(Poke::ProgramEnded);
                 }
             }
@@ -1114,14 +1171,14 @@ impl Hosting {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             hosting.record().ended(&Ended {
-                project_path: &path,
+                project_path: &at.path,
                 number,
                 exit: exit.clone(),
                 stopped,
-                watched: hosting.watched(&project),
+                watched: hosting.watched(&at),
             });
             // With no window to tell its board, the board the host keeps is told (#2194).
-            if let Some(channel) = channel.as_ref().filter(|_| !hosting.watched(&project)) {
+            if let Some(channel) = channel.as_ref().filter(|_| !hosting.watched(&at)) {
                 channel.ended_with_no_window(number, &exit);
             }
             // Only once its end is kept: a host killed before then leaves it to be settled.
@@ -1146,12 +1203,10 @@ impl Hosting {
     async fn start_browser(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
         // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
         self.let_through(&start, peer)?;
-        let program = {
+        let (program, at) = {
             let state = self.state();
-            if held_by_a_link(&state, &start.project).is_none() {
-                return Err(no_such_project(&start.project));
-            }
-            match &start.program {
+            let at = held_at(&state, &start.project, link_of(peer))?;
+            let program = match &start.program {
                 Some(id) if state.programs.contains_key(id) => {
                     return Err(Refusal {
                         code: session::MALFORMED.into(),
@@ -1166,7 +1221,8 @@ impl Hosting {
                 }
                 Some(id) => id.clone(),
                 None => ulid::Ulid::generate().to_string(),
-            }
+            };
+            (program, at)
         };
         // Starting an engine forks and waits for it to answer: off the runtime.
         let hosting = self.clone();
@@ -1193,7 +1249,7 @@ impl Hosting {
             program.clone(),
             Hosted {
                 kind: ProgramKind::Browser,
-                project: start.project.clone(),
+                at,
                 number: 0,
                 run: start.run.clone(),
                 running: Arc::clone(&running),
@@ -1321,26 +1377,24 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    /// Deals the next number in held `project` (#2000): it only rises, so no chat has had it.
-    fn deal(&self, project: &str) -> Result<Answer, Refusal> {
+    /// Deals the next number in held `project`, at the place `peer`'s link holds it (#2000): it
+    /// only rises, so no chat there has had it.
+    fn deal(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let mut state = self.state();
-        if held_by_a_link(&state, project).is_none() {
-            return Err(no_such_project(project));
-        }
-        let dealt = state.dealt.entry(project.to_owned()).or_default();
+        let at = held_at(&state, project, link_of(peer))?;
+        let dealt = state.dealt.entry(at).or_default();
         *dealt = dealt
             .checked_add(1)
             .ok_or_else(|| no_number_left(project))?;
         Ok(Answer::Dealt { number: *dealt })
     }
 
-    /// The numbers up to `dealt` went out in held `project` before: none of them is dealt again.
-    fn dealt_already(&self, project: &str, dealt: u32) -> Result<Answer, Refusal> {
+    /// The numbers up to `dealt` went out in held `project`, at the place `peer`'s link holds
+    /// it, before: none of them is dealt again.
+    fn dealt_already(&self, project: &str, dealt: u32, peer: &Peer) -> Result<Answer, Refusal> {
         let mut state = self.state();
-        if held_by_a_link(&state, project).is_none() {
-            return Err(no_such_project(project));
-        }
-        let was = state.dealt.entry(project.to_owned()).or_default();
+        let at = held_at(&state, project, link_of(peer))?;
+        let was = state.dealt.entry(at).or_default();
         *was = (*was).max(dealt);
         Ok(Answer::Done)
     }
@@ -1353,12 +1407,8 @@ impl Hosting {
         peer: &Peer,
     ) -> Result<Option<Arc<dyn Channel>>, Refusal> {
         let state = self.state();
-        let held = state
-            .projects
-            .get(project)
-            .filter(|held| held.links.contains_key(&link_of(peer)))
-            .ok_or_else(|| no_such_project(project))?;
-        Ok(held.channel.clone())
+        let at = held_by(&state, project, link_of(peer)).ok_or_else(|| no_such_project(project))?;
+        Ok(state.projects.get(at).and_then(|held| held.channel.clone()))
     }
 
     /// The window's reply to line `heard` of `project`'s hooks, from a link that holds it.
@@ -1392,7 +1442,7 @@ impl Hosting {
             (hosted, confinements)
         };
         // A line for it is not read from now on.
-        if let Some(channel) = self.channel(&hosted.project) {
+        if let Some(channel) = self.channel(&hosted.at) {
             channel.forget(hosted.number);
         }
         tokio::task::spawn_blocking(move || {
@@ -1421,9 +1471,7 @@ impl Hosting {
             if state.confinements.contains_key(&id) {
                 return Err(already_confined(&id));
             }
-            held_by_a_link(&state, &confine.project)
-                .map(|held| held.path.clone())
-                .ok_or_else(|| no_such_project(&confine.project))?
+            held_at(&state, &confine.project, link_of(peer))?.path
         };
         let weak = Arc::downgrade(&self.inner);
         let tell = {
@@ -1535,15 +1583,6 @@ impl Hosting {
     }
 }
 
-/// Held project `project`, where a link holds it: nothing starts, is dealt or is confined in a
-/// project kept only for the programs in it the window has not closed (#2194).
-fn held_by_a_link<'a>(state: &'a State, project: &str) -> Option<&'a Held> {
-    state
-        .projects
-        .get(project)
-        .filter(|held| !held.links.is_empty())
-}
-
 /// Takes every confinement whose owner `whose` says, out of `state`.
 fn take_confinements(state: &mut State, whose: impl Fn(&Owner) -> bool) -> Vec<Arc<dyn Confining>> {
     let ids: Vec<String> = state
@@ -1572,28 +1611,24 @@ fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
 }
 
 impl Hosting {
-    /// Save `project`, which a link holds, unless it is saved already: one saver per project.
-    async fn start_saving(&self, project: String) -> Result<Answer, Refusal> {
-        let path = self
-            .state()
-            .projects
-            .get(&project)
-            .map(|held| held.path.clone())
-            .ok_or_else(|| no_such_project(&project))?;
+    /// Save `project`, at the place `peer`'s link holds it, unless it is saved there already:
+    /// one saver per place (#2178).
+    async fn start_saving(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let at = held_at(&self.state(), project, link_of(peer))?;
         // A saver's start reads the project and starts threads: off the runtime.
         let hosting = self.clone();
-        tokio::task::spawn_blocking(move || hosting.saver_for(project, path))
+        tokio::task::spawn_blocking(move || hosting.saver_for(at))
             .await
             .map_err(|why| not_started(why.to_string()))?
     }
 
-    fn saver_for(&self, project: String, path: PathBuf) -> Result<Answer, Refusal> {
+    fn saver_for(&self, at: HeldAt) -> Result<Answer, Refusal> {
         let _one_at_a_time = self
             .inner
             .starting_a_saver
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if self.state().saving.contains_key(&project) {
+        if self.state().saving.contains_key(&at) {
             return Ok(Answer::Done);
         }
         let Some(save) = self.inner.save.get() else {
@@ -1601,60 +1636,61 @@ impl Hosting {
                 "this session host was given no way to save a project".into(),
             ));
         };
-        // Each weakly: the saver is the host's, and must not keep it.
+        // Each weakly: the saver is the host's, and must not keep it. What each look did is
+        // told to the links that hold the project at this place, as its hook lines are: another
+        // clone's window is never told it (#2178).
         let told = {
             let host = Arc::downgrade(&self.inner);
-            let project = project.clone();
+            let at = at.clone();
             Box::new(move |looked: Looked| {
                 if let Some(inner) = host.upgrade() {
                     let pushed = Pushed::Saving {
-                        project: project.clone(),
+                        project: at.project.clone(),
                         saved: looked.saved,
                         moved_tree: looked.moved_tree,
                     };
-                    Hosting::tell_the_savers(&mut Hosting { inner }.state(), &project, &pushed);
+                    Hosting::tell_holders(&mut Hosting { inner }.state(), &at, &pushed, true);
                 }
             })
         };
         let working = {
             let host = Arc::downgrade(&self.inner);
-            let project = project.clone();
+            let at = at.clone();
             Box::new(move || {
                 host.upgrade()
-                    .map(|inner| Hosting { inner }.working_in(&project))
+                    .map(|inner| Hosting { inner }.working_in(&at))
                     .unwrap_or_default()
             })
         };
         let ask_the_window = {
             let host = Arc::downgrade(&self.inner);
-            let project = project.clone();
+            let at = at.clone();
             Box::new(move |workspace: &str| {
-                host.upgrade().and_then(|inner| {
-                    Hosting { inner }.ask_the_window(&project, workspace, ASK_WITHIN)
-                })
+                host.upgrade()
+                    .and_then(|inner| Hosting { inner }.ask_the_window(&at, workspace, ASK_WITHIN))
             })
         };
         let saving = save
             .save(ToSave {
-                project: project.clone(),
-                project_path: path,
+                project: at.project.clone(),
+                project_path: at.path.clone(),
                 told,
                 working,
                 ask_the_window,
             })
             .map_err(not_started)?;
-        self.state().saving.insert(project, saving);
+        self.state().saving.insert(at, saving);
         Ok(Answer::Done)
     }
 
-    /// The programs running in `project` now, by number.
-    fn working_in(&self, project: &str) -> Vec<Working> {
+    /// The programs running in the project held `at` now, by number.
+    fn working_in(&self, at: &HeldAt) -> Vec<Working> {
         let mut working: Vec<Working> = self
             .state()
             .programs
             .values()
             .filter(|hosted| {
-                hosted.project == project && !hosted.ended && hosted.kind != ProgramKind::Browser
+                hosted.at == *at && !hosted.ended && hosted.kind != ProgramKind::Browser
             })
             .map(|hosted| Working {
                 number: hosted.number,
@@ -1666,20 +1702,25 @@ impl Hosting {
     }
 
     /// Stop saving `project`, answered once its saver has been let go of. Nothing saved is done.
-    async fn stop_saving(&self, project: &str) -> Result<Answer, Refusal> {
-        let saving = self.state().saving.remove(project);
+    async fn stop_saving(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let saving = {
+            let mut state = self.state();
+            saved_at(&state, project, link_of(peer))?.and_then(|at| state.saving.remove(&at))
+        };
         if let Some(saving) = saving {
             let _ = tokio::task::spawn_blocking(move || drop(saving)).await;
         }
         Ok(Answer::Done)
     }
 
-    fn fetch(&self, project: &str) -> Result<Answer, Refusal> {
+    fn fetch(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let state = self.state();
-        let saving = state.saving.get(project).ok_or_else(|| Refusal {
-            code: session::NO_SUCH_PROJECT.into(),
-            why: format!("this session host does not save project {project}"),
-        })?;
+        let saving = saved_at(&state, project, link_of(peer))?
+            .and_then(|at| state.saving.get(&at))
+            .ok_or_else(|| Refusal {
+                code: session::NO_SUCH_PROJECT.into(),
+                why: format!("this session host does not save project {project}"),
+            })?;
         saving.poke(Poke::Fetch);
         Ok(Answer::Done)
     }
@@ -1725,16 +1766,16 @@ impl session::Host for Hosting {
             }
             Command::Stop { chat } => self.stop(&chat).await,
             Command::Close { program } => self.close(&program),
-            Command::Deal { project } => self.deal(&project),
-            Command::DealtAlready { project, dealt } => self.dealt_already(&project, dealt),
+            Command::Deal { project } => self.deal(&project, peer),
+            Command::DealtAlready { project, dealt } => self.dealt_already(&project, dealt, peer),
             Command::ReplyHeard {
                 project,
                 heard,
                 reply,
             } => self.reply_heard(&project, heard, reply, peer),
-            Command::StartSaving { project } => self.start_saving(project).await,
-            Command::StopSaving { project } => self.stop_saving(&project).await,
-            Command::FetchProject { project } => self.fetch(&project),
+            Command::StartSaving { project } => self.start_saving(&project, peer).await,
+            Command::StopSaving { project } => self.stop_saving(&project, peer).await,
+            Command::FetchProject { project } => self.fetch(&project, peer),
             Command::MidTurn { question, chats } => {
                 // An answer nobody waits for any more (it came late) is done all the same.
                 if let Some(waiting) = self.state().questions.remove(&question) {

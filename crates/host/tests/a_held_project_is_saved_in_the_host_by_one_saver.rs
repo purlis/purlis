@@ -29,6 +29,11 @@ const PATIENCE: Duration = Duration::from_secs(5);
 static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().unwrap());
 
+/// The place the host holds `folder` at: the folder, however its path is spelled.
+fn place(folder: &tempfile::TempDir) -> std::path::PathBuf {
+    std::fs::canonicalize(folder.path()).unwrap()
+}
+
 struct Host {
     hosting: Hosting,
     savers: Savers,
@@ -52,18 +57,7 @@ fn a_host() -> Host {
 
 /// A window: a `local-ui` link to the host, with the project held on it.
 async fn a_window(host: &Host) -> (Client, Events) {
-    let (a, b) = duplex(256 * 1024);
-    let (client, served) = tokio::join!(
-        link::connect(
-            a,
-            session::speaks(),
-            Scope::LocalUi,
-            HELD.of(Scope::LocalUi)
-        ),
-        link::serve_any(b, session::speaks(), &HELD)
-    );
-    tokio::spawn(session::serve(served.unwrap(), host.hosting.clone(), None));
-    let (client, _views, events) = Client::new(client.unwrap());
+    let (client, events) = a_link(host, Scope::LocalUi).await;
     client
         .hold_project(PROJECT, host.project.path().to_str().unwrap())
         .await
@@ -189,7 +183,7 @@ async fn a_held_project_is_saved_by_one_saver_however_often_it_is_asked() {
     let started = host.savers.started();
     assert_eq!(started.len(), 1, "a second saver was started");
     assert_eq!(started[0].0, PROJECT);
-    assert_eq!(started[0].1, host.project.path());
+    assert_eq!(started[0].1, place(&host.project));
     assert_eq!(host.savers.running(), 1);
 }
 
@@ -219,6 +213,71 @@ async fn what_each_look_did_reaches_the_window() {
             }) if project == PROJECT
         ),
         "{told:?}"
+    );
+}
+
+#[tokio::test]
+async fn each_clone_of_a_project_has_its_own_saver_and_only_its_window_hears_its_looks() {
+    // #2178: one project id, two folders, each held on a link of its own.
+    let host = a_host();
+    let (first, mut first_told) = a_window(&host).await;
+    first.subscribe(Default::default()).await.unwrap();
+    let clone = Host {
+        hosting: host.hosting.clone(),
+        savers: host.savers.clone(),
+        project: tempfile::tempdir().unwrap(),
+    };
+    let (second, mut second_told) = a_window(&clone).await;
+    second.subscribe(Default::default()).await.unwrap();
+
+    first.start_saving(PROJECT).await.unwrap();
+    second.start_saving(PROJECT).await.unwrap();
+    host.savers.looks_at(
+        &place(&clone.project),
+        Looked {
+            saved: true,
+            moved_tree: false,
+        },
+    );
+
+    let started = host.savers.started();
+    assert_eq!(started.len(), 2, "each clone has a saver of its own");
+    assert_ne!(started[0].1, started[1].1);
+    assert!(matches!(
+        timeout(PATIENCE, second_told.recv()).await,
+        Ok(Some(Told::Pushed(Pushed::Saving { saved: true, .. })))
+    ));
+    assert!(
+        timeout(Duration::from_millis(200), first_told.recv())
+            .await
+            .is_err(),
+        "the first clone's window was told the second's look"
+    );
+}
+
+#[tokio::test]
+async fn a_link_that_holds_neither_of_two_clones_stops_neither_saver() {
+    let host = a_host();
+    let (first, _first_told) = a_window(&host).await;
+    first.start_saving(PROJECT).await.unwrap();
+    let clone = Host {
+        hosting: host.hosting.clone(),
+        savers: host.savers.clone(),
+        project: tempfile::tempdir().unwrap(),
+    };
+    let (_second, _second_told) = a_window(&clone).await;
+    let (neither, _told) = a_link(&host, Scope::LocalUi).await;
+
+    let stopped = neither.stop_saving(PROJECT).await;
+
+    assert_eq!(
+        stopped.unwrap_err().refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_PROJECT)
+    );
+    assert_eq!(
+        host.savers.running(),
+        1,
+        "the first clone's saver was stopped"
     );
 }
 

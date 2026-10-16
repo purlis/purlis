@@ -159,9 +159,6 @@ pub(crate) fn in_the_window() -> Target {
     }
 }
 
-static HELD: std::sync::LazyLock<Credentials> =
-    std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
-
 /// A chat in the session host: the switch on. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them, and its projects saved as the window's binary saves them.
@@ -269,7 +266,7 @@ async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
 /// `host` makes, on a runtime of the target's own, its own kill switch in a config home of its
 /// own. The window opens no event log, and hands the host every write (#2003); the host keeps
 /// it in `log`.
-fn a_window_on<H: session::Host>(
+fn a_window_on<H: session::Host + Clone>(
     log: PathBuf,
     host: impl FnOnce() -> H + Send + 'static,
 ) -> Target {
@@ -278,32 +275,9 @@ fn a_window_on<H: session::Host>(
         .enable_all()
         .build()
         .expect("a runtime");
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(1 << 20);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(
-            served.expect("the host admits the window"),
-            host(),
-            None,
-        ));
-        HostLink::over(
-            client.expect("the window is admitted"),
-            tokio::runtime::Handle::current(),
-            || {},
-        )
-        .await
-        .expect("the window speaks to the host")
-    });
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::new(link));
+    // Made on the runtime, as a host is made where it serves.
+    let host = runtime.block_on(async move { host() });
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(host, &runtime);
     let mut target = a_window_over(connection, std::env::vars_os().collect(), log);
     target._keeps.push(Box::new(runtime));
     target
@@ -1426,63 +1400,94 @@ fn the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart(
     after.sessions.close(id).expect("it closes");
 }
 
-/// A window of the session host's own, over a link a test can cut as a crash of the window
+static HELD: std::sync::LazyLock<Credentials> =
+    std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
+
+/// A `local-ui` link to `hosting` through a stream a test can cut, the cut kept in `cuts`.
+async fn a_cuttable_link(
+    hosting: purlis_host::Hosting,
+    cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+) -> Result<HostLink, String> {
+    let (windows_end, near) = tokio::io::duplex(1 << 20);
+    let (far, hosts_end) = tokio::io::duplex(1 << 20);
+    let cut = tokio::spawn(async move {
+        let (mut near, mut far) = (near, far);
+        let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
+    })
+    .abort_handle();
+    cuts.lock().expect("the cuts").push(cut);
+    let (client, served) = tokio::join!(
+        link::connect(
+            windows_end,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(hosts_end, session::speaks(), &HELD)
+    );
+    tokio::spawn(session::serve(
+        served.map_err(|why| why.to_string())?,
+        hosting,
+        None,
+    ));
+    HostLink::over(
+        client.map_err(|why| why.to_string())?,
+        tokio::runtime::Handle::current(),
+        || {},
+    )
+    .await
+}
+
+/// A window of the session host's own, over links a test can cut as a crash of the window
 /// would: its hooks for the project, its chats, and what it is told.
 struct AWindow {
     sessions: HostedSessions,
     hooks: Hooks,
     moved: Arc<Mutex<Vec<Moved>>>,
-    link: Arc<HostLink>,
-    cut: tokio::task::AbortHandle,
+    /// The window's connection: its own link, and the project root's (#2178).
+    connection: Arc<Connection>,
+    root: PathBuf,
+    /// What cuts each of its links.
+    cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
 }
 
 impl AWindow {
     /// A window on `hosting`, for the project at `root`.
     fn on(hosting: &purlis_host::Hosting, root: &Path, runtime: &tokio::runtime::Runtime) -> Self {
-        let hosting = hosting.clone();
-        let (link, cut) = runtime.block_on(async {
-            let (windows_end, near) = tokio::io::duplex(1 << 20);
-            let (far, hosts_end) = tokio::io::duplex(1 << 20);
-            let cut = tokio::spawn(async move {
-                let (mut near, mut far) = (near, far);
-                let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
-            })
-            .abort_handle();
-            let (client, served) = tokio::join!(
-                link::connect(
-                    windows_end,
-                    session::speaks(),
-                    Scope::LocalUi,
-                    HELD.of(Scope::LocalUi)
-                ),
-                link::serve_any(hosts_end, session::speaks(), &HELD)
-            );
-            tokio::spawn(session::serve(
-                served.expect("the host admits the window"),
-                hosting,
-                None,
-            ));
-            let link = HostLink::over(
-                client.expect("the window is admitted"),
-                tokio::runtime::Handle::current(),
-                || {},
-            )
-            .await
+        let cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>> = Arc::default();
+        let link = runtime
+            .block_on(a_cuttable_link(hosting.clone(), Arc::clone(&cuts)))
             .expect("the window speaks to the host");
-            (link, cut)
-        });
-        let link = Arc::new(link);
+        let dial: crate::hostedsessions::Dial = {
+            let (hosting, cuts, handle) =
+                (hosting.clone(), Arc::clone(&cuts), runtime.handle().clone());
+            Arc::new(move |within| {
+                crate::hostedsessions::open_within(
+                    &handle,
+                    within,
+                    a_cuttable_link(hosting.clone(), Arc::clone(&cuts)),
+                )
+            })
+        };
         let connection = Arc::new(Connection::default());
-        connection.ready(Arc::clone(&link));
+        connection.ready(Arc::new(link), dial);
         let (hooks, moved) = hooks_of(root, true);
-        let sessions = HostedSessions::new(connection, root);
+        let sessions = HostedSessions::new(Arc::clone(&connection), root);
         sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
         AWindow {
             sessions,
             hooks,
             moved,
-            link,
-            cut,
+            connection,
+            root: root.to_path_buf(),
+            cuts,
+        }
+    }
+
+    /// Cuts every link of the window's, as its crash would.
+    fn cut(&self) {
+        for cut in self.cuts.lock().expect("the cuts").iter() {
+            cut.abort();
         }
     }
 
@@ -1543,11 +1548,13 @@ fn a_window_killed_and_back_reads_every_chats_state_and_needs_you_as_the_host_ke
     // Every move the first window made has reached the host: a read of the board follows them.
     let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
     first
-        .link
+        .connection
+        .of_project(&first.root, PATIENCE)
+        .expect("the root's link")
         .call(session::Command::Board { project })
         .expect("the host answers its board");
 
-    first.cut.abort();
+    first.cut();
     drop(first);
     std::fs::write(&speak, "").expect("the chat is told to speak");
     until("the chat spoke with no window there", || spoke.exists());
@@ -1834,8 +1841,9 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
     )
     .expect("a running dispatch");
 
-    // The window goes: its holds on the project go with it, and the host runs on.
-    let link = host.wait(PATIENCE).expect("the link");
+    // The window goes: its holds on the project go with it, and the host runs on. The project
+    // is held on its root's own link (#2178).
+    let link = host.of_project(&root, PATIENCE).expect("the root's link");
     let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
     link.call(session::Command::LetGoOfProject { project })
         .expect("let go of");

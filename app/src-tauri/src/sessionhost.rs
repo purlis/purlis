@@ -25,9 +25,10 @@
 //! and nothing the window draws waits for it. Once it says it is ready, the window connects as `local-ui` with the
 //! credential the host minted, and holds the link.
 //!
-//! **Chats run in it behind the start-time switch** (#1998, `crate::hostedsessions`): the link
-//! the window holds is what every project's chats run over when the switch is on, and with no
-//! host of the window's own, those chats are refused with the reason ([`Connection`]). Wherever
+//! **Chats run in it behind the start-time switch** (#1998, `crate::hostedsessions`): when the
+//! switch is on, each project root's chats run over a link of its own, opened as the window's
+//! is (#2178), and with no host of the window's own, those chats are refused with the reason
+//! ([`Connection`]). Wherever
 //! chats run, the host takes every process below the window as inside a chat and refuses it a
 //! person's scope (`purlis_host::Window`). What this host says goes to the window's log.
 //!
@@ -977,8 +978,9 @@ fn log_what_it_says(said: std::process::ChildStderr, supervision: Arc<Supervisio
 }
 
 /// Connect to the host as `local-ui`, the window's scope, and hold the link for as long as the
-/// window runs: the chats that run in the host go over it ([`HostLink`]). A link that cannot be
-/// made, or ends, wakes the supervisor.
+/// window runs: the chats that run in the host go over it, and over one more link for each
+/// project root the window holds there, opened the same way ([`HostLink`], #2178). A link that
+/// cannot be made, or a window's link that ends, wakes the supervisor (#2007).
 fn connect(
     socket: PathBuf,
     credentials: PathBuf,
@@ -993,19 +995,7 @@ fn connect(
         };
         let credential = match Credential::read(&credentials, Scope::LocalUi) {
             Ok(credential) => credential,
-            Err(why) => {
-                return lost(format!("its credential could not be read: {why}"));
-            }
-        };
-        let linked = match tokio::net::UnixStream::connect(&socket).await {
-            Ok(stream) => {
-                link::connect(stream, session::speaks(), Scope::LocalUi, &credential).await
-            }
-            Err(why) => return lost(format!("its socket did not answer: {why}")),
-        };
-        let link = match linked {
-            Ok(link) => link,
-            Err(why) => return lost(format!("it refused the window: {why}")),
+            Err(why) => return lost(format!("its credential could not be read: {why}")),
         };
         let ended = {
             let connection = Arc::clone(&connection);
@@ -1021,11 +1011,49 @@ fn connect(
                 supervision.link_lost();
             }
         };
-        match HostLink::over(link, tokio::runtime::Handle::current(), ended).await {
-            Ok(link) => connection.ready(Arc::new(link)),
+        let runtime = tokio::runtime::Handle::current();
+        match open_link(&socket, &credential, ended).await {
+            Ok(link) => {
+                let dial = dialing(socket, credential, runtime);
+                connection.ready(Arc::new(link), dial);
+            }
             Err(why) => lost(why),
         }
     });
+}
+
+/// A `local-ui` link to the host at `socket`; `ended` is called once it ends.
+async fn open_link(
+    socket: &Path,
+    credential: &Credential,
+    ended: impl FnOnce() + Send + 'static,
+) -> Result<HostLink, String> {
+    let stream = tokio::net::UnixStream::connect(socket)
+        .await
+        .map_err(|why| format!("its socket did not answer: {why}"))?;
+    let link = link::connect(stream, session::speaks(), Scope::LocalUi, credential)
+        .await
+        .map_err(|why| format!("it refused the window: {why}"))?;
+    HostLink::over(link, tokio::runtime::Handle::current(), ended).await
+}
+
+/// Opens one more link to the host, from any thread but the runtime's own: what
+/// [`Connection::of_project`] holds each project root on. Its end is the window's link's to
+/// judge: a host that went ends that one too, and the supervisor hears it there.
+fn dialing(
+    socket: PathBuf,
+    credential: Credential,
+    runtime: tokio::runtime::Handle,
+) -> crate::hostedsessions::Dial {
+    Arc::new(move |within| {
+        let (socket, credential) = (socket.clone(), credential.clone());
+        crate::hostedsessions::open_within(&runtime, within, async move {
+            open_link(&socket, &credential, || {
+                tracing::info!("purlis: a project's link to the session host ended");
+            })
+            .await
+        })
+    })
 }
 
 mod breaker;
