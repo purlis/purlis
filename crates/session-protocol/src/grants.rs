@@ -33,6 +33,7 @@
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.7) | yes | | | | | |
+//! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -86,6 +87,9 @@
 //! - **A stop needs no human** (ADR 0078 §4, ADR 0071): it only removes power. Every scope may
 //!   send one but `editor`, which can make no agent act or stop (ADR 0081). `stop_all`, the
 //!   kill switch, is a stop like any other, and its state a read like `list`.
+//! - **Only the window writes in the event log through the host** (1.8). What it records is
+//!   what the window decided (a run begun, a person's grant), and the log is the audit's source
+//!   (ADR 0075): a scope that could write in it could record a person's act no person made.
 //! - **Only the window re-arms** (ADR 0071, 1.5). Any agent can run a command, so a re-arm any
 //!   other scope could send would put a person's power in every agent's hands. A `rearm` from
 //!   another scope is refused in words saying where a re-arm is made.
@@ -146,6 +150,8 @@ pub enum Power {
     /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
     /// person, and what it shows.
     Browser,
+    /// `record` (1.8): a write in the event log the host holds.
+    Record,
     /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
     OptOut,
 }
@@ -234,6 +240,13 @@ mod tests {
                 scope == Scope::LocalUi,
                 "{scope}"
             );
+        }
+    }
+
+    #[test]
+    fn only_the_window_writes_in_the_event_log_the_host_holds() {
+        for scope in Scope::ALL {
+            assert_eq!(scope.may(Power::Record), scope == Scope::LocalUi, "{scope}");
         }
     }
 

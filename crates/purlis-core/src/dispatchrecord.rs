@@ -36,9 +36,11 @@
 //!
 //! **The app, and nothing else.** [`open`], [`note`], [`said`] and [`close`] are called by the
 //! app with facts from its own record of the chats: no line on the hook channel names a
-//! record, an asker, an outcome or a cost. Three things in a record are still a chat's. The
-//! brief, the report's text and each message the two chats sent each other ([`Said`], #1495)
-//! are its words, stored as written and held to a cap ([`cut`]). And what its
+//! record, an asker, an outcome or a cost. While chats run in the session host, the host (the
+//! app's own binary) ends one whose chat's program ended with no window there
+//! ([`ended_unwatched`], #2003), from the program's end it saw itself. Three things in a record
+//! are still a chat's. The brief, the report's text and each message the two chats sent each other
+//! ([`Said`], #1495) are its words, stored as written and held to a cap ([`cut`]). And what its
 //! harness reported of tokens and cost ([`crate::usage::spent`]) is relayed by the chat's
 //! status line, which its harness runs outside the sandbox, into a file of the app's folder
 //! kept by the chat's id, where no sandboxed chat can write (#1457). It is shown as the harness
@@ -2062,6 +2064,25 @@ pub fn settle_asked(
         .count()
 }
 
+/// **The persona chat with the id `id`, number `number`, ended by itself with no window there
+/// to decide its end** (#2003): the session host settles the dispatch it worked, as [`settle`]
+/// settles one whose chat is gone, at `now`. Failed as [`ENDED_WITHOUT_A_REPORT`] where it owed a
+/// report, and kept as owed to its asking chat ([`Undelivered`]), which the window hands it when
+/// it is back; its row is kept, since the chat that asked may still be at work. How many ended.
+pub fn ended_unwatched(
+    root: &Path,
+    id: &str,
+    number: u32,
+    now: chrono::DateTime<chrono::Utc>,
+) -> usize {
+    settle_asked(
+        root,
+        |worker| !named(worker, Some(id), Some(number)),
+        |_| true,
+        now,
+    )
+}
+
 /// [`settle`] as the app runs it when it opens a project, before any chat starts: the chats
 /// still open are the ones the reopen record ([`crate::reopen`]) brings back. A record that
 /// cannot be read says nothing about which chats are gone, so nothing is ended.
@@ -2297,5 +2318,4 @@ fn change(root: &Path, id: &str, edit: impl FnOnce(&mut Record) -> bool) -> io::
 }
 
 #[cfg(test)]
-#[path = "dispatchrecord_tests.rs"]
 mod tests;
