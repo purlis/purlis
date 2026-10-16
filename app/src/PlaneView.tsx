@@ -255,6 +255,7 @@ import {
   type LastMoved,
   sendToBackground,
   focusedChat,
+  focusedContent,
   homeOf,
   layoutShown,
   moveToOwnTab,
@@ -277,7 +278,8 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { BROWSER_TITLE, browserView, browsersLetGo } from "./browsers";
+import { BROWSER_TITLE, browserView, browsersLetGo, isBrowser } from "./browsers";
+import { sendToDriven } from "./browserDriving";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
@@ -4516,6 +4518,15 @@ export const PlaneView = memo(function PlaneView({
    */
   const sendKey = useCallback(
     async (key: string): Promise<Ran> => {
+      // A browser the person drives, in the pane in focus, takes it as a chat does (#2014).
+      const focused = focusedContent(tabs);
+      if (
+        key === PASS_THROUGH_KEY &&
+        focused?.kind === "view" &&
+        isBrowser(focused.view) &&
+        sendToDriven(focused.view.key, key)
+      )
+        return { ok: true };
       if (frontSession === undefined)
         return { ok: false, refused: "No chat is in front, so there is nowhere to send it." };
       if (key !== PASS_THROUGH_KEY) return { ok: false, refused: `purlis cannot send ${key}.` };
@@ -4528,7 +4539,7 @@ export const PlaneView = memo(function PlaneView({
       // every press of a key an operator means to press repeatedly is noise.
       return { ok: true };
     },
-    [frontSession, plane],
+    [frontSession, plane, tabs],
   );
 
   /**

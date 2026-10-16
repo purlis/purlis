@@ -12,7 +12,7 @@ use purlis_host::standin::{StandInBrowsers, StandIns};
 use purlis_host::{ComposesNothing, Hosting};
 
 use super::WindowBrowsers;
-use crate::browsers::BrowserViewRole;
+use crate::browsers::{BrowserInput, BrowserViewRole, InputOutcome, KeyAct};
 
 struct Window {
     browsers: WindowBrowsers,
@@ -66,7 +66,7 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
         .watch(
             &program,
             BrowserViewRole::Focused,
-            Box::new(move |image| drawing.lock().unwrap().push(image.to_vec())),
+            Box::new(move |_aim, image| drawing.lock().unwrap().push(image.to_vec())),
         )
         .unwrap();
     assert_eq!((watching.width, watching.height), (1280, 800));
@@ -150,4 +150,91 @@ fn letting_go_of_a_project_ends_the_browsers_the_window_started_in_it_and_its_ho
         held_again.is_ok(),
         "the project is held again when asked: {held_again:?}"
     );
+}
+
+/// A key the person pressed, aimed at what a frame said it showed.
+fn a_key(aim: &str) -> BrowserInput {
+    BrowserInput::Key {
+        aim: aim.to_owned(),
+        action: KeyAct::Down,
+        key: "a".into(),
+        physical: "KeyA".into(),
+        key_code: 65,
+        modifiers: 0,
+    }
+}
+
+#[test]
+fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_the_page() {
+    use crate::chatbrowsers::{Driver, Refused};
+    use purlis_session_protocol::browsing::Act;
+
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let aims: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = Arc::clone(&aims);
+    window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(move |aim, _image| seen.lock().unwrap().push(aim.unwrap_or_default())),
+        )
+        .unwrap();
+    screen.shown().document = 5;
+    screen.makes(b"\xff\xd8 a page");
+    until("the frame says what it shows", || {
+        !aims.lock().unwrap().is_empty()
+    });
+    let aim = aims.lock().unwrap()[0].clone();
+    assert_eq!(aim, "p1:5");
+
+    let early = window.browsers.input(&program, a_key(&aim)).unwrap();
+    assert_eq!(
+        early,
+        InputOutcome::Refused {
+            why: purlis_host::NOT_DRIVING.into()
+        }
+    );
+
+    window.browsers.take_over(&program).unwrap();
+    let refused = Driver::act(&window.browsers, &program, "c-1", Act::Pages);
+    assert!(
+        matches!(&refused, Err(Refused::Said(why)) if why.contains("the person has taken this browser over")),
+        "{refused:?}"
+    );
+    assert_eq!(
+        window.browsers.input(&program, a_key(&aim)).unwrap(),
+        InputOutcome::Taken
+    );
+    assert_eq!(screen.shown().inputs.len(), 1);
+    assert_eq!(
+        window.browsers.input(&program, a_key("p1:4")).unwrap(),
+        InputOutcome::Missed,
+        "input aimed at a document the page has left is dropped"
+    );
+
+    window.browsers.hand_back(&program).unwrap();
+    assert!(Driver::act(&window.browsers, &program, "c-2", Act::Pages).is_ok());
+}
+
+#[test]
+fn a_view_opened_again_says_the_person_still_drives_the_browser() {
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    let watching = window
+        .browsers
+        .watch(&program, BrowserViewRole::Focused, Box::new(|_, _| {}))
+        .unwrap();
+    assert!(!watching.person_drives);
+    window.browsers.take_over(&program).unwrap();
+    window.browsers.unwatch(&program, watching.view).unwrap();
+
+    let again = window
+        .browsers
+        .watch(&program, BrowserViewRole::Focused, Box::new(|_, _| {}))
+        .unwrap();
+
+    assert!(again.person_drives);
 }

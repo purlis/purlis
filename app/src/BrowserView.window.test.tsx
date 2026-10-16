@@ -3,11 +3,13 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import type { BrowserFrame } from "./bindings";
+import { pickIn } from "./primitives/select.testkit";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -49,9 +51,9 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-function core(open: () => unknown = () => "B1") {
+function core(open: () => unknown = () => "B1", personDrives = false) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
-  let frames: Channel<string> | undefined;
+  let frames: Channel<BrowserFrame> | undefined;
   mockIPC(
     (cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
@@ -64,16 +66,18 @@ function core(open: () => unknown = () => "B1") {
         return { root: PLANE, personas: [], persona: null, unfiled: [], workspaces: [] };
       if (cmd === "open_browser") return open();
       if (cmd === "watch_browser") {
-        frames = (args as { frames: Channel<string> }).frames;
-        return { view: 4, width: 1280, height: 800 };
+        frames = (args as { frames: Channel<BrowserFrame> }).frames;
+        return { view: 4, width: 1280, height: 800, person_drives: personDrives };
       }
+      if (cmd === "browser_input") return { outcome: "taken" };
       return null;
     },
     { shouldMockEvents: true },
   );
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
-    send: (base64: string) => frames?.onmessage(base64),
+    send: (jpeg: string, aim = "p1:1") => frames?.onmessage({ aim, jpeg }),
+    order: () => asked.map(({ cmd }) => cmd),
   };
 }
 
@@ -182,5 +186,139 @@ describe("a browser's view nobody can see", () => {
     rerender(drawn(false));
     await waitFor(() => expect(host.asked("unwatch_browser")).toHaveLength(2));
     delete (document as unknown as { hidden?: boolean }).hidden;
+  });
+});
+
+describe("taking a browser over from its view (#2014)", () => {
+  // jsdom lays nothing out: the page is drawn over 1280 by 800 pixels of the view, at its size.
+  const box = { left: 0, top: 0, width: 1280, height: 800, right: 1280, bottom: 800, x: 0, y: 0 };
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue({
+      ...box,
+      toJSON: () => box,
+    } as DOMRect);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  async function drawn(personDrives = false) {
+    const { BrowserView } = await import("./BrowserView");
+    const { ProjectShownProvider } = await import("./projectShown");
+    const host = core(undefined, personDrives);
+    render(
+      <ProjectShownProvider value={true}>
+        <BrowserView program="B1" />
+      </ProjectShownProvider>,
+    );
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
+    host.send("/9j/AA==", "p1:7");
+    return host;
+  }
+
+  it("takes the browser over with a click, which then reaches the page where it was aimed", async () => {
+    const host = await drawn();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Click or type in the page to take it over.",
+    );
+
+    fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
+      clientX: 640,
+      clientY: 400,
+      button: 0,
+      detail: 1,
+      pointerId: 1,
+    });
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    const order = host.order();
+    expect(order.indexOf("take_over_browser")).toBeLessThan(order.indexOf("browser_input"));
+    expect(host.asked("browser_input")[0]).toEqual({
+      program: "B1",
+      input: expect.objectContaining({
+        kind: "mouse",
+        aim: "p1:7",
+        action: "pressed",
+        x: 640,
+        y: 400,
+        button: "left",
+      }),
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "You are driving this browser. The agent is paused until you press Done.",
+    );
+  });
+
+  it("takes the browser over with a key, and Done hands it back", async () => {
+    const host = await drawn();
+
+    fireEvent.keyDown(screen.getByTestId("browser-surface"), {
+      key: "x",
+      code: "KeyX",
+      keyCode: 88,
+    });
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(host.asked("take_over_browser")).toEqual([{ program: "B1" }]);
+    expect(host.asked("browser_input")[0].input).toMatchObject({
+      kind: "key",
+      key: "x",
+      action: "down",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Click or type in the page to take it over.",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  });
+
+  it("hands the browser back on the one chord, which never reaches the page", async () => {
+    const host = await drawn(true);
+    await screen.findByRole("button", { name: "Done" });
+    const mac = navigator.platform.toLowerCase().includes("mac");
+
+    fireEvent.keyDown(screen.getByTestId("browser-surface"), {
+      key: "Enter",
+      shiftKey: true,
+      metaKey: mac,
+      ctrlKey: !mac,
+    });
+
+    await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
+    expect(host.asked("browser_input")).toEqual([]);
+  });
+
+  it("says the person still drives a browser whose view opens again after a crash of the window", async () => {
+    const host = await drawn(true);
+
+    expect(await screen.findByRole("button", { name: "Done" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The agent is paused until you press Done.",
+    );
+    expect(host.asked("take_over_browser")).toEqual([]);
+  });
+
+  it("takes the browser over to set a size preset, and sets it", async () => {
+    const host = await drawn();
+
+    await pickIn(screen.getByRole("combobox", { name: "Page size" }), "phone");
+
+    await waitFor(() =>
+      expect(host.asked("size_browser")).toEqual([{ program: "B1", width: 390, height: 844 }]),
+    );
+    const order = host.order();
+    expect(order.indexOf("take_over_browser")).toBeLessThan(order.indexOf("size_browser"));
+  });
+
+  it("moves of a mouse the person does not drive with reach nothing", async () => {
+    const host = await drawn();
+
+    fireEvent.pointerMove(screen.getByTestId("browser-surface"), { clientX: 10, clientY: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(host.asked("browser_input")).toEqual([]);
+    expect(host.asked("take_over_browser")).toEqual([]);
   });
 });

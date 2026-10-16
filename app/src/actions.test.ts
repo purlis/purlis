@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { MemoryScope, RowAction } from "./bindings";
+import { drivenBy } from "./browserDriving";
+import { browserView } from "./browsers";
 import { DRAFT, memoryKey, memoryView, type MemoryRef } from "./memories";
 import { describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
@@ -2481,6 +2483,20 @@ describe("the key the palette claimed", () => {
 
     expect(row?.available).toBe(false);
     expect(row?.reason).toBe("No chat is in front, so there is nowhere to send it.");
+  });
+  it("hands it to the page of a browser the person drives in the pane in focus (#2014)", () => {
+    const tabs = openView(noTabs(), browserView("B1"), "Browser", "alpha");
+    expect(by(catalogue(now({ tabs })), "pane.sendkey")?.available).toBe(false);
+
+    const stop = drivenBy("B1", () => undefined);
+    try {
+      const row = by(catalogue(now({ tabs })), "pane.sendkey");
+      expect(row?.available).toBe(true);
+      expect(row?.title).toBe("Send F2 to the page you are driving");
+      expect(row?.does).toEqual({ verb: "sendKey", key: "F2" });
+    } finally {
+      stop();
+    }
   });
 });
 

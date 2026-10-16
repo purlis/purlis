@@ -105,7 +105,8 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { BROWSERS_OFFERED } from "./browsers";
+import { BROWSERS_OFFERED, isBrowser } from "./browsers";
+import { isDriven } from "./browserDriving";
 
 /**
  * **Where a refusal is put right, when that is a setting** (#1201, SE-22): the words of the link
@@ -1534,6 +1535,9 @@ export function catalogue(now: Now): Offer[] {
   // pane showing a view has no chat for it to be about.
   const focusedOn = focusedContent(now.tabs);
   const chatInFocus = focusedOn?.kind === "session";
+  // A browser the person drives takes the key as a chat does (#2014).
+  const drivenInFocus =
+    focusedOn?.kind === "view" && isBrowser(focusedOn.view) && isDriven(focusedOn.view.key);
   const offers: Offer[] = [];
 
   // A chat starts through the picker, which is the only path ADR 0022 admits. The palette
@@ -1701,9 +1705,11 @@ export function catalogue(now: Now): Offer[] {
 
   // The key the palette claimed, handed back. Not destructive and not below the line: it is
   // how an operator whose harness binds `F2` types `F2` at all (charter-app#47).
-  const sendKey = `Send ${PASS_THROUGH_KEY} to the chat in front`;
+  const sendKey = drivenInFocus
+    ? `Send ${PASS_THROUGH_KEY} to the page you are driving`
+    : `Send ${PASS_THROUGH_KEY} to the chat in front`;
   offers.push(
-    chatInFocus
+    chatInFocus || drivenInFocus
       ? can(PASS_THROUGH_ID, sendKey, { verb: "sendKey", key: PASS_THROUGH_KEY })
       : cannot(
           PASS_THROUGH_ID,
