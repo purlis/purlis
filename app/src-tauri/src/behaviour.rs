@@ -1344,8 +1344,9 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
     )
     .expect("a running dispatch");
 
-    // The window goes: its holds on the project go with it, and the host runs on.
-    let link = host.wait(PATIENCE).expect("the link");
+    // The window goes: its holds on the project go with it, and the host runs on. The project
+    // is held on its root's own link (#2178).
+    let link = host.of_project(&root, PATIENCE).expect("the root's link");
     let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
     link.call(session::Command::LetGoOfProject { project })
         .expect("let go of");
