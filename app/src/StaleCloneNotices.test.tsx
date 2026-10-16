@@ -90,7 +90,8 @@ describe("a stale repo's Notice", () => {
       {
         ...BOTH,
         remote: {
-          ...BOTH.remote!,
+          origin: "github.com/acme/widget",
+          now: "https://github.com/purlis/widget.git",
           pushes_kept: ["github.com/acme/widget", "gitlab.example/mirror/widget"],
         },
       },
