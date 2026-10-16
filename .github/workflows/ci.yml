@@ -49,6 +49,31 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
+  # TEMPORARY probe for #2255, removed before ready: commit_scan's tests 50 times beside four
+  # CPU burners per core.
+  flaky-probe-2255:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - run: cargo test -p purlis-cli --locked --test commit_scan --no-run
+      - name: Loop under load
+        run: |
+          pids=()
+          for _ in $(seq $(( $(nproc) * 4 ))); do (while :; do :; done) & pids+=($!); done
+          failed=0
+          for i in $(seq 50); do
+            if ! cargo test -p purlis-cli --locked --test commit_scan -q -- --test-threads=16 > run.log 2>&1; then
+              failed=$((failed + 1)); echo "run $i FAILED"; grep -E "panicked|FAILED|Timeout" run.log | head -20
+            fi
+          done
+          kill "${pids[@]}"
+          echo "failed runs: $failed of 50"
+          test "$failed" -eq 0
   # The Rust suite in two parts on two runners, each building the tests and running half of
   # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10). Part 1 also runs fmt, clippy and the doctests, which part 2's
