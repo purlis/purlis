@@ -1153,3 +1153,80 @@ fn every_link_on_the_way_to_a_tool_s_program_is_where_no_chat_writes() {
     );
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// `unxz`, declared as a tool, found as a link to xz: what it runs is xz, by its own path.
+fn unxz_at(xz: &Path) -> Ready {
+    Ready {
+        tool: Tool::one("unxz", "devops", "T", Handed::Env, "TOKEN"),
+        program: xz.to_path_buf(),
+    }
+}
+
+#[test]
+fn a_tool_whose_program_has_another_name_hands_secret_exec_the_declared_one() {
+    let text = shim(
+        Path::new("/Applications/Purlis.app/Contents/MacOS/purlis"),
+        "devops",
+        &unxz_at(Path::new("/opt/homebrew/Cellar/xz/5.8.4/bin/xz")),
+    );
+    assert!(
+        text.ends_with(
+            "exec '/Applications/Purlis.app/Contents/MacOS/purlis' 'secret' 'exec' 'devops' \
+             '--env' 'T=TOKEN' '--argv0' 'unxz' '--' '/opt/homebrew/Cellar/xz/5.8.4/bin/xz' \
+             \"$@\"\n"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_tool_named_as_its_program_is_handed_no_other_name() {
+    let text = shim(
+        Path::new("/purlis"),
+        "devops",
+        &Ready {
+            tool: Tool::one("kubectl", "devops", "T", Handed::Env, "TOKEN"),
+            program: PathBuf::from("/opt/homebrew/bin/kubectl"),
+        },
+    );
+    assert!(!text.contains("argv0"), "{text}");
+    assert!(!text.contains("exec -a"), "{text}");
+}
+
+/// The shim with no app to ask runs the program itself, under the declared name where the shell
+/// can say one (`exec -a`, bash's and zsh's; a shell without it runs the program by its path).
+#[test]
+fn a_shim_with_no_app_runs_its_program_under_the_declared_name() {
+    let Some(xz) = crate::secrets::exec::tests::xz() else {
+        let _ =
+            std::io::Write::write_all(&mut std::io::stderr(), b"skipped: no xz on this machine\n");
+        return;
+    };
+    let Some(bash) = ["/bin/bash", "/usr/bin/bash"]
+        .into_iter()
+        .map(Path::new)
+        .find(|path| path.is_file())
+    else {
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr(),
+            b"skipped: no bash on this machine\n",
+        );
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let file = crate::secrets::exec::tests::packed(&xz, tmp.path(), "unpacked\n");
+    let script = tmp.path().join("unxz");
+    std::fs::write(&script, shim(Path::new("/purlis"), "devops", &unxz_at(&xz))).unwrap();
+    let out = crate::forklock::output(
+        std::process::Command::new(bash)
+            .arg(&script)
+            .arg("-c")
+            .arg(&file)
+            .env_remove("PURLIS_HOOK_SOCKET")
+            .env_remove("CHARTER_HOOK_SOCKET"),
+    )
+    .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    // `xz -c` would pack it again.
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "unpacked\n");
+}

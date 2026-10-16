@@ -1421,6 +1421,7 @@ pub(crate) fn serve_recorded(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
     let mut a_login = false;
+    let mut declared_as: Option<String> = None;
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -1446,6 +1447,7 @@ pub(crate) fn serve_recorded(
             ) {
                 Ok(words) => {
                     a_login = ready.tool.login.is_some();
+                    declared_as = ready.argv0().map(str::to_owned);
                     command = words;
                 }
                 Err(why) => return refuse(&mut *writer, 1, why),
@@ -1615,6 +1617,7 @@ pub(crate) fn serve_recorded(
         stream: false,
         exec: false,
         command: command.clone(),
+        argv0: None,
     };
     let prepared = match exec::prepare(&ctx, &v, &req, base, Some(&within), &|| None) {
         Ok(prepared) => prepared,
@@ -1695,17 +1698,42 @@ pub(crate) fn serve_recorded(
             );
         }
     };
+    // A tool declared under a name its program's file does not have runs under that name
+    // (#1977), the one the chat's start armed and never one the chat asks for. A run's wrap
+    // (`sandbox-exec`, purlis's own on Linux) starts a program under the path it is given, so
+    // the run is of a link of that name, the app's own for this run beside the credential files
+    // no chat reads, to the program as resolved: what runs is that program still.
+    let named = match declared_as
+        .as_deref()
+        .map(|name| named_link(&within, name, &program))
+        .transpose()
+    {
+        Ok(named) => named,
+        Err(e) => {
+            return refuse(
+                &mut *writer,
+                1,
+                format!(
+                    "purlis could not start {} under its tool's name ({e})",
+                    command[0]
+                ),
+            );
+        }
+    };
+    let run_as = named
+        .as_ref()
+        .map_or_else(|| program.clone(), |(_, link)| link.clone());
+    // The run's credential files and its named link: given back to the run alone.
+    let readable: Vec<PathBuf> = prepared
+        .files
+        .iter()
+        .cloned()
+        .chain(named.iter().map(|(_, link)| link.clone()))
+        .collect();
     let profile = || {
         let mut ports = beside.proxy_ports();
         ports.extend(tunnels.iter().map(crate::sandbox::tunnel::Tunnel::port));
-        profile_on(
-            confines,
-            &prepared.files,
-            &given,
-            &folder,
-            beside.tmp(),
-            &ports,
-        )
+        profile_on(confines, &readable, &given, &folder, beside.tmp(), &ports)
     };
     let mut child = match &applying {
         Applying::Seatbelt => {
@@ -1714,7 +1742,7 @@ pub(crate) fn serve_recorded(
                 Err(why) => return refuse(&mut *writer, 1, why.to_owned()),
             };
             let mut child = std::process::Command::new(crate::sandbox::backend::SANDBOX_EXEC);
-            child.arg("-p").arg(profile).arg("--").arg(&program);
+            child.arg("-p").arg(profile).arg("--").arg(&run_as);
             child
         }
         // The same profile, read by purlis's own wrap, as a wrapped chat's line starts
@@ -1724,13 +1752,13 @@ pub(crate) fn serve_recorded(
                 Ok(profile) => profile,
                 Err(why) => return refuse(&mut *writer, 1, why.to_owned()),
             };
-            let Some(named) = program.to_str() else {
+            let Some(named) = run_as.to_str() else {
                 return refuse(
                     &mut *writer,
                     1,
                     format!(
                         "the program's path is not text, so purlis's sandbox cannot start it: {}",
-                        program.display()
+                        run_as.display()
                     ),
                 );
             };
@@ -1743,7 +1771,7 @@ pub(crate) fn serve_recorded(
             child
         }
         #[cfg(test)]
-        Applying::Unwrapped => std::process::Command::new(&program),
+        Applying::Unwrapped => std::process::Command::new(&run_as),
     };
     let start_in = wanted
         .cwd
@@ -2177,6 +2205,29 @@ fn cmd_said_note(ctx: &Ctx, v: &registry::Vault, writer: &mut dyn Write) -> std:
 
 /// The folder under the vaults directory a brokered run keeps its credential files in.
 pub const EXEC_DIR: &str = "exec";
+
+/// **A link named `name` to `program`**, in a folder of its own made in `within`, the app's
+/// private folder no chat reads or writes (#1977): the folder, removed when it is dropped, and
+/// the link. A name that is not one file's name is refused.
+fn named_link(
+    within: &Path,
+    name: &str,
+    program: &Path,
+) -> std::io::Result<(tempfile::TempDir, PathBuf)> {
+    if Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) {
+        return Err(std::io::Error::other(format!(
+            "{name} is not a file's name"
+        )));
+    }
+    let dir = tempfile::Builder::new().prefix("as-").tempdir_in(within)?;
+    let link = dir.path().join(name);
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(program, &link)?;
+    // A run is wrapped only on macOS: this is never reached elsewhere.
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(program, &link)?;
+    Ok((dir, link))
+}
 
 /// The `exec` folder under `vaults` (the project's vaults directory), made `0700` if it is not
 /// there. Refused unless `vaults` is a directory and no link, and `exec` is, as the kernel names

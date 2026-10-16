@@ -49,6 +49,12 @@ pub struct Request {
     pub stream: bool,
     pub exec: bool,
     pub command: Vec<String>,
+    /// The name the program is started under, its `argv[0]`, where that is not the command's
+    /// first word: a declared tool's shim runs the program its name resolves to, by its own
+    /// path, under the name the tool was declared as (#1977), so a program that does what its
+    /// name says (`unxz`, a `git-*` link) does what the declared one says. Which program runs
+    /// is the first word's alone.
+    pub argv0: Option<String>,
 }
 
 /// Every temp file this call created, removed when it goes out of scope — on a return, on an
@@ -459,6 +465,11 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
         .args(&command[1..])
         .env_clear()
         .envs(prepared.env.iter().map(|(k, v)| (k, v)));
+    // Started by its path, under the name it was asked for (#1977).
+    #[cfg(unix)]
+    if let Some(name) = &req.argv0 {
+        std::os::unix::process::CommandExt::arg0(&mut child, name);
+    }
 
     if req.exec {
         drop(signals);
@@ -671,7 +682,7 @@ impl Drop for Termination {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 mod keychain_tests;

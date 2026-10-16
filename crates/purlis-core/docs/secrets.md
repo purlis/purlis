@@ -251,7 +251,13 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   interpreter or another program that runs what it is told, with the same sentence, on the
   Notice and Settings › Sandbox and as a chat starts, and no Allow is of it. A tool runs the
   program its links resolve to, and every link on the way to it is in a folder no chat writes.
-  An
+  It starts that program under the name the tool was declared as (its `argv[0]`), so a program
+  that does what its name says (`unxz` or `xzcat` linked to `xz`, `gunzip` or `zcat`, a
+  `git-*` link) does what the declared name says (#1977). In the run's sandbox the app makes a
+  link of that name, for that run alone, beside the credential files no chat reads, to the
+  resolved program, and runs the link, so the program sees a path that ends in the declared
+  name. The script itself, run where no app answers, can only name the program when its shell
+  has `exec -a` (bash and zsh do, dash does not); otherwise the program sees its own name. An
   administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
   gets the scripts, and a save that adds one is refused.
 - **A browser login: a persona's tool that logs a browser in to one page** (D-PE-browser-1,

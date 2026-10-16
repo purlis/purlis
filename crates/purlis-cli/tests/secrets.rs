@@ -786,3 +786,57 @@ fn persona_secret_writes_and_audit_in_a_sandboxed_chat_are_refused_before_the_re
     }
     assert_eq!(std::fs::read_to_string(&vault).expect("the vault"), before);
 }
+
+/// A persona tool's script runs the program its name resolves to under the name it was
+/// declared as (#1977): `xz`, a program that does what its name says, started as `unxz`, unpacks.
+#[test]
+fn exec_starts_the_program_under_the_name_it_is_handed() {
+    let Some(xz) = ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+        .iter()
+        .map(|dir| Path::new(dir).join("xz"))
+        .find(|path| path.is_file())
+        .and_then(|path| path.canonicalize().ok())
+    else {
+        let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
+        return;
+    };
+    let tmp = plane();
+    let packed = {
+        let mut child = Command::new(&xz)
+            .arg("-c")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("xz runs");
+        child
+            .stdin
+            .take()
+            .expect("a stdin")
+            .write_all(b"unpacked\n")
+            .expect("written");
+        child.wait_with_output().expect("xz ends").stdout
+    };
+    let file = tmp.path().join("packed.xz");
+    std::fs::write(&file, packed).expect("the packed file");
+    let xz = xz.display().to_string();
+    let file = file.display().to_string();
+    let out = run(
+        &tmp,
+        &[
+            "secret",
+            "exec",
+            "devops",
+            "--env",
+            "T=API_TOKEN",
+            "--argv0",
+            "unxz",
+            "--",
+            &xz,
+            "-c",
+            &file,
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    // `xz -c` would pack it again.
+    assert_eq!(text(&out.stdout), "unpacked\n");
+}

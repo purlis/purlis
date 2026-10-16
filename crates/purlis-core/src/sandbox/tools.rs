@@ -260,11 +260,25 @@ impl Tool {
         } else {
             program.display().to_string()
         };
+        let named = self
+            .argv0_for(program)
+            .map(|name| ["--argv0".to_owned(), name.to_owned()]);
         ["secret".to_owned(), "exec".to_owned(), self.vault.clone()]
             .into_iter()
             .chain(self.flags())
+            .chain(named.into_iter().flatten())
             .chain(["--".to_owned(), run])
             .collect()
+    }
+
+    /// **The name `program` starts under as this tool**, where it is not the program's own
+    /// file name: the name the tool was declared as (#1977). A tool found through a link of
+    /// another name runs the program the link resolves to, by its path, and a program that does
+    /// what its name says (`unxz` linked to `xz`, a `git-*` link) does what the declared one
+    /// says. None for a browser login, whose program is purlis's own pick.
+    fn argv0_for(&self, program: &Path) -> Option<&str> {
+        (self.login.is_none() && program.file_name() != Some(std::ffi::OsStr::new(&self.name)))
+            .then_some(self.name.as_str())
     }
 }
 
@@ -962,6 +976,15 @@ pub struct Ready {
     pub program: PathBuf,
 }
 
+impl Ready {
+    /// **The name its program starts under**, where that is not the program's own file name:
+    /// the name the tool was declared as (#1977). The program that runs is [`Ready::program`]
+    /// either way.
+    pub fn argv0(&self) -> Option<&str> {
+        self.tool.argv0_for(&self.program)
+    }
+}
+
 /// **A persona's tools, resolved for one chat**: the folder their shims go in, each tool with
 /// its program, and why each other one runs nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1422,7 +1445,7 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
          if [ -z \"{channel}\" ]; then\n\
          # No app to ask from here: inside a `secret exec` run already, which handed the value \
          on, or\n# outside the chat. The program itself, with nothing added.\n\
-         exec {program} \"$@\"\nfi\nexec {words} \"$@\"\n",
+         {named}exec {program} \"$@\"\nfi\nexec {words} \"$@\"\n",
         name = ready.tool.name,
         var = ready
             .tool
@@ -1434,6 +1457,16 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
         vault = ready.tool.vault,
         program = quoted(&ready.program.display().to_string()),
         words = words.join(" "),
+        // Under the declared name (#1977) where the shell can name it: POSIX `exec` has no
+        // `-a` (dash's has none), so it is tried in a subshell first.
+        named = ready.argv0().map_or_else(String::new, |name| {
+            let name = quoted(name);
+            format!(
+                "if (exec -a {name} true) 2>/dev/null; then\n\
+                 exec -a {name} {program} \"$@\"\nfi\n",
+                program = quoted(&ready.program.display().to_string()),
+            )
+        }),
     )
 }
 

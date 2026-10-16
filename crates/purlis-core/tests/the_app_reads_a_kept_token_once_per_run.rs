@@ -62,6 +62,7 @@ fn two_values() -> Request {
             "-c".into(),
             "printf '%s|%s' \"$A\" \"$B\"".into(),
         ],
+        argv0: None,
     }
 }
 

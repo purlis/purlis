@@ -563,3 +563,68 @@ fn the_handlers_are_gone_once_exec_returns() {
         "exec's handlers no longer record a signal"
     );
 }
+
+/// **A multi-call program, by the path it really is**: `xz`, which unpacks when it is started
+/// as `unxz`. Found where the machine keeps its programs; `None` on a machine without it.
+#[cfg(unix)]
+pub(crate) fn xz() -> Option<std::path::PathBuf> {
+    ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+        .iter()
+        .map(|dir| std::path::Path::new(dir).join("xz"))
+        .find(|path| path.is_file())
+        .and_then(|path| path.canonicalize().ok())
+}
+
+/// `text`, packed by `xz` into `dir/packed.xz`.
+#[cfg(unix)]
+pub(crate) fn packed(
+    xz: &std::path::Path,
+    dir: &std::path::Path,
+    text: &str,
+) -> std::path::PathBuf {
+    let path = dir.join("packed.xz");
+    let mut child = crate::forklock::spawn(
+        Command::new(xz)
+            .arg("-c")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped()),
+    )
+    .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(text.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    std::fs::write(&path, out.stdout).unwrap();
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn a_program_started_under_another_name_does_what_that_name_says() {
+    let Some(xz) = xz() else {
+        let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
+        return;
+    };
+    let (tmp, ctx) = plane(serde_json::json!({}), &[]);
+    let file = packed(&xz, tmp.path(), "unpacked\n");
+    // `xz -c` packs again; started as `unxz`, the same program unpacks.
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            env: vec!["T=TOKEN".into()],
+            argv0: Some("unxz".into()),
+            ..req(vec![
+                xz.display().to_string(),
+                "-c".into(),
+                file.display().to_string(),
+            ])
+        },
+    );
+    assert_eq!(rec.errors(), Vec::<&str>::new());
+    assert_eq!(code, 0);
+    assert_eq!(rec.out(), "unpacked\n");
+}
