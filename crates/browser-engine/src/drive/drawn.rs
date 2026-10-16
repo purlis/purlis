@@ -152,6 +152,8 @@ fn read_document(
 
     let contents = rare(nodes, "contentDocumentIndex")?;
     let mut shown: HashSet<usize> = HashSet::new();
+    // The text each node lays out itself.
+    let mut own: Vec<String> = vec![String::new(); count];
     for (entry, node) in laid.iter().enumerate() {
         let at = node_at(*node)?;
         shown.insert(at);
@@ -179,7 +181,8 @@ fn read_document(
         let image = images
             .iter()
             .any(|style| style.contains("url(") || style.contains("paint("));
-        if holds(string(texts[entry])?) || image || OPAQUE.contains(&name.as_str()) {
+        own[at].push_str(string(texts[entry])?);
+        if image || OPAQUE.contains(&name.as_str()) {
             paint(at, out);
         }
         if name == "INPUT"
@@ -189,6 +192,23 @@ fn read_document(
         }
         if FRAMES.contains(&name.as_str()) && !contents.iter().any(|(i, _)| *i == at) {
             out.frames.push(chain(at));
+        }
+    }
+    // Text laid out that holds a text kept out, whole or split over elements: the innermost
+    // element whose text, read in order, holds it. Each node comes after the one it is in.
+    let mut inside = vec![false; count];
+    for at in (0..count).rev() {
+        let text = std::mem::take(&mut own[at]);
+        let holding = inside[at] || holds(&text);
+        if holding && !inside[at] {
+            paint(at, out);
+        }
+        if let Some(up) = parent(at) {
+            if up >= at {
+                return Err(Unread);
+            }
+            inside[up] |= holding;
+            own[up].insert_str(0, &text);
         }
     }
     // What a field, a button or a drop-down shows is its value or its options, not text laid

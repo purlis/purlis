@@ -426,3 +426,19 @@ fn a_screenshot_is_withheld_when_the_page_draws_an_element_again_outside_its_box
     let shot = browser.call(&id(1), Call::Screenshot { page: None });
     assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
 }
+
+#[test]
+fn a_screenshot_paints_over_what_was_kept_out_shown_split_over_elements() {
+    let (browser, engine) = browser();
+    let mut page = Document::new("PAGE-1");
+    let line = page.element(99, None, "P");
+    page.text(100, line, "Hello OPEN ");
+    let bold = page.element(101, Some(line), "B");
+    page.text(102, bold, "sesame");
+    draws(&engine, "S-PAGE-1", &page, &[(99, [8.0, 8.0, 9.0, 9.0])]);
+    keep_out_the_secret(&browser);
+
+    let after = shot(&browser, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}
