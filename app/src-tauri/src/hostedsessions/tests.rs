@@ -299,9 +299,10 @@ fn a_start_hands_the_host_what_the_window_composed_and_the_host_composes_it_as_t
         },
     );
     assert_eq!(spec.env, in_the_window.env, "the same environment and PATH");
-    assert!(
-        purlis_core::scaffold::planefile::project_id(&hosted.root).is_some(),
-        "the host names the project by its stable id"
+    assert_eq!(
+        purlis_core::scaffold::planefile::project_id(&hosted.root),
+        None,
+        "holding the project wrote no id into it (#2004)"
     );
 }
 

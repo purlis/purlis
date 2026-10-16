@@ -1681,7 +1681,7 @@ fn a_window_killed_and_back_reads_every_chats_state_and_needs_you_as_the_host_ke
         first.told_it_needs_you(ended_its_turn)
     });
     // Every move the first window made has reached the host: a read of the board follows them.
-    let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).expect("its id");
     first
         .connection
         .of_project(&first.root, PATIENCE)
@@ -2302,7 +2302,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
     // The window goes: its holds on the project go with it, and the host runs on. The project
     // is held on its root's own link (#2178).
     let link = host.of_project(&root, PATIENCE).expect("the root's link");
-    let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).expect("its id");
     link.call(session::Command::LetGoOfProject { project })
         .expect("let go of");
     // The task's program ends by itself.

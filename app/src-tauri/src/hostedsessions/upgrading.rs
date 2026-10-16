@@ -370,6 +370,8 @@ fn the_launch_before_the_upgrade(world: &World) {
     let held = planes
         .held(&planes.open(&root))
         .expect("the project is held");
+    // As a launch does: it reads what was open, here nothing, and records from then on.
+    held.reopen(SIZE, reopen::read_or_refusal(&root), Choice::ReopenAll);
     for (profile, _) in PROFILES {
         let cwd = if profile == "side" {
             world.worktree()
