@@ -697,21 +697,28 @@ fn a_signed_manifest_of_a_later_version_issued_before_the_one_in_use_is_refused(
     assert!(!served.asked.borrow().contains(&url(NEWER)));
 }
 
-/// Serves the published manifest and bundle at once, and an archive whose body does not come
-/// until it is let go; says when the archive was asked for.
+/// Serves the published manifest and bundle at once, and `archive` only once it is let go;
+/// says when the archive was asked for.
 struct Stalling {
     manifest: Vec<u8>,
     bundle: Vec<u8>,
+    archive: Vec<u8>,
     asked: mpsc::Sender<()>,
     release: Mutex<mpsc::Receiver<()>>,
 }
 
-struct Stalled<'a>(&'a Stalling);
+struct Stalled<'a> {
+    stalling: &'a Stalling,
+    body: Option<Cursor<Vec<u8>>>,
+}
 
 impl Read for Stalled<'_> {
-    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
-        let _ = self.0.release.lock().unwrap().recv();
-        Err(std::io::Error::other("the download stopped"))
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.body.is_none() {
+            let _ = self.stalling.release.lock().unwrap().recv();
+            self.body = Some(Cursor::new(self.stalling.archive.clone()));
+        }
+        self.body.as_mut().unwrap().read(buf)
     }
 }
 
@@ -722,7 +729,10 @@ impl Fetch for Stalling {
             PUBLISHED_BUNDLE => Ok(Box::new(Cursor::new(self.bundle.clone()))),
             _ => {
                 let _ = self.asked.send(());
-                Ok(Box::new(Stalled(self)))
+                Ok(Box::new(Stalled {
+                    stalling: self,
+                    body: None,
+                }))
             }
         }
     }
@@ -746,6 +756,7 @@ fn a_stalled_update_download_holds_up_no_start_of_the_installed_engine() {
     let stalling = Stalling {
         manifest: text.clone().into_bytes(),
         bundle: keys.sign(&text).into_bytes(),
+        archive: b"not the archive pinned".to_vec(),
         asked,
         release: Mutex::new(release),
     };
@@ -785,4 +796,57 @@ fn a_stalled_update_download_holds_up_no_start_of_the_installed_engine() {
         let_go.send(()).unwrap();
         assert!(updating.join().unwrap().is_err());
     });
+}
+
+/// Two updates at once: the one issued later is the one kept, whichever finishes last.
+#[test]
+fn of_two_updates_at_once_the_later_issued_is_kept_whichever_finishes_last() {
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let (old, new) = (archive("pinned"), archive("newer"));
+    let earlier = manifest_text(NEWER, "2026-10-20T05:00:00Z", &sha256(&new));
+    let later = manifest_text(NEWER, "2026-10-21T05:00:00Z", &sha256(&new));
+    let (asked, archive_asked) = mpsc::channel();
+    let (let_go, release) = mpsc::channel();
+    let stalling = Stalling {
+        manifest: earlier.clone().into_bytes(),
+        bundle: keys.sign(&earlier).into_bytes(),
+        archive: new.clone(),
+        asked,
+        release: Mutex::new(release),
+    };
+    let public = keys.0.pk.clone();
+    let built = || {
+        Engines::new(
+            root.path(),
+            Platform::Linux64,
+            manifest(VERSION, ISSUED, &sha256(&old)),
+            Box::new(Trusts(public.clone())),
+        )
+    };
+    std::thread::scope(|scope| {
+        let slow = scope.spawn(|| {
+            built().update_from_published(&EngineSettings::default(), &stalling, at(NOW))
+        });
+        archive_asked
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the earlier update reached its download");
+        let served = Served::with(url(NEWER), new.clone());
+        built()
+            .update(
+                later.as_bytes(),
+                &keys.sign(&later),
+                &EngineSettings::default(),
+                &served,
+                at(NOW),
+            )
+            .unwrap();
+        let_go.send(()).unwrap();
+        let refused = slow.join().unwrap().unwrap_err();
+        assert!(matches!(refused, Refused::Older { .. }), "{refused:?}");
+    });
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("update.json")).unwrap(),
+        later
+    );
 }

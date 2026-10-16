@@ -256,18 +256,32 @@ pub const MAX_REDIRECTS: usize = 5;
 pub struct Https {
     total: Duration,
     listener: Option<Listener>,
+    /// Plain http too: only this crate's own tests, against a loopback server.
+    #[cfg(test)]
+    plain: bool,
 }
 
 impl Https {
     /// The longest an archive's download may take: an hour.
     pub const ARCHIVE: Duration = Duration::from_secs(60 * 60);
 
-    /// Downloads each taking at most `total`, from the request to the body's last byte.
+    /// Downloads each taking at most `total`, from the first request to the body's last
+    /// byte, redirects included.
     pub fn within(total: Duration) -> Self {
         Self {
             total,
             listener: None,
+            #[cfg(test)]
+            plain: false,
         }
+    }
+
+    fn https_only(&self) -> bool {
+        #[cfg(test)]
+        if self.plain {
+            return false;
+        }
+        true
     }
 
     /// The same downloads, each request told to `listener`.
@@ -294,18 +308,28 @@ impl Default for Https {
 
 impl Fetch for Https {
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>> {
+        let https_only = self.https_only();
         let agent: ureq::Agent = ureq::Agent::config_builder()
-            .https_only(true)
+            .https_only(https_only)
             .timeout_connect(Some(Duration::from_secs(30)))
-            .timeout_global(Some(self.total))
             .max_redirects(0)
             .http_status_as_error(false)
             .build()
             .into();
+        // One deadline for the whole download: each request, a redirect's included, gets only
+        // what is left of it.
+        let deadline = Instant::now() + self.total;
         let mut url = url.to_owned();
         for _ in 0..=MAX_REDIRECTS {
             let started = Instant::now();
-            let response = match agent.get(&url).call() {
+            let left = deadline.saturating_duration_since(started);
+            let response = match agent
+                .get(&url)
+                .config()
+                .timeout_global(Some(left))
+                .build()
+                .call()
+            {
                 Ok(response) => response,
                 Err(why) => {
                     self.hear(Hop {
@@ -329,7 +353,7 @@ impl Fetch for Https {
                     .headers()
                     .get("location")
                     .and_then(|to| to.to_str().ok())
-                    .filter(|to| to.starts_with("https://"))
+                    .filter(|to| to.starts_with("https://") || !https_only)
                     .ok_or_else(|| {
                         io::Error::other(format!("{url} redirects to no https address"))
                     })?
@@ -628,14 +652,19 @@ impl Engines {
             .verify(manifest, signature)
             .map_err(Refused::Signature)?;
         let update = Manifest::parse(manifest)?;
-        let current = self.trusted();
-        if !update.supersedes(&current) || update.issued <= current.issued {
+        if !self.takes(&update) {
             return Err(Refused::Older {
                 version: update.version,
             });
         }
         let program = self.install(&update, fetch)?;
         let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
+        // Asked again: another update may have been kept while this one downloaded.
+        if !self.takes(&update) {
+            return Err(Refused::Older {
+                version: update.version,
+            });
+        }
         private_dir(&self.root).map_err(Refused::Store)?;
         write_replacing(&self.root.join(UPDATE_SIGNATURE), signature.as_bytes())?;
         write_replacing(&self.root.join(UPDATE), manifest)?;
@@ -679,6 +708,13 @@ impl Engines {
                 .flatten()
                 .any(|entry| installed_digest(&entry.path()).is_some())
         })
+    }
+
+    /// Whether `update` is to be taken over the manifest in use: it supersedes it, and was
+    /// issued after it.
+    fn takes(&self, update: &Manifest) -> bool {
+        let current = self.trusted();
+        update.supersedes(&current) && update.issued > current.issued
     }
 
     /// The manifest in use: a stored update that still verifies and supersedes the one this
@@ -914,13 +950,13 @@ impl Drop for Scratch {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Read};
-    use std::sync::{Arc, Mutex};
-    use std::time::Instant;
+    use std::io::{Cursor, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::{Duration, Instant};
 
-    use super::{Heard, Https};
+    use super::{Fetch, Heard, Https};
 
-    /// Each request a listener hears, as `(url, status, answered)`.
     /// What a listener heard: `(url, status, answered)` for each request.
     type Hops = Arc<Mutex<Vec<(String, Option<u16>, bool)>>>;
 
@@ -946,6 +982,90 @@ mod tests {
             )),
             whole: false,
         }
+    }
+
+    /// A loopback server answering each connection in turn with the next of `answers` (made
+    /// knowing its port), each after its wait; every connection stays open, silent, until the
+    /// test ends.
+    fn serving(answers: impl FnOnce(u16) -> Vec<(Duration, String)>) -> (u16, mpsc::Sender<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let answers = answers(port);
+        let (done, ended) = mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let mut open = Vec::new();
+            for (wait, answer) in answers {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut request = [0_u8; 4096];
+                let _ = stream.read(&mut request);
+                std::thread::sleep(wait);
+                let _ = stream.write_all(answer.as_bytes());
+                open.push(stream);
+            }
+            let _ = ended.recv();
+        });
+        (port, done)
+    }
+
+    fn plain(total: Duration) -> (Https, Hops) {
+        let (https, heard) = listening();
+        (
+            Https {
+                total,
+                plain: true,
+                ..https
+            },
+            heard,
+        )
+    }
+
+    #[test]
+    fn a_body_that_stops_mid_way_is_given_up_on_within_the_total_time() {
+        let (port, _done) = serving(|_| {
+            vec![(
+                Duration::ZERO,
+                "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\nthe first".to_owned(),
+            )]
+        });
+        let (https, heard) = plain(Duration::from_secs(2));
+        let url = format!("http://127.0.0.1:{port}/engine-manifest.json");
+        let started = Instant::now();
+        let mut body = https.fetch(&url).expect("the headers came");
+        let mut bytes = Vec::new();
+        assert!(body.read_to_end(&mut bytes).is_err());
+        drop(body);
+        let took = started.elapsed();
+        assert!(took < Duration::from_secs(10), "given up on after {took:?}");
+        assert_eq!(*heard.lock().unwrap(), [(url, Some(200), false)]);
+    }
+
+    #[test]
+    fn redirects_share_one_total_time() {
+        // Each answer a redirect to the same server, a second after it was asked.
+        let (port, _done) = serving(|port| {
+            (1..=5)
+                .map(|n| {
+                    (
+                        Duration::from_secs(1),
+                        format!(
+                            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/{n}\r\n\
+                             Content-Length: 0\r\nConnection: close\r\n\r\n"
+                        ),
+                    )
+                })
+                .collect()
+        });
+        let (https, _) = plain(Duration::from_secs(2));
+        let started = Instant::now();
+        let got = https.fetch(&format!("http://127.0.0.1:{port}/0"));
+        let took = started.elapsed();
+        assert!(got.is_err());
+        assert!(
+            took < Duration::from_millis(3500),
+            "five redirects a second apart took {took:?} under a two-second limit"
+        );
     }
 
     #[test]
