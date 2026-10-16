@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792187076806,
+  "lastUpdate": 1792189902534,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14616,6 +14616,48 @@ window.BENCHMARK_DATA = {
             "value": 101.453743,
             "unit": "ms",
             "extra": "median of 5 runs: 101.032, 101.113, 101.454, 102.580, 103.009 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e4f820b2c1d2a427fb88ea2c0b5f0e16141105fb",
+          "message": "Geometry and type tokens everywhere: title bar, workspace and session strips, the rail and the status bar (#2340)\n\n* feat(app): the strips, the title bar and the status line read the core tokens where one is exact\n\nWhere a core token's value is the literal exactly, the declaration now\nreads the token, so Purlis Classic draws the same pixels:\n\n- corners of 4px -> var(--radius-md): the project strip's buttons, a\n  chat tab's rename box, the bar's buttons, a bare `+`, `N more`, the\n  needs-you hand, About and the kill switch on the title bar, and a\n  task's move buttons in a tab chip's menu;\n- 2rem -> var(--size-control): the workspaces row's and strip's height,\n  the narrowest tab that wears a chip;\n- 1.5rem -> var(--size-chrome): the chip's hand;\n- 1rem -> var(--font-size-base): the project strip's text;\n- 600 -> var(--font-weight-strong): the status line's workspace and the\n  current row in a chip's menu.\n\nSeventeen entries leave the guards' allowances (fourteen geometry,\nthree type). A literal with no exact token stays as it is.\n\nRefs #2315\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(app): the type guard's raised-ceiling case plants past the ceiling, whatever the list's length\n\nThe case planted one entry and expected the list to pass its ceiling,\nwhich held only while the list was exactly as long as the ceiling. A\nmigration that shortens the list no longer has to lower the ceiling in\nthe same change for this case to stay red-on-growth.\n\nRefs #2315\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(app): the needs-you hand's no-coloured-border check reads past its corner\n\nThe check refused any border property reading a token other than\nborder.subtle, which took in `border-radius: var(--radius-md)`. A corner\nis geometry, not a colour, so the check now skips the radius properties\nand still refuses a coloured border.\n\nRefs #2315\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* feat(app): the strips, the title bar and the rail snap their spacing, corners and type to the core scale\n\nThe operator's geometry snap rule (2026-10-17, #2313): a spacing,\ncorner, type size or weight with no exact token takes the nearest core\ntoken by computed px at the 14px root, a tie going to the smaller; a px\nliteral may become a rem token, and a 999px pill is --radius-full.\n\n68 declarations on the title bar, the workspace and chats strips, a\ntab's chip and its menu, the rail and the needs-you hand move to the\nscale, each by at most 3px (the pull request lists each with its\nchange). A chip menu's indents are a multiple of --space-5, so the\nsteps stay even. Sizes that are no step of the scale (an icon's box, a\ntab's cap, the rail's width, the title bar's height) keep their\nliterals, as do the line heights.\n\n77 more entries leave the allowances (65 geometry, 12 type). The\ndesign system says how a migration snaps.\n\nRefs #2315\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix(app): the chip is a pill, the plane-updated mark is the pin's size, and wrapping up is spaced as stopping\n\n- A tab chip's button: its 0.7rem corner is past half its height, so\n  it is --radius-full, which draws the same.\n- The plane-updated mark: its font size only sized its icon, so the\n  icon takes the pin's box (calc(var(--space-4) + var(--space-1))) as\n  its comment says, and the mark sets no font size.\n- A chat wrapping up: its mark stands var(--space-3) from the name, as\n  a stopping chat's does. One more allowance entry goes.\n\nThe design system says how a series, a pill and a line height are\ntaken in a snap.\n\nRefs #2315\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T02:30:15+04:00",
+          "tree_id": "938fc1eec225f90caf88cba3bcf787ea990ef9f9",
+          "url": "https://github.com/purlis/purlis/commit/e4f820b2c1d2a427fb88ea2c0b5f0e16141105fb"
+        },
+        "date": 1792189901051,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5381754999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.500, 0.511, 0.538, 0.550, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.929342499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.570, 16.774, 16.929, 17.294, 17.346 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.758114,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.295, 104.583, 104.758, 104.903, 105.198 ms"
           }
         ]
       }
