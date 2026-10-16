@@ -26,6 +26,19 @@ use crate::host::{Opening, SessionHost};
 #[cfg(test)]
 use crate::sessions::{Reporting, Sessions};
 
+/// `words` with the session a new conversation is started under, `--session-id <was>`, named
+/// `fresh` instead; whether they held one. A `--resume` is left as it is.
+fn renamed_session(words: &mut [String], was: &str, fresh: &str) -> bool {
+    let mut renamed = false;
+    for at in 1..words.len() {
+        if words[at - 1] == "--session-id" && words[at] == was {
+            words[at] = fresh.to_owned();
+            renamed = true;
+        }
+    }
+    renamed
+}
+
 /// Every identity variable a vault of the project at `root` declares — both halves of each
 /// `env` binding — so a chat is started without any of them (#271 review, U6). `root` is the
 /// open project's, never one found above the chat's folder (#1410). A registry that cannot be
@@ -2468,7 +2481,19 @@ impl Chats {
         if let Some(gone) = lock(&self.never_started).as_ref() {
             gone(session);
         }
-        let (program, command, args, env, conversation, how) = again;
+        let (program, mut command, mut args, env, mut conversation, how) = again;
+        // A new conversation is started under a new id: Claude Code refuses an id whose
+        // transcript the first run may have begun (measured in 2.1.300: `--session-id` is
+        // refused while `<id>.jsonl` exists), and that run was never prompted, so nothing of it
+        // is lost. A conversation resumed is resumed again under its own id.
+        if let Some(was) = conversation.clone() {
+            let fresh = purlis_core::harness::SessionId::fresh().as_str().to_owned();
+            if renamed_session(&mut args, &was, &fresh)
+                | renamed_session(&mut command, &was, &fresh)
+            {
+                conversation = Some(fresh);
+            }
+        }
         self.open_it_as(
             chat,
             program,
@@ -7137,6 +7162,73 @@ pub(crate) mod tests {
         assert!(lock(&told).is_empty());
         assert!(chats.owed_restarts().is_empty());
         chats.close(session).expect("ends");
+    }
+
+    /// The word after `flag` in `args`, where there is one.
+    fn after(args: &[String], flag: &str) -> Option<String> {
+        args.windows(2)
+            .find(|pair| pair[0] == flag)
+            .map(|pair| pair[1].clone())
+    }
+
+    #[test]
+    fn a_new_conversation_started_once_more_at_its_start_is_under_a_new_id() {
+        // Claude Code refuses `--session-id` for an id whose transcript exists, and the first
+        // run may have begun one: the run that goes on is a new conversation of its own, and the
+        // chat's record names it.
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, _told) = chats_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_chat_in_with(plane.path(), None), SIZE)
+            .expect("starts");
+        let opened = host.openings();
+        assert_eq!(opened.len(), 2, "started once more");
+        let first = after(&opened[0].args, "--session-id").expect("a new conversation");
+        let second = after(&opened[1].args, "--session-id").expect("a new conversation");
+        assert_ne!(first, second, "under a new id");
+        assert_eq!(after(&opened[1].args, "--resume"), None);
+        let recorded = chats.recorded_chat(session).expect("its record");
+        assert_eq!(
+            recorded.resume.map(|id| id.as_str().to_owned()),
+            Some(second),
+            "its record names the conversation that goes on"
+        );
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_resumed_conversation_started_once_more_at_its_start_is_resumed_again() {
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, _told) = chats_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        let opened = host.openings();
+        assert_eq!(opened.len(), 2, "started once more");
+        assert_eq!(after(&opened[0].args, "--resume").as_deref(), Some(ID));
+        assert_eq!(after(&opened[1].args, "--resume").as_deref(), Some(ID));
+        assert_eq!(after(&opened[1].args, "--session-id"), None);
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_session_is_renamed_only_where_a_new_conversation_is_started() {
+        let mut words: Vec<String> = ["--session-id", "a", "--name", "a"]
+            .map(str::to_owned)
+            .to_vec();
+        assert!(renamed_session(&mut words, "a", "b"));
+        assert_eq!(words, ["--session-id", "b", "--name", "a"]);
+        let mut resumed: Vec<String> = ["--resume", "a"].map(str::to_owned).to_vec();
+        assert!(!renamed_session(&mut resumed, "a", "b"));
+        assert_eq!(resumed, ["--resume", "a"]);
     }
 
     #[test]
