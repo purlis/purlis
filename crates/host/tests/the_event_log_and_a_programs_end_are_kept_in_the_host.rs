@@ -202,7 +202,7 @@ async fn a_program_that_ends_by_itself_with_the_window_gone_is_kept_as_unwatched
     assert_eq!(
         ended,
         [Told {
-            project_path: project.path().to_owned(),
+            project_path: std::fs::canonicalize(project.path()).unwrap(),
             number: 1,
             exit: Exit::Code(1),
             stopped: None,

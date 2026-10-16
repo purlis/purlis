@@ -235,6 +235,13 @@ word for itself, never committed, and different in every copy at another path. A
 same path on another machine has the same key, and the device id is what tells it apart.
 _Avoid_: clone id, plane hash, install id
 
+**Place** (of a project, in the session host):
+A project's stable id at one clone's canonical root on the host's machine: what the host holds,
+deals chat numbers in, hears hooks from and saves. Two clones of one project are two places;
+one folder is one place however its path is spelled. A link holds each project at one place
+(ADR 0068, amended for #2178).
+_Avoid_: path (for the place as a whole), clone-key (that is the clone's own word for itself)
+
 **Copy** (of a project):
 A second clone made from a project's directory, `.charter/` and all: `cp -R`, rsync, a backup
 restored beside the original, or the same path on another machine. Its first launch finds that

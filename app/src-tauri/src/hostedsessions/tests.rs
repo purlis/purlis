@@ -12,14 +12,60 @@ use std::time::{Duration, Instant};
 use purlis_core::engine::Size;
 use purlis_host::standin::{Savers, StandIns};
 use purlis_host::{FromTheWindow, Hosting};
-use purlis_session_protocol::auth::{Credentials, Scope};
-use purlis_session_protocol::link;
 use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
 
-static HELD: std::sync::LazyLock<Credentials> =
-    std::sync::LazyLock::new(|| Credentials::mint().unwrap());
+/// The window's connection to the host `hosting` serves as, over in-memory links, run on
+/// `runtime`: its own link, ready, and one more opened for each project root, as the window's
+/// are over the host's socket.
+pub(crate) fn in_memory<H: session::Host + Clone>(
+    hosting: H,
+    runtime: &tokio::runtime::Runtime,
+) -> (Arc<Connection>, Arc<HostLink>) {
+    let link = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial =
+        Arc::new(move |within| open_within(&handle, within, a_link_to(hosting.clone(), || {})));
+    let connection = Arc::new(Connection::default());
+    connection.ready(Arc::clone(&link), dial);
+    (connection, link)
+}
+
+/// A `local-ui` link to `hosting` over an in-memory stream; `closed` is called once the host's
+/// end of it ends.
+async fn a_link_to<H: session::Host>(
+    hosting: H,
+    closed: impl FnOnce() + Send + 'static,
+) -> Result<HostLink, String> {
+    use purlis_session_protocol::auth::{Credentials, Scope};
+    use purlis_session_protocol::link;
+
+    static HELD: std::sync::LazyLock<Credentials> =
+        std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
+
+    let (a, b) = tokio::io::duplex(1 << 20);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let served = served.map_err(|why| why.to_string())?;
+    tokio::spawn(async move {
+        let _ = session::serve(served, hosting, None).await;
+        closed();
+    });
+    let client = client.map_err(|why| why.to_string())?;
+    HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
+}
 
 const SIZE: Size = Size {
     columns: 100,
@@ -55,25 +101,7 @@ fn hosted() -> Hosted {
     let savers = Savers::default();
     let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone())
         .saving_with(savers.clone());
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(256 * 1024);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(served.unwrap(), hosting, None));
-        HostLink::over(client.unwrap(), tokio::runtime::Handle::current(), || {})
-            .await
-            .unwrap()
-    });
-    let link = Arc::new(link);
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::clone(&link));
+    let (connection, link) = in_memory(hosting, &runtime);
     let (dir, root) = a_project();
     Hosted {
         sessions: HostedSessions::new(connection, &root),
@@ -128,6 +156,41 @@ fn a_pane() -> (Sink, Arc<Mutex<String>>) {
         Box::new(move |text: String| seen.lock().unwrap().push_str(&text)) as Sink
     };
     (sink, seen)
+}
+
+#[test]
+fn two_clones_of_one_project_in_one_window_both_start_chats() {
+    // #2178: one project id, two folders, one window's connection to its host.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let runs = StandIns::default();
+    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone());
+    let (connection, _window) = in_memory(hosting, &runtime);
+    let clone = || {
+        let (dir, root) = a_project();
+        std::fs::write(
+            root.join(purlis_core::plane::MANIFEST),
+            "[project]\nid = \"01J9PRJCT00000000000000000\"\n",
+        )
+        .unwrap();
+        (dir, root)
+    };
+    let ((_one, first), (_two, second)) = (clone(), clone());
+    let first = HostedSessions::new(Arc::clone(&connection), &first);
+    let second = HostedSessions::new(connection, &second);
+
+    let started = (
+        first.open(None, &a_shell("true"), &|_| {}),
+        second.open(None, &a_shell("true"), &|_| {}),
+    );
+
+    assert_eq!(started, (Ok(1), Ok(1)), "each clone deals its own numbers");
+    assert_eq!(runs.ran().len(), 2);
+    drop((first, second));
+    drop(runtime);
 }
 
 #[test]
@@ -570,26 +633,7 @@ fn a_window_of(
     HostedSessions,
     Arc<Mutex<Vec<crate::hooks::Moved>>>,
 ) {
-    let hosting = hosting.clone();
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(256 * 1024);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(served.unwrap(), hosting, None));
-        HostLink::over(client.unwrap(), tokio::runtime::Handle::current(), || {})
-            .await
-            .unwrap()
-    });
-    let link = Arc::new(link);
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::clone(&link));
+    let (connection, link) = in_memory(hosting.clone(), runtime);
     let moved: Arc<Mutex<Vec<crate::hooks::Moved>>> = Arc::default();
     let plane: crate::planes::PlaneId =
         serde_json::from_str(&serde_json::to_string(root).unwrap()).unwrap();
@@ -865,4 +909,81 @@ fn a_host_before_held_trust_events_is_sent_the_trust_event_first_and_no_start_ta
         as_the_host_reads(&taken_back, session::VERSION),
         [taken_back]
     );
+}
+
+fn a_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+#[test]
+fn a_call_that_cannot_wait_never_waits_behind_another_roots_link_being_opened() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(
+        FromTheWindow(crate::sessionhost::launched),
+        StandIns::default(),
+    );
+    let (connection, window) = in_memory(hosting, &runtime);
+    let ((_one, open), (_two, opening)) = (a_project(), a_project());
+    connection
+        .of_project(&open, PATIENCE)
+        .expect("the first root's link opens");
+    // From now on another link opens only once it is let go.
+    let (entered, dialed) = std::sync::mpsc::channel();
+    let (let_go, go) = std::sync::mpsc::channel::<()>();
+    let go = Mutex::new(go);
+    connection.ready(
+        window,
+        Arc::new(move |within| {
+            let _ = entered.send(());
+            let _ = go.lock().unwrap().recv_timeout(within);
+            Err("held up".to_owned())
+        }),
+    );
+    let dialer = {
+        let (connection, opening) = (Arc::clone(&connection), opening.clone());
+        std::thread::spawn(move || connection.of_project(&opening, PATIENCE).map(|_| ()))
+    };
+    dialed
+        .recv_timeout(PATIENCE)
+        .expect("the second root's link is being opened");
+
+    let asked = Instant::now();
+    let already = connection.of_project(&open, Duration::ZERO);
+    let not_yet = connection.of_project(&opening, Duration::ZERO);
+    let waited = asked.elapsed();
+
+    let _ = let_go.send(());
+    assert!(dialer.join().unwrap().is_err());
+    assert!(already.is_ok(), "the open link was not answered");
+    assert!(not_yet.is_err(), "a link still opening was answered");
+    assert!(
+        waited < Duration::from_secs(1),
+        "it waited {waited:?} behind another root's link"
+    );
+}
+
+#[test]
+fn a_link_that_opens_after_nobody_waits_for_it_is_closed() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(
+        FromTheWindow(crate::sessionhost::launched),
+        StandIns::default(),
+    );
+    let (closed, ends) = std::sync::mpsc::channel();
+
+    let opened = open_within(runtime.handle(), Duration::from_millis(50), async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        a_link_to(hosting, move || {
+            let _ = closed.send(());
+        })
+        .await
+    });
+
+    assert!(opened.is_err(), "the link opened in time");
+    ends.recv_timeout(PATIENCE)
+        .expect("the link that opened late is still open");
 }

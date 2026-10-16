@@ -41,8 +41,12 @@
 //! write it decides ([`record_in_the_host`]); what its hooks' hearing would write of a line goes
 //! back with the line's reply. The host keeps what a program's end leaves, window or no window.
 //!
-//! **One link for every project.** The window's link to its host ([`HostLink`]) carries every
-//! project's chats: their views come on it, word that a program ended, and their hooks' lines.
+//! **A link for each project root.** The window's own link to its host carries the kill switch
+//! and the event log's writes; each project root the window opens is held on a link of its own
+//! ([`Connection::of_project`]), which carries that root's chats, its browsers and its saving:
+//! their views, word that a program ended, its hooks' lines and what each look of its auto-save
+//! did. The host knows a project by its stable id, which every clone of it shares, and tells two
+//! clones apart by the link that holds each (#2178).
 //!
 //! **The host saves the project too** (#2002): the window asks it to as the project opens
 //! ([`HostedSessions`]'s `keep_saving`), and starts no auto-save of its own, so exactly one
@@ -162,12 +166,24 @@ pub(crate) fn as_the_host_reads(
 }
 
 /// Where the window's link to its session host stands: being made, ready, or not to be had and
-/// why. Shared by every project's [`HostedSessions`].
+/// why; and the link each project root is held on. Shared by every project's
+/// [`HostedSessions`].
 #[derive(Default)]
 pub struct Connection {
     state: Mutex<Linked>,
     changed: Condvar,
+    /// Opens another link to the same host, once the window's is ready.
+    dial: Mutex<Option<Dial>>,
+    /// The link each project root is held on, by the root (#2178).
+    projects: Mutex<HashMap<PathBuf, Arc<HostLink>>>,
+    /// Held while a root's link is being opened, by the root: one root never gets two links,
+    /// and nothing waits for another root's.
+    opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
 }
+
+/// Opens another `local-ui` link to the window's host, waiting at most the time it is given: one
+/// for each project root the window holds there (#2178).
+pub type Dial = Arc<dyn Fn(Duration) -> Result<HostLink, String> + Send + Sync>;
 
 #[derive(Default)]
 enum Linked {
@@ -178,10 +194,44 @@ enum Linked {
 }
 
 impl Connection {
-    /// The link is ready.
-    pub fn ready(&self, link: Arc<HostLink>) {
+    /// The link is ready, and `dial` opens another to the same host.
+    pub fn ready(&self, link: Arc<HostLink>, dial: Dial) {
+        *lock(&self.dial) = Some(dial);
         *lock(&self.state) = Linked::Ready(link);
         self.changed.notify_all();
+    }
+
+    /// The link the project at `root` is held on: its own, opened the first time it is asked
+    /// for, so two clones of one project are held apart (#2178). Waits at most `within` for the
+    /// window's link, and for the new one; with no time to wait, only a link already open is
+    /// answered, whatever link is being opened meanwhile.
+    pub(crate) fn of_project(
+        &self,
+        root: &Path,
+        within: Duration,
+    ) -> Result<Arc<HostLink>, String> {
+        self.wait(within)?;
+        if let Some(link) = lock(&self.projects).get(root) {
+            return Ok(Arc::clone(link));
+        }
+        if within.is_zero() {
+            return Err(format!(
+                "{} is not held in the session host",
+                root.display()
+            ));
+        }
+        let opening = Arc::clone(lock(&self.opening).entry(root.to_path_buf()).or_default());
+        let _opening = lock(&opening);
+        // Another call may have opened it while this one waited its turn.
+        if let Some(link) = lock(&self.projects).get(root) {
+            return Ok(Arc::clone(link));
+        }
+        let dial = lock(&self.dial)
+            .clone()
+            .ok_or_else(|| no_host("there is no way to open another link to it"))?;
+        let link = Arc::new(dial(within).map_err(|why| no_host(&why))?);
+        lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
+        Ok(link)
     }
 
     /// There is no link, for `why`: every chat start says so from now on.
@@ -290,6 +340,16 @@ pub struct HostLink {
     client: Arc<Client>,
     runtime: tokio::runtime::Handle,
     shared: Arc<Shared>,
+    /// What hears the host on it, which keeps it open: the link closes once this ends.
+    hearing: tokio::task::AbortHandle,
+}
+
+/// A link nobody holds any more is closed: one that opened after nobody waited for it, among
+/// them.
+impl Drop for HostLink {
+    fn drop(&mut self) {
+        self.hearing.abort();
+    }
 }
 
 #[derive(Default)]
@@ -358,14 +418,17 @@ impl HostLink {
                 runtime: runtime.clone(),
             },
         );
-        runtime.spawn(async move {
-            hearing.await;
-            ended();
-        });
+        let hearing = runtime
+            .spawn(async move {
+                hearing.await;
+                ended();
+            })
+            .abort_handle();
         Ok(HostLink {
             client,
             runtime,
             shared,
+            hearing,
         })
     }
 
@@ -832,6 +895,11 @@ impl HostedSessions {
         lock(&self.relayed).clone()
     }
 
+    /// This project's own link to the host, waiting at most `within`.
+    fn own_link(&self, within: Duration) -> Result<Arc<HostLink>, String> {
+        self.connection.of_project(&self.root, within)
+    }
+
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
         held_on(
@@ -870,7 +938,7 @@ impl HostedSessions {
             .get(&id)
             .map(|program| program.id.clone())
             .ok_or_else(|| gone(id))?;
-        Ok((self.connection.wait(LINK_WITHIN)?, program))
+        Ok((self.own_link(LINK_WITHIN)?, program))
     }
 
     /// The number a chat opens under: `wanted` where it can still be had, else the next the
@@ -892,7 +960,7 @@ impl HostedSessions {
             .values()
             .map(|program| program.id.clone())
             .collect();
-        let link = self.connection.wait(Duration::ZERO).ok()?;
+        let link = self.own_link(Duration::ZERO).ok()?;
         Some((link, programs))
     }
 
@@ -921,7 +989,8 @@ impl HostedSessions {
     }
 }
 
-/// The link `connection` reaches, with the project at `root` held on it: `held` keeps its id
+/// The project at `root`'s own link to the host `connection` reaches, with the project held on
+/// it (#2178): `held` keeps its id
 /// once it is. Before the hold the host's lines for the project are heard through `relayed`,
 /// and after it the host is told the numbers `opened` has dealt (#2000).
 fn held_on(
@@ -931,7 +1000,7 @@ fn held_on(
     opened: &AtomicU32,
     root: &Path,
 ) -> Result<(Arc<HostLink>, String), String> {
-    let link = connection.wait(LINK_WITHIN)?;
+    let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
     if let Some(project) = &*held {
         return Ok((link, project.clone()));
@@ -980,7 +1049,7 @@ fn held_on(
     Ok((link, project))
 }
 
-/// What holds a project on the window's link, for a thread of its own: [`held_on`]'s.
+/// What holds a project on its own link to the host, for a thread of its own: [`held_on`]'s.
 struct Holding {
     connection: Arc<Connection>,
     held: Arc<Mutex<Option<String>>>,
@@ -1369,7 +1438,7 @@ impl SessionHost for HostedSessions {
             relayed.ended(id, None);
         }
         let program = lock(&self.running).remove(&id).ok_or_else(|| gone(id))?;
-        if let Ok(link) = self.connection.wait(Duration::ZERO) {
+        if let Ok(link) = self.own_link(Duration::ZERO) {
             for view in &program.views {
                 link.undraw(*view);
             }
@@ -1447,7 +1516,7 @@ impl SessionHost for HostedSessions {
     fn already_dealt(&self, dealt: u32) {
         self.opened.fetch_max(dealt, Ordering::Relaxed);
         let project = lock(&self.held).clone();
-        if let (Some(project), Ok(link)) = (project, self.connection.wait(Duration::ZERO)) {
+        if let (Some(project), Ok(link)) = (project, self.own_link(Duration::ZERO)) {
             link.send(Command::DealtAlready { project, dealt });
         }
     }
@@ -1523,5 +1592,21 @@ fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A link to the window's host, opened by `opening` on `runtime` and waited for at most
+/// `within`, from any thread but the runtime's own: what a [`Dial`] answers.
+pub(crate) fn open_within(
+    runtime: &tokio::runtime::Handle,
+    within: Duration,
+    opening: impl std::future::Future<Output = Result<HostLink, String>> + Send + 'static,
+) -> Result<HostLink, String> {
+    let (opened, link) = std::sync::mpsc::channel();
+    runtime.spawn(async move {
+        // A link that opens once nobody waits for it any more is dropped here.
+        let _ = opened.send(opening.await);
+    });
+    link.recv_timeout(within)
+        .map_err(|_| "it did not open another link in time".to_owned())?
+}
+
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

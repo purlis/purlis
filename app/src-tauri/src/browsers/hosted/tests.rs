@@ -10,16 +10,9 @@ use std::time::{Duration, Instant};
 
 use purlis_host::standin::{StandInBrowsers, StandIns};
 use purlis_host::{ComposesNothing, Hosting};
-use purlis_session_protocol::auth::{Credentials, Scope};
-use purlis_session_protocol::link;
-use purlis_session_protocol::session;
 
 use super::WindowBrowsers;
 use crate::browsers::BrowserViewRole;
-use crate::hostedsessions::{Connection, HostLink};
-
-static HELD: std::sync::LazyLock<Credentials> =
-    std::sync::LazyLock::new(|| Credentials::mint().unwrap());
 
 struct Window {
     browsers: WindowBrowsers,
@@ -39,24 +32,7 @@ fn window() -> Window {
     let started = StandInBrowsers::in_folder(store.path().join("browsers"));
     let hosting =
         Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(started.clone());
-    let link = runtime.block_on(async {
-        let (a, b) = tokio::io::duplex(1 << 20);
-        let (client, served) = tokio::join!(
-            link::connect(
-                a,
-                session::speaks(),
-                Scope::LocalUi,
-                HELD.of(Scope::LocalUi)
-            ),
-            link::serve_any(b, session::speaks(), &HELD)
-        );
-        tokio::spawn(session::serve(served.unwrap(), hosting, None));
-        HostLink::over(client.unwrap(), tokio::runtime::Handle::current(), || {})
-            .await
-            .unwrap()
-    });
-    let connection = Arc::new(Connection::default());
-    connection.ready(Arc::new(link));
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
     let project = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(project.path()).unwrap();
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();
@@ -107,6 +83,22 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
 
     window.browsers.unwatch(&program, watching.view).unwrap();
     until("frames stop with the last view", || !screen.shown().showing);
+}
+
+#[test]
+fn two_clones_of_one_project_each_open_a_browser() {
+    // #2178: one project id, two folders.
+    let window = window();
+    let id = "[project]\nid = \"01J9PRJCT00000000000000000\"\n";
+    std::fs::write(window.root.join(purlis_core::plane::MANIFEST), id).unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let other = std::fs::canonicalize(clone.path()).unwrap();
+    std::fs::write(other.join(purlis_core::plane::MANIFEST), id).unwrap();
+
+    window.browsers.open(&window.root).unwrap();
+    window.browsers.open(&other).unwrap();
+
+    assert_eq!(window.started.started().len(), 2);
 }
 
 #[test]
