@@ -1,0 +1,398 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: operator image
+
+run-name: ${{ github.event_name == 'workflow_run' && format('cluster operator {0} ({1}) of {2}', github.event.workflow_run.conclusion, github.event.workflow_run.event, github.event.workflow_run.head_sha) || format('{0}, {1}', github.event_name, github.ref_name) }}
+
+# purlis's cluster operator image (#2238, spec #2041), made the way `runner-image.yml` makes the
+# runner image: for linux/amd64 and linux/arm64, kept in the GitHub Container Registry as a
+# PRIVATE package of this organisation, recorded by digest and signed by keyless cosign through
+# this run's GitHub OIDC identity. No signing key is stored anywhere; the signature's entry in
+# Sigstore's public transparency log names the image and its digest, which the operator accepted
+# (ruling of 2026-10-15). The package stays private until the operator rules to publish it
+# (ruling of 2026-10-14): `image` pushes only into a package the packages API shows private, and
+# `index` tags and signs only when that still holds and the registry refuses an anonymous pull.
+#
+# Two ways in, and what each makes:
+#
+#   `cluster operator` green -> the image of that commit: built, checked, pushed, tagged
+#   on a push to `main`         `sha-<commit>` (and `main` when that moves it forward), signed,
+#                               verified, and its digest recorded in the run's summary, its
+#                               `operator-image` artifact and an `operator.yaml` that names it.
+#                               `operator.yml` runs on a push to `main` that changes the operator,
+#                               so every such change, and only that, makes an image; its kind
+#                               tests on that commit are what this waits for.
+#   a pull request           -> touching the operator or this image's own files only: the same
+#                               build and check, for both architectures, pushed nowhere.
+#
+# Nothing else starts it: there is no `workflow_dispatch`, and a failed publishing run is re-run
+# from its own page.
+#
+# **Each architecture is built on a runner of its own architecture** (`ubuntu-24.04` and
+# `ubuntu-24.04-arm`), with no emulation, with the pinned toolchain, `cargo auditable` and the
+# operator's `release` profile, and no cache. The compile runs in a job that holds no write
+# permission; the image jobs hold `packages: write`, and only `index`, which signs, can mint an
+# OIDC token. What the registry and the forge are asked before a push, a tag or a signature is
+# `tools/image-registry.mjs`, the runner image's own, which fails closed.
+#
+# **Nothing is tagged or signed that was not checked.** `image` pushes each architecture's image
+# by digest only, untagged, pulls that digest back, and checks exactly those bytes
+# (`tools/operator-image-check.mjs`). `index` runs only when both passed.
+
+on:
+  pull_request:
+    paths:
+      - operator/**
+      - rust-toolchain.toml
+      - .github/actions/rust-toolchain/**
+      - tools/operator-image-*
+      - tools/image-registry*
+      - .github/workflows/operator-image.yml
+  workflow_run:
+    workflows: [cluster operator]
+    types: [completed]
+    branches: [main]
+
+# One publish at a time, never cancelled once started, as `runner-image.yml`'s; a run that
+# publishes nothing takes a group of its own and displaces no publish. A pull request's run is
+# superseded by its next push.
+concurrency:
+  group: operator-image-${{ github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_branch != 'main' || github.event.workflow_run.head_repository.full_name != github.repository) && format('nothing-{0}', github.run_id) || github.event_name == 'workflow_run' && 'main' || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Where the image lives: the name `operator/deploy/operator.yaml` gives it. The organisation's
+  # own registry, so the package is the organisation's and private until it is made otherwise.
+  IMAGE: ghcr.io/${{ github.repository_owner }}/purlis-cluster-operator
+
+jobs:
+  plan:
+    name: what this run makes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The same rule as `release.yml`'s `plan`, on the operator's own checks: only a green
+    # `cluster operator` on a push to THIS repository's `main` publishes, and
+    # `workflow_run.head_sha` is the one commit such a run builds.
+    if: >-
+      github.event_name != 'workflow_run' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            workflow_run) publish=true; sha=$RUN_SHA ;;
+            pull_request) publish=false; sha=$PR_SHA ;;
+            *) publish=false; sha=$GITHUB_SHA ;;
+          esac
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Operator image of \`$sha\`: $([ "$publish" = true ] && echo 'built, checked, pushed and signed' || echo 'built and checked, pushed nowhere')." >> "$GITHUB_STEP_SUMMARY"
+
+  binary:
+    name: purlis-cluster-operator (${{ matrix.arch }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    # The commit checked out is `plan`'s: in main's context only the commit a green
+    # `cluster operator` ran on after a push to this repository's `main`, and otherwise the
+    # run's own branch. No job of this workflow restores or saves a cache.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      # The version `release.yml` installs: the binary lists the crates it was built from, for
+      # `cargo audit bin`.
+      - name: cargo-auditable
+        env:
+          CARGO_AUDITABLE_VERSION: 0.7.6
+        run: cargo install --locked cargo-auditable --version "$CARGO_AUDITABLE_VERSION"
+      - name: The operator's binary
+        run: cargo auditable build --release --locked --manifest-path operator/Cargo.toml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-cluster-operator-linux-${{ matrix.arch }}
+          path: operator/target/release/purlis-cluster-operator
+          if-no-files-found: error
+          retention-days: 7
+
+  image:
+    name: image (${{ matrix.arch }})
+    needs: [plan, binary]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: ${{ needs.plan.outputs.publish }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      # The build context is this folder and the one file in it, so nothing else of the
+      # checkout can reach the image.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-cluster-operator-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/context
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Sign in to the registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # **No image is pushed into a package that is not private.** The packages API says so
+      # immediately before the push. On the first run there is no package yet: a placeholder
+      # (one small text file, nothing of purlis) is pushed to create it, and the package is
+      # shown private before the image's own bytes go in. Anything else stops the job here.
+      - name: The package is private before anything of purlis is pushed
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/image-registry.mjs ensure-private "$ARCH"
+
+      - name: Build the operator's image, to check it here
+        if: env.PUBLISH != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ runner.temp }}/context
+          file: operator/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          load: true
+          tags: purlis-cluster-operator:candidate
+      # Pushed by digest only: an untagged image nothing names until `index` does, after the
+      # check has passed on the very bytes pushed.
+      - name: Build the operator's image and push it by digest
+        id: push
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ runner.temp }}/context
+          file: operator/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+            org.opencontainers.image.title=purlis cluster operator
+            org.opencontainers.image.description=purlis in your cluster: turns Pools and Claims into runners
+            org.opencontainers.image.licenses=Apache-2.0
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      - name: Pull back what was pushed, to check exactly that
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE@$DIGEST"
+          docker tag "$IMAGE@$DIGEST" purlis-cluster-operator:candidate
+
+      - name: The operator's image is what the cluster runs, and its binary starts
+        run: node tools/operator-image-check.mjs purlis-cluster-operator:candidate "$ARCH"
+
+      - name: Record this architecture's digest
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/digests"
+          echo "$DIGEST" > "$RUNNER_TEMP/digests/$ARCH"
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The multi-architecture image: both digests under one index, tagged, signed and recorded.
+  index:
+    name: index, sign and record
+    needs: [plan, image]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # `id-token` mints the OIDC token cosign signs with, through Sigstore's public-good
+    # instance; nothing else in the workflow can mint one. `contents: read` is for the checkout
+    # of the commit's own tools and manifests, and for comparing two commits of `main`.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      SHA: ${{ needs.plan.outputs.sha }}
+      SIGNER: ${{ github.server_url }}/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      # By name, never by pattern: a pattern takes whatever any job of the run uploaded under
+      # a name that matches.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-amd64
+          path: ${{ runner.temp }}/digests
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-arm64
+          path: ${{ runner.temp }}/digests
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # The package stays private until the operator rules to publish it. Before anything is
+      # tagged or signed, the packages API has to say `private` and the registry has to refuse
+      # both images to a puller who has not signed in. An answer that shows neither stops the
+      # run (`tools/image-registry.mjs` fails closed).
+      - name: The images are private
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state=$(node tools/image-registry.mjs visibility)
+          if [ "$state" != private ]; then
+            echo "::error::the package is $state, not private"
+            exit 1
+          fi
+          node tools/image-registry.mjs anonymous \
+            "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")"
+
+      # `main` only moves forward, as the runner image's does: the image of an older commit can
+      # finish last. It is still tagged `sha-<commit>` and signed; `main` stays on the later one.
+      - name: One index for both architectures, tagged sha-<commit>, and main when it moves forward
+        id: index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          order=$(node tools/image-registry.mjs order "$SHA")
+          echo "$order"
+          tags=(--tag "$IMAGE:sha-$SHA")
+          case "$order" in
+            main:*) tags+=(--tag "$IMAGE:main") ;;
+            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }" ;;
+            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
+          esac
+          docker buildx imagetools create "${tags[@]}" \
+            "$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" \
+            "$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")"
+          digest=$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest}}' | jq -r .digest)
+          platforms=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(" ")')
+          if [ "$platforms" != "linux/amd64 linux/arm64" ]; then
+            echo "::error::the index holds $platforms"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          case "$order" in main:*) echo "main=true" ;; *) echo "main=false" ;; esac >> "$GITHUB_OUTPUT"
+
+      # Keyless: the certificate names this workflow on `main` as the signer, and the
+      # signature goes in Sigstore's public transparency log. `--recursive` signs each
+      # architecture's image as well as the index.
+      - name: Sign by digest
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: cosign sign --yes --recursive "$IMAGE@$DIGEST"
+      - name: The signature verifies as this workflow's on main
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign verify "$IMAGE@$DIGEST" \
+            --certificate-identity "$SIGNER/.github/workflows/operator-image.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /dev/null
+
+      # The digest, and the install manifest that names it: `operator/deploy/operator.yaml` of
+      # this commit with its image set to this index by digest, as docs/cluster-operator.md
+      # installs it.
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+          MAIN: ${{ steps.index.outputs.main }}
+        run: |
+          set -euo pipefail
+          tags="\`sha-$SHA\`"
+          if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
+          mkdir -p "$RUNNER_TEMP/record"
+          echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/operator-image.txt"
+          placeholder="image: $IMAGE:main"
+          if [ "$(grep -cxF "          $placeholder" operator/deploy/operator.yaml)" != 1 ]; then
+            echo "::error::operator/deploy/operator.yaml does not name $IMAGE:main exactly once"
+            exit 1
+          fi
+          sed "s|^          $placeholder\$|          image: $IMAGE@$DIGEST|" operator/deploy/operator.yaml \
+            > "$RUNNER_TEMP/record/operator.yaml"
+          grep -qxF "          image: $IMAGE@$DIGEST" "$RUNNER_TEMP/record/operator.yaml"
+          {
+            echo "### Operator image"
+            echo
+            echo "\`$IMAGE@$DIGEST\`"
+            echo
+            echo "Commit \`$SHA\`, tagged $tags, linux/amd64 and linux/arm64, signed and verified."
+            echo "The run's \`operator-image\` artifact holds \`operator.yaml\` naming it."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: operator-image
+          path: |
+            ${{ runner.temp }}/record/operator-image.txt
+            ${{ runner.temp }}/record/operator.yaml
+          if-no-files-found: error
+          retention-days: 90

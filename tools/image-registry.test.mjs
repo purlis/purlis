@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// What `runner-image.yml` asks the registry and the forge before it pushes, tags or signs the
-// runner image (#2043). Run with `node --test tools/`.
+// What `runner-image.yml` and `operator-image.yml` ask the registry and the forge before they
+// push, tag or sign the runner image (#2043) and the cluster operator's image (#2238). Run with
+// `node --test tools/`.
 //
 // Every answer is given by a stand-in for the forge's API (`api`, which returns what `gh api`
 // printed or throws its error) and for the registry (`get`, which returns a status and a body),
@@ -10,7 +11,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { anonymousPull, mainTag, visibility } from "./runner-image-registry.mjs";
+import { anonymousPull, ensurePrivate, mainTag, packageOf, visibility } from "./image-registry.mjs";
 
 const PACKAGE = { org: "purlis", name: "purlis-runner" };
 
@@ -153,5 +154,115 @@ test("the order check fails closed when it cannot place the commit", () => {
   assert.throws(
     () => mainTag({ ...PACKAGE, repo: "purlis/purlis", sha: SHA, api: api([[versions, new Error("gh api: HTTP 403")]]) }),
     /403/,
+  );
+});
+
+test("the package is the one the workflow's IMAGE names, under the repository's owner", () => {
+  assert.deepEqual(packageOf({ image: "ghcr.io/purlis/purlis-runner", owner: "purlis" }), {
+    org: "purlis",
+    name: "purlis-runner",
+  });
+  assert.deepEqual(packageOf({ image: "ghcr.io/purlis/purlis-cluster-operator", owner: "Purlis" }), {
+    org: "purlis",
+    name: "purlis-cluster-operator",
+  });
+});
+
+test("an IMAGE that is not a package of the repository's owner on ghcr.io is refused", () => {
+  for (const image of [
+    undefined,
+    "",
+    "docker.io/purlis/purlis-runner",
+    "ghcr.io/someone-else/purlis-runner",
+    "ghcr.io/purlis/purlis-runner:main",
+    `ghcr.io/purlis/purlis-runner@sha256:${"a".repeat(64)}`,
+    "ghcr.io/purlis/nested/purlis-runner",
+    "ghcr.io/purlis/",
+    "ghcr.io/purlis/Purlis-Runner",
+  ]) {
+    assert.throws(() => packageOf({ image, owner: "purlis" }), /IMAGE/, String(image));
+  }
+});
+
+const operatorAt = /^orgs\/purlis\/packages\/container\/purlis-cluster-operator$/;
+const OPERATOR = { org: "purlis", name: "purlis-cluster-operator" };
+
+/** A forge whose package answers each visibility question with the next of `answers`. */
+function changing(answers) {
+  const left = [...answers];
+  const asked = { count: 0 };
+  const forgeApi = (args) => {
+    asked.count += 1;
+    const answer = left.length > 1 ? left.shift() : left[0];
+    return api([[operatorAt, answer]])(args);
+  };
+  return { forgeApi, asked };
+}
+
+const notFound = () => new Error("gh api: Package not found. (HTTP 404)");
+
+test("a private package is left as it is, and nothing is pushed into it first", async () => {
+  const { forgeApi } = changing([{ visibility: "private" }]);
+  let pushed = 0;
+  const shown = await ensurePrivate({ ...OPERATOR, api: forgeApi, pushPlaceholder: () => (pushed += 1), wait: async () => {} });
+  assert.equal(shown, "private");
+  assert.equal(pushed, 0);
+});
+
+test("a missing package is made with a placeholder and shown private before purlis goes in", async () => {
+  const { forgeApi } = changing([notFound(), notFound(), { visibility: "private" }]);
+  let pushed = 0;
+  const shown = await ensurePrivate({ ...OPERATOR, api: forgeApi, pushPlaceholder: () => (pushed += 1), wait: async () => {} });
+  assert.equal(shown, "private");
+  assert.equal(pushed, 1);
+});
+
+test("a package that is not shown private, before or after the placeholder, stops the push", async () => {
+  const stops = [
+    [{ visibility: "public" }],
+    [new Error("gh api: HTTP 500")],
+    [notFound(), { visibility: "public" }],
+    [notFound(), { visibility: "internal" }],
+    [notFound(), new Error("gh api: HTTP 403")],
+  ];
+  for (const answers of stops) {
+    const { forgeApi } = changing(answers);
+    await assert.rejects(
+      ensurePrivate({ ...OPERATOR, api: forgeApi, pushPlaceholder: () => {}, wait: async () => {} }),
+      /not private|cannot tell/,
+      String(answers.map((a) => a.message ?? a.visibility)),
+    );
+  }
+});
+
+test("a package still missing after the placeholder stops the push once the tries are spent", async () => {
+  const { forgeApi, asked } = changing([notFound()]);
+  let waited = 0;
+  await assert.rejects(
+    ensurePrivate({
+      ...OPERATOR,
+      api: forgeApi,
+      pushPlaceholder: () => {},
+      wait: async () => (waited += 1),
+      tries: 3,
+    }),
+    /still not there/,
+  );
+  assert.equal(waited, 3);
+  assert.equal(asked.count, 4, "once before the placeholder, then once per try");
+});
+
+test("a placeholder that cannot be pushed stops the push", async () => {
+  const { forgeApi } = changing([notFound()]);
+  await assert.rejects(
+    ensurePrivate({
+      ...OPERATOR,
+      api: forgeApi,
+      pushPlaceholder: () => {
+        throw new Error("docker buildx: denied");
+      },
+      wait: async () => {},
+    }),
+    /denied/,
   );
 });
