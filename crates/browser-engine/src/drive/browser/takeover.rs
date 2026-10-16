@@ -42,7 +42,7 @@ use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
     ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
-    lock,
+    SHIFT, lock,
 };
 
 /// Who holds a browser, and the epoch of their lease.
@@ -527,10 +527,14 @@ fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
     }
 }
 
-/// Whether a key pressed may change what a field holds: one that types, a deletion, or a
-/// chord (a paste, an undo).
+/// Whether a key pressed may change what a field holds: one that types, a deletion, a paste
+/// (Shift+Insert too), or a chord (an undo).
 fn edits(key: &str, modifiers: Modifiers) -> bool {
-    typed(key, modifiers).is_some() || key == "Backspace" || key == "Delete" || commands(modifiers)
+    typed(key, modifiers).is_some()
+        || key == "Backspace"
+        || key == "Delete"
+        || (key == "Insert" && modifiers & SHIFT != 0)
+        || commands(modifiers)
 }
 
 /// The engine's key event for one key of the person's.

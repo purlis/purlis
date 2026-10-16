@@ -31,7 +31,8 @@ the person typed. The amendments above are left as accepted, and this note adds 
    After the key, what the field holds is read from the field itself, and again at a press of the
    mouse and at the hand-back; with each run of characters as the person typed it, it is kept out
    of every later answer about every page of the browser, a page opened later included, whatever
-   became of the field. A page that cannot say which element has the focus, or has one focused
+   became of the field. A text kept out is taken out whole, the longest first, and a screenshot
+   paints over every element whose text shows it, as it does a blanked field. A page that cannot say which element has the focus, or has one focused
    that its tree does not show, has the key held back, and the person is told. A character typed
    with Alt or AltGr (Option on a Mac) types, blanked first like any other. *D-2014-4, to be
    confirmed.*

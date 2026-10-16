@@ -589,3 +589,91 @@ fn input_aimed_at_a_frame_whose_inside_has_since_changed_is_dropped() {
     assert_eq!(late, Err(Refusal::Missed));
     assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
 }
+
+#[test]
+fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let value = "squirrel9x";
+    for (typed, letter) in value.char_indices() {
+        // The field holds what was typed so far, this key included, when it is read after it.
+        super::super::lock(&engine.model).value = value[..typed + letter.len_utf8()].to_owned();
+        browser
+            .person_input(&key(&aim, &letter.to_string(), true))
+            .unwrap();
+    }
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", "Signed in as squirrel9x");
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-1","type":"page","title":"squirrel9x","url":"http://fixture.test/frames.html?q=squirrel9x"}}),
+        None,
+    );
+    std::thread::sleep(Duration::from_millis(30));
+
+    let text = snapshot(&browser, 1);
+    let found = browser
+        .call(
+            &id(2),
+            Call::Find {
+                page: None,
+                text: Some("rrel9x".into()),
+                role: None,
+                within: None,
+            },
+        )
+        .unwrap();
+    let waited = browser
+        .call(
+            &id(3),
+            Call::WaitForText {
+                page: None,
+                text: "rel9".into(),
+                gone: false,
+                within: Duration::from_millis(10),
+            },
+        )
+        .unwrap();
+    let listed = browser.call(&id(4), Call::Pages).unwrap();
+
+    assert!(text.contains("Signed in as (blanked)\""), "{text}");
+    for part in ["rrel", "el9", "l9x", "irre"] {
+        assert!(!text.contains(part), "{part} in\n{text}");
+    }
+    assert!(
+        matches!(&found.content, crate::drive::Content::Text(t) if t.ends_with("Nothing on the page matches.\n")),
+        "{found:?}"
+    );
+    assert_eq!(waited.content, crate::drive::Content::Seen(false));
+    let page = listed.page.unwrap();
+    assert!(!page.address.contains("rel9"), "{page:?}");
+    assert!(!page.title.contains("rel9"), "{page:?}");
+}
+
+#[test]
+fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it() {
+    let (browser, engine) = browser();
+    focus_on(&engine, &[]);
+    browser.take_over();
+    let aim = aim_now(&browser);
+    for letter in ["q", "z", "w", "v"] {
+        browser.person_input(&key(&aim, letter, true)).unwrap();
+    }
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", "Signed in as qzwv");
+    // Where the page draws that line of text.
+    super::super::lock(&engine.model)
+        .quads
+        .insert(31, vec![7.0, 0.0, 9.0, 0.0, 9.0, 1.0, 7.0, 1.0]);
+
+    let shot = browser
+        .call(&id(1), Call::Screenshot { page: None })
+        .unwrap();
+
+    let crate::drive::Content::Image(shot) = shot.content else {
+        panic!("a screenshot is an image")
+    };
+    assert_eq!(super::pixel(&shot, 9, 0), vec![128, 128, 128]);
+    assert_eq!(super::pixel(&shot, 1, 8), vec![255, 255, 255]);
+}

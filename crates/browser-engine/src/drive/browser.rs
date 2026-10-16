@@ -1637,7 +1637,8 @@ impl Browser {
             dropped,
             false,
         );
-        // Where each blanked element is, before and after the picture: both are painted.
+        // Where each blanked element is, and each element that shows a text kept out, before and
+        // after the picture: both are painted.
         let mut boxes = self.blanked_boxes(&target)?;
         let shot = self
             .devtools()
@@ -1669,10 +1670,11 @@ impl Browser {
         Ok(self.answer(&target, settled, opened, Content::Image(painted), None))
     }
 
-    /// The box of every blanked element on `target`'s page, in CSS pixels. An element the engine
-    /// says it cannot place is not drawn; any other failure withholds the screenshot.
+    /// The box of every blanked element on `target`'s page, and of every element that shows a
+    /// text kept out (#2014), in CSS pixels. An element the engine says it cannot place is not
+    /// drawn; any other failure withholds the screenshot.
     fn blanked_boxes(&self, target: &str) -> Result<Vec<Rect>, Refusal> {
-        let keys: Vec<NodeKey> = {
+        let mut keys: Vec<NodeKey> = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             state
@@ -1682,6 +1684,10 @@ impl Browser {
                 .cloned()
                 .collect()
         };
+        let echoes = self
+            .snapshot_of(target)
+            .map_err(|why| Refusal::Withheld(why.to_string()))?;
+        keys.extend(echoes.echoes().iter().cloned());
         let mut boxes = Vec::new();
         for key in keys {
             let at = {
