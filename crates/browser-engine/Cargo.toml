@@ -20,8 +20,8 @@ sha2 = "0.11"
 # The signature over an engine manifest that did not ship inside this build (ADR 0042's tool).
 minisign-verify = "0.2"
 # Chrome for Testing ships as a zip. Only the deflate reader, on the zlib-rs backend flate2
-# already links: the tree gains no crate.
-zip = { version = "4.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# already links. Of what zip 9 needs, only typed-path, its path parser, is new to the tree.
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # The one download: core's own client and features, so the tree gains no crate.
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 # When a manifest was issued, read as RFC 3339.
