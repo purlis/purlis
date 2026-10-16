@@ -7,8 +7,8 @@ system, one Granted list), item 6 of the amendment *a browser's reach is a lane 
 is built as follows. A site new to the project is a public site its chat's reach does not list.
 
 1. **The driver tells every request apart; the reach proxy carries only what was judged.** A
-   chat's browser holds every request of every page, browser-wide, until its judge
-   (`purlis_core::browsers::sites`) has heard what it is: a read (a link the page offered, an
+   chat's browser holds every http and https request of every page, browser-wide, until its
+   judge (`purlis_core::browsers::sites`) has heard what it is: a read (a link the page offered, an
    image, a script, a frame), an address the agent wrote (its open or navigate, and where that
    address redirects while the act lasts), or something sent (a form submitted, by GET or POST,
    or a request with a body). The agent's typing, keys and choices on a page are judged as

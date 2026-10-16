@@ -590,13 +590,17 @@ impl Browser {
             })
             .map_err(|e| Refusal::Engine(e.to_string()))?;
         // Held browser-wide, before any page is known, so no page sends anything unjudged:
-        // every frame's, every worker's.
+        // every frame's, every worker's. Only web addresses go out through the reach proxy,
+        // so only they are held: the engine's own pages and extensions load as they are.
         if inner.judge.is_some() {
             inner
                 .devtools
                 .call(
                     "Fetch.enable",
-                    json!({ "patterns": [{ "urlPattern": "*", "requestStage": "Request" }] }),
+                    json!({ "patterns": [
+                        { "urlPattern": "http://*", "requestStage": "Request" },
+                        { "urlPattern": "https://*", "requestStage": "Request" },
+                    ] }),
                     None,
                 )
                 .map_err(refusal)?;

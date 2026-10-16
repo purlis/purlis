@@ -42,7 +42,9 @@ fn judge() -> (Judge, Told) {
     let told = Arc::new(Mutex::new(Vec::new()));
     let keep = Arc::clone(&told);
     let judge: Judge = Arc::new(move |out: &Outbound| {
-        keep.lock().unwrap().push((out.address.clone(), out.why));
+        keep.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((out.address.clone(), out.why));
         if out.address.starts_with("http://other.test/") && out.why != Why::Reads {
             Gate::Ask {
                 site: "other.test:80".to_owned(),
@@ -86,10 +88,8 @@ fn ref_on(text: &str, words: &str) -> Ref {
 fn open_the_way_out(browser: &Browser, told: &Told) {
     let address = WebAddress::parse("http://fixture.test/leaving.html").unwrap();
     if let Err(why) = browser.call(&next_id(), Call::Open { address }) {
-        panic!(
-            "the page of ways out did not open: {why}; the judge was told {:?}",
-            told.lock().unwrap()
-        );
+        let heard = format!("{:?}", told.lock().unwrap());
+        panic!("the page of ways out did not open: {why}; the judge was told {heard}");
     }
 }
 

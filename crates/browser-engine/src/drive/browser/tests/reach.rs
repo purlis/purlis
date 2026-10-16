@@ -85,7 +85,10 @@ fn a_judged_browser_holds_every_request_of_every_page_until_it_is_judged() {
     assert_eq!(enabled[0].session, None);
     assert_eq!(
         enabled[0].params["patterns"],
-        json!([{ "urlPattern": "*", "requestStage": "Request" }])
+        json!([
+            { "urlPattern": "http://*", "requestStage": "Request" },
+            { "urlPattern": "https://*", "requestStage": "Request" },
+        ])
     );
 }
 
