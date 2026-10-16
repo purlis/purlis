@@ -79,10 +79,11 @@ echo "--- upstream agent-sandbox v1.0.6"
 kubectl --context "$context" apply --server-side -f "$upstream" >/dev/null
 kubectl --context "$context" -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
 
-echo "--- purlis's definitions and the policy on claims, then the operator"
+echo "--- the policy on claims and purlis's definitions, then the operator"
+# The policy first, so no Claim is ever admitted before it holds.
+kubectl --context "$context" apply --server-side -f "$here/deploy/policy.yaml"
 kubectl --context "$context" apply --server-side -f "$here/deploy/crds.yaml"
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
-kubectl --context "$context" apply --server-side -f "$here/deploy/policy.yaml"
 sed "s|image: ghcr.io/purlis/purlis-cluster-operator:main|image: $operator|" "$here/deploy/operator.yaml" |
   kubectl --context "$context" apply --server-side -f -
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s

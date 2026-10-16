@@ -391,7 +391,11 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     match &refused {
         Err(kube::Error::Api(status)) => {
             assert_eq!(status.code, 403, "{status:?}");
-            assert!(status.message.contains("e2e-use"), "{status:?}");
+            // The policy's own words, not an ordinary refusal of the request.
+            assert!(
+                status.message.contains("may not use the pool e2e-use"),
+                "{status:?}"
+            );
         }
         other => panic!("ada's claim was not refused: {other:?}"),
     }

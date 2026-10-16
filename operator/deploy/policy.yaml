@@ -3,7 +3,8 @@
 
 # Who may use a Pool is the cluster's own access control on it: a Claim is admitted only when
 # the person making it may `use` the Pool it names, asked of the cluster's authorizer as that
-# person. Applied with purlis's definitions (crds.yaml), before the operator.
+# person. Applied before purlis's definitions (crds.yaml), so no Claim is admitted before it
+# holds, and before the operator.
 #
 # A cluster admin grants `use` with RBAC, on one pool or on all of them:
 #

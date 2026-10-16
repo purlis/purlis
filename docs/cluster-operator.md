@@ -32,10 +32,11 @@ cluster admin can review and apply them apart from the controllers.
 # 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
 kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
 
-# 2. purlis's definitions, Pool and Claim, and the policy that admits a Claim only for
-#    someone who may use its Pool.
-kubectl apply --server-side -f operator/deploy/crds.yaml
+# 2. The policy that admits a Claim only for someone who may use its Pool, then purlis's
+#    definitions, Pool and Claim. The policy goes first, so no Claim is admitted before it
+#    holds.
 kubectl apply --server-side -f operator/deploy/policy.yaml
+kubectl apply --server-side -f operator/deploy/crds.yaml
 
 # 3. The operator, in the `purlis-system` namespace, with its image set to your build.
 kubectl apply --server-side -f operator/deploy/operator.yaml
