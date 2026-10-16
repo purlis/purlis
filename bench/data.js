@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792132231339,
+  "lastUpdate": 1792133781675,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13524,6 +13524,48 @@ window.BENCHMARK_DATA = {
             "value": 104.864371,
             "unit": "ms",
             "extra": "median of 5 runs: 102.895, 103.399, 104.864, 105.253, 106.374 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "005823ddaa907c0d58a1caa7c44cf4cc44cd95b9",
+          "message": "Runners: the cluster operator, first slice (#2240)\n\n* Runners: the cluster operator, first slice\n\npurlis's cluster operator in operator/, a Rust workspace of its own on kube-rs: a team's Pool\nand a person's Claim (runners.purlis.dev/v1alpha1) become objects of upstream agent-sandbox\nv1.0.6, whose definitions are vendored, and the Claim says whether its runner is ready. Its\nClusterRole holds no exec, attach or Secret right. Rendered install manifests, the operator's\nimage, and a kind end-to-end run on Kubernetes 1.36 in a workflow that runs only when the\noperator or the runner image changes.\n\nRefs #2054\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Cluster operator: a Claim needs use on its Pool; a narrower role\n\nA ValidatingAdmissionPolicy admits a Claim only for someone the cluster lets `use` the Pool it\nnames, applied with the definitions and checked on kind. The operator's role drops `get` on\nclaims and sandboxclaims. Owner references never block their owner's deletion. The workflow\nruns nightly and on toolchain and deny.toml changes. Test helpers shared.\n\nRefs #2054\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Cluster operator: the policy on claims goes in before the definitions\n\nRefs #2054\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T10:54:46+04:00",
+          "tree_id": "5f2bbeda7ac5a210c90e89329eea4ed0f35df0f1",
+          "url": "https://github.com/purlis/purlis/commit/005823ddaa907c0d58a1caa7c44cf4cc44cd95b9"
+        },
+        "date": 1792133780355,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.294565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.279, 0.292, 0.295, 0.299, 0.311 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6324865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.562, 16.582, 16.632, 16.776, 16.785 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.01012349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.046, 101.832, 102.010, 102.238, 102.297 ms"
           }
         ]
       }
