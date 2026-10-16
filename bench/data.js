@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792135084259,
+  "lastUpdate": 1792137327886,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13608,6 +13608,48 @@ window.BENCHMARK_DATA = {
             "value": 103.37080399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.805, 103.210, 103.371, 103.680, 105.173 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bea262434b8b9d1c30fce8fa68bd6c80db78d293",
+          "message": "Flaky: six Rust tests wait on the event they check (#2221) (#2264)\n\n- handoff's needed_you_at_the_hook: the next turn is on the board before\n  its prompt is sent; the hook channel serves connections side by side.\n- browsers::hosted: a close answers once the host forgot the browser and\n  ends it after, so the test waits until every stand-in has stopped.\n- youreditor: the marker is written then renamed, never read half-made.\n- alacritty: the clock is read before the update opens.\n- tool_events: a hook that outwaits the host spools its line; the helper\n  reads the spool beside the socket as well as the live line.\n- browser engine (product): a page an action opened has not settled while\n  it has no address, so the answer names where it went.\n\nCloses #2221\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T11:54:08+04:00",
+          "tree_id": "95a187cceff7821e502982ed08bea6bc08dc77a5",
+          "url": "https://github.com/purlis/purlis/commit/bea262434b8b9d1c30fce8fa68bd6c80db78d293"
+        },
+        "date": 1792137326276,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4669505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.463, 0.466, 0.467, 0.476, 0.479 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.325916499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.222, 16.296, 16.326, 16.406, 16.442 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9908085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.590, 101.703, 101.991, 102.294, 102.444 ms"
           }
         ]
       }
