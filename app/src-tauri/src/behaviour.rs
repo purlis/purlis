@@ -1607,6 +1607,8 @@ mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart
 fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
     const CHATS: usize = 20;
     let target = in_a_host_process();
+    // Before any chat starts: each is told its end as it starts.
+    let ends = told_of_ends(&target);
     // One chat whose turn has ended, as its harness's own hook says.
     let idle = a_chat_on_the_board(
         &target,
@@ -1632,7 +1634,6 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
         Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
         id
     }));
-    let ends = told_of_ends(&target);
     let killed = Instant::now();
 
     (target.kill_the_host.as_ref().expect("a host process"))();
