@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792133781675,
+  "lastUpdate": 1792135084259,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13566,6 +13566,48 @@ window.BENCHMARK_DATA = {
             "value": 102.01012349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.046, 101.832, 102.010, 102.238, 102.297 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df19a0a3036f368d8f05a52da0ea7bc8fb8f93c9",
+          "message": "The event log, end-of-program work and dispatch answers live in the session host (#2219)\n\n* The event log and a program's end are kept in the session host\n\nWith the start-time switch on, the session host is the event log's one\nwriter: it opens the log as it first holds a project, and the window\nopens none. Each write the window decides travels to the host as an\neventlog::Entry over the session protocol's new `record` (1.8,\nlocal-ui only), and is written with the code the window's own path\nruns (Recorder::apply). What the window's hearing would write of a hook\nline the host handed on goes back with the line's reply and is written\nin the host on the thread that heard the line; the host drains every\nspool, so a line its hook spooled after the host took it late is\nrecorded once (closes #2000's D-2000-8).\n\nAs each program ends the host tells its binary how, with its own act\nthat ended it and whether a window held the project; the binary drains\nthe chat's spool, ends its sub-agents' runs in the log, and, with no\nwindow there and a program that ended by itself, ends the dispatch it\nworked as one that went without its report, owed to its asking chat.\n\nThe behaviour suite gains one writer and a dispatched chat on both\ntargets, and a chat ending with the window gone on the host's.\n\nCloses #2003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Event log in the host: compile and clippy fixes\n\ncarry hands an entry back as an Option; the window's own refused-commit\nrecord and its event log go through Events; the host test asks only the\nscopes a host admits.\n\nRefs #2003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Behaviour: the dispatching chat runs in its project, and a start that did not come says what the chat drew\n\nRefs #2003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Event log in the host: review fixes\n\nThe host checks that an entry sent back with a reply belongs to that\nline: its kind, what it said, its chat and its project; anything else is\nnot recorded and the hook spools the line. A trust or audited entry is\nwritten only under a `trust.` kind. Power::Record gains its grants unit\ntest.\n\nThe comment and ADR item on the order of a relayed line's write say what\nholds: the host writes it once the window's hearing returns, before the\nhook is told its line is taken. D-2003-7 is tested through the window's\ndispatch answer on both targets, and the one-writer behaviour checks\nthat no spooled copy waits instead of sleeping. The test modules of\nplanes, handoff, killswitch and dispatchrecord move to files of their\nown, unchanged. A changes/ fragment, one helper for the audited writes,\nand Ended loses the fields nothing read.\n\nRefs #2003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Event log in the host: say why a relayed line is written last, wrap lines\n\nThe comment on a relayed hook line's write says why it is not sent ahead\nas `record`: only the host thread that heard the line tells it from its\nspooled copy (#952, D-2003-4). Three lines over 100 characters are\nwrapped.\n\nRefs #2003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Event log in the host: a tool line and a refused commit keep their own record\n\nThe host's check that an entry sent back with a reply belongs to that\nline is tested for a tool-call line and a refused-commit line too: each\nline's own record is written, and an entry of another call, another chat\nor another kind is not.\n\nRefs #2003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T10:56:42+04:00",
+          "tree_id": "cdc27f3c1b0fd33d855bfb8e10c09c5527a67f9a",
+          "url": "https://github.com/purlis/purlis/commit/df19a0a3036f368d8f05a52da0ea7bc8fb8f93c9"
+        },
+        "date": 1792135083040,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5384709999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.516, 0.520, 0.538, 0.544, 0.544 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.047681,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.357, 16.982, 17.048, 17.137, 17.178 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.37080399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.805, 103.210, 103.371, 103.680, 105.173 ms"
           }
         ]
       }
