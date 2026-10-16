@@ -433,6 +433,7 @@ fn listener_is(socket: &impl AsFd, pid: u32) -> io::Result<bool> {
 }
 
 /// The process a pidfd's `/proc/self/fdinfo` text names: `-1` once it has ended.
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn pidfd_pid(info: &str) -> Option<i64> {
     info.lines()
         .find_map(|line| line.strip_prefix("Pid:"))
@@ -652,6 +653,7 @@ fn resolves_to(name: &str, target: &Path) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     #[test]
     fn a_pidfd_names_its_process_until_it_ends() {
         assert_eq!(
