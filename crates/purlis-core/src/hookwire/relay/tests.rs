@@ -495,14 +495,78 @@ fn the_windows_sending_back(window: &Arc<Window>, entry: Entry) -> Hearing {
     let (_, holding) = a_window();
     let mut hearing = the_windows(window, &holding);
     hearing.each = {
-        let window = Arc::clone(window);
+        let (window, entry) = (Arc::clone(window), entry.clone());
         Box::new(move |report| {
             window.said(format!("report {}", report.chat));
             let _ = carry(entry.clone());
             Ok(())
         })
     };
+    hearing.tool = {
+        let (window, entry) = (Arc::clone(window), entry.clone());
+        Box::new(move |call| {
+            window.said(format!("tool {}", call.chat));
+            let _ = carry(entry.clone());
+            Ok(())
+        })
+    };
+    hearing.refused = {
+        let window = Arc::clone(window);
+        Box::new(move |refused| {
+            window.said(format!("refused {}", refused.chat));
+            let _ = carry(entry.clone());
+            Ok(())
+        })
+    };
     hearing
+}
+
+/// Tool call `id` of chat `chat`.
+fn tool_call(chat: u32, id: &str) -> ToolCall {
+    ToolCall {
+        chat,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some("Bash".to_owned()),
+        call: Some(id.to_owned()),
+        args: None,
+        decision: super::super::Decision::None,
+        rule: None,
+        hook_ms: 1,
+        agent: None,
+        at_ms: 0,
+    }
+}
+
+fn a_tool_entry(call: ToolCall) -> Entry {
+    Entry::Tool {
+        plane: "/planes/one".into(),
+        call,
+    }
+}
+
+fn a_refused_entry(chat: u32) -> Entry {
+    Entry::Refused {
+        plane: "/planes/one".into(),
+        chat,
+    }
+}
+
+fn commit_refused(chat: u32) -> CommitRefused {
+    CommitRefused {
+        chat,
+        commit_refused: "repo: a finding".to_owned(),
+    }
+}
+
+/// What the host made of `line` when the window's hearing sent `entry` back with it: whether
+/// the hook was told it is taken, and what was written.
+fn sent_back_with(line: &dyn Fn(&Hearing) -> io::Result<()>, entry: &Entry) -> (bool, Vec<Entry>) {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let host = relayed_keeping(the_windows_sending_back(&window, entry.clone()), &kept);
+    let taken = line(&host).is_ok();
+    let written = kept.recorded.lock().unwrap().clone();
+    (taken, written)
 }
 
 #[test]
@@ -541,6 +605,44 @@ fn the_host_records_only_an_entry_that_is_the_record_of_the_line_it_was_sent_bac
         assert!(
             kept.recorded.lock().unwrap().is_empty(),
             "{entry:?} is not written"
+        );
+    }
+}
+
+#[test]
+fn the_host_records_of_a_tool_line_or_a_refused_commit_only_that_line_s_own_record() {
+    let tool_line = |host: &Hearing| (host.tool)(tool_call(3, "toolu_01"));
+    let refused_line = |host: &Hearing| (host.refused)(commit_refused(3));
+
+    // Each line's own record is written, and its hook told it is taken.
+    let own = a_tool_entry(tool_call(3, "toolu_01"));
+    assert_eq!(sent_back_with(&tool_line, &own), (true, vec![own]));
+    let own = a_refused_entry(3);
+    assert_eq!(sent_back_with(&refused_line, &own), (true, vec![own]));
+
+    let not_the_tool_line = [
+        a_tool_entry(tool_call(3, "toolu_02")),
+        a_tool_entry(tool_call(4, "toolu_01")),
+        a_report_entry(3),
+        a_refused_entry(3),
+    ];
+    for entry in not_the_tool_line {
+        assert_eq!(
+            sent_back_with(&tool_line, &entry),
+            (false, Vec::new()),
+            "{entry:?}: not written, and its hook spools the line"
+        );
+    }
+    let not_the_refused_line = [
+        a_refused_entry(4),
+        a_report_entry(3),
+        a_tool_entry(tool_call(3, "toolu_01")),
+    ];
+    for entry in not_the_refused_line {
+        assert_eq!(
+            sent_back_with(&refused_line, &entry),
+            (false, Vec::new()),
+            "{entry:?}: not written, and its hook spools the line"
         );
     }
 }
