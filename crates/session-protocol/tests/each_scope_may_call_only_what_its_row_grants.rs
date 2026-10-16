@@ -287,6 +287,32 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
         },
         Command::Quit,
+        // A browser the person takes over, drives and hands back: the window's alone (1.14).
+        Command::TakeOver {
+            program: CHAT.into(),
+        },
+        Command::BrowserInput {
+            program: CHAT.into(),
+            input: purlis_session_protocol::browsing::Input::Key {
+                aim: purlis_session_protocol::browsing::Aim {
+                    page: "p1".into(),
+                    document: 1,
+                },
+                action: purlis_session_protocol::browsing::KeyAction::Down,
+                key: "a".into(),
+                physical: "KeyA".into(),
+                key_code: 65,
+                modifiers: 0,
+            },
+        },
+        Command::SizeBrowser {
+            program: CHAT.into(),
+            width: 390,
+            height: 844,
+        },
+        Command::HandBack {
+            program: CHAT.into(),
+        },
     ]
 }
 
@@ -335,6 +361,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "browse",
             "programs_of",
             "quit",
+            "take_over",
+            "browser_input",
+            "size_browser",
+            "hand_back",
         ],
         Scope::Terminal => &[
             "list",

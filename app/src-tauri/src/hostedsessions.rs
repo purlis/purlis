@@ -330,9 +330,10 @@ fn no_host(why: &str) -> String {
     )
 }
 
-/// Where a browser view's frames go, each a JPEG image, whole (#2012). An empty one says the
-/// view has ended for good.
-pub type FrameSink = Box<dyn FnMut(bytes::Bytes) + Send>;
+/// Where a browser view's frames go, each a JPEG image, whole (#2012), with what it shows where
+/// the frame says so (#2014: the page and document, as `p1:5`). An empty one says the view has
+/// ended for good.
+pub type FrameSink = Box<dyn FnMut(Option<String>, bytes::Bytes) + Send>;
 
 /// What a view's stream is drawn into: a pane's terminal, as text, or a browser view's canvas,
 /// a whole frame at a time.
@@ -812,10 +813,18 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
             break;
         };
         for frame in whole {
-            if frame.format == purlis_session_protocol::view::frames::JPEG
-                && !frame.image.is_empty()
-            {
-                (lock(sink))(frame.image);
+            use purlis_session_protocol::view::frames::{AIMED_JPEG, JPEG};
+            match frame.format {
+                JPEG if !frame.image.is_empty() => (lock(sink))(None, frame.image),
+                // What it shows, as the window echoes it back with the person's input (#2014).
+                AIMED_JPEG => {
+                    if let Some((aim, image)) = frame.aimed()
+                        && !image.is_empty()
+                    {
+                        (lock(sink))(Some(crate::browsers::aim_said(&aim)), image);
+                    }
+                }
+                _ => {}
             }
         }
         if reader.ack(bytes.len()).await.is_err() {
@@ -865,7 +874,7 @@ fn finish_view(shared: &Shared, view: u32) {
     };
     match sink {
         Some(Draws::Text(sink)) => (lock(&sink))(ENDED.to_owned()),
-        Some(Draws::Frames(sink)) => (lock(&sink))(bytes::Bytes::new()),
+        Some(Draws::Frames(sink)) => (lock(&sink))(None, bytes::Bytes::new()),
         None => {}
     }
 }

@@ -27,6 +27,12 @@
 //!   it. Its value appears in no answer.
 //! - **Only web addresses.** Every navigation takes a [`WebAddress`]; a page the engine opens at
 //!   any other address (a link or a redirect a page offered) is closed and never listed.
+//! - **One driver at a time** (#2014). The agent drives through its calls until the person
+//!   takes the browser over ([`Browser::take_over`]); from then every call is refused, a call in
+//!   flight answers that it was interrupted, and only the person's own input
+//!   ([`Browser::person_input`]) reaches the page, each field they type into blanked before
+//!   their keys reach it. The lease never comes back by itself: [`Browser::hand_back`] returns
+//!   it, and every reference dealt before it is void.
 
 mod blank;
 mod browser;
@@ -93,6 +99,99 @@ impl Ref {
 impl fmt::Display for Ref {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// Who drives a browser (#2014): the agent, through its calls, or the person who took it over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Driver {
+    Agent,
+    Person,
+}
+
+/// What a frame showed: its page, and its documents (a number that changes each time the page
+/// or any frame inside it loads another document, or a frame in it goes). Input aimed at a frame
+/// names it, and input whose page has moved on, in any of its frames, is dropped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Aim {
+    pub page: PageId,
+    pub document: u64,
+}
+
+/// One frame of the current page for the person to watch: a JPEG, and what it showed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Painted {
+    pub aim: Aim,
+    pub jpeg: Vec<u8>,
+}
+
+/// What the person's mouse did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseKind {
+    Moved,
+    Pressed,
+    Released,
+    Wheel,
+}
+
+/// The mouse button an event is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    None,
+    Left,
+    Middle,
+    Right,
+}
+
+/// The keys held with an input event, as bits: [`ALT`], [`CONTROL`], [`META`], [`SHIFT`].
+pub type Modifiers = u8;
+
+/// Alt (Option on a Mac) held.
+pub const ALT: Modifiers = 1;
+/// Control held.
+pub const CONTROL: Modifiers = 2;
+/// Meta (Command on a Mac) held.
+pub const META: Modifiers = 4;
+/// Shift held.
+pub const SHIFT: Modifiers = 8;
+
+/// One event of the person's, aimed at what a frame showed (#2014). Points are CSS pixels of
+/// the page's viewport.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PersonInput {
+    Mouse {
+        aim: Aim,
+        kind: MouseKind,
+        x: f64,
+        y: f64,
+        button: MouseButton,
+        /// 1 for a click, 2 for the second of a double click; 0 for a move or the wheel.
+        clicks: u8,
+        modifiers: Modifiers,
+        /// How far the wheel turned, in CSS pixels.
+        delta_x: f64,
+        delta_y: f64,
+    },
+    Key {
+        aim: Aim,
+        /// Pressed (`true`) or let go.
+        down: bool,
+        /// The key as the window names it (`a`, `Enter`, `ArrowLeft`).
+        key: String,
+        /// The physical key (`KeyA`).
+        code: String,
+        /// The platform's key code for it.
+        key_code: u32,
+        modifiers: Modifiers,
+    },
+}
+
+impl PersonInput {
+    /// What the event was aimed at.
+    pub fn aim(&self) -> &Aim {
+        match self {
+            PersonInput::Mouse { aim, .. } | PersonInput::Key { aim, .. } => aim,
+        }
     }
 }
 
@@ -294,6 +393,10 @@ pub enum Refusal {
     #[error("the page cannot tell which field has the focus")]
     FocusUnclear,
     #[error(
+        "the page has something focused that purlis cannot see, so the key was held back: click the field you mean to type into"
+    )]
+    FocusUnseen,
+    #[error(
         "the call acted in part, so the page's state is not known ({done}): {why}. Take a snapshot"
     )]
     Partly {
@@ -338,6 +441,20 @@ pub enum Refusal {
     Unknown,
     #[error("the screenshot is withheld because a blanked field could not be found on it: {0}")]
     Withheld(String),
+    #[error(
+        "the person has taken this browser over, so it takes no call from you: do something else, and use the browser again once they hand it back"
+    )]
+    PersonDriving,
+    #[error(
+        "the person took this browser over while the call ran, so it was interrupted and the page's state is not known: once they hand it back, take a new snapshot"
+    )]
+    Interrupted,
+    #[error("{0} was dealt before the person took this browser over: take a new snapshot")]
+    HandedBack(Ref),
+    #[error("the person is not driving this browser: take it over first")]
+    NotDriving,
+    #[error("the page changed before this input reached it, so it was dropped")]
+    Missed,
 }
 
 /// How long and how much, all configurable (from Settings, by the session host).

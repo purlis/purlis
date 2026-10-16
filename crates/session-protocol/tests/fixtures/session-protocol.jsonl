@@ -101,3 +101,14 @@
 {"call":{"id":52,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
 {"reply":{"re":52,"ok":{"programs":[{"program":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","kind":"harness","number":3,"process":4242,"run":"01J9RUN0000000000000000000","confined":{"confinement":"01J9CNFNMNT0000000000000000","http":51234,"socks":51235,"tmp":"/tmp/purlis-chat-3"},"cols":120,"rows":40},{"program":"01J9ZQ8000000000000000000E","kind":"shell","number":4,"exit":{"code":0},"cols":80,"rows":24}]}}}
 {"reply":{"re":45,"refused":{"code":"too_large","why":"the board kept for project 01J9PRJCT00000000000000000 is 70000 bytes, more than one answer carries (61440)"}}}
+{"call":{"id":71,"command":"take_over","program":"01J9ZQ8000000000000000000D"}}
+{"reply":{"re":71,"ok":{"driving":{"driver":"person"}}}}
+{"call":{"id":72,"command":"browser_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"mouse","aim":{"page":"p1","document":3},"action":"pressed","x":120,"y":215,"button":"left","clicks":1}}}
+{"call":{"id":73,"command":"browser_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"key","aim":{"page":"p1","document":3},"action":"down","key":"A","physical":"KeyA","key_code":65,"modifiers":8}}}
+{"call":{"id":74,"command":"browser_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"mouse","aim":{"page":"p1","document":4},"action":"wheel","x":640,"y":400,"delta_y":120}}}
+{"reply":{"re":73,"refused":{"code":"input_missed","why":"the page changed before this input reached it, so it was dropped"}}}
+{"call":{"id":75,"command":"size_browser","program":"01J9ZQ8000000000000000000D","width":390,"height":844}}
+{"reply":{"re":75,"refused":{"code":"not_driving","why":"the person is not driving this browser: take it over first"}}}
+{"call":{"id":76,"command":"hand_back","program":"01J9ZQ8000000000000000000D"}}
+{"reply":{"re":76,"ok":{"driving":{"driver":"agent"}}}}
+{"reply":{"re":1,"ok":{"chats":[{"chat":"01J9ZQ8000000000000000000D","project":"01J9PRJCT00000000000000000","state":"running","kind":"browser","driver":"person"}]}}}

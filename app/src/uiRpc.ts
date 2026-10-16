@@ -550,6 +550,10 @@ export const commands = {
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
 	closeBrowser: __WINDOW_ONLY_RESULT,
+	takeOverBrowser: __WINDOW_ONLY_RESULT,
+	handBackBrowser: __WINDOW_ONLY_RESULT,
+	browserInput: __WINDOW_ONLY_RESULT,
+	sizeBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
 	/**
@@ -2475,17 +2479,35 @@ export type BriefOf =
 /**  A dispatch by its record's id: what a finished task's row is named by. */
 ({ dispatch: string }) & { chat?: never };
 
+/**
+ *  One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
+ *  page and its document), which the person's input names back, and the JPEG in base64. An
+ *  empty `jpeg` says the view has ended for good.
+ */
+export type BrowserFrame = {
+	aim: string,
+	jpeg: string,
+};
+
+/**
+ *  One event of the person's in a browser they drive (#2014): aimed at what a frame showed
+ *  (its `aim`), at a point in CSS pixels of the page; `modifiers` are bits (Alt 1, Control 2,
+ *  Meta 4, Shift 8).
+ */
+export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";
 
 /**
- *  A browser view the window has open: its number, and the size of the page its frames are
- *  painted at, in CSS pixels.
+ *  A browser view the window has open: its number, the size of the page its frames are
+ *  painted at, in CSS pixels, and whether the person drives the browser (#2014).
  */
 export type BrowserWatching = {
 	view: number,
 	width: number,
 	height: number,
+	person_drives: boolean,
 };
 
 /**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
@@ -4758,6 +4780,12 @@ export type InboxUpdate = {
 };
 
 /**
+ *  What became of one event of the person's (#2014): it reached the page; it was dropped, the
+ *  page having moved on from the frame it was aimed at; or it was refused, in words to show.
+ */
+export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
+
+/**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
  */
@@ -4822,6 +4850,9 @@ export type KeptBlocked = {
 	/**  When, in seconds since 1970. */
 	at: number,
 };
+
+/**  What the person's key did (#2014). */
+export type KeyAct = "down" | "up";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -5201,6 +5232,12 @@ export type Merged = {
 	was: string,
 	now: string,
 };
+
+/**  What the person's mouse did, in a browser they drive (#2014). */
+export type MouseAct = "moved" | "pressed" | "released" | "wheel";
+
+/**  A mouse button (#2014). */
+export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**
  *  The event the window listens for. One chat, its state, whether it is asking for you.

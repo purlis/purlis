@@ -50,8 +50,28 @@ impl Screen for Slow {
         &self,
         _call_id: &str,
         _act: purlis_session_protocol::browsing::Act,
+        _epoch: u64,
     ) -> Result<purlis_session_protocol::browsing::Browsed, NotActed> {
         Err(NotActed::Refused("a stand-in".into()))
+    }
+
+    fn take_over(&self) -> u64 {
+        1
+    }
+
+    fn hand_back(&self) -> u64 {
+        2
+    }
+
+    fn input(
+        &self,
+        _input: &purlis_session_protocol::browsing::Input,
+    ) -> Result<(), super::NotTaken> {
+        Ok(())
+    }
+
+    fn size_to(&self, _width: u16, _height: u16) -> Result<(), super::NotTaken> {
+        Ok(())
     }
 }
 
@@ -60,7 +80,7 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
     let screen = Arc::new(Slow::default());
     let browser = Browser::new(screen.clone());
     let source = browser
-        .view(ViewKind::Browser, Some(ViewRole::Focused), None)
+        .view(ViewKind::Browser, Some(ViewRole::Focused), None, true)
         .expect("a browser view");
     let first = source.attach();
     assert!(screen.showing.load(Ordering::SeqCst));

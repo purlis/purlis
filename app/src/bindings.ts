@@ -1122,13 +1122,24 @@ export const commands = {
 	openBrowser: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("open_browser", { plane })),
 	/**
 	 *  Attaches a browser view of `program` as `role`: each whole frame, a JPEG, is sent on
-	 *  `frames` in base64; an empty one says the view has ended.
+	 *  `frames` in base64 with what it shows (#2014); an empty one says the view has ended.
 	 */
-	watchBrowser: (program: string, role: BrowserViewRole, frames: Channel<string>) => typedError<BrowserWatching, string>(__TAURI_INVOKE("watch_browser", { program, role, frames })),
+	watchBrowser: (program: string, role: BrowserViewRole, frames: Channel<BrowserFrame>) => typedError<BrowserWatching, string>(__TAURI_INVOKE("watch_browser", { program, role, frames })),
 	/**  Closes a browser view the window had open. The browser runs on. */
 	unwatchBrowser: (program: string, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_browser", { program, view })),
 	/**  Ends browser `program`: its engine and everything it started. */
 	closeBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("close_browser", { program })),
+	/**
+	 *  The person takes browser `program` over (#2014): its chat's browser tools are refused in
+	 *  words until [`hand_back_browser`], and a call in flight is cut.
+	 */
+	takeOverBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("take_over_browser", { program })),
+	/**  The person hands browser `program` back to its chat (#2014): Done. */
+	handBackBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("hand_back_browser", { program })),
+	/**  One click, move, wheel or key of the person's in browser `program`, which they drive (#2014). */
+	browserInput: (program: string, input: BrowserInput) => typedError<InputOutcome, string>(__TAURI_INVOKE("browser_input", { program, input })),
+	/**  The person sets browser `program`'s pages to `width` by `height` CSS pixels (#2014). */
+	sizeBrowser: (program: string, width: number, height: number) => typedError<null, string>(__TAURI_INVOKE("size_browser", { program, width, height })),
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
 	/**
@@ -3862,17 +3873,35 @@ export type BriefOf =
 /**  A dispatch by its record's id: what a finished task's row is named by. */
 ({ dispatch: string }) & { chat?: never };
 
+/**
+ *  One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
+ *  page and its document), which the person's input names back, and the JPEG in base64. An
+ *  empty `jpeg` says the view has ended for good.
+ */
+export type BrowserFrame = {
+	aim: string,
+	jpeg: string,
+};
+
+/**
+ *  One event of the person's in a browser they drive (#2014): aimed at what a frame showed
+ *  (its `aim`), at a point in CSS pixels of the page; `modifiers` are bits (Alt 1, Control 2,
+ *  Meta 4, Shift 8).
+ */
+export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";
 
 /**
- *  A browser view the window has open: its number, and the size of the page its frames are
- *  painted at, in CSS pixels.
+ *  A browser view the window has open: its number, the size of the page its frames are
+ *  painted at, in CSS pixels, and whether the person drives the browser (#2014).
  */
 export type BrowserWatching = {
 	view: number,
 	width: number,
 	height: number,
+	person_drives: boolean,
 };
 
 /**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
@@ -6145,6 +6174,12 @@ export type InboxUpdate = {
 };
 
 /**
+ *  What became of one event of the person's (#2014): it reached the page; it was dropped, the
+ *  page having moved on from the frame it was aimed at; or it was refused, in words to show.
+ */
+export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
+
+/**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
  */
@@ -6209,6 +6244,9 @@ export type KeptBlocked = {
 	/**  When, in seconds since 1970. */
 	at: number,
 };
+
+/**  What the person's key did (#2014). */
+export type KeyAct = "down" | "up";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -6588,6 +6626,12 @@ export type Merged = {
 	was: string,
 	now: string,
 };
+
+/**  What the person's mouse did, in a browser they drive (#2014). */
+export type MouseAct = "moved" | "pressed" | "released" | "wheel";
+
+/**  A mouse button (#2014). */
+export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**
  *  The event the window listens for. One chat, its state, whether it is asking for you.

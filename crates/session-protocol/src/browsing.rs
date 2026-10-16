@@ -14,6 +14,12 @@
 //!
 //! **No act runs script.** Every act is one of the driver's own; text an agent writes reaches a
 //! page only as typed text or as a value to match, never as code.
+//!
+//! **One driver at a time** (1.14, #2014). The person takes a browser over from its view
+//! ([`crate::session::Command::TakeOver`]); while they drive, every act is refused and only their
+//! own input reaches the page ([`Input`]), each event naming what the frame it was aimed at showed
+//! ([`Aim`]). Only their hand-back ([`crate::session::Command::HandBack`]) returns the browser to
+//! the agent.
 
 use serde::{Deserialize, Serialize};
 
@@ -229,6 +235,104 @@ pub struct BrowserReach {
     pub withdrawn: Vec<u16>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_web: bool,
+}
+
+/// Who drives a browser (1.14): the agent, through its acts, or the person who took it over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Driver {
+    Agent,
+    Person,
+}
+
+/// What a frame of a browser showed (1.14): its page (`p1`), and its documents, a number that
+/// changes each time the page or any frame inside it loads another document. Input names the
+/// frame it was aimed at by it, and the browser drops input whose page has moved on.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Aim {
+    pub page: String,
+    pub document: u64,
+}
+
+/// What the person's mouse did (1.14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseAction {
+    Moved,
+    Pressed,
+    Released,
+    Wheel,
+}
+
+/// The mouse button a mouse event is about (1.14).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Button {
+    #[default]
+    None,
+    Left,
+    Middle,
+    Right,
+}
+
+/// What the person's key did (1.14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyAction {
+    Down,
+    Up,
+}
+
+/// One event of the person's, in a browser they drive (1.14): a mouse's or a key's, aimed at
+/// what a frame showed. Points are CSS pixels of the page's viewport; `modifiers` are the keys
+/// held, as bits (Alt 1, Control 2, Meta 4, Shift 8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Input {
+    Mouse {
+        aim: Aim,
+        action: MouseAction,
+        x: i32,
+        y: i32,
+        #[serde(default, skip_serializing_if = "is_no_button")]
+        button: Button,
+        /// 1 for a click, 2 for the second of a double click.
+        #[serde(default, skip_serializing_if = "is_zero_u8")]
+        clicks: u8,
+        #[serde(default, skip_serializing_if = "is_zero_u8")]
+        modifiers: u8,
+        /// How far the wheel turned, in CSS pixels.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        delta_x: i32,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        delta_y: i32,
+    },
+    Key {
+        aim: Aim,
+        action: KeyAction,
+        /// The key as the window names it (`a`, `Enter`, `ArrowLeft`).
+        key: String,
+        /// The physical key, as the platform names it (`KeyA`).
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        physical: String,
+        /// The platform's key code for it.
+        #[serde(default, skip_serializing_if = "is_zero_u32")]
+        key_code: u32,
+        #[serde(default, skip_serializing_if = "is_zero_u8")]
+        modifiers: u8,
+    },
+}
+
+fn is_no_button(button: &Button) -> bool {
+    *button == Button::None
+}
+
+fn is_zero_u8(n: &u8) -> bool {
+    *n == 0
+}
+
+fn is_zero_u32(n: &u32) -> bool {
+    *n == 0
 }
 
 mod optional_base64 {

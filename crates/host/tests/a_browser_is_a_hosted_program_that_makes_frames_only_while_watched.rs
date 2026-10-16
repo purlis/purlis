@@ -20,7 +20,7 @@ use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
     self, Client, Events, Exit, ProgramKind, Pushed, StartProgram, Told, ViewKind, ViewRole,
 };
-use purlis_session_protocol::view::frames::{Frames, JPEG};
+use purlis_session_protocol::view::frames::{AIMED_JPEG, Frames};
 use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use tokio::io::duplex;
 use tokio::time::timeout;
@@ -112,8 +112,9 @@ async fn frames_until(reader: &mut Reader, until: Instant) -> Vec<Vec<u8>> {
         };
         reader.ack(bytes.len()).await.unwrap();
         for frame in frames.push(&bytes).unwrap() {
-            assert_eq!(frame.format, JPEG);
-            images.push(frame.image.to_vec());
+            // A 1.14 link's view is sent frames that name what they show (#2014).
+            assert_eq!(frame.format, AIMED_JPEG);
+            images.push(frame.aimed().expect("an aimed frame").1.to_vec());
         }
     }
     images
@@ -275,7 +276,8 @@ async fn a_view_that_falls_behind_is_given_the_next_whole_frame() {
     }
     let whole = frames.push(&snapshot).unwrap();
     assert_eq!(whole.len(), 1, "the snapshot is one frame");
-    assert_eq!(whole[0].image.len(), 200 * 1024, "and it is whole");
+    let (_, image) = whole[0].aimed().expect("an aimed frame");
+    assert_eq!(image.len(), 200 * 1024, "and it is whole");
     assert!(frames.is_between_frames());
     linked.hosting.end_all();
     maker.join().unwrap();

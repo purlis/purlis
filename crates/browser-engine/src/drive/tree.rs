@@ -117,6 +117,8 @@ pub(crate) struct Snapshot {
     blanked_text: Vec<String>,
     /// Every element the engine says has the focus.
     focused: Vec<NodeKey>,
+    /// Every element whose name or value held a text kept out: where the page shows it.
+    echoes: Vec<NodeKey>,
 }
 
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
@@ -128,6 +130,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
             lines: Vec::new(),
             blanked_text: Vec::new(),
             focused: Vec::new(),
+            echoes: Vec::new(),
         };
     };
     let mut builder = Builder {
@@ -163,7 +166,17 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         .chain(scrub.iter().map(String::as_str))
         .collect();
     title = cut(&scrubbed(&title, &all));
+    let mut echoes = Vec::new();
     for line in &mut lines {
+        if let Some(key) = &line.key
+            && (holds_any(&line.name, &all)
+                || line
+                    .value
+                    .as_deref()
+                    .is_some_and(|value| holds_any(value, &all)))
+        {
+            echoes.push(key.clone());
+        }
         line.name = cut(&scrubbed(&line.name, &all));
         if let Some(value) = &mut line.value {
             *value = cut(&scrubbed(value, &all));
@@ -181,6 +194,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         lines,
         blanked_text,
         focused: builder.focused,
+        echoes,
     }
 }
 
@@ -225,16 +239,26 @@ fn decoded_address(address: &str) -> String {
 }
 
 /// `text` with every one of `blanked` (at least [`SHORTEST_SCRUBBED`] characters) taken out,
-/// ignoring case.
+/// ignoring case: the longest first, so a text kept out is taken out whole, never in part by a
+/// shorter one it begins or ends with.
 pub(crate) fn scrubbed(text: &str, blanked: &[&str]) -> String {
+    let mut needles: Vec<&str> = blanked
+        .iter()
+        .copied()
+        .filter(|needle| needle.chars().count() >= SHORTEST_SCRUBBED)
+        .collect();
+    needles.sort_by_key(|needle| std::cmp::Reverse(needle.chars().count()));
     let mut out = text.to_owned();
-    for needle in blanked {
-        if needle.chars().count() < SHORTEST_SCRUBBED {
-            continue;
-        }
+    for needle in needles {
         out = replace_ignoring_case(&out, needle, "(blanked)");
     }
     out
+}
+
+/// Whether `text` holds any of `blanked` (at least [`SHORTEST_SCRUBBED`] characters), ignoring
+/// case.
+fn holds_any(text: &str, blanked: &[&str]) -> bool {
+    scrubbed(text, blanked) != text
 }
 
 fn replace_ignoring_case(text: &str, needle: &str, with: &str) -> String {
@@ -284,6 +308,11 @@ impl Snapshot {
     /// What the blanked elements held (each at least [`SHORTEST_SCRUBBED`] characters).
     pub(crate) fn blanked_text(&self) -> &[String] {
         &self.blanked_text
+    }
+
+    /// Every element whose name or value held a text kept out: where the page shows it.
+    pub(crate) fn echoes(&self) -> &[NodeKey] {
+        &self.echoes
     }
 
     /// Every element the engine says has the focus: one, when it is plain which.

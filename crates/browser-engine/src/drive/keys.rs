@@ -61,6 +61,14 @@ const COMMANDS: &[(&str, &str)] = &[
     ("z", "undo"),
 ];
 
+/// The editing command a chord with Control or Meta on `key` carries (`a`: `selectAll`).
+pub(crate) fn command_of(key: &str) -> Option<&'static str> {
+    COMMANDS
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, command)| *command)
+}
+
 struct Key {
     key: String,
     code: String,

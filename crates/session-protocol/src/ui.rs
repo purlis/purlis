@@ -545,6 +545,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "watch_browser",
     "unwatch_browser",
     "close_browser",
+    // Taking a browser over, driving it and handing it back (#2014): what the person types into
+    // a page is theirs, and only the window, where they see it, sends it.
+    "take_over_browser",
+    "hand_back_browser",
+    "browser_input",
+    "size_browser",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

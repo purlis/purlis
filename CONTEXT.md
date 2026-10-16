@@ -628,9 +628,25 @@ login. Exactly one at a time. While the person drives, the agent's browser tools
 words, and the browser returns to the agent only when the person says so.
 _Avoid_: controller, owner (that is whose the browser is), focus
 
+**Driver lease**:
+The session host's record of a browser's **driver**, with an epoch that changes each time the
+driver does. Every act of the agent's is carried out under the lease it was checked against, so
+one the person's take-over overtook never reaches the page. It stays with the person whatever
+becomes of the window, until they hand it back. Only ever "driver lease": a bare "lease" is a
+**claim**'s word to avoid.
+_Avoid_: lock, token, session
+
 **Take over**:
-The person's act of becoming a browser's driver. **Hand back** ends it.
+The person's act of becoming a browser's driver: a click or a key in its view. **Hand back** ends
+it: Done, or one fixed chord, and nothing else.
 _Avoid_: control, grab, interrupt
+
+**Aim** (of the person's input):
+What a **browser view**'s frame showed the person: the page, and the documents in it, as a number
+that changes each time the page or any frame inside it loads another document. Each click or key
+names the aim of the frame it was aimed at, and the browser drops one whose page has since moved
+on, in any of its frames, rather than let it land on something else.
+_Avoid_: target (that is the engine's word for a page), focus
 
 **Pin** (of a browser):
 A person's act that gives a chat's browser to its workspace: it outlives the chat but not the

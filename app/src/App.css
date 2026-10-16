@@ -8358,7 +8358,8 @@ textarea.ui-field {
 }
 
 /* A browser view (#2012): the browser's frames on a canvas, filling the pane and scaled to fit
-   it whole, centred on the sunken surface a page sits on. */
+   it whole, centred on the sunken surface a page sits on; above it, the bar purlis draws outside
+   the frame, which says who drives (#2014). */
 .view-body:has(> .browser-view) {
   display: flex;
   padding: 0;
@@ -8368,11 +8369,52 @@ textarea.ui-field {
 .browser-view {
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-sunken);
+}
+
+.browser-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.browser-bar[data-driving="person"] {
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-base);
+}
+
+.browser-bar-said {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.browser-bar-refused {
+  color: var(--danger-text);
+}
+
+.browser-surface {
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   min-width: 0;
   min-height: 0;
-  background: var(--surface-sunken);
+  outline: none;
+}
+
+.browser-surface:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
 }
 
 .browser-frame {

@@ -20,6 +20,15 @@
 //! (`purlis_session_protocol::view::frames`). A view that falls behind is dropped and attached
 //! again, as every view is, and its fresh snapshot is the latest frame: it starts on a whole
 //! one. A view between frames is sent only the newest, never a backlog.
+//!
+//! **One driver at a time** (#2014). The host holds each browser's driver lease: the agent's
+//! until the person takes the browser over, then the person's until they hand it back, and
+//! nothing else returns it (not the window's link ending, not a crash of the window). While the
+//! person drives, every act is refused in [`A_BROWSER_THE_PERSON_DRIVES`]'s words and only their
+//! input reaches the browser; an act is carried out under the epoch of the lease it was checked
+//! against, so one the take-over overtook is cut by the engine. A view of a 1.14 link is sent
+//! frames that name what they show (`view::frames::AIMED_JPEG`), which the person's input names
+//! back.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,16 +37,16 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::StreamExt;
-use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
-use purlis_session_protocol::session::{Exit, Readiness, ViewKind, ViewRole};
-use purlis_session_protocol::view::frames::{JPEG, frame};
+use purlis_session_protocol::browsing::{Act, Aim, Browsed, BrowserReach, Driver, Input};
+use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
+use purlis_session_protocol::view::frames::{JPEG, aimed, frame};
 use purlis_session_protocol::view::{Attachment, Source};
 use tokio::sync::watch;
 
 use crate::hosting::Running;
 
-/// Where a browser's engine hands each frame it makes: a JPEG image.
-pub type FrameSink = Arc<dyn Fn(Bytes) + Send + Sync>;
+/// Where a browser's engine hands each frame it makes: what it shows, and a JPEG image of it.
+pub type FrameSink = Arc<dyn Fn(Aim, Bytes) + Send + Sync>;
 
 /// The least time between two frames sent to a thumbnail: about one a second.
 pub const THUMBNAIL_EVERY: Duration = Duration::from_secs(1);
@@ -51,7 +60,7 @@ pub trait Screen: Send + Sync + 'static {
     fn pace(&self, every: Duration);
     /// Stop making frames.
     fn hide(&self);
-    /// The size of its page, in CSS pixels: what a view's frames are drawn at.
+    /// The size of its pages now, in CSS pixels: what a view's frames are drawn at.
     fn size(&self) -> (u16, u16);
     /// The engine's process, while it runs.
     fn process(&self) -> Option<u32>;
@@ -59,10 +68,35 @@ pub trait Screen: Send + Sync + 'static {
     fn stop(&self);
     /// Calls `tell` once, as the engine ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
-    /// Carries out `act` under its own id `call_id` (#2013), and answers what the browser
-    /// answered, or why it did not act. It waits on the engine, so the host calls it off its
-    /// runtime.
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed>;
+    /// Carries out `act` under its own id `call_id` (#2013), as the agent's under the lease of
+    /// `epoch` (#2014), and answers what the browser answered, or why it did not act: refused
+    /// unless the agent holds that lease, and cut if the person takes the browser over before
+    /// it answers. It waits on the engine, so the host calls it off its runtime.
+    fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed>;
+    /// The person takes it over (#2014): an act in flight is cut. Answers the new lease's
+    /// epoch. Returns once no act of the agent's can reach a page.
+    fn take_over(&self) -> u64;
+    /// The person hands it back (#2014): every reference dealt before is void. Answers the new
+    /// lease's epoch.
+    fn hand_back(&self) -> u64;
+    /// One event of the person's, while they drive (#2014). It may read the page first (to
+    /// blank the field a key goes into), so the host calls it off its runtime.
+    fn input(&self, input: &Input) -> Result<(), NotTaken>;
+    /// The person sets its pages' size, in CSS pixels, while they drive (#2014).
+    fn size_to(&self, width: u16, height: u16) -> Result<(), NotTaken>;
+}
+
+/// Why a browser did not take the person's input or size (#2014).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotTaken {
+    /// The person does not drive it. Refused `not_driving`.
+    NotDriving,
+    /// The page no longer shows what the input was aimed at. Refused `input_missed`.
+    Missed,
+    /// The browser has ended. Refused `browser_ended`.
+    Ended,
+    /// The driver refused it, in words that say why.
+    Refused(String),
 }
 
 /// Why a browser did not carry an act out (#2013).
@@ -77,6 +111,15 @@ pub enum NotActed {
 
 /// What an act on a browser that has ended is refused with (#2013).
 pub const AN_ENDED_BROWSER: &str = "the browser has ended: open a new one";
+
+/// What an act is refused with while the person drives the browser (#2014).
+pub const A_BROWSER_THE_PERSON_DRIVES: &str = "the person has taken this browser over, so it takes no call from you: do something else, and use the browser again once they hand it back";
+
+/// What the person's input is refused with before they take the browser over (#2014).
+pub const NOT_DRIVING: &str = "the person is not driving this browser: take it over first";
+
+/// What the person's input is refused with where the page has moved on (#2014).
+pub const INPUT_MISSED: &str = "the page changed before this input reached it, so it was dropped";
 
 /// Starts browsers: the binary's, built on the engine and the core.
 pub trait Browsers: Send + Sync + 'static {
@@ -106,12 +149,24 @@ impl Browsers for NoBrowsers {
     }
 }
 
-/// What a browser view is sent: nothing yet, the latest frame (framed), or the end.
+/// What a browser view is sent: nothing yet, the latest frame (what it shows, and its image),
+/// or the end.
 #[derive(Clone)]
 enum Latest {
     Nothing,
-    Frame(Bytes),
+    Frame(Aim, Bytes),
     Ended,
+}
+
+impl Latest {
+    /// The latest frame, framed as a view that `aims` (1.14) or one before it reads it.
+    fn framed(&self, aims: bool) -> Option<Bytes> {
+        match self {
+            Latest::Frame(aim, image) if aims => Some(aimed(aim, image)),
+            Latest::Frame(_, image) => Some(frame(JPEG, image)),
+            Latest::Nothing | Latest::Ended => None,
+        }
+    }
 }
 
 /// One browser's frames, and the views that want them.
@@ -142,12 +197,12 @@ impl Hub {
         Self::repace(&self.screen, &viewers);
         if viewers.len() == 1 {
             let latest = self.latest.clone();
-            self.screen.show(Arc::new(move |image: Bytes| {
+            self.screen.show(Arc::new(move |aim: Aim, image: Bytes| {
                 latest.send_if_modified(|now| {
                     if matches!(now, Latest::Ended) {
                         return false;
                     }
-                    *now = Latest::Frame(frame(JPEG, &image));
+                    *now = Latest::Frame(aim, image);
                     true
                 });
             }));
@@ -190,20 +245,19 @@ impl Drop for Watching {
 }
 
 /// A browser as one view of it shows it: the latest frame, then each newer one, no more often
-/// than `every`.
+/// than `every`; each naming what it shows when the view `aims` (1.14).
 struct BrowserSource {
     hub: Arc<Hub>,
     every: Duration,
+    aims: bool,
 }
 
 impl Source for BrowserSource {
     fn attach(&self) -> Attachment {
         let watching = self.hub.watched(self.every);
         let mut latest = self.hub.latest.subscribe();
-        let snapshot = match &*latest.borrow_and_update() {
-            Latest::Frame(framed) => framed.clone(),
-            Latest::Nothing | Latest::Ended => Bytes::new(),
-        };
+        let aims = self.aims;
+        let snapshot = latest.borrow_and_update().framed(aims).unwrap_or_default();
         let every = self.every;
         let live = futures::stream::unfold(
             (latest, watching, None::<tokio::time::Instant>),
@@ -215,7 +269,8 @@ impl Source for BrowserSource {
                     }
                     let next = latest.borrow_and_update().clone();
                     match next {
-                        Latest::Frame(framed) => {
+                        Latest::Frame(..) => {
+                            let framed = next.framed(aims).unwrap_or_default();
                             let now = tokio::time::Instant::now();
                             return Some((framed, (latest, watching, Some(now))));
                         }
@@ -247,6 +302,9 @@ pub fn every(role: Option<ViewRole>, rate: Option<u32>) -> Duration {
 /// A browser, as the host runs it beside its terminals.
 pub(crate) struct Browser {
     hub: Arc<Hub>,
+    /// Who drives it, and the epoch of their lease (#2014): the host's, so no link's end
+    /// changes it.
+    lease: Mutex<(Driver, u64)>,
 }
 
 impl Browser {
@@ -259,7 +317,28 @@ impl Browser {
                 viewers: Mutex::new(Vec::new()),
                 next: AtomicU64::new(1),
             }),
+            lease: Mutex::new((Driver::Agent, 0)),
         }
+    }
+
+    fn lease(&self) -> MutexGuard<'_, (Driver, u64)> {
+        self.lease
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// The refusal the person's input or size is answered with.
+fn not_taken(why: NotTaken) -> Refusal {
+    let (code, why) = match why {
+        NotTaken::NotDriving => (session::NOT_DRIVING, NOT_DRIVING.to_owned()),
+        NotTaken::Missed => (session::INPUT_MISSED, INPUT_MISSED.to_owned()),
+        NotTaken::Ended => (session::BROWSER_ENDED, AN_ENDED_BROWSER.to_owned()),
+        NotTaken::Refused(why) => (session::BROWSER_REFUSED, why),
+    };
+    Refusal {
+        code: code.into(),
+        why,
     }
 }
 
@@ -276,6 +355,7 @@ impl Running for Browser {
         Arc::new(BrowserSource {
             hub: Arc::clone(&self.hub),
             every: Duration::ZERO,
+            aims: false,
         })
     }
 
@@ -284,11 +364,13 @@ impl Running for Browser {
         kind: ViewKind,
         role: Option<ViewRole>,
         rate: Option<u32>,
+        aims: bool,
     ) -> Option<Arc<dyn Source>> {
         (kind == ViewKind::Browser).then(|| {
             Arc::new(BrowserSource {
                 hub: Arc::clone(&self.hub),
                 every: every(role, rate),
+                aims,
             }) as Arc<dyn Source>
         })
     }
@@ -298,7 +380,47 @@ impl Running for Browser {
     }
 
     fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
-        self.hub.screen.act(call_id, act)
+        let epoch = match *self.lease() {
+            (Driver::Person, _) => {
+                return Err(NotActed::Refused(A_BROWSER_THE_PERSON_DRIVES.into()));
+            }
+            (Driver::Agent, epoch) => epoch,
+        };
+        self.hub.screen.act(call_id, act, epoch)
+    }
+
+    fn take_over(&self) -> Result<Driver, Refusal> {
+        let mut lease = self.lease();
+        if lease.0 != Driver::Person {
+            *lease = (Driver::Person, self.hub.screen.take_over());
+        }
+        Ok(Driver::Person)
+    }
+
+    fn hand_back(&self) -> Result<Driver, Refusal> {
+        let mut lease = self.lease();
+        if lease.0 != Driver::Agent {
+            *lease = (Driver::Agent, self.hub.screen.hand_back());
+        }
+        Ok(Driver::Agent)
+    }
+
+    fn input(&self, input: &Input) -> Result<(), Refusal> {
+        if self.lease().0 != Driver::Person {
+            return Err(not_taken(NotTaken::NotDriving));
+        }
+        self.hub.screen.input(input).map_err(not_taken)
+    }
+
+    fn size_browser(&self, width: u16, height: u16) -> Result<(), Refusal> {
+        if self.lease().0 != Driver::Person {
+            return Err(not_taken(NotTaken::NotDriving));
+        }
+        self.hub.screen.size_to(width, height).map_err(not_taken)
+    }
+
+    fn driver(&self) -> Option<Driver> {
+        Some(self.lease().0)
     }
 
     fn stop(&self) {

@@ -19,6 +19,12 @@
 //! **Stop all ends every browser** ([`stop_every_browser`]): the kill switch, from the title bar
 //! or `purlis stop --all`, stops each browser the window's host runs, which ends its engine's
 //! whole process group. While stopped, no browser starts.
+//!
+//! **The person takes a browser over from its view** (#2014): [`take_over_browser`], then their
+//! own clicks and keys ([`browser_input`]), each aimed at what the frame they saw showed, and
+//! [`hand_back_browser`] on Done. The lease is the session host's: a view opened again, after
+//! a crash of the window too, says whether the person still drives ([`BrowserWatching`]).
+//! These are the window's alone (`ui::WINDOW_ONLY`): what the person types is theirs.
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -31,13 +37,162 @@ pub enum BrowserViewRole {
     Thumbnail,
 }
 
-/// A browser view the window has open: its number, and the size of the page its frames are
-/// painted at, in CSS pixels.
+/// A browser view the window has open: its number, the size of the page its frames are
+/// painted at, in CSS pixels, and whether the person drives the browser (#2014).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 pub struct BrowserWatching {
     pub view: u32,
     pub width: u16,
     pub height: u16,
+    pub person_drives: bool,
+}
+
+/// One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
+/// page and its document), which the person's input names back, and the JPEG in base64. An
+/// empty `jpeg` says the view has ended for good.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+pub struct BrowserFrame {
+    pub aim: String,
+    pub jpeg: String,
+}
+
+/// What the person's mouse did, in a browser they drive (#2014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseAct {
+    Moved,
+    Pressed,
+    Released,
+    Wheel,
+}
+
+/// A mouse button (#2014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseButton {
+    None,
+    Left,
+    Middle,
+    Right,
+}
+
+/// What the person's key did (#2014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyAct {
+    Down,
+    Up,
+}
+
+/// One event of the person's in a browser they drive (#2014): aimed at what a frame showed
+/// (its `aim`), at a point in CSS pixels of the page; `modifiers` are bits (Alt 1, Control 2,
+/// Meta 4, Shift 8).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowserInput {
+    Mouse {
+        aim: String,
+        action: MouseAct,
+        x: i32,
+        y: i32,
+        button: MouseButton,
+        clicks: u8,
+        modifiers: u8,
+        delta_x: i32,
+        delta_y: i32,
+    },
+    Key {
+        aim: String,
+        action: KeyAct,
+        key: String,
+        physical: String,
+        key_code: u32,
+        modifiers: u8,
+    },
+}
+
+/// What became of one event of the person's (#2014): it reached the page; it was dropped, the
+/// page having moved on from the frame it was aimed at; or it was refused, in words to show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum InputOutcome {
+    Taken,
+    Missed,
+    Refused { why: String },
+}
+
+/// What a frame shows, as the window holds it: `p1:5`, the page and its document.
+pub(crate) fn aim_said(aim: &purlis_session_protocol::browsing::Aim) -> String {
+    format!("{}:{}", aim.page, aim.document)
+}
+
+/// What `said` (as [`aim_said`] wrote it) names, if it reads.
+#[cfg(unix)]
+fn aim_read(said: &str) -> Option<purlis_session_protocol::browsing::Aim> {
+    let (page, document) = said.rsplit_once(':')?;
+    Some(purlis_session_protocol::browsing::Aim {
+        page: page.to_owned(),
+        document: document.parse().ok()?,
+    })
+}
+
+#[cfg(unix)]
+impl BrowserInput {
+    /// The event in the session protocol's words, or `None` where its aim does not read.
+    fn wire(&self) -> Option<purlis_session_protocol::browsing::Input> {
+        use purlis_session_protocol::browsing::{self as wire, Input};
+        Some(match self {
+            BrowserInput::Mouse {
+                aim,
+                action,
+                x,
+                y,
+                button,
+                clicks,
+                modifiers,
+                delta_x,
+                delta_y,
+            } => Input::Mouse {
+                aim: aim_read(aim)?,
+                action: match action {
+                    MouseAct::Moved => wire::MouseAction::Moved,
+                    MouseAct::Pressed => wire::MouseAction::Pressed,
+                    MouseAct::Released => wire::MouseAction::Released,
+                    MouseAct::Wheel => wire::MouseAction::Wheel,
+                },
+                x: *x,
+                y: *y,
+                button: match button {
+                    MouseButton::None => wire::Button::None,
+                    MouseButton::Left => wire::Button::Left,
+                    MouseButton::Middle => wire::Button::Middle,
+                    MouseButton::Right => wire::Button::Right,
+                },
+                clicks: *clicks,
+                modifiers: *modifiers,
+                delta_x: *delta_x,
+                delta_y: *delta_y,
+            },
+            BrowserInput::Key {
+                aim,
+                action,
+                key,
+                physical,
+                key_code,
+                modifiers,
+            } => Input::Key {
+                aim: aim_read(aim)?,
+                action: match action {
+                    KeyAct::Down => wire::KeyAction::Down,
+                    KeyAct::Up => wire::KeyAction::Up,
+                },
+                key: key.clone(),
+                physical: physical.clone(),
+                key_code: *key_code,
+                modifiers: *modifiers,
+            },
+        })
+    }
 }
 
 #[cfg(unix)]
@@ -50,12 +205,12 @@ mod hosted {
     use std::sync::{Arc, Mutex, PoisonError};
     use std::time::Duration;
 
-    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
+    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver};
     use purlis_session_protocol::session::{
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
 
-    use super::{BrowserViewRole, BrowserWatching};
+    use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome};
     use crate::hostedsessions::{Connection, FrameSink, HostLink};
 
     /// How long a browser command waits for the window's link to its host.
@@ -222,11 +377,72 @@ mod hosted {
                 }
             };
             link.draw_frames(attached.view, frames);
+            // The lease is the host's: a view opened again says whether the person still drives.
+            let person_drives = matches!(
+                link.call(Command::List),
+                Ok(Answer::Chats(listed)) if listed.iter().any(|one| {
+                    one.chat == program && one.driver == Some(Driver::Person)
+                })
+            );
             Ok(BrowserWatching {
                 view: attached.view,
                 width: attached.cols,
                 height: attached.rows,
+                person_drives,
             })
+        }
+
+        /// The person takes `program` over (#2014): the chat's acts are refused until they
+        /// hand it back, and one in flight is cut.
+        pub(crate) fn take_over(&self, program: &str) -> Result<(), String> {
+            self.link()?
+                .call(Command::TakeOver {
+                    program: program.to_owned(),
+                })
+                .map(|_| ())
+        }
+
+        /// The person hands `program` back to its chat (#2014).
+        pub(crate) fn hand_back(&self, program: &str) -> Result<(), String> {
+            self.link()?
+                .call(Command::HandBack {
+                    program: program.to_owned(),
+                })
+                .map(|_| ())
+        }
+
+        /// One event of the person's in `program`, which they drive (#2014).
+        pub(crate) fn input(
+            &self,
+            program: &str,
+            input: BrowserInput,
+        ) -> Result<InputOutcome, String> {
+            let Some(input) = input.wire() else {
+                return Ok(InputOutcome::Missed);
+            };
+            let sent = self.link()?.call_refused_within(
+                Command::BrowserInput {
+                    program: program.to_owned(),
+                    input,
+                },
+                LINK_WITHIN,
+            );
+            Ok(match sent {
+                Ok(_) => InputOutcome::Taken,
+                Err(refusal) if refusal.code == session::INPUT_MISSED => InputOutcome::Missed,
+                Err(refusal) => InputOutcome::Refused { why: refusal.why },
+            })
+        }
+
+        /// The person sets `program`'s pages to `width` by `height` CSS pixels (#2014).
+        pub(crate) fn size(&self, program: &str, width: u16, height: u16) -> Result<(), String> {
+            self.link()?
+                .call(Command::SizeBrowser {
+                    program: program.to_owned(),
+                    width,
+                    height,
+                })
+                .map(|_| ())
         }
 
         /// Closes view `view` of `program`: its frames stop with the last view.
@@ -352,14 +568,14 @@ pub async fn open_browser(
 }
 
 /// Attaches a browser view of `program` as `role`: each whole frame, a JPEG, is sent on
-/// `frames` in base64; an empty one says the view has ended.
+/// `frames` in base64 with what it shows (#2014); an empty one says the view has ended.
 #[tauri::command]
 #[specta::specta]
 pub async fn watch_browser(
     app: tauri::AppHandle,
     program: String,
     role: BrowserViewRole,
-    frames: Channel<String>,
+    frames: Channel<BrowserFrame>,
 ) -> Result<BrowserWatching, String> {
     #[cfg(unix)]
     {
@@ -369,9 +585,12 @@ pub async fn watch_browser(
             browsers.watch(
                 &program,
                 role,
-                Box::new(move |image| {
+                Box::new(move |aim, image| {
                     // A window that has gone drops what it cannot take; the browser runs on.
-                    let _ = frames.send(base64::engine::general_purpose::STANDARD.encode(&image));
+                    let _ = frames.send(BrowserFrame {
+                        aim: aim.unwrap_or_default(),
+                        jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
+                    });
                 }),
             )
         })
@@ -404,6 +623,92 @@ pub async fn unwatch_browser(
     {
         let _ = (app, program, view);
         Ok(())
+    }
+}
+
+/// The person takes browser `program` over (#2014): its chat's browser tools are refused in
+/// words until [`hand_back_browser`], and a call in flight is cut.
+#[tauri::command]
+#[specta::specta]
+pub async fn take_over_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        crate::off_the_window("taking a browser over", move || {
+            browsers.take_over(&program)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
+/// The person hands browser `program` back to its chat (#2014): Done.
+#[tauri::command]
+#[specta::specta]
+pub async fn hand_back_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        crate::off_the_window("handing a browser back", move || {
+            browsers.hand_back(&program)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
+/// One click, move, wheel or key of the person's in browser `program`, which they drive (#2014).
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_input(
+    app: tauri::AppHandle,
+    program: String,
+    input: BrowserInput,
+) -> Result<InputOutcome, String> {
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        crate::off_the_window("sending input to a browser", move || {
+            browsers.input(&program, input)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program, input);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
+/// The person sets browser `program`'s pages to `width` by `height` CSS pixels (#2014).
+#[tauri::command]
+#[specta::specta]
+pub async fn size_browser(
+    app: tauri::AppHandle,
+    program: String,
+    width: u16,
+    height: u16,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        crate::off_the_window("sizing a browser", move || {
+            browsers.size(&program, width, height)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program, width, height);
+        Err("browsers run on macOS and Linux only".to_owned())
     }
 }
 

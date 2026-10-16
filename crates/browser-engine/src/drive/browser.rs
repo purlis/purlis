@@ -21,11 +21,15 @@ use super::screencast::Screencast;
 use super::settle::{Activity, Settle, activity};
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
 use super::{
-    Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Ref, Refusal, Settled,
-    lock,
+    Aim, Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Painted, Ref,
+    Refusal, Settled, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
+
+mod takeover;
+
+use takeover::{Lease, Typing};
 
 /// DevTools as the driver needs it: the engine's connection, or a stand-in in tests.
 pub(crate) trait DevTools: Send + Sync {
@@ -80,6 +84,21 @@ pub(crate) const SELECT_OPTIONS: &str = r"function (wanted) {
   return { picked: options.filter((o) => o.selected).map((o) => o.label || o.text) };
 }";
 
+/// The function that reads what a field holds, run on the field itself (#2014): a constant,
+/// whatever the field.
+pub(crate) const READ_VALUE: &str = r"function () {
+  if (typeof this.value === 'string') return this.value;
+  if (this.isContentEditable) return this.innerText;
+  return '';
+}";
+
+/// The script that says what the document has focused (#2014): a tag name, or nothing for the
+/// document itself. A constant.
+pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
+  const at = document.activeElement;
+  return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
+})()";
+
 /// How long the driver gives the engine to say whether a document has loaded.
 const READY_STATE_WITHIN: Duration = Duration::from_secs(2);
 /// How often a wait looks again.
@@ -116,6 +135,9 @@ struct Page {
     /// What blanked elements of this page held, kept out of every answer while the page lasts,
     /// whatever became of the elements.
     scrubbed: Vec<String>,
+    /// What the page shows, as a number that changes each time it or any frame in it loads
+    /// another document, or a frame in it goes (#2014): the document a frame's aim names.
+    shows: u64,
     frames: HashMap<String, Frame>,
 }
 
@@ -175,6 +197,9 @@ struct Refs {
     by_node: HashMap<(NodeKey, u64), Ref>,
     by_ref: HashMap<Ref, (String, NodeKey, u64)>,
     dealt: u64,
+    /// Every reference up to this one was dealt before the person last handed the browser
+    /// back (#2014): void.
+    void_through: u64,
 }
 
 impl Refs {
@@ -199,12 +224,25 @@ impl Refs {
 
     /// Whether `written` names a reference this browser dealt, live or not.
     fn was_dealt(&self, written: &Ref) -> bool {
-        written
-            .as_str()
-            .strip_prefix('e')
-            .and_then(|n| n.parse::<u64>().ok())
-            .is_some_and(|n| n >= 1 && n <= self.dealt)
+        number(written).is_some_and(|n| n >= 1 && n <= self.dealt)
     }
+
+    /// Whether `written` was dealt before the person last handed the browser back.
+    fn was_voided(&self, written: &Ref) -> bool {
+        number(written).is_some_and(|n| n >= 1 && n <= self.void_through)
+    }
+
+    /// Voids every reference dealt so far: the next snapshot deals new ones.
+    fn void(&mut self) {
+        self.by_node.clear();
+        self.by_ref.clear();
+        self.void_through = self.dealt;
+    }
+}
+
+/// The number a reference was dealt as (`e12`: 12).
+fn number(written: &Ref) -> Option<u64> {
+    written.as_str().strip_prefix('e')?.parse().ok()
 }
 
 #[derive(Default)]
@@ -217,6 +255,11 @@ struct State {
     pages_listed: u64,
     generations: u64,
     ended: bool,
+    /// The size the person set its pages to, in CSS pixels (#2014): every page is given it.
+    size: Option<(u16, u16)>,
+    /// What the person typed while driving (#2014): kept out of every answer about every page
+    /// of the browser, a page opened later included.
+    kept: Vec<String>,
 }
 
 impl State {
@@ -233,6 +276,29 @@ impl State {
             Session::Page(target) => Some(target.clone()),
             Session::Frame { page, .. } => Some(page.clone()),
         }
+    }
+
+    /// Keeps `held` out of every later answer about every page, and every page opened later.
+    fn keep_out_everywhere(&mut self, held: &[String]) {
+        for text in held.iter().filter(|text| !text.is_empty()) {
+            if !self.kept.iter().any(|kept| kept.eq_ignore_ascii_case(text)) {
+                self.kept.push(text.clone());
+            }
+        }
+        let kept = self.kept.clone();
+        for page in &mut self.pages {
+            page.keep_out(&kept);
+        }
+    }
+
+    /// What a frame of `target`'s page shows now: the page, and its main frame's document.
+    fn aim(&self, target: &str) -> Option<Aim> {
+        let page = self.page(target)?;
+        page.frames.get(target)?;
+        Some(Aim {
+            page: page.id.clone(),
+            document: page.shows,
+        })
     }
 
     fn info(&self, target: &str) -> Option<PageInfo> {
@@ -290,6 +356,7 @@ impl State {
         entry.name = text("name");
         entry.url = text("url");
         if navigated {
+            page.shows = generation;
             entry.generation = generation;
             if id == target {
                 page.url = text("url");
@@ -301,6 +368,8 @@ impl State {
 
     /// Forgets `frame` and every frame inside it.
     fn frame_gone(&mut self, target: &str, frame: &str) {
+        self.generations += 1;
+        let shows = self.generations;
         let Some(page) = self.page_mut(target) else {
             return;
         };
@@ -319,6 +388,7 @@ impl State {
         for id in &gone {
             page.frames.remove(id);
         }
+        page.shows = shows;
         for id in &gone {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
@@ -371,6 +441,13 @@ pub struct Browser {
     acting: Mutex<()>,
     /// Input events sent to pages, for an answer that says how far an action got.
     inputs: AtomicU64,
+    /// Who drives (#2014), and the lease's epoch: every act the agent's calls send checks it
+    /// under this lock, so none reaches a page once the person has taken it over.
+    lease: Mutex<Lease>,
+    /// The epoch of the lease the call now acting was made under.
+    acting_epoch: AtomicU64,
+    /// What the person typed while driving, kept out of later answers (#2014).
+    typing: Mutex<Typing>,
     /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
     /// call in flight.
     #[cfg(unix)]
@@ -450,6 +527,9 @@ impl Browser {
             ledger: Ledger::new(limits.answers_kept),
             acting: Mutex::new(()),
             inputs: AtomicU64::new(0),
+            lease: Mutex::new(Lease::default()),
+            acting_epoch: AtomicU64::new(0),
+            typing: Mutex::new(Typing::default()),
             #[cfg(unix)]
             engine: Mutex::new(None),
         })
@@ -466,19 +546,28 @@ impl Browser {
     }
 
     /// Answers `call`. A call whose `id` was answered before answers the same again and acts on
-    /// nothing; an `id` given to a different call is refused.
+    /// nothing; an `id` given to a different call is refused. Refused while the person drives
+    /// (#2014).
     pub fn call(&self, id: &CallId, call: Call) -> Result<Answer, Refusal> {
+        self.call_at(self.epoch(), id, call)
+    }
+
+    /// [`Browser::call`], made under the lease of `epoch` (#2014): refused unless the agent
+    /// holds that lease now, and cut, answering [`Refusal::Interrupted`], if the person takes
+    /// the browser over before it answers.
+    pub fn call_at(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
+        self.agent_holds(epoch)?;
         // A call that only reads acts on nothing, so a retry of it reads again; only what acts
         // is kept by id.
         if call.only_reads() {
             let _one = lock(&self.acting);
-            return self.run(call);
+            return self.run_at(epoch, call);
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
                 let answer = {
                     let _one = lock(&self.acting);
-                    self.run(call)
+                    self.run_at(epoch, call)
                 };
                 ticket.finish(answer.clone());
                 answer
@@ -515,7 +604,7 @@ impl Browser {
 
     /// Starts the frames of its current page for the person to watch, each JPEG handed to
     /// `frames` as the engine paints it, until [`Browser::hide`] (#2012). Returns at once.
-    pub fn show(&self, frames: Arc<dyn Fn(Vec<u8>) + Send + Sync>) {
+    pub fn show(&self, frames: Arc<dyn Fn(Painted) + Send + Sync>) {
         self.inner.cast.show(frames);
     }
 
@@ -542,6 +631,11 @@ impl Browser {
     /// `None`), whatever it is: the field the person is typing into, even one that is no form
     /// field and has no reference.
     pub fn blank_focused(&self, page: Option<&PageId>) -> Result<(), Refusal> {
+        self.blank_what_has_focus(page).map(|_| ())
+    }
+
+    /// [`Browser::blank_focused`], answering the element it blanked and its page's target.
+    fn blank_what_has_focus(&self, page: Option<&PageId>) -> Result<(String, NodeKey), Refusal> {
         let target = self.target(page)?;
         let snapshot = self.snapshot_of(&target)?;
         let key = match snapshot.focused() {
@@ -549,7 +643,8 @@ impl Browser {
             [one] => one.clone(),
             _ => return Err(Refusal::FocusUnclear),
         };
-        self.blank_node(&target, key)
+        self.blank_node(&target, key.clone())?;
+        Ok((target, key))
     }
 
     fn blank_node(&self, target: &str, key: NodeKey) -> Result<(), Refusal> {
@@ -684,11 +779,13 @@ impl Browser {
             Call::SwitchPage { page } => {
                 let target = self.target(Some(&page))?;
                 lock(&self.inner.state).current = Some(target.clone());
-                let _ = self.devtools().call(
-                    "Target.activateTarget",
-                    json!({ "targetId": target }),
-                    None,
-                );
+                let _ = self.gated(|| {
+                    self.devtools().call(
+                        "Target.activateTarget",
+                        json!({ "targetId": target }),
+                        None,
+                    )
+                })?;
                 Ok(self.answer_now(&target, Content::Nothing))
             }
             Call::Screenshot { page } => self.screenshot(page.as_ref()),
@@ -724,6 +821,9 @@ impl Browser {
             if state.ended {
                 return Err(Refusal::Ended);
             }
+            if self.cut() {
+                return Err(Refusal::Interrupted);
+            }
             match state.page(target) {
                 None => return Err(Refusal::NoPage),
                 Some(Page {
@@ -747,8 +847,10 @@ impl Browser {
         // The page starts empty and is sent to `address` once it is set up, so every event of
         // its load is seen.
         let created = self
-            .devtools()
-            .call("Target.createTarget", json!({ "url": "about:blank" }), None)
+            .gated(|| {
+                self.devtools()
+                    .call("Target.createTarget", json!({ "url": "about:blank" }), None)
+            })?
             .map_err(refusal)?;
         let target = created
             .get("targetId")
@@ -758,7 +860,11 @@ impl Browser {
         // The engine says it made the page before its event about the page has been read.
         let deadline = Instant::now() + self.inner.limits.settle_within;
         let mut state = lock(&self.inner.state);
-        while state.page(&target).is_none() && !state.ended && Instant::now() < deadline {
+        while state.page(&target).is_none()
+            && !state.ended
+            && !self.cut()
+            && Instant::now() < deadline
+        {
             state = self
                 .inner
                 .changed
@@ -775,12 +881,13 @@ impl Browser {
     /// Sends the page on `session` to `address`; a load that failed is said in the note.
     fn navigate(&self, session: &str, address: &WebAddress) -> Result<Option<String>, Refusal> {
         let went = self
-            .devtools()
-            .call(
-                "Page.navigate",
-                json!({ "url": address.as_str() }),
-                Some(session),
-            )
+            .gated(|| {
+                self.devtools().call(
+                    "Page.navigate",
+                    json!({ "url": address.as_str() }),
+                    Some(session),
+                )
+            })?
             .map_err(refusal)?;
         Ok(went
             .get("errorText")
@@ -935,6 +1042,11 @@ impl Browser {
                 let opened = opened.iter().filter_map(|t| state.info(t)).collect();
                 if state.ended {
                     return (Settled::No(vec!["the browser has ended".into()]), opened);
+                }
+                // The person took the browser over: the call that waits is cut, and answers
+                // so ([`Browser::call_at`]).
+                if self.cut() {
+                    return (Settled::No(Vec::new()), opened);
                 }
                 (waiting, sessions, opened)
             };
@@ -1138,11 +1250,16 @@ impl Browser {
                 .and_then(Value::as_i64)
                 .unwrap_or_default();
             if scroll {
-                let _ = self.devtools().call(
-                    "DOM.scrollIntoViewIfNeeded",
-                    json!({ "backendNodeId": owner }),
-                    Some(parent_session),
-                );
+                let gone_on = self.gated(|| {
+                    self.devtools().call(
+                        "DOM.scrollIntoViewIfNeeded",
+                        json!({ "backendNodeId": owner }),
+                        Some(parent_session),
+                    )
+                });
+                if gone_on.is_err() {
+                    return Err(CallError::TimedOut);
+                }
             }
             let model = self.devtools().call(
                 "DOM.getBoxModel",
@@ -1170,11 +1287,13 @@ impl Browser {
         };
         let (dx, dy) = self.frame_offset(at, scroll).map_err(shown)?;
         if scroll {
-            let _ = self.devtools().call(
-                "DOM.scrollIntoViewIfNeeded",
-                json!({ "backendNodeId": at.backend }),
-                Some(&at.node_session),
-            );
+            let _ = self.gated(|| {
+                self.devtools().call(
+                    "DOM.scrollIntoViewIfNeeded",
+                    json!({ "backendNodeId": at.backend }),
+                    Some(&at.node_session),
+                )
+            })?;
         }
         let quads = self
             .devtools()
@@ -1212,11 +1331,12 @@ impl Browser {
     /// Sends one input event (or text) to the page on `session`, counted for an answer that says
     /// how far an action got.
     fn input(&self, method: &str, event: Value, session: &str) -> Result<(), Refusal> {
-        self.inputs.fetch_add(1, Ordering::SeqCst);
-        self.devtools()
-            .call(method, event, Some(session))
-            .map(|_| ())
-            .map_err(refusal)
+        self.gated(|| {
+            self.inputs.fetch_add(1, Ordering::SeqCst);
+            self.devtools().call(method, event, Some(session))
+        })?
+        .map(|_| ())
+        .map_err(refusal)
     }
 
     fn click(&self, target: &Ref, clicks: i64) -> Result<Answer, Refusal> {
@@ -1275,16 +1395,17 @@ impl Browser {
         session: &str,
     ) -> Result<(), Refusal> {
         if let Some((r, at)) = at {
-            self.devtools()
-                .call(
+            self.gated(|| {
+                self.devtools().call(
                     "DOM.focus",
                     json!({ "backendNodeId": at.backend }),
                     Some(&at.node_session),
                 )
-                .map_err(|why| match why {
-                    CallError::Engine { .. } => Refusal::NotShown(r.clone()),
-                    other => refusal(other),
-                })?;
+            })?
+            .map_err(|why| match why {
+                CallError::Engine { .. } => Refusal::NotShown(r.clone()),
+                other => refusal(other),
+            })?;
         }
         if field.replace {
             let mut keys = key_events("Control+a").expect("a known chord");
@@ -1322,17 +1443,18 @@ impl Browser {
             .to_owned();
         let answer = self.acting_on(&page, || {
             let chose = self
-                .devtools()
-                .call(
-                    "Runtime.callFunctionOn",
-                    json!({
-                        "objectId": object,
-                        "functionDeclaration": SELECT_OPTIONS,
-                        "arguments": [{ "value": options }],
-                        "returnByValue": true,
-                    }),
-                    Some(&at.node_session),
-                )
+                .gated(|| {
+                    self.devtools().call(
+                        "Runtime.callFunctionOn",
+                        json!({
+                            "objectId": object,
+                            "functionDeclaration": SELECT_OPTIONS,
+                            "arguments": [{ "value": options }],
+                            "returnByValue": true,
+                        }),
+                        Some(&at.node_session),
+                    )
+                })?
                 .map_err(refusal)?;
             let said = chose.pointer("/result/value").cloned().unwrap_or_default();
             if said.get("notSelect").is_some() {
@@ -1462,13 +1584,14 @@ impl Browser {
         WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
         let entry = earlier.get("id").cloned().unwrap_or_default();
         self.acting_on(&target, || {
-            self.devtools()
-                .call(
+            self.gated(|| {
+                self.devtools().call(
                     "Page.navigateToHistoryEntry",
                     json!({ "entryId": entry }),
                     Some(&session),
                 )
-                .map_err(refusal)?;
+            })?
+            .map_err(refusal)?;
             Ok(None)
         })
     }
@@ -1490,7 +1613,7 @@ impl Browser {
             if Instant::now() >= deadline {
                 break false;
             }
-            thread::sleep(READ_AGAIN.min(deadline.saturating_duration_since(Instant::now())));
+            self.pause(READ_AGAIN.min(deadline.saturating_duration_since(Instant::now())))?;
         };
         let dropped = self.devtools().dropped_events();
         let (settled, opened) = self.settle(
@@ -1514,7 +1637,8 @@ impl Browser {
             dropped,
             false,
         );
-        // Where each blanked element is, before and after the picture: both are painted.
+        // Where each blanked element is, and each element that shows a text kept out, before and
+        // after the picture: both are painted.
         let mut boxes = self.blanked_boxes(&target)?;
         let shot = self
             .devtools()
@@ -1546,10 +1670,11 @@ impl Browser {
         Ok(self.answer(&target, settled, opened, Content::Image(painted), None))
     }
 
-    /// The box of every blanked element on `target`'s page, in CSS pixels. An element the engine
-    /// says it cannot place is not drawn; any other failure withholds the screenshot.
+    /// The box of every blanked element on `target`'s page, and of every element that shows a
+    /// text kept out (#2014), in CSS pixels. An element the engine says it cannot place is not
+    /// drawn; any other failure withholds the screenshot.
     fn blanked_boxes(&self, target: &str) -> Result<Vec<Rect>, Refusal> {
-        let keys: Vec<NodeKey> = {
+        let mut keys: Vec<NodeKey> = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             state
@@ -1559,6 +1684,10 @@ impl Browser {
                 .cloned()
                 .collect()
         };
+        let echoes = self
+            .snapshot_of(target)
+            .map_err(|why| Refusal::Withheld(why.to_string()))?;
+        keys.extend(echoes.echoes().iter().cloned());
         let mut boxes = Vec::new();
         for key in keys {
             let at = {
@@ -1617,7 +1746,15 @@ impl Inner {
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
         if event.method == "Page.screencastFrame" {
-            self.cast.frame(&event.params, event.session_id.as_deref());
+            let aim = event.session_id.as_deref().and_then(|session| {
+                let state = lock(&self.state);
+                let target = state.page_of_session(session)?;
+                state.aim(&target)
+            });
+            if let Some(aim) = aim {
+                self.cast
+                    .frame(&event.params, event.session_id.as_deref(), aim);
+            }
             return;
         }
         let now = Instant::now();
@@ -1648,6 +1785,7 @@ impl Inner {
                                 by.settle.observe("", Activity::Changed, now);
                             }
                             let id = PageId(format!("p{}", state.pages_listed));
+                            let kept = state.kept.clone();
                             state.pages.push(Page {
                                 id,
                                 target: target.clone(),
@@ -1655,7 +1793,8 @@ impl Inner {
                                 url: url.clone(),
                                 title: String::new(),
                                 settle: Settle::new(now),
-                                scrubbed: Vec::new(),
+                                scrubbed: kept,
+                                shows: 0,
                                 frames: HashMap::new(),
                             });
                         }
@@ -1799,6 +1938,18 @@ impl Inner {
             FollowUp::SetUp(session) => {
                 let on = Some(session.as_str());
                 let _ = devtools.call("Page.enable", json!({}), on);
+                let size = {
+                    let state = lock(&self.state);
+                    let is_page = matches!(state.sessions.get(&session), Some(Session::Page(_)));
+                    state.size.filter(|_| is_page)
+                };
+                if let Some((width, height)) = size {
+                    let _ = devtools.call(
+                        "Emulation.setDeviceMetricsOverride",
+                        takeover::metrics(width, height),
+                        on,
+                    );
+                }
                 let _ = devtools.call("Network.enable", json!({}), on);
                 let _ = devtools.call(
                     "Target.setAutoAttach",
@@ -1834,7 +1985,9 @@ impl Inner {
 /// The live element `written` names: its page and node.
 fn live_ref(state: &State, written: &Ref) -> Result<(String, NodeKey), Refusal> {
     let Some((page, key, generation)) = state.refs.by_ref.get(written) else {
-        return Err(if state.refs.was_dealt(written) {
+        return Err(if state.refs.was_voided(written) {
+            Refusal::HandedBack(written.clone())
+        } else if state.refs.was_dealt(written) {
             stale(written)
         } else {
             Refusal::NoSuchRef(written.clone())

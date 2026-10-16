@@ -38,6 +38,7 @@
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
 //! | `programs_of` (1.13) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
+//! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -95,6 +96,9 @@
 //!   person what a chat's browser may reach, starts it with that reach, and hands on each of
 //!   the chat's acts with `browse`. No other scope sends an act, `remote-link` included: a
 //!   relayed hold does not carry a chat's browser.
+//! - **A browser is taken over, driven and handed back in the window alone** (1.14, #2014). What
+//!   the person types into a page is theirs, and only the window, where they see the page, sends
+//!   it. No other scope takes a browser over or hands it back, `remote-link` included.
 //! - **Saving a held project is the window's alone** (1.7): the project's commits and pushes
 //!   are the person's, and only the link that may save a project hears how saving it goes: what
 //!   each look did and the host's question of who is mid-turn go only to the window's links that
@@ -168,7 +172,8 @@ pub enum Power {
     /// `rearm` (1.5): lets programs start again after the kill switch.
     Rearm,
     /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
-    /// person, and what it shows; and `browse` (1.11), an act of a chat's browser, which the
+    /// person, and what it shows; `take_over`, `hand_back`, `browser_input` and `size_browser`
+    /// (1.14), the person driving it; and `browse` (1.11), an act of a chat's browser, which the
     /// window hands on once it has decided the chat may have one.
     Browser,
     /// `record` (1.8): a write in the event log the host holds.

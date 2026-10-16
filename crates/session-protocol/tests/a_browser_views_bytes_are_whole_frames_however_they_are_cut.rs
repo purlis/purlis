@@ -5,7 +5,10 @@
 //! reader handed the stream in pieces of any size tells where one frame ends and the next
 //! begins, and a frame larger than the bound is refused rather than held.
 
-use purlis_session_protocol::view::frames::{self, Frame, Frames, JPEG, MOST_FRAME_BYTES};
+use purlis_session_protocol::browsing::Aim;
+use purlis_session_protocol::view::frames::{
+    self, AIMED_JPEG, Frame, Frames, JPEG, MOST_FRAME_BYTES,
+};
 
 fn jpeg(byte: u8, len: usize) -> Vec<u8> {
     vec![byte; len]
@@ -67,4 +70,39 @@ fn an_empty_snapshot_is_no_frame_yet() {
     let mut reader = Frames::default();
     assert!(reader.push(&[]).unwrap().is_empty());
     assert!(reader.is_between_frames());
+}
+
+#[test]
+fn an_aimed_frame_names_the_page_and_document_it_shows_before_its_image() {
+    let aim = Aim {
+        page: "p2".into(),
+        document: 7,
+    };
+    let framed = frames::aimed(&aim, &[0xff, 0xd8]);
+    assert_eq!(
+        &framed[..],
+        &[
+            0, 0, 0, 14,   // the length
+            0x02, // the format: an aimed JPEG
+            2, b'p', b'2', // the page, its length first
+            0, 0, 0, 0, 0, 0, 0, 7, // the document
+            0xff, 0xd8, // the image
+        ]
+    );
+    let mut reader = Frames::default();
+    let read = reader.push(&framed).unwrap();
+    assert_eq!(read[0].format, AIMED_JPEG);
+    let (said, image) = read[0].aimed().expect("an aimed frame reads back");
+    assert_eq!(said, aim);
+    assert_eq!(&image[..], &[0xff, 0xd8]);
+}
+
+#[test]
+fn a_plain_or_cut_short_frame_names_no_aim() {
+    let plain = &Frames::default().push(&frames::frame(JPEG, b"x")).unwrap()[0];
+    assert_eq!(plain.aimed(), None);
+    let short = &Frames::default()
+        .push(&frames::frame(AIMED_JPEG, &[9, b'p']))
+        .unwrap()[0];
+    assert_eq!(short.aimed(), None);
 }

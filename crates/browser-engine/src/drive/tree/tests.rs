@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use super::{FrameAx, NodeKey, Query, View, build, scrubbed_address};
+use super::{FrameAx, NodeKey, Query, View, build, scrubbed, scrubbed_address};
 
 /// `Accessibility.getFullAXTree` as the engine answered it for the fixture site's frames page.
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
@@ -424,4 +424,13 @@ fn blanked_text_is_found_in_an_address_however_the_address_encodes_it() {
         scrubbed_address("http://fixture.test/a%20b?c=d+e", &["zzz"]),
         "http://fixture.test/a%20b?c=d+e"
     );
+}
+
+#[test]
+fn a_kept_text_and_its_beginnings_are_taken_out_whole_whatever_order_they_were_kept_in() {
+    let kept = ["squ", "squi", "squir", "squirre", "squirrel9"];
+
+    let said = scrubbed("Signed in as SQUIRREL9 today", &kept);
+
+    assert_eq!(said, "Signed in as (blanked) today");
 }

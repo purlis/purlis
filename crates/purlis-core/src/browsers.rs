@@ -33,6 +33,9 @@
 //!   ([`browsed`]), a screenshot made to fit the control lane ([`MOST_SCREENSHOT_BYTES`]).
 //! - **Its data folder** is the one the host gives it, under `<data>/browsers`, fresh: the host
 //!   removes it once the browser has ended.
+//! - **Its driver** (#2014): the host's lease is the driver's own ([`drive::Browser::take_over`]),
+//!   each act made under the epoch the host checked; the person's input becomes the driver's own
+//!   event ([`input_of`]), and each frame names what it shows ([`aim_of`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once, PoisonError};
@@ -49,7 +52,7 @@ use purlis_browser_engine::process::{Engine, Keeper};
 use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
-use purlis_host::{Browsers, FrameSink, NotActed, Screen};
+use purlis_host::{Browsers, FrameSink, NotActed, NotTaken, Screen};
 
 use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
 use crate::sandbox::reach::{Reach, Written};
@@ -488,6 +491,80 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
     out
 }
 
+/// **The person's input as the driver's own event** (#2014), aimed where they aimed it.
+pub fn input_of(input: &wire::Input) -> drive::PersonInput {
+    let aim_at = |aim: &wire::Aim| drive::Aim {
+        page: PageId::new(aim.page.clone()),
+        document: aim.document,
+    };
+    match input {
+        wire::Input::Mouse {
+            aim,
+            action,
+            x,
+            y,
+            button,
+            clicks,
+            modifiers,
+            delta_x,
+            delta_y,
+        } => drive::PersonInput::Mouse {
+            aim: aim_at(aim),
+            kind: match action {
+                wire::MouseAction::Moved => drive::MouseKind::Moved,
+                wire::MouseAction::Pressed => drive::MouseKind::Pressed,
+                wire::MouseAction::Released => drive::MouseKind::Released,
+                wire::MouseAction::Wheel => drive::MouseKind::Wheel,
+            },
+            x: f64::from(*x),
+            y: f64::from(*y),
+            button: match button {
+                wire::Button::None => drive::MouseButton::None,
+                wire::Button::Left => drive::MouseButton::Left,
+                wire::Button::Middle => drive::MouseButton::Middle,
+                wire::Button::Right => drive::MouseButton::Right,
+            },
+            clicks: *clicks,
+            modifiers: *modifiers,
+            delta_x: f64::from(*delta_x),
+            delta_y: f64::from(*delta_y),
+        },
+        wire::Input::Key {
+            aim,
+            action,
+            key,
+            physical,
+            key_code,
+            modifiers,
+        } => drive::PersonInput::Key {
+            aim: aim_at(aim),
+            down: *action == wire::KeyAction::Down,
+            key: key.clone(),
+            code: physical.clone(),
+            key_code: *key_code,
+            modifiers: *modifiers,
+        },
+    }
+}
+
+/// **What a frame shows, in the protocol's words** (#2014).
+pub fn aim_of(aim: &drive::Aim) -> wire::Aim {
+    wire::Aim {
+        page: aim.page.as_str().to_owned(),
+        document: aim.document,
+    }
+}
+
+/// Why the driver did not take the person's input, as the host says it.
+fn not_taken(refusal: drive::Refusal) -> NotTaken {
+    match refusal {
+        drive::Refusal::NotDriving => NotTaken::NotDriving,
+        drive::Refusal::Missed => NotTaken::Missed,
+        drive::Refusal::Ended => NotTaken::Ended,
+        other => NotTaken::Refused(other.to_string()),
+    }
+}
+
 /// A running browser and its reach proxy, which lives exactly as long as it.
 struct Held {
     browser: Arc<Browser>,
@@ -512,7 +589,11 @@ impl EngineScreen {
 
 impl Screen for EngineScreen {
     fn show(&self, frames: FrameSink) {
-        self.with(|browser| browser.show(Arc::new(move |image| frames(Bytes::from(image)))));
+        self.with(|browser| {
+            browser.show(Arc::new(move |painted: drive::Painted| {
+                frames(aim_of(&painted.aim), Bytes::from(painted.jpeg));
+            }));
+        });
     }
 
     fn pace(&self, every: Duration) {
@@ -524,7 +605,9 @@ impl Screen for EngineScreen {
     }
 
     fn size(&self) -> (u16, u16) {
-        PAGE_SIZE
+        self.with(|browser| browser.size())
+            .flatten()
+            .unwrap_or(PAGE_SIZE)
     }
 
     fn process(&self) -> Option<u32> {
@@ -543,7 +626,7 @@ impl Screen for EngineScreen {
         }
     }
 
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
+    fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed> {
         let id = CallId::new(call_id).map_err(|why| NotActed::Refused(why.to_string()))?;
         let call = call_of(act).map_err(NotActed::Refused)?;
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
@@ -551,13 +634,35 @@ impl Screen for EngineScreen {
         let browser = self.with(Arc::clone);
         browser
             .map_or(Err(drive::Refusal::Ended), |browser| {
-                browser.call(&id, call)
+                browser.call_at(epoch, &id, call)
             })
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
             .map_err(|refusal| match refusal {
                 drive::Refusal::Ended => NotActed::Ended,
                 other => NotActed::Refused(other.to_string()),
             })
+    }
+
+    fn take_over(&self) -> u64 {
+        // Outside the lock, as an act is: it returns once no act of the agent's can reach a
+        // page.
+        self.with(Arc::clone)
+            .map_or(0, |browser| browser.take_over())
+    }
+
+    fn hand_back(&self) -> u64 {
+        self.with(Arc::clone)
+            .map_or(0, |browser| browser.hand_back())
+    }
+
+    fn input(&self, input: &wire::Input) -> Result<(), NotTaken> {
+        let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
+        browser.person_input(&input_of(input)).map_err(not_taken)
+    }
+
+    fn size_to(&self, width: u16, height: u16) -> Result<(), NotTaken> {
+        let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
+        browser.size_to(width, height).map_err(not_taken)
     }
 
     /// Told once the engine has ended, however it ended; at once when it was stopped already.
