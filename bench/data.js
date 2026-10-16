@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792153049965,
+  "lastUpdate": 1792154241455,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14112,6 +14112,48 @@ window.BENCHMARK_DATA = {
             "value": 101.736028,
             "unit": "ms",
             "extra": "median of 5 runs: 101.412, 101.444, 101.736, 101.773, 102.990 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e3c4727730121f1eb15c4713bd47736cfffcbb44",
+          "message": "Session host: two clones of one project in one window both start chats (#2230)\n\n* Session host: hold each clone of a project at its own place\n\nThe host holds a project at a place: its stable id at a folder. A link\nholds each project at one place, a second link may hold the same project\nat another (a second clone), and no hold moves where another link holds\nit. Every command naming a project means the place its link holds it at,\nor the one place it is held for a link that holds it nowhere; a project\nheld at two places, neither the link's, is refused. Numbers are dealt per\nplace, as each clone's own record keeps them, and each place has its own\nhook channel whose lines reach only the links that hold it there.\n\nRefs #2178\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Window: hold each project root on a link of its own to the host\n\nThe window's connection to its session host opens one more local-ui\nlink for each project root the first time that root's chats or browsers\nneed the host, and holds the root on it. Two clones of one project in\none window are then held apart by the host, and both start chats. The\nwindow's first link keeps the kill switch. App tests share one\nin-memory connection helper that opens links the same way.\n\nADR 0068 gains a dated amendment recording D-2178-1 and D-2178-2.\n\nCloses #2178\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* ADR 0068: a project is saved per place\n\nRecords D-2178-5: each clone of a project held in the session host has\nits own saver, and what each look did is pushed only to the links that\nhold the project at that place.\n\nRefs #2178\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Session host: one folder is one place however its path is spelled\n\nA hold names its place by the folder's canonical path. While any place\nholds a project, saving commands from a link that holds it nowhere are\nanswered as every other project command is; the one saver still running\nis used only once nobody holds the project any more. One lookup gives\nthe place a link holds. Place joins CONTEXT.md.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Window: open each root's link outside the shared map, close a link opened late\n\nConnection::of_project opens a root's link with only that root's turn\nheld, so a call that cannot wait is answered at once whatever link is\nbeing opened. A HostLink nobody holds any more is closed, so a link that\nopens after its wait ended does not stay open. The dial-with-a-wait is\none helper (open_within), and the in-memory connection the tests share\nlives in hostedsessions' tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Behaviour: the window lets go of a project on its root's own link\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T16:23:16+04:00",
+          "tree_id": "361a8588fdf26c7d21784b83001e08842387692b",
+          "url": "https://github.com/purlis/purlis/commit/e3c4727730121f1eb15c4713bd47736cfffcbb44"
+        },
+        "date": 1792154239767,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.28691900000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.281, 0.286, 0.287, 0.294, 0.295 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.598249,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.504, 16.515, 16.598, 16.648, 16.657 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.059393,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.942, 101.313, 102.059, 102.111, 102.124 ms"
           }
         ]
       }
