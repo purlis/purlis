@@ -8094,7 +8094,7 @@ h2.sidebar-title .node-icon {
 }
 
 .ui-setting-label {
-  font-weight: var(--font-weight-regular);
+  font-weight: var(--font-weight-medium);
   overflow-wrap: anywhere;
 }
 
@@ -8363,7 +8363,7 @@ textarea.ui-field {
 }
 
 .ui-choice-option label {
-  font-weight: var(--font-weight-regular);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 

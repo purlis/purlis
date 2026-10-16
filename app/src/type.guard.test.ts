@@ -23,7 +23,7 @@ import { TYPE_ALLOWANCE } from "./type.guard.allowance";
  * | Property      | May be                                                        |
  * | ------------- | ------------------------------------------------------------- |
  * | `font-size`   | `var(--font-size-*)`, one of the core's six                    |
- * | `font-weight` | `var(--font-weight-regular)` or `var(--font-weight-strong)`    |
+ * | `font-weight` | `var(--font-weight-*)`, one of the core's three                 |
  * | `line-height` | `var(--line-height-tight)` or `var(--line-height-body)`        |
  * | `font-family` | `var(--font-mono)`                                             |
  * | `color`       | `var(--<a theme's colour token>)`, or `currentColor`           |

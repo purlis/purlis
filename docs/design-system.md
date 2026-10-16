@@ -694,6 +694,7 @@ rings stay in px. The px below are at the default 14px text.
 | `--font-size-lg`        | 16px                                       | the title role; nothing drew it before the [text roles](#text-roles)     |
 | `--font-size-xl`        | 20px                                       | on the scale; nothing draws it and no role reads it (#1920 rules on it)  |
 | `--font-weight-regular` | 400                                        | the weight of the window's words                                         |
+| `--font-weight-medium`  | 500                                        | a form's label: a setting's name, a choice's name                        |
 | `--font-weight-strong`  | 600                                        | the one strong weight: a title, a heading, a label, a row's strong line  |
 | `--line-height-tight`   | 1.2                                        | a compact line: a count, a chip. A share of the text's size, so no unit  |
 | `--line-height-body`    | 1.4                                        | the window's own line (`:root`)                                          |
@@ -843,7 +844,7 @@ view wears one.
    `0.65rem` become it.
 4. **One colour for a word that says something is wrong:** `danger.text`. `state.failed` is a
    state's mark, not a word's colour.
-5. **Two weights.** Regular and strong, and no third.
+5. **Three weights.** Regular 400, medium 500 and strong 600, and no fourth.
 6. **A role sets no line height.** A word keeps the line of what it sits in:
    `--line-height-body` is the window's, `--line-height-tight` a compact line's.
 
@@ -870,11 +871,12 @@ window differ, the window was kept and the difference is recorded here for the m
   steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
   role.
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
-- **Counts and matches were weight 700** (five rules) and Settings' form labels 500 (two): no
-  token names either. The geometry snap rule (#2313, 2026-10-17) takes a weight with no token to
-  the nearest one, so the counts on the strips, the rail and the title bar's hand are
-  `--font-weight-strong` now (#2315), and Settings' two form labels, halfway between, take the
-  smaller, `--font-weight-regular` (#2317); the rest move with their surfaces.
+- **Counts and matches were weight 700** (five rules), which no token names. The geometry snap
+  rule (#2313, 2026-10-17) takes a weight with no token to the nearest one, so the counts on the
+  strips, the rail and the title bar's hand are `--font-weight-strong` now (#2315); the rest move
+  with their surfaces. **Settings' form labels were 500** (two rules): the type scale has three
+  weights, regular 400, medium 500 and strong 600, since the foundation draws 500 throughout, and
+  those labels are `--font-weight-medium` (#2317).
 - **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
   It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
 - **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's
