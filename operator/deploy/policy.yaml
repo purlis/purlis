@@ -22,6 +22,8 @@
 # the cluster refuses a Claim from someone who may not use its pool.
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 # Kept when the release is uninstalled, as Helm keeps the definitions in crds/: a Claim is never
 # admitted without it.
 apiVersion: admissionregistration.k8s.io/v1

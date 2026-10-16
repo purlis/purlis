@@ -1,7 +1,6 @@
-{{- /*
-Copyright 2026 Purlis
-SPDX-License-Identifier: Apache-2.0
-
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+{{/*
 What the operator may do: this ClusterRole and nothing else. No value of the chart reaches it.
 */ -}}
 apiVersion: rbac.authorization.k8s.io/v1
