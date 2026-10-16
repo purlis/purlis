@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792192296634,
+  "lastUpdate": 1792193521075,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14742,6 +14742,48 @@ window.BENCHMARK_DATA = {
             "value": 104.83598549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 104.630, 104.825, 104.836, 105.329, 105.559 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "efb159a0f41c4591ea0dc1a0f5795488cc2f254c",
+          "message": "Runners: doctor checks a cluster before the operator is installed (#2354)\n\n* Runners: doctor checks a cluster before the operator is installed (#2236)\n\n`purlis-cluster-operator doctor` says what a cluster lacks for the operator, one line per\nfinding with the next step, and exits 1 when anything is missing: Kubernetes 1.36 or later,\nupstream agent-sandbox v1.0.6 (definitions and controller), and the right to apply the\ninstall's cluster-scoped objects. It only reads, plus SelfSubjectAccessReview.\n\nThe checks run against a Cluster seam: tests describe clusters, an in-process API server\nchecks the kube adapter asks only reads, and the kind run checks doctor before and after\nthe pinned upstream and as a read-only identity.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: doctor asks escalate and bind on cluster roles, review fixes (#2236)\n\n- Ask SelfSubjectAccessReview for escalate and bind on clusterroles too: without them the\n  install's cluster roles are refused unless the admin already holds every right they grant.\n- Name the cluster asked first; a refused access review says \"may not ask whether you may\";\n  a controller with no ready replica is a finding; no empty image name in a finding.\n- One apply command, one \"installed in part\" finding, Finding::new and Report::holds.\n- The manifests test reads every deploy/*.yaml; a definition that has v1beta1 but does not\n  serve it is tested through the kube adapter.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T03:27:47+04:00",
+          "tree_id": "9200f78a482dba3b774d8b8f78d0c4d0ab75908d",
+          "url": "https://github.com/purlis/purlis/commit/efb159a0f41c4591ea0dc1a0f5795488cc2f254c"
+        },
+        "date": 1792193520129,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6041825000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.591, 0.602, 0.604, 0.609, 0.615 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.0080755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.926, 15.997, 16.008, 16.011, 16.510 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2542675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.269, 100.991, 102.254, 102.297, 102.730 ms"
           }
         ]
       }
