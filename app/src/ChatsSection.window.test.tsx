@@ -699,7 +699,9 @@ describe("a task chat", () => {
     arrive(open[2]);
     await waitFor(() => expect(tabNames()).toEqual(["steward 1", "devops 3"]));
     // And as a row of its own at the top: it is not a task of the chat it came from (#1492).
-    expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "1 devops 3"]);
+    // Waited on, not read once (#2158): the arrival opens its tab in the event's own handler,
+    // but its row is drawn from the sidebar the window reads again after, which answers later.
+    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "1 devops 3"]));
     expect((await cardOf(tree, "devops 3")).text).toContain("from steward 1");
   });
 });
