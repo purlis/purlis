@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792164260075,
+  "lastUpdate": 1792165473758,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14364,6 +14364,48 @@ window.BENCHMARK_DATA = {
             "value": 104.158795,
             "unit": "ms",
             "extra": "median of 5 runs: 102.365, 103.364, 104.159, 104.642, 104.984 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cdd9d7665674571419255e2fcb5ebce188a6e9d8",
+          "message": "Browsers: who signs the engine's manifest, and its updates in the background (#2298)\n\n* Browsers: engine manifests are taken only as the manifest workflow signed them with Sigstore\n\nThe session host trusts a newer engine manifest only with a Sigstore bundle\nverified offline against the trusted root the build ships, from a certificate\nGitHub's token issuer gave to engine-manifest.yml on main of purlis/purlis,\nwith the log entry's inclusion proof in the bundle. It reads the published\nmanifest in the background once the pinned engine is in use, and before a\nbrowser starts on an engine behind past its warning; each read is listed in\nthe network log as the updater's. The same version issued later refreshes\nthe engine's age; an earlier version is never taken.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a daily workflow on main signs the engine manifest with Sigstore\n\nengine-manifest.yml reads Chrome for Testing's last-known-good stable\nversion, hashes each platform's archive into a manifest of the pin's\nshape, signs it keyless with cosign, verifies it against the trusted root\nthe builds ship as the identity they accept, and replaces the two assets\nof the engine-manifest prerelease. ADR 0042 and ADR 0083 amended as the\noperator ruled on 2026-10-16.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: engine manifest fixes from review\n\nSigstore::verify itself asks every bundle for the v0.3 format and an\ninclusion proof and checkpoint on every log entry. Downloads have a total\ntime, the manifest's a minute and an archive's an hour, and only moving an\nengine into place or keeping an update waits on another; a check that fails\nis written to the host's log. A received manifest is taken only when issued\nafter the one in use. Each request, redirects included, is listed in the\nnetwork log once its answer is read: the manifest's as the updater's, the\narchive's as the browser engine's. sigstore-verify is pinned exactly.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: one deadline per engine download, and an update kept only if still the newest\n\nA download's total time now covers every redirect, and an update is asked\nagain, once its engine is in place, whether it is still to be taken, so of\ntwo updates at once the later-issued one is kept. Tests for a body that\nstops mid-way, redirects sharing one deadline, and two updates at once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T19:31:20+04:00",
+          "tree_id": "27bb95035bbc848c363b6434fb2c2c7c7db746a9",
+          "url": "https://github.com/purlis/purlis/commit/cdd9d7665674571419255e2fcb5ebce188a6e9d8"
+        },
+        "date": 1792165472733,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47993050000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.470, 0.478, 0.480, 0.481, 0.534 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.602812,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.485, 16.547, 16.603, 16.739, 16.772 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.96988350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.778, 101.312, 101.970, 102.577, 102.955 ms"
           }
         ]
       }
