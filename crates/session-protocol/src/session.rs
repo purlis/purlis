@@ -880,7 +880,8 @@ pub enum Pushed {
     /// One look of a project's auto-save did something (1.7): it `saved` the project, or only
     /// fetched, pushed or looked at a request; `moved_tree` when what it did moved files in the
     /// tree (a fast-forward, a save's rebase), so a client reads everything again, and only the
-    /// git standing otherwise.
+    /// git standing otherwise. Pushed only to a link that may save ([`crate::grants::Power::Save`])
+    /// and holds the project.
     Saving {
         project: String,
         saved: bool,

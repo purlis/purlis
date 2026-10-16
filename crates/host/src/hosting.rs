@@ -45,8 +45,9 @@
 //!
 //! **A held project is saved here when the window asks** (#2002): the host runs the binary's
 //! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
-//! is composed, and tells every subscriber what each look did. One saver per project, however
-//! often it is asked. A link that ends without a word leaves it saving, so the project is saved
+//! is composed, and tells the window what each look did: only a link that may save a project
+//! ([`Power::Save`]) and holds it hears how saving it goes, its saver's question of who is
+//! mid-turn included. One saver per project, however often it is asked. A link that ends without a word leaves it saving, so the project is saved
 //! while the window is gone for a moment; the window's own stop, or every window letting go of
 //! the project, ends it.
 
@@ -373,12 +374,13 @@ struct State {
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
-/// ([`Power::Confine`]).
+/// ([`Power::Confine`]) and how saving a project it holds goes ([`Power::Save`]).
 struct Subscriber {
     /// The link it came on ([`link_of`]).
     link: u64,
     told: mpsc::Sender<Pushed>,
     confines: bool,
+    saves: bool,
 }
 
 /// A chat's confinement the host holds (#1999), and whose it is.
@@ -587,9 +589,31 @@ impl Hosting {
         });
     }
 
+    /// Tell how saving `project` goes to every subscriber whose link may save it
+    /// ([`Power::Save`]) and holds it, letting go of one that is gone or has stopped reading:
+    /// whether one was told. Only the link that may save a project hears how saving it goes.
+    fn tell_the_savers(state: &mut State, project: &str, pushed: &Pushed) -> bool {
+        let holders: Vec<u64> = state
+            .projects
+            .get(project)
+            .map(|held| held.links.keys().copied().collect())
+            .unwrap_or_default();
+        let mut told = false;
+        state.subscribers.retain(|subscriber| {
+            if !subscriber.saves || !holders.contains(&subscriber.link) {
+                return true;
+            }
+            let sent = subscriber.told.try_send(pushed.clone()).is_ok();
+            told |= sent;
+            sent
+        });
+        told
+    }
+
     /// Asks the window which chats are mid-turn in `workspace` of `project`, and waits for its
     /// answer, at most `within`: `None` with no window holding the project linked, or none that
-    /// answered (#2002). Asked of the links that hold the project, as its hook lines are.
+    /// answered (#2002). Asked of the links that may save the project and hold it
+    /// ([`Self::tell_the_savers`]), which alone answer it.
     fn ask_the_window(
         &self,
         project: &str,
@@ -599,11 +623,6 @@ impl Hosting {
         let (answered, answer) = std::sync::mpsc::channel();
         let question = {
             let mut state = self.state();
-            let holders: Vec<u64> = state
-                .projects
-                .get(project)
-                .map(|held| held.links.keys().copied().collect())
-                .unwrap_or_default();
             state.asked += 1;
             let question = state.asked;
             let pushed = Pushed::WhoIsMidTurn {
@@ -611,16 +630,7 @@ impl Hosting {
                 project: project.to_owned(),
                 workspace: workspace.to_owned(),
             };
-            let mut asked = false;
-            state.subscribers.retain(|subscriber| {
-                if !holders.contains(&subscriber.link) {
-                    return true;
-                }
-                let sent = subscriber.told.try_send(pushed.clone()).is_ok();
-                asked |= sent;
-                sent
-            });
-            if !asked {
+            if !Self::tell_the_savers(&mut state, project, &pushed) {
                 return None;
             }
             state.questions.insert(question, answered);
@@ -1520,11 +1530,12 @@ impl Hosting {
             let project = project.clone();
             Box::new(move |looked: Looked| {
                 if let Some(inner) = host.upgrade() {
-                    Hosting { inner }.tell(&Pushed::Saving {
+                    let pushed = Pushed::Saving {
                         project: project.clone(),
                         saved: looked.saved,
                         moved_tree: looked.moved_tree,
-                    });
+                    };
+                    Hosting::tell_the_savers(&mut Hosting { inner }.state(), &project, &pushed);
                 }
             })
         };
@@ -1748,6 +1759,7 @@ impl session::Host for Hosting {
             link: link_of(peer),
             told,
             confines: peer.scope().may(Power::Confine),
+            saves: peer.scope().may(Power::Save),
         });
         Ok(notices)
     }
