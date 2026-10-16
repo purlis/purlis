@@ -228,7 +228,10 @@ fn a_project_made_from_a_template_has_a_steward_that_points_to_its_personas() {
             one.id
         );
         assert!(
-            steward.contains("`purlis persona list`"),
+            // As the plane spells the program: `purlis`, or `charter` until it migrates.
+            ["`purlis persona list`", "`charter persona list`"]
+                .iter()
+                .any(|cmd| steward.contains(cmd)),
             "{}: the steward does not say how to list them\n{steward}",
             one.id
         );
