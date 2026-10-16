@@ -34,6 +34,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
@@ -170,8 +171,26 @@ impl Chat {
 pub struct ChatBrowsers {
     chats: Mutex<HashMap<u32, Chat>>,
     /// Browsers that were to end and could not be ended yet: no chat uses them, and each is
-    /// tried again until it ends. They count toward the project's browsers.
-    unended: Mutex<Vec<String>>,
+    /// tried again until it ends. They count toward the project's browsers, and are listed
+    /// under the chat they were of, as not ended yet.
+    unended: Mutex<Vec<ChatBrowser>>,
+    /// Moves each time a browser is added to the chats' or taken from them ([`Self::listing`]).
+    listing: AtomicU64,
+}
+
+/// **One browser of a chat's, as the window lists it** (#2024): under its chat in the Chats
+/// list, live on its chat's tab, and opened in a view tab by its program.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatBrowser {
+    /// The chat it is of.
+    pub session: u32,
+    /// What the chat calls it: `b1`, `b2`.
+    pub name: String,
+    /// Its program in the session host: what its view is opened by.
+    pub program: String,
+    /// It was to end and could not be ended yet (D-2013-16): no call of the chat's reaches it,
+    /// purlis keeps trying, and Stop all ends it now.
+    pub unended: bool,
 }
 
 /// Ends `program`: a close, once more, then a stop by its id. Whether it ended.
@@ -208,6 +227,45 @@ const NARROWED: &str = "the person withdrew part of what this chat may reach, so
 impl ChatBrowsers {
     fn lock(&self) -> MutexGuard<'_, HashMap<u32, Chat>> {
         self.chats.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Every browser of the project's chats**, by chat, each chat's oldest first, then any of
+    /// its that is not ended yet.
+    pub fn listed(&self) -> Vec<ChatBrowser> {
+        let mut listed: Vec<ChatBrowser> = self
+            .lock()
+            .iter()
+            .flat_map(|(session, chat)| {
+                chat.browsers.iter().map(|(name, program)| ChatBrowser {
+                    session: *session,
+                    name: name.clone(),
+                    program: program.clone(),
+                    unended: false,
+                })
+            })
+            .collect();
+        // And those not ended yet, after the ones its chat uses (D-2013-16).
+        listed.extend(
+            self.unended
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .iter()
+                .cloned(),
+        );
+        // Stable within a chat: its browsers are kept oldest first.
+        listed.sort_by_key(|one| (one.session, one.unended));
+        listed
+    }
+
+    /// **Where the listing stands**: a number that moves each time a browser is added to the
+    /// chats' or taken from them, and on nothing else, so a caller tells the window only when
+    /// [`Self::listed`] changed.
+    pub fn listing(&self) -> u64 {
+        self.listing.load(Ordering::Relaxed)
+    }
+
+    fn relisted(&self) {
+        self.listing.fetch_add(1, Ordering::Relaxed);
     }
 
     /// What the person said chat `session`'s browser may reach.
@@ -385,28 +443,42 @@ impl ChatBrowsers {
         self.unended
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .iter()
+            .map(|one| one.program.clone())
+            .collect()
     }
 
-    /// Ends each of `programs` ([`end`]), and keeps those that did not end, with those kept
-    /// before, which are tried again first. Answers how many of `programs` ended and did not.
-    fn end_all(&self, driver: Option<&Arc<dyn Driver>>, programs: Vec<String>) -> Ended {
+    /// Ends each of `browsers` ([`end`]), and keeps those that did not end, with those kept
+    /// before, which are tried again first. Answers how many of `browsers` ended and did not.
+    fn end_all(&self, driver: Option<&Arc<dyn Driver>>, browsers: Vec<ChatBrowser>) -> Ended {
         let before =
             std::mem::take(&mut *self.unended.lock().unwrap_or_else(PoisonError::into_inner));
-        let left = |programs: Vec<String>| -> Vec<String> {
+        let left = |browsers: Vec<ChatBrowser>| -> Vec<ChatBrowser> {
             match driver {
-                Some(driver) => programs
+                Some(driver) => browsers
                     .into_iter()
-                    .filter(|program| !end(driver.as_ref(), program))
+                    .filter(|one| !end(driver.as_ref(), &one.program))
                     .collect(),
-                None => programs,
+                None => browsers,
             }
         };
-        let count = programs.len();
+        let count = browsers.len();
+        let had = before.len();
         let mut kept = left(before);
-        let now = left(programs);
+        let still = kept.len();
+        let now: Vec<ChatBrowser> = left(browsers)
+            .into_iter()
+            .map(|one| ChatBrowser {
+                unended: true,
+                ..one
+            })
+            .collect();
         let unended = now.len();
         kept.extend(now);
+        // One kept before that has ended now, or one that could not be ended: its row moves.
+        if still != had || unended > 0 {
+            self.relisted();
+        }
         self.unended
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -417,28 +489,72 @@ impl ChatBrowsers {
         }
     }
 
+    /// **Stop all stopped every browser** (#2024): the chats' browsers leave them, and their
+    /// rows and tabs, as each is ended (a browser Stop all ended answers as gone); one that
+    /// could not be is kept and tried again, as any is. Each chat's answer to its Ask stands.
+    pub fn all_stopped(&self, driver: Option<&Arc<dyn Driver>>) {
+        let browsers: Vec<ChatBrowser> = {
+            let mut chats = self.lock();
+            chats
+                .iter_mut()
+                .flat_map(|(session, chat)| {
+                    chat.current = None;
+                    chat.browsers
+                        .drain(..)
+                        .map(|(name, program)| ChatBrowser {
+                            session: *session,
+                            name,
+                            program,
+                            unended: false,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
+        if !browsers.is_empty() {
+            self.relisted();
+        }
+        self.end_all(driver, browsers);
+    }
+
+    /// Whether `program` is a browser a chat uses now: one that ends with its chat, and that
+    /// nothing else of the window's ends (#2024).
+    pub fn is_in_use(&self, program: &str) -> bool {
+        self.lock()
+            .values()
+            .any(|chat| chat.browsers.iter().any(|(_, one)| one == program))
+    }
+
     /// **The person narrowed chat `session`'s reach while it runs**: a port withdrawn, an Allow
     /// removed. Its browsers end, since each was given the chat's reach as it started; one that
     /// cannot be ended yet is kept and tried again until it is, and no call of the chat's
     /// reaches it. The person's answer to its Ask stands, and its next call opens a browser on
     /// what the chat reaches then, and says why.
     pub fn narrowed(&self, driver: Option<&Arc<dyn Driver>>, session: u32) -> Ended {
-        let programs: Vec<String> = {
+        let programs: Vec<ChatBrowser> = {
             let mut chats = self.lock();
             let Some(chat) = chats.get_mut(&session) else {
                 drop(chats);
                 self.end_all(driver, Vec::new());
                 return Ended::default();
             };
-            let programs: Vec<String> = chat
+            let programs: Vec<ChatBrowser> = chat
                 .browsers
                 .drain(..)
-                .map(|(_, program)| program)
+                .map(|(name, program)| ChatBrowser {
+                    session,
+                    name,
+                    program,
+                    unended: false,
+                })
                 .collect();
             chat.current = None;
             chat.narrowed |= !programs.is_empty();
             programs
         };
+        if !programs.is_empty() {
+            self.relisted();
+        }
         self.end_all(driver, programs)
     }
 
@@ -446,14 +562,22 @@ impl ChatBrowsers {
     /// could not be ended yet, which is tried again until it is.
     pub fn forget(&self, driver: Option<&Arc<dyn Driver>>, session: u32) {
         let gone = self.lock().remove(&session);
-        let programs = gone
+        let programs: Vec<ChatBrowser> = gone
             .map(|chat| {
                 chat.browsers
                     .into_iter()
-                    .map(|(_, program)| program)
+                    .map(|(name, program)| ChatBrowser {
+                        session,
+                        name,
+                        program,
+                        unended: false,
+                    })
                     .collect()
             })
             .unwrap_or_default();
+        if !programs.is_empty() {
+            self.relisted();
+        }
         self.end_all(driver, programs);
     }
 
@@ -561,6 +685,7 @@ impl ChatBrowsers {
             let name = format!("b{}", chat.next);
             chat.next += 1;
             chat.browsers.push((name.clone(), program));
+            self.relisted();
             chat.current = Some(name.clone());
             Ok(name)
         };
@@ -593,8 +718,15 @@ impl ChatBrowsers {
                     return (no(&no_such(&name)), false);
                 };
                 chat.drop_browser(&name);
+                self.relisted();
                 drop(chats);
-                if self.end_all(Some(driver), vec![program]).unended > 0 {
+                let closing = ChatBrowser {
+                    session: browse.chat,
+                    name: name.clone(),
+                    program,
+                    unended: false,
+                };
+                if self.end_all(Some(driver), vec![closing]).unended > 0 {
                     return (
                         no(&format!(
                             "purlis could not end browser {name} yet, and keeps trying: this chat \
@@ -651,6 +783,7 @@ impl ChatBrowsers {
             Err(Refused::Gone) => {
                 if let Some(chat) = self.lock().get_mut(&browse.chat) {
                     chat.drop_browser(&name);
+                    self.relisted();
                 }
                 (
                     no(&format!(
@@ -691,6 +824,19 @@ pub struct BrowsersEnded {
 /// Told each [`BrowsersEnded`], as the window shows it.
 pub type Teller = Arc<dyn Fn(BrowsersEnded) + Send + Sync + 'static>;
 
+/// The event the window hears on when a project's chats' browsers were added to or taken from
+/// (#2024): it reads them again ([`chat_browsers`]).
+pub const LISTED: &str = "chat-browsers-listed";
+
+/// **A project whose chats' browsers were added to or taken from** (#2024).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct BrowsersListed {
+    pub plane: crate::planes::PlaneId,
+}
+
+/// Told each project whose chats' browsers were added to or taken from.
+pub type ListedTeller = Arc<dyn Fn(crate::planes::PlaneId) + Send + Sync + 'static>;
+
 /// **The person narrowed chat `session`'s reach while it runs, in project `held`**: its
 /// browsers end ([`ChatBrowsers::narrowed`]), and where any did, `told` hears it for its tab.
 pub fn narrowed(
@@ -699,7 +845,9 @@ pub fn narrowed(
     session: u32,
     told: &dyn Fn(BrowsersEnded),
 ) {
+    let listing = held.browsers().listing();
     let Ended { ended, unended } = held.browsers().narrowed(held.browser_driver(), session);
+    held.browsers_listed_since(listing);
     crate::browserneedsyou::settled(held);
     if unended > 0 {
         told(BrowsersEnded {
@@ -746,6 +894,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     }
     let reach = || reach_of(held.chats(), browse.chat);
     let as_persona = || as_persona_of(held, browse.chat);
+    let listing = held.browsers().listing();
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),
         held.root(),
@@ -754,6 +903,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         &as_persona,
         now,
     );
+    held.browsers_listed_since(listing);
     if raised {
         tracing::info!(
             "purlis: chat {} asked for a browser; the person is asked what it may reach",
@@ -809,6 +959,34 @@ fn reach_of(chats: &crate::chats::Chats, session: u32) -> BrowserReach {
         .map_or_else(BrowserReach::default, |confines| {
             purlis_core::browsertools::browser_reach(&confines.decides(), false)
         })
+}
+
+/// What closing a chat's browser from the window is refused with: it ends with its chat.
+pub const ENDS_WITH_ITS_CHAT: &str = "This browser is a chat's, and ends with its chat: closing \
+                                      its tab closes only the view.";
+
+/// **Whether the window may end browser `program`** (#2024): never one a chat of `projects`
+/// uses, which ends with its chat. Answers the refusal, or nothing.
+pub fn closing_refused<'a>(
+    projects: impl IntoIterator<Item = &'a ChatBrowsers>,
+    program: &str,
+) -> Option<String> {
+    projects
+        .into_iter()
+        .any(|browsers| browsers.is_in_use(program))
+        .then(|| ENDS_WITH_ITS_CHAT.to_owned())
+}
+
+/// **The browsers of project `plane`'s chats** (#2024): what the Chats list draws under each
+/// chat and its tab draws live, read again on [`LISTED`]. The window's alone
+/// (`ui::WINDOW_ONLY`): a browser is watched only in the person's own window.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_browsers(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<ChatBrowser>, String> {
+    Ok(planes.held(&plane)?.browsers().listed())
 }
 
 const WAITS_NO_MORE: &str = "Nothing is asking for a browser for that chat any more.";

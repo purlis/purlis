@@ -656,7 +656,7 @@ pub async fn hand_back_browser(
     program: String,
 ) -> Result<(), String> {
     // The Ask that asked the person to take it over ends, and its chat is woken (#2015).
-    let projects = planes.every_project();
+    let projects = planes.every_held();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
@@ -721,7 +721,8 @@ pub async fn size_browser(
     }
 }
 
-/// Ends browser `program`: its engine and everything it started.
+/// Ends browser `program`: its engine and everything it started. Never a browser a chat uses,
+/// which ends with its chat (#2024).
 #[tauri::command]
 #[specta::specta]
 pub async fn close_browser(
@@ -729,21 +730,20 @@ pub async fn close_browser(
     planes: tauri::State<'_, crate::planes::Planes>,
     program: String,
 ) -> Result<(), String> {
-    // An Ask about it ends with it, with an Update (#2015).
-    let projects = planes.every_project();
+    let held = planes.every_held();
+    if let Some(why) =
+        crate::chatbrowsers::closing_refused(held.iter().map(|one| one.browsers()), &program)
+    {
+        return Err(why);
+    }
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
-        crate::off_the_window("ending a browser", move || {
-            browsers.close(&program)?;
-            crate::browserneedsyou::program_ended(&projects, &program);
-            Ok(())
-        })
-        .await
+        crate::off_the_window("ending a browser", move || browsers.close(&program)).await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program, projects);
+        let _ = (app, program);
         Ok(())
     }
 }
@@ -766,9 +766,11 @@ pub fn stop_every_browser(app: &tauri::AppHandle) -> usize {
     {
         use tauri::Manager;
         let stopped = browsers(app).map_or(0, |browsers| browsers.stop_every_browser());
-        // Every Ask about a browser ends with it, each with an Update (#2015).
+        // The chats' browsers leave their rows and tabs (#2024), and every Ask about one ends
+        // with it, each with an Update (#2015).
         if let Some(planes) = app.try_state::<crate::planes::Planes>() {
-            crate::browserneedsyou::all_ended(&planes.every_project());
+            planes.chat_browsers_stopped();
+            crate::browserneedsyou::all_ended(&planes.every_held());
         }
         stopped
     }

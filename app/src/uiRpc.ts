@@ -389,6 +389,7 @@ export const commands = {
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
+	chatBrowsers: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
@@ -2544,6 +2545,11 @@ export type BrowsersEnded = {
 	note: string,
 };
 
+/**  **A project whose chats' browsers were added to or taken from** (#2024). */
+export type BrowsersListed = {
+	plane: PlaneId,
+};
+
 /**  What kind of build this is, which decides which section is shown. */
 export type Build = 
 /**  The changelog has a section for this version. */
@@ -2758,6 +2764,24 @@ export type ChatBlocked = {
 	 *  Judged as a port is before it is sent here, and again before anything is allowed.
 	 */
 	suggested?: string | null,
+};
+
+/**
+ *  **One browser of a chat's, as the window lists it** (#2024): under its chat in the Chats
+ *  list, live on its chat's tab, and opened in a view tab by its program.
+ */
+export type ChatBrowser = {
+	/**  The chat it is of. */
+	session: number,
+	/**  What the chat calls it: `b1`, `b2`. */
+	name: string,
+	/**  Its program in the session host: what its view is opened by. */
+	program: string,
+	/**
+	 *  It was to end and could not be ended yet (D-2013-16): no call of the chat's reaches it,
+	 *  purlis keeps trying, and Stop all ends it now.
+	 */
+	unended: boolean,
 };
 
 /**

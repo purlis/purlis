@@ -275,6 +275,8 @@ pub struct Held {
     browsers: crate::chatbrowsers::ChatBrowsers,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
+    /// Told each time a browser is added to its chats' or taken from them (#2024).
+    browsers_listed: Arc<dyn Fn() + Send + Sync>,
     /// The changes each chat proposed to purlis's own configuration, until the person answers
     /// (#1975).
     proposals: crate::proposals::Proposals,
@@ -545,6 +547,14 @@ impl Held {
     /// Where the chats' browsers run: none where the window has no session host.
     pub fn browser_driver(&self) -> Option<&Arc<dyn crate::chatbrowsers::Driver>> {
         self.browser_driver.as_ref()
+    }
+
+    /// Tells the window where the chats' browsers moved since `before`, a
+    /// [`crate::chatbrowsers::ChatBrowsers::listing`] read earlier (#2024).
+    pub fn browsers_listed_since(&self, before: u64) {
+        if self.browsers.listing() != before {
+            (self.browsers_listed)();
+        }
     }
 
     /// The changes each chat proposed to purlis's own configuration, for the person to apply
@@ -1031,8 +1041,10 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
-        // Its browsers end with it (#2013).
+        // Its browsers end with it (#2013), and leave its rows and its tab (#2024).
+        let listing = self.browsers.listing();
         self.browsers.forget(self.browser_driver.as_ref(), session);
+        self.browsers_listed_since(listing);
         self.proposals.forget(session);
         self.mcp_failures.forget(session);
         self.lost_with_the_host.forget(session);
@@ -1982,6 +1994,8 @@ pub struct Planes {
     mcp_failed: crate::mcpfailed::Teller,
     /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
     browsers_ended: crate::chatbrowsers::Teller,
+    /// Told each project whose chats' browsers were added to or taken from (#2024).
+    browsers_listed: crate::chatbrowsers::ListedTeller,
     /// Where the chats' browsers run (#2013): the window's session host, once it is given.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each chat whose program ended with its session host (#2007).
@@ -2242,6 +2256,7 @@ impl Planes {
             browser_asks_ended: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
+            browsers_listed: Arc::new(|_| {}),
             browser_driver: None,
             lost_with_the_host: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
@@ -2484,6 +2499,13 @@ impl Planes {
     /// the window says so on its tab (#2013).
     pub fn telling_browsers_ended(mut self, ended: crate::chatbrowsers::Teller) -> Self {
         self.browsers_ended = ended;
+        self
+    }
+
+    /// Tells `listed` each project whose chats' browsers were added to or taken from, so the
+    /// window draws them under their chats and on their tabs (#2024).
+    pub fn telling_browsers_listed(mut self, listed: crate::chatbrowsers::ListedTeller) -> Self {
+        self.browsers_listed = listed;
         self
     }
 
@@ -3971,6 +3993,12 @@ impl Planes {
         // What the chats of a dispatch said, expired once a day while the project is open
         // (#1556): the open and a timeline's read expire only what they read.
         let talk_sweep = crate::activity::Daily::start(root.clone(), Arc::clone(&me));
+        // The window is told of this project's chats' browsers as they come and go (#2024).
+        let browsers_listed: Arc<dyn Fn() + Send + Sync> = {
+            let listed = Arc::clone(&self.browsers_listed);
+            let plane = id.clone();
+            Arc::new(move || listed(plane.clone()))
+        };
         Held {
             id,
             root,
@@ -3998,6 +4026,7 @@ impl Planes {
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default(),
             browser_driver: self.browser_driver.clone(),
+            browsers_listed,
             proposals: crate::proposals::Proposals::default(),
             mcp_failures,
             lost_with_the_host,
@@ -4093,17 +4122,27 @@ impl Planes {
         Arc::clone(&self.kill_switch)
     }
 
+    /// Every project this registry holds, the registry's lock let go of.
+    pub fn every_held(&self) -> Vec<Arc<Held>> {
+        self.map().values().map(Arc::clone).collect()
+    }
+
+    /// **Stop all stopped every browser** (#2024): each project's chats' browsers leave their
+    /// rows and tabs, and the window is told.
+    pub fn chat_browsers_stopped(&self) {
+        for held in self.every_held() {
+            let listing = held.browsers().listing();
+            held.browsers().all_stopped(held.browser_driver());
+            held.browsers_listed_since(listing);
+        }
+    }
+
     /// The plane a command is acting for, or the one sentence saying it is not open.
     pub fn held(&self, plane: &PlaneId) -> Result<Arc<Held>, String> {
         self.map()
             .get(plane)
             .map(Arc::clone)
             .ok_or_else(|| no_such(plane, "act on"))
-    }
-
-    /// Every project this registry holds, its lock let go of (#2015).
-    pub fn every_project(&self) -> Vec<Arc<Held>> {
-        self.map().values().map(Arc::clone).collect()
     }
 
     /// Every plane this process holds, in no particular order.

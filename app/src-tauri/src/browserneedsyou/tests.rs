@@ -296,14 +296,3 @@ fn a_chat_that_closes_and_stop_all_each_end_their_asks_with_an_update() {
     assert!(other.needs.waiting().is_empty());
     assert_eq!(other.ended.lock().unwrap()[0].at, 1003);
 }
-
-#[test]
-fn the_window_closing_a_browser_ends_its_ask_with_an_update() {
-    let project = Project::new();
-    project.call(&browse(CHAT, Some("b1"), needs_you()));
-
-    project.needs.program_ended("program-1", 1004);
-
-    assert!(project.needs.waiting().is_empty());
-    assert_eq!(project.ended.lock().unwrap().len(), 1);
-}

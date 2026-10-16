@@ -18,9 +18,20 @@ export function frameBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-/** Draws `jpeg` on `canvas`, at the frame's own size; the canvas is scaled by its style. */
-export async function paint(canvas: HTMLCanvasElement, jpeg: Uint8Array): Promise<void> {
-  const bitmap = await createImageBitmap(new Blob([jpeg as BlobPart], { type: "image/jpeg" }));
+/**
+ * Draws `jpeg` on `canvas`, at the frame's own size, or made `across` pixels wide (its height
+ * kept in proportion) for a thumbnail, so its canvas holds no page-sized picture; the canvas
+ * is scaled by its style.
+ */
+export async function paint(
+  canvas: HTMLCanvasElement,
+  jpeg: Uint8Array,
+  across?: number,
+): Promise<void> {
+  const blob = new Blob([jpeg as BlobPart], { type: "image/jpeg" });
+  const bitmap = await (across === undefined
+    ? createImageBitmap(blob)
+    : createImageBitmap(blob, { resizeWidth: across, resizeQuality: "low" }));
   try {
     if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
     if (canvas.height !== bitmap.height) canvas.height = bitmap.height;

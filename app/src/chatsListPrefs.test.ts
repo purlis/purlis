@@ -35,7 +35,7 @@ afterEach(() => {
 describe("how the Chats list is drawn (#1499, V100-73)", () => {
   it("is one order until the person says otherwise", () => {
     expect(loadChatsList({ version: 1, regions: [] })).toEqual({
-      prefs: { grouped: false, tabbed: false, away: true },
+      prefs: { grouped: false, tabbed: false, away: true, beside: false },
       said: [],
     });
     expect(chatsListPrefs()).toEqual(DEFAULT_CHATS_LIST);
@@ -46,11 +46,13 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
       grouped: true,
       tabbed: false,
       away: true,
+      beside: false,
     });
     expect(loadChatsList({ chats: { away: false } }).prefs).toEqual({
       grouped: false,
       tabbed: false,
       away: false,
+      beside: false,
     });
   });
 
@@ -58,7 +60,7 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
     // A row is one line now: what an older purlis wrote is no fault of the file.
     for (const lines of [1, 2, 3])
       expect(loadChatsList({ chats: { lines, grouped: true } })).toEqual({
-        prefs: { grouped: true, tabbed: false, away: true },
+        prefs: { grouped: true, tabbed: false, away: true, beside: false },
         said: [],
       });
   });
@@ -69,6 +71,7 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
       grouped: false,
       tabbed: true,
       away: true,
+      beside: false,
     });
     const { prefs, said } = loadChatsList({ chats: { tabbed: "always" } });
     expect(prefs.tabbed).toBe(false);
@@ -81,10 +84,19 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
       grouped: false,
       tabbed: false,
       away: false,
+      beside: false,
     });
     const { prefs, said } = loadChatsList({ chats: { away: "never" } });
     expect(prefs.away).toBe(true);
     expect(said.join()).toContain('"chats.away" "never" is not true or false, so it is true');
+  });
+
+  it("opens a chat's browser beside it only once the person says so (#2024)", () => {
+    expect(DEFAULT_CHATS_LIST.beside).toBe(false);
+    expect(loadChatsList({ chats: { beside: true } }).prefs.beside).toBe(true);
+    const { prefs, said } = loadChatsList({ chats: { beside: "right" } });
+    expect(prefs.beside).toBe(false);
+    expect(said.join()).toContain('"chats.beside" "right" is not true or false, so it is false');
   });
 
   it("writes that choice to the layout file with the others", async () => {
@@ -100,6 +112,7 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
       grouped: false,
       tabbed: true,
       away: true,
+      beside: false,
     });
   });
 
@@ -123,11 +136,11 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
   it("is what the launch started from, until it is changed", () => {
     handed({ version: 1, regions: [], chats: { tabbed: true } });
     const { result } = renderHook(() => useChatsListPrefs());
-    expect(result.current).toEqual({ grouped: false, tabbed: true, away: true });
+    expect(result.current).toEqual({ grouped: false, tabbed: true, away: true, beside: false });
 
     act(() => setChatsListPrefs({ grouped: true }));
 
-    expect(result.current).toEqual({ grouped: true, tabbed: true, away: true });
+    expect(result.current).toEqual({ grouped: true, tabbed: true, away: true, beside: false });
   });
 
   it("is written to the layout file as it is changed, and left out of it at the default", async () => {
@@ -143,6 +156,7 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
       grouped: true,
       tabbed: false,
       away: true,
+      beside: false,
     });
 
     setChatsListPrefs({ grouped: false });

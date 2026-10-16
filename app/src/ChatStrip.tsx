@@ -18,6 +18,7 @@ import {
 } from "./sortable";
 import { droppedReference, overChat, type ChatsForReferences } from "./references";
 import { FreshMark, freshMarkShown } from "./PlaneUpdated";
+import { TabBrowsers, type BrowserShown } from "./ChatBrowsersShown";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   chatOf,
@@ -132,6 +133,8 @@ export function ChatStrip({
   handedFrom,
   workItems,
   restoring = NONE_RESTORING,
+  browsersOfTab,
+  openBrowser,
 }: ChatStripProps) {
   return (
     <header
@@ -422,6 +425,12 @@ export function ChatStrip({
                               />
                             )}
                           </QueueRead>
+                          {/* **The tab's chats' browsers, live** (#2024): a thumbnail each,
+                            pressed to open its view. Beside the tab's button, as the fresh
+                            mark is. */}
+                          {browsersOfTab !== undefined && openBrowser !== undefined && (
+                            <TabBrowsers browsers={browsersOfTab(id)} onOpen={openBrowser} />
+                          )}
                           <FreshMark
                             id={freshMarkOf(id)}
                             // **Never on a task's own tab** (#1489): nothing drawn on
@@ -584,4 +593,8 @@ type ChatStripProps = {
   workItems: Record<number, string>;
   /** The chats the launch has still to start (`restoring.rs`): each one's tab says so. */
   restoring?: ReadonlySet<number>;
+  /** The browsers of tab `id`'s chats (#2024), drawn live beside it. */
+  browsersOfTab?: (id: number) => readonly BrowserShown[];
+  /** Opens a browser's view, from its thumbnail on a tab. */
+  openBrowser?: (shown: BrowserShown) => void;
 };

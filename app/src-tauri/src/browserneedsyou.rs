@@ -20,7 +20,7 @@
 //!   gated send held to the board's answer, as a vault's Allow is (ADR 0064, amended
 //!   2026-10-16).
 //! - **The Ask ends with its browser**: closed by the chat, ended by a narrowing, by its chat
-//!   closing, by Stop all or by the window. Each leaves an Update in the Inbox ([`Ended`]),
+//!   closing, or by Stop all. Each leaves an Update in the Inbox ([`Ended`]),
 //!   and the chat is told nothing more than its next browser call says.
 //!
 //! **In memory only**, like every Ask a chat raises: a relaunch starts with none. Nothing the
@@ -197,11 +197,6 @@ impl NeedsYou {
     pub fn all_ended(&self, now: u64) -> usize {
         self.end_where(|_| true, now)
     }
-
-    /// Browser `program` was ended from the window: its Ask ends.
-    pub fn program_ended(&self, program: &str, now: u64) -> usize {
-        self.end_where(|one| one.program == program, now)
-    }
 }
 
 /// What an Update says of an Ask that ended with its browser.
@@ -364,20 +359,6 @@ pub fn handed_back(projects: &[Arc<crate::planes::Held>], program: &str) {
             back.browser
         );
         held.chats().asks_may_have_moved();
-    }
-}
-
-/// **Browser `program` was ended from the window** (#2015): its Ask ends with it, with an
-/// Update, in whichever project it was.
-pub fn program_ended(projects: &[Arc<crate::planes::Held>], program: &str) {
-    for held in projects {
-        if held
-            .needs_you()
-            .program_ended(program, crate::sandboxing::now_secs())
-            > 0
-        {
-            held.chats().asks_may_have_moved();
-        }
     }
 }
 

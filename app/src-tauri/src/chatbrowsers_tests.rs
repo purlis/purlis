@@ -743,3 +743,141 @@ fn always_answered_again_narrower_ends_the_browsers_it_opened_at_once() {
     );
     assert!(!hosted.started.lock().unwrap()[1].open_web);
 }
+
+/// Chat `chat`'s browser allowed, and one act of it carried out.
+fn allowed_and_acting(browsers: &ChatBrowsers, hosted: &Arc<Hosted>, chat: u32) {
+    answered(browsers, hosted, &ask(chat, click()));
+    browsers.allow(chat, false);
+    answered(browsers, hosted, &ask(chat, click()));
+}
+
+fn listed(chat: u32, name: &str, program: &str) -> super::ChatBrowser {
+    super::ChatBrowser {
+        session: chat,
+        name: name.into(),
+        program: program.into(),
+        unended: false,
+    }
+}
+
+#[test]
+fn every_browser_of_the_projects_chats_is_listed_under_its_chat_by_the_name_the_chat_knows() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 5);
+    allowed_and_acting(&browsers, &hosted, 3);
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+
+    assert_eq!(
+        browsers.listed(),
+        [
+            listed(3, "b1", "program-2"),
+            listed(3, "b2", "program-3"),
+            listed(5, "b1", "program-1"),
+        ]
+    );
+}
+
+#[test]
+fn the_listing_moves_when_a_browser_starts_or_ends_and_not_on_an_act() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let at_first = browsers.listing();
+
+    allowed_and_acting(&browsers, &hosted, 3);
+    let started = browsers.listing();
+    answered(&browsers, &hosted, &ask(3, click()));
+    let acted = browsers.listing();
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    let another = browsers.listing();
+    answered(&browsers, &hosted, &ask(3, Browsing::Close));
+    let closed = browsers.listing();
+    browsers.narrowed(Some(&driver), 3);
+    let narrowed = browsers.listing();
+    allowed_and_acting(&browsers, &hosted, 4);
+    let before_forget = browsers.listing();
+    browsers.forget(Some(&driver), 4);
+
+    assert_ne!(started, at_first);
+    assert_eq!(acted, started, "an act starts and ends nothing");
+    assert_ne!(another, acted);
+    assert_ne!(closed, another);
+    assert_ne!(narrowed, closed);
+    assert_ne!(browsers.listing(), before_forget);
+    assert!(browsers.listed().is_empty());
+}
+
+#[test]
+fn a_browser_that_ended_by_itself_leaves_the_listing_at_its_chats_next_call() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    hosted.ended.lock().unwrap().push("program-1".into());
+    let before = browsers.listing();
+
+    answered(&browsers, &hosted, &ask(3, click()));
+
+    assert_ne!(browsers.listing(), before);
+    assert!(browsers.listed().is_empty());
+}
+
+#[test]
+fn a_browser_not_ended_yet_stays_listed_under_its_chat_as_not_ended_until_it_ends() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    *hosted.closes_fail.lock().unwrap() = u32::MAX;
+    *hosted.stops_fail.lock().unwrap() = u32::MAX;
+
+    browsers.narrowed(Some(&driver), 3);
+
+    assert_eq!(
+        browsers.listed(),
+        [super::ChatBrowser {
+            unended: true,
+            ..listed(3, "b1", "program-1")
+        }]
+    );
+    let before = browsers.listing();
+    *hosted.closes_fail.lock().unwrap() = 0;
+    // The chat's next call tries it again first, and it ends.
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert_ne!(browsers.listing(), before, "its row moves");
+    assert!(browsers.listed().iter().all(|one| !one.unended));
+}
+
+#[test]
+fn stop_all_takes_every_chats_browsers_off_the_listing_and_keeps_the_persons_answers() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    allowed_and_acting(&browsers, &hosted, 4);
+    let before = browsers.listing();
+
+    browsers.all_stopped(Some(&driver));
+
+    assert!(browsers.listed().is_empty());
+    assert_ne!(browsers.listing(), before);
+    assert_eq!(browsers.posture(3), Posture::Allowed { open_web: false });
+    // The next call opens a new one.
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert_eq!(browsers.listed(), [listed(3, "b2", "program-3")]);
+}
+
+#[test]
+fn a_browser_a_chat_uses_is_known_as_one_and_one_it_no_longer_uses_is_not() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+
+    assert!(browsers.is_in_use("program-1"));
+    assert!(!browsers.is_in_use("program-9"));
+    assert!(super::closing_refused([&browsers], "program-1").is_some());
+    assert!(super::closing_refused([&browsers], "program-9").is_none());
+
+    answered(&browsers, &hosted, &ask(3, Browsing::Close));
+    assert!(!browsers.is_in_use("program-1"));
+}
