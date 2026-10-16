@@ -12,12 +12,17 @@
 //! the page showed while the person drove is never handed to the agent.
 //!
 //! **The person's input** ([`Browser::person_input`]) is taken only while they drive, and only
-//! where it was aimed: at the page and document a frame showed them. Before a key that edits
-//! reaches the page, the element that has the focus is blanked, so what the person types is in
-//! no later snapshot, find or screenshot; and the page is read again after it, so the field's
-//! latest content is kept out of every later answer about its page too. And each run of
-//! characters the person typed is kept out of later answers about its page as typed, wherever
-//! the page shows it, whatever became of the field.
+//! where it was aimed: at the page and document a frame showed them. What the person types or
+//! pastes stays out of every answer the agent gets:
+//!
+//! - Before a key that may change a field reaches the page, the element that has the focus is
+//!   blanked, so it is in no later snapshot, find or screenshot. A page that cannot say which
+//!   element has the focus, or has one focused that its tree does not show, has the key held
+//!   back, and the person is told.
+//! - After the key, what the field holds is read from the field itself, and the person's runs
+//!   of typed characters are kept as they typed them; both are kept out of every later answer
+//!   about every page of the browser, a page opened later included, whatever became of the
+//!   field. A press of the mouse and the hand-back read every field the person touched again.
 //!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
@@ -31,10 +36,13 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::super::keys::command_of;
+use super::super::tree::NodeKey;
+use super::{ACTIVE_ELEMENT, READ_VALUE};
 use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
-    Aim, Call, Driver, Modifiers, MouseButton, MouseKind, PersonInput, Refusal, lock,
+    ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
+    lock,
 };
 
 /// Who holds a browser, and the epoch of their lease.
@@ -60,6 +68,9 @@ pub(crate) struct Typing {
     /// The runs of characters the person typed on each page (by target), the last one still
     /// growing: a key that types no character, or a press of the mouse, ends a run.
     runs: HashMap<String, Vec<String>>,
+    /// Every field the person typed into (its page's target and its element), read again at a
+    /// press of the mouse and at the hand-back.
+    touched: HashSet<(String, NodeKey)>,
     /// The mouse buttons the person holds down, as the engine's bits.
     held: i64,
 }
@@ -275,12 +286,22 @@ impl Browser {
             } => {
                 let text = (*down).then(|| typed(key, *modifiers)).flatten();
                 let edits = *down && edits(key, *modifiers);
-                if edits {
-                    match self.blank_focused(None) {
-                        Ok(()) | Err(Refusal::NothingFocused) => {}
+                let field = if edits {
+                    match self.blank_what_has_focus(None) {
+                        Ok(field) => Some(field),
+                        Err(Refusal::NothingFocused) => {
+                            // Nothing the tree shows has the focus: unless the document has
+                            // nothing focused either, the key waits.
+                            if self.focus_unseen(&session) {
+                                return Err(Refusal::FocusUnseen);
+                            }
+                            None
+                        }
                         Err(why) => return Err(why),
                     }
-                }
+                } else {
+                    None
+                };
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -288,9 +309,13 @@ impl Browser {
                 }
                 if edits {
                     lock(&self.typing).dirty.insert(target.clone());
-                    // Read the page again now, so the field's content with this key in it is
+                }
+                if let Some(field) = field {
+                    // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
-                    let _ = self.snapshot_of(&target);
+                    let held = self.field_holds(&field);
+                    lock(&self.inner.state).keep_out_everywhere(&[held]);
+                    lock(&self.typing).touched.insert(field);
                 }
                 Ok(())
             }
@@ -364,31 +389,92 @@ impl Browser {
         })
     }
 
-    /// Reads every page the person typed into again, and keeps each run of characters they
-    /// typed out of every later answer about its page.
+    /// Reads every page and every field the person typed into again, and keeps what they hold
+    /// and each run of characters the person typed out of every later answer about every page.
     fn keep_typing_out(&self) {
-        let (dirty, runs) = {
+        let (dirty, runs, touched) = {
             let mut typing = lock(&self.typing);
             // Each run is kept out once: a run still growing is a run a press of the mouse or
             // the hand-back has just ended.
-            let runs: Vec<(String, Vec<String>)> = std::mem::take(&mut typing.runs)
-                .into_iter()
-                .map(|(target, runs)| {
-                    let typed = runs.into_iter().filter(|run| !run.is_empty());
-                    (target, typed.collect())
-                })
+            let runs: Vec<String> = std::mem::take(&mut typing.runs)
+                .into_values()
+                .flatten()
+                .filter(|run| !run.is_empty())
                 .collect();
-            (std::mem::take(&mut typing.dirty), runs)
+            let touched: Vec<(String, NodeKey)> = typing.touched.iter().cloned().collect();
+            (std::mem::take(&mut typing.dirty), runs, touched)
         };
+        let mut held = runs;
+        for field in &touched {
+            held.push(self.field_holds(field));
+        }
         for target in dirty {
             let _ = self.snapshot_of(&target);
-        }
-        let mut state = lock(&self.inner.state);
-        for (target, runs) in runs {
-            if let Some(page) = state.page_mut(&target) {
-                page.keep_out(&runs);
+            if let Some(page) = lock(&self.inner.state).page(&target) {
+                held.extend(page.scrubbed.iter().cloned());
             }
         }
+        lock(&self.inner.state).keep_out_everywhere(&held);
+    }
+
+    /// What `field` holds now, read from the field itself; empty where it cannot be read (it is
+    /// gone, or its page moved on).
+    fn field_holds(&self, (target, key): &(String, NodeKey)) -> String {
+        let session = {
+            let state = lock(&self.inner.state);
+            match state
+                .page(target)
+                .and_then(|page| page.frames.get(&key.frame))
+            {
+                Some(frame) => frame.session.clone(),
+                None => return String::new(),
+            }
+        };
+        let on = Some(session.as_str());
+        let Ok(resolved) = self.devtools().call(
+            "DOM.resolveNode",
+            json!({ "backendNodeId": key.backend }),
+            on,
+        ) else {
+            return String::new();
+        };
+        let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
+            return String::new();
+        };
+        let read = self.devtools().call(
+            "Runtime.callFunctionOn",
+            json!({ "objectId": object, "functionDeclaration": READ_VALUE, "returnByValue": true }),
+            on,
+        );
+        let _ = self
+            .devtools()
+            .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+        read.ok()
+            .and_then(|read| {
+                read.pointer("/result/value")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_default()
+    }
+
+    /// Whether the document on `session` has an element focused (or one inside a frame), though
+    /// its tree shows none: then a key typed now would go where purlis cannot blank it.
+    fn focus_unseen(&self, session: &str) -> bool {
+        self.devtools()
+            .call(
+                "Runtime.evaluate",
+                json!({ "expression": ACTIVE_ELEMENT, "returnByValue": true }),
+                Some(session),
+            )
+            .ok()
+            .and_then(|read| {
+                read.pointer("/result/value")
+                    .and_then(Value::as_str)
+                    .map(|tag| !tag.is_empty())
+            })
+            // A document that cannot say holds the key back too.
+            .unwrap_or(true)
     }
 }
 
@@ -419,10 +505,16 @@ impl Typing {
     }
 }
 
-/// The text a key types, if it types any: a key named by one character, or Enter, held with
-/// no Control, Meta or Alt.
+/// Whether the keys held make a chord rather than a character: Meta, or Control without Alt
+/// (Control with Alt is AltGr, which types; Alt alone is Option, which types too).
+fn commands(modifiers: Modifiers) -> bool {
+    modifiers & META != 0 || (modifiers & CONTROL != 0 && modifiers & ALT == 0)
+}
+
+/// The text a key types, if it types any: a key named by one character, or Enter, held with no
+/// chord ([`commands`]): with Alt or AltGr, the character the key named (`@`, `€`).
 fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
-    if modifiers & (1 | 2 | 4) != 0 {
+    if commands(modifiers) {
         return None;
     }
     if key == "Enter" {
@@ -436,12 +528,9 @@ fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
 }
 
 /// Whether a key pressed may change what a field holds: one that types, a deletion, or a
-/// chord with Control or Meta (a paste, an undo).
+/// chord (a paste, an undo).
 fn edits(key: &str, modifiers: Modifiers) -> bool {
-    typed(key, modifiers).is_some()
-        || key == "Backspace"
-        || key == "Delete"
-        || modifiers & (2 | 4) != 0
+    typed(key, modifiers).is_some() || key == "Backspace" || key == "Delete" || commands(modifiers)
 }
 
 /// The engine's key event for one key of the person's.
@@ -470,7 +559,7 @@ fn key_event(
         event["unmodifiedText"] = text.into();
     }
     if down
-        && modifiers & (2 | 4) != 0
+        && commands(modifiers)
         && let Some(command) = command_of(key)
     {
         event["commands"] = json!([command]);

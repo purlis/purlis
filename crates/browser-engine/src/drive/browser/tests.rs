@@ -13,7 +13,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Value, json};
 
-use super::{Browser, DevTools, READY_STATE, SELECT_OPTIONS};
+use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS};
 use crate::WebAddress;
 use crate::cdp::{CallError, Event};
 use crate::drive::{
@@ -44,6 +44,10 @@ struct Model {
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
+    /// What a field the person typed into holds, as its DOM says it (#2014).
+    value: String,
+    /// What the document says has the focus: a tag name, or empty for nothing (#2014).
+    active: String,
     pages: u32,
     pixel_ratio: f64,
 }
@@ -146,6 +150,9 @@ impl Engine {
                     }),
                 }
             }
+            "Runtime.evaluate" if p["expression"] == ACTIVE_ELEMENT => {
+                Ok(json!({"result":{"type":"string","value":super::lock(&self.model).active}}))
+            }
             "Runtime.evaluate" => {
                 Ok(json!({"result":{"type":"string","value":super::lock(&self.model).ready}}))
             }
@@ -176,6 +183,9 @@ impl Engine {
             }
             "DOM.resolveNode" => {
                 Ok(json!({"object":{"type":"object","subtype":"node","objectId":"OBJECT-1"}}))
+            }
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == READ_VALUE => {
+                Ok(json!({"result": {"type":"string","value": super::lock(&self.model).value}}))
             }
             "Runtime.callFunctionOn" => {
                 Ok(json!({"result": {"type":"object","value": super::lock(&self.model).select}}))
@@ -268,6 +278,8 @@ fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
             select: json!({"picked":["Blue"]}),
             pages: 1,
             pixel_ratio: 1.0,
+            value: String::new(),
+            active: String::new(),
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
@@ -863,9 +875,17 @@ fn no_call_runs_script_the_caller_wrote() {
         .unwrap();
     for sent in engine.all_sent() {
         match sent.method.as_str() {
-            "Runtime.evaluate" => assert_eq!(sent.params["expression"], READY_STATE),
+            "Runtime.evaluate" => assert!(
+                [READY_STATE, ACTIVE_ELEMENT]
+                    .contains(&sent.params["expression"].as_str().unwrap()),
+                "{sent:?}"
+            ),
             "Runtime.callFunctionOn" => {
-                assert_eq!(sent.params["functionDeclaration"], SELECT_OPTIONS);
+                assert!(
+                    [SELECT_OPTIONS, READ_VALUE]
+                        .contains(&sent.params["functionDeclaration"].as_str().unwrap()),
+                    "{sent:?}"
+                );
             }
             "Runtime.compileScript"
             | "Runtime.runScript"

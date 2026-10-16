@@ -84,6 +84,21 @@ pub(crate) const SELECT_OPTIONS: &str = r"function (wanted) {
   return { picked: options.filter((o) => o.selected).map((o) => o.label || o.text) };
 }";
 
+/// The function that reads what a field holds, run on the field itself (#2014): a constant,
+/// whatever the field.
+pub(crate) const READ_VALUE: &str = r"function () {
+  if (typeof this.value === 'string') return this.value;
+  if (this.isContentEditable) return this.innerText;
+  return '';
+}";
+
+/// The script that says what the document has focused (#2014): a tag name, or nothing for the
+/// document itself. A constant.
+pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
+  const at = document.activeElement;
+  return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
+})()";
+
 /// How long the driver gives the engine to say whether a document has loaded.
 const READY_STATE_WITHIN: Duration = Duration::from_secs(2);
 /// How often a wait looks again.
@@ -239,6 +254,9 @@ struct State {
     ended: bool,
     /// The size the person set its pages to, in CSS pixels (#2014): every page is given it.
     size: Option<(u16, u16)>,
+    /// What the person typed while driving (#2014): kept out of every answer about every page
+    /// of the browser, a page opened later included.
+    kept: Vec<String>,
 }
 
 impl State {
@@ -254,6 +272,19 @@ impl State {
         match self.sessions.get(session)? {
             Session::Page(target) => Some(target.clone()),
             Session::Frame { page, .. } => Some(page.clone()),
+        }
+    }
+
+    /// Keeps `held` out of every later answer about every page, and every page opened later.
+    fn keep_out_everywhere(&mut self, held: &[String]) {
+        for text in held.iter().filter(|text| !text.is_empty()) {
+            if !self.kept.iter().any(|kept| kept.eq_ignore_ascii_case(text)) {
+                self.kept.push(text.clone());
+            }
+        }
+        let kept = self.kept.clone();
+        for page in &mut self.pages {
+            page.keep_out(&kept);
         }
     }
 
@@ -593,6 +624,11 @@ impl Browser {
     /// `None`), whatever it is: the field the person is typing into, even one that is no form
     /// field and has no reference.
     pub fn blank_focused(&self, page: Option<&PageId>) -> Result<(), Refusal> {
+        self.blank_what_has_focus(page).map(|_| ())
+    }
+
+    /// [`Browser::blank_focused`], answering the element it blanked and its page's target.
+    fn blank_what_has_focus(&self, page: Option<&PageId>) -> Result<(String, NodeKey), Refusal> {
         let target = self.target(page)?;
         let snapshot = self.snapshot_of(&target)?;
         let key = match snapshot.focused() {
@@ -600,7 +636,8 @@ impl Browser {
             [one] => one.clone(),
             _ => return Err(Refusal::FocusUnclear),
         };
-        self.blank_node(&target, key)
+        self.blank_node(&target, key.clone())?;
+        Ok((target, key))
     }
 
     fn blank_node(&self, target: &str, key: NodeKey) -> Result<(), Refusal> {
@@ -1735,6 +1772,7 @@ impl Inner {
                                 by.settle.observe("", Activity::Changed, now);
                             }
                             let id = PageId(format!("p{}", state.pages_listed));
+                            let kept = state.kept.clone();
                             state.pages.push(Page {
                                 id,
                                 target: target.clone(),
@@ -1742,7 +1780,7 @@ impl Inner {
                                 url: url.clone(),
                                 title: String::new(),
                                 settle: Settle::new(now),
-                                scrubbed: Vec::new(),
+                                scrubbed: kept,
                                 frames: HashMap::new(),
                             });
                         }

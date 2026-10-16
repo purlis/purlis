@@ -143,8 +143,17 @@ pub enum MouseButton {
     Right,
 }
 
-/// The keys held with an input event, as bits: Alt 1, Control 2, Meta 4, Shift 8.
+/// The keys held with an input event, as bits: [`ALT`], [`CONTROL`], [`META`], [`SHIFT`].
 pub type Modifiers = u8;
+
+/// Alt (Option on a Mac) held.
+pub const ALT: Modifiers = 1;
+/// Control held.
+pub const CONTROL: Modifiers = 2;
+/// Meta (Command on a Mac) held.
+pub const META: Modifiers = 4;
+/// Shift held.
+pub const SHIFT: Modifiers = 8;
 
 /// One event of the person's, aimed at what a frame showed (#2014). Points are CSS pixels of
 /// the page's viewport.
@@ -383,6 +392,10 @@ pub enum Refusal {
     NothingFocused,
     #[error("the page cannot tell which field has the focus")]
     FocusUnclear,
+    #[error(
+        "the page has something focused that purlis cannot see, so the key was held back: click the field you mean to type into"
+    )]
+    FocusUnseen,
     #[error(
         "the call acted in part, so the page's state is not known ({done}): {why}. Take a snapshot"
     )]

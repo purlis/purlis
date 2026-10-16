@@ -35,6 +35,25 @@ fn key(aim: &Aim, key: &str, down: bool) -> PersonInput {
     }
 }
 
+fn chord(aim: &Aim, key: &str, modifiers: u8) -> PersonInput {
+    PersonInput::Key {
+        aim: aim.clone(),
+        down: true,
+        key: key.to_owned(),
+        code: String::new(),
+        key_code: 0,
+        modifiers,
+    }
+}
+
+/// The page writes `said` into its text, as a page that echoes what was typed does.
+fn the_page_says(engine: &super::Engine, frame: &str, said: &str) {
+    let mut model = super::super::lock(&engine.model);
+    let nodes = model.ax.get_mut(frame).unwrap().as_array_mut().unwrap();
+    let line = nodes.iter_mut().find(|n| n["nodeId"] == "16").unwrap();
+    line["name"]["value"] = json!(said);
+}
+
 fn press(aim: &Aim, x: f64, y: f64) -> PersonInput {
     PersonInput::Mouse {
         aim: aim.clone(),
@@ -416,4 +435,136 @@ fn what_the_person_typed_stays_out_of_later_answers_even_once_its_field_is_gone(
 
     let text = snapshot(&browser, 1);
     assert!(!text.to_lowercase().contains("xyzk"), "{text}");
+}
+
+#[test]
+fn a_character_typed_with_alt_or_option_reaches_the_field_once_it_is_blanked() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let reads_before = engine.sent("Accessibility.getFullAXTree").len();
+
+    browser.person_input(&chord(&aim, "@", 1)).unwrap();
+
+    let sent = engine.all_sent();
+    let key_at = sent
+        .iter()
+        .position(|s| s.method == "Input.dispatchKeyEvent")
+        .expect("the key reached the page");
+    assert!(
+        sent[..key_at]
+            .iter()
+            .filter(|s| s.method == "Accessibility.getFullAXTree")
+            .count()
+            > reads_before,
+        "the field was blanked before the key"
+    );
+    assert_eq!(sent[key_at].params["type"], "keyDown");
+    assert_eq!(sent[key_at].params["text"], "@");
+}
+
+#[test]
+fn what_the_person_pastes_stays_out_of_later_answers() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    // The field holds what was pasted into it; its tree shows only that it holds something.
+    super::super::lock(&engine.model).value = "pasted-Secret9".into();
+
+    browser.person_input(&chord(&aim, "v", 4)).unwrap();
+    the_page_says(&engine, "PAGE-1", "You entered pasted-Secret9");
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("pasted-Secret9"), "{text}");
+}
+
+#[test]
+fn what_the_person_typed_in_pieces_stays_out_of_later_answers_whole() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    for letter in ["k", "r"] {
+        browser.person_input(&key(&aim, letter, true)).unwrap();
+    }
+    browser.person_input(&press(&aim, 12.0, 12.0)).unwrap();
+    for letter in ["w", "t"] {
+        browser.person_input(&key(&aim, letter, true)).unwrap();
+    }
+    super::super::lock(&engine.model).value = "krwt".into();
+    the_page_says(&engine, "PAGE-1", "Welcome, krwt");
+
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("krwt"), "{text}");
+}
+
+#[test]
+fn what_the_person_typed_stays_out_of_answers_about_every_page_of_the_browser() {
+    let (browser, engine) = browser();
+    focus_on(&engine, &[]);
+    browser.take_over();
+    let aim = aim_now(&browser);
+    for letter in ["q", "z", "w", "v"] {
+        browser.person_input(&key(&aim, letter, true)).unwrap();
+    }
+    browser.hand_back();
+    // Another page of the same browser shows what was typed.
+    {
+        let mut model = super::super::lock(&engine.model);
+        let main = model.ax["PAGE-1"].clone();
+        model.ax.insert("PAGE-2".into(), main);
+    }
+    the_page_says(&engine, "PAGE-2", "Signed in as qzwv");
+
+    browser
+        .call(
+            &id(7),
+            Call::Open {
+                address: crate::WebAddress::parse("http://fixture.test/other.html").unwrap(),
+            },
+        )
+        .unwrap();
+    let text = snapshot(&browser, 8);
+
+    assert!(text.contains("Signed in as"), "{text}");
+    assert!(!text.contains("qzwv"), "{text}");
+}
+
+#[test]
+fn a_key_waits_when_the_focus_is_on_something_the_page_does_not_show_as_focused() {
+    let (browser, engine) = browser();
+    focus_on(&engine, &[]);
+    super::super::lock(&engine.model).active = "CANVAS".into();
+    browser.take_over();
+    let aim = aim_now(&browser);
+
+    let typed = browser.person_input(&key(&aim, "x", true));
+
+    assert_eq!(typed, Err(Refusal::FocusUnseen));
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn what_the_person_pasted_stays_out_even_once_the_page_has_moved_on() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    super::super::lock(&engine.model).value = "pasted-Other7".into();
+    browser.person_input(&chord(&aim, "v", 4)).unwrap();
+    // The page sends the form by itself and loads another document: the field is gone.
+    super::super::lock(&engine.model).value = String::new();
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-7","url":"http://fixture.test/next.html","name":""}}),
+        Some("S-PAGE-1"),
+    );
+    the_page_says(&engine, "PAGE-1", "Welcome, pasted-Other7");
+    std::thread::sleep(Duration::from_millis(30));
+
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("pasted-Other7"), "{text}");
 }
