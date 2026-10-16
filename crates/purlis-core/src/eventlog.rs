@@ -1328,6 +1328,8 @@ struct Identity {
     run: String,
     /// What the current run is: the next run a clear begins, and every child run, carries it.
     attributes: Attributes,
+    /// Why the run began, while its `run.started` is held ([`Recorder::begin_held`]).
+    held: Option<Began>,
 }
 
 /// The run an event is recorded under, and the run that one came from.
@@ -1630,6 +1632,8 @@ impl Recorder {
         cleared: Option<&str>,
         spooled: Option<u64>,
     ) -> io::Result<Event> {
+        // A run held for its start is said before any line of it.
+        self.begun(plane, report.chat)?;
         let known = self.chats.contains_key(&(plane.to_path_buf(), report.chat));
         let named = match &report.conversation {
             crate::hookwire::Conversation::Named(id) => Some(id.as_str()),
@@ -1776,6 +1780,7 @@ impl Recorder {
                 chat: chat.to_owned(),
                 run: run.to_owned(),
                 attributes: Attributes::default(),
+                held: None,
             },
         );
     }
@@ -1795,6 +1800,7 @@ impl Recorder {
     ) -> io::Result<Event> {
         use crate::hookwire::spool::{Drained, Spooled};
         let number = item.chat();
+        self.begun(plane, number)?;
         let known = self.chats.get(&(plane.to_path_buf(), number)).cloned();
         let (kind, mut body) = match item {
             Drained::Line { seq, line, .. } => match (line, &known) {
@@ -2272,27 +2278,59 @@ impl Recorder {
         cause: Began,
         attributes: &Attributes,
     ) -> io::Result<Event> {
-        // A child still live is of the run this one takes the place of, which has ended
-        // superseded (ADR 0076 §2): a run whose own end was told has none left.
-        let ended = self.end_children(chat, RunState::Completed, Cause::Superseded);
-        // Held before the line is written: a log that refuses the line must not leave the
-        // chat's next hook line to mint it a second id.
+        self.begin_held(plane, number, RunOf { chat, run }, cause, attributes);
+        self.begun(plane, number)?
+            .ok_or_else(|| io::Error::other("the run was not held"))
+    }
+
+    /// [`Recorder::begin`], its `run.started` held until [`Recorder::begun`] says the run goes
+    /// on: a start the host may still take back (#2250). A line of the run that comes first is
+    /// written after it, so a run's first event is still its `run.started`; one never begun
+    /// writes nothing.
+    pub fn begin_held(
+        &mut self,
+        plane: &Path,
+        number: u32,
+        RunOf { chat, run }: RunOf<'_>,
+        cause: Began,
+        attributes: &Attributes,
+    ) {
         self.chats.insert(
             (plane.to_path_buf(), number),
             Identity {
                 chat: chat.to_owned(),
                 run: run.to_owned(),
                 attributes: attributes.clone(),
+                held: Some(cause),
             },
         );
+    }
+
+    /// The `run.started` of chat `number`'s run held by [`Recorder::begin_held`], written now;
+    /// `None` where none is held.
+    pub fn begun(&mut self, plane: &Path, number: u32) -> io::Result<Option<Event>> {
+        let Some(who) = self.chats.get_mut(&(plane.to_path_buf(), number)) else {
+            return Ok(None);
+        };
+        // Taken before the line is written: a log that refuses the line must not leave the
+        // chat's next hook line to mint it a second id, or to try the line again.
+        let Some(cause) = who.held.take() else {
+            return Ok(None);
+        };
+        let who = who.clone();
+        // A child still live is of the run this one takes the place of, which has ended
+        // superseded (ADR 0076 §2): a run whose own end was told has none left.
+        let ended = self.end_children(&who.chat, RunState::Completed, Cause::Superseded);
         ended?;
-        let body = attributes.body(cause, &self.log.device);
+        let body = who.attributes.body(cause, &self.log.device);
         self.log
-            .append(Some(chat), Some(run), None, "run.started", body)
+            .append(Some(&who.chat), Some(&who.run), None, "run.started", body)
+            .map(Some)
     }
 
     /// The chat's identity, giving it one and its first run when it has none.
     fn identity(&mut self, plane: &Path, number: u32) -> io::Result<Identity> {
+        self.begun(plane, number)?;
         match self.chats.get(&(plane.to_path_buf(), number)) {
             Some(who) => Ok(who.clone()),
             None => self.new_run(plane, number, Began::Start, None, None),
@@ -2382,6 +2420,7 @@ impl Recorder {
                 conversation: conversation.map(str::to_owned),
                 ..before
             },
+            held: None,
         };
         if cause == Began::Clear {
             // The cleared run is superseded, and its children end with it, before the run

@@ -41,7 +41,9 @@ pub enum Entry {
     },
     /// A commit purlis's git hook refused, of chat `chat` ([`Recorder::refused`]).
     Refused { plane: PathBuf, chat: u32 },
-    /// The run a start begins ([`Recorder::begin`]).
+    /// The run a start begins ([`Recorder::begin`]), or, `held`, the run of a start the window
+    /// may still put aside, whose `run.started` waits for its [`Entry::Begun`]
+    /// ([`Recorder::begin_held`], #2250).
     Begin {
         plane: PathBuf,
         number: u32,
@@ -49,7 +51,12 @@ pub enum Entry {
         run: String,
         cause: Began,
         attributes: Attributes,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        held: bool,
     },
+    /// The start whose run was held goes on: its `run.started` is written now
+    /// ([`Recorder::begun`]).
+    Begun { plane: PathBuf, number: u32 },
     /// What a start decided about a chat's sandbox, under the run it begins
     /// ([`Recorder::trust`]): its kind and body as the window composed them.
     Trust {
@@ -112,16 +119,20 @@ impl Recorder {
                 run,
                 cause,
                 attributes,
-            } => one(self.begin(
-                &plane,
-                number,
-                RunOf {
+                held,
+            } => {
+                let run = RunOf {
                     chat: &chat,
                     run: &run,
-                },
-                cause,
-                &attributes,
-            )),
+                };
+                if held {
+                    self.begin_held(&plane, number, run, cause, &attributes);
+                    Ok(Vec::new())
+                } else {
+                    one(self.begin(&plane, number, run, cause, &attributes))
+                }
+            }
+            Entry::Begun { plane, number } => Ok(self.begun(&plane, number)?.into_iter().collect()),
             Entry::Trust {
                 chat,
                 run,

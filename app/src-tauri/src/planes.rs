@@ -1131,6 +1131,57 @@ impl Held {
         Ok(started)
     }
 
+    /// **Chat `session`'s project settings no longer pass** (ADR 0067 as amended 2026-10-16):
+    /// started again in its place now, by the core, whatever the window is doing. What it asked
+    /// the person is refused (the asks were the old run's), a stop of it gives way, and the new
+    /// run starts on the person's settings and purlis's. Where it cannot be started again (no
+    /// conversation to resume, a start refused), the old run is ended all the same, and why is
+    /// answered for its tab.
+    pub fn contain_project_settings(&self, session: u32) -> Result<u32, String> {
+        // A chat the person is stopping is not started again (#1448): it is ended, as the stop
+        // would have ended it.
+        if self.stopping.is_stopping(session) {
+            if let Err(ended) = self.end_chat(session) {
+                tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
+            }
+            return Err(
+                "This project's Claude Code settings changed and a sandboxed chat does not load \
+                 them as they are now, so purlis ended this chat, which you were stopping."
+                    .to_owned(),
+            );
+        }
+        for ask in self
+            .asks()
+            .asks
+            .into_iter()
+            .filter(|ask| ask.session == session)
+        {
+            if let Err(why) = self.answer_ask(session, &ask.ask, "deny") {
+                tracing::warn!("purlis: chat {session}'s ask was not refused ({why})");
+            }
+        }
+        match self.chats.restart_for_project_settings(session) {
+            Ok(started) => {
+                self.in_its_place(session, started);
+                Ok(started)
+            }
+            Err(why) => {
+                let said = format!(
+                    "This project's Claude Code settings changed and a sandboxed chat does not \
+                     load them as they are now, so purlis ended this chat: it could not be \
+                     started again on its conversation ({why}). Start it again to go on."
+                );
+                // Kept with why among the chats that would not start, so a window that opens
+                // later still says so.
+                self.chats.keep_aside(session, &said);
+                if let Err(ended) = self.end_chat(session) {
+                    tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
+                }
+                Err(said)
+            }
+        }
+    }
+
     /// **A chat the person is stopping is not started again** (#1448): a restart gives it a new
     /// number, which would take it out of its stop with nobody told.
     fn not_while_stopping(&self, session: u32) -> Result<(), String> {
@@ -1875,6 +1926,9 @@ pub struct Planes {
     arranged: Arc<ArrangedBehind>,
     /// Told how many hosts a chat's proxy refused past the ones it names (#1353).
     refused_more: hooks::RefusedMoreTeller,
+    /// Told each chat whose project's Claude Code settings no longer pass (ADR 0067 as amended
+    /// 2026-10-16).
+    project_settings: crate::projectsettings::Teller,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
@@ -2130,6 +2184,7 @@ impl Planes {
             blocks: Arc::new(|_| {}),
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
+            project_settings: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
@@ -2325,6 +2380,14 @@ impl Planes {
     /// window's thread and outlives the registry's borrow (#1949).
     pub(crate) fn block_teller(&self) -> hooks::BlockTeller {
         Arc::clone(&self.blocks)
+    }
+
+    /// Tells `told` each chat, in a plane this registry holds, whose project's Claude Code
+    /// settings changed so that it no longer loads them, so the window restarts it (ADR 0067 as
+    /// amended 2026-10-16).
+    pub(crate) fn telling_project_settings(mut self, told: crate::projectsettings::Teller) -> Self {
+        self.project_settings = told;
+        self
     }
 
     /// Tells `more` how many hosts a chat's proxy refused past the ones it names, in a plane this
@@ -2781,6 +2844,32 @@ impl Planes {
                     session,
                     more,
                 });
+            })
+        });
+        // A chat whose project's Claude Code settings no longer pass is started again by the
+        // core itself, or ended, and the window is told to redraw it (ADR 0067 as amended
+        // 2026-10-16). Weak for the handoff's reason.
+        held.chats().tell_project_settings_to({
+            let weak = Arc::downgrade(&held);
+            let (plane, told) = (id.clone(), Arc::clone(&self.project_settings));
+            Arc::new(move |session| {
+                if let Some(strong) = weak.upgrade() {
+                    let (chat, notices, ended) = match strong.contain_project_settings(session) {
+                        Ok(started) => (
+                            crate::drawn(&strong, started).ok(),
+                            strong.chats().start_notes(started),
+                            None,
+                        ),
+                        Err(why) => (None, Vec::new(), Some(why)),
+                    };
+                    told(crate::projectsettings::Rescreened {
+                        plane: plane.clone(),
+                        session,
+                        chat,
+                        notices,
+                        ended,
+                    });
+                }
             })
         });
         // A permission hook's ask is read by the harness this app started its chat as, never
@@ -3447,14 +3536,29 @@ impl Planes {
             let events = events.clone();
             // The key the hook channel records this project's chats under.
             let root = id.root().to_path_buf();
-            chats.when_a_run_begins(Box::new(move |session, run, cause, attributes| {
-                let begun = events.record(purlis_core::eventlog::Entry::Begin {
+            // A run its start may still put aside is held until the start goes on (#2250); a
+            // line of it that comes first is written after its `run.started`.
+            chats.when_a_run_begins(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session, run, cause, attributes, said| {
+                    let begun = events.record(purlis_core::eventlog::Entry::Begin {
+                        plane: root.clone(),
+                        number: session,
+                        chat: run.chat.to_owned(),
+                        run: run.run.to_owned(),
+                        cause,
+                        attributes: attributes.clone(),
+                        held: said == crate::chats::RunSaid::Held,
+                    });
+                    if let Err(why) = begun {
+                        tracing::warn!("purlis: a run was not written to the event log ({why})");
+                    }
+                }
+            }));
+            chats.when_a_held_run_goes_on(Box::new(move |session| {
+                let begun = events.record(purlis_core::eventlog::Entry::Begun {
                     plane: root.clone(),
                     number: session,
-                    chat: run.chat.to_owned(),
-                    run: run.run.to_owned(),
-                    cause,
-                    attributes: attributes.clone(),
                 });
                 if let Err(why) = begun {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");
@@ -3572,6 +3676,26 @@ impl Planes {
                 .when_one_ends(Arc::new(move |session, exit| {
                     // A curation prompt still waiting is for a chat that is gone: never typed.
                     typed.forget(session);
+                    // A run ended so that the same chat starts again at once (ADR 0067 as
+                    // amended 2026-10-16) has not ended the chat: what follows its place says
+                    // so. Its sub-agents' runs still end with it, stopped as a close stops
+                    // them (ADR 0076 §6), and nothing else here is done for it. Where the
+                    // session host writes the event log, it ends them as the program ends
+                    // there (#2003).
+                    if me
+                        .get()
+                        .and_then(std::sync::Weak::upgrade)
+                        .is_some_and(|held| held.chats.replaced(session))
+                    {
+                        if let Some(events) = events.as_ref().and_then(hooks::Events::held) {
+                            let (state, cause) = how_its_run_ended(
+                                Some(purlis_core::state::run::StopBy::Closed),
+                                &exit,
+                            );
+                            its_children_end(events, &events_root, session, state, cause);
+                        }
+                        return;
+                    }
                     // A chat that ended on its own while it wrapped up wrote no record, and the
                     // window says so (ADR 0064). One closed by Close or by its record was let go
                     // of before its program was ended, so it says nothing here.

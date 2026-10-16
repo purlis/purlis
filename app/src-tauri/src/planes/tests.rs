@@ -3025,6 +3025,179 @@ fn a_harness_writing_down_its_input(dir: &Path) -> (String, PathBuf, PathBuf) {
     (program.display().to_string(), ready, typed)
 }
 
+/// Raises a permission ask on chat `chat`, as its harness's hook does.
+fn an_ask_open_on(held: &Held, chat: u32) {
+    held.hooks()
+        .asks()
+        .raise(
+            &chat.to_string(),
+            purlis_core::harness::hooked::Source::ClaudeCode,
+            &serde_json::json!({
+                "hook_event_name": "PermissionRequest",
+                "tool_name": "Bash",
+                "tool_input": {"command": "npm test"},
+            }),
+            std::time::Instant::now(),
+        )
+        .expect("the ask is held for the window");
+    assert!(held.asks_open_for(chat));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_whose_project_settings_stop_passing_is_started_again_by_the_core_with_no_window() {
+    // ADR 0067 as amended 2026-10-16: no window is open here, and an ask of the old run's
+    // is still open; the core starts it again in its place all the same.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let (planes, _told) = planes_telling();
+    let held = planes.held(&planes.open(&root)).expect("it is held");
+    // A Claude Code chat on no profile, which a restart starts again from its record.
+    let at = dir.path().join("chat");
+    std::fs::create_dir_all(&at).expect("a directory");
+    let ready = at.join("ready");
+    let program = stand_in::claude_code(
+        &at,
+        "claude",
+        &format!("#!/bin/sh\n: > '{}'\nexec sleep 600\n", ready.display()),
+    );
+    let mut record = one_chat_on(&program.display().to_string()).chats.remove(0);
+    record.resume =
+        purlis_core::harness::SessionId::new("11111111-2222-4333-8444-555555555555").ok();
+    let chat = held
+        .chats()
+        .start(&record, STARTING)
+        .expect("the chat starts");
+    assert!(becomes(|| ready.exists()), "the stand-in never started");
+    an_ask_open_on(&held, chat);
+
+    let started = held
+        .contain_project_settings(chat)
+        .expect("started again on its conversation");
+    assert!(!held.asks_open_for(chat), "the old run's ask is refused");
+    let open: Vec<u32> = held
+        .chats()
+        .open_now()
+        .iter()
+        .map(|one| one.session)
+        .collect();
+    assert!(open.contains(&started) && !open.contains(&chat), "{open:?}");
+    held.close_chat(started).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_start_whose_project_settings_stop_passing_as_it_runs_answers_the_run_that_goes_on() {
+    // ADR 0067 as amended 2026-10-16: the first screen after the spawn is the start's own.
+    // A change caught there ends that run and starts the chat once more on the person's
+    // settings; the number the start answers is that run, open and running, and nobody is
+    // told of a restart.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    std::fs::create_dir_all(root.join(".claude")).expect(".claude");
+    std::fs::write(
+        root.join(".claude/settings.json"),
+        r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}}"#,
+    )
+    .expect("settings");
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let planes = Planes::telling(
+        Arc::new(|_| {}),
+        crate::Shipped {
+            binary: Some(dir.path().join("purlis")),
+            plugin: Some(dir.path().join("plugin")),
+            shims: None,
+            git_hooks: None,
+        },
+        None,
+    )
+    .telling_project_settings({
+        let told = Arc::clone(&told);
+        Arc::new(move |one: crate::projectsettings::Rescreened| {
+            told.lock().expect("told").push(one.session);
+        })
+    });
+    let held = planes.held(&planes.open(&root)).expect("it is held");
+    let changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    held.chats()
+        .project_settings_watch()
+        .changing_before_the_next_chat({
+            let (root, changed) = (root.clone(), Arc::clone(&changed));
+            move || {
+                changed.store(true, std::sync::atomic::Ordering::SeqCst);
+                std::fs::write(
+                    root.join(".claude/settings.json"),
+                    r#"{"permissions": {"allow": ["Bash"]}}"#,
+                )
+                .expect("changed");
+            }
+        });
+    let at = dir.path().join("chat");
+    std::fs::create_dir_all(&at).expect("a directory");
+    let program = stand_in::claude_code(&at, "claude", "#!/bin/sh\nexec sleep 600\n");
+    let mut record = one_chat_on(&program.display().to_string()).chats.remove(0);
+    record.cwd = Some(root.clone());
+    let session = held
+        .chats()
+        .start(&record, STARTING)
+        .expect("the chat starts");
+    let open: Vec<u32> = held
+        .chats()
+        .open_now()
+        .iter()
+        .map(|one| one.session)
+        .collect();
+    assert_eq!(open, [session], "the start answers the run that goes on");
+    assert!(told.lock().expect("told").is_empty(), "no restart is told");
+    if changed.load(std::sync::atomic::Ordering::SeqCst) {
+        // Where a sandbox applies here, the change was caught: the run that goes on is the
+        // one started again, its project's files not loaded.
+        assert!(
+            held.chats()
+                .start_notes(session)
+                .iter()
+                .any(|note| note.contains("permissions.allow")),
+            "its tab says why"
+        );
+    }
+    held.close_chat(session).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_that_cannot_start_again_for_its_project_settings_is_ended_and_says_why() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let (planes, _told) = planes_telling();
+    let held = planes.held(&planes.open(&root)).expect("it is held");
+    // A program with no conversation to resume.
+    let (program, ready, _) = a_harness_writing_down_its_input(dir.path());
+    let session = held
+        .chats()
+        .start(&one_chat_on(&program).chats[0], STARTING)
+        .expect("it starts");
+    assert!(becomes(|| ready.exists()), "the stand-in never started");
+
+    let why = held
+        .contain_project_settings(session)
+        .expect_err("nothing to start again on");
+    assert!(why.contains("ended this chat"), "{why}");
+    assert!(
+        held.chats()
+            .would_not_start()
+            .iter()
+            .any(|one| one.why == why),
+        "kept with why among the chats that would not start"
+    );
+    assert!(
+        held.chats()
+            .open_now()
+            .iter()
+            .all(|one| one.session != session),
+        "the old run does not go on"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_curation_prompt_is_typed_on_its_chat_s_start_as_one_paste_and_nothing_is_sent() {
@@ -6217,6 +6390,45 @@ fn a_chat_whose_program_ends_ends_its_sub_agents_runs_in_the_event_log() {
             "exited".to_owned()
         )],
         "only its own sub-agents end, and never another chat's ({others:?})"
+    );
+}
+
+#[test]
+fn a_run_ended_to_start_its_chat_again_ends_its_sub_agents_runs_in_the_event_log() {
+    // ADR 0076 §6: a run replaced at once (ADR 0067 as amended 2026-10-16) is no end of
+    // its chat, and its sub-agents' runs still end with it, stopped as a close stops them.
+    let dir = tempfile::tempdir().expect("a directory");
+    let logs = dir.path().join("events");
+    let events = an_event_log(&logs);
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let planes = planes.recording_events(Some(events.clone()));
+    let plane = planes.open(&a_plane(&dir.path().join("plane")));
+    let held = planes.held(&plane).expect("it is held");
+    let session = held
+        .chats()
+        .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+        .expect("the host starts it");
+    let (run, children) = a_chat_with_sub_agents(&events, plane.root(), session, &["agent-1"]);
+    held.chats().replaced_in_a_test(session);
+
+    host.program_ends(session, purlis_core::session::Exit::Code(0));
+
+    assert_eq!(
+        runs_ended(&logs),
+        [(
+            children[0].clone(),
+            Some(run),
+            "stopped".to_owned(),
+            "closed".to_owned()
+        )]
+    );
+    assert!(
+        held.chats()
+            .open_now()
+            .iter()
+            .any(|one| one.session == session),
+        "the chat itself goes on"
     );
 }
 

@@ -306,3 +306,42 @@ fn the_person_s_plugins_are_read_from_claude_code_s_record_at_user_scope() {
     );
     assert_eq!(installed_for_the_person(None), None);
 }
+
+#[test]
+fn words_limited_to_the_person_s_settings_carry_the_project_s_rules() {
+    let screened = Screened {
+        deny: vec!["Bash(rm -rf *)".to_owned()],
+        ask: vec!["Bash(git push *)".to_owned()],
+        ..Screened::default()
+    };
+    let armed: Vec<String> = [
+        "--plugin-dir",
+        "/app/plugin",
+        "--mcp-config",
+        "{}",
+        "--settings",
+        r#"{"permissions": {"allow": ["x"], "deny": ["Read(/v)"]}}"#,
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let limited = limited(armed, &screened).expect("limited");
+    assert_eq!(limited[2..4], ["--setting-sources", "user"]);
+    let settings: serde_json::Value = serde_json::from_str(&limited[7]).expect("JSON");
+    assert_eq!(
+        settings["permissions"]["deny"],
+        serde_json::json!(["Read(/v)", "Bash(rm -rf *)"])
+    );
+    assert_eq!(
+        settings["permissions"]["ask"],
+        serde_json::json!(["Bash(git push *)"])
+    );
+    assert_eq!(settings["permissions"]["allow"], serde_json::json!(["x"]));
+    // Once is enough.
+    assert_eq!(
+        limited.clone(),
+        super::limited(limited, &screened).expect("as is")
+    );
+    // Words purlis did not arm are refused, never started on the project's files.
+    assert!(super::limited(vec!["--settings".to_owned()], &screened).is_err());
+    assert!(super::limited(["--settings", "{}"].map(str::to_owned).to_vec(), &screened).is_err());
+}

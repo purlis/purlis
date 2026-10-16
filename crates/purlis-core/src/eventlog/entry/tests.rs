@@ -128,6 +128,7 @@ fn an_entry_sent_as_json_writes_what_the_windows_own_call_writes() {
                 run: RUN.into(),
                 cause: Began::Start,
                 attributes: attributes(),
+                held: false,
             },
             Entry::Trust {
                 chat: CHAT.into(),
@@ -194,6 +195,7 @@ fn a_chat_a_begun_run_names_is_known_by_its_id_and_one_never_named_is_not() {
         run: RUN.into(),
         cause: Began::Reopen,
         attributes: Attributes::default(),
+        held: false,
     })
     .unwrap();
 
@@ -286,4 +288,69 @@ fn a_trust_or_audited_entry_of_a_kind_that_is_no_trust_event_is_refused_and_writ
         body: serde_json::json!({}),
     })
     .expect("a trust kind is written");
+}
+
+#[test]
+fn a_held_run_sent_as_entries_is_written_as_the_windows_own_held_run_is() {
+    use crate::state::Event::Stop;
+    let plane = Path::new("/planes/one");
+    let run = RunOf {
+        chat: CHAT,
+        run: RUN,
+    };
+
+    let here = tempfile::tempdir().unwrap();
+    {
+        let mut window = recorder(here.path());
+        window.begin_held(plane, 3, run, Began::Start, &attributes());
+        window.begun(plane, 3).unwrap();
+        window.begin_held(plane, 4, run, Began::Start, &attributes());
+        window
+            .report_with(plane, &report(4, Stop), Followed::No, None)
+            .unwrap();
+        window.begin_held(plane, 5, run, Began::Start, &attributes());
+    }
+
+    let there = tempfile::tempdir().unwrap();
+    {
+        let mut host = recorder(there.path());
+        let held = |number| Entry::Begin {
+            plane: plane.into(),
+            number,
+            chat: CHAT.into(),
+            run: RUN.into(),
+            cause: Began::Start,
+            attributes: attributes(),
+            held: true,
+        };
+        assert!(
+            host.apply(sent(held(3))).unwrap().is_empty(),
+            "held, not written"
+        );
+        host.apply(sent(Entry::Begun {
+            plane: plane.into(),
+            number: 3,
+        }))
+        .unwrap();
+        host.apply(sent(held(4))).unwrap();
+        host.apply(sent(Entry::Report {
+            plane: plane.into(),
+            report: report(4, Stop),
+            followed: Followed::No,
+            begun: None,
+        }))
+        .unwrap();
+        host.apply(sent(held(5))).unwrap();
+    }
+
+    let window: Vec<_> = read(here.path()).unwrap().iter().map(said).collect();
+    let host: Vec<_> = read(there.path()).unwrap().iter().map(said).collect();
+    let kinds: Vec<&str> = window.iter().map(|one| one.1.as_str()).collect();
+    assert_eq!(
+        kinds,
+        // Chat 3's run, chat 4's run before its line, and the sub-agent's run that line begins.
+        ["run.started", "run.started", "run.started", "hook.stop"],
+        "one never begun writes nothing"
+    );
+    assert_eq!(host, window);
 }

@@ -20,7 +20,9 @@ the window opens the log and writes it, as before.
    `purlis_core::eventlog::Entry` (the run a start begins, a start's sandbox decision, a
    person's audited act, a kill switch line, a hook line with what the board made of it), and
    the host writes it with the code the window's own path runs (`Recorder::apply`). So the two
-   paths write the same events. *Rejected:* the window composing finished events (the run a
+   paths write the same events. A run whose start may still be put aside (#2250, ADR 0066 as
+   amended 2026-10-16) travels as a held `Begin`, and its start going on as `Begun`: the host
+   holds its `run.started` as the window's own log holds it. *Rejected:* the window composing finished events (the run a
    number maps to, a sub-agent's child run and a tool call's pairing are the writer's state,
    and would be decided twice). *D-2003-2.*
 3. **Session protocol 1.8, a minor.** It adds `record` (one entry, answered once it is kept,
